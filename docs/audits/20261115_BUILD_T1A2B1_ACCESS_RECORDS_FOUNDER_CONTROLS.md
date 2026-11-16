@@ -499,3 +499,305 @@ Every write is server-only and is reached only while `PRACTICE_FIELD_MODE` is no
 4. **The isolation suite's batch-submit rows write `envelope.quarterKey: undefined`** at `mandateBatchTransport.js:208` (the fix-round refuter's strict fake; an engine path this build does not touch). Real Firestore rejects `undefined` unless `ignoreUndefinedProperties` is set.
 5. **`admission.test.js` "the slot cap … for EACH archetype"** (T1a-1) runs 5.5–6.7 s under load against a 5-second limit. It can fail a loaded run, or read as a false kill in a battery.
 6. `requireAuth` verifies tokens without `checkRevoked`, as `api/mandate/create.js` does. Pre-existing.
+
+---
+
+## Fix round, 16 Nov 2026 — Astra T2B-01 to T2B-04
+
+**Claude Code (Opus 5.5), 16 Nov 2026.** Astra reviewed `421a445d` (`docs/audits/20261116_ASTRA_REVIEW_T1A2B1.md`, committed byte-identical, SHA-256 `6a7b335f…`). She found no access breach, no quarterly change and no money change. Her four findings were about records that were incomplete or wrong, and about the spend bound. This round fixes all four, applies the founder's ruling on Q2, puts the fixes through an independent review lens and a refuter, fixes what they confirmed, and stops.
+
+**Branch and heads.**
+- `git fetch origin` ran first. The branch head was `421a445d553b6648f976abb31e558d8ee4236f75`, as expected.
+- `origin/main` was `71bc6bde7c0553cdb16e5c5f3752d248968967c3`, unchanged since the build, so nothing was merged.
+- The work was done in a fresh worktree whose branch was set to `421a445d`, and pushed to `claude/practice-field-t1a2b1-access-records` (a fast-forward, no force).
+- Code head: `29bf46a5647b0c5e2e96c1bd0dd6cd290fadf3bb`. This report follows in a docs-only commit.
+
+**Flag and fences.** `PRACTICE_FIELD_MODE` is still `'off'`. No fenced file, flag value, pin or `vercel.json` changed, and the new code calls no fenced function. This session made no model call, no Firestore write and no EODHD call.
+
+| Question | Answer |
+|---|---|
+| T2B-01: can a carried price borrow another quote's time? | No. Every holding records where its price came from (`lastMarkProvenance`), and a carry copies that record unchanged. Astra's sequence, on all three ledgers, observed and unobserved, names 30 Nov's snapshot and no time. The packet also checks each carried price's source against its own copy of that close |
+| T2B-02: can a due session's windows disappear? | No. The window ledger has its own cursor from the book's creation. Her empty book's 16 Nov windows are reported missing, once |
+| T2B-03: does the packet hold every price the result rests on? | Yes: every close from entry to endpoint, on every ledger. The decline and exposure are recomputed from the packet alone. The largest packet is about 233 KiB, so it stays one document |
+| T2B-04 and Q2: can spend pass $3? | No, within what the price table prices. A call reserves its maximum, and anything the table cannot price is refused. A refusal never locks the month; an exhausted month refuses every call |
+| Did any money figure change? | No. Compared leaf by leaf, the end-to-end run only gains new and provenance fields, plus one document |
+| Tests | Full Linux suite exit 0, `Test Files  1507 passed | 12 skipped (1519)`, `Tests  33945 passed | 135 skipped (34080)`; rules suite exit 0, 813/813; lint gate exit 0; `vite build` exit 0, `dist/` byte-identical to `main` |
+| Differentials against `main` | 17/17 per mode identical; 40/40 raw-identical |
+| Review | One lens, with a refuter on every finding. 14 findings: one must-fix (S-1) and three should-fix (S-2, P-1, and O-2's builder row), all fixed; the rest notes and test gaps, mostly hardened anyway; one refuted (O-4) |
+| Mutation battery | 34 defined, 34 ran, 34 killed, 0 survived, 0 broken at the final code head (the prompt's eight among them); 21 of 21 killed at the four fixes before the review |
+
+### F.1 In plain terms
+
+**1. A price now says where it came from, however long it is carried (T2B-01).** Every holding records, beside its last price, where that price came from: a fill or a close, the session, the snapshot, its quality and the vendor's time. The time is left empty when the vendor gave none. When a later close cannot price the holding, the old price is carried forward and its record is carried with it, unchanged. The sealed result now copies that record.
+
+In Astra's case, a price taken on 30 November with no vendor time was carried to the 1 December endpoint and labelled with 27 November's time. It is now labelled as 30 November's, with no time. The admission packet no longer seals the old time beside such a price either. The time field the gap screen uses is unchanged.
+
+**2. Every session the book was due is accounted for, from the day it was created (T2B-02).** The window ledger used to follow the valuation, which starts at the first session with money in it. So an empty book's first days, and the days before its first fill, left no record of their missed windows.
+
+The ledger now keeps its own cursor from the book's creation. At each close and catch-up, every earlier session it has not covered gets its own close row, before the valuation's own session. That row is marked `valued: false` and raises one alert per missed window. No valuation row is written for those sessions. The valuation's own cursor, fills, corporate actions and catch-up are unchanged. One guard is added: no fill may be dated in a session the ledger has already written up. Today nothing reaches that guard.
+
+**3. The result's evidence holds every close its numbers came from (T2B-03).** The result's largest decline and average exposure come from every close of the idea, but the sealed packet copied only the running totals. It now copies each close from entry to endpoint, on every ledger: values, cash, each holding's quantity and price, and where each price came from.
+
+A function recomputes the decline and exposure from the packet alone. It names any close that is missing, out of order or incomplete, and any result its closes do not give. A changed price also breaks the packet's hash. The largest possible packet is about 233 KiB, under a quarter of Firestore's 1 MiB limit, so it stays one document. That shape is a 60-session idea with four names, an eight-name basket and SPY.
+
+**4. The $3 limit now holds at the bill, not at a guess (T2B-04 and Q2).** A model call used to reserve an estimate, and then any larger bill was accepted. Now a call must state its model, the most tokens it can send and receive, and whether it uses a cache or a server tool. It then reserves the most that call can possibly cost under the price table.
+- **Refused calls:** a model with no price, a one-hour cache, or a server tool such as web search. The price table cannot price the last two.
+- **A call that might not fit** in the month's remaining room is refused. As the founder ruled on Q2, a refusal does not lock the month.
+- **After the call,** the real cost is recorded and the unused part of the reservation is freed. A bill above the reservation should be impossible; if one happens it is recorded as billed, flagged and logged.
+- **"Exhausted"** now means the month has less room left than the smallest call T1b will make. An exhausted month runs no call. That figure is a placeholder T1b sets: `PRACTICE_FIELD_MIN_CALL_MAX_CHARGE_USD`, $0.05 for now.
+
+### F.2 Each fix by `file:line` (at the code head `29bf46a5`)
+
+The round has five code commits on `421a445d`: one per finding and one for the review. Together they touch 18 files, +1,473 / −280. Twelve of those files are product or config (+732 / −175); the rest are tests.
+
+**T2B-01 — `6c498970`.**
+
+| Where | What |
+|---|---|
+| `api/_utils/practiceField/ledger.js:879`, `:882` | `MARK_PROVENANCE_SOURCE` (`fill`, `close`) and `markProvenance`: `{ source, symbol, session, snapshotKey, quality, vendorTimeIso }`, every field present, unknowns null. The header above them states the rule and why `lastMarkAsOf` is not provenance |
+| `ledger.js:901`, `:913` | `withCloseMarks(ledger, valuation, { date, snapshotKey })`: a FRESH mark takes this close's provenance (its quality, and its vendor time, which is null when the quote had none); a CARRIED mark keeps the one it had. `lastMarkAsOf` is written exactly as before |
+| `fills.js:142` | `executeIdeaFill`: a holding left after a fill (a buy, a top-up or a trim) gets the fill's provenance: the slot snapshot, `vendor_time`, the quote's time. This covers all three ledgers; the same-stock comparison is a mirror and copies it |
+| `entry.js:279` | The book's position is booked with the idea holding's own provenance |
+| `close.js:611` | The book's positions at a close: fresh → this close's provenance; carried → kept |
+| `close.js:108`, `:110` | `marksOf`: a valuation row's carried mark names `carriedFrom` (the holding's provenance) |
+| `settlement.js:222` | `ledgerEndpoint`: each endpoint holding gains `markSource` and, when carried, `carriedFrom`. These are provenance only: no figure reads them |
+| `evidence.js:89`, `:108` | `readAdmissionMarkSources` now reads only the last close's book row. `markSourceOf` reads the position's provenance and gives one of four kinds: `entry_fill`, `close`, `carried` (naming the carried price's own source: its session, snapshot, quality and time) or `unknown` |
+| `evidence.js:191`, `:201`, `:205` | `provenanceCopy`; `timeAgreesWithQuality` (a mark has no time exactly when its quality is `receipt_time_fallback`); `honestProvenance` |
+| `evidence.js:232`, `:241` | `isCarriedMark` reads the endpoint row's `markSource`. `endpointCopy` gives each mark its `markSource`, its `snapshotKey` and, when carried, `carriedFrom`. That replaces `carriedFromVendorTimeIso`, which borrowed the holding's `lastMarkAsOf` |
+| `evidence.js:484` | `resultPacketMissingMarks`, the completeness check. A fresh mark must name the endpoint's snapshot, carry no `carriedFrom`, and have a time that agrees with its quality. A carried mark needs an honest `carriedFrom`, which the packet's own record of that source confirms (`:510`) |
+| `admission.js:347` | The call now reads only the last close's row |
+
+**T2B-02 — `3f38e4cf`.**
+
+| Where | What |
+|---|---|
+| `windowLedger.js:155`, `:158` | `WINDOW_ONLY_SESSIONS_PER_TX = 20`; the cursor's field, `execState.windowsAccountedThrough` |
+| `windowLedger.js:169` | `firstUnaccountedWindowSession`. With a cursor, the next session after it: the later of `windowsAccountedThrough` and `lastCloseKey`. With neither, the creation session: its date when the book existed before that session's close pass ended, else the next session |
+| `windowLedger.js:185` | `windowOnlySessionsBefore` |
+| `windowLedger.js:199`, `:223` | `buildCloseWindowRow(…, valued)`. Every close row now says `valued`. A window-only row has `observed: null`, no snapshot, `caughtUpAt`, `accountedBy: 'window_cursor'` and an empty code record |
+| `windowLedger.js:251`, `:266` | `readWindowOnlySessions` (reads only) and `writeWindowOnlySessions` (create-once) |
+| `close.js:470`–`:480` | `closeNextSession`, before any write: reads the sessions the cursor has not covered before the one the valuation closes. If there is nothing to value, or more than twenty such sessions, this transaction accounts for them alone and moves the cursor |
+| `close.js:753`, `:766` | Otherwise the valuation's transaction writes their rows before its own, and moves the cursor to the session it closed |
+| `close.js:830`, `:869` | `catchUpIdeaBook` and `closeIdeaBook` carry on after a window-only transaction, which does not count against the valuation's twenty sessions. Both return `windowsAccounted` |
+| `compositionProtectedStoresAllowlist.json` | The new create site (`writeWindowOnlySessions`, 1) and `closeNextSession`'s second update (2), each with its note |
+
+**T2B-03 — `ce592c00`.**
+
+| Where | What |
+|---|---|
+| `close.js:662`–`:700` | For each idea reaching its endpoint, the close reads the idea's row of every close from its entry session to the one before, all before any write. It hands those rows, with this close's row, to the packet |
+| `evidence.js:277` | `observationOf`: one close, taken from its row, on each ledger. It holds the marked value and cash (and the idea's holdings value), and each holding's quantity, mark, quality, vendor time, source and snapshot key (`carriedFrom` for a carried one) |
+| `evidence.js:409`, `:413`, `:465` | `buildResultPacket(…, closeRows)` refuses `observation_row_missing` when any close between entry and endpoint is missing or out of sequence. It writes `observations` beside `track` |
+| `evidence.js:356` | `recomputeResultFromPacket` recomputes each close's values from its prices and checks them against what the close states. It then folds them as the close folded its rows, states the result with `trackStatistics`, and lists every problem it finds (see the review) |
+| `evidence.js:510`, `:527` | `sourceRecordAgrees`: a carried mark's source must match the packet's own record of it, either the observation of that close or the entry fill. `resultPacketProvenanceProblems` checks every copied mark |
+| `settlement.js:296`, `:396` | `trackStatistics` is now the one function the result's decline, exposure and row counts are written with. No figure moves: the end-to-end results are leaf-identical |
+
+**T2B-04 and Q2 — `a061408c`.**
+
+| Where | What |
+|---|---|
+| `spend.js:117` | `maxCallChargeMicros`: every input token at the table's dearest input rate (`CACHE_WRITE_INPUT_MULTIPLIER`, 1.25×) and every output token at the output rate, rounded up to the micro-dollar. It returns null for a model the table does not price |
+| `spend.js:134`, `:142` | `spendExhausted` (the room is below `PRACTICE_FIELD_MIN_CALL_MAX_CHARGE_USD`) and `withExhaustion`, which re-derives the state at every write and clears `exhaustedAt` / `exhaustedBy` once the month is no longer exhausted |
+| `spend.js:184`, `:195`, `:211` | `planReserve({ modelId, maxInputTokens, maxOutputTokens, cacheTtl, serverTools, … })` refuses `model_unpriced`, or `spend_would_exceed` when the maximum does not fit; neither refusal writes anything. The op records the model, ceilings, cache, tools, maximum and table version |
+| `spend.js:227`, `:246` | `planSettle` records the charge as it is and sets `releasedUsd`. An unreadable call is charged its maximum, and a charge above the maximum is flagged `charge_above_reservation` |
+| `spend.js:315` | `settleSpend` logs `PRACTICE_FIELD_CHARGE_ABOVE_RESERVATION` |
+| `constants.js:139` | `PRACTICE_FIELD_MIN_CALL_MAX_CHARGE_USD = 0.05`, a placeholder T1b sets |
+
+**The review — `29bf46a5`** (F.5 gives each finding):
+
+| Where | What |
+|---|---|
+| `spend.js:99`, `:197` | S-1: `cacheTtl` (`'none'`, `'5m'` or `'1h'`) and `serverTools` are required; a one-hour cache write or any server tool is refused `pricing_unsupported`. The header now defines `maxInputTokens` as every billed input token |
+| `spend.js:206` | S-2: an exhausted month refuses `spend_exhausted`, even for a call that would fit. Nothing is written |
+| `spend.js:203`, `:237` | S-4: fails closed with `spend_state_invalid` or `reservation_without_maximum` |
+| `evidence.js:134` | P-1: the admission packet's position copy no longer holds the raw `lastMarkAsOf`, which stays only as `markSource.recordedMarkAsOf`, labelled |
+| `evidence.js:314`, `:326`, `:337`, `:356`, `:413` | O-1, O-1b, O-3, O-4: `wholeLedger`, `holdingsAgainst` (summation order only), `sameJson`, the recomputation's coverage, ledger and result checks, and the builder's sequence check |
+| `sessions.js:57` | W-3: a fill dated in a session the window cursor has already written up is refused as closed |
+| `windowLedger.js:39`, `:211` | W-1: the header now says what `served` and `valued` mean, and a window-only row's `code.caughtUpSession` is null |
+
+### F.3 Checks
+
+On WSL Ubuntu (Linux, the record), in a private worktree of `~/pd-ci` at the code head, Node 20.20.2, with the install matching the lockfile (`40382e64edb6`) and `TZ=UTC`. The full suite ran alone under the lock. Every check below ran at the FINAL code head `29bf46a5` unless it names `a061408c` (the four fixes before the review).
+
+| Check | Command | Result |
+|---|---|---|
+| Practice Field, endpoint, scans, isolation and trace files | `npx vitest run api/_utils/practiceField api/practice-field api/cron/practiceFieldIsolation.test.js api/cron/practiceFieldNoBook.trace.test.js api/_utils/filmRoom/practiceFieldSeam.test.js api/_utils/mandateMoneyRounding.scan.test.js api/_utils/mandateRationale.imports.test.js api/_utils/compositionProtectedStores.scan.test.js api/_utils/modelPriceTable.test.js` | exit 0 · `Test Files  26 passed (26)` · `Tests  671 passed (671)` (at `a061408c`: 26 files, 661) |
+| Full suite | `TZ=UTC flock /tmp/pd-suite.lock npx vitest run --maxWorkers=8` | **exit 0** · `Test Files  1507 passed \| 12 skipped (1519)` · `Tests  33945 passed \| 135 skipped (34080)` · 279.56 s (read from the log). 30 rows more than the build's 33,915: +12 evidence, +7 window ledger, +11 spend. At `a061408c`: exit 0, `Tests  33935 passed \| 135 skipped (34070)` |
+| Rules suite | `npm run test:rules` (JDK 21, the local emulator) | **exit 0** · `Test Files  43 passed (43)` · `Tests  813 passed (813)` (no rule changed this round; also exit 0, 813/813 at `a061408c`) |
+| Lint gate | `npm run lint:gate` | exit 0 (`--max-warnings 0`; also at `a061408c`) |
+| Production build | `npx vite build` | exit 0. `dist/` (113 files) is **byte-identical** to `main`'s build in the same tree (`dist` hash list `8376dc36…` for `71bc6bde`, `a061408c` and `29bf46a5`). The pushed head, with this report, is built again before the push; the PR description gives that result |
+| The seventeen-scenario differential, both modes, against `origin/main` | Astra's `astra-differential.test.js`, unmodified (SHA-256 `17e724ad…`); `base` = `71bc6bde`, `head` = the code head, LF archives | **34/34 identical**: 17 at `'off'`, 17 at `'on'`. Its 4,000-case build-set row and its prompt byte-equality rows pass too (36/36 rows). Also 34/34 at `a061408c` |
+| The 40-case traced differential, against `origin/main` | Astra's `astra-cron-trace.test.js`, unmodified (SHA-256 `9297cead…`) | **40/40 raw-identical**: 20 at `'off'`, 20 at `'on'`, with one registry read per `'on'` fire on both sides. Its evidence file's hash is `6c169f26…`, the same as at the build. Also 40/40 at `a061408c` |
+
+The differentials ran on Windows from LF `git archive` trees, in Astra's layout. The build's own 17-scenario scratch harness (`204a2f32…`) was not rerun; Astra's harness covers the same seventeen scenarios at both modes.
+
+### F.4 The end-to-end comparison
+
+The run was re-pinned at each fix and once for the review. Each dump was compared leaf by leaf with the one before it. Before changing anything, this session reproduced the current pin (`bb742bb9…`) from `421a445d` byte for byte.
+
+| | SHA-256 | Bytes | Documents | Against the one before |
+|---|---|---|---|---|
+| The pin before this round (`421a445d`) | `bb742bb9181c76d5…` | 328,611 | 154 | — |
+| T2B-01 | `db22f0487877ad3e…` | 332,712 | 154 | 108 leaves added; 3 changed (the result packets' `contentHash`) |
+| T2B-02 | `e6c3969bb56f8ca3…` | 334,166 | 155 | 1 document added; 29 leaves added; none changed |
+| T2B-03 (T2B-04 does not touch the run) | `bd6286bdab695368…` | 384,605 | 155 | 1,195 leaves added; 3 changed (the same `contentHash`es) |
+| The review (the final pin) | **`f9c91e33f6bafa05b46ec4d7ce5d67d8ad1a8a80a4b92d42b4412fcbf76ad6ed`** | 384,605 | 155 | 1 leaf changed: 13 Nov's window-only row, `code.caughtUpSession` `true` → `null` |
+
+**The pin before this round against the final pin, leaf by leaf:**
+- **One document added:** 13 Nov's close row of the window ledger. The run's book is created on Friday 13 Nov and its first idea fills on Monday 16 Nov. Nothing ran on the 13th, so its three windows are missed, `valued: false`.
+- **1,332 leaves added, every one a new or provenance field:**
+  - `observations` in the three result packets: 1,195;
+  - `lastMarkProvenance` on the ideas' holdings: 60;
+  - `valued` on the 28 existing close rows: 28;
+  - `markSource` (28) and `snapshotKey` (14) on endpoint rows' holdings and packet marks;
+  - `carriedFrom` on the one carried mark of the missing-quote day: 6;
+  - the book's `execState.windowsAccountedThrough`: 1.
+- **No leaf removed.** The only changed leaves are the three result packets' `contentHash`, which follow from the added fields.
+- **No money leaf changed:** no cash, quantity, fill, valuation mark, value, gap, decline, exposure or result figure.
+
+`endToEnd.test.js` now also checks two things for each idea: the packet's statistics recompute from the packet alone with no problem, and every copied mark's source agrees with the packet.
+
+### F.5 The review and the refuter
+
+**How.** The round's code diff is 18 files, so BUILD_RULES §2 applies. As the prompt directed, ONE independent lens reviewed the four fixes, on its own read-only `git archive` snapshot of `a061408c` with `node_modules` linked. It was told to find defects, fix nothing, and reproduce each finding.
+- The lens split the work with two read-only forks of its own: one on the observations, one on spend.
+- It ran its own mutants against the repository's suites and a leaf comparison of the end-to-end dumps.
+- It re-ran the rounding scan's closure walk with POSIX paths. spend.js's new `Math.ceil` is not reachable from any money entrypoint, and every other count equals the baseline.
+
+Every finding then went to a refuter on a fresh snapshot, told to break it. The refuter fetched Anthropic's published pricing page to check S-1. Neither agent wrote to the repository or ran a writing git command.
+
+| # | Finding (lens) | Refuter | Disposition |
+|---|---|---|---|
+| S-1 | The maximum assumes 5-minute caching. A 1-hour cache write bills 2× the base input, and a server tool has fees; the table carries neither, and `priceUsage` cannot see either. Example: a 200k-in / 1k-out call reserves $0.255 but can list at $0.405 (should-fix) | CONFIRMED and widened, rates verified on Anthropic's pricing page (Haiku 4.5: a 1-hour write is $2/MTok; web search is $10 per 1,000 searches plus its result tokens; tool use adds a system prompt). **Must-fix** by T2B-04's own standard | **Fixed.** A call must state `cacheTtl` and `serverTools`; a 1-hour cache write or any server tool is refused `pricing_unsupported`. `maxInputTokens` is defined as every billed input token, the tool system prompt included. Pricing those, rather than refusing them, needs the table to carry them (F.7) |
+| S-2 | A month that reads exhausted still accepted a call below the $0.05 figure (should-fix) | CONFIRMED: it contradicts contract §17 B-SPEND ("no model call runs") | **Fixed.** An exhausted month refuses `spend_exhausted`; nothing is written, so Q2 holds |
+| P-1 | The admission packet sealed a position's raw `lastMarkAsOf` beside its price, which can be another quote's time (note) | CONFIRMED and **upgraded to should-fix**: it is the T2B-01 class in a create-once packet, and no ruling covered that field | **Fixed.** Dropped from the position copy; kept only inside `markSource` as `recordedMarkAsOf` |
+| O-2 | No test triggers `observation_row_missing`, a positive provenance problem or the `order:` problem; four mutants survive (should-fix, tests) | CONFIRMED (one mutant is equivalent): should-fix for the builder row, a note for the rest | **Fixed:** all four rows added |
+| W-1 | A window-only row says the close was `served`, and raises no close alert (should-fix) | PARTLY: the facts are right, but a caught-up VALUED close reads exactly the same way. The proposed fix would alert on one of two identical outages. Note | Kept (R-28). `code.caughtUpSession` is now null on such a row, and the header says what `served` and `valued` mean |
+| W-2 | No test pins the creation-session rule (after the pass, a weekend, between the close and the pass end); three mutants survive (should-fix, tests) | CONFIRMED, but the mutants change only rows that can carry no alert. Note | **Fixed:** the three rows added |
+| W-3 | The fill guard checks only `lastCloseKey`: a fill in a session already written up by the cursor would wedge that session's close for good (note) | CONFIRMED latent, unreachable from every production caller. Note plus a one-line hardening | **Hardened:** `fillSessionRefusal` refuses such a session, with a row |
+| O-1 | The recomputation checked neither coverage nor the stated result; an edited and re-sealed body passed (should-fix) | PARTLY: re-sealing needs write access to a server-only store, and anyone with that access can rewrite everything consistently. Note | **Hardened:** `coverage:` and `result:` problems |
+| O-1b | A missing ledger folded as $0 (should-fix) | PARTLY: reachable only through a forged or corrupted packet. Note | **Hardened:** `ledger:` problems, never $0 |
+| O-3 | The recomputation summed in symbol order, the valuation in the holdings' own order; at a half-cent tie an honest value was named a problem (note) | CONFIRMED: narrow (a ticker change at that close, three or more names). The in-memory store keeps insertion order, unlike Firestore | **Fixed:** a stated value agrees when it is the rounding of its prices' sum up to the summation order's last bit (1e-9 relative), never a cent. R-33 corrected |
+| O-4 | A missing row makes the endpoint close throw for good (note) | REFUTED: no real path produces one, and the calendar walk cannot stop early | The builder also checks the sequence now (cheap) |
+| S-4 | An op with no numeric maximum turns the month's totals into NaN (note) | CONFIRMED mechanism, unreachable | **Hardened:** fails closed |
+| T-1, T-2 | `>=` for the over-reservation test, and re-stamping `exhaustedAt`, both survive (test gaps) | CONFIRMED | **Fixed:** rows added |
+| P-2 | `basisSuspicion.frozenMarkAsOf` pairs a frozen mark with `lastMarkAsOf` (note) | CONFIRMED, but T1a-2a's code, in no packet | Not this round's; worth knowing if a founder screen ever shows it |
+
+**What the lens and refuter found sound** (at `a061408c`):
+- Provenance is written at every fill and close on every ledger, and on the book's positions. It survives unobserved sessions, held-back symbols, splits, ticker changes and settlement-pending holdings.
+- The admission packet's kinds are right.
+- No session is skipped or written twice under real clocks, and the 20-per-transaction loop moves forward.
+- Weekend, holiday, after-hours and early-close creation are handled.
+- Alerts are neither lost nor duplicated.
+- The track and recomputation fold identically.
+- The largest packet measures about 239 KB.
+- The maximum bounds `priceUsage` within the table's own pricing (20,000 random cases).
+- Micro-dollar amounts round-trip exactly; $3.00 is admitted and $3.000001 refused.
+- Refusals write nothing; replays, rollover and the clock-behind case all hold.
+- Every read comes before any write.
+- Nothing outside the Practice Field changed.
+
+The refuter added an edge to W-2: the creation rule uses the close pass's end (18:00), while the last close fire is at 17:45. A book created between 17:46 and 17:59 is therefore owed a close that no fire can serve. The effect is one close row with nothing missing (R-27).
+
+### F.6 The mutation battery
+
+Each mutant re-breaks one rule in a copy of the code head, never the working tree: an LF `git archive` tree. The runner then runs the test files named for that mutant and judges by the exit code **and** the JSON report. It stopped if the unmutated baseline was not green. It checked that every anchor occurs exactly once, restored each file afterwards, and checked each restore by hash.
+
+**At `a061408c` (the four fixes): 21 defined, 21 ran, 21 killed, 0 survived, 0 broken** (baseline: 103 rows in 5 files).
+
+**At the final code head `29bf46a5`: **34 defined, 34 ran, 34 killed, 0 survived, 0 broken** (baseline: 157 rows in 6 files). That is the first battery's 21, with X8 re-anchored where the review rewrote its line, plus one mutant per review fix (R-).**
+
+| Id | Re-breaks | File | Tests run | Verdict at `29bf46a5` (rows failed) |
+|---|---|---|---|---|
+| P1a | a borrowed vendor time accepted (the completeness check takes any time beside an untimed quality) | `evidence.js` | `evidence`, `endToEnd` | KILLED (1/26) |
+| P1b | a borrowed vendor time at the root: a fresh untimed close mark recorded with the holding's earlier lastMarkAsOf | `ledger.js` | `evidence`, `endToEnd` | KILLED (3/26) |
+| P2a | the window cursor tied back to valuation: no cursor before the first valuation close (no creation start) | `windowLedger.js` | `windowLedger`, `endToEnd` | KILLED (8/29) |
+| P2b | the window cursor tied back to valuation: the cursor IS the valuation's lastCloseKey | `windowLedger.js` | `windowLedger`, `endToEnd` | KILLED (17/29) |
+| P3a | a no-money session not accounted (the valuation's transaction writes no row for the sessions before it) | `close.js` | `windowLedger`, `endToEnd` | KILLED (3/29) |
+| P3b | a no-money session not accounted (a catch-up with nothing to value writes nothing) | `close.js` | `windowLedger`, `endToEnd` | KILLED (4/29) |
+| P4 | an intermediate close dropped from the packet (every other one between entry and endpoint) | `evidence.js` | `evidence`, `endToEnd` | KILLED (11/26) |
+| P5 | the recomputation passing without the observations (it answers from the packet's own track) | `evidence.js` | `evidence`, `endToEnd` | KILLED (2/26) |
+| P6 | an estimate reserved instead of the maximum (input at the base rate, not the dearest) | `spend.js` | `spend` | KILLED (18/26) |
+| P7 | a refusal exhausting the month (the refused reservation writes a sticky exhausted) | `spend.js` | `spend` | KILLED (2/26) |
+| P8 | the unused reservation not released (the month keeps the maximum after settlement) | `spend.js` | `spend` | KILLED (8/26) |
+| X1 | a carry overwrites the provenance (a carried mark takes this close as its source) | `ledger.js` | `evidence`, `endToEnd` | KILLED (5/26) |
+| X2 | a carried source not checked against the packet's own observation of it | `evidence.js` | `evidence`, `endToEnd` | KILLED (1/26) |
+| X3 | the valuation's transaction drops the alerts of the sessions only the window cursor accounted for | `close.js` | `windowLedger`, `endToEnd` | KILLED (2/29) |
+| X4 | more sessions than one transaction takes: the rest left unaccounted | `close.js` | `windowLedger`, `endToEnd` | KILLED (1/29) |
+| X5 | an unpriced model reserved at nothing | `spend.js` | `spend` | KILLED (2/26) |
+| X6 | a charge above the reserved maximum clamped to it | `spend.js` | `spend` | KILLED (1/26) |
+| X7 | exhausted not derived from the smallest call (only when the room is negative) | `spend.js` | `spend` | KILLED (7/26) |
+| X8 | the recomputation does not check an observation's stated value against its prices | `evidence.js` | `evidence`, `endToEnd` | KILLED (2/26) |
+| X9 | a window-only close row says it was valued | `windowLedger.js` | `windowLedger`, `endToEnd` | KILLED (5/29) |
+| X10 | a row's carried mark does not name its source | `close.js` | `evidence`, `endToEnd`, `close` | KILLED (4/61) |
+| RS1a | S-1: a 1-hour cache write reserved at the 5-minute rate | `spend.js` | `spend` | KILLED (1/26) |
+| RS1b | S-1: a server tool reserved as if it had no fee | `spend.js` | `spend` | KILLED (1/26) |
+| RS2 | S-2: an exhausted month reserves a call small enough to fit | `spend.js` | `spend` | KILLED (4/26) |
+| RS4 | S-4: an op with no numeric maximum is settled (NaN totals) | `spend.js` | `spend` | KILLED (1/26) |
+| RT1 | T-1: a settlement AT the maximum flagged above it | `spend.js` | `spend` | KILLED (1/26) |
+| RT2 | T-2: a later write re-stamps exhaustedAt / exhaustedBy while the month stays exhausted | `spend.js` | `spend` | KILLED (1/26) |
+| RP1 | P-1: the admission packet seals the raw lastMarkAsOf beside the price | `evidence.js` | `evidence`, `endToEnd` | KILLED (1/26) |
+| RO1a | O-1: a gap between copied closes not named | `evidence.js` | `evidence`, `endToEnd` | KILLED (1/26) |
+| RO1b | O-1b: a missing ledger folded as $0, unnamed | `evidence.js` | `evidence`, `endToEnd` | KILLED (1/26) |
+| RO1r | O-1: a result its closes do not give is not named | `evidence.js` | `evidence`, `endToEnd` | KILLED (2/26) |
+| RO3 | O-3: the summation order's last bit treated as a cent of money | `evidence.js` | `evidence`, `endToEnd` | KILLED (1/26) |
+| RW3 | W-3: a fill dated in a session the window cursor already wrote up | `sessions.js` | `windowLedger`, `entry` | KILLED (1/70) |
+| RW1 | W-1: a window-only row says its session was caught up | `windowLedger.js` | `windowLedger`, `endToEnd` | KILLED (3/29) |
+
+The prompt's eight, by mutant:
+- a borrowed vendor time accepted: P1a, with the root case P1b;
+- the window cursor tied back to valuation: P2a, P2b;
+- a no-money session not accounted: P3a, P3b;
+- an intermediate close dropped from the packet: P4;
+- the recomputation passing without the observations: P5;
+- an estimate reserved instead of the maximum: P6;
+- a refusal exhausting the month: P7;
+- the unused reservation not released: P8.
+
+Astra's borrowed-time case is caught twice: by the time-and-quality rule, and by the packet's own observation of 30 November (X2). Under P1a alone her rows still fail the observation check, so the fresh-price row is what kills P1a.
+
+### F.7 The price table, for checking before T1b's first call
+
+Nothing in this round verifies these figures against Anthropic's published prices. `api/_utils/modelPriceTable.js` (`MODEL_PRICE_TABLE_VERSION = 2`, with the comment "first-party API list rates (verified 2026-08-12)") holds:
+
+| Model id | Input, $ per million tokens | Output, $ per million tokens |
+|---|---|---|
+| `claude-haiku-4-5-20251001` | 1.00 | 5.00 |
+| `claude-haiku-4-5` | 1.00 | 5.00 |
+
+The table's multipliers, each × the base input rate:
+- cache write: `CACHE_WRITE_INPUT_MULTIPLIER = 1.25`, the 5-minute tier;
+- cache read: `CACHE_READ_INPUT_MULTIPLIER = 0.1`;
+- batch discount: `BATCH_DISCOUNT_MULTIPLIER = 0.5`.
+
+The reservation prices every input token at 1.25× the input rate, so a call that writes its whole prompt to the cache still fits. **Not in the table**, and so refused at reservation (review S-1):
+- the 1-hour cache write: 2× base on Anthropic's list (the refuter read $2/MTok for Haiku 4.5);
+- server tools: web search is $10 per 1,000 searches plus its result tokens.
+
+The refuter also noted Haiku 5.5's prompt-length pricing (5× base above 100K tokens), which a flat per-model rate cannot express. If T1b uses any of these, the table, and `priceUsage`, must carry it first.
+
+### F.8 Readings stated
+
+| # | Where the prompt left room | What was built |
+|---|---|---|
+| R-24 | T2B-01: "make `lastMarkAsOf` follow the same rule, or stop using it for provenance; say which" | **Stopped using it for provenance.** `lastMarkAsOf` is the engine's position field, and the gap screen reads it as the session of the last trusted mark (`ledger.js` `markSessionOf`). Emptying it for an untimed quote would change which cash actions wait, a money change this round may not make. So it is written exactly as before and documented as the last *vendor-timed* mark's time. Nothing that states where a price came from reads it, and since the review no packet seals it beside a price (P-1). The new `lastMarkProvenance` is the record |
+| R-25 | T2B-01: "a carry copies the provenance unchanged" | The provenance is unchanged through a split too (the engine divides `lastMark`; the receipts record the ratio) and through a ticker change (`symbol` stays the quote's symbol). So a carried price can differ from its source quote by a split's ratio. The packet's cross-check compares the source's time, quality and snapshot, never its price |
+| R-26 | T2B-01: the admission packet's mark sources | A `carried` mark now names its source's snapshot, session, quality and time; before, it named no snapshot (the build's B1 residual). A position with no provenance reads `unknown`, and none is written without one since this round |
+| R-27 | T2B-02: "from the book's creation" | The creation session is the creation date when it is a session and the book existed before that session's close pass ended (18:00 on a regular day); otherwise it is the next session. A book created at 17:00 is owed that day's close, not its windows; one created at 19:00 starts the next session. The last close fire is at 17:45, so a book created between 17:46 and 17:59 is owed a close row no fire can serve, with nothing missing (refuter) |
+| R-28 | T2B-02: what a window-only row says | `valued: false`, `observed: null`, no snapshot, `caughtUpAt`, `accountedBy: 'window_cursor'`, `code.caughtUpSession: null`. Its `close` is listed as served, meaning its close row was written late, exactly as a caught-up valued close's is. So only its intraday windows can be missing, which matches Astra's "three intraday windows reported missing". The refuter showed the alternative would alert on one of two identical outages (W-1) |
+| R-29 | T2B-02: where the cursor starts for a book that already has closes | At the later of `windowsAccountedThrough` and `lastCloseKey`. Every session the valuation closed wrote its own close row, so the cursor never re-writes one (a second `tx.create` would abort the close). Every close writes both fields, so once a book has a close the two are equal. No fill is dated in a session the cursor has written up (W-3; today unreachable) |
+| R-30 | T2B-02: when window-only sessions are written | Only in a transaction that commits: a close whose valuation runs, or a catch-up with nothing to value. A requested close refused `valuation_missed` writes nothing, as before, and the next close or catch-up accounts for those sessions. Twenty go in each transaction; a call carries on until done, and these transactions do not count against the valuation catch-up's twenty sessions |
+| R-31 | T2B-03: split the packet if it might pass 1 MiB | **One document.** The largest shape is 238,673 bytes by Firestore's storage-size rules (285,508 as JSON), about 23% of the limit; the test asserts it is under 256 KiB. That shape is a long slot of 60 sessions with four names, an eight-name frozen basket and SPY, with every close between entry and endpoint carried, so every copied mark names its source |
+| R-32 | T2B-03: a close missing between entry and endpoint | Refused (`observation_row_missing`), as a missing inception row is (R-9). Every close writes the row of every filled idea, so this cannot be produced, and a packet without the row would not be the result's evidence |
+| R-33 | T2B-03: "recomputed from the packet alone" | Each close's values are recomputed from its holdings' quantities and marks and its cash, and checked against what the close states. A stated value agrees when it is the rounding of its prices' sum in some order: Firestore returns map keys sorted, but a ticker change at that close appends its key, and the in-memory store keeps insertion order (review O-3). The values are then folded and stated by the same functions the close used (`foldCloseIntoTrack`, `trackStatistics`), not from the packet's `track`, which is kept beside them. The recomputation also names gaps, missing ledgers and a result its closes do not give. It shows a change to a stored packet; it cannot stop a forgery by someone who can write the server-only store (review O-1) |
+| R-34 | T2B-04: "the most the call can cost" | Every input token at the table's dearest input rate (a 5-minute cache write, 1.25×, so a prompt written to the cache still fits) and every output token up to `max_tokens` at the output rate. No batch discount; rounded up to the micro-dollar. `maxInputTokens` is every billed input token, the tool system prompt included. A test prices every usage mix within the ceilings with the table's own `priceUsage` and finds none above the reservation. What the table cannot price is refused (S-1) |
+| R-35 | T2B-04: settling a call whose usage cannot be read | Charged its reserved maximum, the most it could have cost. Before, it was charged its estimate |
+| R-36 | T2B-04: `exhausted` "derived" | `exhausted` is computed at every write by comparing the room with `PRACTICE_FIELD_MIN_CALL_MAX_CHARGE_USD` ($0.05, a placeholder), and stored with the totals for readers. An exhausted month refuses every reservation, even one that would fit (contract §17 B-SPEND; review S-2). That refusal writes nothing, so the month only stays exhausted while its room stays low, and a settlement that frees room ends it (Q2) |
+
+### F.9 What goes to T1a-2b-2
+
+- **T2B-05** (Astra, P3): recover a window's action counts after a window-ledger write fails. A sale or entry can commit before the separate window-row write fails, and the retry can then serve the window with no copy of the earlier fill count. Fix: reconstruct the counts from committed receipts, or persist an idempotent pending-window receipt with each action.
+- **T2B-06** (Astra, P3): recover the original create response after a failed done write. A pending creation that committed book A, replayed after A closed and B opened, answers `open_book_exists` naming B. Fix: recover A's creation receipt before reading today's open claim.
+- **Q7:** the draining close sweep counts a catch-up that closed a book as `skipped`, not `closed`.
+
+**For T1b** (not this round's): check the price table (F.7), set `PRACTICE_FIELD_MIN_CALL_MAX_CHARGE_USD` from the first caller's smallest call, and keep model calls to the 5-minute cache with no server tool until the table prices more.
