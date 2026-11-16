@@ -128,6 +128,14 @@ describe('the attribution — a casual clone\'s battle, by the platform resolver
       expect(await momentOver(cloneStore({ [`agents/${CLONE_AGENT}`]: doc })), JSON.stringify(doc)).toBeNull();
     }
   });
+  it('NOTHING IS ANSWERED UNDER A CLONE: asked under the clone\'s own id, every clone-document shape is null — missing, no parent, another owner\'s, a parent that is a clone (the mutant: an unresolvable clone answered under itself, as the resolver\'s fallback would name it)', async () => {
+    for (const doc of [undefined, null, {}, { ownerId: OWNER }, { ownerId: OWNER, rankedAgentId: '' }, { ownerId: OWNER, rankedAgentId: CLONE_AGENT }, { ownerId: 'someone-else', rankedAgentId: CLONE_AGENT }, { ownerId: OWNER, rankedAgentId: AGENT }]) {
+      const store = cloneStore({ [`agents/${CLONE_AGENT}`]: doc });
+      expect(await momentOver(store, { ...MOMENT_ASK, attributionAgentId: CLONE_AGENT }), JSON.stringify(doc)).toBeNull();
+      // the resolver's own answer for such a document is the clone itself — the route refuses that (attribution_unavailable); so does the excerpt
+      if (!(doc && doc.ownerId === OWNER && doc.rankedAgentId === AGENT)) expect(resolveRecordTargetId(CLONE_AGENT, doc && doc.ownerId === OWNER ? doc : null), JSON.stringify(doc)).toBe(CLONE_AGENT);
+    }
+  });
   it('THE RULE IS THE RESOLVER\'S: over every clone-document shape the excerpt answers exactly when resolveRecordTargetId gives a non-clone parent for the owner\'s own clone document', async () => {
     const shapes = [undefined, null, {}, { ownerId: OWNER }, { ownerId: OWNER, rankedAgentId: AGENT }, { ownerId: OWNER, rankedAgentId: '' }, { ownerId: OWNER, rankedAgentId: 7 }, { ownerId: 'someone-else', rankedAgentId: AGENT }];
     for (const doc of shapes) {
