@@ -76,7 +76,7 @@ import cardHandler from '../../../api/film-room/card.js';
 import { setPracticeFieldSeam, resetPracticeFieldSeam } from '../../../api/_utils/filmRoom/practiceFieldSeam.js';
 import { SITUATION_QUESTIONS } from '../../data/situationQuestions';
 import { momentsOf } from '../../utils/filmRoomMoments';
-import { ledgerOf, latestOf, chainOf, groupCards } from './filmRoomCards';
+import { ledgerOf, latestOf, chainOf, groupCards, agentOfCard } from './filmRoomCards';
 import { setRuleOf, setStateOf, YourCall, Receipt } from './FilmRoomCardRegions';
 import { FILM_ROOM_COPY } from './filmRoomCopy';
 const COPY_CARDS = FILM_ROOM_COPY.cards;
@@ -2741,5 +2741,61 @@ describe('C1 fix round §2 review (the mutating lens, LD-3) — Offer and Retire
     settle({ ok: false, code: 'version_conflict' });
     await m.flush(2);
     expect(m.buttons('Offer to your agent')[0].disabled).toBe(false);
+  });
+});
+
+// ── Film Room C2 item 7 (Build C Amendment B CB-3; Amendment C CC-9 item 1) ─────────────────────────────────────────
+describe('C2 — every receipt action names the card\'s own agent: retire and park, as the offer', () => {
+  const CLONE = `casual-agent-${OWNER}`;
+  const onClone = async () => {
+    t.store.set(`agents/${CLONE}`, { ownerId: OWNER, name: 'Aurora (casual)', archetype: 'momentum_chaser', rankedAgentId: AGENT });
+    t.store.set(`agentBattles/${B}`, { ...fx.battle, agentId: CLONE });
+    t.store.set(`agentBattles/${B}/tape/${D2}`, { ...fx.tape2, agentId: CLONE });
+    await open({ battle: battleOf({ agentId: CLONE }), tapes: { [D1]: { ...fx.tape1, agentId: CLONE }, [D2]: { ...fx.tape2, agentId: CLONE } } });
+  };
+  it('on a clone\'s battle the receipt\'s Retire sends the card\'s own agent (the ranked parent), never the battle\'s clone — the create still names the battle\'s own (the mutant: retire naming the battle\'s agent again)', async () => {
+    await onClone();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard();
+    expect(t.store.get(`agents/${AGENT}/plays/op_1`)).toMatchObject({ agentId: AGENT, stage: 'card' });
+    m.click(m.buttons('Retire')[0]);
+    await m.flush(10);
+    const sent = cardBodies().filter((b) => b.op === 'retire');
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ op: 'retire', agentId: AGENT, entryId: 'op_1' });
+    expect(cardBodies().find((b) => b.op === 'create').agentId).toBe(CLONE);
+    expect(t.store.get(`agents/${AGENT}/plays/op_1`).stage).toBe('retired');
+    // the clone's document gone: the same request (a lost answer re-tapped) is still its own replay — a clone-named one is not
+    t.store.delete(`agents/${CLONE}`);
+    expect(await api.postCard(sent[0])).toMatchObject({ ok: true, status: 200, body: { idempotent: true } });
+    expect(await api.postCard({ ...sent[0], agentId: CLONE })).toMatchObject({ ok: false, status: 503, body: { error: 'attribution_unavailable' } });
+  });
+  it('… and Park sends the card\'s own agent too (the mutant: park naming the battle\'s agent)', async () => {
+    openBook();
+    await onClone();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard({ note: 'Practice the exit.', route: 'offer', question: 'stalled.ready' });
+    const move = (to, payload, clock) => applyServerTransition(state.db, { entryId: 'op_1', ownerId: OWNER, agentId: AGENT, to, by: 'practice_field', payload, opId: `s_${to}`, nowIso: `${D2}T${clock}:00.000Z` });
+    await move('nomination', { bookId: BOOK_ID, nominationId: 'op_1', state: 'accepted', ideaId: 'idea-1', reason: 'I will test it.', consideredAt: `${D2}T20:40:00.000Z` }, '20:45');
+    await move('testing', { bookId: BOOK_ID, ideaId: 'idea-1' }, '20:50');
+    await move('tested', { ideaId: 'idea-1', resultRef: 'r1', contractCondition: 'met', economicResult: 'ahead' }, '20:55');
+    m.teardown(); m.setup(); globalThis.localStorage.clear();
+    await onClone();
+    m.click(m.q('[data-my-card="op_1"]'));
+    await m.flush();
+    m.click(m.buttons('Park this card')[0]);
+    await m.flush(10);
+    const sent = cardBodies().filter((b) => b.op === 'park');
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ op: 'park', agentId: AGENT, entryId: 'op_1' });
+    expect(t.store.get(`agents/${AGENT}/plays/op_1`).parkedAt).toEqual(expect.any(String));
+  });
+  it('a card that names no agent falls back to the screen\'s (the one export, agentOfCard)', () => {
+    expect(agentOfCard({ agentId: AGENT }, CLONE)).toBe(AGENT);
+    expect(agentOfCard({}, CLONE)).toBe(CLONE);
+    expect(agentOfCard({ agentId: '' }, CLONE)).toBe(CLONE);
+    expect(agentOfCard(null, CLONE)).toBe(CLONE);
   });
 });

@@ -127,7 +127,8 @@ function defaultBuildWithdrawal(record, { nowIso }) {
 
 /**
  * The defaults. `bookForOwner` and `bookIsForAgent` are THE PRACTICE FIELD'S (T1a-1,
- * api/_utils/practiceField/bookStore.js): one read of the owner's idea-book claim — and no read at all, answering
+ * api/_utils/practiceField/bookStore.js): at most two reads — the owner's idea-book claim, then the book it names, as
+ * the header says (Film Room C2, Amendment C CC-9 item 4) — and no read at all, answering
  * null, while PRACTICE_FIELD_MODE does not admit the owner (so with the mode 'off' the Film Room behaves exactly as
  * it did with the old "no book for anyone" default) — and the book's `attributionAgentId`, written once at its
  * creation. `buildNominationDoc` and `buildWithdrawal` stay the Film Room's defaults until T2.
