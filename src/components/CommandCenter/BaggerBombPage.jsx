@@ -39,7 +39,7 @@ import { EmptyNote, Eyebrow, HubButton, HubLayoutContext, HubLink, Mono, Section
 import DeploySection from './sections/DeploySection';
 import { GameRow, GamesLiveNote, GamesLoadingLine, GamesReadNote, gamesNoteDue } from './sections/GamesSection';
 import HistorySheet from './HistorySheet';
-import { BAGGERBOMB_PAGE_COPY as PAGE } from './baggerBombPageCopy';
+import { BAGGERBOMB_PAGE_COPY as PAGE } from '../../constants/baggerBombPageCopy';
 import { RECORD_STATUS, baggerBombGames, baggerBombRecord, careerOf, liveBaggerBombRows, pageFinished } from './baggerBombPageModel';
 
 const rootStyle = { position: 'relative', zIndex: HUB_LAYERS.page, color: C.ink, outline: 'none', minHeight: '100dvh' };
