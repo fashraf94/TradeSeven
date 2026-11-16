@@ -35,7 +35,7 @@ describe('CE-1 — the id kinds the platform mints, pinned', () => {
       ['Mandate seat; backing stake and debit; solo season', 'prefixed-hex'],
       ['model request id, observation id, news id, narration and deep-dive document ids (bare hex)', 'bare-hex'],
       ['gameplan meeting', 'epoch-ms'],
-      ['timestamped ids (risk, gameplan and exit evaluations; drafts, training battles, directives on the client; tournament runs; shadow events; accelerated-clock uids)', 'epoch-ms'],
+      ['timestamped ids (risk, gameplan and exit evaluation ids; drafts, training battles, directives on the client; tournament runs; shadow events; accelerated-clock uids)', 'epoch-ms'],
       ['evaluation, trade and proposal sequence ids (and the call, tick, action and verification ids built on the battle id)', 'battle-sequence'],
       ['client base-36 fallbacks for card ops and backing requests', 'base36-fallback'],
       ['live-draft group', 'live-draft-group'],
