@@ -42,7 +42,7 @@ import { verifyPacket, resultPacketMissingMarks } from './evidence.js';
 // T1a-2b-1: re-pinned from T1a-2a's ed90ebd5… (267,350 bytes, 120 documents). Leaf-compared base against head: 34
 // documents ADDED — three admission and three result evidence packets, 28 close rows of the window ledger — and no
 // leaf of any existing document added, removed or changed.
-const EXPECTED_DUMP = { sha256: '21c7d608f494b185bf8e6375a8d25c1b5995470fcd813225a29528c754e55c24', bytes: 327187 };
+const EXPECTED_DUMP = { sha256: 'bb742bb9181c76d5f81317d59702307e37e6155c6fd9c19a61f523647ea65a0f', bytes: 328611 };
 
 // Twenty-nine sessions from Monday 16 November 2026 (Thanksgiving and Christmas are not sessions).
 const SESSIONS = ['2026-11-16'];

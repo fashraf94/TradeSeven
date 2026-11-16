@@ -40,6 +40,9 @@ const isPlain = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 /** A JSON-pure deep copy: Dates and Firestore Timestamps become ISO strings; undefined map values are dropped. */
 export function jsonPure(value) {
   if (value === undefined) return undefined;
+  // A lone UTF-16 surrogate is stored by Firestore as U+FFFD: made well-formed HERE, so the hash is of what is stored
+  // and still holds after a round trip (review B12).
+  if (typeof value === 'string') return typeof value.toWellFormed === 'function' ? value.toWellFormed() : value;
   if (value === null || typeof value !== 'object') return Number.isNaN(value) ? null : value;
   if (value instanceof Date) return value.toISOString();
   if (typeof value.toDate === 'function') return value.toDate().toISOString();
@@ -73,20 +76,69 @@ export function evidenceRefOf(ideaRef, packetId) {
 // ── admission ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
+ * What admission needs to name where each mark it measured came from (review B1), read IN admission's transaction,
+ * before any write: the book's row of its last closed session (was that close observed, and from which stored
+ * snapshot), and, for each open idea that entered on or before that session, its own row of that session (each mark's
+ * quality there). An idea that entered AFTER the last close has its marks from its entry's own window snapshot, which
+ * the idea itself names. Nothing re-marks a position between those two events: a sale removes its own position only.
+ */
+export async function readAdmissionMarkSources(tx, bookRef, book, ideas) {
+  const lastCloseKey = typeof book?.execState?.lastCloseKey === 'string' ? book.execState.lastCloseKey : null;
+  if (lastCloseKey === null) return { lastCloseKey, lastCloseRow: null, closeRows: {} };
+  const rowSnap = await tx.get(bookRef.collection('dailyRows').doc(lastCloseKey));
+  const closeRows = {};
+  for (const idea of ideas || []) {
+    const entered = idea?.entry?.sessionDate;
+    if (typeof entered !== 'string' || entered > lastCloseKey) continue;
+    const snap = await tx.get(bookRef.collection('ideas').doc(idea.ideaId).collection('rows').doc(lastCloseKey));
+    closeRows[idea.ideaId] = snap.exists ? snap.data() : null;
+  }
+  return { lastCloseKey, lastCloseRow: rowSnap.exists ? rowSnap.data() : null, closeRows };
+}
+
+/**
+ * Where one position's recorded mark came from, with its observation time and quality (contract §6):
+ *   entry_fill  the idea entered after the last close: the mark is its fill's quote, from its entry window's snapshot;
+ *   close       the last close marked it FROM its stored snapshot: that snapshot, the close row's quality for it
+ *               (`vendor_time`, or e.g. `receipt_time_fallback`), and the vendor's time when there was one — null
+ *               otherwise, never a time from another quote;
+ *   carried     the last close carried an earlier mark (an unobserved session, a held-back symbol): no snapshot.
+ * `recordedMarkAsOf` is the position's own `lastMarkAsOf`, as recorded — beside the source, never in place of a
+ * vendor time (review R-B1c: a close quote with no vendor time leaves the earlier quote's time on the position).
+ */
+function markSourceOf(sym, position, idea, sources) {
+  const lastCloseKey = sources?.lastCloseKey ?? null;
+  const recordedMarkAsOf = position?.lastMarkAsOf ?? null;
+  const entered = typeof idea?.entry?.sessionDate === 'string' ? idea.entry.sessionDate : null;
+  if (idea && entered !== null && (lastCloseKey === null || entered > lastCloseKey)) {
+    return { kind: 'entry_fill', snapshotKey: idea.entry.snapshotKey ?? null, session: entered, quality: 'fill', vendorTimeIso: recordedMarkAsOf, recordedMarkAsOf };
+  }
+  const row = idea ? (sources?.closeRows?.[idea.ideaId] ?? null) : null;
+  const mark = row?.marks?.[sym] ?? null;
+  if (row && row.observed === true && mark?.markSource === 'snapshot') {
+    return { kind: 'close', snapshotKey: row.closeSnapshotKey ?? null, session: lastCloseKey, quality: mark.quality ?? null, vendorTimeIso: mark.vendorTimeIso ?? null, recordedMarkAsOf };
+  }
+  return { kind: 'carried', snapshotKey: null, session: lastCloseKey, quality: mark?.quality ?? null, vendorTimeIso: null, recordedMarkAsOf };
+}
+
+/**
  * The admission packet. `book` is the book as admission's transaction READ it (before the reservation), `ideas` the
  * other open ideas as read, `idea` the idea document being written (its contract frozen), `verdict` admission's own
- * evaluation (the limits it computed).
+ * evaluation (the limits it computed), `markSources` what readAdmissionMarkSources read in the same transaction.
  */
-export function buildAdmissionPacket({ bookId, book, ideas, idea, verdict, nowIso }) {
+export function buildAdmissionPacket({ bookId, book, ideas, idea, verdict, nowIso, markSources = null }) {
+  const ideasById = new Map((ideas || []).map((i) => [i?.ideaId, i]));
   const positions = {};
   for (const sym of Object.keys(book?.portfolio?.positions || {}).sort()) {
     const p = book.portfolio.positions[sym];
     positions[sym] = {
       shares: p?.shares ?? null, lastMark: p?.lastMark ?? null, lastMarkAsOf: p?.lastMarkAsOf ?? null,
       lastMarkSource: p?.lastMarkSource ?? null, ideaId: p?.ideaId ?? null,
+      markSource: markSourceOf(sym, p, ideasById.get(p?.ideaId) ?? null, markSources),
     };
   }
   const lastCloseKey = typeof book?.execState?.lastCloseKey === 'string' ? book.execState.lastCloseKey : null;
+  const lastCloseRow = markSources?.lastCloseRow ?? null;
   return seal({
     packetVersion: EVIDENCE_PACKET_VERSION,
     packetId: EVIDENCE_PACKET.ADMISSION,
@@ -104,19 +156,21 @@ export function buildAdmissionPacket({ bookId, book, ideas, idea, verdict, nowIs
     // The sources the idea names, by reference (`{ kind, ref }`), and its origin. No excerpt exists in this build.
     sources: { origin: idea.contract?.origin ?? null, references: idea.contract?.sources ?? [] },
     // What admission measured against: the book's RECORDED state (contract §5.4 check 7 — the equity every limit is a
-    // share of is `portfolio.totalValue`, the figure the last close or the last fill wrote; each position's mark is
-    // the one last written on it). The marks' snapshot: the last close's stored snapshot, and the last window the
-    // idea-book pass served (a fill since that close writes the marks of what it bought from that window's snapshot).
+    // share of is `portfolio.totalValue`, the figure the last close or the last fill wrote from these same marks; each
+    // position's mark is the one last written on it, and `markSource` names where THAT mark came from — the entry's
+    // window snapshot, the last close's stored snapshot, or a mark carried at the last close — with its observation
+    // time and quality). `lastClose` is the book's last closed session as its own row records it: whether it was
+    // observed, and the stored snapshot it was valued from (null for an unobserved session).
     measuredAgainst: {
       bookRevision: book?.revision ?? null,
       equityUsd: book?.portfolio?.totalValue ?? null,
       cashUsd: book?.portfolio?.cash ?? null,
       treasuryUnreservedUsd: book?.treasury?.unreservedCash ?? null,
       positions,
-      marksSnapshot: {
-        lastCloseKey,
-        closeSnapshotKey: lastCloseKey === null ? null : `${lastCloseKey}_close`,
-        lastWindowTickKey: typeof book?.execState?.lastIdeaTickKey === 'string' ? book.execState.lastIdeaTickKey : null,
+      lastClose: lastCloseKey === null ? null : {
+        session: lastCloseKey,
+        observed: lastCloseRow?.observed ?? null,
+        closeSnapshotKey: lastCloseRow?.closeSnapshotKey ?? null,
       },
       otherOpenIdeas: (ideas || []).map((i) => ({
         ideaId: i?.ideaId ?? null, status: i?.status ?? null, slot: i?.contract?.slot ?? null,
@@ -151,14 +205,20 @@ const saleCopy = (r) => ({
   costTier: r?.costTier ?? null, frictionPaidUsd: r?.frictionPaidUsd ?? null, queuedBy: r?.queuedBy ?? null,
 });
 
-/** One ledger's endpoint, as the endpoint row states it: every holding's mark, its vendor time and quality. */
-const endpointCopy = (side) => {
+/**
+ * One ledger's endpoint, as the endpoint row states it: every holding's mark, its vendor time and quality. A mark that
+ * is not this close's own (carried: an unobserved endpoint, a held-back symbol, a symbol missing from the close
+ * document) has no vendor time on the row; the packet then names the mark's last observation time as the ledger's
+ * holding records it, `carriedFromVendorTimeIso` (review B2).
+ */
+const endpointCopy = (side, ledger) => {
   const marks = {};
   for (const sym of Object.keys(side?.holdings || {}).sort()) {
     const h = side.holdings[sym];
     marks[sym] = {
       shares: h?.shares ?? null, mark: h?.mark ?? null, markQuality: h?.markQuality ?? null,
       markVendorTimeIso: h?.markVendorTimeIso ?? null, costTier: h?.costTier ?? null,
+      ...(h?.markQuality === 'vendor_time' ? {} : { carriedFromVendorTimeIso: ledger?.holdings?.[sym]?.lastMarkAsOf ?? null }),
     };
   }
   return {
@@ -187,7 +247,7 @@ export function buildResultPacket({ bookId, idea, endpointRow, inception, nowIso
     const ledger = idea[field] || {};
     corporateActions[name] = (ledger.corporateActionReceipts || []).filter((r) => r?.applied === true);
     salesBeforeEndpoint[name] = (ledger.saleReceipts || []).map(saleCopy);
-    endpoint[name] = endpointCopy(endpointRow[name]);
+    endpoint[name] = endpointCopy(endpointRow[name], ledger);
   }
   return seal({
     packetVersion: EVIDENCE_PACKET_VERSION,
@@ -221,6 +281,9 @@ export function buildResultPacket({ bookId, idea, endpointRow, inception, nowIso
       ledgers: endpoint,
       gapUsd: endpointRow.gapUsd ?? null, gapToSpyUsd: endpointRow.gapToSpyUsd ?? null,
     },
+    // The running record the result's largest decline and invested exposure were computed from (settlement.js
+    // foldCloseIntoTrack — one fold per recorded close), as it stood at the endpoint (review B13).
+    track: idea.track ?? null,
     // The result itself, as written on the idea.
     result: idea.result,
   });
@@ -235,7 +298,9 @@ export function resultPacketMissingMarks(packet, endpointRow) {
   for (const [name] of LEDGERS) {
     for (const sym of Object.keys(endpointRow?.[name]?.holdings || {})) {
       const m = packet?.endpoint?.ledgers?.[name]?.marks?.[sym];
-      if (!m || typeof m.mark !== 'number' || !('markVendorTimeIso' in m) || typeof m.markQuality !== 'string') missing.push(`${name}:${sym}`);
+      // A mark with its observation time: the close's own vendor time, or — for a carried mark — its last one (B2).
+      const observedAt = m?.markQuality === 'vendor_time' ? m?.markVendorTimeIso : m?.carriedFromVendorTimeIso;
+      if (!m || typeof m.mark !== 'number' || typeof m.markQuality !== 'string' || typeof observedAt !== 'string') missing.push(`${name}:${sym}`);
     }
   }
   return missing;

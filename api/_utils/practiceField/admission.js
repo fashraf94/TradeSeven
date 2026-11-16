@@ -51,7 +51,7 @@ import {
   coverageRefOf, coverageRef, ideaCoveragePlan, coverageFits, coverageWithRef, coverageWithoutRef,
 } from './coverage.js';
 import { assertReconciled } from './reconcile.js';
-import { buildAdmissionPacket, evidenceRefOf, EVIDENCE_PACKET } from './evidence.js';
+import { buildAdmissionPacket, readAdmissionMarkSources, evidenceRefOf, EVIDENCE_PACKET } from './evidence.js';
 import {
   toCents, fromCents, shareLimitCents, shareCeilCents, ratioLimitCents, floorMulDiv,
 } from './money.js';
@@ -342,6 +342,8 @@ export async function admitIdea(db, { bookId, contract: rawContract, opId, nowIs
     }
     const coverageSnap = await tx.get(coverageDocRef);
     const coverageData = coverageSnap.exists ? coverageSnap.data() : null;
+    // T1a-2b-1 §3 (review B1): where each recorded mark came from, for the admission packet — read now, before any write.
+    const markSources = await readAdmissionMarkSources(tx, bookRef, book, ideas);
     // Reject, never repair (Astra T1A-02): a book that does not reconcile AS READ — its marks, its equity, any of its
     // ideas' three ledgers — admits nothing. The limits below are shares of that equity.
     assertReconciled(book, ideas);
@@ -373,7 +375,7 @@ export async function admitIdea(db, { bookId, contract: rawContract, opId, nowIs
     // T1a-2b-1 §3: the admission's evidence — the contract as frozen and what admission measured it against (the book
     // as THIS transaction read it, before the reservation) — written CREATE-ONCE in the same transaction. A replay
     // returned above, before any write, so it writes nothing.
-    const admissionPacket = buildAdmissionPacket({ bookId, book, ideas, idea: ideaDoc, verdict, nowIso });
+    const admissionPacket = buildAdmissionPacket({ bookId, book, ideas, idea: ideaDoc, verdict, nowIso, markSources });
 
     tx.set(ideaRef, ideaDoc);
     tx.create(evidenceRefOf(ideaRef, EVIDENCE_PACKET.ADMISSION), admissionPacket);

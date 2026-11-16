@@ -1502,10 +1502,14 @@ service cloud.firestore {
       // book. The book doc and dailyRows / decisions / corporateActions keep
       // their rules above. Not listed, so denied to every client: the book's
       // controlOps (the founder's request records) and every other store.
+      // Signed in first, so an unauthenticated request costs no read of
+      // the parent book.
       function isIdeaBookOwner(bookId) {
-        let book = get(/databases/$(database)/documents/mandates/$(bookId)).data;
         return request.auth != null
-               && request.auth.uid == book.userId
+               && ownsIdeaBook(get(/databases/$(database)/documents/mandates/$(bookId)).data);
+      }
+      function ownsIdeaBook(book) {
+        return request.auth.uid == book.userId
                && book.get('kind', null) == 'idea_book';
       }
       // An idea, its valuation / inception / endpoint rows and its two

@@ -15,9 +15,11 @@
 //     denied to them; their book doc, dailyRows, decisions, corporateActions and quarterSummaries read exactly as
 //     before;
 //   · the book's own doc and its dailyRows / decisions / corporateActions keep their rules (the idea book's owner
-//     reads them; another user does not); its controlOps — the founder's request records — are read by nobody;
-//   · the server-only stores the Practice Field keeps OUTSIDE the book (its claims and founder-cap registry, its
-//     coverage document) stay denied to every client;
+//     reads them; another user does not); its spendOps — the per-call spend records — are read by nobody;
+//   · ANOTHER idea-book owner, with a book and a claim of their own, reads nothing of the owner's (review A1); a
+//     CLOSED idea book stays readable to its owner (contract V2 §11; review A3);
+//   · the server-only stores the Practice Field keeps OUTSIDE the book (its claims, their founderOps request records,
+//     the founder-cap registry, the coverage document) stay denied to every client;
 //   · the rules text carries exactly these blocks, inside mandates/{mandateId}.
 //
 // Not part of the default vitest run (no `.test.` in the filename). Run:
@@ -35,9 +37,12 @@ const OWNER = 'pf-owner-1';
 const OTHER = 'pf-intruder-2';
 const PRIVILEGED = 'pf-admin-3';
 const QUARTERLY_OWNER = 'q-owner-4';
+const OWNER2 = 'pf-owner-5'; // another player with an idea book and a claim of their own (review A1)
 
 const BOOK = 'mandates/pf_book_1';
 const QBOOK = 'mandates/q_book_1';
+const BOOK2 = 'mandates/pf_book_2';
+const CLOSED = 'mandates/pf_book_closed';
 const IDEA = `${BOOK}/ideas/idea_1`;
 // Each store: a document path and the collection that holds it.
 const STORES = Object.freeze([
@@ -66,6 +71,7 @@ const asOther = () => testEnv.authenticatedContext(OTHER).firestore();
 const asPrivileged = () => testEnv.authenticatedContext(PRIVILEGED, { admin: true, role: 'service' }).firestore();
 const asAnon = () => testEnv.unauthenticatedContext().firestore();
 const asQuarterlyOwner = () => testEnv.authenticatedContext(QUARTERLY_OWNER).firestore();
+const asOwner2 = () => testEnv.authenticatedContext(OWNER2).firestore();
 const EVERYONE = [['the owner', asOwner], ['another user', asOther], ['a privileged-claims context', asPrivileged], ['an unauthenticated client', asAnon]];
 
 beforeAll(async () => {
@@ -85,7 +91,13 @@ beforeEach(async () => {
   await seed(`${BOOK}/dailyRows/2026-11-16`, { date: '2026-11-16' });
   await seed(`${BOOK}/decisions/d1`, { verb: 'BUY' });
   await seed(`${BOOK}/corporateActions/a1`, { type: 'split' });
-  await seed(`${BOOK}/controlOps/p-1`, { action: 'pause' });
+  await seed(`${BOOK}/spendOps/call-1`, { opId: 'call-1', state: 'reserved' });
+  await seed(`practiceFieldBooks/${OWNER}/founderOps/p-1`, { action: 'pause' });
+  // A second player's idea book and claim; and a CLOSED idea book of the owner's (contract V2 §11: still readable).
+  await seed(BOOK2, { ...ideaBook, userId: OWNER2, bookId: 'pf_book_2' });
+  await seed(`practiceFieldBooks/${OWNER2}`, { bookId: 'pf_book_2', status: 'active' });
+  await seed(CLOSED, { ...ideaBook, bookId: 'pf_book_closed', status: 'closed' });
+  for (const [, path] of STORES) await seed(path.replace(BOOK, CLOSED), { bookId: 'pf_book_closed', seeded: true });
   await seed(QBOOK, quarterlyBook);
   for (const path of PLANTED) await seed(path, { planted: true });
   await seed(`${QBOOK}/dailyRows/2026-11-16`, { date: '2026-11-16' });
@@ -104,8 +116,8 @@ describe('the idea book\'s own stores — owner read', () => {
       const listed = await assertSucceeds(getDocs(collection(asOwner(), col)));
       expect(listed.docs.map((d) => d.ref.path)).toContain(path);
     });
-    it(`${name}: another user, a privileged-claims context and an unauthenticated client are denied the document and the list`, async () => {
-      for (const ctx of [asOther, asPrivileged, asAnon]) {
+    it(`${name}: another user, ANOTHER IDEA-BOOK OWNER, a privileged-claims context and an unauthenticated client are denied the document and the list`, async () => {
+      for (const ctx of [asOther, asOwner2, asPrivileged, asAnon]) {
         await assertFails(getDoc(doc(ctx(), path)));
         await assertFails(getDocs(collection(ctx(), col)));
       }
@@ -138,6 +150,8 @@ describe('a quarterly book\'s owner gains nothing new', () => {
     await assertFails(getDocs(collection(asQuarterlyOwner(), `${QBOOK}/ideas`)));
     await assertFails(getDocs(collection(asQuarterlyOwner(), `${QBOOK}/windows`)));
     await assertFails(getDocs(collection(asQuarterlyOwner(), `${QBOOK}/epochs`)));
+    await assertFails(getDocs(collection(asQuarterlyOwner(), `${Q_IDEA}/rows`))); // review A2: the nested stores, listed
+    await assertFails(getDocs(collection(asQuarterlyOwner(), `${Q_IDEA}/evidence`)));
   });
   it('…while the book and its existing stores read exactly as before', async () => {
     await assertSucceeds(getDoc(doc(asQuarterlyOwner(), QBOOK)));
@@ -157,8 +171,26 @@ describe('what stays as it was', () => {
       await assertFails(getDoc(doc(asOther(), path)));
     }
   });
-  it('the founder\'s request records under the book (controlOps) are read by nobody — no rule matches them', async () => {
-    for (const [, ctx] of EVERYONE) await assertFails(getDoc(doc(ctx(), `${BOOK}/controlOps/p-1`)));
+  it('the per-call spend records under the book (spendOps) and the founder\'s request records under the owner\'s claim (founderOps) are read by nobody — no rule matches them', async () => {
+    for (const [, ctx] of EVERYONE) {
+      await assertFails(getDoc(doc(ctx(), `${BOOK}/spendOps/call-1`)));
+      await assertFails(getDocs(collection(ctx(), `${BOOK}/spendOps`)));
+      await assertFails(getDoc(doc(ctx(), `practiceFieldBooks/${OWNER}/founderOps/p-1`)));
+    }
+  });
+  it('a CLOSED idea book stays readable to its owner, store by store (contract V2 §11), and to nobody else (review A3)', async () => {
+    await assertSucceeds(getDoc(doc(asOwner(), CLOSED)));
+    for (const [name, path, col] of STORES) {
+      await assertSucceeds(getDoc(doc(asOwner(), path.replace(BOOK, CLOSED))));
+      await assertSucceeds(getDocs(collection(asOwner(), col.replace(BOOK, CLOSED))));
+      await assertFails(getDoc(doc(asOwner2(), path.replace(BOOK, CLOSED))));
+      expect(name).toBeTruthy();
+    }
+  });
+  it('the second player reads their OWN idea book\'s stores and not the first\'s (a positive control for the A1 rows)', async () => {
+    await seed(`${BOOK2}/ideas/idea_2`, { seeded: true });
+    await assertSucceeds(getDoc(doc(asOwner2(), `${BOOK2}/ideas/idea_2`)));
+    await assertFails(getDoc(doc(asOwner(), `${BOOK2}/ideas/idea_2`)));
   });
   it('the Practice Field\'s server-only stores outside the book — the owner\'s claim, the founder-cap registry, the coverage document — stay denied to every client', async () => {
     for (const path of [`practiceFieldBooks/${OWNER}`, 'practiceFieldBooks/_registry', 'practiceFieldCoverage/current']) {
@@ -175,7 +207,9 @@ describe('the rules text', () => {
     const start = RULES_TEXT.indexOf('match /mandates/{mandateId} {');
     expect(start).toBeGreaterThan(-1);
     const block = RULES_TEXT.slice(start, RULES_TEXT.indexOf('match /userMeta/{userId} {', start));
-    expect(block).toMatch(/function isIdeaBookOwner\(bookId\) \{\s*let book = get\(\/databases\/\$\(database\)\/documents\/mandates\/\$\(bookId\)\)\.data;\s*return request\.auth != null\s*&& request\.auth\.uid == book\.userId\s*&& book\.get\('kind', null\) == 'idea_book';\s*\}/);
+    // Signed in FIRST (review A8: an unauthenticated request costs no read of the parent), then the parent's owner and kind.
+    expect(block).toMatch(/function isIdeaBookOwner\(bookId\) \{\s*return request\.auth != null\s*&& ownsIdeaBook\(get\(\/databases\/\$\(database\)\/documents\/mandates\/\$\(bookId\)\)\.data\);\s*\}/);
+    expect(block).toMatch(/function ownsIdeaBook\(book\) \{\s*return request\.auth\.uid == book\.userId\s*&& book\.get\('kind', null\) == 'idea_book';\s*\}/);
     for (const m of ['match /ideas/{ideaId} {', 'match /rows/{rowId} {', 'match /evidence/{packetId} {', 'match /epochs/{epochId} {', 'match /windows/{rowId} {']) {
       const at = block.indexOf(m);
       expect(at, m).toBeGreaterThan(-1);
@@ -183,6 +217,6 @@ describe('the rules text', () => {
       expect(body, m).toMatch(/allow read: if isIdeaBookOwner\(mandateId\);\s*allow write: if false;/);
     }
     expect(block.match(/isIdeaBookOwner\(mandateId\)/g)).toHaveLength(5);
-    expect(block).not.toMatch(/match \/controlOps|match \/nominations/); // the founder's records stay unmatched; nominations are T2's
+    expect(block).not.toMatch(/match \/spendOps|match \/nominations/); // the spend records stay unmatched; nominations are T2's
   });
 });

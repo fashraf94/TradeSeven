@@ -7,13 +7,16 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { setPracticeFieldModeForTests } from './mode.js';
-import { runFounderAction, isPracticeFieldFounder, founderAllowlist, planControl, FOUNDER_ACTIONS } from './founderControls.js';
-import { runIdeaBookEvalPass, readIdeaBookPresence } from './sweep.js';
+import {
+  runFounderAction, isPracticeFieldFounder, founderAllowlist, planControl, FOUNDER_ACTIONS, founderRequestFingerprint,
+} from './founderControls.js';
+import { founderAllowlist as mandateFounderAllowlist } from '../../mandate/create.js';
+import { runIdeaBookEvalPass, readIdeaBookPresence, ideaCloseLeftUnclosed } from './sweep.js';
 import { assertReconciled } from './reconcile.js';
 import { roundUsd } from '../mandateRounding.js';
 import { COCKPIT_ALLOWLIST_ENV } from '../callRecords/allowlist.js';
 import {
-  makeMandateFakeDb, seedBook, contractOf, closeOn, storeTickSnapshot, tickOf, slotNowOf, etIso, ADMIT_ISO, getBook, getIdea, dumpStore,
+  makeMandateFakeDb, seedBook, contractOf, closeOn, storeTickSnapshot, storeCloseSnapshot, tickOf, slotNowOf, etIso, ADMIT_ISO, getBook, getIdea, dumpStore,
 } from './__testsupport__/fixtures.js';
 
 const UID = 'founder-1';
@@ -63,6 +66,13 @@ describe('authorization — the mode AND the founder allowlist, both, read at ca
     expect(isPracticeFieldFounder(UID)).toBe(true);
   });
 
+  it('MANDATE_FOUNDER_UIDS is parsed exactly as the Mandate founder endpoint parses it (one list; review A7)', () => {
+    for (const raw of [undefined, '', ' , ', 'a', ' a , b ,, c ', 'a,a', '\ta\n,b']) {
+      if (raw === undefined) delete process.env.MANDATE_FOUNDER_UIDS; else process.env.MANDATE_FOUNDER_UIDS = raw;
+      expect(founderAllowlist(), String(raw)).toEqual(mandateFounderAllowlist());
+    }
+  });
+
   it('the dispatcher checks it again: a non-founder, or a founder at \'off\', writes nothing for any action', async () => {
     for (const action of FOUNDER_ACTIONS) {
       const db = makeMandateFakeDb(agents());
@@ -94,11 +104,23 @@ describe('create_book — for the caller and their RANKED agent', () => {
     expect(getBook(db, bookId)).toMatchObject({ userId: UID, attributionAgentId: `agent-${UID}`, kind: 'idea_book', status: 'active', drafting: 'on' });
     expect(db._get(`practiceFieldBooks/${UID}`)).toMatchObject({ bookId, status: 'active' });
     expect(Object.keys(db._get('practiceFieldBooks/_registry').openBooks)).toEqual([bookId]);
+    expect(db._get(`practiceFieldBooks/${UID}/founderOps/create-1`)).toMatchObject({ action: 'create_book', state: 'done', target: { attributionAgentId: `agent-${UID}`, archetypeCodeId: 'momentum_chaser' }, response: { status: 201 } });
     const bytes = dumpStore(db);
     expect(await act(db, 'create_book', 'create-1')).toMatchObject({ status: 200, body: { bookId, idempotentReplay: true } });
     expect(dumpStore(db)).toBe(bytes);
+    // A second key meets the open book: refused, and that refusal is recorded under its key (a replay answers it).
     expect(await act(db, 'create_book', 'create-2')).toMatchObject({ status: 409, body: { error: 'open_book_exists', bookId } });
-    expect(dumpStore(db)).toBe(bytes);
+    const after = JSON.parse(dumpStore(db));
+    expect(Object.keys(after).filter((p) => !(p in JSON.parse(bytes)))).toEqual([`practiceFieldBooks/${UID}/founderOps/create-2`]);
+    expect(await act(db, 'create_book', 'create-2')).toMatchObject({ status: 409, body: { error: 'open_book_exists', idempotentReplay: true } });
+  });
+
+  it('C4 — a replay is answered from its record BEFORE the agent is resolved again: changing the agent\'s archetype or adding a ranked agent does not change the answer', async () => {
+    const db = makeMandateFakeDb(agents());
+    const created = await act(db, 'create_book', 'create-1');
+    db._store.set(`agents/agent-${UID}`, { data: { ownerId: UID, archetype: 'degen' }, version: 9 });
+    db._store.set('agents/agent-second', { data: { ownerId: UID, archetype: 'contrarian' }, version: 1 });
+    expect(await act(db, 'create_book', 'create-1')).toMatchObject({ status: 200, body: { bookId: created.body.bookId, archetypeCodeId: 'momentum_chaser', idempotentReplay: true } });
   });
 
   it('two ranked agents: ambiguous unless the body names one of the CALLER\'s; another owner\'s agent, or none, is not found', async () => {
@@ -116,7 +138,9 @@ describe('create_book — for the caller and their RANKED agent', () => {
     process.env[COCKPIT_ALLOWLIST_ENV] = 'someone-else';
     expect(await act(db, 'create_book', 'c-1')).toEqual({ status: 403, body: { ok: false, error: 'mode_not_admitted' } });
     process.env[COCKPIT_ALLOWLIST_ENV] = UID;
-    expect((await act(db, 'create_book', 'c-1')).status).toBe(201);
+    // The refused request answers the same on a replay (its key is recorded); a new request succeeds.
+    expect(await act(db, 'create_book', 'c-1')).toEqual({ status: 403, body: { ok: false, error: 'mode_not_admitted', idempotentReplay: true } });
+    expect((await act(db, 'create_book', 'c-2')).status).toBe(201);
   });
 });
 
@@ -126,12 +150,13 @@ describe('admit_fixture — on the caller\'s own book, the origin forced to a fo
     expect(await act(db, 'admit_fixture', 'a-1', { contract: contractOf() })).toEqual({ status: 404, body: { error: 'no_open_book' } });
     const { body: { bookId } } = await act(db, 'create_book', 'create-1');
     const { origin: _o, ...bare } = contractOf();
-    const admitted = await act(db, 'admit_fixture', 'a-1', { contract: { ...bare, origin: { kind: 'signaldrop', initiatedBy: 'player' } } });
+    const asked = { ...bare, origin: { kind: 'signaldrop', initiatedBy: 'player' } };
+    const admitted = await act(db, 'admit_fixture', 'a-1', { contract: asked });
     expect(admitted).toMatchObject({ status: 201, body: { ok: true, action: 'admit_fixture', bookId, status: 'accepted', startSession: S[0], idempotentReplay: false } });
     const idea = getIdea(db, bookId, admitted.body.ideaId);
     expect(idea.contract.origin).toEqual({ kind: 'founder_fixture', initiatedBy: 'agent' });
     expect(db._get(`mandates/${bookId}/ideas/${admitted.body.ideaId}/evidence/admission`).contract.origin).toEqual({ kind: 'founder_fixture', initiatedBy: 'agent' });
-    expect(await act(db, 'admit_fixture', 'a-1', { contract: { ...bare } })).toMatchObject({ status: 200, body: { ideaId: admitted.body.ideaId, idempotentReplay: true } });
+    expect(await act(db, 'admit_fixture', 'a-1', { contract: asked })).toMatchObject({ status: 200, body: { ideaId: admitted.body.ideaId, idempotentReplay: true } });
     // The existing checks: the slot is taken, and a malformed contract names its faults.
     const { origin: _o2, ...msft } = contractOf({ names: ['MSFT'] });
     const refused = await act(db, 'admit_fixture', 'a-2', { contract: msft });
@@ -139,11 +164,12 @@ describe('admit_fixture — on the caller\'s own book, the origin forced to a fo
     expect(refused.body.refusals.map((r) => r.code)).toEqual(['slot_occupied']);
     const bad = await act(db, 'admit_fixture', 'a-3', { contract: { ...bare, slot: 'forever', capitalUsd: -1 } });
     expect(bad.body.refusals.map((r) => r.code)).toEqual(expect.arrayContaining(['slot_invalid', 'capital_invalid']));
-    expect(await act(db, 'admit_fixture', 'a-1', { contract: { ...bare, names: ['NVDA'] } })).toMatchObject({ status: 409, body: { error: 'op_id_conflict' } });
+    // The same key asking for something else is not a replay (C3): refused, with the action it was recorded for.
+    expect(await act(db, 'admit_fixture', 'a-1', { contract: { ...bare, names: ['NVDA'] } })).toEqual({ status: 409, body: { ok: false, error: 'request_key_conflict', action: 'admit_fixture' } });
     expect(await act(db, 'admit_fixture', 'a-4', {})).toEqual({ status: 400, body: { ok: false, error: 'contract_required' } });
   });
 
-  it('a claim that names a book the caller does not own (or no idea book) is not the caller\'s book', async () => {
+  it('a claim that names a book the caller does not own, or a book that is not an idea book, is not the caller\'s book (review A5)', async () => {
     const db = makeMandateFakeDb(agents());
     const victim = await seedBook({ db, uid: 'victim', opId: 'v' });
     db._store.set(`practiceFieldBooks/${UID}`, { data: { bookId: victim.bookId, status: 'active' }, version: 1 });
@@ -152,6 +178,61 @@ describe('admit_fixture — on the caller\'s own book, the origin forced to a fo
       expect(await act(db, action, `k-${action}`, { contract: contractOf() }), action).toEqual({ status: 404, body: { error: 'no_open_book' } });
     }
     expect(dumpStore(db)).toBe(before);
+    // The caller's own QUARTERLY book named by the claim: not an idea book.
+    db._store.set('mandates/q-own', { data: { userId: UID, status: 'active', portfolio: { cash: 1e5, positions: {} } }, version: 1 });
+    db._store.set(`practiceFieldBooks/${UID}`, { data: { bookId: 'q-own', status: 'active' }, version: 2 });
+    const before2 = dumpStore(db);
+    for (const action of ['admit_fixture', 'pause', 'resume', 'wind_down']) {
+      expect(await act(db, action, `q-${action}`, { contract: contractOf() }), action).toEqual({ status: 404, body: { error: 'no_open_book' } });
+    }
+    expect(dumpStore(db)).toBe(before2);
+  });
+});
+
+describe('C1, C3 — a request key is the OWNER\'s: a replay never lands on another book, and one key is one request', () => {
+  it('after book A closes and book B opens, replaying A\'s wind_down, pause and admit_fixture answers what they answered and leaves B untouched', async () => {
+    const db = makeMandateFakeDb(agents());
+    const { body: { bookId: a } } = await act(db, 'create_book', 'create-1');
+    const { origin: _o, ...contract } = contractOf();
+    const admitted = await act(db, 'admit_fixture', 'a-1', { contract }, { nowIso: ADMIT_ISO });
+    const paused = await act(db, 'pause', 'p-1');
+    const wound = await act(db, 'wind_down', 'w-1', {}, { nowIso: etIso(S[0], 8, 0) });
+    expect([admitted.status, paused.status, wound.status]).toEqual([201, 200, 200]);
+    // A's only idea never enters: at its start session's close it times out, and that close completes the wind-down.
+    expect(await closeOn(db, a, S[0], quotes())).toMatchObject({ closed: true, bookClosed: true });
+    const { body: { bookId: b } } = await act(db, 'create_book', 'create-2');
+    expect(b).not.toBe(a);
+    const before = JSON.stringify([getBook(db, b), db._get(`mandates/${b}`)]);
+    expect(await act(db, 'wind_down', 'w-1', {}, { nowIso: etIso(S[1], 9, 0) })).toEqual({ status: 200, body: { ...wound.body, idempotentReplay: true } });
+    expect(await act(db, 'pause', 'p-1')).toEqual({ status: 200, body: { ...paused.body, idempotentReplay: true } });
+    expect(await act(db, 'admit_fixture', 'a-1', { contract })).toEqual({ status: 200, body: { ...admitted.body, idempotentReplay: true } });
+    expect(JSON.stringify([getBook(db, b), db._get(`mandates/${b}`)])).toBe(before);
+    expect(getBook(db, b)).toMatchObject({ status: 'active', drafting: 'on', openIdeaIds: [] });
+    // …and the create of A, replayed after A closed, answers what it answered.
+    expect(await act(db, 'create_book', 'create-1')).toMatchObject({ status: 200, body: { bookId: a, idempotentReplay: true } });
+  });
+
+  it('one key across action families is refused request_key_conflict — create, admit and the controls alike', async () => {
+    const db = makeMandateFakeDb(agents());
+    expect((await act(db, 'create_book', 'K')).status).toBe(201);
+    const { origin: _o, ...contract } = contractOf();
+    for (const [action, extra] of [['admit_fixture', { contract }], ['pause', {}], ['resume', {}], ['wind_down', {}]]) {
+      expect(await act(db, action, 'K', extra), action).toEqual({ status: 409, body: { ok: false, error: 'request_key_conflict', action: 'create_book' } });
+    }
+    expect((await act(db, 'pause', 'P')).status).toBe(200);
+    expect(await act(db, 'create_book', 'P')).toEqual({ status: 409, body: { ok: false, error: 'request_key_conflict', action: 'pause' } });
+    expect(getBook(db, db._get(`practiceFieldBooks/${UID}`).bookId)).toMatchObject({ status: 'active', drafting: 'paused', openIdeaIds: [] });
+  });
+
+  it('a create or admit interrupted after its request was recorded re-runs against its RECORDED target', async () => {
+    const db = makeMandateFakeDb(agents());
+    const { body: { bookId } } = await act(db, 'create_book', 'create-1');
+    const { origin: _o, ...contract } = contractOf();
+    // The request recorded, its run lost (the process died between the two).
+    db._store.set(`practiceFieldBooks/${UID}/founderOps/a-9`, { data: { action: 'admit_fixture', requestKey: 'a-9', uid: UID, fingerprint: founderRequestFingerprint('admit_fixture', { contract }), state: 'pending', target: { bookId }, createdAt: ADMIT_ISO }, version: 1 });
+    const out = await act(db, 'admit_fixture', 'a-9', { contract });
+    expect(out).toMatchObject({ status: 201, body: { bookId, idempotentReplay: false } });
+    expect(db._get(`practiceFieldBooks/${UID}/founderOps/a-9`)).toMatchObject({ state: 'done', response: { status: 201 } });
   });
 });
 
@@ -169,7 +250,7 @@ describe('pause, resume and wind_down — recorded once, nothing else changes', 
     const paused = getBook(ctx.db, ctx.bookId);
     expect(paused.drafting).toBe('paused');
     expect(withoutControls(paused)).toBe(withoutControls(before));
-    expect(ctx.db._get(`mandates/${ctx.bookId}/controlOps/p-1`)).toMatchObject({ action: 'pause', uid: UID, outcome: 'paused', before: { drafting: 'on' }, after: { drafting: 'paused' } });
+    expect(ctx.db._get(`practiceFieldBooks/${UID}/founderOps/p-1`)).toMatchObject({ action: 'pause', uid: UID, state: 'done', target: { bookId: ctx.bookId }, outcome: 'paused', before: { drafting: 'on' }, after: { drafting: 'paused' } });
     const bytes = dumpStore(ctx.db);
     expect(await act(ctx.db, 'pause', 'p-1')).toMatchObject({ status: 200, body: { outcome: 'paused', idempotentReplay: true } });
     expect(dumpStore(ctx.db)).toBe(bytes);
@@ -256,6 +337,89 @@ describe('the lifecycles', () => {
     // A closed book takes no control, and the founder may open a new book.
     expect(await act(db, 'pause', 'p-late')).toEqual({ status: 404, body: { error: 'no_open_book' } });
     expect((await act(db, 'create_book', 'create-2')).status).toBe(201);
+  });
+
+  /** A book with no idea, closed on S[0]. */
+  async function emptyBookClosedOnS0(db = makeMandateFakeDb(agents())) {
+    const { body: { bookId } } = await act(db, 'create_book', 'create-1');
+    await close(db, bookId, S[0]);
+    return { db, bookId, bookRef: db.collection('mandates').doc(bookId) };
+  }
+  const windowPass = async (db, date) => {
+    await storeTickSnapshot(db, date, 'open30', quotes());
+    return runIdeaBookEvalPass(db, { tick: tickOf(date), now: slotNowOf(date), ownerToken: 'owner-token' });
+  };
+
+  it('C5 — a CATCH-UP that completes the wind-down: the window that ran it is complete with no error, writes no window row and no stamp on the closed book; the close call answers book_closed, not "left unclosed"', async () => {
+    // Through the window.
+    const one = await emptyBookClosedOnS0();
+    await act(one.db, 'wind_down', 'w-1', {}, { nowIso: etIso(S[1], 9, 0) }); // before S[1]'s close
+    await storeCloseSnapshot(one.db, S[1], quotes()); // S[1]'s close fire never ran
+    const errors = []; const original = console.error; console.error = (...x) => errors.push(x.join(' '));
+    let pass1;
+    try { pass1 = await windowPass(one.db, S[2]); } finally { console.error = original; }
+    expect(pass1).toMatchObject({ books: 1, served: 0, caughtUp: 1, errors: 0 });
+    expect(getBook(one.db, one.bookId)).toMatchObject({ status: 'closed', closedOn: S[1] });
+    expect(getBook(one.db, one.bookId).execState.lastIdeaTickKey ?? null).toBeNull();
+    expect(one.db._get(`mandates/${one.bookId}/windows/${S[2]}_open30`)).toBeUndefined();
+    expect(one.db._get(`mandates/${one.bookId}/windows/${S[1]}_close`)).toMatchObject({ code: { bookClosed: true, caughtUpSession: true } });
+    // Through the close call.
+    const two = await emptyBookClosedOnS0();
+    await act(two.db, 'wind_down', 'w-1', {}, { nowIso: etIso(S[1], 9, 0) });
+    await storeCloseSnapshot(two.db, S[1], quotes());
+    const out = await closeOn(two.db, two.bookId, S[2], quotes());
+    expect(out).toMatchObject({ closed: false, skipped: 'book_closed', bookClosed: true, caughtUp: [{ date: S[1], observed: true }] });
+    expect(ideaCloseLeftUnclosed(out)).toBe(false);
+    expect(getBook(two.db, two.bookId)).toMatchObject({ status: 'closed', closedOn: S[1], execState: { lastCloseKey: S[1] } });
+  });
+
+  it('C2 — a caught-up session that ended BEFORE the wind-down was requested is closed as the active session it was: the wind-down completes at a later session, and no active session loses its rows', async () => {
+    // Requested on S[2] at 09:00, with S[1]'s close missed: S[1] closes active; S[2]'s close completes the wind-down.
+    const a = await emptyBookClosedOnS0();
+    await storeCloseSnapshot(a.db, S[1], quotes());
+    await act(a.db, 'wind_down', 'w-1', {}, { nowIso: etIso(S[2], 9, 0) });
+    const original = console.error; console.error = () => {};
+    let p;
+    try { p = await windowPass(a.db, S[2]); } finally { console.error = original; }
+    expect(p).toMatchObject({ served: 1, caughtUp: 1, errors: 0 });
+    expect(getBook(a.db, a.bookId)).toMatchObject({ status: 'draining', execState: { lastCloseKey: S[1] } });
+    expect(a.db._get(`mandates/${a.bookId}/windows/${S[1]}_close`)).toMatchObject({ code: { bookClosed: false } });
+    expect(await close(a.db, a.bookId, S[2])).toMatchObject({ closed: true, bookClosed: true });
+    expect(getBook(a.db, a.bookId)).toMatchObject({ status: 'closed', closedOn: S[2] });
+    // Requested on S[2] at 18:00 — after S[2]'s close — with S[1] and S[2] both missed: both close active, and S[3]'s
+    // close completes it. Every session keeps its daily row and its close row.
+    const b = await emptyBookClosedOnS0();
+    await storeCloseSnapshot(b.db, S[1], quotes());
+    await storeCloseSnapshot(b.db, S[2], quotes());
+    await act(b.db, 'wind_down', 'w-1', {}, { nowIso: etIso(S[2], 18, 0) });
+    console.error = () => {};
+    try { expect(await windowPass(b.db, S[3])).toMatchObject({ served: 1, caughtUp: 2, errors: 0 }); } finally { console.error = original; }
+    expect(getBook(b.db, b.bookId).status).toBe('draining');
+    expect(await close(b.db, b.bookId, S[3])).toMatchObject({ closed: true, bookClosed: true });
+    expect(getBook(b.db, b.bookId)).toMatchObject({ status: 'closed', closedOn: S[3] });
+    for (const d of [S[0], S[1], S[2], S[3]]) {
+      expect(b.db._get(`mandates/${b.bookId}/dailyRows/${d}`), d).toBeDefined();
+      expect(b.db._get(`mandates/${b.bookId}/windows/${d}_close`), d).toBeDefined();
+    }
+  });
+
+  it('N1 — a fire whose listing still shows a book that has CLOSED since writes nothing to it', async () => {
+    const { db, bookId } = await emptyBookClosedOnS0();
+    await act(db, 'wind_down', 'w-1', {}, { nowIso: etIso(S[1], 9, 0) });
+    const stale = (await db.collection('mandates').where('status', '==', 'draining').where('kind', '==', 'idea_book').limit(25).get()).docs;
+    expect(stale.map((d) => d.id)).toEqual([bookId]);
+    await close(db, bookId, S[1]); // another fire closed it
+    expect(getBook(db, bookId).status).toBe('closed');
+    const staleDb = { ...db, collection: (c) => (c !== 'mandates' ? db.collection(c) : { ...db.collection(c), where: (f, op, status) => ({ where: () => ({ limit: () => ({ get: async () => ({ docs: status === 'draining' ? stale : [] }) }) }) }) }) };
+    await storeTickSnapshot(db, S[2], 'open30', quotes());
+    const before = JSON.stringify(getBook(db, bookId));
+    const out = await runIdeaBookEvalPass(staleDb, { tick: tickOf(S[2]), now: slotNowOf(S[2]), ownerToken: 'owner-token' });
+    expect(out).toMatchObject({ books: 1, served: 0, errors: 0 });
+    const after = getBook(db, bookId);
+    const { lease: _l1, ...b1 } = JSON.parse(before);
+    const { lease: _l2, ...b2 } = after;
+    expect(JSON.stringify(b2)).toBe(JSON.stringify(b1)); // only the engine's lease bookkeeping touched it
+    expect(db._get(`mandates/${bookId}/windows/${S[2]}_open30`)).toBeUndefined();
   });
 
   it('a PAUSED book is still valued and settled: its rows, its line exit, its endpoint and its settlement sale all happen; the pause moved no clock', async () => {

@@ -87,8 +87,10 @@ export const CLOSE_WINDOW = 'close';
  * 71bc6bde: an early-close session still has all three engine slots — 10:00, 11:15 and 12:30 Eastern — so today it
  * expects the same four rows; the founder's two early-close windows arrive with T1b's schedule, here.)
  *
- * A window is due only once the book exists: one that opened before `createdAtIso` is not expected (a book created
- * at 11:00 is not owed that morning's 10:00 window). The close is always due on a session the book is closed for.
+ * A window is due only if the book existed while it was open: one whose slot had already ENDED at `createdAtIso` is
+ * not expected (a book created at 11:00 is not owed that morning's 10:00 window); one still open is (a book created at
+ * 10:05 is served by the 10:00 slot's later fires, and owed it — review, lens B). The close is always due on a session
+ * the book is closed for.
  *
  * @returns {Array<{ window: string, kind: 'intraday'|'close', atIso: string|null }>}  in session order; [] when the
  *          date is not a session on the maintained calendar
@@ -101,16 +103,31 @@ export function ideaBookWindowsOf(sessionDate, { createdAtIso = null } = {}) {
   for (const slot of ideaEntrySlots()) {
     const at = slotInstantMs(sessionDate, slot);
     if (at === null) continue;
-    if (Number.isFinite(createdMs) && at < createdMs) continue;
+    if (Number.isFinite(createdMs) && slotEndMs(sessionDate, slot) <= createdMs) continue;
     out.push({ window: slot, kind: 'intraday', atIso: new Date(at).toISOString() });
   }
   out.push({ window: CLOSE_WINDOW, kind: 'close', atIso: null });
   return out;
 }
 
+/** The instant a session's regular hours end (epoch ms; 13:00 on an early close), or null when the date is not a session. */
+export function sessionCloseMs(sessionDate) {
+  const session = getSessionForDate(sessionDate);
+  return session?.isTradingDay && Number.isFinite(session.closeMs) ? session.closeMs : null;
+}
+
 /** The window ledger's row id for a session's window: `{sessionDate}_{window}` (the window being a slot or `close`). */
 export function windowRowId(sessionDate, window) {
   return `${sessionDate}_${window}`;
+}
+
+/** The instant a slot's activation window ends on a session date (epoch ms), or null — the engine's own geometry. */
+function slotEndMs(sessionDate, slotName) {
+  const session = getSessionForDate(sessionDate);
+  const geometry = resolveSessionSlots(sessionDate);
+  const slot = geometry?.trading ? geometry.slots.find((x) => x.name === slotName) : null;
+  if (!session?.isTradingDay || !slot) return null;
+  return session.openMs + (slot.windowEndMin - geometry.openMin) * 60_000;
 }
 
 /** The instant a slot opens on a session date (epoch ms), or null when the date is not a session or has no such slot. */

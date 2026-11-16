@@ -61,8 +61,12 @@ describe('the admission packet — in admission\'s own transaction, create-once'
       measuredAgainst: {
         bookRevision: bookBefore.revision, equityUsd: bookBefore.portfolio.totalValue, cashUsd: bookBefore.portfolio.cash,
         treasuryUnreservedUsd: bookBefore.treasury.unreservedCash,
-        positions: { MSFT: { shares: bookBefore.portfolio.positions.MSFT.shares, lastMark: 420.11, lastMarkAsOf: bookBefore.portfolio.positions.MSFT.lastMarkAsOf, lastMarkSource: 'snapshot', ideaId: first.ideaId } },
-        marksSnapshot: { lastCloseKey: S[0], closeSnapshotKey: `${S[0]}_close`, lastWindowTickKey: null },
+        positions: { MSFT: {
+          shares: bookBefore.portfolio.positions.MSFT.shares, lastMark: 420.11, lastMarkAsOf: bookBefore.portfolio.positions.MSFT.lastMarkAsOf, lastMarkSource: 'snapshot', ideaId: first.ideaId,
+          // The mark's own source: S[0]'s stored close snapshot, at the vendor's time, full quality.
+          markSource: { kind: 'close', snapshotKey: `${S[0]}_close`, session: S[0], quality: 'vendor_time', vendorTimeIso: bookBefore.portfolio.positions.MSFT.lastMarkAsOf, recordedMarkAsOf: bookBefore.portfolio.positions.MSFT.lastMarkAsOf },
+        } },
+        lastClose: { session: S[0], observed: true, closeSnapshotKey: `${S[0]}_close` },
         otherOpenIdeas: [{ ideaId: first.ideaId, status: 'holding', slot: 'short', names: ['MSFT'], capitalUsd: 20000 }],
       },
     });
@@ -72,6 +76,56 @@ describe('the admission packet — in admission\'s own transaction, create-once'
     expect(packet.limits.all.map((l) => l.constraint)).toEqual(expect.arrayContaining(['slot_cap', 'cash_floor', 'single_position_cap', 'sector_cap']));
     // A tampered packet no longer hashes to itself.
     expect(verifyPacket({ ...packet, measuredAgainst: { ...packet.measuredAgainst, equityUsd: packet.measuredAgainst.equityUsd + 0.01 } })).toBe(false);
+  });
+
+  it('review B1 — each mark names its OWN source: a fill since the last close names its entry window; a mark carried at an unobserved close names no snapshot, only its vendor time', async () => {
+    // (a) No close yet: MSFT was bought at S[0]'s open30; a later window served nothing; admission at 13:30.
+    const a = await seedBook();
+    const first = await admitAndEnter(a.db, a.bookId, { contract: contractOf({ names: ['MSFT'] }), opId: 'first', quotes: quotes(), date: S[0] });
+    await windowAt(a.db, a.bookId, { date: S[0], slot: 'midday', quotes: quotes({ MSFT: 425.5 }) });
+    const ra = await admitIdea(a.db, { bookId: a.bookId, contract: contractOf({ slot: 'medium', names: ['AAPL'], capitalUsd: 25000 }), opId: 'second', nowIso: etIso(S[0], 13, 30) });
+    const pa = a.db._get(`mandates/${a.bookId}/ideas/${ra.ideaId}/evidence/admission`);
+    expect(pa.measuredAgainst.lastClose).toBeNull();
+    expect(pa.measuredAgainst.positions.MSFT).toMatchObject({ lastMark: 418.13, markSource: { kind: 'entry_fill', snapshotKey: `${S[0]}_open30`, session: S[0], quality: 'fill' } });
+    expect(JSON.stringify(pa)).not.toMatch(/_midday/); // the window that bought nothing is not named as a source
+    expect(first.entry.outcome).toBe('entered');
+    // (b) S[0] closed; S[1] never stored, caught up as unobserved by S[2]'s window; admission on S[2].
+    const b = await seedBook({ uid: 'owner-2', opId: 'c2' });
+    const fb = await admitAndEnter(b.db, b.bookId, { contract: contractOf({ names: ['MSFT'] }), opId: 'first', quotes: quotes(), date: S[0] });
+    await closeDay({ ...b, ideaId: fb.ideaId }, S[0], { MSFT: 420.11 });
+    const vendorAtS0 = getBook(b.db, b.bookId).portfolio.positions.MSFT.lastMarkAsOf;
+    const original = console.error; console.error = () => {};
+    try { await windowAt(b.db, b.bookId, { date: S[2], quotes: quotes() }); } finally { console.error = original; }
+    expect(getBook(b.db, b.bookId).execState.lastCloseKey).toBe(S[1]);
+    const rb = await admitIdea(b.db, { bookId: b.bookId, contract: contractOf({ slot: 'medium', names: ['AAPL'], capitalUsd: 25000 }), opId: 'second', nowIso: etIso(S[2], 11, 0) });
+    const pb = b.db._get(`mandates/${b.bookId}/ideas/${rb.ideaId}/evidence/admission`);
+    expect(pb.measuredAgainst.lastClose).toEqual({ session: S[1], observed: false, closeSnapshotKey: null });
+    expect(pb.measuredAgainst.positions.MSFT).toMatchObject({ lastMark: 420.11, markSource: { kind: 'carried', snapshotKey: null, session: S[1], quality: 'unobserved', vendorTimeIso: null, recordedMarkAsOf: vendorAtS0 } });
+    expect(JSON.stringify(pb)).not.toMatch(new RegExp(`${S[1]}_close`)); // a document that never existed is never named
+    // (c) R-B1c: S[0]'s close quote for MSFT carries NO vendor time. The mark is that close's (its snapshot is named),
+    // its quality says so, and no vendor time is claimed — the morning quote's time stays only as what was recorded.
+    const c = await seedBook({ uid: 'owner-3', opId: 'c3' });
+    const fc = await admitAndEnter(c.db, c.bookId, { contract: contractOf({ names: ['MSFT'] }), opId: 'first', quotes: quotes(), date: S[0] });
+    await closeDay({ ...c, ideaId: fc.ideaId }, S[0], { MSFT: { price: 431.17, at: null } });
+    const rc = await admitIdea(c.db, { bookId: c.bookId, contract: contractOf({ slot: 'medium', names: ['AAPL'], capitalUsd: 25000 }), opId: 'second', nowIso: etIso(S[1], 11, 0) });
+    const pc = c.db._get(`mandates/${c.bookId}/ideas/${rc.ideaId}/evidence/admission`);
+    expect(pc.measuredAgainst.positions.MSFT).toMatchObject({
+      lastMark: 431.17, markSource: { kind: 'close', snapshotKey: `${S[0]}_close`, quality: 'receipt_time_fallback', vendorTimeIso: null },
+    });
+  });
+
+  it('review B12 — the hash is of what Firestore stores: a lone surrogate (stored as U+FFFD) is made well-formed first, so the packet still verifies after the round trip', async () => {
+    const ctx = await seedBook();
+    const res = await admitIdea(ctx.db, { bookId: ctx.bookId, contract: contractOf({ thesis: { text: `A thesis with a broken character \uD800 inside it, for the round trip.`, author: 'founder_fixture' } }), opId: 'surrogate', nowIso: ADMIT_ISO });
+    expect(res.ok).toBe(true);
+    const packet = ctx.db._get(`mandates/${ctx.bookId}/ideas/${res.ideaId}/evidence/admission`);
+    expect(packet.contract.thesis.text).toContain('�');
+    expect(packet.contract.thesis.text).not.toContain('\uD800');
+    // What Firestore hands back: every lone surrogate replaced. The packet verifies before and after.
+    const roundTripped = JSON.parse(JSON.stringify(packet).replace(/\\ud800/gi, '\\ufffd'));
+    expect(verifyPacket(packet)).toBe(true);
+    expect(verifyPacket(roundTripped)).toBe(true);
+    expect(jsonPure({ a: 'x\uDC00y', b: ['\uD83D'] })).toEqual({ a: 'x�y', b: ['�'] });
   });
 
   it('a replay writes nothing; a packet already stored for the idea aborts the whole admission (create-once), and a refused admission writes none', async () => {
@@ -162,6 +216,25 @@ describe('the result packet — in the endpoint close\'s transaction, a copy of 
     expect(resultPacketMissingMarks(dropped, endpointRow)).toEqual(['spy:SPY']);
     // The admission packet is there too: two packets per idea.
     expect(verifyPacket(packetOf(ctx, 'admission'))).toBe(true);
+  });
+
+  it('review B2 — a mark CARRIED at the endpoint (its symbol missing from the close document) keeps its last observation time; without it the packet is not whole', async () => {
+    const { db, bookId, bookRef } = await seedBook();
+    const r = await admitAndEnter(db, bookId, { contract: contractOf({ names: ['AAPL'] }), quotes: quotes(), date: S[0] });
+    const ctx = { db, bookId, bookRef, ideaId: r.ideaId };
+    for (let i = 0; i < 10; i += 1) await closeDay(ctx, S[i]);
+    const spyAt = ideaOf(ctx).spyLedger.holdings.SPY.lastMarkAsOf;
+    expect(typeof spyAt).toBe('string');
+    await closeDay(ctx, DUE, { SPY: undefined }); // the due session's close document has no SPY quote
+    const packet = packetOf(ctx, 'result');
+    const endpointRow = ctx.db._get(`mandates/${ctx.bookId}/ideas/${ctx.ideaId}/rows/endpoint`);
+    expect(packet.endpoint.ledgers.spy.marks.SPY).toMatchObject({ markQuality: 'carried_forward', markVendorTimeIso: null, carriedFromVendorTimeIso: spyAt });
+    expect(packet.endpoint.ledgers.idea.marks.AAPL).not.toHaveProperty('carriedFromVendorTimeIso'); // a fresh mark carries its own time
+    expect(resultPacketMissingMarks(packet, endpointRow)).toEqual([]);
+    const timeless = { ...packet, endpoint: { ...packet.endpoint, ledgers: { ...packet.endpoint.ledgers, spy: { ...packet.endpoint.ledgers.spy, marks: { SPY: { ...packet.endpoint.ledgers.spy.marks.SPY, carriedFromVendorTimeIso: null } } } } } };
+    expect(resultPacketMissingMarks(timeless, endpointRow)).toEqual(['spy:SPY']);
+    // …and the running record the result's decline and exposure were computed from is copied too (review B13).
+    expect(packet.track).toEqual(jsonPure(ideaOf(ctx).track));
   });
 
   it('written ONCE: a replayed close writes nothing; a result packet already stored aborts the endpoint close whole', async () => {

@@ -25,23 +25,31 @@
 // owner on the cockpit's server-side allowlist (mode.js practiceFieldAdmits — COCKPIT allowlist, a second
 // environment list); at 'on' they admit any owner.
 //
-// IDEMPOTENT ON A CLIENT `requestKey`. create_book and admit_fixture pass it as their operation id: the book's and
-// the idea's ids are derived from it, so a replay finds what it made. pause, resume and wind_down record each request
-// at `mandates/{bookId}/controlOps/{requestKey}` (create-once, server-only) in the transaction that applies it: a
-// replay answers what the first request answered and changes nothing — so a pause replayed after a resume does not
-// pause the book again. One key for two different actions is refused `request_key_conflict`.
+// IDEMPOTENT ON A CLIENT `requestKey`, PER OWNER (review C1, C3, C4). Every action records its request at
+// `practiceFieldBooks/{uid}/founderOps/{requestKey}` — server-only (no rule matches it) — with the action, a fingerprint
+// of what the request asked, the TARGET it was resolved to at the first request (the book; for create_book the ranked
+// agent and archetype), and once done, the response. A replay — however much later, whatever book the owner's claim
+// names by then — answers the stored response (`idempotentReplay: true`) and changes nothing: a pause replayed after a
+// resume does not pause again; a wind_down replayed after its book closed and a new one opened does not drain the new
+// one; an admit_fixture replayed then admits nothing new. One key for another action, or for the same action asking
+// something else, is refused `request_key_conflict`. pause, resume and wind_down record the request in the transaction
+// that applies it. create_book and admit_fixture record it first (pending, with its target), then run the engine's own
+// idempotent call (createIdeaBook / admitIdea, with the request key as their operation id), then store the response;
+// a request interrupted between the two re-runs against its RECORDED target. A request refused before anything was
+// recorded (no ranked agent, no open book, a missing contract) changes nothing and records nothing.
 
 import { createIdeaBook } from './ideaBook.js';
 import { admitIdea } from './admission.js';
 import { practiceFieldMode } from './mode.js';
 import { isIdeaBook } from '../mandateBookKind.js';
 import { isCloneAgentId } from '../../../src/constants/leagueTournament.js';
+import { canonicalContentHash } from '../canonicalHash.js';
 
 /** The actions, in the build prompt's order. */
 export const FOUNDER_ACTIONS = Object.freeze(['create_book', 'admit_fixture', 'pause', 'resume', 'wind_down']);
 /** A fixture's origin, forced on every admitted contract (Amendment C §6: `founder_fixture` needs no source). */
 export const FOUNDER_FIXTURE_ORIGIN = Object.freeze({ kind: 'founder_fixture', initiatedBy: 'agent' });
-/** A request key: also a document id under the book, so a safe, bounded token. */
+/** A request key: also a document id (under the owner's claim), so a safe, bounded token. */
 const REQUEST_KEY = /^[A-Za-z0-9][A-Za-z0-9_\-:.]{0,199}$/;
 
 /** The founder allowlist, read NOW from MANDATE_FOUNDER_UIDS (comma-separated). Unset or empty: nobody. */
@@ -85,34 +93,107 @@ async function ownBookOf(db, uid) {
   return { bookId: claim.bookId, book };
 }
 
-async function createBook(db, { uid, requestKey, body, nowIso }) {
-  const found = await rankedAgentFor(db, uid, body?.agentId);
-  if (found.error) return found.error;
-  const archetypeCodeId = typeof found.agent.data.archetype === 'string' ? found.agent.data.archetype : null;
-  const res = await createIdeaBook(db, { uid, attributionAgentId: found.agent.id, archetypeCodeId, opId: requestKey, nowIso });
-  if (res.ok) return reply(res.idempotentReplay ? 200 : 201, { ok: true, action: 'create_book', bookId: res.bookId, epochId: res.epochId, attributionAgentId: found.agent.id, archetypeCodeId, idempotentReplay: res.idempotentReplay });
-  const status = { open_book_exists: 409, founder_cap_reached: 409, op_id_conflict: 409, mode_not_admitted: 403 }[res.code] ?? 400;
-  return reply(status, { ok: false, error: res.code, ...(res.bookId ? { bookId: res.bookId } : {}) });
+/** The owner's record of one request (see the header). The collection by its literal name, for the protected-store scan. */
+const founderOpRefOf = (db, uid, requestKey) => db.collection('practiceFieldBooks').doc(uid).collection('founderOps').doc(requestKey);
+
+/** What a request asked, for telling a replay from another request under the same key. */
+export function founderRequestFingerprint(action, body) {
+  return canonicalContentHash({
+    action,
+    agentId: action === 'create_book' ? (body?.agentId ?? null) : null,
+    contract: action === 'admit_fixture' ? (body?.contract ?? null) : null,
+  });
 }
 
-async function admitFixture(db, { uid, requestKey, body, nowIso }) {
-  if (!isPlain(body?.contract)) return reply(400, { ok: false, error: 'contract_required' });
-  const own = await ownBookOf(db, uid);
-  if (own.error) return own.error;
-  // The origin is the server's: a fixture is a founder fixture whatever the body says.
-  const contract = { ...body.contract, origin: { ...FOUNDER_FIXTURE_ORIGIN } };
-  const res = await admitIdea(db, { bookId: own.bookId, contract, opId: requestKey, nowIso });
-  if (res.ok) {
-    return reply(res.idempotentReplay ? 200 : 201, {
-      ok: true, action: 'admit_fixture', bookId: own.bookId, ideaId: res.ideaId, status: res.status ?? null, idempotentReplay: res.idempotentReplay,
-      startSession: res.startSession, dueSession: res.dueSession, permittedMaxUsd: res.permittedMaxUsd, binding: res.binding,
-    });
+/** The answer to a request whose key is already recorded: a conflict, a replay of the stored response, or null (pending). */
+function answerRecorded(prior, { action, fingerprint }) {
+  if (prior.action !== action || prior.fingerprint !== fingerprint) {
+    return reply(409, { ok: false, error: 'request_key_conflict', action: prior.action });
   }
-  const conflict = (res.refusals || []).some((r) => r.code === 'op_id_conflict');
-  return reply(conflict ? 409 : 422, { ok: false, error: conflict ? 'op_id_conflict' : 'admission_refused', refusals: res.refusals, permittedMaxUsd: res.permittedMaxUsd ?? null, binding: res.binding ?? [] });
+  if (prior.state !== 'done' || !prior.response) return null;
+  const { status, body } = prior.response;
+  return reply(status >= 200 && status < 300 ? 200 : status, { ...body, idempotentReplay: true });
 }
 
-/** What pause, resume and wind_down do to a book as read. Pure. @returns {{ patch: object|null, outcome: string, error?: string }} */
+/**
+ * create_book and admit_fixture: record the request (pending, with its target) — or find it — then run the engine's
+ * idempotent call against the RECORDED target, then store the response.
+ */
+async function recordedRequest(db, { uid, action, requestKey, fingerprint, nowIso, resolveTarget, run }) {
+  const opRef = founderOpRefOf(db, uid, requestKey);
+  const first = await opRef.get();
+  let target;
+  if (first.exists) {
+    const answered = answerRecorded(first.data(), { action, fingerprint });
+    if (answered) return answered;
+    target = first.data().target;
+  } else {
+    const resolved = await resolveTarget();
+    if (resolved.error) return resolved.error; // refused before anything was recorded: nothing changed, nothing to replay
+    const begun = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(opRef);
+      if (snap.exists) {
+        const answered = answerRecorded(snap.data(), { action, fingerprint });
+        return answered ? { answered } : { target: snap.data().target };
+      }
+      tx.create(opRef, { action, requestKey, uid, fingerprint, state: 'pending', target: resolved.target, createdAt: nowIso });
+      return { target: resolved.target };
+    });
+    if (begun.answered) return begun.answered;
+    target = begun.target;
+  }
+  const response = await run(target);
+  await opRef.update({ state: 'done', response, completedAt: nowIso });
+  return response;
+}
+
+async function createBook(db, { uid, requestKey, body, nowIso, fingerprint }) {
+  return recordedRequest(db, {
+    uid, action: 'create_book', requestKey, fingerprint, nowIso,
+    resolveTarget: async () => {
+      const found = await rankedAgentFor(db, uid, body?.agentId);
+      if (found.error) return found;
+      const archetypeCodeId = typeof found.agent.data.archetype === 'string' ? found.agent.data.archetype : null;
+      return { target: { attributionAgentId: found.agent.id, archetypeCodeId } };
+    },
+    run: async ({ attributionAgentId, archetypeCodeId }) => {
+      const res = await createIdeaBook(db, { uid, attributionAgentId, archetypeCodeId, opId: requestKey, nowIso });
+      if (res.ok) return reply(res.idempotentReplay ? 200 : 201, { ok: true, action: 'create_book', bookId: res.bookId, epochId: res.epochId, attributionAgentId, archetypeCodeId, idempotentReplay: res.idempotentReplay });
+      const status = { open_book_exists: 409, founder_cap_reached: 409, op_id_conflict: 409, mode_not_admitted: 403 }[res.code] ?? 400;
+      return reply(status, { ok: false, error: res.code, ...(res.bookId ? { bookId: res.bookId } : {}) });
+    },
+  });
+}
+
+async function admitFixture(db, { uid, requestKey, body, nowIso, fingerprint }) {
+  if (!isPlain(body?.contract)) return reply(400, { ok: false, error: 'contract_required' });
+  return recordedRequest(db, {
+    uid, action: 'admit_fixture', requestKey, fingerprint, nowIso,
+    resolveTarget: async () => {
+      const own = await ownBookOf(db, uid);
+      return own.error ? own : { target: { bookId: own.bookId } };
+    },
+    run: async ({ bookId }) => {
+      // The origin is the server's: a fixture is a founder fixture whatever the body says.
+      const contract = { ...body.contract, origin: { ...FOUNDER_FIXTURE_ORIGIN } };
+      const res = await admitIdea(db, { bookId, contract, opId: requestKey, nowIso });
+      if (res.ok) {
+        return reply(res.idempotentReplay ? 200 : 201, {
+          ok: true, action: 'admit_fixture', bookId, ideaId: res.ideaId, status: res.status ?? null, idempotentReplay: res.idempotentReplay,
+          startSession: res.startSession, dueSession: res.dueSession, permittedMaxUsd: res.permittedMaxUsd, binding: res.binding,
+        });
+      }
+      const conflict = (res.refusals || []).some((r) => r.code === 'op_id_conflict');
+      return reply(conflict ? 409 : 422, { ok: false, error: conflict ? 'op_id_conflict' : 'admission_refused', refusals: res.refusals, permittedMaxUsd: res.permittedMaxUsd ?? null, binding: res.binding ?? [] });
+    },
+  });
+}
+
+/**
+ * What pause, resume and wind_down do to a book as read. Pure. A book's status only moves forward: resume and pause
+ * touch `drafting` alone, so a wound-down book stays draining (review C6).
+ * @returns {{ patch: object|null, outcome: string, error?: string }}
+ */
 export function planControl(action, book, { requestKey, uid, nowIso }) {
   if (book.status !== 'active' && book.status !== 'draining') return { patch: null, outcome: 'refused', error: 'book_not_open' };
   if (action === 'pause' || action === 'resume') {
@@ -125,38 +206,36 @@ export function planControl(action, book, { requestKey, uid, nowIso }) {
   return { patch: { status: 'draining', windDown: { requestedAt: nowIso, requestKey, requestedBy: uid } }, outcome: 'draining' };
 }
 
-async function applyControl(db, { uid, action, requestKey, nowIso }) {
-  const own = await ownBookOf(db, uid);
-  if (own.error) return own.error;
-  const bookRef = db.collection('mandates').doc(own.bookId);
-  const opRef = bookRef.collection('controlOps').doc(requestKey);
+/** pause, resume and wind_down: the request recorded in the transaction that applies it, every read before any write. */
+async function applyControl(db, { uid, action, requestKey, nowIso, fingerprint }) {
+  const opRef = founderOpRefOf(db, uid, requestKey);
   const claimRef = db.collection('practiceFieldBooks').doc(uid);
   return db.runTransaction(async (tx) => {
-    const bookSnap = await tx.get(bookRef);
     const opSnap = await tx.get(opRef);
+    if (opSnap.exists) return answerRecorded(opSnap.data(), { action, fingerprint }) ?? reply(409, { ok: false, error: 'request_key_conflict', action: opSnap.data().action });
     const claimSnap = await tx.get(claimRef);
-    if (opSnap.exists) {
-      const prior = opSnap.data();
-      if (prior.action !== action) return reply(409, { ok: false, error: 'request_key_conflict', action: prior.action });
-      return reply(200, { ...prior.response, idempotentReplay: true });
-    }
+    const claim = claimSnap.exists ? claimSnap.data() : null;
+    if (!claim || typeof claim.bookId !== 'string' || claim.bookId.length === 0) return reply(404, { error: 'no_open_book' });
+    const bookId = claim.bookId;
+    const bookRef = db.collection('mandates').doc(bookId);
+    const bookSnap = await tx.get(bookRef);
     const book = bookSnap.exists ? bookSnap.data() : null;
     if (!book || !isIdeaBook(book) || book.userId !== uid) return reply(404, { error: 'no_open_book' });
     const plan = planControl(action, book, { requestKey, uid, nowIso });
     if (plan.error) return reply(409, { ok: false, error: plan.error, status: book.status ?? null });
     const after = { status: plan.patch?.status ?? book.status, drafting: plan.patch?.drafting ?? book.drafting ?? null };
-    const response = { ok: true, action, bookId: own.bookId, outcome: plan.outcome, status: after.status, drafting: after.drafting, idempotentReplay: false };
-    // The request, recorded once — a replay answers it and changes nothing.
+    const response = reply(200, { ok: true, action, bookId, outcome: plan.outcome, status: after.status, drafting: after.drafting, idempotentReplay: false });
+    // The request, recorded once, with the book it acted on — a replay answers it and changes nothing.
     tx.create(opRef, {
-      action, requestKey, uid, at: nowIso, outcome: plan.outcome,
-      before: { status: book.status ?? null, drafting: book.drafting ?? null }, after, response,
+      action, requestKey, uid, fingerprint, state: 'done', target: { bookId }, createdAt: nowIso, completedAt: nowIso,
+      outcome: plan.outcome, before: { status: book.status ?? null, drafting: book.drafting ?? null }, after, response,
     });
     if (plan.patch) tx.update(bookRef, plan.patch);
     // wind_down moves the owner's claim's status with the book's (bookStore.js), in the same transaction.
-    if (plan.patch?.status === 'draining' && claimSnap.exists && claimSnap.data()?.bookId === own.bookId) {
+    if (plan.patch?.status === 'draining' && claim.bookId === bookId) {
       tx.update(claimRef, { status: 'draining', updatedAt: nowIso });
     }
-    return reply(200, response);
+    return response;
   });
 }
 
@@ -173,7 +252,8 @@ export async function runFounderAction(db, { uid, body = {}, nowIso }) {
   if (!FOUNDER_ACTIONS.includes(action)) return reply(400, { error: 'unknown_action', actions: FOUNDER_ACTIONS });
   const requestKey = body?.requestKey;
   if (typeof requestKey !== 'string' || !REQUEST_KEY.test(requestKey)) return reply(400, { error: 'request_key_invalid' });
-  if (action === 'create_book') return createBook(db, { uid, requestKey, body, nowIso });
-  if (action === 'admit_fixture') return admitFixture(db, { uid, requestKey, body, nowIso });
-  return applyControl(db, { uid, action, requestKey, nowIso });
+  const fingerprint = founderRequestFingerprint(action, body);
+  if (action === 'create_book') return createBook(db, { uid, requestKey, body, nowIso, fingerprint });
+  if (action === 'admit_fixture') return admitFixture(db, { uid, requestKey, body, nowIso, fingerprint });
+  return applyControl(db, { uid, action, requestKey, nowIso, fingerprint });
 }

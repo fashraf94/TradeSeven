@@ -81,7 +81,7 @@ import { firstUnclosedSessionBefore } from './sessions.js';
 import { toCents, fromCents } from './money.js';
 import { buildResultPacket, evidenceRefOf, EVIDENCE_PACKET } from './evidence.js';
 import { windowsRefOf, expectedIntradayWindows, buildCloseWindowRow } from './windowLedger.js';
-import { windowRowId, CLOSE_WINDOW } from './windows.js';
+import { windowRowId, CLOSE_WINDOW, sessionCloseMs } from './windows.js';
 
 /** The key of THE close snapshot for a date. */
 export const closeSnapshotKeyFor = (date) => `${date}_close`;
@@ -596,8 +596,14 @@ async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false })
 
     // 9. WIND-DOWN COMPLETES AT A CLOSE (T1a-2b-1 §6; contract §3.2, §11): a draining book with no open idea left after
     //    this close — every idea resulted or timed out — is closed by it. Decided here, on the book as this close
-    //    leaves it.
-    const completesWindDown = book.status === 'draining' && (working.openIdeaIds || []).length === 0;
+    //    leaves it. A caught-up session is closed exactly as its own close would have been (E12; review C2): if the
+    //    wind-down was requested only AFTER that session ended, the book was still active then, and that session's
+    //    close does not complete it — a later session's does, so no active session goes without its rows.
+    const windDownAtMs = Date.parse(book.windDown?.requestedAt ?? '');
+    const sessionEndMs = sessionCloseMs(session);
+    const windDownInForce = book.status === 'draining'
+      && (!Number.isFinite(windDownAtMs) || sessionEndMs === null || windDownAtMs < sessionEndMs);
+    const completesWindDown = windDownInForce && (working.openIdeaIds || []).length === 0;
     const nextBook = {
       ...working,
       portfolio: { ...working.portfolio, positions: nextPositions, cash: roundUsd(bookCash), totalValue: markedEquity },
@@ -727,6 +733,20 @@ async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false })
 }
 
 /**
+ * One closeNextSession of a multi-session call. If it THROWS, the alerts of the sessions this call already committed
+ * (each one's window-missed, unobserved and corporate-action lines) would be lost with the call's return value — and
+ * those sessions are never closed again. So they are logged here, once, before the error goes on (review B3).
+ */
+async function closeNextSessionKeepingAlerts(db, bookRef, args, committedAlerts) {
+  try {
+    return await closeNextSession(db, bookRef, args);
+  } catch (err) {
+    for (const alert of committedAlerts) console.error(`[PracticeFieldClose] ${bookRef.id} ${alert}`);
+    throw err;
+  }
+}
+
+/**
  * CATCH UP every session this book missed BEFORE `before`, in order, each from its own stored close snapshot (E12) —
  * and close nothing else. The idea-book pass calls it at every window, before any sale or entry (sessions.js: nothing
  * moves past an unclosed session). `complete` is true only when no session before `before` is left unclosed.
@@ -741,7 +761,7 @@ export async function catchUpIdeaBook(db, bookRef, { before, now = new Date() } 
   // 'off': no Practice Field code path runs, whoever calls. Before any read.
   if (!practiceFieldLive()) return { ...out, skipped: 'practice_field_off' };
   for (;;) {
-    const res = await closeNextSession(db, bookRef, { date: before, now, catchUpOnly: true });
+    const res = await closeNextSessionKeepingAlerts(db, bookRef, { date: before, now, catchUpOnly: true }, out.alerts);
     out.alerts.push(...(res.alerts || []));
     out.cancelled.push(...(res.cancelled || []));
     out.resulted.push(...(res.resulted || []));
@@ -774,7 +794,7 @@ export async function closeIdeaBook(db, bookRef, { date, now = new Date() } = {}
   const cancelled = [];
   const resulted = [];
   for (;;) {
-    const res = await closeNextSession(db, bookRef, { date, now });
+    const res = await closeNextSessionKeepingAlerts(db, bookRef, { date, now }, alerts);
     alerts.push(...(res.alerts || []));
     cancelled.push(...(res.cancelled || []));
     resulted.push(...(res.resulted || []));

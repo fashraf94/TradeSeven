@@ -225,9 +225,21 @@ export async function runIdeaBookWindow(db, { bookRef, tick, now = new Date() })
     if (caught.bookClosed) return { ...out, served: false, complete: true, skipped: 'book_closed' };
     if (!caught.complete) return { ...out, complete: false, skipped: caught.skipped ?? 'catch_up_incomplete' };
   }
-  // 2, 3. E8 (B-ORDER): within a window, sales come first — then entries.
-  out.sales = await runIdeaBookSalesPass(db, { bookRef, tick, now });
-  out.entries = await runIdeaBookEntryPass(db, { bookRef, tick, now });
+  // 2, 3. E8 (B-ORDER): within a window, sales come first — then entries. Each pass isolates its ideas; a pass that
+  // throws as a whole (its own read of the book) is counted as an error HERE, so what the other pass did stays on this
+  // window's answer — and on its window-ledger row (review B4): a sale filled before the entry pass threw is not lost.
+  try {
+    out.sales = await runIdeaBookSalesPass(db, { bookRef, tick, now });
+  } catch (err) {
+    console.error(`${LOG_PREFIX} idea book ${bookRef.id} sales pass failed at ${tick.tickKey}: ${err.message}`);
+    out.sales = { ...NO_SALES, alerts: [], errors: 1 };
+  }
+  try {
+    out.entries = await runIdeaBookEntryPass(db, { bookRef, tick, now });
+  } catch (err) {
+    console.error(`${LOG_PREFIX} idea book ${bookRef.id} entry pass failed at ${tick.tickKey}: ${err.message}`);
+    out.entries = { ...NO_ENTRIES, errors: 1 };
+  }
   out.errors = out.sales.errors + out.entries.errors;
   return out;
 }
@@ -272,6 +284,8 @@ export async function runIdeaBookEvalPass(db, { tick, now = new Date(), ownerTok
     try {
       const fresh = await bookRef.get();
       if (!fresh.exists || !isIdeaBook(fresh.data())) continue;
+      // A book that closed since the query listed it (another fire's catch-up completed its wind-down) owes nothing.
+      if (!SERVED_STATUSES.includes(fresh.data().status)) continue;
       if (fresh.data().execState?.lastIdeaTickKey === tick.tickKey) continue;
       const win = await runIdeaBookWindow(db, { bookRef, tick, now });
       if (win.served) out.served += 1;
@@ -293,9 +307,10 @@ export async function runIdeaBookEvalPass(db, { tick, now = new Date(), ownerTok
       if (win.served && win.skipped !== 'session_already_closed') await recordWindowAttempt(db, { bookRef, tick, win, now });
       // The within-slot stamp — ONLY for a complete pass with no error (review L3-1): the pass bills nothing, so a
       // transient failure is retried by the slot's next fire instead of costing the idea its last entry slot.
-      // Bookkeeping, not money: no revision bump (the engine's own stamps are written the same way). A book closed
-      // by this window's catch-up is not stamped: nothing is written to a closed book.
-      if (win.complete && win.errors === 0 && win.skipped !== 'book_closed') await bookRef.set({ execState: { lastIdeaTickKey: tick.tickKey } }, { merge: true });
+      // Bookkeeping, not money: no revision bump (the engine's own stamps are written the same way). Only a book the
+      // window SERVED is stamped: one the window found not open — closed by this window's catch-up, or by another
+      // fire's (review N1) — gets no write.
+      if (win.served && win.complete && win.errors === 0) await bookRef.set({ execState: { lastIdeaTickKey: tick.tickKey } }, { merge: true });
     } catch (err) {
       out.errors += 1;
       console.error(`${LOG_PREFIX} idea book ${bookRef.id} pass failed at ${tick.tickKey}: ${err.message}`);

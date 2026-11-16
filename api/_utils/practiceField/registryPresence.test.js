@@ -10,7 +10,8 @@
 //      transaction. Clients cannot write either collection (firestore.rules). No other writer of `mandates` gives a
 //      document `kind: 'idea_book'` (the quarterly builders carry no kind; rollover and escape refuse idea books).
 //      A book's status moves only forward: the founder's wind_down sets `draining` (founderControls.js), and the
-//      close that completes the wind-down sets `closed` (close.js). Nothing sets a closed book open again.
+//      close that completes the wind-down sets `closed` (close.js). Nothing sets a closed book open again; pause and
+//      resume touch `drafting` only (pinned in behaviour below — review C6).
 //   2. NOTHING REMOVES AN ENTRY WHILE ITS BOOK IS ACTIVE OR DRAINING (T1a-2b-1 §6). The registry is written at two
 //      sites: `createIdeaBook`, which keeps every entry already listed, and the close that completes a wind-down
 //      (`closeNextSession`), which removes ONLY the book it closes, in the SAME transaction that sets that book
@@ -30,6 +31,7 @@ import {
 } from './__testsupport__/fixtures.js';
 import { admitIdea } from './admission.js';
 import { closeIdeaBook } from './close.js';
+import { runFounderAction } from './founderControls.js';
 import { buildNewMandateDoc } from '../mandateSchema.js';
 
 const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..', '..', '..');
@@ -102,7 +104,8 @@ describe('the registry is a complete list of idea books (T2A-02) — pinned from
     // runs only for a DRAINING book with no open idea left.
     const close = sources.find((f) => f.path === 'api/_utils/practiceField/close.js').text;
     expect(close.match(/delete openBooks/g)).toHaveLength(1);
-    expect(close).toMatch(/const completesWindDown = book\.status === 'draining' && \(working\.openIdeaIds \|\| \[\]\)\.length === 0;/);
+    expect(close).toMatch(/const windDownInForce = book\.status === 'draining'\s*&& \(!Number\.isFinite\(windDownAtMs\) \|\| sessionEndMs === null \|\| windDownAtMs < sessionEndMs\);/);
+    expect(close).toMatch(/const completesWindDown = windDownInForce && \(working\.openIdeaIds \|\| \[\]\)\.length === 0;/);
     const block = close.slice(close.indexOf('if (completesWindDown) {\n      // 9. The book closes'.replace(/\n/g, close.includes('\r\n') ? '\r\n' : '\n')));
     expect(block.length).toBeLessThan(close.length);
     const body = block.slice(0, block.indexOf('tx.update(bookRef, bookPatch);'));
@@ -158,6 +161,31 @@ describe('the registry is a complete list of idea books (T2A-02) — pinned from
     expect(again.bookId).not.toBe(a.bookId);
     expect(Object.keys(db._get(REGISTRY).openBooks).sort()).toEqual([again.bookId, b.bookId].sort());
     expect(db._get(`mandates/${a.bookId}`).status).toBe('closed');
+  });
+
+  it('1, in behaviour (review C6): a book\'s status only moves forward — resume and pause never reopen a wound-down book, a second wind_down changes nothing, and a closed book takes no control', async () => {
+    const db = makeMandateFakeDb();
+    const a = await seedBook({ db, uid: 'owner-1', opId: 'c1' });
+    await windDownBook(db, { uid: 'owner-1' });
+    const prev = process.env.MANDATE_FOUNDER_UIDS;
+    process.env.MANDATE_FOUNDER_UIDS = 'owner-1';
+    try {
+      const control = (action, requestKey) => runFounderAction(db, { uid: 'owner-1', body: { action, requestKey }, nowIso: ADMIT_ISO });
+      expect((await control('pause', 'p-1')).body).toMatchObject({ status: 'draining', drafting: 'paused' });
+      expect((await control('resume', 'r-1')).body).toMatchObject({ status: 'draining', drafting: 'on' });
+      expect((await control('wind_down', 'w-2')).body).toMatchObject({ outcome: 'already_draining', status: 'draining' });
+      expect(db._get(`mandates/${a.bookId}`).status).toBe('draining');
+      expect(Object.keys(db._get(REGISTRY).openBooks)).toEqual([a.bookId]);
+      // Closed by its next close (no idea open): every control is refused, and the book stays closed.
+      await closeOn(db, a.bookId, DAYS.d1, { AAPL: 230.17, SPY: 600.1 });
+      expect(db._get(`mandates/${a.bookId}`).status).toBe('closed');
+      for (const [action, key] of [['resume', 'r-2'], ['pause', 'p-2'], ['wind_down', 'w-3']]) {
+        expect((await control(action, key)).status, action).toBe(404);
+      }
+      expect(db._get(`mandates/${a.bookId}`).status).toBe('closed');
+    } finally {
+      if (prev === undefined) delete process.env.MANDATE_FOUNDER_UIDS; else process.env.MANDATE_FOUNDER_UIDS = prev;
+    }
   });
 
   it('the removal is atomic with the close: a close whose commit fails writes neither the status, the registry nor the claim; a rival registry write is kept', async () => {

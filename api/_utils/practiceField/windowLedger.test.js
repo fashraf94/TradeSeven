@@ -9,7 +9,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { setPracticeFieldModeForTests } from './mode.js';
 import { admitIdea } from './admission.js';
-import { runIdeaBookEvalPass } from './sweep.js';
+import { runIdeaBookEvalPass, runIdeaBookWindow } from './sweep.js';
 import { closeIdeaBook } from './close.js';
 import { ideaBookWindowsOf, windowRowId, CLOSE_WINDOW } from './windows.js';
 import { recordWindowAttempt, foldWindowAttempt, attemptOf, buildCloseWindowRow, WINDOW_OUTCOME } from './windowLedger.js';
@@ -55,6 +55,9 @@ describe('the expected windows come from windows.js alone', () => {
   it('a window that opened before the book existed is not due; a day that is not a session expects nothing', () => {
     expect(ideaBookWindowsOf(DAYS.d1, { createdAtIso: etIso(DAYS.d1, 11, 0) }).map((x) => x.window)).toEqual(['midday', 'preClose', CLOSE_WINDOW]);
     expect(ideaBookWindowsOf(DAYS.d1, { createdAtIso: etIso(DAYS.d1, 10, 0) }).map((x) => x.window)).toEqual(['open30', 'midday', 'preClose', CLOSE_WINDOW]);
+    // A slot still open when the book is created is owed (its later fires serve the book); one already ended is not.
+    expect(ideaBookWindowsOf(DAYS.d1, { createdAtIso: etIso(DAYS.d1, 10, 5) }).map((x) => x.window)).toEqual(['open30', 'midday', 'preClose', CLOSE_WINDOW]);
+    expect(ideaBookWindowsOf(DAYS.d1, { createdAtIso: etIso(DAYS.d1, 10, 30) }).map((x) => x.window)).toEqual(['midday', 'preClose', CLOSE_WINDOW]);
     expect(ideaBookWindowsOf(DAYS.d1, { createdAtIso: etIso(DAYS.d1, 17, 0) }).map((x) => x.window)).toEqual([CLOSE_WINDOW]);
     expect(ideaBookWindowsOf('2026-11-14')).toEqual([]); // a Saturday
     expect(ideaBookWindowsOf('2026-11-26')).toEqual([]); // Thanksgiving
@@ -120,12 +123,13 @@ describe('the intraday rows the idea-book pass writes', () => {
 
   it('foldWindowAttempt: fills, timeouts and results add up across attempts; what waits is the last attempt\'s; a served row is returned unchanged', () => {
     const tick = tickOf(DAYS.d1, 'midday');
-    const a1 = attemptOf({ complete: false, errors: 0, skipped: 'catch_up_incomplete', caughtUp: [{ date: '2026-11-13', observed: true }], sales: { sold: 1, waiting: 2 }, entries: { entered: 0, waiting: 1 } }, { nowIso: 'A' });
+    // The first attempt fills a sale and an entry, then errors on another idea; the second fills one of each more.
+    const a1 = attemptOf({ complete: true, errors: 1, caughtUp: [{ date: '2026-11-13', observed: true }], sales: { sold: 1, waiting: 2, resulted: 1 }, entries: { entered: 1, waiting: 1, cancelled: 1 } }, { nowIso: 'A' });
     const r1 = foldWindowAttempt(null, a1, { bookId: 'b', tick });
-    expect(r1).toMatchObject({ served: false, attempts: 1, code: { caughtUpSessions: [{ date: '2026-11-13', observed: true }], sales: { filled: 1, waiting: 2 }, entries: { waiting: 1 } } });
+    expect(r1).toMatchObject({ served: false, attempts: 1, errors: 1, code: { caughtUpSessions: [{ date: '2026-11-13', observed: true }], sales: { filled: 1, waiting: 2 }, entries: { filled: 1, waiting: 1, cancelled: 1 }, ideasResulted: 1 } });
     const a2 = attemptOf({ complete: true, errors: 0, caughtUp: [{ date: '2026-11-13', observed: true }], sales: { sold: 1, waiting: 0, resulted: 1 }, entries: { entered: 1, cancelled: 1 } }, { nowIso: 'B' });
     const r2 = foldWindowAttempt(r1, a2, { bookId: 'b', tick });
-    expect(r2).toMatchObject({ served: true, servedAt: 'B', firstAttemptAt: 'A', attempts: 2, code: { caughtUpSessions: [{ date: '2026-11-13', observed: true }], sales: { filled: 2, waiting: 0 }, entries: { filled: 1, waiting: 0, cancelled: 1 }, ideasResulted: 1 } });
+    expect(r2).toMatchObject({ served: true, servedAt: 'B', firstAttemptAt: 'A', attempts: 2, errors: 1, code: { caughtUpSessions: [{ date: '2026-11-13', observed: true }], sales: { filled: 2, waiting: 0 }, entries: { filled: 2, waiting: 0, cancelled: 2 }, ideasResulted: 2 } });
     expect(foldWindowAttempt(r2, a1, { bookId: 'b', tick })).toBe(r2);
     // An attempt with an error is never served, however complete.
     expect(foldWindowAttempt(null, attemptOf({ complete: true, errors: 1 }, { nowIso: 'C' }), { bookId: 'b', tick }).served).toBe(false);
@@ -220,6 +224,45 @@ describe('the close: expected against observed, once', () => {
     expect(buildCloseWindowRow({ ...base, windowRows: {} }).missing).toEqual(['open30', 'midday', 'preClose']);
     expect(buildCloseWindowRow({ ...base, windowRows: { open30: { served: true }, midday: { served: false }, preClose: { served: true } } }).missing).toEqual(['midday']);
     expect(buildCloseWindowRow({ ...base, windowRows: { open30: { served: true }, midday: { served: true }, preClose: { served: true } } }).alerts).toEqual([]);
+  });
+});
+
+describe('nothing a committed session or a filled sale did is lost to a later failure', () => {
+  it('review B3 — a catch-up that commits one session and then THROWS on the next still logs the committed session\'s missed windows, once', async () => {
+    const ctx = await setup();
+    await storeTickSnapshot(ctx.db, DAYS.d1, 'open30', QUOTES);
+    await pass(ctx.db, DAYS.d1, 'open30'); // entered; midday and preClose never run; d1's close fire never runs
+    await storeCloseSnapshot(ctx.db, DAYS.d1, QUOTES);
+    // d2's stored close document is not d2's own: its close throws.
+    ctx.db._store.set(`mandateUniverseSnapshots/${DAYS.d2}_close`, { data: { tickKey: `${DAYS.d3}_close`, sessionDate: DAYS.d2, symbols: {} }, version: 1 });
+    const logged = []; const original = console.error; console.error = (...x) => logged.push(x.join(' '));
+    try {
+      await expect(closeIdeaBook(ctx.db, ctx.bookRef, { date: DAYS.d2, now: closeNowOf(DAYS.d2) })).rejects.toThrow(/close_snapshot_key_mismatch/);
+    } finally { console.error = original; }
+    expect(getBook(ctx.db, ctx.bookId).execState.lastCloseKey).toBe(DAYS.d1); // d1 committed
+    expect(logged.filter((l) => /PRACTICE_FIELD_WINDOW_MISSED/.test(l))).toEqual([
+      `[PracticeFieldClose] ${ctx.bookId} PRACTICE_FIELD_WINDOW_MISSED ${ctx.bookId} ${DAYS.d1}_midday — the book was due at this window and no pass served it`,
+      `[PracticeFieldClose] ${ctx.bookId} PRACTICE_FIELD_WINDOW_MISSED ${ctx.bookId} ${DAYS.d1}_preClose — the book was due at this window and no pass served it`,
+    ]);
+  });
+
+  it('review B4 — the entry pass throwing as a whole after a sale filled: the window answers the sale and one error, and its row records the sale, not served', async () => {
+    const ctx = await setup();
+    await storeTickSnapshot(ctx.db, DAYS.d1, 'open30', QUOTES);
+    await pass(ctx.db, DAYS.d1, 'open30');
+    const level = getIdea(ctx.db, ctx.bookId, ctx.ideaId).lines[0].level;
+    await closeOn(ctx.db, ctx.bookId, DAYS.d1, { AAPL: Math.round((level - 0.02) * 100) / 100, SPY: 600.1 });
+    await storeTickSnapshot(ctx.db, DAYS.d2, 'open30', { AAPL: 216.3, SPY: 600.1 });
+    // The third read of the book in the window is the entry pass's own: it fails.
+    let reads = 0;
+    const flaky = { ...ctx.bookRef, get: async () => { reads += 1; if (reads === 3) throw new Error('UNAVAILABLE: injected (entry pass read)'); return ctx.bookRef.get(); } };
+    const original = console.error; console.error = () => {};
+    let win;
+    try { win = await runIdeaBookWindow(ctx.db, { bookRef: flaky, tick: tickOf(DAYS.d2), now: slotNowOf(DAYS.d2) }); } finally { console.error = original; }
+    expect(win).toMatchObject({ served: true, complete: true, errors: 1, sales: { sold: 1, errors: 0 }, entries: { errors: 1 } });
+    expect(getIdea(ctx.db, ctx.bookId, ctx.ideaId).ledger.saleReceipts).toHaveLength(1);
+    await recordWindowAttempt(ctx.db, { bookRef: ctx.bookRef, tick: tickOf(DAYS.d2), win, now: slotNowOf(DAYS.d2) });
+    expect(rowOf(ctx.db, ctx.bookId, DAYS.d2, 'open30')).toMatchObject({ served: false, errors: 1, code: { sales: { filled: 1 } }, outcome: 'code_action' });
   });
 });
 
