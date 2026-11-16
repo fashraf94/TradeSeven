@@ -11,13 +11,29 @@
 # long-running fixtures. `npm run test:rules` (the Firestore emulator suites:
 # every rules denials suite and the setup-evidence store's protocol rows) runs
 # in the separate `rules` job at the bottom of this file. It is a separate job
-# because it needs a JDK and the emulator download, and so that the `unit`
-# job's steps and wall-clock stay exactly as they were: the two jobs have no
-# `needs` and run in parallel. The `unit` job is still the fast unit gate.
+# because it needs a JDK and the emulator download. It has no `needs` and runs
+# in parallel with the unit jobs.
 #
-# It also runs the tf-setup golden-baseline guard (the step after Node setup):
-# a cross-revision check that blocks a golden regenerated under an unchanged
-# semantics id, which the in-revision golden tests cannot see.
+# The unit gate is three jobs, so that no single job has to fit the whole
+# suite inside one job timeout (at ~1,500 files / ~34K rows the unsharded job
+# hit its 20-minute limit at --maxWorkers=2 on a 2-vCPU runner, and PR #1071
+# was cancelled there twice):
+#   unit-guards  the tf-setup golden-baseline guard and the lint gate, exactly
+#                the steps the old single job ran before its tests.
+#   unit-shard   the vitest suite split four ways (`--shard=k/4`), one runner
+#                per shard, run in parallel.
+#   unit         the aggregator, named `vitest (unit)` — the same check name the
+#                single job had, so any required status check keeps working.
+#                It fails unless unit-guards AND every shard succeeded.
+#
+# The tf-setup golden-baseline guard (the step after Node setup in
+# unit-guards) is a cross-revision check that blocks a golden regenerated
+# under an unchanged semantics id, which the in-revision golden tests cannot
+# see.
+#
+# The wiring of all of this is pinned by the 'Tests workflow wiring' rows in
+# scripts/ci/tf-setup-golden-guard.test.js — change the layout and those rows
+# in the same commit.
 
 name: Tests
 
@@ -37,8 +53,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  unit:
-    name: vitest (unit)
+  unit-guards:
+    name: unit guards (golden baseline + lint gate)
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -84,13 +100,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Worker count is pinned so CI wall-clock is deterministic: on a 2-vCPU
-      # runner vitest's default worker count can resolve to either 2 or 1
-      # (availableParallelism() - 1), which is the difference between a ~4 min
-      # and a ~9 min run. Drop the flag if you'd rather take the default.
-      # NOTE: `--maxWorkers` only. There is no `--minWorkers` in vitest 4 —
-      # passing it aborts the run with "CACError: Unknown option `--minWorkers`"
-      # (verified against the pinned vitest 4.0.17).
       # ── The interim lint gate ────────────────────────────────────────
       # Two rules, both of which catch a CRASH rather than a style slip:
       #   no-undef                    -> a ReferenceError that unmounts the
@@ -105,15 +114,57 @@ jobs:
       # gated; gating on those would mean continue-on-error, which is not a
       # gate. Widen one rule at a time, each time it reaches zero.
       #
-      # Runs BEFORE the unit suite on purpose: it takes well under a minute
-      # and both defect classes it catches are ones the suite can miss —
-      # nothing imported App.jsx until this arc, and a conditional hook only
-      # throws on the one render path that flips its condition.
+      # Runs in this job, in parallel with the shards, because it takes well
+      # under a minute and both defect classes it catches are ones the suite
+      # can miss — nothing imported App.jsx until this arc, and a conditional
+      # hook only throws on the one render path that flips its condition.
       - name: Lint gate (crash-class rules only)
         run: npm run lint:gate
 
+  unit-shard:
+    name: unit shard ${{ matrix.shard }}/4
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    strategy:
+      # Let every shard finish: one red shard must not hide a second one.
+      fail-fast: false
+      matrix:
+        # Must be 1..N, and N must equal the `/N` in the test command below
+        # (pinned by the wiring rows in scripts/ci/tf-setup-golden-guard.test.js).
+        shard: [1, 2, 3, 4]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history, as the unsharded job had: the suite has always run
+          # on a full clone, and this keeps each shard's checkout identical.
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # `--shard=k/N` splits the test files into N groups of near-equal FILE
+      # COUNT, not equal duration, so one shard can run longer than the others.
+      # If a shard's wall-clock creeps toward the 20-minute timeout, raise N
+      # here and in the matrix above (the wiring rows keep the two in step).
+      #
+      # Worker count is pinned so CI wall-clock is deterministic: on a 2-vCPU
+      # runner vitest's default worker count can resolve to either 2 or 1
+      # (availableParallelism() - 1), and a 1-worker run is far slower.
+      # Drop the flag if you'd rather take the default.
+      # NOTE: `--maxWorkers` only. There is no `--minWorkers` in vitest 4 —
+      # passing it aborts the run with "CACError: Unknown option `--minWorkers`"
+      # (verified against the pinned vitest 4.0.17).
       - name: Run unit tests
-        run: npm run test:run -- --maxWorkers=2
+        run: npm run test:run -- --shard=${{ matrix.shard }}/4 --maxWorkers=2
         env:
           # Vitest reports non-TTY progress more usefully in CI.
           CI: 'true'
@@ -122,6 +173,37 @@ jobs:
           # api/_utils/fetchEarningsCalendarEODHD.test.js:14-54) set the var
           # themselves and stub global.fetch — no real network, no secret.
 
+  # ── The aggregator: the one check named `vitest (unit)` ──────────────
+  # Keeps the check name the single unit job had, so a required status check
+  # on `vitest (unit)` keeps working unchanged. `if: always()` makes it run
+  # even when a needed job failed, was cancelled or was skipped — without it
+  # a red shard would leave this check "skipped", which some branch-protection
+  # setups treat as passing. It succeeds only when BOTH needed jobs report
+  # exactly `success` (for the matrix job, that means every shard). Anything
+  # else — failure, cancelled, skipped, or an empty result — fails it.
+  # The results reach the script only through env, never the run text.
+  unit:
+    name: vitest (unit)
+    needs: [unit-guards, unit-shard]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Require every unit job to have succeeded
+        env:
+          UNIT_GUARDS_RESULT: ${{ needs.unit-guards.result }}
+          UNIT_SHARD_RESULT: ${{ needs.unit-shard.result }}
+        run: |
+          echo "unit-guards: ${UNIT_GUARDS_RESULT}"
+          echo "unit-shard:  ${UNIT_SHARD_RESULT}"
+          if [ "${UNIT_GUARDS_RESULT}" = "success" ] && [ "${UNIT_SHARD_RESULT}" = "success" ]; then
+            echo "Every unit job succeeded."
+            exit 0
+          fi
+          echo "::error::vitest (unit) passes only when unit-guards and every unit-shard leg succeeded; a failed, cancelled or skipped job does not count."
+          exit 1
+
   # ── Firestore rules + emulator suites ────────────────────────────────
   # Runs `npm run test:rules`: `firebase emulators:exec --only firestore
   # --project demo-tradeseven-rules "vitest run --config
@@ -129,8 +211,7 @@ jobs:
   # denials suite run against a live Firestore emulator, so a rules change or
   # a record store that the unit suite cannot see is checked on every PR.
   #
-  # Independent of `unit` (no `needs`): it runs in parallel and the unit job's
-  # wall-clock is unchanged.
+  # Independent of the unit jobs (no `needs`): it runs in parallel with them.
   #
   # Why it cannot pass without running the suite:
   #   - no Java 21 -> firebase-tools refuses to start the emulator (it requires
@@ -159,7 +240,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          # Same as the unit job.
+          # Same as the unit jobs.
           node-version: '20'
           cache: 'npm'
 
