@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-15 · **Reviewed:** `c9fe26b2` (lenses PL, DK, GC, OB and their refuters); `29e42a78` (the fix round; lens TI and the battery) · **Build report:** `docs/audits/20261115_BUILD_EVAL_CAPACITY_1.md`
 
-The build's own diff (`187ef495..HEAD`) is over the §2 threshold (≈ 20 files, ≈ 3,800 lines), so the review is multi-lens, adversarial, independently verified, mutation-checked, accompanied by an explicit `vite build`, and written down here.
+The build's own diff (`187ef495..HEAD`) is over the §2 threshold (21 code and test files, 3,973 lines added and 78 removed — `git diff --stat 187ef495 HEAD`, docs excluded), so the review is multi-lens, adversarial, independently verified, mutation-checked, accompanied by an explicit `vite build`, and written down here.
 
 ## 1. Verdict
 
@@ -11,10 +11,10 @@ The build's own diff (`187ef495..HEAD`) is over the §2 threshold (≈ 20 files,
 | Lenses | 5: PL (pool lifecycle), DK (the dark guarantee), GC (EODHD guard and cuts), OB (observability) — in parallel, read-only — then TI (test integrity, mutating), last, on its own tree |
 | Findings | **42**: 27 from PL, DK, GC and OB, every one handed to a refuter — **16 CONFIRMED**, **11 NARROWED**, 0 REFUTED whole, five sub-claims inside narrowed findings refuted with a repro; and 15 from TI, each reproduced by its own surviving mutant (§5) |
 | Severity | **1 high** (TI-1, a test gap — no code defect) and **11 medium** (PL-1, GC-1, OB-1; TI-2 to TI-9) — all fixed with a row that fails without the fix |
-| Dark guarantee | **No behaviour change found at the shipped values** (DK lens + its refuter; the DK lens re-ran the dark proof independently). Re-run after every fix round, comparing reads too: at the final code `97dff8d8`, 16 cases, 128 comparisons, 0 differences |
+| Dark guarantee | **No behaviour change found at the shipped values** (DK lens + its refuter; the DK lens re-ran the dark proof independently). Re-run after every fix round, comparing reads too: at `97dff8d8` and again at the final code `adb26651` (after PP-1), 16 cases, 128 comparisons, 0 differences (391 reads) |
 | Fence | no contact (GC lens; all four lenses checked their area) |
-| Fixed | 37 (code, test or wording: 22 of the first 27 and all 15 TI); 1 disclosed (GC-8); 1 found-not-fixed for the flip PR (GC-9, measured, §6); 3 documented (GC-4, GC-6, PL-5) |
-| Mutation | at the final code `97dff8d8`: **123 / 123 killed** — the builder's 88 and the TI lens's own 35 (§4, §5) |
+| Fixed | 37 (code, test or wording: 22 of the first 27 and all 15 TI), plus PP-1 after the review (§3a); 1 disclosed (GC-8); 1 found-not-fixed for the flip PR (GC-9, measured, §6); 3 documented (GC-4, GC-6, PL-5) |
+| Mutation | at the final code `adb26651`: **126 / 126 killed** — the builder's 91 (88 + LC1–LC3 for PP-1) and the TI lens's own 35 (§4, §5); at `97dff8d8`, 123 / 123 |
 
 ## 2. Method
 
@@ -40,7 +40,7 @@ The build's own diff (`187ef495..HEAD`) is over the §2 threshold (≈ 20 files,
 | GC-1 | **med** | A check waiting on another check's first `/eod/` had no bound | NARROWED — "the rest of the ET date" REFUTED (Node's fetch gives up after ~300 s; the memo entry is then dropped); what holds: with cuts on and the guard off, one hung `/eod/` stalls that symbol's checks to the 300 s kill | **Fixed** — a 15 s bound; on it the stuck entry is dropped and the check fetches daily+price itself; row; mutants R8, R9 |
 | GC-2 | low | A `fallback: true` quote could be shared | NARROWED — the defect is correlation: one failed quote reaches every non-owning battle | **Fixed** — only a usable quote (`isSettlementQuoteUsable`) is shared; row; mutant R10 |
 | GC-3 | low | Ownership compared strings: a held `'BTC'` did not own `'BTC-USD.CC'` | CONFIRMED — blast radius `macroPrices.BTC` in the prompt only | **Fixed** — compared by instrument (`eodSymbolOf`); rows; mutant R11 |
-| GC-4 | low | The report's reason ("both require the name in `stockRankings`") is wrong: the equipped-ticker union can add a macro to the hot bench mid-check | CONFIRMED | **Report corrected**: the copy can appear in the prompt's hot-bench list on a rebuild tick only (the union persists into `watchlist.hotBench`, so later checks own it); it cannot become a bench asset (`findBenchAsset`, `agent-evaluate.js:5395`, reads the bench built from rankings), so it never reaches the executor or scoring. Founder question 1 |
+| GC-4 | low | The report's reason ("both require the name in `stockRankings`") is wrong: the equipped-ticker union can add a macro to the hot bench mid-check | CONFIRMED | **Report corrected**: the copy can appear in the prompt's hot-bench list on a rebuild tick only (the union persists into `watchlist.hotBench`, so later checks own it); it cannot become a bench asset (`findBenchAsset`, `agent-evaluate.js:5395`, reads the bench built from rankings), so it never reaches the executor or scoring. Founder question 1. **Superseded — the bench-asset part was wrong: §3a, PP-1** |
 | GC-5 | low | The crypto UTC-day rows could not fail (every instant 15:00Z) | CONFIRMED (mutant `isCrypto ? etDate : etDate` passed) | **Fixed** — row at 02:00Z (ET 11-16, UTC 11-17); mutant R12 |
 | GC-6 | low | With the guard on, queue wait counts against callers' own races; "6 s" should be 5 s | NARROWED — needs K ≥ 2, the guard on and slow EODHD; the outcome is the designed fail-closed skip | **Documented** (report §4); "5 s" corrected |
 | GC-7 | low | Past the calendar horizon (2028) the cut stops saving, silently | CONFIRMED | **Fixed** — said once per process; row; mutant R13; report caveat |
@@ -54,6 +54,14 @@ The build's own diff (`187ef495..HEAD`) is over the §2 threshold (≈ 20 files,
 | OB-6 | low | Report claims: "§6.4"; "20 rows end to end"; "per check" vs 117 units | 2 CONFIRMED, 1 NARROWED (the numerator is requests, not units: a flag-off agent-mode check is ≈ 89 requests) | **Fixed** in the report and the script's label |
 | OB-7 | low | 429 counting is complete only because `maxRetries: 0`; unstated | CONFIRMED (with `maxRetries: 2`, a 429 then 200 counts 0) | **Fixed** — stated in the module |
 
+### 3a. After the review — the pre-push trace
+
+Before pushing, an independent consult asked for the trace behind GC-4's "it cannot become a bench asset" (the GC refuter had stopped at `findBenchAsset`). The trace found a flag-on gap. New id prefix `PP` (none of this review's ids reused).
+
+| ID | Sev | Finding | Check | Disposition |
+|---|---|---|---|---|
+| PP-1 | **med** (flag on only; dark at the shipped values) | With the cuts on, a macro the battle did not own at the fan-out holds the run's copy in `prices`. Two sites add names later in the check and put them on the in-memory bench — the hot-bench rebuild (merged into the bench at `agent-evaluate.js:1866-1872`) and a news catalyst (`:3002`) — and both fetched only a name with no price. A swap into SPY or QQQ listed there would be priced from the run-start quote when the beacon is not fresh (`agentSwapExecution.js:323-331`); the prompt's candidate list would show it too | VERIFIED by reading both sites, the bench merge and the executor's `getPrice`; every other bench change (`:901` removes names; `:2716-2721` re-reads after the executor) adds no unowned name | **Fixed (`adb26651`)** — the fan-out marks the names it gave the run's copy (`sharedQuoteSymbols`), and both sites also fetch a marked name; flag off the set is `null` and both read `!prices[t]` as before. Two rows in `agent-evaluate.marketDataCuts.test.js` (catalyst; rebuild): each fetches SPY in the check once, writes and request identical to flag off. Mutants LC1–LC3 (§4). Report §5.4 corrected |
+
 ## 4. The builder's mutation battery
 
 Run on Linux (WSL `~/pd-ci-cap1dp`, `TZ=UTC`) by `scratchpad/mutants/mutate.mjs` from `spec.json`: each mutant's anchors must match **exactly once** (else BROKEN, never a silent skip); applied to a clean tree; its suites run with a JSON report (deleted first); every touched file restored from `git show HEAD:<file>` and the tree checked clean after each. **KILLED** needs a non-zero exit AND at least one failed row.
@@ -62,6 +70,8 @@ Run on Linux (WSL `~/pd-ci-cap1dp`, `TZ=UTC`) by `scratchpad/mutants/mutate.mjs`
 |---|---|---|---|---|
 | 1 (the build) | `2e125db8` | 8 suite groups green | 69 | **69 KILLED** |
 | 2 (after the fix round; the record) | `29e42a78` | 8 suite groups green | 88 — the 69 (three re-anchored where the fixes moved their lines: P4, C10, L10) + 19 for the review's rows (R1–R19) | **88 KILLED**, 0 SURVIVED, 0 BROKEN, 0 ERROR |
+| 3 (with the TI lens's 35, §5) | `97dff8d8` | 10 suite groups green | 123 | **123 KILLED** |
+| 4 (after PP-1; the final code) | `adb26651` | 10 suite groups green (cuts group 45 rows) | 126 — the 123 + LC1 (the rebuild site's condition), LC2 (the catalyst site's), LC3 (the fan-out's mark) | **126 KILLED**, 0 SURVIVED, 0 BROKEN, 0 ERROR — LC1 and LC2 each killed by their own site's row, LC3 by both |
 
 By group (run 2): clamp 4 · cutoff 3 · in-flight cap 1 · deferral 2 · await-all 1 · failure 1 · affinity 4 · stats 1 · capture scope 1 · per-battle catch 1 · timeout 4 · limiter cap 3 · flag-off identity 5 · counters 3 · timeout path 1 · session key 2 · narrow guard 2 · prior bar 1 · fresh fallback 2 · read fail-open 2 · single flight 1 · macro sharing 5 · header parsing 6 · no throw 2 · window 1 · capture on/off 1 · EODHD delta 1 · run record 1 · script 3 · flag pins 4 · review rows 19. Each mutant's id, edit, suites and the first failing rows are in `scratchpad/mutants/run2/results.json` (out of tree).
 
