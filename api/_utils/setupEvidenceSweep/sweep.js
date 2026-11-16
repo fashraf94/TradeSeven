@@ -51,6 +51,8 @@ const errorCodeOf = (err) => String(err?.code ?? err?.name ?? 'unknown').slice(0
  * carries no numeric gRPC status code: every Firestore (Admin SDK) failure carries one, and the provider's failures never
  * reach here (the store's acquireOnce reads them as fetch_failed). So a TypeError, a ReferenceError, a RangeError or a
  * plain Error thrown by code is a programming error; a transient Firestore failure (UNAVAILABLE 14, ABORTED 10, …) is not.
+ * This rests on the Admin SDK speaking gRPC (getFirestore() with no settings, as api/_utils/firebaseAdmin.js makes it):
+ * under preferRest a network error would carry a string code (ECONNRESET) and would read here as a programming error.
  */
 export function isProgrammingError(err) {
   return err instanceof SetupEvidenceProgrammingError || err?.name === 'SetupEvidenceProgrammingError' || typeof err?.code !== 'number';

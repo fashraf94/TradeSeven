@@ -448,6 +448,32 @@ describe('review lens 1 (docs/audits/20261116_BUILD_CHART_EVIDENCE.md §4): the 
     expect(r.deferred.unpublished).toBe(15 - h.calls.length);
   });
 
+  it('outcomes of different kinds in a row are no streak: alternating unpublished and failing names never stop the run', async () => {
+    const db = makeSweepDb();
+    const names = [...ALL_TICKERS].sort().slice(0, 32);
+    const h = harness({ at: T_RUN1, rowsFor: (s, session) => unpublishedRows(session) });
+    const late = h.fetchPayload;
+    h.fetchPayload = async (symbol, opts) => { if (names.indexOf(symbol) % 2 === 1) { h.calls.push({ symbol, opts }); await new Promise((r) => setTimeout(r, 0)); throw new Error('EODHD daily request failed'); } return late(symbol, opts); };
+    const r = await h.run(db, { symbols: names });
+    expect(h.calls).toHaveLength(32);
+    expect(r.deferred).toEqual({});
+  });
+
+  it('confirmations of a shared gap in a row are braked too: each is a permanent refused record', async () => {
+    const db = makeSweepDb();
+    const names = [...ALL_TICKERS].sort().slice(0, 40);
+    const gapped = names.filter((_, i) => i % 2 === 0);
+    // Run 1: the gapped names between usable ones, so no streak forms: each gapped name is observed once.
+    const h = harness({ at: T_RUN1, rowsFor: (s, session) => (gapped.includes(s) ? interiorGapRows(session) : pullbackRows(session)) });
+    const first = await h.run(db, { symbols: names });
+    expect(first.retryable).toEqual({ missing_bar: 20 });
+    // Run 2, the gapped names only: twenty confirmations in a row. The brake stops them at a streak.
+    h.nowMs = T_RUN2;
+    const second = await h.run(db, { symbols: gapped });
+    expect(second.final.refused).toBeLessThanOrEqual(C.BRAKE_STREAK_STOP + C.SWEEP_CONCURRENCY - 1);
+    expect(second.deferred.shared_gap).toBe(20 - second.storeCalls);
+  });
+
   it('a transient counter failure closes admission for the run: no further name takes a claim only to fail the same way', async () => {
     const db = makeSweepDb();
     db.failTransactions(({ writes }) => writes.includes(statePath(MON)) && !db.read(statePath(MON))?.runs);
@@ -492,13 +518,17 @@ describe('review lens 1 (docs/audits/20261116_BUILD_CHART_EVIDENCE.md §4): the 
 
   it('L1-3b: a TypeError in the sweep\'s own counter transaction is surfaced and thrown, not read as a failed fetch', async () => {
     const db = makeSweepDb();
-    db.failTransactions(({ writes }) => writes.includes(statePath(MON)), () => new TypeError('a bug in the counter'));
+    let stateTx = 0;
+    db.failTransactions(({ writes }) => writes.includes(statePath(MON)) && stateTx++ === 0, () => new TypeError('a bug in the counter')); // the first reservation only
     const h = harness({ at: T_RUN1 });
     let caught = null;
     try { await h.run(db); } catch (err) { caught = err; }
     expect(caught).toBeInstanceOf(TypeError);
     expect(caught.message).toBe('a bug in the counter');
-    expect(h.calls).toEqual([]); // the request was never made
+    const line = JSON.parse(h.lines[0].slice(C.HEALTH_LINE_PREFIX.length + 1));
+    expect(line.programmingErrors).toBe(1);
+    expect(line.storeCalls).toBeLessThanOrEqual(C.SWEEP_CONCURRENCY); // the run stopped: no further name took a claim
+    expect(line.stateWritten).toBe(true); // the record, a later transaction, landed
   });
 
   it('L1-3b: a TypeError in the end-of-run record is surfaced and thrown', async () => {
