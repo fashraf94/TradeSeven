@@ -197,3 +197,30 @@ The idea-book ending and the watching screen (R3b T6 "idea book on", P1): the Pr
 2. **B4** (client, dark): branch `claude/shared-research-b4`, after B3 merges; smoke branch with fixtures and a phone checklist.
 3. **The flip:** a one-line founder PR, `SHARED_RESEARCH_BUILDER_MODE` to `'on'` with its pin. No rule or index to deploy.
 4. **The founder's allowlist runs** on real stories and his own words; the measures decide the budget and what comes next.
+
+---
+
+## §B10 · B3 preamble rulings (Nov 16)
+
+The B3 session re-verified the amendment against `main` @ `88d34457` and stopped on one shape difference and three readings (STOP report `20261116_SHARED_RESEARCH_B3_PREAMBLE_STOP.md`). The founder ruled them on Nov 16, 2026; B3 builds from `6a55d679` on these rulings. Where a ruling and an earlier section of this amendment disagree, the ruling wins.
+
+| # | Ruling |
+|---|---|
+| **S-B1** | Approved: the card is saved on the list as `thesisCard`; `thesis` stays `''` as B1 writes it. Name it in the report and the PR. |
+| **S-B2** | Approved: only builder sessions are stamped; no `shape` reads as `'ledger'`. |
+| **S-B3** | Approved (the default): `pick.reasons: [{ text ≤140, refs[] }] ≤3`, each labelled by the server. |
+| **S-B4** | Approved (the recommended default): dropping names keeps the why proposal for the names that remain. |
+
+**Routine choices 1–20:** approved, with one change —
+
+| # | Ruling |
+|---|---|
+| **R-21** | Free taps DO leave an exchange. Each applied `card` op appends one player exchange of a new kind `card` (builder sessions only): its op, part, a short label of what was set, and the time. No model call, no step. A retried `opId` appends nothing. This keeps the conversation and the order of decisions on reload. |
+
+**Three requirements from the Practice Field chat's reply (Nov 16), on the saved record:**
+
+| # | Requirement |
+|---|---|
+| **PF-1** | `thesisCard` is written once, in the save transaction, and never edited by any route. It carries its `schemaVersion`, the watchlist id and idea version (1) it was saved with, and the research session id. Pin with a census test: one writer. |
+| **PF-2** | Every finding id in `thesisCard` must resolve, from saved records alone, to its text, source name, link and published date for as long as the list exists. Check whether any code path can delete or prune a research record or its findings while its list exists. If none can, the ids suffice: pin that with a census test and say so in the report. If any can, carry a bounded copy of those four fields per carried finding in `thesisCard`. |
+| **PF-3** | The provenance stamp is on builder saves exactly as on ledger saves (session at open, the saved list, passed to the version builder). One test row. |
