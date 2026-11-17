@@ -1,0 +1,88 @@
+{
+  "recordedAt": "2026-11-17T15:12:37.392Z",
+  "key": "strengthen:wrongIf",
+  "goal": "strengthen",
+  "part": "wrongIf",
+  "shape": {
+    "goal": "strengthen",
+    "part": "wrongIf"
+  },
+  "model": "claude-sonnet-5-5",
+  "modelIds": {
+    "step": "claude-sonnet-5-5",
+    "frame": "claude-haiku-5-5"
+  },
+  "ok": true,
+  "reason": null,
+  "stopReason": "end_turn",
+  "category": null,
+  "apiError": null,
+  "attempts": 1,
+  "elapsedMs": 6615,
+  "usage": {
+    "input": 5951,
+    "output": 560
+  },
+  "costUsd": 0.017502,
+  "readAt": "2026-11-16T15:00:00.000Z",
+  "output": {
+    "reply": "New evidence supports both wrong-if options the card already holds. Cloud companies say running models, not only training them, now drives accelerator orders, and one large cloud company says it runs more of its own AI work on its own chips. The proposal stays as it is, with the player's choice on spending cuts untouched and a third, more specific option added.",
+    "findings": [
+      {
+        "tempId": "t1",
+        "kind": "coverage",
+        "fact": "Cloud companies said demand to run AI models, not only to train them, is now a main reason they order accelerators.",
+        "symbolCandidate": null,
+        "companyName": null,
+        "support": {
+          "kind": "retrieval",
+          "index": 0,
+          "from": [],
+          "reason": null
+        },
+        "at": "2026-11-13",
+        "supersedes": null
+      },
+      {
+        "tempId": "t2",
+        "kind": "coverage",
+        "fact": "One large cloud company said it now runs more of its own AI work on chips it designs itself.",
+        "symbolCandidate": null,
+        "companyName": null,
+        "support": {
+          "kind": "retrieval",
+          "index": 1,
+          "from": [],
+          "reason": null
+        },
+        "at": "2026-11-11",
+        "supersedes": null
+      }
+    ],
+    "wrongIfOptions": [
+      {
+        "text": "the largest cloud companies cut AI data-center spending for two quarters",
+        "refs": [
+          "f_7a000000-0000-4000-8000-000000000005"
+        ]
+      },
+      {
+        "text": "a big buyer moves most of its work to its own chips",
+        "refs": [
+          "f_7a000000-0000-4000-8000-000000000004",
+          "t2"
+        ]
+      },
+      {
+        "text": "cloud companies say running models no longer needs more accelerators",
+        "refs": [
+          "t1"
+        ]
+      }
+    ],
+    "pick": {
+      "value": "a big buyer moves most of its work to its own chips",
+      "reason": "A cloud company already shifts more work to its own chips, so this is the live risk."
+    }
+  }
+}

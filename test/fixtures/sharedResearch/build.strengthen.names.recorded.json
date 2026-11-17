@@ -1,0 +1,82 @@
+{
+  "recordedAt": "2026-11-17T15:12:23.686Z",
+  "key": "strengthen:names",
+  "goal": "strengthen",
+  "part": "names",
+  "shape": {
+    "goal": "strengthen",
+    "part": "names"
+  },
+  "model": "claude-sonnet-5-5",
+  "modelIds": {
+    "step": "claude-sonnet-5-5",
+    "frame": "claude-haiku-5-5"
+  },
+  "ok": true,
+  "reason": null,
+  "stopReason": "end_turn",
+  "category": null,
+  "apiError": null,
+  "attempts": 1,
+  "elapsedMs": 5571,
+  "usage": {
+    "input": 5710,
+    "output": 534
+  },
+  "costUsd": 0.01676,
+  "readAt": "2026-11-16T15:00:00.000Z",
+  "output": {
+    "reply": "Two new facts bear on NVDA. Demand to run models, not only train them, now drives accelerator orders, which supports the name. One large cloud company said it runs more of its own AI work on its own chips, which sharpens the point against. The card's names and wrong-if stay as they are.",
+    "findings": [
+      {
+        "tempId": "t1",
+        "kind": "coverage",
+        "fact": "Cloud companies said demand to run AI models, not only to train them, is now a main reason they order accelerators.",
+        "symbolCandidate": null,
+        "companyName": null,
+        "support": {
+          "kind": "retrieval",
+          "index": 0,
+          "from": [],
+          "reason": null
+        },
+        "at": "2026-11-13",
+        "supersedes": null
+      },
+      {
+        "tempId": "t2",
+        "kind": "coverage",
+        "fact": "One large cloud company said it now runs more of its own AI work on chips it designs itself.",
+        "symbolCandidate": null,
+        "companyName": null,
+        "support": {
+          "kind": "retrieval",
+          "index": 1,
+          "from": [],
+          "reason": null
+        },
+        "at": "2026-11-11",
+        "supersedes": null
+      },
+      {
+        "tempId": "t3",
+        "kind": "inference",
+        "fact": "Nvidia's share of what these buyers spend on AI chips is not disclosed in the sources read, so how much of its sales this shift would touch is unresolved.",
+        "symbolCandidate": "NVDA",
+        "companyName": "NVIDIA Corporation",
+        "support": {
+          "kind": "unresolved",
+          "index": null,
+          "from": [],
+          "reason": "not_disclosed"
+        },
+        "at": null,
+        "supersedes": null
+      }
+    ],
+    "pick": {
+      "value": "NVDA",
+      "reason": "Still the only listed company with a sourced connection; new evidence cuts both ways."
+    }
+  }
+}

@@ -36,9 +36,11 @@ import { BUILD_INTENT, BUILD_GOALS, THESIS_PARTS, PICK_PARTS, CARD_OPS } from '.
 import { gateSharedResearchRoute, sendSharedResearchError } from '../_utils/sharedResearch/gate.js';
 import { sharedResearchBuilderMode } from '../_utils/sharedResearch/gate.js';
 import {
-  shapeOf, openingCardOf, builderQuestionOf, cardContextOf, thesisViewOf, isGoalOffered, applyProposals,
+  shapeOf, openingCardOf, builderQuestionOf, cardContextOf, thesisViewOf, isGoalOffered, offeredGoalsOf, applyProposals,
 } from '../_utils/sharedResearch/thesis.js';
-import { BUILD_SCHEMA, validateBuildTurn, buildCandidateNamesOf, builderFallbackReplyOf } from '../_utils/sharedResearch/thesisSchema.js';
+import {
+  buildSchemaOf, turnShapeOf, validateBuildTurn, buildCandidateNamesOf, builderFallbackReplyOf,
+} from '../_utils/sharedResearch/thesisSchema.js';
 import {
   refuse, cleanPlayerText, exchangeOf, sessionViewOf, quotaViewOf, latestLinesOf, OBSERVATION_MAX, DIRECTION_MAX,
   methodChangeOf, retainedRetrievalOf,
@@ -625,13 +627,17 @@ async function handleBuildStep(body, res, { db, uid }) {
   const nowIso = new Date(t0).toISOString();
   const directionExchange = direction ? exchangeOf({ who: 'player', kind: 'direction', text: direction, at: nowIso, stepId, intent }) : null;
   // The server decides what is on offer (§B4.2): a goal the card does not offer — or a ledger session — is refused
-  // inside the admission transaction, before the step's call is counted.
+  // inside the admission transaction, before the step's call is counted. The turn's shape — the schema it is asked in
+  // (S-1; `direction` takes the next research goal on offer) — is read there too, from the same card and the same offer.
+  let turnShape = turnShapeOf({ goal, part });
   const begun = await beginStep(db, {
     uid, sessionId, stepId, intent, directionExchange, nowIso, nowMs: t0,
     shape: 'builder', // a ledger session is refused first, before a replay too (review RA-2/RD-1)
     admit: (s, rec) => {
       if (!s.thesis) throw refuse(400, 'invalid_intent', { reason: 'shape' });
-      if (!isGoalOffered(s.thesis, cardCtxIn(s, rec), { goal, part })) throw refuse(400, 'invalid_intent', { reason: 'goal_not_offered' });
+      const ctx = cardCtxIn(s, rec);
+      if (!isGoalOffered(s.thesis, ctx, { goal, part })) throw refuse(400, 'invalid_intent', { reason: 'goal_not_offered' });
+      turnShape = turnShapeOf({ goal, part }, offeredGoalsOf(s.thesis, ctx));
     },
   });
   const day = await readQuota(db, { uid, nowIso });
@@ -680,7 +686,7 @@ async function handleBuildStep(body, res, { db, uid }) {
   const fit = fitPrompt({
     system, findings: current, items, protectedIds: new Set(cardFindingIdsOf(card)),
     render: (parts) => renderBuildUser({
-      question: record.question, entryKind: session.entry?.kind, goal, part, direction, card, supported: companiesBefore.supported,
+      question: record.question, entryKind: session.entry?.kind, goal, part, shape: turnShape, direction, card, supported: companiesBefore.supported,
       stepsLeft, findings: parts.findings, items: parts.items, retrieval: retrievalState, room,
     }),
   });
@@ -698,7 +704,7 @@ async function handleBuildStep(body, res, { db, uid }) {
   const timer = setTimeout(() => controller.abort(), budgetMs);
   let turn;
   try {
-    turn = await runTurn({ kind: 'step', system, user: fit.user, schema: BUILD_SCHEMA, signal: controller.signal, deadlineAt: Date.now() + budgetMs });
+    turn = await runTurn({ kind: 'step', system, user: fit.user, schema: buildSchemaOf(turnShape), signal: controller.signal, deadlineAt: Date.now() + budgetMs });
   } finally {
     clearTimeout(timer);
   }
@@ -717,7 +723,7 @@ async function handleBuildStep(body, res, { db, uid }) {
   try {
     checked = validateBuildTurn(turn.output, {
       record, items: fit.items, readAt: r && !r.error ? r.readAt : null, partnerExchangeId, partnerAt: persistIso, nowIso: persistIso,
-      mintFindingId: newFindingId, names, partnerName, method, card, goal, part,
+      mintFindingId: newFindingId, names, partnerName, method, card, goal, part, shape: turnShape,
     });
   } catch (err) {
     // a paid call is never left unrecorded (review RC-1): the step fails, logged, its call counted, the session released

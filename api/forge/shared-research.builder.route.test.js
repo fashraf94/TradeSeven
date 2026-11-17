@@ -62,7 +62,7 @@ vi.mock('../_utils/sharedResearch/retrieval.js', async (importOriginal) => {
 
 const { default: handler } = await import('./shared-research.js');
 const { resetUidRateLimits } = await import('../_utils/sharedResearch/gate.js');
-const { BUILD_SCHEMA } = await import('../_utils/sharedResearch/thesisSchema.js');
+const { BUILD_SCHEMAS } = await import('../_utils/sharedResearch/thesisSchema.js');
 
 const UID = 'u1';
 const AGENT = { ownerId: UID, name: 'Atlas', archetype: 'contrarian', loadouts: { baggerbomb: { archetype: 'momentum_chaser', book: null } } };
@@ -277,7 +277,7 @@ describe('a step only proposes (V2-4)', () => {
     expect(r.body.thesis.pick).toMatchObject({ part: 'segment', value: 'GPUs and accelerators', asked: false, basis: 'reasoning' });
     expect(r.body.thesis.rev).toBe(o.thesis.rev + 1);
     expect(r.body.thesis.filled).toBe(1);
-    expect(state.turns[0].schema).toBe(BUILD_SCHEMA);
+    expect(state.turns[0].schema).toBe(BUILD_SCHEMAS.map_segments);
     expect(state.turns[0].system).not.toContain('weakest link');
     expect(state.logs.at(-1)).toMatchObject({ outcome: 'completion', intent: 'build', goal: 'map_segments' });
     expect(sessionDoc(o.session.sessionId).stepsUsed).toBe(1);
@@ -311,6 +311,55 @@ describe('a step only proposes (V2-4)', () => {
     state.turnQueue.push({ ok: false, reason: 'model_error_500', usage: null, model: 'claude-sonnet-5-5', attempts: 1, elapsedMs: 5, costUsd: null, stopReason: null });
     const r = await post({ action: 'step', sessionId: o.session.sessionId, stepId: uuid(1), intent: 'build', goal: 'map_segments' });
     expect(r.body).toMatchObject({ error: 'step_failed', reason: 'model_error_500', thesis: { rev: o.thesis.rev } });
+  });
+});
+
+describe('one schema per goal (the founder\'s S-1, Nov 17)', () => {
+  it('each step is asked in its own goal\'s schema', async () => {
+    const o = await openOwn();
+    const id = o.session.sessionId;
+    let rev = o.thesis.rev;
+    const step = async (n, goal, a, extra) => { const r = await build(id, n, goal, a, extra); expect(r.statusCode, JSON.stringify(r.body)).toBe(200); rev = r.body.thesis.rev; };
+    const tap = async (n, op, part, value) => { const r = await card(id, n, op, part, value, rev); expect(r.statusCode, JSON.stringify(r.body)).toBe(200); rev = r.body.thesis.rev; };
+    await step(1, 'map_segments', MAP());
+    await step(2, 'pick', out({ reply: 'I would stand on GPUs and accelerators.', pick: { value: 'GPUs and accelerators', reason: 'Sales tie to it most directly.', reasons: [] } }), { part: 'segment' });
+    await tap(1, 'set', 'segment', 'GPUs and accelerators');
+    await step(3, 'find_names', NAMES());
+    await tap(2, 'set', 'names', ['NVDA']);
+    await step(4, 'build_why', WHY());
+    await step(5, 'strengthen', out({ reply: 'Nothing new changes the theme.' }), { part: 'theme' });
+    expect(state.turns.map((t) => t.schema)).toEqual([
+      BUILD_SCHEMAS.map_segments, BUILD_SCHEMAS.pick, BUILD_SCHEMAS.find_names, BUILD_SCHEMAS.build_why, BUILD_SCHEMAS['strengthen:theme'],
+    ]);
+  });
+  it('a direction step is asked as the research goal the card would offer next, read at admission, and lands only that goal\'s proposals', async () => {
+    const o = await openOwn();
+    const id = o.session.sessionId;
+    const r = await build(id, 1, 'direction', out({
+      reply: 'Power is one part of the theme. Here is a map.',
+      segments: [{ label: 'GPUs and accelerators', line: 'The chips that train and run models', refs: [] }, { label: 'Data-center power', line: 'Electricity and cooling for the buildings', refs: [] }],
+      why: { shared: 'x', reasons: [], against: { text: '', refs: [] } },
+    }), { direction: 'look at power' });
+    expect(r.statusCode, JSON.stringify(r.body)).toBe(200);
+    expect(state.turns[0].schema).toBe(BUILD_SCHEMAS.map_segments);
+    expect(state.turns[0].user).toContain("The proposals you may make are those of the card's next step (map segments)");
+    expect(r.body.thesis.parts.segment.map.map((m) => m.label)).toEqual(['GPUs and accelerators', 'Data-center power']);
+    expect(state.logs.at(-1).validationNotes).toContain('ignored:why');
+  });
+  it('with nothing else on offer, direction is asked with findings and companies only, and lands nothing on the card', async () => {
+    const long = 'I want to play AI through the chips, the power and the networking that the largest data centers keep buying';
+    const o = await openOwn(long, 'req-own-long');
+    const id = o.session.sessionId;
+    const m = await build(id, 1, 'map_segments', out({ ...MAP().output, themeSuggestion: 'AI data-center build-out' }));
+    expect(m.statusCode, JSON.stringify(m.body)).toBe(200);
+    expect(m.body.thesis.parts.theme).toMatchObject({ state: 'suggested', suggestion: 'AI data-center build-out' });
+    expect(m.body.thesis.choices.research.map((g) => g.goal)).not.toContain('map_segments');
+    const r = await build(id, 2, 'direction', out({ reply: 'I looked at power.', segments: [{ label: 'A', line: 'a', refs: [] }, { label: 'B', line: 'b', refs: [] }] }), { direction: 'look at power' });
+    expect(r.statusCode, JSON.stringify(r.body)).toBe(200);
+    expect(state.turns[1].schema).toBe(BUILD_SCHEMAS.direction);
+    expect(state.turns[1].user).toContain('Propose nothing for the card this step: findings only.');
+    expect(r.body.thesis.parts.segment.map.map((x) => x.label)).toEqual(['GPUs and accelerators', 'Data-center power']);
+    expect(state.logs.at(-1).validationNotes).toContain('ignored:segments');
   });
 });
 

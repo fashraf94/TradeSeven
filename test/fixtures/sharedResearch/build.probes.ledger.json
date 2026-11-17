@@ -1,0 +1,175 @@
+{
+  "ruling": "S-4 (Nov 17): up to 16 calls and $0.50 in total",
+  "callsMax": 16,
+  "costMaxUsd": 0.5,
+  "calls": [
+    {
+      "at": "2026-11-17T15:11:15.590Z",
+      "key": "build_why",
+      "ok": true,
+      "reason": null,
+      "apiError": null,
+      "usage": {
+        "input": 6586,
+        "output": 1273
+      },
+      "costUsd": 0.025902,
+      "elapsedMs": 10995,
+      "attempts": 1
+    },
+    {
+      "at": "2026-11-17T15:11:47.236Z",
+      "key": "map_segments",
+      "ok": true,
+      "reason": null,
+      "apiError": null,
+      "usage": {
+        "input": 5931,
+        "output": 880
+      },
+      "costUsd": 0.020662,
+      "elapsedMs": 9854,
+      "attempts": 1
+    },
+    {
+      "at": "2026-11-17T15:11:53.849Z",
+      "key": "verify_source",
+      "ok": true,
+      "reason": null,
+      "apiError": null,
+      "usage": {
+        "input": 5404,
+        "output": 554
+      },
+      "costUsd": 0.016348,
+      "elapsedMs": 6554,
+      "attempts": 1
+    },
+    {
+      "at": "2026-11-17T15:12:01.480Z",
+      "key": "find_names",
+      "ok": true,
+      "reason": null,
+      "apiError": null,
+      "usage": {
+        "input": 5681,
+        "output": 835
+      },
+      "costUsd": 0.019712,
+      "elapsedMs": 7604,
+      "attempts": 1
+    },
+    {
+      "at": "2026-11-17T15:12:06.166Z",
+      "key": "pick",
+      "ok": true,
+      "reason": null,
+      "apiError": null,
+      "usage": {
+        "input": 4523,
+        "output": 366
+      },
+      "costUsd": 0.012706,
+      "elapsedMs": 4671,
+      "attempts": 1
+    },
+    {
+      "at": "2026-11-17T15:12:11.097Z",
+      "key": "strengthen:theme",
+      "ok": true,
+      "reason": null,
+      "apiError": null,
+      "usage": {
+        "input": 5510,
+        "output": 352
+      },
+      "costUsd": 0.01454,
+      "elapsedMs": 4923,
+      "attempts": 1
+    },
+    {
+      "at": "2026-11-17T15:12:18.110Z",
+      "key": "strengthen:segment",
+      "ok": true,
+      "reason": null,
+      "apiError": null,
+      "usage": {
+        "input": 5960,
+        "output": 706
+      },
+      "costUsd": 0.01898,
+      "elapsedMs": 7011,
+      "attempts": 1
+    },
+    {
+      "at": "2026-11-17T15:12:23.686Z",
+      "key": "strengthen:names",
+      "ok": true,
+      "reason": null,
+      "apiError": null,
+      "usage": {
+        "input": 5710,
+        "output": 534
+      },
+      "costUsd": 0.01676,
+      "elapsedMs": 5571,
+      "attempts": 1
+    },
+    {
+      "at": "2026-11-17T15:12:30.771Z",
+      "key": "strengthen:why",
+      "ok": true,
+      "reason": null,
+      "apiError": null,
+      "usage": {
+        "input": 6167,
+        "output": 716
+      },
+      "costUsd": 0.019494,
+      "elapsedMs": 7080,
+      "attempts": 1
+    },
+    {
+      "at": "2026-11-17T15:12:37.392Z",
+      "key": "strengthen:wrongIf",
+      "ok": true,
+      "reason": null,
+      "apiError": null,
+      "usage": {
+        "input": 5951,
+        "output": 560
+      },
+      "costUsd": 0.017502,
+      "elapsedMs": 6615,
+      "attempts": 1
+    },
+    {
+      "at": "2026-11-17T15:12:42.972Z",
+      "key": "strengthen:timeFrame",
+      "ok": true,
+      "reason": null,
+      "apiError": null,
+      "usage": {
+        "input": 5712,
+        "output": 582
+      },
+      "costUsd": 0.017244,
+      "elapsedMs": 5569,
+      "attempts": 1
+    },
+    {
+      "at": "2026-11-17T15:12:49.252Z",
+      "key": "direction",
+      "ok": true,
+      "reason": null,
+      "apiError": null,
+      "usage": {
+        "input": 5384,
+        "output": 631
+      },
+      "costUsd": 0.017078,
+      "elapsedMs": 6275,
+      "attempts": 1
+    }
+  ]
+}

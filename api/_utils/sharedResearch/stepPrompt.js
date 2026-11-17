@@ -229,18 +229,18 @@ export function buildBuildSystemPrompt({ partnerName, method = null } = {}) {
     `Game universe (the only symbols you may write, in a fact or in symbolCandidate): ${UNIVERSE_LINE}`,
     `Index names you may write: ${INDEX_NAMES.join(' ')}. Capital abbreviations you may write: ${ACRONYMS.join(' ')}. Write every other abbreviation and every other company in plain words ("Taiwan Semiconductor", "graphics processors").`,
     '',
-    "Output (the schema you are given). Fill only what this step's goal asks for; leave every other field null or empty.",
+    "Output (the schema you are given holds only this step's fields). Fill what this step's goal asks for; leave a proposal null or empty when you have none.",
     '- findings: at most 12, each one fact in your own words. support.kind "retrieval" with the item number only when that item states the fact; "inference" with support.from naming the finding ids or tempIds it rests on; "unresolved" with a reason when a link could not be checked. Never cite an item number you were not given; with no items, write no retrieval support. Never write the word "item" or an item number in a fact or the reply: cite through support.',
     "- at: the fact's own date, written as year-month-day digits (for example 2026-11-05), when the item states one; null otherwise. Never today's date for an old fact.",
     '- A correction names the record finding it corrects in supersedes; correct one finding at most once. A Source-backed finding is corrected only by another retrieved fact, or by an unresolved finding when the evidence now conflicts; never by an inference.',
-    `- companies: at most 6. role is one of ${RELATIONSHIP_ROLES.join(', ')}. relationshipRef names the relationship finding about that company. A company is supported, and can be a name on the card, only when a retrieved item verifies the relationship and its symbol is in the game universe. claim: null.`,
+    `- companies (when the schema has them): at most 6. role is one of ${RELATIONSHIP_ROLES.join(', ')}. relationshipRef names the relationship finding about that company. A company is supported, and can be a name on the card, only when a retrieved item verifies the relationship and its symbol is in the game universe.`,
     `- Unresolved reasons: ${UNRESOLVED_REASONS.join(', ')}.`,
-    '- themeSuggestion: a theme in a short phrase (at most 80 characters), only when the card has no theme.',
+    '- themeSuggestion: a theme in a short phrase (at most 80 characters), only when the card has no theme; else an empty string.',
     '- segments: two to five, each a label (at most 60 characters), one line (at most 120) and refs naming the findings that back it; refs empty when it is your own reasoning.',
-    '- why: shared is the reason the names share, written as a clause that follows "because" (at most 160 characters); reasons are one to three per name, each resting only on Source-backed findings about that company (refs); against is the strongest point against with the findings it rests on.',
+    '- why: shared is the reason the names share, written as a clause that follows "because" (at most 160 characters); reasons: one per name, each resting only on Source-backed findings about that company (refs); against is the strongest point against with the findings it rests on (an empty text when you found none).',
     "- wrongIfOptions: up to three, each a business condition written as a clause that follows \"It's wrong if\" (at most 160 characters), with the findings it rests on, if any. Never a price level or a share-price move.",
     '- timeFramePick: the time frame that fits the why, and why in one line (at most 140 characters).',
-    "- pick: the one choice you would make for a part (its value exactly as the choice is written; names as symbols separated by commas) and your reason in one line (at most 140 characters), with refs. When the step's goal is pick, also give two or three reasons, each citing only findings already on the record, or with refs empty when it is your own reasoning.",
+    "- pick: the one choice you would make for the part this step is about (its value exactly as the card writes it; names as symbols separated by commas) and your reason in one line (at most 140 characters). When the step's goal is pick, also give two or three reasons, each citing only findings already on the record (refs), or with refs empty when it is your own reasoning.",
     '- Every number in a line you write appears in a Source-backed finding that line cites.',
     '- reply: two or three plain sentences, at most 600 characters: what this step found and what it proposes for the card. Write no sentence about yourself or your own process.',
   ].join('\n');
@@ -252,13 +252,20 @@ function goalLineOf({ goal, part, card }) {
   const where = card?.segment?.state === 'set' && !card.segment.skipped ? card.segment.value : (card?.theme?.value ?? 'the theme');
   switch (goal) {
     case 'verify_source': return "This step: check the starting point against its primary source: find the filing, release or report it rests on, and that source's own date. Suggest a theme for the thesis in a short phrase (themeSuggestion).";
-    case 'map_segments': return `This step: map the theme into two to five segments (segments), then mark the one you would stand on (pick, part "segment") with a one-line reason.${card?.theme?.state === 'set' ? '' : ' The card has no theme yet: suggest one (themeSuggestion).'}`;
-    case 'find_names': return `This step: find listed companies from the game universe with a sourced connection to ${line(where)} (relationship findings and companies). Mark the one company, or the group of up to four, you would build on (pick, part "names").`;
-    case 'build_why': return `This step: build the why for ${names}: the reason they share (why.shared), one to three Source-backed reasons per name (why.reasons) and the strongest point against (why.against). Offer up to three ways the thesis could be proved wrong (wrongIfOptions), mark the one you would pick (pick, part "wrongIf"), and say which time frame fits (timeFramePick).`;
+    case 'map_segments': return `This step: map the theme into two to five segments (segments), then mark the one you would stand on (pick) with a one-line reason.${card?.theme?.state === 'set' ? '' : ' The card has no theme yet: suggest one (themeSuggestion).'}`;
+    case 'find_names': return `This step: find listed companies from the game universe with a sourced connection to ${line(where)} (relationship findings and companies). Mark the one company, or the group of up to four, you would build on (pick).`;
+    case 'build_why': return `This step: build the why for ${names}: the reason they share (why.shared), one Source-backed reason per name (why.reasons) and the strongest point against (why.against). Offer up to three ways the thesis could be proved wrong (wrongIfOptions), mark the one you would pick (pick), and say which time frame fits (timeFramePick).`;
     case 'strengthen': return `This step: strengthen the card's ${part}: look for evidence for or against it. Revise its proposal only if the evidence changes it.`;
     case 'pick': return `This step: no search. Pick for the player among the card's choices for ${part} and say why (pick, with two or three reasons). Cite only findings already on the record; a reason no finding backs is your own reasoning and has empty refs.`;
     default: return "This step: follow the player's direction below. It steers this step; it never changes the theme.";
   }
+}
+
+/** The proposals a `direction` turn may make: those of the research goal it is asked as (thesisSchema.turnShapeOf). */
+function directionLineOf(shape) {
+  if (!shape || shape.goal === 'direction') return 'Propose nothing for the card this step: findings only.';
+  const of = shape.goal === 'strengthen' ? `strengthening the card's ${shape.part}` : shape.goal.replace('_', ' ');
+  return `The proposals you may make are those of the card's next step (${of}); make one only when what you find supports it.`;
 }
 
 const said = (v) => (v === null || v === undefined || v === '' ? null : line(v));
@@ -298,7 +305,7 @@ function cardLinesOf(card, supported = []) {
  * record supports now ({ symbol, name, role, relationship }).
  */
 export function renderBuildUser({
-  question, entryKind, goal, part = null, direction = null, card, supported = [], stepsLeft, findings, items, retrieval, room = null,
+  question, entryKind, goal, part = null, shape = null, direction = null, card, supported = [], stepsLeft, findings, items, retrieval, room = null,
 }) {
   const out = [`Question (fixed; never change it): ${line(question)}`, `Started from: ${STARTED[entryKind] ?? 'the player'}`];
   out.push('The thesis card as it stands:', ...cardLinesOf(card, supported));
@@ -306,6 +313,7 @@ export function renderBuildUser({
   for (const c of supported) out.push(`  ${c.symbol} | ${line(c.name)} | ${line(c.role)} | ${line(c.relationship)}`);
   if (supported.length === 0) out.push('  (none yet)');
   out.push(goalLineOf({ goal, part, card }));
+  if (goal === 'direction') out.push(directionLineOf(shape));
   if (direction) out.push(`The player's direction (their words): ${line(direction)}`);
   out.push(`Steps left after this one: ${stepsLeft}`);
   if (Number.isInteger(room)) out.push(`Room on the record: at most ${room} more findings this step.`);

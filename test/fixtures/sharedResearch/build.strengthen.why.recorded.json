@@ -1,0 +1,99 @@
+{
+  "recordedAt": "2026-11-17T15:12:30.771Z",
+  "key": "strengthen:why",
+  "goal": "strengthen",
+  "part": "why",
+  "shape": {
+    "goal": "strengthen",
+    "part": "why"
+  },
+  "model": "claude-sonnet-5-5",
+  "modelIds": {
+    "step": "claude-sonnet-5-5",
+    "frame": "claude-haiku-5-5"
+  },
+  "ok": true,
+  "reason": null,
+  "stopReason": "end_turn",
+  "category": null,
+  "apiError": null,
+  "attempts": 1,
+  "elapsedMs": 7080,
+  "usage": {
+    "input": 6167,
+    "output": 716
+  },
+  "costUsd": 0.019494,
+  "readAt": "2026-11-16T15:00:00.000Z",
+  "output": {
+    "reply": "Two new findings bear on the why. Cloud companies say demand to run models is now a main reason they order accelerators, which supports the reason on the card. One large cloud company says it runs more of its own AI work on chips it designs, which strengthens the point against. The proposal stays as it is; how large the in-house chip share is for the company's results is not disclosed.",
+    "findings": [
+      {
+        "tempId": "t1",
+        "kind": "coverage",
+        "fact": "Cloud companies said demand to run AI models, not only to train them, is now a main reason they order accelerators.",
+        "symbolCandidate": null,
+        "companyName": null,
+        "support": {
+          "kind": "retrieval",
+          "index": 0,
+          "from": [],
+          "reason": null
+        },
+        "at": null,
+        "supersedes": null
+      },
+      {
+        "tempId": "t2",
+        "kind": "coverage",
+        "fact": "One large cloud company said it now runs more of its own AI work on chips it designs itself.",
+        "symbolCandidate": null,
+        "companyName": null,
+        "support": {
+          "kind": "retrieval",
+          "index": 1,
+          "from": [],
+          "reason": null
+        },
+        "at": null,
+        "supersedes": null
+      },
+      {
+        "tempId": "t3",
+        "kind": "inference",
+        "fact": "How much of the large cloud buyers' accelerator demand shifts to their own chips, and what that means for Nvidia's revenue, is not disclosed in what was read.",
+        "symbolCandidate": "NVDA",
+        "companyName": "NVIDIA Corporation",
+        "support": {
+          "kind": "unresolved",
+          "index": null,
+          "from": [],
+          "reason": "not_disclosed"
+        },
+        "at": null,
+        "supersedes": null
+      }
+    ],
+    "why": {
+      "shared": "it sells the accelerators AI data centers are buying",
+      "reasons": [
+        {
+          "companyName": "NVIDIA Corporation",
+          "symbolCandidate": "NVDA",
+          "text": "Data centers are the large majority of its revenue, and cloud buyers cite demand to run models as a main reason they order accelerators.",
+          "refs": [
+            "f_7a000000-0000-4000-8000-000000000003",
+            "t1"
+          ]
+        }
+      ],
+      "against": {
+        "text": "Several of the largest buyers design their own AI chips, and one says it now runs more of its own AI work on them.",
+        "refs": [
+          "f_7a000000-0000-4000-8000-000000000004",
+          "t2"
+        ]
+      }
+    }
+  }
+}

@@ -7,7 +7,9 @@
 // replaced by a plain line when the goal's own proposal is dropped whole.
 
 import { describe, it, expect } from 'vitest';
-import { validateBuildTurn, BUILD_SCHEMA, NAMES_A_PRICE, builderFallbackReplyOf, unsourcedLineOf, acceptsOf, UNION_PARAMETERS } from './thesisSchema.js';
+import {
+  validateBuildTurn, BUILD_SCHEMAS, BUILD_SHAPES, buildSchemaOf, schemaKeyOf, turnShapeOf, NAMES_A_PRICE, builderFallbackReplyOf, unsourcedLineOf, acceptsOf,
+} from './thesisSchema.js';
 import { STEP_SCHEMA } from './stepSchema.js';
 import { emptyCard } from './thesis.js';
 
@@ -40,11 +42,11 @@ const base = (over = {}) => ({
   reply: 'Two reasons hold up in the sources.', findings: [], companies: [],
   themeSuggestion: null, segments: [], why: null, wrongIfOptions: [], timeFramePick: null, pick: null, ...over,
 });
-function validate(output, { goal = 'build_why', part = null, card = cardWithNames(['NVDA']), record = RECORD } = {}) {
+function validate(output, { goal = 'build_why', part = null, card = cardWithNames(['NVDA']), record = RECORD, shape = undefined } = {}) {
   let n = 100;
   return validateBuildTurn(output, {
     record, items: ITEMS, readAt: READ, partnerExchangeId: '2a3b4c5d-6e7f-4a8b-9c0d-1e2f3a4b5c6d', partnerAt: NOW, nowIso: NOW,
-    mintFindingId: () => id(++n), names: NAMES, partnerName: 'Atlas', card, goal, part,
+    mintFindingId: () => id(++n), names: NAMES, partnerName: 'Atlas', card, goal, part, ...(shape ? { shape } : {}),
   });
 }
 const WHY = (over = {}) => ({
@@ -53,31 +55,95 @@ const WHY = (over = {}) => ({
   against: { text: 'Large buyers design their own chips.', refs: [id(4)] }, ...over,
 });
 
-describe('the schema (§B4.2)', () => {
-  it('keeps B1\'s reply, findings and companies exactly; drops summary, lines and nextAction; adds the six proposals', () => {
-    expect(Object.keys(BUILD_SCHEMA.properties)).toEqual(['reply', 'findings', 'companies', 'themeSuggestion', 'segments', 'why', 'wrongIfOptions', 'timeFramePick', 'pick']);
-    expect(BUILD_SCHEMA.properties.findings).toBe(STEP_SCHEMA.properties.findings);
-    expect(BUILD_SCHEMA.properties.companies).toBe(STEP_SCHEMA.properties.companies);
-    expect(BUILD_SCHEMA.required).toEqual(Object.keys(BUILD_SCHEMA.properties));
-    expect(BUILD_SCHEMA.properties.pick.anyOf[0].properties.reasons.items.required).toEqual(['text', 'refs']); // §B10 S-B3
-  });
-  it('stays inside the API\'s schema limits: fewer than 16 union-type parameters (13), no optional parameter', () => {
-    const unions = [];
-    let optional = 0;
-    const walk = (s, at) => {
-      if (!s || typeof s !== 'object') return;
-      if (Array.isArray(s.anyOf) || Array.isArray(s.type)) unions.push(at);
-      for (const branch of [s, ...(s.anyOf ?? [])]) {
-        if (branch.type === 'object' && branch.properties) {
-          for (const [k, v] of Object.entries(branch.properties)) { if (!(branch.required ?? []).includes(k)) optional += 1; walk(v, `${at}.${k}`); }
-        }
-        if (branch.items) walk(branch.items, `${at}[]`);
+/** A schema's size as the API's grammar sees it: objects, arrays, properties, union types (and optional parameters). */
+function countsOf(schema) {
+  const c = { objects: 0, arrays: 0, properties: 0, unions: 0, optional: 0 };
+  const walk = (s) => {
+    if (!s || typeof s !== 'object') return;
+    if (Array.isArray(s.anyOf) || Array.isArray(s.type)) c.unions += 1;
+    for (const b of [s, ...(s.anyOf ?? [])]) {
+      if (b.type === 'object') {
+        c.objects += 1;
+        for (const [k, v] of Object.entries(b.properties ?? {})) { c.properties += 1; if (!(b.required ?? []).includes(k)) c.optional += 1; walk(v); }
       }
-    };
-    walk(BUILD_SCHEMA, '');
-    expect(unions).toHaveLength(UNION_PARAMETERS);
-    expect(UNION_PARAMETERS).toBeLessThan(16);
-    expect(optional).toBe(0);
+      if (b.type === 'array') { c.arrays += 1; walk(b.items); }
+    }
+  };
+  walk(schema);
+  return c;
+}
+/**
+ * The size of every builder schema that COMPILED live (S-5; the recorded probes in test/fixtures/sharedResearch/
+ * build.*.recorded.json, thesisSchema.recorded.test.js). A schema that grows past any of these numbers fails here: the
+ * API refused one schema for all goals ("The compiled grammar is too large…") and the split exists to stay compiled.
+ */
+const COMPILED = Object.freeze({
+  verify_source: { objects: 4, arrays: 3, properties: 20, unions: 8 },
+  map_segments: { objects: 6, arrays: 5, properties: 27, unions: 9 },
+  find_names: { objects: 5, arrays: 3, properties: 22, unions: 9 },
+  build_why: { objects: 9, arrays: 7, properties: 33, unions: 9 },
+  pick: { objects: 3, arrays: 2, properties: 7, unions: 1 },
+  'strengthen:theme': { objects: 3, arrays: 2, properties: 14, unions: 6 },
+  'strengthen:segment': { objects: 5, arrays: 4, properties: 21, unions: 7 },
+  'strengthen:names': { objects: 4, arrays: 2, properties: 17, unions: 7 },
+  'strengthen:why': { objects: 6, arrays: 5, properties: 24, unions: 7 },
+  'strengthen:wrongIf': { objects: 5, arrays: 4, properties: 20, unions: 7 },
+  'strengthen:timeFrame': { objects: 4, arrays: 2, properties: 17, unions: 7 },
+  direction: { objects: 4, arrays: 3, properties: 19, unions: 8 },
+});
+
+describe('one schema per goal (the founder\'s S-1, S-2 and S-5, Nov 17)', () => {
+  /** S-1, by the letter: reply plus only what the goal may land, with findings and companies where S-1 lists them. */
+  const KEYS = Object.freeze({
+    verify_source: ['reply', 'findings', 'companies', 'themeSuggestion'],
+    map_segments: ['reply', 'findings', 'companies', 'themeSuggestion', 'segments', 'pick'],
+    find_names: ['reply', 'findings', 'companies', 'pick'],
+    build_why: ['reply', 'findings', 'why', 'wrongIfOptions', 'timeFramePick', 'pick'],
+    pick: ['reply', 'pick'],
+    'strengthen:theme': ['reply', 'findings'],
+    'strengthen:segment': ['reply', 'findings', 'segments', 'pick'],
+    'strengthen:names': ['reply', 'findings', 'pick'],
+    'strengthen:why': ['reply', 'findings', 'why'],
+    'strengthen:wrongIf': ['reply', 'findings', 'wrongIfOptions', 'pick'],
+    'strengthen:timeFrame': ['reply', 'findings', 'timeFramePick'],
+    direction: ['reply', 'findings', 'companies'],
+  });
+  it('each goal\'s schema holds reply plus only what that goal may land; findings and companies only where S-1 lists them', () => {
+    expect(Object.keys(BUILD_SCHEMAS)).toEqual(Object.keys(KEYS));
+    for (const [key, keys] of Object.entries(KEYS)) {
+      expect(Object.keys(BUILD_SCHEMAS[key].properties), key).toEqual(keys);
+      expect(BUILD_SCHEMAS[key].required, key).toEqual(keys);
+    }
+    for (const s of BUILD_SHAPES) expect(buildSchemaOf(s)).toBe(BUILD_SCHEMAS[schemaKeyOf(s)]);
+  });
+  it('findings are B1\'s exactly; the builder\'s companies drop claim and openRef (S-2); the ledger\'s STEP_SCHEMA keeps both', () => {
+    for (const s of Object.values(BUILD_SCHEMAS)) if (s.properties.findings) expect(s.properties.findings).toBe(STEP_SCHEMA.properties.findings);
+    const company = BUILD_SCHEMAS.find_names.properties.companies.items;
+    expect(Object.keys(company.properties)).toEqual(['companyName', 'symbolCandidate', 'role', 'relationshipRef']);
+    for (const k of Object.keys(company.properties)) expect(company.properties[k]).toBe(STEP_SCHEMA.properties.companies.items.properties[k]);
+    expect(Object.keys(STEP_SCHEMA.properties.companies.items.properties)).toEqual(['companyName', 'symbolCandidate', 'role', 'relationshipRef', 'openRef', 'claim']);
+    expect(Object.keys(STEP_SCHEMA.properties)).toEqual(['reply', 'findings', 'summary', 'lines', 'nextAction', 'companies']);
+  });
+  it('a research goal\'s pick is a value and one reason; the reasons with refs exist only in the pick goal\'s schema (S-2; §B10 S-B3)', () => {
+    for (const [key, s] of Object.entries(BUILD_SCHEMAS)) {
+      if (!s.properties.pick) continue;
+      const p = s.properties.pick.anyOf[0];
+      expect(Object.keys(p.properties), key).toEqual(key === 'pick' ? ['value', 'reason', 'reasons'] : ['value', 'reason']);
+    }
+    expect(BUILD_SCHEMAS.pick.properties.pick.anyOf[0].properties.reasons.items.required).toEqual(['text', 'refs']);
+  });
+  it('every schema stays at or under the size that compiled live (S-5), with no optional parameter', () => {
+    expect(Object.keys(COMPILED)).toEqual(Object.keys(BUILD_SCHEMAS));
+    for (const [key, s] of Object.entries(BUILD_SCHEMAS)) {
+      const { optional, ...size } = countsOf(s);
+      expect(optional, key).toBe(0);
+      for (const [k, max] of Object.entries(COMPILED[key])) expect(size[k], `${key}.${k}`).toBeLessThanOrEqual(max);
+    }
+  });
+  it('the counter counts what the grammar holds (a planted array, object, property and union each raise it)', () => {
+    const base = countsOf(BUILD_SCHEMAS.pick);
+    const grown = { ...BUILD_SCHEMAS.pick, properties: { ...BUILD_SCHEMAS.pick.properties, extra: { anyOf: [{ type: 'array', items: { type: 'object', properties: { a: { type: 'string' } }, required: ['a'] } }, { type: 'null' }] } } };
+    expect(countsOf(grown)).toEqual({ ...base, objects: base.objects + 1, arrays: base.arrays + 1, properties: base.properties + 2, unions: base.unions + 1, optional: 1 });
   });
   it('reads the schema\'s empty-string none like null: no theme, no point against, no symbol', () => {
     const v = validate(base({ themeSuggestion: '', why: WHY({ against: { text: '', refs: [] }, reasons: [{ companyName: 'Nvidia', symbolCandidate: '', text: 'Data centers are most of its sales.', refs: [id(2)] }] }) }));
@@ -220,10 +286,16 @@ describe('rule 6 — the pick goal cites only findings already on the record', (
     expect(v.proposals.pick).toMatchObject({ part: 'segment', value: 'GPUs', asked: true, findingIds: [id(4)] });
     expect(v.proposals.pick.reasons.map((r) => r.text)).toEqual(['Buyers say so.', 'It is the easiest to tie to sales.']);
   });
-  it('a pick for another part than the one asked is dropped', () => {
-    const v = validate(base({ pick: { part: 'timeFrame', value: 'swing', reason: 'x', refs: [], reasons: [] } }), { goal: 'pick', part: 'segment', card: card() });
-    expect(v.notes).toContain('dropped:pick:wrong_part');
+  it('the pick\'s part is the server\'s — the one asked — never the model\'s: a time frame offered for the segment is not a choice', () => {
+    const v = validate(base({ pick: { part: 'timeFrame', value: 'swing', reason: 'x', reasons: [] } }), { goal: 'pick', part: 'segment', card: card() });
+    expect(v.notes).toContain('dropped:pick:not_a_choice');
+    expect(v.proposals.pick).toBeNull();
     expect(v.reply).toBe('This step added 0 findings. The card did not change.');
+  });
+  it('the pick goal rests on the findings its kept reasons cite, and on nothing a dropped reason cited', () => {
+    const v = validate(base({ pick: { value: 'GPUs', reason: 'Buyers say so.', reasons: [{ text: 'Buyers say so.', refs: [id(4)] }, { text: 'Supply is the limit.', refs: [id(9)] }] } }), { goal: 'pick', part: 'segment', card: card() });
+    expect(v.notes).toContain('dropped:pick.reason:1:not_on_record');
+    expect(v.proposals.pick).toMatchObject({ part: 'segment', findingIds: [id(4)], asked: true });
   });
   it('a pick for a part the player already set is dropped', () => {
     const v = validate(base({ pick: { part: 'segment', value: 'GPUs', reason: 'x', refs: [], reasons: [] } }), { goal: 'map_segments' });
@@ -242,7 +314,37 @@ describe('each goal lands only its own proposals', () => {
     expect(acceptsOf('pick', 'names')).toEqual(['pick']);
     expect(acceptsOf('strengthen', 'theme')).toEqual([]);
     expect(acceptsOf('strengthen', 'why')).toEqual(['why']);
-    expect(acceptsOf('direction')).toHaveLength(6);
+    expect(acceptsOf('direction')).toEqual([]);
+  });
+  it('direction is asked as the first research goal on offer — never pick, never itself — or with findings only when none is', () => {
+    expect(turnShapeOf({ goal: 'direction' }, [{ goal: 'build_why' }, { goal: 'strengthen', part: 'theme' }, { goal: 'direction' }])).toEqual({ goal: 'build_why', part: null });
+    expect(turnShapeOf({ goal: 'direction' }, [{ goal: 'pick', part: 'segment' }, { goal: 'strengthen', part: 'names' }, { goal: 'direction' }])).toEqual({ goal: 'strengthen', part: 'names' });
+    expect(turnShapeOf({ goal: 'direction' }, [{ goal: 'pick', part: 'segment' }, { goal: 'direction' }])).toEqual({ goal: 'direction', part: null });
+    expect(turnShapeOf({ goal: 'direction' }, [])).toEqual({ goal: 'direction', part: null });
+    expect(turnShapeOf({ goal: 'find_names', part: 'theme' })).toEqual({ goal: 'find_names', part: null });
+    expect(turnShapeOf({ goal: 'strengthen', part: 'why' }, [{ goal: 'build_why' }])).toEqual({ goal: 'strengthen', part: 'why' });
+  });
+  it('a direction turn lands exactly what the goal it was asked as lands, and nothing else', () => {
+    const asWhy = validate(base({ why: WHY(), themeSuggestion: 'Chips' }), { goal: 'direction', shape: { goal: 'build_why', part: null } });
+    expect(asWhy.proposals.why).not.toBeNull();
+    expect(asWhy.notes).toContain('ignored:themeSuggestion');
+    expect(asWhy.proposals.goal).toBe('direction');
+    const none = validate(base({ why: WHY(), segments: [{ label: 'A', line: 'a', refs: [] }, { label: 'B', line: 'b', refs: [] }] }), { goal: 'direction' });
+    expect([none.proposals.why, none.proposals.map]).toEqual([null, null]);
+    expect(none.notes).toEqual(expect.arrayContaining(['ignored:why', 'ignored:segments']));
+  });
+  it('a research goal\'s pick rests on no finding and is labelled the partner\'s reasoning; a ref it carries is never read (S-2)', () => {
+    const v = validate(base({ pick: { value: 'NVDA', reason: 'It has the sourced connection.', refs: [id(1)] } }), { goal: 'find_names', card: cardWithNames(null) });
+    expect(v.proposals.pick).toMatchObject({ part: 'names', value: ['NVDA'], findingIds: [], reasons: [], asked: false });
+    const n = validate(base({ pick: { value: 'NVDA', reason: 'Data centers are 78% of its sales.' } }), { goal: 'find_names', card: cardWithNames(null) });
+    expect(n.notes).toContain('dropped:pick:unsupported_number');
+  });
+  it('a company\'s claim is never read on a builder turn: no proposed claim lands as a finding (S-2)', () => {
+    const v = validate(base({
+      companies: [{ companyName: 'Nvidia', symbolCandidate: 'NVDA', role: 'Supplier', relationshipRef: id(1), openRef: id(3), claim: { effect: 'It sells more chips.', relationship: 'Supplier.', evidence: 'Its sales.', uncertainty: 'None.' } }],
+    }), { goal: 'find_names', card: cardWithNames(null) });
+    expect(v.ok).toBe(true);
+    expect(v.findings.filter((f) => f.kind === 'idea')).toEqual([]);
   });
   it('a theme suggestion is not taken when the card has a theme', () => {
     const v = validate(base({ themeSuggestion: 'Power' }), { goal: 'map_segments', card: cardWithNames(null) });

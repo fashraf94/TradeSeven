@@ -3,11 +3,15 @@
 // Shared Research — THE BUILDER TURN'S SCHEMA AND ITS VALIDATOR (Amendment B
 // §B4.2; §B10 S-B3; K-4).
 //
-// The builder turn keeps B1's `reply` (now at most 600 characters), `findings`
-// and `companies` exactly as B1 defines them, drops `summary`, `lines` and
-// `nextAction`, and adds the card's proposals: `themeSuggestion`, `segments`,
-// `why`, `wrongIfOptions`, `timeFramePick` and `pick` (with up to three
-// `reasons`, §B10 S-B3).
+// ONE SCHEMA PER GOAL (the founder's S-1/S-2, Nov 17): each goal's schema holds
+// `reply` (at most 600 characters) plus only what that goal may land (ACCEPTS,
+// the rule the validator enforces), with B1's `findings` and the builder's
+// `companies` where S-1 lists them; B1's `summary`, `lines` and `nextAction`
+// are gone. Builder companies drop `claim` and `openRef` (the card's why
+// replaces the ledger's claims). A research goal's pick is a value and one
+// reason; the reasons with refs exist only in the `pick` goal's schema (§B10
+// S-B3). `direction` is asked in the schema of the research goal the card
+// would offer next (turnShapeOf), or with findings and companies only.
 //
 // validateBuildTurn(output, ctx) runs in two halves:
 //   1. B1's validator (stepSchema.validateStepTurn) on the turn's reply,
@@ -33,7 +37,7 @@
 // plain line that says what landed (never a false sentence).
 
 import { currentFindingsOf } from '../researchRecords/model.js';
-import { ADOPTABLE_HORIZONS, PICK_PARTS, THESIS_LIMITS as L } from '../../../src/constants/sharedResearch.js';
+import { ADOPTABLE_HORIZONS, PICK_PARTS, THESIS_PARTS, THESIS_LIMITS as L } from '../../../src/constants/sharedResearch.js';
 import { STEP_SCHEMA, validateStepTurn, sentencesOf, promisesService, ACRONYMS, INDEX_NAMES } from './stepSchema.js';
 import { gameUniverse, companiesOf, resolveSymbol, isSameCompany } from './companies.js';
 import { NAMES_A_PRICE, lineFailOf, builderWordingOf } from './thesisWords.js';
@@ -41,27 +45,35 @@ import { applyProposals, cardContextOf } from './thesis.js';
 
 export { NAMES_A_PRICE };
 
-// ── the schema (structured outputs: every object closed, every key required, nullable through anyOf) ──
+// ── the schemas (structured outputs: every object closed, every key required, nullable through anyOf) ──
 //
-// The API compiles the schema into a grammar and allows at most 16 parameters with union types (anyOf or a type
-// array) per request (platform docs, "Schema complexity limits"); B1's step schema holds 15. The builder keeps B1's
-// findings and companies (10) and so writes three of its own "none" values as an EMPTY STRING rather than null — the
-// theme suggestion, a reason's symbol and the point against's text — leaving 13 (UNION_PARAMETERS, pinned by test).
-// The validator reads an empty string and a null alike.
+// The API compiles a request's schema into a grammar. One schema holding every goal's proposals did not compile — the
+// API's own words, Nov 17: "The compiled grammar is too large, which would cause performance issues." So each goal is
+// asked in its own schema (S-1): `reply`, B1's `findings` (not for `pick`, which makes no search), the builder's
+// `companies` (verify_source, map_segments, find_names, and `direction` with nothing else on offer), and the proposal
+// fields that goal may land (ACCEPTS). Three "none" values stay an EMPTY STRING rather than null — the theme
+// suggestion, a reason's symbol and the point against's text; the validator reads an empty string and a null alike.
+// Every schema's size is pinned in thesisSchema.test.js at what compiled live (S-5).
 
 const str = (description) => ({ type: 'string', description });
 const nullable = (t) => ({ anyOf: [t, { type: 'null' }] });
 const obj = (properties) => ({ type: 'object', additionalProperties: false, required: Object.keys(properties), properties });
 const refs = (description) => ({ type: 'array', items: { type: 'string' }, description });
 
-export const BUILD_SCHEMA = Object.freeze(obj({
-  reply: str('Two or three plain sentences: what this step found and what it proposes for the card. At most 600 characters.'),
-  findings: STEP_SCHEMA.properties.findings,
-  companies: STEP_SCHEMA.properties.companies,
+const REPLY = str('Two or three plain sentences: what this step found and what it proposes for the card. At most 600 characters.');
+const B1_COMPANY = STEP_SCHEMA.properties.companies.items.properties;
+/** The builder's companies (S-2): B1's company without `claim` and `openRef` — the card's why replaces the ledger's claims. */
+const COMPANIES = Object.freeze({
+  type: 'array',
+  description: STEP_SCHEMA.properties.companies.description,
+  items: obj({ companyName: B1_COMPANY.companyName, symbolCandidate: B1_COMPANY.symbolCandidate, role: B1_COMPANY.role, relationshipRef: B1_COMPANY.relationshipRef }),
+});
+/** Each proposal field's schema. `pick` here is a research goal's: a value and one reason (S-2). */
+const FIELD = Object.freeze({
   themeSuggestion: str('A theme for the thesis in a short phrase (at most 80 characters), only when the card has no theme; else an empty string.'),
   segments: {
     type: 'array',
-    description: 'map_segments: two to five segments of the theme; otherwise empty.',
+    description: 'Two to five segments of the theme.',
     items: obj({
       label: str('The segment, at most 60 characters.'),
       line: str('One line saying what it covers, at most 120 characters.'),
@@ -72,7 +84,7 @@ export const BUILD_SCHEMA = Object.freeze(obj({
     shared: str('The reason the names share, as a clause that follows "because" (at most 160 characters).'),
     reasons: {
       type: 'array',
-      description: 'One to three reasons per name, each resting on Source-backed findings about that company.',
+      description: 'One reason per name, resting on Source-backed findings about that company.',
       items: obj({
         companyName: str('The company, in words.'),
         symbolCandidate: str('Its symbol, from the names on the card; an empty string when you do not know it.'),
@@ -87,7 +99,7 @@ export const BUILD_SCHEMA = Object.freeze(obj({
   })),
   wrongIfOptions: {
     type: 'array',
-    description: 'build_why: up to three ways the thesis could be proved wrong, each a business condition (never a price); otherwise empty.',
+    description: 'Up to three ways the thesis could be proved wrong, each a business condition, never a price.',
     items: obj({ text: str('A clause that follows "It\'s wrong if", at most 160 characters.'), refs: refs('The finding ids or tempIds it rests on, if any.') }),
   },
   timeFramePick: nullable(obj({
@@ -95,40 +107,73 @@ export const BUILD_SCHEMA = Object.freeze(obj({
     reason: str('Why it fits the why, at most 140 characters.'),
   })),
   pick: nullable(obj({
-    part: { type: 'string', enum: [...PICK_PARTS] },
-    value: str('The choice you would make: a segment label, the symbols separated by commas, a wrong-if option as written, or a time frame.'),
+    value: str('Your choice exactly as the card writes it: a segment label, the symbols separated by commas, or a wrong-if option.'),
     reason: str('Your reason in one line, at most 140 characters.'),
-    refs: refs('The finding ids it rests on; empty when it is your own reasoning.'),
-    reasons: {
-      type: 'array',
-      description: 'The pick goal: two or three reasons, each tied to findings already on the record or given as your reasoning (refs empty). Otherwise empty.',
-      items: obj({ text: str('One reason, at most 140 characters.'), refs: refs('The record finding ids it rests on; empty for your reasoning.') }),
-    },
   })),
+});
+/** The `pick` goal's pick (§B10 S-B3): its value, one line, and two or three reasons, each with the record findings it rests on. */
+const PICK_GOAL_PICK = nullable(obj({
+  value: str('Your choice exactly as the card writes it: a segment label, the symbols separated by commas, a wrong-if option, or a time frame.'),
+  reason: str('Your reason in one line, at most 140 characters.'),
+  reasons: {
+    type: 'array',
+    description: 'Two or three reasons, each tied to findings already on the record or given as your reasoning (refs empty).',
+    items: obj({ text: str('One reason, at most 140 characters.'), refs: refs('The record finding ids it rests on; empty for your reasoning.') }),
+  },
 }));
 
 // ── what each goal may land ───────────────────────────────────────────────────
 
 export const PROPOSAL_FIELDS = Object.freeze(['themeSuggestion', 'segments', 'why', 'wrongIfOptions', 'timeFramePick', 'pick']);
-/** The schema's parameters with union types (anyOf): under the API's limit of 16 per request, as B1's 15 are. */
-export const UNION_PARAMETERS = 13;
 const ACCEPTS = Object.freeze({
   verify_source: ['themeSuggestion'],
   map_segments: ['themeSuggestion', 'segments', 'pick'],
   find_names: ['pick'],
   build_why: ['why', 'wrongIfOptions', 'timeFramePick', 'pick'],
   pick: ['pick'],
-  direction: [...PROPOSAL_FIELDS],
+  direction: [], // with nothing else on offer; otherwise it is asked, and lands, as the next research goal (turnShapeOf)
 });
 const STRENGTHEN_ACCEPTS = Object.freeze({
   theme: [], segment: ['segments', 'pick'], names: ['pick'], why: ['why'], wrongIf: ['wrongIfOptions', 'pick'], timeFrame: ['timeFramePick'],
 });
 /** The proposals a goal lands (each turn works on the goal it was given and on nothing else — rulebook §6). */
 export const acceptsOf = (goal, part) => (goal === 'strengthen' ? (STRENGTHEN_ACCEPTS[part] ?? []) : (ACCEPTS[goal] ?? []));
-/** The part a pick may be for, by goal (null: any part with choices). */
+/** The part a pick is for: the goal's own, or the request's part (pick, strengthen) — the server's, never the model's. */
 const pickPartOf = (goal, part) => ({ map_segments: 'segment', find_names: 'names', build_why: 'wrongIf' }[goal] ?? (goal === 'pick' || goal === 'strengthen' ? part : null));
 /** The proposal a goal is FOR: when it is dropped whole, the reply cannot stand (K-4). */
 const MAIN = Object.freeze({ map_segments: 'map', build_why: 'why', pick: 'pick' });
+/** The goals whose schema carries the builder's companies (S-1). */
+const WITH_COMPANIES = Object.freeze(['verify_source', 'map_segments', 'find_names', 'direction']);
+
+/**
+ * The goal and part a turn is asked in (S-1): its own; for `direction`, the research goal the card would offer next
+ * (the first offered that is neither `direction` nor `pick`, which makes no search), or `direction` itself — findings
+ * and companies only — when none is. `offered`: offeredGoalsOf(card, ctx), read at the step's admission.
+ */
+export function turnShapeOf({ goal, part = null }, offered = []) {
+  if (goal !== 'direction') return { goal, part: goal === 'strengthen' || goal === 'pick' ? part : null };
+  const next = (Array.isArray(offered) ? offered : []).find((g) => g.goal !== 'direction' && g.goal !== 'pick') ?? null;
+  return next ? { goal: next.goal, part: next.part ?? null } : { goal: 'direction', part: null };
+}
+/** A shape's schema key: the goal, or `strengthen:<part>`. */
+export const schemaKeyOf = ({ goal, part = null }) => (goal === 'strengthen' ? `strengthen:${part}` : goal);
+
+function schemaOf({ goal, part = null }) {
+  const properties = { reply: REPLY };
+  if (goal !== 'pick') properties.findings = STEP_SCHEMA.properties.findings;
+  if (WITH_COMPANIES.includes(goal)) properties.companies = COMPANIES;
+  for (const field of acceptsOf(goal, part)) properties[field] = goal === 'pick' && field === 'pick' ? PICK_GOAL_PICK : FIELD[field];
+  return Object.freeze(obj(properties));
+}
+/** Every turn shape a builder step can be asked in — five goals, `strengthen` on each part, `direction` with none on offer. */
+export const BUILD_SHAPES = Object.freeze([
+  { goal: 'verify_source', part: null }, { goal: 'map_segments', part: null }, { goal: 'find_names', part: null }, { goal: 'build_why', part: null },
+  { goal: 'pick', part: null }, ...THESIS_PARTS.map((part) => ({ goal: 'strengthen', part })), { goal: 'direction', part: null },
+].map((s) => Object.freeze(s)));
+/** One schema per shape, by key (S-1). The ledger's STEP_SCHEMA is untouched. */
+export const BUILD_SCHEMAS = Object.freeze(Object.fromEntries(BUILD_SHAPES.map((s) => [schemaKeyOf(s), schemaOf(s)])));
+/** The schema a turn of this shape is asked in. */
+export const buildSchemaOf = (shape) => BUILD_SCHEMAS[schemaKeyOf(shape)];
 
 // ── small helpers ─────────────────────────────────────────────────────────────
 
@@ -168,17 +213,21 @@ export function cutAtSentence(text, max) {
  *                         mintFindingId, names, partnerName, method, universe) plus:
  * @param {object} ctx.card   the card as the step began
  * @param {string} ctx.goal   the step's goal; `ctx.part` for strengthen and pick
+ * @param {object} [ctx.shape] the goal and part the turn was asked in (turnShapeOf; `direction` takes the next goal's)
  * @returns {{ ok: true, findings, reply, notes, proposals } | { ok: false, rule, detail }}
  */
 export function validateBuildTurn(output, ctx) {
   const { record, card, goal, part = null, partnerName = null, universe = gameUniverse, names = {} } = ctx;
+  const shape = ctx.shape ?? turnShapeOf({ goal, part });
   if (!output || typeof output !== 'object') return { ok: false, rule: 'unparseable', detail: null };
   const rawFindings = Array.isArray(output.findings) ? output.findings : [];
+  // The builder writes no ledger claim and no open question (S-2): whatever a company carries, B1 reads none.
+  const companies = (Array.isArray(output.companies) ? output.companies : []).map((c) => (c && typeof c === 'object' && !Array.isArray(c) ? { ...c, openRef: null, claim: null } : c));
 
   // 1. B1's validator on the reply, the findings and the companies — its rules alone can fail the step. The reply is cut
   //    to its 600 characters at a sentence's end FIRST, so B1's number check reads the text that is kept (RB-7).
   const b1 = validateStepTurn({
-    reply: cutAtSentence(clean(output.reply), L.reply), findings: output.findings, companies: output.companies,
+    reply: cutAtSentence(clean(output.reply), L.reply), findings: rawFindings, companies,
     summary: null, lines: { support: null, complication: null, missing: null }, nextAction: null,
   }, ctx);
   if (!b1.ok) return b1;
@@ -213,7 +262,7 @@ export function validateBuildTurn(output, ctx) {
   /** A bounded line: cleaned, 1..max characters (an over-long line is dropped, never cut into the card). */
   const lineOf = (raw, max) => { const t = clean(raw); return t && t.length <= max ? t : null; };
 
-  const accepts = acceptsOf(goal, part);
+  const accepts = acceptsOf(shape.goal, shape.part); // `direction` lands what the goal it was asked as lands
   const present = (field) => {
     const v = output[field];
     return Array.isArray(v) ? v.length > 0 : typeof v === 'string' ? v.trim() !== '' : v !== null && v !== undefined;
@@ -329,46 +378,52 @@ export function validateBuildTurn(output, ctx) {
     else proposals.timeFrame = { value: t.horizon, reason };
   }
 
-  // the pick (rules 3, 5 and 6; §B10 S-B3)
+  // the pick (rules 3, 5 and 6; §B10 S-B3). Its part is the server's: the goal's own, or the request's (pick,
+  // strengthen) — the schema gives the model no part to write (S-1). A research goal's pick is a value and one reason
+  // with no refs (S-2), so it rests on nothing and its reason may state no number; the `pick` goal's reasons each cite
+  // findings already on the record (rule 6), and the pick rests on the findings its kept reasons cite.
   if (takes('pick')) {
     const p = output.pick;
     const recordOnly = goal === 'pick';
-    const allowed = pickPartOf(goal, part);
+    const pickPart = pickPartOf(shape.goal, shape.part);
     const supportedAfter = supportedAfterOf();
     const reason = lineOf(p?.reason, L.pickReason);
-    const ids = resolveAll(p?.refs, recordOnly);
+    const reasons = [];
+    const reasonNotes = [];
+    if (recordOnly) {
+      (Array.isArray(p.reasons) ? p.reasons : []).forEach((r, i) => {
+        const text = lineOf(r?.text, L.pickReason);
+        const rids = resolveAll(r?.refs, true);
+        const f = !text ? 'length' : rids === null ? 'not_on_record' : lineFail(text, verifiedOf(rids));
+        if (f) return reasonNotes.push(`dropped:pick.reason:${i}:${f}`);
+        if (reasons.length >= L.pickReasons) return reasonNotes.push(`dropped:pick.reason:${i}:too_many`);
+        reasons.push({ text, findingIds: rids });
+        return undefined;
+      });
+    }
+    const ids = [...new Set(reasons.flatMap((r) => r.findingIds))];
     let value = null;
     let fail = null;
-    if (!PICK_PARTS.includes(p?.part) || (allowed !== null && p.part !== allowed)) fail = 'wrong_part';
-    else if (card[p.part].state === 'set') fail = 'part_set';
-    else if (p.part === 'segment') value = (proposals.map ?? card.segment.map ?? []).find((m) => m.label === clean(p.value))?.label ?? null;
-    else if (p.part === 'names') {
+    if (!PICK_PARTS.includes(pickPart)) fail = 'wrong_part';
+    else if (card[pickPart].state === 'set') fail = 'part_set';
+    else if (pickPart === 'segment') value = (proposals.map ?? card.segment.map ?? []).find((m) => m.label === clean(p.value))?.label ?? null;
+    else if (pickPart === 'names') {
       // every token must be a supported symbol: a pick that names anything else is dropped, never narrowed (RB-4)
       const tokens = clean(p.value).split(SYMBOL_SPLIT).map((s) => s.replace(/[.;:!?]+$/, '')).filter(Boolean); // "NVDA, AMD." reads AMD
       const syms = tokens.map((s) => resolveSymbol(s, universe));
       const uniq = syms.filter((s, i) => s && syms.indexOf(s) === i);
       value = syms.every(Boolean) && uniq.length >= L.namesMin && uniq.length <= L.namesMax && uniq.every((s) => supportedAfter.includes(s)) ? uniq : null;
-    } else if (p.part === 'wrongIf') value = (proposals.wrongIfOptions ?? card.wrongIf.options).find((o) => o.text.toLowerCase() === clean(p.value).toLowerCase())?.text ?? null;
+    } else if (pickPart === 'wrongIf') value = (proposals.wrongIfOptions ?? card.wrongIf.options).find((o) => o.text.toLowerCase() === clean(p.value).toLowerCase())?.text ?? null;
     else value = ADOPTABLE_HORIZONS.includes(clean(p.value)) ? clean(p.value) : null;
-    if (!fail && value === null) fail = p.part === 'names' ? 'not_supported' : 'not_a_choice';
+    if (!fail && value === null) fail = pickPart === 'names' ? 'not_supported' : 'not_a_choice';
     if (!fail && !reason) fail = 'length';
-    if (!fail && ids === null) fail = recordOnly ? 'not_on_record' : 'invalid_source';
     if (!fail) fail = lineFail(reason, verifiedOf(ids));
     if (fail) {
       drop('pick', fail);
     } else {
-      const reasons = [];
-      (Array.isArray(p.reasons) ? p.reasons : []).forEach((r, i) => {
-        const text = lineOf(r?.text, L.pickReason);
-        const rids = resolveAll(r?.refs, recordOnly);
-        const f = !text ? 'length' : rids === null ? (recordOnly ? 'not_on_record' : 'invalid_source') : lineFail(text, verifiedOf(rids));
-        if (f) return drop(`pick.reason:${i}`, f);
-        if (reasons.length >= L.pickReasons) return drop(`pick.reason:${i}`, 'too_many');
-        reasons.push({ text, findingIds: rids });
-        return undefined;
-      });
-      if (goal === 'pick' && reasons.length < 2) notes.push(`pick_reasons_few:${reasons.length}`);
-      proposals.pick = { part: p.part, value, reason, findingIds: ids, reasons, asked: goal === 'pick' };
+      notes.push(...reasonNotes);
+      if (recordOnly && reasons.length < 2) notes.push(`pick_reasons_few:${reasons.length}`);
+      proposals.pick = { part: pickPart, value, reason, findingIds: ids, reasons, asked: recordOnly };
     }
   }
 

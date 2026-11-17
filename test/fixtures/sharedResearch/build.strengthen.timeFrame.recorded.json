@@ -1,0 +1,86 @@
+{
+  "recordedAt": "2026-11-17T15:12:42.972Z",
+  "key": "strengthen:timeFrame",
+  "goal": "strengthen",
+  "part": "timeFrame",
+  "shape": {
+    "goal": "strengthen",
+    "part": "timeFrame"
+  },
+  "model": "claude-sonnet-5-5",
+  "modelIds": {
+    "step": "claude-sonnet-5-5",
+    "frame": "claude-haiku-5-5"
+  },
+  "ok": true,
+  "reason": null,
+  "stopReason": "end_turn",
+  "category": null,
+  "apiError": null,
+  "attempts": 1,
+  "elapsedMs": 5569,
+  "usage": {
+    "input": 5712,
+    "output": 582
+  },
+  "costUsd": 0.017244,
+  "readAt": "2026-11-16T15:00:00.000Z",
+  "output": {
+    "reply": "The evidence leans toward keeping positional. Cloud companies say running models is now a main reason they order accelerators, which is demand that recurs rather than a one-off training build, while a large cloud company moving more work to its own chips is a risk that plays out over quarters, not days. I would keep positional and not change the card.",
+    "findings": [
+      {
+        "tempId": "t1",
+        "kind": "coverage",
+        "fact": "Cloud companies said demand to run AI models, not only to train them, is now a main reason they order accelerators.",
+        "symbolCandidate": null,
+        "companyName": null,
+        "support": {
+          "kind": "retrieval",
+          "index": 0,
+          "from": [],
+          "reason": null
+        },
+        "at": "2026-11-13",
+        "supersedes": null
+      },
+      {
+        "tempId": "t2",
+        "kind": "coverage",
+        "fact": "One large cloud company said it now runs more of its own AI work on chips it designs itself.",
+        "symbolCandidate": null,
+        "companyName": null,
+        "support": {
+          "kind": "retrieval",
+          "index": 1,
+          "from": [],
+          "reason": null
+        },
+        "at": "2026-11-11",
+        "supersedes": null
+      },
+      {
+        "tempId": "t3",
+        "kind": "inference",
+        "fact": "Ordering driven by running models is recurring demand, and a buyer shifting work to its own chips builds up over quarters; both fit a thesis measured in weeks to a few months rather than days.",
+        "symbolCandidate": "NVDA",
+        "companyName": "NVIDIA Corporation",
+        "support": {
+          "kind": "inference",
+          "index": null,
+          "from": [
+            "t1",
+            "t2",
+            "f_7a000000-0000-4000-8000-000000000005"
+          ],
+          "reason": null
+        },
+        "at": null,
+        "supersedes": null
+      }
+    ],
+    "timeFramePick": {
+      "horizon": "positional",
+      "reason": "Demand to run models recurs and own-chip shifts build over quarters, so about 30 sessions fits."
+    }
+  }
+}
