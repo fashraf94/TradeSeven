@@ -129,7 +129,7 @@ export function freeLabelOf(choice, thesis, agentName) {
   const mark = confirmMarkOf(choice, thesis);
   const pick = thesis?.pick ?? null;
   const reasoning = pick ? basisTagOf(pick.basis, agentName) : null;
-  if (part === 'theme') return { label: B.useTheme(value), mark: B.suggestedTag(agentName) };
+  if (part === 'theme') return { label: B.themeConfirm(value), mark: B.suggestedTag(agentName) };
   if (part === 'segment') {
     const line = (thesis?.parts?.segment?.map ?? []).find((m) => m.label === value)?.line ?? null;
     if (mark === 'pick') return { label: value, sub: line, mark: B.pickTag(agentName), reason: pick.reason, reasonTag: reasoning };

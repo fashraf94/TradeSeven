@@ -269,7 +269,7 @@ describe('every state, from the server\'s answers', () => {
     await openOn(TA.getStoryVerified);
     expect($('[data-sr-slot="theme"]').dataset.srSlotState).toBe('suggested');
     const c = $('[data-sr-free="confirm:theme"]');
-    expect(c.textContent).toContain(B.useTheme('Cloud AI data-center spending'));
+    expect(c.textContent).toContain(B.themeConfirm('Cloud AI data-center spending'));
     expect(c.textContent).toContain(B.suggestedTag('Atlas'));
   });
   it('desktop (D1): the card left, the conversation and its choices right', async () => {

@@ -109,7 +109,7 @@ const BUILDER = Object.freeze({
   reasoningTag: (name) => `${cap(name)}’s reasoning`,
   sourceCount: (n) => `${n} ${plural(n, 'source', 'sources')}`,
   confirmValue: (value) => `Confirm ${value}`,
-  useTheme: (value) => `Use “${value}” as the theme`,
+  themeConfirm: (value) => `Use “${value}” as the theme`,
   skipSegment: 'Skip the segment',
   namesHelp: (min, max) => `Tick ${min} to ${max}. Only a company with a sourced connection can be picked.`,
   namesBuild: (n) => (n === 0 ? 'Build it on the names you tick' : n === 1 ? 'Build it on one stock' : `Build it on ${n} names`),
