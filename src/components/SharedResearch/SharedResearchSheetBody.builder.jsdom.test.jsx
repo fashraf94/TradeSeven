@@ -1265,15 +1265,30 @@ describe('lens (c) on the phone round: the fixes', () => {
   it('R-3 (refuter): the scroll padding follows the composer when it leaves and comes back', async () => {
     const realRO = globalThis.ResizeObserver;
     const off = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight');
+    // An observer fires as a browser's does: once for an element it begins to observe, and once when an observed element
+    // leaves the page (its size goes to zero) — never for an element it does not observe (a foot that came back is new).
     const live = new Set();
-    globalThis.ResizeObserver = class { constructor(cb) { this.cb = cb; } observe() { live.add(this); } disconnect() { live.delete(this); } };
+    globalThis.ResizeObserver = class {
+      constructor(cb) { this.cb = cb; this.els = new Map(); }
+      observe(el) { this.els.set(el, 'new'); live.add(this); }
+      disconnect() { this.els.clear(); live.delete(this); }
+    };
     Object.defineProperty(HTMLElement.prototype, 'offsetHeight', { configurable: true, get() { return this.hasAttribute?.('data-sr-foot') ? 61 : 0; } });
-    const fire = () => act(async () => { for (const ro of [...live]) ro.cb([]); });
+    const fire = () => act(async () => {
+      for (const ro of [...live]) {
+        let due = false;
+        for (const [el, seen] of ro.els) {
+          if (seen === 'new') { ro.els.set(el, 'seen'); due = true; } else if (seen === 'seen' && !el.isConnected) { ro.els.set(el, 'gone'); due = true; }
+        }
+        if (due) ro.cb([]);
+      }
+    });
     try {
       server.set('get', TA.getOutOfSteps);
       server.set('card', [TA.oosWrongIfSet, TA.oosWrongIfCleared]);
       const m = keep(mount(<div style={{ overflowY: 'auto' }} data-zz-scroller=""><Body mode="session" sessionId={TA.getOutOfSteps.body.session.sessionId} agentName="Atlas" agentId="agent-fixture-1" phone onClose={vi.fn()} /></div>));
       await flush();
+      await fire(); // the first observations are delivered, as a browser does at once
       const box = m.host.querySelector('[data-zz-scroller]');
       expect($('[data-sr-foot]')).not.toBeNull();
       expect(box.style.scrollPaddingBottom).toBe('89px');
