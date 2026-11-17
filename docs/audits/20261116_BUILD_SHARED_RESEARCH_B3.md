@@ -1,6 +1,6 @@
 # Build report — Shared Research "Work an idea" B3, the thesis builder's server (dark)
 
-**Date:** Nov 16, 2026 · **Session:** local Claude Code (Opus 5.5), own worktree, no advisor · **Branch:** `claude/shared-research-b3` · **PR:** to be opened from this branch (draft)
+**Date:** Nov 16, 2026 · **Session:** local Claude Code (Opus 5.5), own worktree, no advisor · **Branch:** `claude/shared-research-b3` · **PR:** #1083 (draft) · **Pushed head:** this report's commits on top of the final tree `583e9dbb` (docs only; `src/index.css:9` keeps `docs/` out of Tailwind's sources, so the build at `583e9dbb` is the pushed head's)
 
 **Spec of record:**
 - `docs/specs/20261116_SHARED_RESEARCH_SPEC_V1_2_AMENDMENT_B_THESIS_BUILDER.md`, §B2–§B6, plus §B10 (the founder's preamble rulings, appended on this branch);
