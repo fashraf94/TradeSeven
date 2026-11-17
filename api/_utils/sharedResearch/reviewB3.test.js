@@ -113,6 +113,12 @@ describe('RB-1 / RB-2 / RB-3 — the builder\'s own wording (builder lines only;
     expect(NAMES_A_PRICE.test(text)).toBe(true);
   });
   it.each([
+    'NVDA sells off its networking unit', 'AMD halves its dividend', 'AMD halves its capex',
+    "NVDA's average selling price drops for two quarters", 'hyperscalers sell off their GPU clusters',
+  ])('a business condition is never read as a price (refuter R2\'s controls): "%s"', (text) => {
+    expect(NAMES_A_PRICE.test(text)).toBe(false);
+  });
+  it.each([
     'it sells the accelerators AI data centers are buying', 'its market share should rise as buyers add capacity', 'accelerator prices will fall as supply grows',
     'big buyers cut accelerator spending for two quarters', 'a price war cuts margins', 'it sells off a networking unit', 'revenue halves after a buyer leaves',
     'Spending plans run over several quarters.', 'The team will test a new chip next year.',
@@ -147,8 +153,8 @@ describe('RB-4 — a names pick is dropped, never narrowed', () => {
     expect(v.proposals.pick).toBeNull();
     expect(v.notes).toContain('dropped:pick:not_supported');
   });
-  it('"NVDA and AMD" lands whole', () => {
-    expect(validate({ pick: { part: 'names', value: 'NVDA and AMD', reason: 'Both sell accelerators.', refs: [], reasons: [] } }).proposals.pick.value).toEqual(['NVDA', 'AMD']);
+  it.each([['NVDA and AMD'], ['NVDA, AMD.']])('"%s" lands whole', (value) => {
+    expect(validate({ pick: { part: 'names', value, reason: 'Both sell accelerators.', refs: [], reasons: [] } }).proposals.pick.value).toEqual(['NVDA', 'AMD']);
   });
 });
 

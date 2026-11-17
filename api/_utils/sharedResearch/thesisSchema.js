@@ -344,7 +344,7 @@ export function validateBuildTurn(output, ctx) {
     else if (p.part === 'segment') value = (proposals.map ?? card.segment.map ?? []).find((m) => m.label === clean(p.value))?.label ?? null;
     else if (p.part === 'names') {
       // every token must be a supported symbol: a pick that names anything else is dropped, never narrowed (RB-4)
-      const tokens = clean(p.value).split(SYMBOL_SPLIT).filter(Boolean);
+      const tokens = clean(p.value).split(SYMBOL_SPLIT).map((s) => s.replace(/[.;:!?]+$/, '')).filter(Boolean); // "NVDA, AMD." reads AMD
       const syms = tokens.map((s) => resolveSymbol(s, universe));
       const uniq = syms.filter((s, i) => s && syms.indexOf(s) === i);
       value = syms.every(Boolean) && uniq.length >= L.namesMin && uniq.length <= L.namesMax && uniq.every((s) => supportedAfter.includes(s)) ? uniq : null;

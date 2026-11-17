@@ -27,8 +27,8 @@ export const NAMES_A_PRICE = new RegExp([
   String.raw`\b\d[\d,.]*\s*(?:dollars?|usd)\b`,
   String.raw`\bprice\s+targets?\b|\btarget\s+price\b`,
   String.raw`\b(?:share|stock)\s+prices?\b`,
+  // a ticker's or a company's own price ("NVDA's price drops") — never "its average selling price", a business measure
   String.raw`'s\s+(?:share\s+|stock\s+)?price\b`,
-  String.raw`\bprice\s+(?:drops?|dropped|falls?|fell|declines?|declined|sinks?|sank|slides?|slid|rises?|rose|climbs?|climbed|halves|halved)\b`,
   String.raw`\b(?:stock|shares?)\s+(?:falls?|fell|drops?|dropped|declines?|declined|closes?|closed|trades?|traded|sinks?|sank|slides?|slid|rises?|rose|halves|halve|halved|doubles?|doubled|tumbles?|tumbled|plunges?|plunged)\b`,
   String.raw`\b(?:closes?|closing|trades?|trading)\s+(?:below|above|under|over)\b`,
   String.raw`\btrades?\s+(?:lower|higher|down|up)\b`,
