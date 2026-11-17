@@ -1,8 +1,8 @@
 # Build report — Shared Research "Work an idea" B4, the thesis builder's screen (dark)
 
-**Smoke preview:** SMOKE_URL — `?srFixture=index` lists every scenario; **`?srFixture=walk`** plays the founder's walk.
+**Smoke preview:** https://trade-seven-4ycujqtnq-fais-projects-bc179554.vercel.app — `?srFixture=index` lists every scenario; **`?srFixture=walk`** plays the founder's walk. Branch `claude/shared-research-b4-smoke` (never merged), commit `d72814d5` = `2c30f34e` (this report's first commit) + the three smoke files. Checked on the deployed preview: the real-browser rows 32 / 32 and the scripted walk 22 / 22.
 
-**Date:** Nov 17, 2026 · **Session:** local Claude Code (Opus 5.5), own worktree · **Branch:** `claude/shared-research-b4` · **PR:** PR_NUMBER (draft) · **Pushed head:** PUSHED_HEAD
+**Date:** Nov 17, 2026 · **Session:** local Claude Code (Opus 5.5), own worktree · **Branch:** `claude/shared-research-b4` · **PR:** [#1086](https://github.com/fashraf94/TradeSeven/pull/1086) (draft) · **Pushed head:** the commit that adds this line (docs only; the code is `20d776e5`)
 
 **Spec of record:**
 - the B3 report's contract, `docs/audits/20261116_BUILD_SHARED_RESEARCH_B3.md` §4 (with §12 and §15);
@@ -367,7 +367,7 @@ What the screen shows honestly but the founder may want changed — each is a se
 
 **Shared Research "Work an idea" B4 — the thesis builder's screen. Dark: `SHARED_RESEARCH_BUILDER_MODE` stays `'off'`.**
 
-Smoke preview (committed fixtures only; never merge the smoke branch): SMOKE_URL — `?srFixture=index` lists the scenarios, `?srFixture=walk` plays the founder's walk.
+Smoke preview (committed fixtures only; never merge the smoke branch): https://trade-seven-4ycujqtnq-fais-projects-bc179554.vercel.app — `?srFixture=index` lists the scenarios, `?srFixture=walk` plays the founder's walk.
 
 Report: [`docs/audits/20261117_BUILD_SHARED_RESEARCH_B4.md`](docs/audits/20261117_BUILD_SHARED_RESEARCH_B4.md) — every state with its server field and row, the review, the mutation table, the watch list, and the phone checklist.
 
@@ -400,6 +400,8 @@ No network call in any test; no model or provider call anywhere.
 - Bundle vs main: only the lazy Shared Research chunk changes (77.8 → 141.8 KB minified); the entry's export aliases are re-lettered (the same locals; the body identical once hashes are masked), so its importers differ only in alias letters; CSS byte-identical
 - Mutants: 58 / 58 killed (55 jsdom, 3 real-browser), each by the row it names; every file restored and checked by SHA-256
 - Review: four lenses and two refuter rounds — 22 findings at should-fix or above, 22 fixed; two refuter rounds found 6 + 4 defects in the fixes, all fixed; 2 rulings asked
+- Re-checked on the report commit `2c30f34e`: the full suite again (exit 0, the same counts); its build identical to the code head's (hash-masked), CSS byte-identical to `main`.
+- On the deployed smoke preview: the real-browser rows 32 / 32; the scripted walk 22 / 22.
 
 ### For the founder
 - Two rulings asked (report §10): Q-1 the per-reason "Source-backed" tag on a why proposal; Q-2 Save held for `too_many_evidence_refs` whatever the edit.
