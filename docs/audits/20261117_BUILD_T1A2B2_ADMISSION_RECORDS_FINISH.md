@@ -422,3 +422,161 @@ The run also makes one admission while B holds XOM (review A10). It is refused a
 6. **A quarterly first build that loses `create()` to an idea-only first build adopts the omitted document** (review B7). It heals at the next slot's top-up. Pre-existing and byte-identical here.
 7. **`mandateUniverseSnapshot.imports.test.js`'s self-check fails on Windows** (path separators), on `main` too. It passes on Linux.
 8. **`evidence.test.js` has two unused variables** (`contentHash` at the reseal helper, and a `bookRef`) under the plain ESLint config. They are on `main` too; the lint gate passes.
+
+## 9. Final fix, 17 Nov 2026 — T2C-01
+
+| Question | Answer |
+|---|---|
+| Is T2C-01 fixed? | **Yes.** Before it values a held name, admission reads that session's daily corporate-action layer inside its own transaction. A failed fetch, a missing entry, or a missing daily document refuses the name; nothing is written. Astra's $21,000 case is refused `ca_fetch_failed` |
+| Did anything else move? | **No money figure.** The quarterly product is identical (34/34 and 40/40). `dist/` is byte-identical to `main`. The end-to-end run changed only by the packet's new coverage fields |
+| Checks | Full Linux suite exit 0 (35,156 passed); lint gate 0; build 0; rules 839/839. Each of the three refusals removed in turn fails a row. The refuter found no way past the check (51 probes, 38 killed, the 13 others backlog) |
+| What is left | Nothing in this fix's scope. Four of the refuter's backlog rows can still admit $21,000 against $19,998.20 (R7a, R7b, R7d, R8; §9.4). Each needs a state today's producer does not make, or lies in the close. They go to T1a-2b-3 with Astra's backlog and the refuter's other rows (§9.6) |
+
+Astra's review of this PR (`audits/20261117_ASTRA_REVIEW_T1A2B2.md`, SHA-256 `ae5784d7…`, committed byte-identical with its README row) passed everything else and left one blocker, **T2C-01**.
+
+Admission read only the slot or close snapshot. The snapshot builder copies the daily layer's corporate-action rows but not its `caFetchFailed`, so a failed fetch looked like "no action listed". In Astra's case:
+- a 4-for-5 reverse split moved AAPL 25%, under the gap screen's 40%;
+- admission priced the old share count at the adjusted price;
+- it accepted a $21,000 short reservation against a true short cap of $19,998.20.
+
+The sales path already refused this case (`exits.js:174`, with its transactional daily read at `exits.js:347` and `:379`). Admission now does the same.
+
+Branch head before: `7687cfa5a77dc6981bf661ecf028ce5cdd280b66`. `origin/main`: `a6b7baa0a20e28c412afbae5fd88819c12e94fd6`, fetched at the start and again before the final checks. It was already merged into the branch, so there was nothing to merge. This session worked in its own worktree and pushed to this branch by fast-forward, because the branch is checked out in another worktree.
+
+### 9.1 The change (code commit `c4918d3a`)
+
+| Where | What |
+|---|---|
+| `api/_utils/practiceField/admissionMarks.js:184` | `readAdmissionMarkSet` reads `mandateUniverseDaily/{session}` inside admission's transaction, by the collection's literal name, as the sales do. `session` is the session the chosen marks belong to: the one in progress, or the last completed session when its close is the basis. It attaches `daily: { key, present, symbols }` to the mark set. Nothing is read when the calendar names no session |
+| `api/_utils/practiceField/admissionMarks.js:236` | `admissionMarksOf` checks each held name's coverage **before** valuing it (`caCoverageOf`, `:67`). A failing name is refused `admission_marks_unavailable` by symbol, frozen (valued at nothing), and no dollar limit is measured. One reason per name, coverage first:<br>• `ca_daily_missing`: no daily document for the session. This is stricter than a sale, on purpose: admission can wait, and a sale has a reason to proceed.<br>• `ca_coverage_missing`: no entry of the name's own (never one inherited through the object's prototype).<br>• `ca_fetch_failed`: `caFetchFailed === true`, the sales' own test.<br>A mark set with no `daily` counts as missing, so it fails closed. A book holding nothing needs no daily document |
+| `api/_utils/practiceField/admissionMarks.js:296` | The admission packet's `admissionMarks.caCoverage` records the daily document's key, whether it existed and, per held name, `covered` and `fetchSucceeded`. A refusal writes nothing |
+| `api/_utils/practiceField/admissionMarks.js:25`, `:59` | The header's paragraph on the coverage rule; the refusal vocabulary `CA_COVERAGE_REFUSAL` |
+
+- **The one selected price snapshot is unchanged.**
+- **`admission.js` is unchanged.** Both its paths get the daily document through `readAdmissionMarkSet`, already called in its transaction: the whole draft (`evaluateAdmission`) and a draft whose shape fails.
+- **The refusal object is unchanged:** its fields, and `founderControls.test.js`'s endpoint replay of it.
+- **Not touched:** `ledger.js`, corporate-action application, fill and sale amounts, the snapshot builders, any fenced file, flag, pin, rule or index. No fenced function is called.
+
+### 9.2 The regressions (`admissionMarks.test.js:368`)
+
+Astra's case runs on the engine's **own** daily and fast builders (`ensureDailySnapshot`, `ensureUniverseSnapshot`), with injected fetchers:
+- $30,000 of AAPL entered on D1 at $231.47 and closed there: equity $99,991.00;
+- D2's daily layer records AAPL's fetch as failed;
+- D2's 10:00 snapshot prints a vendor-timed $289.3375, the reverse split's adjusted price.
+
+| Row | Result |
+|---|---|
+| `:414` Astra's regression | The builders as they are: the daily layer has `caFetchFailed: true`; the snapshot has the price, no action and nothing of the failure. The $21,000 short JPM admission is **refused `ca_fetch_failed` for AAPL**. A broken draft hears the same refusal. **Nothing is written.** Presented with the split at the same price, the close values the book at $99,991.00, a short cap of $19,998.20 (Astra's diagnostic control) |
+| `:438` A missing entry | AAPL left out of the daily build: **refused `ca_coverage_missing`**, nothing written |
+| `:447` A missing daily document | No daily build at all (the snapshot's `dailyRef` is null): **refused `ca_daily_missing`**, nothing written |
+| `:456` Control: the feed succeeded, nothing listed | The same 25% rise is genuine: **admitted** at the new equity, $107,488.75 (short cap $21,497.75). The packet records the coverage |
+| `:469` Control: the feed lists the reverse split | The coverage passes, and the holding's basis is **refused `corporate_action_pending`**, as before |
+| `:477` Control: an empty book | **Admitted** with no daily document anywhere. The packet records the key it would have read, absent |
+| `:485` Control: the close basis | At 17:00 on D1, and at 09:15 on D2 before its open, the basis is D1's close. D1's failed daily layer **refuses**, though D2's (already built) succeeded. The reverse (D1 covered, D2 failed) **admits**, and names D1's daily layer |
+
+**The existing rows.** Fixtures store no daily layer, so every existing row that admits while the book holds a name was refused `ca_daily_missing`. A census settled it: with only that refusal disabled, every such row passed except the two that pin the packet's shape (`admissionMarks.test.js:64`, the end-to-end pin). Two test helpers were added to `__testsupport__/fixtures.js`:
+- `storeDailyLayer` (`:234`) writes a session's daily layer in the builder's entry shape;
+- `coverHeldNames` (`:254`) covers what the book holds, as the daily build's idea-book coverage does in production.
+
+Neither is wired into the snapshot fixtures. The sales read the daily layer too, so a fixture-wide document would change sale refusals across the suite. Instead, each held-book admission gets its session's coverage just before it:
+- in `admissionMarks.test.js`: `t1a05Book` (D2), the D3 and Friday rows, and the hand-built mark set at `:343`;
+- in `admission.test.js` (4), `catchUp.test.js` (3), `corporateActions.test.js` (3), `entry.test.js` (3), `evidence.test.js` (5), `exits.test.js` (2), `founderControls.test.js` (1) and `practiceFieldIsolation.test.js` (2).
+
+A second census then logged every row where a coverage refusal fires. One existing row still passed but for a new reason: `corporateActions.test.js:708` was refusing AAPL for coverage instead of the basis conflict it describes. It got S[2]'s coverage. After that, coverage refusals fire only in the seven new rows and the A10 probe.
+
+**The end-to-end pin** (`endToEnd.test.js:80`) moved only by the packet's new coverage fields. Both runs were dumped and compared leaf by leaf:
+- the base `7687cfa5` reproduces `288b0c89…` byte for byte; the head gives `f061fb0e…` (390,122 bytes);
+- **163 → 163 documents.** Nothing added or removed;
+- **9 leaves added:** `admissionMarks.caCoverage.{dailyKey, dailyPresent: false, symbols: {}}` on each of the three admission packets;
+- **3 leaves changed:** those packets' `contentHash`;
+- **No money leaf changed.**
+
+The A10 probe (`:204`), made while B holds XOM, now runs twice:
+- first with no daily layer: it shows `ca_daily_missing` for XOM end to end;
+- then with S[7]'s coverage placed for the probe: the measured `capital_exceeds_slot_cap`, as before.
+
+Both write nothing, and the placed document is removed after the probe.
+
+### 9.3 The mutation check
+
+Each refusal was replaced in turn by `if (false)`, in an LF snapshot of `c4918d3a`. The runs used the Practice Field, endpoint and isolation files (605 rows) and were judged by exit code and failing row names. Log SHA-256 `39c12c1a…`.
+
+| Mutant | Result | Killed by |
+|---|---|---|
+| Control (no mutant) | exit 0, 605/605 | — |
+| M1, `ca_daily_missing` removed | **killed**, exit 1 | `admissionMarks.test.js:447`, and the end-to-end A10 probe (`endToEnd.test.js:205`) |
+| M2, `ca_coverage_missing` removed | **killed**, exit 1 | `admissionMarks.test.js:438` |
+| M3, `ca_fetch_failed` removed | **killed**, exit 1 | `admissionMarks.test.js:414` and `:485` |
+
+In the battery run, M2 also failed the end-to-end row, on a 5.46 s timeout against the row's 5 s limit, while the Linux suite and the refuter were running. Rerun alone under M2, that file passes and the coverage row still fails. So that one failure was load, not a kill, and it is not counted. Each removed branch falls through to the next check without a throw, so no kill is a crash.
+
+### 9.4 The refuter
+
+One refuter worked on its own read-only LF snapshot of `c4918d3a`, told to break the fix. It defined **51** probes, **ran 51**, and **38 were killed** (the fix held). Its probe file, re-run here against the committed source, gives the same split: 13 red, 38 green, and the committed 25 rows green.
+
+**Nothing to fix in this PR.** No probe found a way past the coverage check. Whenever the marks' session has no daily document, no entry for a held name, or `caFetchFailed: true`, admission refuses and measures no dollar limit. That held against:
+- every daily shape tried: null; `present` not `true`; `symbols` null, an array, a string or inherited; an entry missing, or present only in lower case;
+- holdings keyed by another spelling, a zero-share holding, a waiting rename, and a position no open idea mirrors (each refused by name);
+- the daily document chosen at 13 instants: 23:30 Eastern (UTC already the next day), pre-open, 09:45, 16:00, a Saturday, Thanksgiving, the early close at 12:50, 13:00 and 13:30, and the DST change;
+- two races: the daily document turned to failed, or deleted, between admission's read and its commit. Each was retried and refused, and nothing was written.
+
+Its own four mutants of `admissionMarks.js` were all killed by its probes:
+- coverage always passing;
+- the daily document of today's Eastern date read in place of the marks' session (also killed by the committed close-basis row, `:485`);
+- the daily read moved outside the transaction (killed only by the race probes);
+- `caFetchFailed` ignored.
+
+**Disclosed:** no committed row pins the transactional read. A read moved outside the transaction passes them all; only the refuter's race probes catch it. The read is inside the transaction (`admissionMarks.js:184`, `tx.get`). A committed race row goes to T1a-2b-3 (§9.6).
+
+Its 13 red rows are all **BACKLOG** by the dispositions set before it ran, and go to T1a-2b-3 (§9.6):
+- **Odd entry values** (8 rows, no money effect): an entry of `false`, `0`, `''`, `'x'`, `{}` or `[]`, and `caFetchFailed` of `'true'` or `1`, read as covered and succeeded. That is the sales' own rule (`exits.js:174`). No builder writes these values.
+- **R7c** (no money effect): the daily document's own `date` is not checked against its key.
+- **R7a, R7b, R7d (money):** a daily document that differs from the one the slot snapshot was built from. Coverage now reads the daily document, but the basis check (`saleHeldBackBy`, `admissionMarks.js:243`) sees action rows only through the snapshot. A daily document that lists a reverse split the snapshot does not carry therefore admits $21,000 against $19,998.20. Three ways in:
+  - a top-up after the snapshot, for a held name missing from the day's first build;
+  - a `force` rebuild after the snapshot;
+  - a snapshot built with no daily document (`dailyRef: null`) and a daily document built later.
+
+  Each needs a state today's producer does not make:
+  - the cron builds the daily document before every slot and close snapshot (`api/cron/mandate-evaluate.js:410`, `:876`);
+  - no production caller forces a daily rebuild;
+  - by the refuter's reading, the first build's held set includes the idea books' holdings.
+- **R8 (money, outside admission):** the close never reads the daily layer. While the fetch fails for several sessions, every in-session admission is refused `ca_fetch_failed`, but each close writes the adjusted price into `lastMark` against the unadjusted share count. Once the split leaves the feed's five-day window, a later clean fetch hides it, and the gap screen compares against the polluted mark.
+
+### 9.5 The checks
+
+Linux runs used WSL Ubuntu, a private worktree of `~/pd-ci` at `086c9f7f` (the code commit plus the review's docs commit), Node 20.20.2, the install matching the lockfile (`e457c10d0317`), and `TZ=UTC`.
+
+| Check | Result |
+|---|---|
+| The Practice Field, endpoint, isolation, trace and seam files, with the snapshot, top-up, scan and interleaving files | exit 0 · `Test Files  27 passed (27)` · `Tests  733 passed (733)` |
+| The seventeen-scenario differential, both modes, against `origin/main` `a6b7baa0` | Astra's `astra-differential.test.js`, unmodified (`17e724ad…`), in her layout (base `a6b7baa0`, head `c4918d3a`, LF archives): exit 0 · **34/34 identical** (17 at `'off'`, 17 at `'on'`); 36/36 rows. Its evidence file is byte-identical to the one in her review run (`b6d71e76…`) |
+| The 40-case traced differential, against `origin/main` | Astra's `astra-cron-trace.test.js`, unmodified (`9297cead…`), the same layout: exit 0 · **40/40 identical**. Evidence hash `6c169f26…`, unchanged |
+| The end-to-end pin | Moved only by the packet's coverage fields (§9.2): `f061fb0e…`, 390,122 bytes, 163 documents |
+| **Full suite**, `TZ=UTC flock /tmp/pd-suite.lock` + `vitest run --maxWorkers=8`, at `086c9f7f` | **exit code 0** · `Test Files  1557 passed \| 12 skipped (1569)` · `Tests  35156 passed \| 135 skipped (35291)` · `Duration  332.11s`, read from the log (log SHA-256 `8f0956ad0f04ae45…`). That is 35,149 at the last build plus the 7 new rows |
+| `npm run lint:gate`, at `086c9f7f` | exit 0 (log `9f001ed27060e4e9…`) |
+| `npx vite build`, at `086c9f7f` | exit 0, built in 16.02 s (log `e798e20b52e6bceb…`). `dist/` (113 files) is **byte-identical** to `main`'s build, made in a second worktree with the same install: hash list `462b76919c46a337…` on both sides. The pushed head, which adds only this section, is built again before the push |
+| `npm run test:rules` (JDK 21, local emulator, Linux; no rule changed), at `086c9f7f` | exit 0 · `Test Files  46 passed (46)` · `Tests  839 passed (839)` (log `d92eea99f87c3b96…`) |
+
+### 9.6 What is carried from Astra's review
+
+Nothing below is a merge blocker in her review. Each goes where she, Q1–Q6 and the brief put it.
+
+**To T1b:**
+- **T2C-02:** a served window row must reconcile receipts merged after it was served, and must never add a delayed attempt to a total that already includes it. Keep the receipt-derived totals apart from the attempt-derived ones (`windowLedger.js:128`, `:138`, `:189`).
+- **A result reader** must check the parts (`resultPacketPartProblems(packet, partDocs)`), not only the packet's own hash (`verifyPacket`). The current end-to-end reader does both.
+- **An ex-dividend refusal or `close_owed`** does not use up a slot's refill attempt.
+- **Drafting** admits at its own window's snapshot, with server time.
+
+**To T1a-2b-3:**
+- **T2C-04:** the idea document's size alert (the bound fixture's idea document is 1,288,985 bytes; the estimate fits about 2,879 receipts), and whether receipts must move during the corporate-action finish (Q6).
+
+From this round's refuter (§9.4), also to T1a-2b-3:
+- **Snapshot action rows lagging the daily layer** (R7a, R7b, R7d; money). Two candidate fixes:
+  - read each held name's `corporateActions` from its daily entry as well as from the snapshot;
+  - or refuse a snapshot whose `dailyRef` is null or names another session.
+- **The close's own reading of the daily layer** (R8; money; `close.js`): a failed fetch must not let the close write an adjusted price over an unadjusted count.
+- **Odd entry values and the daily document's own `date`** (R3, R7c; no money effect). The same rule as the sales, so decide both together.
+- **A committed race row** for admission's transactional daily read.
+
+**To T5:**
+- **T2C-03:** the `force` rebuild of the daily document can erase carried actions under a concurrent top-up. Before any operational rebuild is exposed, isolate it from top-ups and define how held symbols' actions are kept (`mandateUniverseSnapshot.js:262`, `:351`).
