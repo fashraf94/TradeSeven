@@ -29,8 +29,9 @@ import { setPracticeFieldModeForTests } from './mode.js';
 import { roundUsd } from '../mandateRounding.js';
 import {
   seedBook, closeOn, windowAt, contractOf, getBook, getIdea, getRow, dumpStore, countDocs, etIso, ADMIT_ISO,
-  takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, countResults,
+  takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, countResults, withoutWindowAlerts,
 } from './__testsupport__/fixtures.js';
+import { verifyPacket, resultPacketMissingMarks, resultPacketProvenanceProblems, recomputeResultFromPacket } from './evidence.js';
 
 // The pinned evidence. A change here is a change to what the idea book records: re-pin it only with a reviewed
 // change, and carry the new figures into the build report.
@@ -38,7 +39,27 @@ import {
 //   entry and twelve closes, no sale.
 //   T1a-2a: the run itself changed — three ideas through the ONE short slot, each to its result (see above) — so the
 //   bytes are not comparable field by field with T1a-1's; the build report lists what each document kind gained.
-const EXPECTED_DUMP = { sha256: 'ed90ebd5da97658f7488cf098829f577fe952e00c43c7f9d5830967d4fc80666', bytes: 267350 };
+// T1a-2b-1: re-pinned from T1a-2a's ed90ebd5… (267,350 bytes, 120 documents). Leaf-compared base against head: 34
+// documents ADDED — three admission and three result evidence packets, 28 close rows of the window ledger — and no
+// leaf of any existing document added, removed or changed. The build first pinned 21c7d608…; its review fixes changed
+// only the six packets (the admission packet's `marksSnapshot` became per-position `markSource` with `lastClose`, B1;
+// the result packet gained `track`, B13), so bb742bb9…. This run's admissions hold no position, so no `markSource`
+// is exercised here — evidence.test.js covers each kind.
+// Fix round of 16 Nov 2026 (Astra T2B-01 to T2B-04), re-pinned once per fix, each leaf-compared against bb742bb9…:
+//   T2B-01 (mark provenance): db22f048…, 332,712 bytes, 154 documents. No document added or removed; 108 leaves ADDED
+//     — `lastMarkProvenance` on every holding and position, `markSource` (and `carriedFrom` for a carried mark) on the
+//     endpoint rows' holdings, `carriedFrom` on a row's carried mark, the packets' per-mark `markSource`/`snapshotKey` —
+//     and the three result packets' `contentHash` changed with them. No other leaf changed; no money leaf changed.
+//   T2B-02 (the window cursor): e6c3969b…, 334,166 bytes, 155 documents. Against T2B-01's pin: ONE document added —
+//     13 Nov's close row of the window ledger (the book's creation day, before its first fill: `valued: false`, its
+//     three windows missed) — and 29 leaves added: `valued` on the 28 existing close rows, and the book's
+//     `execState.windowsAccountedThrough`. Nothing changed or removed.
+//   T2B-03 (the close observations): bd6286bd…, 384,605 bytes, 155 documents. Against T2B-02's pin: no document added
+//     or removed; 1,195 leaves added, all under the three result packets' `observations` (every close from entry to
+//     endpoint, copied from the idea's rows), and those packets' `contentHash` changed with them. Nothing else.
+//   The round's review (W-1): f9c91e33…, 384,605 bytes, 155 documents. One leaf changed: 13 Nov's window-only close
+//     row says `code.caughtUpSession: null` (nothing was caught up for it), not `true`.
+const EXPECTED_DUMP = { sha256: 'f9c91e33f6bafa05b46ec4d7ce5d67d8ad1a8a80a4b92d42b4412fcbf76ad6ed', bytes: 384605 };
 
 // Twenty-nine sessions from Monday 16 November 2026 (Thanksgiving and Christmas are not sessions).
 const SESSIONS = ['2026-11-16'];
@@ -212,6 +233,27 @@ describe('the end-to-end synthetic run', () => {
     // Every idea carries its origin, frozen with the contract and copied onto the inception row (direction note ruling 6).
     expect(idea(b.ideaId).contract.origin).toEqual({ kind: 'signaldrop', initiatedBy: 'player' });
     expect(db._get(`mandates/${bookId}/ideas/${c.ideaId}/rows/inception`).origin).toEqual({ kind: 'research', initiatedBy: 'agent' });
+    // T1a-2b-1 §3: every idea keeps its two evidence packets, each whole and hashing to itself, the result's carrying
+    // every endpoint mark of every ledger; §4: one close row per session closed.
+    for (const id of [a.ideaId, b.ideaId, c.ideaId]) {
+      const admission = db._get(`mandates/${bookId}/ideas/${id}/evidence/admission`);
+      const result = db._get(`mandates/${bookId}/ideas/${id}/evidence/result`);
+      expect(verifyPacket(admission) && verifyPacket(result), id).toBe(true);
+      expect(result.result).toEqual(idea(id).result);
+      expect(resultPacketMissingMarks(result, db._get(`mandates/${bookId}/ideas/${id}/rows/endpoint`)), id).toEqual([]);
+      // Astra T2B-03: every close the result rests on is in the packet, and its statistics recompute from it alone.
+      expect(resultPacketProvenanceProblems(result), id).toEqual([]);
+      const re = recomputeResultFromPacket(result);
+      expect(re.problems, id).toEqual([]);
+      expect(re.observations, id).toBe(result.result.dataQuality.rows);
+      expect(re.largestDecline, id).toEqual(result.result.largestDecline);
+      expect(re.investedExposure, id).toEqual(result.result.investedExposure);
+    }
+    // …and (Astra T2B-02) the book's creation day, 13 Nov, before its first idea filled: accounted for by the window
+    // ledger's own cursor, its windows missed, with no valuation row.
+    expect(countDocs(db, `mandates/${bookId}/windows/`)).toBe(29);
+    expect(db._get(`mandates/${bookId}/windows/2026-11-13_close`)).toMatchObject({ valued: false, session: { missing: ['open30', 'midday', 'preClose'] } });
+    expect(db._get(`mandates/${bookId}/dailyRows/2026-11-13`)).toBeUndefined();
 
     // The evidence.
     const dump = dumpStore(db);
@@ -298,7 +340,7 @@ describe('three ideas side by side — the book\'s row is the sum of its ideas\'
       const date = DAYS12[i];
       const out = await closeOn(db, bookId, date, closeQuotesOf(i));
       expect(out.closed, date).toBe(true);
-      expect(out.alerts, date).toEqual([]);
+      expect(withoutWindowAlerts(out.alerts), date).toEqual([]);
       reconcile(db, bookId);
       const book = getBook(db, bookId);
       // B-MARK: a close moves cash only by a dividend; the treasury never moves; no decision is written.

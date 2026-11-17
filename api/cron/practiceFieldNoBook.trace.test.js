@@ -54,7 +54,7 @@ import { runEvalSweep, runCloseSweep } from './mandate-evaluate.js';
 import { makeMandateFakeDb } from '../_utils/__testsupport__/mandateFakeFirestore.js';
 import { buildNewMandateDoc } from '../_utils/mandateSchema.js';
 import { setPracticeFieldModeForTests } from '../_utils/practiceField/mode.js';
-import { seedBook } from '../_utils/practiceField/__testsupport__/fixtures.js';
+import { seedBook, windDownBook } from '../_utils/practiceField/__testsupport__/fixtures.js';
 
 const REGISTRY = 'practiceFieldBooks/_registry';
 const VINTAGE = {
@@ -267,8 +267,8 @@ describe('Astra T2A-02 — the controls: where the registry cannot say "none", d
   it('the registry lists a book that is DRAINING: discovery runs, and the draining book is closed by the Practice Field\'s own query', async () => {
     const s = SCENARIOS.find((x) => x.name === 'close-cash');
     const rec = await fire(s, 'on', async (db) => {
-      const book = await seedBook({ db, uid: 'owner-d', opId: 'c-d' });
-      await book.bookRef.update({ status: 'draining' }); // nothing sets the status yet (T1a-2b): a fixture stands in
+      await seedBook({ db, uid: 'owner-d', opId: 'c-d' });
+      await windDownBook(db, { uid: 'owner-d' }); // the founder's REAL wind_down (T1a-2b-1 §6; T1a-2a C-1)
     });
     expect(discoveryQueries(rec).some((op) => op[2].some((p) => p[1] === 'status' && p[3] === 'draining'))).toBe(true);
     expect(rec.response.body).toMatchObject({ drainingIdeaBooks: { books: 1 } });
@@ -278,8 +278,8 @@ describe('Astra T2A-02 — the controls: where the registry cannot say "none", d
     const s = SCENARIOS.find((x) => x.name === 'hold');
     const prepare = async (db) => {
       await seedBook({ db, uid: 'owner-a', opId: 'c-a' });
-      const d = await seedBook({ db, uid: 'owner-d', opId: 'c-d' });
-      await d.bookRef.update({ status: 'draining' });
+      await seedBook({ db, uid: 'owner-d', opId: 'c-d' });
+      await windDownBook(db, { uid: 'owner-d' });
     };
     const off = await fire(s, 'off', prepare);
     const on = await fire(s, 'on', prepare);

@@ -105,7 +105,7 @@ describe("mode 'off' makes every Practice Field path a no-op, before any read", 
     expect(await runIdeaBookEvalPass(untouchable, { tick, ownerToken: 't' })).toEqual({ books: 0, served: 0, caughtUp: 0, sold: 0, saleWaiting: 0, resulted: 0, entered: 0, waiting: 0, cancelled: 0, errors: 0, leaseSkips: 0 });
     expect(await closeIdeaBook(untouchable, ref, { date: DAYS.d1 })).toEqual({ closed: false, skipped: 'practice_field_off', alerts: [] });
     // The window pass and its catch-up (review RH-1): the same.
-    expect(await catchUpIdeaBook(untouchable, ref, { before: DAYS.d2 })).toEqual({ complete: false, skipped: 'practice_field_off', caughtUp: [], cancelled: [], resulted: [], alerts: [] });
+    expect(await catchUpIdeaBook(untouchable, ref, { before: DAYS.d2 })).toEqual({ complete: false, skipped: 'practice_field_off', caughtUp: [], windowsAccounted: [], cancelled: [], resulted: [], alerts: [] });
     expect(await runIdeaBookWindow(untouchable, { bookRef: ref, tick })).toEqual({
       served: false, complete: true, caughtUp: [], errors: 0,
       sales: { served: false, sold: 0, waiting: 0, resulted: 0, errors: 0, alerts: [] }, entries: { served: false, entered: 0, waiting: 0, cancelled: 0, errors: 0 },

@@ -14,6 +14,7 @@ import { roundUsd } from '../mandateRounding.js';
 import {
   seedBook, admitAndEnter, closeOn, contractOf, getBook, getIdea, getRow, closeSnapshot, tickSnapshot, tickOf, slotOpenIso, etIso, DAYS, ADMIT_ISO,
   countDocs, makeMandateFakeDb, takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, SALE_WORD_KEYS, storeCloseSnapshot, enterIdeaWith,
+  withoutWindowAlerts,
 } from './__testsupport__/fixtures.js';
 
 const CAP = { AAPL: 3.4e12, MSFT: 3.1e12, NVDA: 3.5e12, LLY: 7.5e11, AMD: 2.6e11, AVGO: 8.2e11 };
@@ -51,7 +52,7 @@ describe('a valuation: every ledger marked from the one close snapshot', () => {
     const prices = { AAPL: 233.11, MSFT: 420.77, SPY: 599.02, XLK: 234.93 };
     const out = await closeOn(db, bookId, DAYS.d1, prices);
     expect(out.closed).toBe(true);
-    expect(out.alerts).toEqual([]);
+    expect(withoutWindowAlerts(out.alerts)).toEqual([]); // the windows were not run: their misses are windowLedger.test.js's
 
     const idea = getIdea(db, bookId, r.ideaId);
     const row = getRow(db, bookId, r.ideaId, DAYS.d1);
@@ -199,7 +200,7 @@ describe('corporate actions: once per ledger', () => {
     const before = getIdea(db, bookId, r.ideaId);
     const beforeRow = getRow(db, bookId, r.ideaId, DAYS.d2);
     const out = await closeOn(db, bookId, DAYS.d3, { AAPL: { price: 117.25, corporateActions: [split] }, MSFT: 419.9, SPY: 600.1 });
-    expect(out.alerts).toEqual([]);
+    expect(withoutWindowAlerts(out.alerts)).toEqual([]);
     const idea = getIdea(db, bookId, r.ideaId);
     const book = getBook(db, bookId);
     const shares = before.ledger.holdings.AAPL.shares;
@@ -390,7 +391,7 @@ describe('Astra T1A-01 — an action the feed lists twice is applied once per le
     await closeOn(db, bookId, DAYS.d1, QUOTES); // the entry session's own close: no session is skipped (Amendment E12)
     const out = await closeOn(db, bookId, DAYS.d2, { AAPL: { price: 99, corporateActions: [div, { ...div }] }, SPY: 500 });
     expect(out.closed).toBe(true);
-    expect(out.alerts).toEqual([]);
+    expect(withoutWindowAlerts(out.alerts)).toEqual([]);
     const idea = getIdea(db, bookId, r.ideaId);
     const book = getBook(db, bookId);
     for (const ledger of [idea.ledger, idea.comparisonLedger]) {
@@ -412,7 +413,7 @@ describe('Astra T1A-01 — an action the feed lists twice is applied once per le
     const before = getIdea(db, bookId, r.ideaId);
     await closeOn(db, bookId, DAYS.d1, QUOTES); // the entry session's own close: no session is skipped (Amendment E12)
     const out = await closeOn(db, bookId, DAYS.d2, { AAPL: { price: 50.02, corporateActions: [split, { ...split }] }, SPY: 500 });
-    expect(out.alerts).toEqual([]);
+    expect(withoutWindowAlerts(out.alerts)).toEqual([]);
     const idea = getIdea(db, bookId, r.ideaId);
     expect(idea.ledger.holdings.AAPL.shares).toBe(399.880034);
     expect(idea.comparisonLedger.holdings.AAPL.shares).toBe(399.880034);
@@ -542,7 +543,7 @@ describe('Astra T1A-01 — an action the feed lists twice is applied once per le
       const later = await closeOn(db, bookId, date, { AAPL: 100.41, SPY: 500 });
       expect(getRow(db, bookId, r.ideaId, date).fullQuality, date).toBe(true);
       expect(db._get(`mandates/${bookId}/dailyRows/${date}`).fullQuality).toBe(true);
-      expect(later.alerts).toEqual([]);
+      expect(withoutWindowAlerts(later.alerts)).toEqual([]);
     }
   });
 
@@ -639,7 +640,11 @@ describe('mark quality: missing data stays visible', () => {
     // D2: MSFT is missing; AAPL has no vendor time; XLK's quote is the vendor's from an earlier session.
     await closeOn(db, bookId, DAYS.d2, { AAPL: { price: 234.5, at: null }, SPY: 600.1, XLK: { price: 235.5, at: etIso(DAYS.d1, 16, 0) } });
     const row = getRow(db, bookId, r.ideaId, DAYS.d2);
-    expect(row.marks.MSFT).toEqual({ mark: 420.77, quality: 'carried_forward', markSource: 'carry_over', vendorTimeIso: null });
+    // A carried mark names where its price came from: D1's close, as it was recorded then (Astra T2B-01).
+    expect(row.marks.MSFT).toEqual({
+      mark: 420.77, quality: 'carried_forward', markSource: 'carry_over', vendorTimeIso: null,
+      carriedFrom: { source: 'close', symbol: 'MSFT', session: DAYS.d1, snapshotKey: `${DAYS.d1}_close`, quality: 'vendor_time', vendorTimeIso: etIso(DAYS.d1, 16, 0) },
+    });
     expect(row.marks.AAPL).toEqual({ mark: 234.5, quality: 'receipt_time_fallback', markSource: 'snapshot', vendorTimeIso: null });
     expect(row.comparisonMarks.XLK).toMatchObject({ mark: 235.5, quality: 'carried_forward' });
     expect(row.spyMarks.SPY.quality).toBe('vendor_time');

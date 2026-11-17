@@ -34,11 +34,12 @@
 // the mean invested exposure. Rather than re-read up to sixty rows inside the endpoint's transaction, each close
 // folds its row into a small running record on the idea; the endpoint reads it.
 
-import { MANDATE_FRICTION_TIERS } from '../mandateConfig.js';
 import {
   IDEA_SCHEMA_VERSION, VALUATION_LABEL, VALUATION_LABEL_UNOBSERVED, MARK_QUALITY, EXIT_REASON, CONTRACT_CONDITION, ECONOMIC_RESULT,
   PROCESS_QUALITY, EVIDENCE_SCOPE_SINGLE, ADOPTION_NO_OFFER, RESULT_VERSION, DECISION_ORIGIN_SETTLEMENT, DECISION_ORIGIN_LINE_EXIT,
+  DECISION_ORIGIN_DELISTING_EXIT,
 } from './constants.js';
+import { PracticeFieldError } from './errors.js';
 import { modelledSaleProceeds, isCostTier, costTierOf } from './fills.js';
 import { fundOf, frictionForSymbol } from './symbols.js';
 import { unsettledConflicts, heldActionRecords, basisSuspicionRecords } from './ledger.js';
@@ -165,13 +166,17 @@ export function readLines({ idea, valuation, date, isDueSession, late, recognise
 
 // ── The endpoint ─────────────────────────────────────────────────────────────────────────────────────────────
 
-/** The cost tier a holding is liquidated under: a fund's explicit tier; the tier a stock entered with (E5). */
+/**
+ * The cost tier a holding is liquidated under: a fund's explicit tier; the tier a stock entered with (E5). A holding
+ * with no stored tier cannot reach here — the reconciliation refuses one on every ledger, as read and as written
+ * (reconcile.js) — so there is no fallback to the model's widest tier (T1a-2a C-9, removed in T1a-2b-1): if one ever
+ * did arrive, the endpoint refuses it rather than cost it at a tier it never entered with. `stored` is always true; it
+ * stays on the answer because the endpoint row and the result carry `costTiersStored`.
+ */
 export function exitTierOf(symbol, holding) {
   if (fundOf(symbol)) return { tier: costTierOf(frictionForSymbol(symbol, null)), stored: true };
   if (isCostTier(holding?.costTier)) return { tier: costTierOf(holding.costTier), stored: true };
-  // A holding with no stored tier (none is written by this build) is costed at the model's widest tier and named.
-  const widest = MANDATE_FRICTION_TIERS.unknown;
-  return { tier: { capTier: 'unknown', slippageBps: widest.slippageBps, spreadProxyBps: widest.spreadProxyBps }, stored: false };
+  throw new PracticeFieldError('cost_tier_unknown', { symbol, at: 'endpoint' });
 }
 
 /**
@@ -212,6 +217,10 @@ export function ledgerEndpoint(ledger, valuation) {
     holdings[sym] = {
       shares: h.shares, mark: m.mark, markQuality: m.quality, markVendorTimeIso: m.vendorTimeIso ?? null,
       costTier: tier, atMarkUsd: sale.grossUsd, netOfModelledCostUsd: sale.netUsd, modelledCostUsd: fromCents(toCents(sale.grossUsd) - toCents(sale.netUsd)),
+      // Where the mark came from (Astra T2B-01): this close's snapshot, or — CARRIED — the holding's own provenance,
+      // which a carry leaves unchanged (ledger.js). Provenance only: no figure above reads it.
+      markSource: m.markSource ?? null,
+      ...(m.markSource !== 'snapshot' ? { carriedFrom: h.lastMarkProvenance ?? null } : {}),
     };
   }
   const valueCents = cashCents + netCents;
@@ -277,6 +286,22 @@ const declineOf = (series) => (series && series.declineCents > 0
     priorPeakUsd: fromCents(series.declinePeakCents), peakOn: series.declinePeakOn, troughOn: series.declineTroughOn,
   }
   : { usd: 0, pctOfPriorPeak: 0, priorPeakUsd: series?.peakCents != null ? fromCents(series.peakCents) : null, peakOn: series?.peakOn ?? null, troughOn: null });
+
+/**
+ * The statistics a result states from its running record (contract §4.4): each series' largest decline, the mean
+ * invested exposure, and the rows counted. ONE function: buildEndpoint writes the result with it, and the result
+ * packet's recomputation reproduces them with it from the packet's own copied observations, folded by
+ * foldCloseIntoTrack (evidence.js recomputeResultFromPacket; Astra T2B-03). Pure.
+ */
+export function trackStatistics(track) {
+  const t = track || newTrack();
+  return {
+    largestDecline: { idea: declineOf(t.idea), comparison: declineOf(t.comparison), basis: 'recorded_session_close_values' },
+    investedExposure: { mean: t.closes > 0 ? t.exposureSum / t.closes : null, closes: t.closes },
+    rows: t.rows,
+    rowsNotFullQuality: t.rowsNotFullQuality,
+  };
+}
 
 // ── The endpoint row and the result ──────────────────────────────────────────────────────────────────────────
 
@@ -367,12 +392,14 @@ export function buildEndpoint({ idea, valuations, date, kind, observed, caughtUp
   const processQuality = blockedBy.length > 0 ? PROCESS_QUALITY.BLOCKED : PROCESS_QUALITY.FOLLOWED_PLAN;
 
   const track = idea.track || newTrack();
-  // Sales before the endpoint all carry the origin `line_exit`; one whose holding a delisting left waiting recognised
-  // no line, so it is counted apart (review RH-3), by what queued it.
-  const early = (idea.ledger.saleReceipts || []).filter((r) => r.kind === DECISION_ORIGIN_LINE_EXIT);
-  const lineExits = early.filter((r) => r.queuedBy?.reason !== EXIT_REASON.DELISTING);
+  // The decline, exposure and row counts, from the running record by the one function (trackStatistics).
+  const stats = trackStatistics(track);
+  // The sales before the endpoint, by their origin (Q-G): a line exit, or a sale of a holding a delisting left
+  // waiting (it recognised no line), counted apart (review RH-3) — the same two counts T1a-2a wrote.
+  const receipts = idea.ledger.saleReceipts || [];
+  const lineExits = receipts.filter((r) => r.kind === DECISION_ORIGIN_LINE_EXIT);
   const lineExitCostCents = lineExits.reduce((sum, r) => sum + toCents(r.frictionPaidUsd || 0), 0);
-  const delistingExits = early.filter((r) => r.queuedBy?.reason === EXIT_REASON.DELISTING);
+  const delistingExits = receipts.filter((r) => r.kind === DECISION_ORIGIN_DELISTING_EXIT);
   const delistingExitCostCents = delistingExits.reduce((sum, r) => sum + toCents(r.frictionPaidUsd || 0), 0);
 
   const result = {
@@ -403,16 +430,16 @@ export function buildEndpoint({ idea, valuations, date, kind, observed, caughtUp
     oneObservationLabel: true,
     // Beside them (contract §4.4).
     spy: { valueUsd: spy.valueUsd, gapUsd: fromCents(spyGapCents), gapPctOfReserved: (spyGapCents * 100) / reservedCents, fullQuality: spy.fullQuality },
-    largestDecline: { idea: declineOf(track.idea), comparison: declineOf(track.comparison), basis: 'recorded_session_close_values' },
+    largestDecline: stats.largestDecline,
     trades: {
       entry: { count: idea.entry?.legCount ?? null, costsUsd: idea.entry?.costsPaidUsd ?? null },
       lineExit: { count: lineExits.length, costsUsd: fromCents(lineExitCostCents) },
-      // A holding sold because a delisting left it waiting: recorded with the origin `line_exit`, counted here, apart.
+      // A holding sold because a delisting left it waiting: its own origin, `delisting_exit` (Q-G), counted apart.
       delistingExit: { count: delistingExits.length, costsUsd: fromCents(delistingExitCostCents) },
     },
-    investedExposure: { mean: track.closes > 0 ? track.exposureSum / track.closes : null, closes: track.closes },
+    investedExposure: stats.investedExposure,
     dataQuality: {
-      rows: track.rows, rowsNotFullQuality: track.rowsNotFullQuality,
+      rows: stats.rows, rowsNotFullQuality: stats.rowsNotFullQuality,
       unobservedLineSessions: unobservedCount,
       waitingDays: (idea.waitedSessions || []).length,
       costTiersStored: own.costTiersStored && cmp.costTiersStored && spy.costTiersStored,

@@ -13,6 +13,7 @@
 
 import { getSessionForDate } from '../marketSchedule.js';
 import { SLOT_NAMES, resolveSessionSlots } from '../mandateSessionSlots.js';
+import { MANDATE_CLOSE_DELAY_MIN, MANDATE_CLOSE_WINDOW_MIN } from '../mandateConfig.js';
 import { HORIZON_WINDOW_SESSIONS } from '../../../src/constants/hypothesisRecords.js';
 import { PRACTICE_FIELD_SLOT_HORIZON } from '../../../src/data/practiceFieldSlots.js';
 
@@ -74,6 +75,89 @@ export function isLastIdeaEntrySlot(slotName) {
 /** The engine slots code sells at: the same windows it enters at (sales first — Amendment E8). */
 export function ideaSaleSlots() {
   return ideaEntrySlots();
+}
+
+/** The name of the window ledger's row for a session's close (Amendment C §3; T1a-2b-1 §4). */
+export const CLOSE_WINDOW = 'close';
+
+/**
+ * THE WINDOWS A BOOK IS DUE ON A SESSION (T1a-2b-1 §4; Amendment C §3; Astra W-12, W-14, W-15) — the one place the
+ * window ledger's expected rows come from, so T1b changes the schedule by changing this module alone. Today they are
+ * the engine slots code acts at (`ideaEntrySlots`), as the session's own geometry places them, then the close. The
+ * geometry is read, never assumed: a session whose geometry has no such slot does not expect it. (Read at main
+ * 71bc6bde: an early-close session still has all three engine slots — 10:00, 11:15 and 12:30 Eastern — so today it
+ * expects the same four rows; the founder's two early-close windows arrive with T1b's schedule, here.)
+ *
+ * A window is due only if a fire of the evaluation cron could still serve the book in it: the book existed before
+ * the slot's LAST fire (`IDEA_BOOK_EVAL_FIRE_EVERY_MIN`). A book created at 10:05 is served by the 10:15 fire of the
+ * 10:00 slot, and owed it (review, lens B); one created at 10:20 is not owed it — no fire is left in [10:00, 10:30)
+ * (fix-round refuter NF-4). The close is always due on a session the book is closed for.
+ *
+ * @returns {Array<{ window: string, kind: 'intraday'|'close', atIso: string|null }>}  in session order; [] when the
+ *          date is not a session on the maintained calendar
+ */
+export function ideaBookWindowsOf(sessionDate, { createdAtIso = null } = {}) {
+  const session = getSessionForDate(sessionDate);
+  if (!session?.isTradingDay) return [];
+  const createdMs = typeof createdAtIso === 'string' ? Date.parse(createdAtIso) : NaN;
+  const out = [];
+  for (const slot of ideaEntrySlots()) {
+    const at = slotInstantMs(sessionDate, slot);
+    if (at === null) continue;
+    if (Number.isFinite(createdMs) && !(createdMs < lastFireInSlotMs(sessionDate, slot))) continue;
+    out.push({ window: slot, kind: 'intraday', atIso: new Date(at).toISOString() });
+  }
+  out.push({ window: CLOSE_WINDOW, kind: 'close', atIso: null });
+  return out;
+}
+
+/** The instant a session's regular hours end (epoch ms; 13:00 on an early close), or null when the date is not a session. */
+export function sessionCloseMs(sessionDate) {
+  const session = getSessionForDate(sessionDate);
+  return session?.isTradingDay && Number.isFinite(session.closeMs) ? session.closeMs : null;
+}
+
+/**
+ * The instant a session's CLOSE PASS window ends (epoch ms): the latest moment its on-time close can run — the engine's
+ * close tick, [close + MANDATE_CLOSE_DELAY_MIN, close + DELAY + MANDATE_CLOSE_WINDOW_MIN) Eastern (mandateSessionSlots
+ * activeCloseTick), 18:00 on a regular session. Null when the date is not a session.
+ */
+export function sessionClosePassEndMs(sessionDate) {
+  const closeMs = sessionCloseMs(sessionDate);
+  return closeMs === null ? null : closeMs + (MANDATE_CLOSE_DELAY_MIN + MANDATE_CLOSE_WINDOW_MIN) * 60_000;
+}
+
+/**
+ * How often the evaluation cron fires, in minutes, on the quarter hour — `vercel.json` `/api/cron/mandate-evaluate`,
+ * `*\/15` (pinned by windowLedger.test.js). A slot's window is served only at a fire inside it.
+ */
+export const IDEA_BOOK_EVAL_FIRE_EVERY_MIN = 15;
+
+/** The window ledger's row id for a session's window: `{sessionDate}_{window}` (the window being a slot or `close`). */
+export function windowRowId(sessionDate, window) {
+  return `${sessionDate}_${window}`;
+}
+
+/** The instant a slot's activation window ends on a session date (epoch ms), or null — the engine's own geometry. */
+function slotEndMs(sessionDate, slotName) {
+  const session = getSessionForDate(sessionDate);
+  const geometry = resolveSessionSlots(sessionDate);
+  const slot = geometry?.trading ? geometry.slots.find((x) => x.name === slotName) : null;
+  if (!session?.isTradingDay || !slot) return null;
+  return session.openMs + (slot.windowEndMin - geometry.openMin) * 60_000;
+}
+
+/**
+ * The instant of the LAST evaluation fire inside a slot's window (epoch ms), or NaN when no fire falls in it. Fires
+ * are on the quarter hour, and Eastern offsets are whole hours, so they are the epoch's multiples of the cadence.
+ */
+function lastFireInSlotMs(sessionDate, slotName) {
+  const start = slotInstantMs(sessionDate, slotName);
+  const end = slotEndMs(sessionDate, slotName);
+  if (start === null || end === null) return NaN;
+  const step = IDEA_BOOK_EVAL_FIRE_EVERY_MIN * 60_000;
+  const last = Math.floor((end - 1) / step) * step;
+  return last >= start ? last : NaN;
 }
 
 /** The instant a slot opens on a session date (epoch ms), or null when the date is not a session or has no such slot. */

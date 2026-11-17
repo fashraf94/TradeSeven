@@ -883,6 +883,11 @@
       "collectionGroup": "setupMenuLabelState",
       "fieldPath": "attempts",
       "indexes": []
+    },
+    {
+      "collectionGroup": "decisions",
+      "fieldPath": "rationale",
+      "indexes": []
     }
   ]
 }

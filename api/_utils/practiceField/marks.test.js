@@ -105,15 +105,26 @@ describe('eligibleMark — the only source of a fill price for an idea book', ()
     expect(eligibleMark(snap({ AAPL: { price: 231.47, at: at(10, 21) } }, { builtAt: new Date(at(10, 22)) }), 'AAPL', opts(decision)).ok).toBe(true);
   });
 
-  it('Q-2 — stale_quote: a quote more than 20 minutes old at the window\'s tick (the stored snapshot\'s own build time) is refused; exactly 20 minutes is not', () => {
-    // The tick is 12:46 (snap's build time). 12:26 is exactly twenty minutes before it; 12:25 is twenty-one.
-    expect(eligibleMark(snap({ AAPL: { price: 231.47, at: at(12, 26) } }), 'AAPL', opts()).ok).toBe(true);
-    expect(eligibleMark(snap({ AAPL: { price: 231.47, at: at(12, 25) } }), 'AAPL', opts())).toEqual({ ok: false, symbol: 'AAPL', refusal: MARK_REFUSAL.STALE_QUOTE });
+  it('Q-D — the idea book\'s maximum quote age is its OWN constant, 30 minutes; the engine\'s 20 minutes is unchanged and not read here', async () => {
+    const { PRACTICE_FIELD_MARK_MAX_AGE_MS } = await import('./constants.js');
+    const { MANDATE_MARK_MAX_AGE_MS } = await import('../mandateConfig.js');
+    expect(PRACTICE_FIELD_MARK_MAX_AGE_MS).toBe(30 * 60 * 1000);
+    expect(MANDATE_MARK_MAX_AGE_MS).toBe(20 * 60 * 1000);
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(new URL('./marks.js', import.meta.url), 'utf8');
+    expect(src).not.toMatch(/MANDATE_MARK_MAX_AGE_MS/);
+    expect(src.match(/PRACTICE_FIELD_MARK_MAX_AGE_MS/g).length).toBeGreaterThanOrEqual(3); // the import and the two age tests
+  });
+
+  it('Q-2 — stale_quote: a quote more than 30 minutes old (Q-D: the idea book\'s own constant) at the window\'s tick (the stored snapshot\'s own build time) is refused; exactly 30 minutes is not', () => {
+    // The tick is 12:46 (snap's build time). 12:16 is exactly thirty minutes before it; 12:15 is thirty-one.
+    expect(eligibleMark(snap({ AAPL: { price: 231.47, at: at(12, 16) } }), 'AAPL', opts()).ok).toBe(true);
+    expect(eligibleMark(snap({ AAPL: { price: 231.47, at: at(12, 15) } }), 'AAPL', opts())).toEqual({ ok: false, symbol: 'AAPL', refusal: MARK_REFUSAL.STALE_QUOTE });
     expect(MARK_REFUSAL.STALE_QUOTE).toBe('stale_quote');
     // The tick is the DOCUMENT's: a build time as a Firestore Timestamp or an ISO string reads the same…
     const stamp = { toDate: () => new Date(at(12, 46)) };
-    expect(eligibleMark(snap({ AAPL: { price: 231.47, at: at(12, 25) } }, { builtAt: stamp }), 'AAPL', opts()).refusal).toBe('stale_quote');
-    expect(eligibleMark(snap({ AAPL: { price: 231.47, at: at(12, 26) } }, { builtAt: at(12, 46) }), 'AAPL', opts()).ok).toBe(true);
+    expect(eligibleMark(snap({ AAPL: { price: 231.47, at: at(12, 15) } }, { builtAt: stamp }), 'AAPL', opts()).refusal).toBe('stale_quote');
+    expect(eligibleMark(snap({ AAPL: { price: 231.47, at: at(12, 16) } }, { builtAt: at(12, 46) }), 'AAPL', opts()).ok).toBe(true);
     // …and a snapshot with no readable build time certifies no age.
     for (const builtAt of [undefined, null, 'soon', 1794849000]) {
       expect(eligibleMark(snap({ AAPL: 231.47 }, { builtAt }), 'AAPL', opts()).refusal, String(builtAt)).toBe('stale_quote');
@@ -122,24 +133,24 @@ describe('eligibleMark — the only source of a fill price for an idea book', ()
     expect(eligibleMark(snap({ AAPL: { price: 231.47, at: at(10, 19) } }), 'AAPL', opts(at(10, 20))).refusal).toBe('before_decision');
   });
 
-  it('quotePastMaxAge asks the SAME question as the age test above, alone — so a sale can tell a quote that merely predates its decision from one that has not printed for more than twenty minutes', () => {
-    // The tick is 12:46. Exactly twenty minutes is not past the age; one second more is — as eligibleMark judges.
-    expect(quotePastMaxAge(snap({ AAPL: { price: 231.47, at: at(12, 26) } }), 'AAPL')).toBe(false);
-    const oneSecondMore = new Date(Date.parse(at(12, 26)) - 1000).toISOString();
+  it('quotePastMaxAge asks the SAME question as the age test above, alone — so a sale can tell a quote that merely predates its decision from one that has not printed for more than thirty minutes', () => {
+    // The tick is 12:46. Exactly thirty minutes is not past the age; one second more is — as eligibleMark judges.
+    expect(quotePastMaxAge(snap({ AAPL: { price: 231.47, at: at(12, 16) } }), 'AAPL')).toBe(false);
+    const oneSecondMore = new Date(Date.parse(at(12, 16)) - 1000).toISOString();
     expect(quotePastMaxAge(snap({ AAPL: { price: 231.47, at: oneSecondMore } }), 'AAPL')).toBe(true);
     expect(eligibleMark(snap({ AAPL: { price: 231.47, at: oneSecondMore } }), 'AAPL', opts()).refusal).toBe('stale_quote');
     expect(quotePastMaxAge(snap({ AAPL: { price: 231.47, at: at(12, 45) } }), 'AAPL')).toBe(false);
     expect(quotePastMaxAge(snap({ AAPL: { price: 231.47, at: at(11, 0) } }), 'AAPL')).toBe(true);
     // A fractional vendor time is judged by the same arithmetic as eligibleMark's (no truncation between the two):
-    // a quote at 12:26:00.5 against a build at 12:46:00.5 is EXACTLY twenty minutes old — not past the age. Truncated
-    // to the whole second it would read twenty minutes and half a second (fourth refuter pass).
-    const fractional = snap({ AAPL: { price: 231.47, at: at(12, 26) } }, { builtAt: new Date(Date.parse(at(12, 46)) + 500) });
+    // a quote at 12:16:00.5 against a build at 12:46:00.5 is EXACTLY thirty minutes old — not past the age. Truncated
+    // to the whole second it would read thirty minutes and half a second (fourth refuter pass).
+    const fractional = snap({ AAPL: { price: 231.47, at: at(12, 16) } }, { builtAt: new Date(Date.parse(at(12, 46)) + 500) });
     fractional.symbols.AAPL.quoteTs += 0.5;
     expect(quotePastMaxAge(fractional, 'AAPL')).toBe(false);
     expect(eligibleMark(fractional, 'AAPL', opts()).ok).toBe(true);
     // The build time as a Timestamp or an ISO string reads the same; one that cannot be read certifies no age.
-    expect(quotePastMaxAge(snap({ AAPL: { price: 231.47, at: at(12, 26) } }, { builtAt: { toDate: () => new Date(at(12, 46)) } }), 'AAPL')).toBe(false);
-    expect(quotePastMaxAge(snap({ AAPL: { price: 231.47, at: at(12, 26) } }, { builtAt: at(12, 46) }), 'AAPL')).toBe(false);
+    expect(quotePastMaxAge(snap({ AAPL: { price: 231.47, at: at(12, 16) } }, { builtAt: { toDate: () => new Date(at(12, 46)) } }), 'AAPL')).toBe(false);
+    expect(quotePastMaxAge(snap({ AAPL: { price: 231.47, at: at(12, 16) } }, { builtAt: at(12, 46) }), 'AAPL')).toBe(false);
     for (const builtAt of [undefined, null, 'soon', 1794849000]) expect(quotePastMaxAge(snap({ AAPL: 231.47 }, { builtAt }), 'AAPL'), String(builtAt)).toBe(true);
     // No vendor time, no quote, no symbol: nothing certifies an age.
     expect(quotePastMaxAge(snap({ AAPL: { price: 231.47, at: null } }), 'AAPL')).toBe(true);
