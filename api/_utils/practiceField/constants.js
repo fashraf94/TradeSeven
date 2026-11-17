@@ -101,6 +101,10 @@ export const MARK_QUALITY = Object.freeze({
   CARRIED_FORWARD: 'carried_forward',
   PRE_OPEN_PRINT: 'pre_open_print',
   UNOBSERVED: 'unobserved',
+  // T1a-2b-3 (Amendment F-1): a mark the close CARRIED because the session's corporate-action data did not cover the
+  // symbol — no daily entry, a failed fetch, a snapshot naming another daily layer, or a gap longer than the fetch
+  // window with no backfill yet. Never written over the unadjusted count as a fresh price.
+  CA_COVERAGE_MISSING: 'ca_coverage_missing',
 });
 
 /** The origin every code-made basket entry decision carries. */

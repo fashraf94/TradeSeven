@@ -340,7 +340,7 @@ describe('integer cents throughout', () => {
     const ideas = book.openIdeaIds.map((id) => getIdea(db, bookId, id));
     const markSet = {
       basis: 'session_snapshot', session: DAYS.d2, snapshotKey: `${DAYS.d2}_open30`, snapshot: db._get(`mandateUniverseSnapshots/${DAYS.d2}_open30`), builtAtIso: null, considered: [],
-      daily: { key: DAYS.d2, present: true, symbols: db._get(`mandateUniverseDaily/${DAYS.d2}`).symbols },
+      daily: { key: DAYS.d2, present: true, symbols: db._get(`mandateUniverseDaily/${DAYS.d2}`).symbols, doc: db._get(`mandateUniverseDaily/${DAYS.d2}`) },
     };
     const epoch = db._get(`mandates/${bookId}/epochs/epoch-0001`);
     const v = evaluateAdmission({ book, epoch, ideas, coverageData: null, contract, ideaRefKey: `${bookId}/x`, nowIso: AT_11, admitsOwner: true, markSet });
@@ -444,12 +444,15 @@ describe('Astra T2C-01 — a held name is valued only when the day\'s corporate-
     expect(moneyStoreBytes(db)).toBe(before);
   });
 
-  it('NO daily document for the session at all, with a held name: refused `ca_daily_missing` — stricter than a sale, on purpose; nothing written', async () => {
+  it('NO daily document for the session at all, with a held name: refused — stricter than a sale, on purpose; nothing written (T1a-2b-3: the snapshot names no daily layer, so it is not used — Amendment F-2, R7d)', async () => {
     const { db, bookId, heldId } = await t2c01Book({ daily: false });
     expect(db._get(`mandateUniverseDaily/${DAYS.d2}`)).toBeUndefined();
     expect(db._get(`mandateUniverseSnapshots/${DAYS.d2}_open30`)).toMatchObject({ dailyRef: null, symbols: { AAPL: { price: D2_AAPL } } });
     const before = moneyStoreBytes(db);
-    expect(await admitIdea(db, { bookId, contract: shortJpm(), opId: 'short-jpm', nowIso: AT_11 })).toEqual(refusedFor(heldId, 'ca_daily_missing'));
+    // The snapshot is not used (F-2): no key is named for the marks; the refusal says why, by symbol.
+    const refused = refusedFor(heldId, 'snapshot_daily_mismatch');
+    refused.refusals[0].snapshotKey = null;
+    expect(await admitIdea(db, { bookId, contract: shortJpm(), opId: 'short-jpm', nowIso: AT_11 })).toEqual(refused);
     expect(moneyStoreBytes(db)).toBe(before);
   });
 

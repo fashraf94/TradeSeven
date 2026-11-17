@@ -84,7 +84,10 @@ import {
 // made while their session's layer is stored, `admissionMarks.caCoverage.dailyPresent` false → true, and their
 // `contentHash`. The A10 probe's uncovered half now takes XOM's entry out of S[7]'s layer for the probe and puts the
 // layer back (`ca_coverage_missing`; it was `ca_daily_missing` while the run stored no layer).
-const EXPECTED_DUMP = { sha256: '7f631a47f6bf8353dfb757a510a38f43d11ae3380847fa0336974f24496ec4ae', bytes: 442942 };
+// T1a-2b-3, step 2 (Amendment F-6, F-2, F-1, F-3: the coverage rule, the rows' union, the backfill): re-pinned from
+// 7f631a47…, leaf-compared. NO MONEY LEAF CHANGED — every session's data covers every held symbol here. 11 leaves ADDED:
+// each open idea's `caCoveredThrough` (the last session its corporate-action data covered, per held symbol).
+const EXPECTED_DUMP = { sha256: '9ec8efca9d2d3ecdccc3c26aa8f72f893efedd60c722992fcac81a45eafff7e1', bytes: 443293 };
 
 // Twenty-nine sessions from Monday 16 November 2026 (Thanksgiving and Christmas are not sessions).
 const SESSIONS = ['2026-11-16'];

@@ -51,27 +51,33 @@ import { valueLedger, saleHeldBackBy } from './ledger.js';
 import { etDateOfMs, sessionCloseMs } from './windows.js';
 import { firstUnaccountedWindowSession, WINDOWS_ACCOUNTED_FIELD } from './windowLedger.js';
 import { toCents, fromCents } from './money.js';
+import { caActionsBySymbol } from '../mandateUniverseSnapshot.js';
+import {
+  dailyDocOf, dailyCoverageOf, snapshotNamesDaily, unionActionsBySymbol, dailyActionsBySymbol, sessionCoverage, coveredThroughOf, DAILY_COVERAGE_REFUSAL,
+} from './dailyCoverage.js';
 
 /** Where admission's marks come from. */
 export const ADMISSION_MARK_BASIS = Object.freeze({ SESSION_SNAPSHOT: 'session_snapshot', LAST_CLOSE: 'last_close' });
 
-/** Why a held name's share basis cannot be trusted for want of the day's corporate-action coverage (Astra T2C-01). */
+/**
+ * Why a held name's share basis cannot be trusted for want of the day's corporate-action coverage (Astra T2C-01), and
+ * (T1a-2b-3, Amendment F-1) for want of continuous coverage since the last session that covered it: `ca_coverage_gap`,
+ * the session's rows do not reach back to the day after the idea's `caCoveredThrough` for the name.
+ */
 export const CA_COVERAGE_REFUSAL = Object.freeze({
-  DAILY_MISSING: 'ca_daily_missing', COVERAGE_MISSING: 'ca_coverage_missing', FETCH_FAILED: 'ca_fetch_failed',
+  DAILY_MISSING: DAILY_COVERAGE_REFUSAL.DAILY_MISSING, COVERAGE_MISSING: DAILY_COVERAGE_REFUSAL.COVERAGE_MISSING,
+  FETCH_FAILED: DAILY_COVERAGE_REFUSAL.FETCH_FAILED, COVERAGE_GAP: 'ca_coverage_gap',
 });
 
 /**
- * One held name's coverage in the session's daily layer (`markSet.daily`; absent: none was read — fail closed). Pure.
+ * One held name's coverage in the session's daily layer (`markSet.daily`; absent: none was read — fail closed), by the
+ * ONE rule every path uses (Amendment F-6, dailyCoverage.js dailyCoverageOf): the document as read must be THE layer of
+ * the session (its own date), and the entry a plain object whose `caFetchFailed` is absent or exactly `false`. Pure.
  * @returns {{ covered: boolean, fetchSucceeded: boolean|null, refusal: string|null }}
  */
 function caCoverageOf(daily, symbol) {
   if (daily?.present !== true) return { covered: false, fetchSucceeded: null, refusal: CA_COVERAGE_REFUSAL.DAILY_MISSING };
-  const symbols = daily?.symbols;
-  // Its own entry only: never one inherited through the object's prototype.
-  const entry = symbols !== null && typeof symbols === 'object' && Object.hasOwn(symbols, symbol) ? symbols[symbol] : null;
-  if (entry == null) return { covered: false, fetchSucceeded: null, refusal: CA_COVERAGE_REFUSAL.COVERAGE_MISSING };
-  if (entry?.caFetchFailed === true) return { covered: true, fetchSucceeded: false, refusal: CA_COVERAGE_REFUSAL.FETCH_FAILED };
-  return { covered: true, fetchSucceeded: true, refusal: null };
+  return dailyCoverageOf(daily.doc ?? null, symbol);
 }
 
 const DAY_MS = 86_400_000;
@@ -182,7 +188,9 @@ export async function readAdmissionMarkSet(tx, db, { nowIso }) {
   let daily = null;
   if (session !== null) {
     const dailySnap = await tx.get(db.collection('mandateUniverseDaily').doc(session));
-    daily = { key: session, present: dailySnap.exists, symbols: dailySnap.exists ? (dailySnap.data()?.symbols ?? null) : null };
+    // Amendment F-6: a stored document whose own date is not the session's counts as missing.
+    const doc = dailyDocOf(dailySnap.exists ? dailySnap.data() : null, session);
+    daily = { key: session, present: doc !== null, symbols: doc?.symbols ?? null, doc };
   }
   for (const key of keys) {
     const snap = await tx.get(db.collection('mandateUniverseSnapshots').doc(key));
@@ -191,6 +199,12 @@ export async function readAdmissionMarkSet(tx, db, { nowIso }) {
     const builtMs = instantMs(doc?.builtAt);
     if (doc?.tickKey !== key || doc?.sessionDate !== session || !Number.isFinite(builtMs)) { reason = 'snapshot_invalid'; passedOver.push({ key, reason }); continue; }
     if (builtMs > nowMs) { reason = 'snapshot_after_decision'; passedOver.push({ key, reason }); continue; }
+    // Amendment F-2: THE snapshot is used only when it names its session's daily layer. One that does not is not
+    // used, and nothing older stands in for it (the newest valid snapshot is the decision's one set of marks): refused.
+    if (!snapshotNamesDaily(doc, session)) {
+      passedOver.push({ key, reason: 'snapshot_daily_mismatch' });
+      return { basis, session, snapshotKey: null, snapshot: null, builtAtIso: null, considered: keys, passedOver, reason: 'snapshot_daily_mismatch', daily };
+    }
     return { basis, session, snapshotKey: key, snapshot: doc, builtAtIso: new Date(builtMs).toISOString(), considered: keys, passedOver, reason: null, daily };
   }
   return { basis, session, snapshotKey: null, snapshot: null, builtAtIso: null, considered: keys, passedOver, reason, daily };
@@ -217,6 +231,8 @@ export function admissionMarksOf({ book, ideas, markSet, nowIso }) {
   const unavailable = [];
   const marks = {};
   const caCoverage = {};
+  // Amendment F-2: the action rows the basis check reads are the union of the session's daily layer and the snapshot's.
+  const sessionActions = snapshot ? unionActionsBySymbol(caActionsBySymbol(snapshot), dailyActionsBySymbol(markSet?.daily?.doc ?? null)) : null;
   const treasuryCents = centsOf(book?.treasury?.unreservedCash);
   let ideasCashCents = 0;
   let holdingsCents = 0;
@@ -240,8 +256,14 @@ export function admissionMarksOf({ book, ideas, markSet, nowIso }) {
         unavailable.push({ symbol, ideaId: idea.ideaId ?? null, reason: coverage.refusal });
         continue;
       }
+      // Amendment F-1: the session's rows must reach back to the day after the last session the idea's data covered.
+      if (!sessionCoverage({ symbol, session, coveredThrough: coveredThroughOf(idea, symbol), daily: markSet?.daily?.doc ?? null, dailyRefOk: true }).covered) {
+        heldBack.add(symbol);
+        unavailable.push({ symbol, ideaId: idea.ideaId ?? null, reason: CA_COVERAGE_REFUSAL.COVERAGE_GAP });
+        continue;
+      }
       const why = saleHeldBackBy(ledger, symbol, snapshot, {
-        sinceDate, date: session, otherLedgers: [idea.comparisonLedger, idea.spyLedger],
+        sinceDate, date: session, otherLedgers: [idea.comparisonLedger, idea.spyLedger], actionsBySymbol: sessionActions,
       });
       if (why !== null) {
         heldBack.add(symbol);

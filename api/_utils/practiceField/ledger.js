@@ -107,7 +107,7 @@ import { roundUsd } from '../mandateRounding.js';
 import { MARK_QUALITY } from './constants.js';
 import { closeMarkQuality } from './marks.js';
 import { addUsd, toCents } from './money.js';
-import { etDateOfMs } from './windows.js';
+import { CA_COVERAGE_GAP } from './dailyCoverage.js';
 
 export const LEDGER_KIND = Object.freeze({ IDEA: 'idea', COMPARISON: 'comparison', SPY: 'spy' });
 
@@ -295,10 +295,17 @@ function shapeOf(ratio) {
   return { kind, n };
 }
 
-/** The session date of a holding's last trusted mark, or null when it cannot be told. */
+/**
+ * The session the holding's last trusted mark CAME FROM, or null when it cannot be told (Amendment F-3; Astra T2B-01's
+ * confirmation). It is the mark's own provenance (`lastMarkProvenance.session`): the session of the snapshot that
+ * priced it, which a carry or a split's adjustment leaves unchanged. Not `lastMarkAsOf`, which keeps an older quote's
+ * vendor time when a later quote had none — so a gap was dated from a session before the one its frozen mark came from
+ * (Nov 27 timed → Nov 30 untimed → a later halving read as moving since Nov 27). A holding with no provenance says it
+ * cannot be told (null): every cash action after the mark then waits, the fail-closed side.
+ */
 function markSessionOf(holding) {
-  const ms = typeof holding?.lastMarkAsOf === 'string' ? Date.parse(holding.lastMarkAsOf) : NaN;
-  return Number.isFinite(ms) ? etDateOfMs(ms) : null;
+  const session = holding?.lastMarkProvenance?.session;
+  return typeof session === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(session) ? session : null;
 }
 
 /**
@@ -314,9 +321,12 @@ function markSessionOf(holding) {
  * explains the old note releases it in the dry run, and a further move that row does not explain is then recorded in its
  * place — with that move's session, ratio and adjusted frozen mark — before the idea's hold set is computed, so the cash
  * waits until a listed row explains the new move too.
+ * A symbol whose corporate-action data does not cover this session (`skip`; Amendment F-1) is not screened: its share
+ * basis is already in doubt for want of data, everything that depends on its count waits for that, and its mark is
+ * carried. It is screened at the close whose data covers it again, after the rows that data lists are applied.
  * @returns {{ ledger: object, raised: Array<object> }}
  */
-export function withBasisSuspicions(ledger, closeSnapshot, actionsBySymbol, { sinceDate, date, delistingWaiting = null }) {
+export function withBasisSuspicions(ledger, closeSnapshot, actionsBySymbol, { sinceDate, date, delistingWaiting = null, skip = null }) {
   if (!ledger || !closeSnapshot) return { ledger, raised: [] };
   const dry = applyActions(ledger, actionsBySymbol, { date, phase: 'share_basis' }).ledger;
   const settled = settledIdsOf(dry);
@@ -326,7 +336,7 @@ export function withBasisSuspicions(ledger, closeSnapshot, actionsBySymbol, { si
   for (const [sym, { ratio }] of scan.suspectedCA) {
     const h = ledger.holdings?.[sym];
     const d = dry.holdings?.[sym];
-    if (!h || !d || openBasisSuspicion(d) || founderRuledMove(d, ratio) || delistingWaitingHolding(h) || delistingWaiting?.has(sym)) continue;
+    if (!h || !d || skip?.has(sym) || openBasisSuspicion(d) || founderRuledMove(d, ratio) || delistingWaitingHolding(h) || delistingWaiting?.has(sym)) continue;
     // A delisting with no cash listed for it today makes it a waiting sale at this close (R-32, as above).
     if ((actionsBySymbol?.[sym] || []).some((a) => a?.type === 'delisting' && delistingCashOf(a) === null && typeof a.effectiveDate === 'string' && a.effectiveDate <= date && !settled.has(deriveActionId(a)))) continue;
     // (A dividend paid at an earlier close that explains its own ex-date drop leaves that close's mark fresh —
@@ -583,6 +593,10 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
     // releasing it).
     const suspicionHolds = (i) => (shareBasis ? action.effectiveDate > i.effectiveDate : (typeof i.since !== 'string' || action.effectiveDate > i.since));
     const before = (i) => {
+      // A coverage gap (Amendment F-1): no data is known for the symbol after the last session its data covered
+      // (`since`), so EVERY count-dependent action dated after it waits — cash or share basis: an action the gap hides
+      // may precede it. One dated on or before `since` was presented while the data covered it.
+      if (i.type === CA_COVERAGE_GAP) return typeof i.since !== 'string' || action.effectiveDate > i.since;
       if (typeof i.effectiveDate !== 'string') return true;
       if (i.type === SUSPECTED_SPLIT) return suspicionHolds(i);
       return shareBasis ? byDatePhaseId(i, action) < 0 : i.effectiveDate <= action.effectiveDate;
@@ -790,13 +804,15 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
  *
  * A symbol the snapshot cannot mark — absent, incomplete, in `frozen` (an unresolved or suspected corporate
  * action) — is valued at the ledger's own last mark and labelled `carried_forward`. `fullQuality` is false
- * whenever any mark is not `vendor_time`.
+ * whenever any mark is not `vendor_time`. A carried mark whose symbol is in `carriedQuality` takes that quality instead
+ * — the close names a mark it carried because the session's corporate-action data did not cover the symbol
+ * (`ca_coverage_missing`, Amendment F-1).
  *
  * @returns {{ rawValue: number, rawPositionsValue: number, markedValue: number, markedHoldingsValue: number, cash: number,
  *             marks: Object<string, { mark: number, shares: number, quality: string, markSource: string, vendorTimeIso: string|null }>,
  *             fullQuality: boolean }}
  */
-export function valueLedger(ledger, closeSnapshot, { sessionDate, frozen = null } = {}) {
+export function valueLedger(ledger, closeSnapshot, { sessionDate, frozen = null, carriedQuality = null } = {}) {
   const markingSnapshot = frozen && frozen.size > 0 ? snapshotExcluding(closeSnapshot, frozen) : closeSnapshot;
   const { marked, positionsValue, totalValue } = markBook(ledger.holdings, ledger.cash, markingSnapshot);
   const marks = {};
@@ -805,7 +821,7 @@ export function valueLedger(ledger, closeSnapshot, { sessionDate, frozen = null 
     const fromSnapshot = m.markSource === 'snapshot';
     const q = fromSnapshot
       ? closeMarkQuality(closeSnapshot?.symbols?.[sym] ?? null, sessionDate)
-      : { quality: MARK_QUALITY.CARRIED_FORWARD, vendorTimeIso: null };
+      : { quality: carriedQuality?.get(sym) ?? MARK_QUALITY.CARRIED_FORWARD, vendorTimeIso: null };
     if (q.quality !== MARK_QUALITY.VENDOR_TIME) fullQuality = false;
     marks[sym] = { mark: m.mark, shares: m.shares, quality: q.quality, markSource: m.markSource, vendorTimeIso: q.vendorTimeIso };
   }
@@ -948,11 +964,14 @@ export function withCloseMarks(ledger, valuation, { date = null, snapshotKey = n
  * `suspected_corporate_action`, as the live screen reads — also after the price has recovered, and also for a holding
  * that began waiting on a delisting after the suspicion was raised. The live screen still runs as before; a move the
  * founder has resolved is not suspected again against the same frozen mark.
+ *
+ * The action rows are the snapshot's own unless the caller hands the session's (`actionsBySymbol`): Amendment F-2 —
+ * the union of the session's daily layer and the snapshot's copy (dailyCoverage.js unionActionsBySymbol).
  */
-export function saleHeldBackBy(ledger, symbol, snapshot, { sinceDate, date, otherLedgers = [] }) {
+export function saleHeldBackBy(ledger, symbol, snapshot, { sinceDate, date, otherLedgers = [], actionsBySymbol: rows = null }) {
   const holding = ledger?.holdings?.[symbol];
   if (!holding) return null;
-  const actionsBySymbol = caActionsBySymbol(snapshot);
+  const actionsBySymbol = rows ?? caActionsBySymbol(snapshot);
   // The gap screen's RECORD (fix round 3, T2A-D01): the move it suspected is not settled because the price has since
   // recovered or the shape has gone. First, before the delisting exception below: a suspicion raised before the holding
   // began waiting on a delisting still holds it.

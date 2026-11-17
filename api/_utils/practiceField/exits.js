@@ -64,6 +64,8 @@ import { PracticeFieldError, isPracticeFieldError } from './errors.js';
 import { practiceFieldLive } from './mode.js';
 import { executeIdeaFill, isCostTier } from './fills.js';
 import { cloneLedger, markedEquityCents, saleHeldBackBy } from './ledger.js';
+import { caActionsBySymbol } from '../mandateUniverseSnapshot.js';
+import { dailyDocOf, snapshotNamesDaily, unionActionsBySymbol, dailyActionsBySymbol, sessionCoverage, coveredThroughOf } from './dailyCoverage.js';
 import { pendingSaleOf, completedLiquidation } from './settlement.js';
 import { coverageRefOf, coverageRef, coverageWithoutRef } from './coverage.js';
 import { assertReconciled } from './reconcile.js';
@@ -82,8 +84,10 @@ export function isSaleWindow(tick) {
 
 /** The refusal of a sale whose day has no corporate-action data for its symbol (the daily layer's `caFetchFailed`). */
 export const CORPORATE_ACTION_DATA_MISSING = 'corporate_action_data_missing';
+/** The refusal of a sale whose slot snapshot does not name its session's daily layer (Amendment F-2): not used. */
+export const SNAPSHOT_DAILY_MISMATCH = 'snapshot_daily_mismatch';
 /** The refusals that hold a sale back for a corporate action, not for a price. */
-const CORPORATE_ACTION_HOLDS = new Set(['corporate_action_pending', 'corporate_action_unsettled', 'suspected_corporate_action', CORPORATE_ACTION_DATA_MISSING]);
+const CORPORATE_ACTION_HOLDS = new Set(['corporate_action_pending', 'corporate_action_unsettled', 'suspected_corporate_action', CORPORATE_ACTION_DATA_MISSING, SNAPSHOT_DAILY_MISMATCH]);
 /** `{ date, slot }` of a window's key (`YYYY-MM-DD_slot`). */
 const windowOfTickKey = (tickKey) => ({ date: String(tickKey).slice(0, 10), slot: String(tickKey).slice(11) });
 
@@ -136,6 +140,11 @@ export function planPendingSales({ book, idea, others, snapshot, daily = null, c
   let changed = false;
   let blockedBy = [...(idea.blockedBy || [])];
   let waitedSessions = [...(idea.waitedSessions || [])];
+  // Amendment F-6: THE session's daily layer, or none (not a plain object, or its own date is not the session's).
+  const dailyDoc = dailyDocOf(daily, tick.date);
+  // Amendment F-2: a slot snapshot that names its session's daily layer is used, with the action rows of both.
+  const namesDaily = snapshot ? snapshotNamesDaily(snapshot, tick.date) : false;
+  const sessionActions = snapshot && namesDaily ? unionActionsBySymbol(caActionsBySymbol(snapshot), dailyActionsBySymbol(dailyDoc)) : null;
 
   for (const symbol of Object.keys(ledger.holdings).sort()) {
     const holding = ledger.holdings[symbol];
@@ -161,17 +170,24 @@ export function planPendingSales({ book, idea, others, snapshot, daily = null, c
     // day one takes effect shows the already-adjusted price beside a holding that is not yet adjusted. So a holding
     // with an action due and unsettled, an unsettled conflict, or a price gap with a split's signature WAITS (E9):
     // the close applies the action, and the sale fills at the next eligible observation.
-    const heldBack = snapshot ? saleHeldBackBy(ledger, symbol, snapshot, {
-      sinceDate: book.execState?.lastCloseKey ?? null, date: tick.date, otherLedgers: [idea.comparisonLedger, idea.spyLedger],
+    const heldBack = snapshot && namesDaily ? saleHeldBackBy(ledger, symbol, snapshot, {
+      sinceDate: book.execState?.lastCloseKey ?? null, date: tick.date, otherLedgers: [idea.comparisonLedger, idea.spyLedger], actionsBySymbol: sessionActions,
     }) : null;
     if (!snapshot) refusal = 'no_stored_snapshot';
+    // F-2: a slot snapshot that does not name its session's daily layer is not used: the sale waits.
+    else if (!namesDaily) refusal = SNAPSHOT_DAILY_MISMATCH;
     // The day's corporate-action fetch FAILED for this symbol (the daily layer says so; the slot snapshot does not
     // carry it): "no action listed" then means nothing, and a split below the gap screen's threshold would be sold
     // across. The sale waits that session under its own name (second refuter pass, 2a).
     // A daily document that has NO ENTRY for the symbol knows as little (it was built without the idea book's
-    // coverage): held the same way (third refuter pass). With no daily document at all nothing can be said, and
-    // the slot snapshot's own lists are all there is; the cron never builds a slot snapshot without one.
-    else if (daily && (daily.symbols?.[symbol] == null || daily.symbols[symbol].caFetchFailed === true)) refusal = CORPORATE_ACTION_DATA_MISSING;
+    // coverage): held the same way (third refuter pass). Since T1a-2b-3 ONE RULE decides a daily entry for admission,
+    // the sales and the close alike (Amendment F-6, dailyCoverage.js): no daily document — or one whose own date is
+    // not the session's — an entry that is not a plain object, or a `caFetchFailed` that is not absent or exactly
+    // `false`, all hold the sale. And the session's rows must reach back, without a hole, to the day after the last
+    // session the idea's data covered the symbol (`caCoveredThrough`, F-1): on the first day after an outage longer
+    // than the daily window, today's entry is clean but an action in the gap is still unapplied — held too, until the
+    // close applies the backfill. (Within the window the rows are here, and a due one holds the sale below.)
+    else if (!sessionCoverage({ symbol, session: tick.date, coveredThrough: coveredThroughOf(idea, symbol), daily: dailyDoc, dailyRefOk: namesDaily }).covered) refusal = CORPORATE_ACTION_DATA_MISSING;
     else if (heldBack !== null) refusal = heldBack;
     else {
       try {

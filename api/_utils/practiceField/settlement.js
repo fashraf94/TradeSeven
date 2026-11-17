@@ -43,6 +43,7 @@ import { PracticeFieldError } from './errors.js';
 import { modelledSaleProceeds, isCostTier, costTierOf } from './fills.js';
 import { fundOf, frictionForSymbol } from './symbols.js';
 import { unsettledConflicts, heldActionRecords, basisSuspicionRecords } from './ledger.js';
+import { coverageGapIdOf } from './dailyCoverage.js';
 import { toCents, fromCents } from './money.js';
 
 /** The kinds of endpoint: at the scheduled due session, early (no holdings left — E2), or after a due session passed. */
@@ -191,15 +192,18 @@ export function exitTierOf(symbol, holding) {
  *   `fullQuality` is `marksFullQuality` (every mark is `vendor_time`) AND no unsettled conflicting corporate action:
  *   the two are kept apart so a result can say WHICH it lacked (review RH-7).
  */
-export function ledgerEndpoint(ledger, valuation) {
+export function ledgerEndpoint(ledger, valuation, { coverageGaps = null } = {}) {
   const cashCents = toCents(ledger.cash);
   let grossCents = 0;
   let netCents = 0;
   let rawNet = 0;
   // …and every action a holding is owed that waits on its share basis (fix round 2), and every open gap-screen suspicion
   // (fix round 3, T2A-D01): the value is in doubt by it.
+  // …and (T1a-2b-3, Amendment F-1) every open coverage gap of a symbol this ledger holds: the session's data did not
+  // cover it, so what it is owed cannot be known.
   const unsettledActions = [
     ...unsettledConflicts(ledger).map((r) => r.actionId), ...heldActionRecords(ledger).map((r) => r.actionId), ...basisSuspicionRecords(ledger).map((r) => r.actionId),
+    ...Object.keys(ledger.holdings || {}).sort().filter((sym) => coverageGaps?.[sym]).map((sym) => coverageGapIdOf(sym, coverageGaps[sym].since)),
   ];
   let marksFullQuality = true;
   let costTiersStored = true;
@@ -320,9 +324,10 @@ export function trackStatistics(track) {
  * @returns {{ endpointRow: object, result: object }}
  */
 export function buildEndpoint({ idea, valuations, date, kind, observed, caughtUp = false, snapshotMeta, nowIso }) {
-  const own = ledgerEndpoint(idea.ledger, valuations.idea);
-  const cmp = ledgerEndpoint(idea.comparisonLedger, valuations.comparison);
-  const spy = ledgerEndpoint(idea.spyLedger, valuations.spy);
+  const gaps = { coverageGaps: idea.caCoverageGaps ?? null };
+  const own = ledgerEndpoint(idea.ledger, valuations.idea, gaps);
+  const cmp = ledgerEndpoint(idea.comparisonLedger, valuations.comparison, gaps);
+  const spy = ledgerEndpoint(idea.spyLedger, valuations.spy, gaps);
   const reservedCents = toCents(idea.contract.capitalUsd);
   const gapCents = own.valueCents - cmp.valueCents;
   const spyGapCents = own.valueCents - spy.valueCents;

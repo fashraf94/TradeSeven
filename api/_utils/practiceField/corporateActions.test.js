@@ -1800,7 +1800,8 @@ describe('Fix round 3 — Astra T2A-D01: a gap-screen suspicion is recorded and 
   });
 
   it('the gap\'s LOWER edge (pure): an action dated on or before `since` — the session of the last trusted mark — is before the move: a dividend of that date is paid now on the current count, a later one waits, and a 2-for-1 of that date applies but explains nothing', () => {
-    const holding = { shares: 10, costBasisTotal: 1000, avgCost: 100, lastMark: 100, lastMarkAsOf: etIsoOf(S[1], 16, 0), lastMarkSource: 'snapshot', openedAt: S[0] };
+    // (T1a-2b-3, Amendment F-3: `since` is the session the mark CAME FROM — its provenance, as a close writes it.)
+    const holding = { shares: 10, costBasisTotal: 1000, avgCost: 100, lastMark: 100, lastMarkAsOf: etIsoOf(S[1], 16, 0), lastMarkSource: 'snapshot', openedAt: S[0], lastMarkProvenance: { source: 'close', symbol: 'AAPL', session: S[1], snapshotKey: `${S[1]}_close`, quality: 'vendor_time', vendorTimeIso: etIsoOf(S[1], 16, 0) } };
     const ledger = { ...newLedger('idea', 1000), cash: 0, holdings: { AAPL: holding } };
     const { ledger: suspected, raised } = withBasisSuspicions(ledger, closeSnapshotOf(S[2], { AAPL: 50 }), {}, { sinceDate: S[1], date: S[2] });
     expect(raised).toEqual([expect.objectContaining({ symbol: 'AAPL', suspectedOn: S[2], since: S[1], ratio: 0.5, frozenMark: 100 })]);
@@ -1940,6 +1941,8 @@ describe('Final fix — Astra T2A-E01: a late split explains the old note while 
   it('the screen, called directly: an old note this close\'s split explains is replaced by the residual move (its session, ratio and the adjusted frozen mark); an old note it does not explain is kept as it is', () => {
     const holding = {
       shares: 199.940017, costBasisTotal: 19994, avgCost: 100, lastMark: 100, lastMarkAsOf: etIsoOf(S[0], 16, 0), openedAt: S[0],
+      // (T1a-2b-3, Amendment F-3: the frozen mark's own session, as a close writes it.)
+      lastMarkProvenance: { source: 'close', symbol: 'AAPL', session: S[0], snapshotKey: `${S[0]}_close`, quality: 'vendor_time', vendorTimeIso: etIsoOf(S[0], 16, 0) },
       basisSuspicion: { symbol: 'AAPL', suspectedOn: S[1], since: S[0], ratio: 0.5, shape: { kind: 'split', n: 2 }, frozenMark: 100, frozenMarkAsOf: etIsoOf(S[0], 16, 0), resolvedBy: null, resolvedAt: null },
     };
     const ledger = { ...newLedger('idea', 20000), cash: 6, holdings: { AAPL: holding } };
