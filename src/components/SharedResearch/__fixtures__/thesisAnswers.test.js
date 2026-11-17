@@ -398,6 +398,7 @@ function build() {
   group = tap(group, { op: 'confirm', part: 'timeFrame', nowIso: at(8) }).inv;
   A.getGroupReady = { status: 200, body: getAnswerOf(group) };
 
+
   // an incomplete why (SQ-3): two names, a sourced reason for one; the drop choice
   const two = tap(afterNames, { op: 'confirm', part: 'names', nowIso: at(4) });
   const inc = step(two.inv, { goal: 'build_why', output: incompleteWhy(rel), items: WHY_ITEMS, nowIso: at(5) });
@@ -468,6 +469,35 @@ function build() {
     afterMap: thesisOf(afterMap), afterSegment: thesisOf(afterSegment), afterNames: thesisOf(afterNames), afterOneStock: thesisOf(afterOneStock),
     afterWhyStep: thesisOf(afterWhyStep), afterWhy: thesisOf(afterWhy), afterWrongIf: thesisOf(afterWrongIf), ready: thesisOf(ready),
   };
+  // more carried findings than the idea builder takes (saveIssue too_many_evidence_refs; thesis.js saveIssueOf, RA-7):
+  // thirty Source-backed notes on Nvidia land on the record (appended as the record holds findings — the corrections'
+  // precedent above: a step adds at most STEP_FINDINGS_MAX), the why is asked as a build_why step that cites them all and
+  // passes validateBuildTurn, then the walk's own taps make the card ready
+  const LETTERS = Array.from({ length: 30 }, (_, i) => `${String.fromCharCode(97 + Math.floor(i / 26))}${String.fromCharCode(97 + (i % 26))}`);
+  const notes = built(LETTERS.map((l) => ({
+    kind: 'coverage', symbol: 'NVDA', fact: `An analyst note (${l}) says the large cloud buyers keep ordering Nvidia accelerators for new AI data centers.`,
+    source: { recordKind: 'retrieval', recordId: `https://research.example.org/nvidia-note-${l}`, label: `research.example.org · Nvidia note ${l}`, url: `https://research.example.org/nvidia-note-${l}` },
+    at: at(5), asOf: '2026-11-08T00:00:00.000Z', status: 'verified', statusReason: null, supersedes: null,
+  })), at(5));
+  const crowded = { ...afterOneStock, record: append(afterOneStock.record, notes, at(5)) };
+  const manyWhy = step(crowded, {
+    goal: 'build_why', items: WHY_ITEMS, nowIso: at(6),
+    output: {
+      reply: 'Many notes on the record say the same thing: the large cloud buyers keep ordering Nvidia accelerators.',
+      findings: [],
+      why: {
+        shared: 'the large cloud buyers keep ordering Nvidia accelerators for new AI data centers',
+        reasons: [{ companyName: 'NVIDIA Corporation', symbolCandidate: 'NVDA', text: 'Note after note says the large cloud buyers keep ordering its accelerators.', refs: [rel.NVDA, ...notes.map((f) => f.findingId)] }],
+      },
+      wrongIfOptions: [],
+      timeFramePick: null,
+      pick: { value: '', reason: '' },
+    },
+  });
+  let many = tap(manyWhy.inv, { op: 'confirm', part: 'why', nowIso: at(7) }).inv;
+  many = tap(many, { op: 'set', part: 'wrongIf', value: { text: 'the large cloud buyers stop ordering Nvidia accelerators' }, nowIso: at(8) }).inv;
+  many = tap(many, { op: 'set', part: 'timeFrame', value: 'positional', nowIso: at(9) }).inv;
+  A.getTooManyRefs = { status: 200, body: getAnswerOf(many) };
   return A;
 }
 
@@ -520,6 +550,8 @@ describe('the thesis builder\'s client fixtures are the server\'s answers (B4 Te
     expect(t('getOutOfSteps').choices.free.some((c) => c.part === 'wrongIf')).toBe(true);
     expect(t('walkPriceLine').parts.wrongIf.priceLines).toEqual([{ symbol: 'NVDA', level: 120 }]);
     expect(t('getSaveIssue')).toMatchObject({ ready: true, saveIssue: { code: 'names_not_supported', detail: { deselected: 'AMD' } } });
+    expect(t('getTooManyRefs')).toMatchObject({ ready: true, saveIssue: { code: 'too_many_evidence_refs' } });
+    expect(t('getTooManyRefs').saveIssue.detail).toBeGreaterThan(28);
     expect(t('getStaleSegment').parts.segment.state).toBe('stale');
     expect(t('getStaleSegment').ready).toBe(false);
     expect(t('getStaleSegment').blockers[0]).toEqual({ part: 'segment', state: 'stale' });

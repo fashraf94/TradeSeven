@@ -378,6 +378,16 @@ export default function useSharedResearch({ gated: gatedProp = false } = {}) {
   // ── the thesis builder (B4; Amendment B §B4) ─────────────────────────────────
 
   /**
+   * A read through `run` (the refuter's R4): one request at a time, so no tap goes out while it is in flight and no
+   * older answer can land over a newer card. What the server holds now is put on screen.
+   */
+  const readInRun = useCallback(async (sessionId) => {
+    const answer = await run({ kind: 'read', sessionId }, () => service.readInvestigation(sessionId));
+    if (answer?.ok && live.current) setInv(investigationOf(answer.body, null));
+    return answer;
+  }, [run]);
+
+  /**
    * Own words, opened at once as a thesis builder (DR-6; K-3): `{ entry: { kind: 'observation', observation }, requestId }`.
    * The same words tried again re-send the same requestId (the server answers the session it made); new words, a new one.
    * The answer is returned as received: a 400 invalid_entry (the mode rolled back, W-4) is the caller's to fall back on.
@@ -400,7 +410,10 @@ export default function useSharedResearch({ gated: gatedProp = false } = {}) {
     const sessionId = inv?.session?.sessionId;
     if (!sessionId) return null;
     const key = JSON.stringify(['step', sessionId, goal, part, direction]);
-    const id = stepId ?? lostRef.current.get(key)?.id ?? service.newRequestId();
+    const lost = lostRef.current.get(key);
+    // a lost step that has since landed on screen (its partner exchange is held) is done: a new tap is a new step
+    const landed = Boolean(lost) && (inv?.session?.exchanges ?? []).some((e) => e?.who === 'partner' && e.stepId === lost.id);
+    const id = stepId ?? (lost && !landed ? lost.id : service.newRequestId());
     const body = { sessionId, stepId: id, intent: 'build', goal, ...(part ? { part } : {}), ...(direction ? { direction } : {}) };
     const attempt = { builder: true, stepId: id, goal, part, direction };
     const answer = await run({ kind: 'step', sessionId, stepId: id, intent: 'build', goal, part }, () => service.takeStep(body));
@@ -426,8 +439,9 @@ export default function useSharedResearch({ gated: gatedProp = false } = {}) {
    * One free tap (§B4.3): one entry of `thesis.choices.free`, sent back as offered — `{ op, part, value? }` — with the
    * card's `rev` the player saw and a fresh opId; `value` is the player's own input where the choice asks for one (the
    * ticked names, their words, the kept reasons, the price lines). A 409 card_stale draws the fresh card from the
-   * answer with the server's line and sends nothing more (K-15). After a lost answer, the same tap re-sends the very
-   * same body: its opId and its rev (the server answers an applied opId unchanged).
+   * answer with the server's line and sends nothing more (K-15). After a lost answer, the same tap re-sends the same
+   * opId — with the card's rev as it is NOW (the refuter's R1): the server checks an applied opId before the rev, so a
+   * tap that landed answers `applied: false`, and one that did not is applied to the card on screen.
    */
   const cardOp = useCallback(async (choice, input) => {
     const sessionId = inv?.session?.sessionId;
@@ -436,7 +450,7 @@ export default function useSharedResearch({ gated: gatedProp = false } = {}) {
     const value = input !== undefined ? input : choice.value;
     const key = JSON.stringify(['card', sessionId, choice.op, choice.part, value ?? null]);
     const lost = lostRef.current.get(key);
-    const body = lost ? lost.body : {
+    const body = lost ? { ...lost.body, rev } : {
       sessionId, opId: service.newRequestId(), rev, op: choice.op, part: choice.part, ...(value !== undefined && value !== null ? { value } : {}),
     };
     const answer = await run({ kind: 'card', sessionId, op: choice.op, part: choice.part }, () => service.applyCardOp(body));
@@ -448,9 +462,9 @@ export default function useSharedResearch({ gated: gatedProp = false } = {}) {
       setInv((prior) => ({ ...prior, session: b.session ?? prior?.session ?? null, thesis: b.thesis }));
       setStepOutcome(null);
       // A card answer carries no record (§4.3). When it shows a step landed that this page never heard back from (a lost
-      // step answer), the findings on screen are stale: read the investigation again, outside `run` (review 4B-7).
+      // step answer), the findings on screen are stale: read the investigation again, through `run` (review 4B-7; R4).
       const now = b.session ?? null;
-      if (now && held && (now.stepsUsed !== held.stepsUsed || now.lastStep?.stepId !== held.lastStep?.stepId)) await reread(sessionId);
+      if (now && held && (now.stepsUsed !== held.stepsUsed || now.lastStep?.stepId !== held.lastStep?.stepId)) await readInRun(sessionId);
     } else if (b.error === 'card_stale' && b.thesis) {
       lostRef.current.delete(key);
       setInv((prior) => ({ ...prior, thesis: b.thesis }));
@@ -461,7 +475,7 @@ export default function useSharedResearch({ gated: gatedProp = false } = {}) {
       setFailure({ ...failureOf(answer), action: 'card', attempt: { choice, input } });
     }
     return answer;
-  }, [inv, run, reread]);
+  }, [inv, run, readInRun]);
 
   /**
    * Save thesis (§B4.5): `{ sessionId, rev, statement? }` — the `rev` the player saw; `statement` only when the player
@@ -490,16 +504,22 @@ export default function useSharedResearch({ gated: gatedProp = false } = {}) {
       setSave({ status: 'uncertain', input, sessionId });
       return answer;
     }
+    // A refusal speaks of one card: `atRev` is that card's rev, and the screen shows the refusal only while that card is
+    // the one on screen (the refuter's R3) — a later change of the card retires it.
     if (b.error === 'card_stale' && b.thesis) {
       setInv((prior) => ({ ...prior, thesis: b.thesis }));
-      setSave({ status: 'stale', input, sessionId, message: failureOf(answer).message });
+      setSave({ status: 'stale', input, sessionId, message: failureOf(answer).message, atRev: b.thesis.rev });
       return answer;
     }
-    setSave({ status: 'failed', input, sessionId, message: failureOf(answer).message, code: b.error ?? null, blockers: Array.isArray(b.blockers) ? b.blockers : null });
-    // not_ready carries no card: read it, so the card on screen is the one the server judged (review 4B-3)
-    if (b.error === 'not_ready') await reread(sessionId);
+    setSave({ status: 'failed', input, sessionId, message: failureOf(answer).message, code: b.error ?? null, blockers: Array.isArray(b.blockers) ? b.blockers : null, atRev: rev });
+    // not_ready carries no card: read it (through `run`), so the card on screen is the one the server judged (review 4B-3)
+    if (b.error === 'not_ready') {
+      const fresh = await readInRun(sessionId);
+      const freshRev = fresh?.ok ? fresh.body?.thesis?.rev : undefined;
+      if (Number.isSafeInteger(freshRev)) setSave((s) => (s.status === 'failed' && s.sessionId === sessionId ? { ...s, atRev: freshRev } : s));
+    }
     return answer;
-  }, [inv, run, reread]);
+  }, [inv, run, reread, readInRun]);
 
   // ── equip (K-9) ─────────────────────────────────────────────────────────────
 

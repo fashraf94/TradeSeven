@@ -7,6 +7,7 @@ import A from './__fixtures__/thesisAnswers.json';
 import {
   frontPartOf, footOf, panelOf, valueChoicesOf, confirmMarkOf, slotOf, sentenceRunsOf, conversationOf, partFindingIdsOf,
   isBuilderSession, joinNames, horizonLabelOf, hasSuggestedPart, partOfGoal, directionOffered, revisedWhyChoiceOf, PARTLESS_GOALS, THESIS_PARTS,
+  proposalReasonHolds,
 } from './thesisView';
 import { THESIS_PARTS as SHARED_THESIS_PARTS, STATUS_LABELS, findingLabelOf } from '../../constants/sharedResearch';
 
@@ -248,5 +249,29 @@ describe('small rules', () => {
     expect(partOfGoal('verify_source')).toBe('theme');
     expect(partOfGoal('strengthen', 'wrongIf')).toBe('wrongIf');
     expect(partOfGoal('direction')).toBe(null);
+  });
+});
+
+describe('a why proposal\'s reason wears "Source-backed" only where the server\'s per-name answer covers it (review 4A-4; the refuter)', () => {
+  const corrected = A.getProposalCorrected.body.thesis.parts.why.proposal; // NVDA incomplete
+  const group = A.groupWhy.body.thesis.parts.why.proposal; // three names, one reason each, none incomplete
+  // two reasons for one name: the server says the name holds a sourced reason, not which one
+  const twice = { ...group, reasons: [...group.reasons, { ...group.reasons[0], text: 'A second reason for the same name.' }] };
+  it.each([
+    ['a name the server marks incomplete', corrected, corrected.reasons[0], false],
+    ...group.reasons.map((r) => [`${r.symbol}: its only reason, the name not incomplete`, group, r, true]),
+    ['a name with two reasons: the first', twice, twice.reasons[0], false],
+    ['a name with two reasons: the second', twice, twice.reasons.at(-1), false],
+    ['the other names beside it keep their tag', twice, twice.reasons[1], true],
+    ['no proposal', null, group.reasons[0], false],
+    ['no reason', group, null, false],
+  ])('%s', (_label, proposal, reason, holds) => {
+    expect(proposalReasonHolds(proposal, reason)).toBe(holds);
+  });
+  it('the fixtures are what the rows say', () => {
+    expect(corrected.incomplete).toEqual(['NVDA']);
+    expect(group.incomplete ?? []).toEqual([]);
+    expect(new Set(group.reasons.map((r) => r.symbol)).size).toBe(group.reasons.length);
+    expect(group.reasons.length).toBeGreaterThanOrEqual(2);
   });
 });

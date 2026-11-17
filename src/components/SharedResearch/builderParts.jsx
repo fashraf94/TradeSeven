@@ -16,7 +16,7 @@ import { SR_COPY as COPY } from './sharedResearchCopy';
 import { T, S, wash, buttonStyle, linkStyle } from './sharedResearchStyle';
 import { Finding, LinkButton, Tag } from './parts';
 import { withoutRole } from './sharedResearchView';
-import { joinNames, horizonLabelOf, slotOf, sentenceRunsOf, confirmMarkOf, partFindingIdsOf, THESIS_PARTS } from './thesisView';
+import { joinNames, horizonLabelOf, slotOf, sentenceRunsOf, confirmMarkOf, partFindingIdsOf, proposalReasonHolds, THESIS_PARTS } from './thesisView';
 import { findingLabelOf } from '../../constants/sharedResearch';
 
 const B = COPY.builder;
@@ -51,18 +51,22 @@ export function scrollParentOf(el) {
 
 /**
  * The pinned foot's room, measured from the sheet's own scroll box (review 4C-4: a vh share ignores the sheet's header
- * and a phone's toolbars): its choices may take `share` of the box's height. And scroll padding on that box — the
+ * and a phone's toolbars): the whole foot keeps within `share` of the box's height, its choices scrolling inside. And scroll padding on that box — the
  * foot's height below, `top` px above (the strip) — so a control that takes focus is never left under the foot or the
  * strip (review 4C-3). The box's own padding is put back when the view goes.
  */
-export function useFootRoom(footRef, { share = 0.36, top = 0 } = {}) {
+export function useFootRoom(footRef, { choicesRef = null, share = 0.48, top = 0, active = true } = {}) {
   const [cap, setCap] = useState(null);
   useEffect(() => {
+    if (!active) return undefined; // no foot (a closed investigation): the box's padding stays its own (the refuter's 7)
     const scroller = scrollParentOf(footRef.current);
     if (!scroller) return undefined;
     const before = { bottom: scroller.style.scrollPaddingBottom, top: scroller.style.scrollPaddingTop };
     const measure = () => {
-      if (scroller.clientHeight > 0) setCap(Math.round(scroller.clientHeight * share));
+      // the choices get what is left of `share` once the foot's other rows (the composer, its switch, the lines) are counted
+      const foot = footRef.current;
+      const others = foot && choicesRef?.current ? foot.offsetHeight - choicesRef.current.offsetHeight : 0;
+      if (scroller.clientHeight > 0) setCap(Math.max(120, Math.round(scroller.clientHeight * share) - others));
       scroller.style.scrollPaddingBottom = `${(footRef.current?.offsetHeight ?? 0) + 28}px`;
       scroller.style.scrollPaddingTop = top ? `${top}px` : before.top;
     };
@@ -71,7 +75,7 @@ export function useFootRoom(footRef, { share = 0.36, top = 0 } = {}) {
     ro?.observe(scroller);
     if (footRef.current) ro?.observe(footRef.current);
     return () => { ro?.disconnect(); scroller.style.scrollPaddingBottom = before.bottom; scroller.style.scrollPaddingTop = before.top; };
-  }, [footRef, share, top]);
+  }, [footRef, choicesRef, share, top, active]);
   return cap;
 }
 
@@ -410,7 +414,7 @@ export function WhyProposal({ proposal, agentName, title = null, attrs = {} }) {
     <div {...attrs} style={{ ...S.card, gap: 8, border: `1px dashed ${wash('teal', 0.5)}` }}>
       <div style={S.row}><Mark tone="teal">{title ?? B.proposal(agentName)}</Mark><Mark>{B.suggested}</Mark></div>
       {proposal.shared && <p style={{ ...S.body, fontWeight: 600 }} data-sr-proposal-shared="">{proposal.shared}</p>}
-      {(proposal.reasons ?? []).map((r, i) => <ReasonLine key={`${r.symbol}:${i}`} lead={group ? r.symbol : String(i + 1)} text={r.text} findingIds={r.findingIds} basis={incomplete.includes(r.symbol) ? null : 'source'} agentName={agentName} attrs={{ 'data-sr-proposal-reason': r.symbol }} />)}
+      {(proposal.reasons ?? []).map((r, i) => <ReasonLine key={`${r.symbol}:${i}`} lead={group ? r.symbol : String(i + 1)} text={r.text} findingIds={r.findingIds} basis={proposalReasonHolds(proposal, r) ? 'source' : null} agentName={agentName} attrs={{ 'data-sr-proposal-reason': r.symbol }} />)}
       {incomplete.map((s) => <p key={s} style={{ ...S.small, color: T.copper }} data-sr-incomplete={s}>{`${s} · ${B.noReasonYet}`}</p>)}
       <AgainstLine against={proposal.against ?? null} />
     </div>
@@ -517,7 +521,7 @@ export function KeepReasons({ choice, proposal, agentName, onSend, disabled = fa
       {(choice.options ?? []).map((i) => (
         <label key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', minHeight: 44, cursor: 'pointer' }}>
           <input type="checkbox" checked={keep.includes(i)} disabled={disabled} onChange={() => setKeep((k) => (k.includes(i) ? k.filter((x) => x !== i) : [...k, i].sort((a, b) => a - b)))} style={{ width: 18, height: 18, marginTop: 2 }} />
-          <ReasonLine lead={reasons[i]?.symbol ?? String(i + 1)} text={reasons[i]?.text ?? ''} findingIds={reasons[i]?.findingIds ?? []} basis={(proposal?.incomplete ?? []).includes(reasons[i]?.symbol) ? null : 'source'} agentName={agentName} />
+          <ReasonLine lead={reasons[i]?.symbol ?? String(i + 1)} text={reasons[i]?.text ?? ''} findingIds={reasons[i]?.findingIds ?? []} basis={reasons[i] && proposalReasonHolds(proposal, reasons[i]) ? 'source' : null} agentName={agentName} />
         </label>
       ))}
       <FreeButton label={B.keepTicked} strong disabled={disabled || keep.length === 0} onClick={() => onSend({ keep })} attrs={{ 'data-sr-free': 'set:why' }} />

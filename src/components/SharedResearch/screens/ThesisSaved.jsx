@@ -28,7 +28,6 @@ export default function ThesisSaved({ sr, agentName, agentId, onClose }) {
   const watchlistId = outcome.watchlistId ?? session.adoption?.watchlistId ?? null;
   const when = formatWhen(session.adoption?.at);
   const alreadySaved = mine && sr.save.status === 'saved' && outcome.idempotent === true;
-  // the sentence saved: the player's edit when they sent one, else the server's composed sentence
   // the statement saved: the player's edit when this page sent one, else the composed sentence this page saved. No
   // answer carries the statement (it lives on the list's thesisCard), so a reopened sheet shows none (review 4A-3).
   const statement = !mine ? null : typeof sr.save.input?.statement === 'string' ? sr.save.input.statement : thesis?.sentence ?? null;

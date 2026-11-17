@@ -269,5 +269,15 @@ export function conversationOf(session) {
   return rows;
 }
 
+/**
+ * May a why PROPOSAL's reason wear "Source-backed"? (review 4A-4, the refuter): the server says per NAME whether a sourced
+ * reason holds (`incomplete`), not per reason. So a reason is tagged only when its name is not incomplete AND it is that
+ * name's only reason — then the name's holding reason is this one. A name with two or more reasons shows none tagged.
+ */
+export function proposalReasonHolds(proposal, reason) {
+  const reasons = Array.isArray(proposal?.reasons) ? proposal.reasons : [];
+  return !(proposal?.incomplete ?? []).includes(reason?.symbol) && reasons.filter((r) => r?.symbol === reason?.symbol).length === 1;
+}
+
 /** Is any part waiting on the player's confirm (state `suggested`)? — the server's states, read. */
 export const hasSuggestedPart = (thesis) => THESIS_PARTS.some((p) => thesis?.parts?.[p]?.state === 'suggested');

@@ -24372,5 +24372,1115 @@
         ]
       }
     }
+  },
+  "getTooManyRefs": {
+    "status": 200,
+    "body": {
+      "session": {
+        "sessionId": "7a7a7a7a-0000-4000-8000-000000000001",
+        "status": "open",
+        "entry": {
+          "kind": "observation",
+          "itemRef": null,
+          "observation": "I want to play AI",
+          "direction": null,
+          "topic": null,
+          "names": []
+        },
+        "frame": null,
+        "lastError": null,
+        "exchanges": [
+          {
+            "who": "player",
+            "kind": "observation",
+            "text": "I want to play AI",
+            "at": "2026-11-17T14:00:00.000Z"
+          },
+          {
+            "who": "partner",
+            "kind": "step",
+            "text": "Your observation is \"I want to play AI\"; the retrieved items point to four places the theme touches: accelerator chips, networking between chips, data-center power and the cloud companies that spend on it all. I would stand on accelerator chips, since the cloud spending report names them as where most of the money goes. No listed company has a sourced connection yet, so the next steps need to find who earns from this.",
+            "at": "2026-11-17T14:01:00.000Z",
+            "stepId": "5e5e5e5e-0000-4000-8000-000000000003",
+            "intent": "build",
+            "goal": "map_segments"
+          },
+          {
+            "who": "player",
+            "kind": "card",
+            "text": "Segment: Accelerator chips",
+            "at": "2026-11-17T14:02:00.000Z",
+            "card": {
+              "op": "confirm",
+              "part": "segment"
+            }
+          },
+          {
+            "who": "partner",
+            "kind": "step",
+            "text": "Three listed companies have a sourced connection to accelerator chips: Nvidia, AMD and Broadcom. A packaging supplier came up too, but it is privately held, so it stays a lead. Each connection rests on one source, and none says how much of the company's revenue it is.",
+            "at": "2026-11-17T14:03:00.000Z",
+            "stepId": "5e5e5e5e-0000-4000-8000-000000000011",
+            "intent": "build",
+            "goal": "find_names"
+          },
+          {
+            "who": "player",
+            "kind": "card",
+            "text": "Names: NVDA",
+            "at": "2026-11-17T14:04:00.000Z",
+            "card": {
+              "op": "set",
+              "part": "names"
+            }
+          },
+          {
+            "who": "partner",
+            "kind": "step",
+            "text": "Many notes on the record say the same thing: the large cloud buyers keep ordering Nvidia accelerators.",
+            "at": "2026-11-17T14:06:00.000Z",
+            "stepId": "5e5e5e5e-0000-4000-8000-000000000130",
+            "intent": "build",
+            "goal": "build_why"
+          },
+          {
+            "who": "player",
+            "kind": "card",
+            "text": "Why: confirmed",
+            "at": "2026-11-17T14:07:00.000Z",
+            "card": {
+              "op": "confirm",
+              "part": "why"
+            }
+          },
+          {
+            "who": "player",
+            "kind": "card",
+            "text": "Wrong if: the large cloud buyers stop ordering Nvidia accelerators",
+            "at": "2026-11-17T14:08:00.000Z",
+            "card": {
+              "op": "set",
+              "part": "wrongIf"
+            }
+          },
+          {
+            "who": "player",
+            "kind": "card",
+            "text": "Time frame: Positional · about 30 sessions",
+            "at": "2026-11-17T14:09:00.000Z",
+            "card": {
+              "op": "set",
+              "part": "timeFrame"
+            }
+          }
+        ],
+        "stepsUsed": 3,
+        "stepBudget": 10,
+        "lastStep": {
+          "stepId": "5e5e5e5e-0000-4000-8000-000000000130",
+          "intent": "build",
+          "status": "completed",
+          "startedAt": "2026-11-17T14:06:00.000Z",
+          "endedAt": "2026-11-17T14:06:00.000Z",
+          "error": null,
+          "query": "q",
+          "summaryWithheld": false
+        },
+        "researchWorkId": "sr_7a7a7a7a-0000-4000-8000-000000000001",
+        "adoption": null,
+        "createdAt": "2026-11-17T14:00:00.000Z",
+        "updatedAt": "2026-11-17T14:09:00.000Z",
+        "shape": "builder"
+      },
+      "record": {
+        "researchWorkId": "sr_7a7a7a7a-0000-4000-8000-000000000001",
+        "question": "Build a thesis on: I want to play AI",
+        "state": "open",
+        "terminalReason": null,
+        "endedAt": null,
+        "createdAt": "2026-11-17T14:00:00.000Z",
+        "lastTurnAt": null,
+        "summary": null,
+        "answerStale": false,
+        "summaryRevisions": [],
+        "findings": [
+          {
+            "findingId": "f_0f0f0f0f-0000-4000-8000-000000000002",
+            "kind": "observation",
+            "symbol": null,
+            "fact": "I want to play AI",
+            "source": {
+              "recordKind": "exchange",
+              "recordId": null,
+              "label": "Your words"
+            },
+            "at": "2026-11-17T14:00:00.000Z",
+            "asOf": null,
+            "status": "unverified",
+            "statusReason": "player_words",
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0a0a0a01-0000-4000-8000-000000000005",
+            "kind": "coverage",
+            "symbol": null,
+            "fact": "The largest cloud companies said they would keep raising AI data-center spending next year, most of it on accelerator chips.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://news.example.com/ai-capex",
+              "label": "news.example.com · Cloud companies keep raising AI data-center spending",
+              "url": "https://news.example.com/ai-capex"
+            },
+            "at": "2026-11-10T00:00:00.000Z",
+            "asOf": "2026-11-10T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0a0a0a02-0000-4000-8000-000000000006",
+            "kind": "coverage",
+            "symbol": null,
+            "fact": "Executives named chip supply, power and networking as the limits on how fast new AI capacity comes online.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://news.example.com/ai-capex",
+              "label": "news.example.com · Cloud companies keep raising AI data-center spending",
+              "url": "https://news.example.com/ai-capex"
+            },
+            "at": "2026-11-10T00:00:00.000Z",
+            "asOf": "2026-11-10T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0a0a0a03-0000-4000-8000-000000000007",
+            "kind": "coverage",
+            "symbol": null,
+            "fact": "Utilities said data-center projects now make up a large share of requests for new grid connections.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://industry.example.org/dc-power",
+              "label": "industry.example.org · Utilities see data centers driving new demand",
+              "url": "https://industry.example.org/dc-power"
+            },
+            "at": "2026-11-04T00:00:00.000Z",
+            "asOf": "2026-11-04T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0a0a0a04-0000-4000-8000-000000000008",
+            "kind": "coverage",
+            "symbol": null,
+            "fact": "Training clusters need high-speed networking between thousands of accelerators, a market several chip and equipment makers serve.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://news.example.com/ai-networking",
+              "label": "news.example.com · The links between AI chips · undated",
+              "url": "https://news.example.com/ai-networking"
+            },
+            "at": "2026-11-16T15:00:00.000Z",
+            "asOf": null,
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0a0a0a01-0000-4000-8000-000000000013",
+            "kind": "relationship",
+            "symbol": "NVDA",
+            "fact": "Product owner · Nvidia designs the accelerator chips that most AI data centers buy.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://news.example.com/nvda-accel",
+              "label": "news.example.com · Nvidia accelerators lead AI data centers",
+              "url": "https://news.example.com/nvda-accel"
+            },
+            "at": "2026-11-09T00:00:00.000Z",
+            "asOf": "2026-11-09T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0a0a0a02-0000-4000-8000-000000000014",
+            "kind": "relationship",
+            "symbol": "AMD",
+            "fact": "Product owner · AMD said cloud companies ordered its accelerator chips for new AI data centers.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://news.example.com/amd-cloud",
+              "label": "news.example.com · AMD wins accelerator orders from cloud buyers",
+              "url": "https://news.example.com/amd-cloud"
+            },
+            "at": "2026-11-08T00:00:00.000Z",
+            "asOf": "2026-11-08T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0a0a0a03-0000-4000-8000-000000000015",
+            "kind": "relationship",
+            "symbol": "AVGO",
+            "fact": "Supplier · Broadcom designs custom AI chips for some of the largest cloud companies.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://industry.example.org/custom-ai-chips",
+              "label": "industry.example.org · Who builds the custom chips",
+              "url": "https://industry.example.org/custom-ai-chips"
+            },
+            "at": "2026-11-06T00:00:00.000Z",
+            "asOf": "2026-11-06T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0a0a0a04-0000-4000-8000-000000000016",
+            "kind": "relationship",
+            "symbol": null,
+            "fact": "Supplier · Orrin Compute: Orrin Compute packages accelerator chips for several chip designers.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://industry.example.org/ai-packaging",
+              "label": "industry.example.org · Who packages AI chips",
+              "url": "https://industry.example.org/ai-packaging"
+            },
+            "at": "2026-11-05T00:00:00.000Z",
+            "asOf": "2026-11-05T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0f0f0f0f-0000-4000-8000-000000000100",
+            "kind": "coverage",
+            "symbol": "NVDA",
+            "fact": "An analyst note (aa) says the large cloud buyers keep ordering Nvidia accelerators for new AI data centers.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://research.example.org/nvidia-note-aa",
+              "label": "research.example.org · Nvidia note aa",
+              "url": "https://research.example.org/nvidia-note-aa"
+            },
+            "at": "2026-11-17T14:05:00.000Z",
+            "asOf": "2026-11-08T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0f0f0f0f-0000-4000-8000-000000000101",
+            "kind": "coverage",
+            "symbol": "NVDA",
+            "fact": "An analyst note (ab) says the large cloud buyers keep ordering Nvidia accelerators for new AI data centers.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://research.example.org/nvidia-note-ab",
+              "label": "research.example.org · Nvidia note ab",
+              "url": "https://research.example.org/nvidia-note-ab"
+            },
+            "at": "2026-11-17T14:05:00.000Z",
+            "asOf": "2026-11-08T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0f0f0f0f-0000-4000-8000-000000000102",
+            "kind": "coverage",
+            "symbol": "NVDA",
+            "fact": "An analyst note (ac) says the large cloud buyers keep ordering Nvidia accelerators for new AI data centers.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://research.example.org/nvidia-note-ac",
+              "label": "research.example.org · Nvidia note ac",
+              "url": "https://research.example.org/nvidia-note-ac"
+            },
+            "at": "2026-11-17T14:05:00.000Z",
+            "asOf": "2026-11-08T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0f0f0f0f-0000-4000-8000-000000000103",
+            "kind": "coverage",
+            "symbol": "NVDA",
+            "fact": "An analyst note (ad) says the large cloud buyers keep ordering Nvidia accelerators for new AI data centers.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://research.example.org/nvidia-note-ad",
+              "label": "research.example.org · Nvidia note ad",
+              "url": "https://research.example.org/nvidia-note-ad"
+            },
+            "at": "2026-11-17T14:05:00.000Z",
+            "asOf": "2026-11-08T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0f0f0f0f-0000-4000-8000-000000000104",
+            "kind": "coverage",
+            "symbol": "NVDA",
+            "fact": "An analyst note (ae) says the large cloud buyers keep ordering Nvidia accelerators for new AI data centers.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://research.example.org/nvidia-note-ae",
+              "label": "research.example.org · Nvidia note ae",
+              "url": "https://research.example.org/nvidia-note-ae"
+            },
+            "at": "2026-11-17T14:05:00.000Z",
+            "asOf": "2026-11-08T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0f0f0f0f-0000-4000-8000-000000000105",
+            "kind": "coverage",
+            "symbol": "NVDA",
+            "fact": "An analyst note (af) says the large cloud buyers keep ordering Nvidia accelerators for new AI data centers.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://research.example.org/nvidia-note-af",
+              "label": "research.example.org · Nvidia note af",
+              "url": "https://research.example.org/nvidia-note-af"
+            },
+            "at": "2026-11-17T14:05:00.000Z",
+            "asOf": "2026-11-08T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0f0f0f0f-0000-4000-8000-000000000106",
+            "kind": "coverage",
+            "symbol": "NVDA",
+            "fact": "An analyst note (ag) says the large cloud buyers keep ordering Nvidia accelerators for new AI data centers.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://research.example.org/nvidia-note-ag",
+              "label": "research.example.org · Nvidia note ag",
+              "url": "https://research.example.org/nvidia-note-ag"
+            },
+            "at": "2026-11-17T14:05:00.000Z",
+            "asOf": "2026-11-08T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0f0f0f0f-0000-4000-8000-000000000107",
+            "kind": "coverage",
+            "symbol": "NVDA",
+            "fact": "An analyst note (ah) says the large cloud buyers keep ordering Nvidia accelerators for new AI data centers.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://research.example.org/nvidia-note-ah",
+              "label": "research.example.org · Nvidia note ah",
+              "url": "https://research.example.org/nvidia-note-ah"
+            },
+            "at": "2026-11-17T14:05:00.000Z",
+            "asOf": "2026-11-08T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0f0f0f0f-0000-4000-8000-000000000108",
+            "kind": "coverage",
+            "symbol": "NVDA",
+            "fact": "An analyst note (ai) says the large cloud buyers keep ordering Nvidia accelerators for new AI data centers.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://research.example.org/nvidia-note-ai",
+              "label": "research.example.org · Nvidia note ai",
+              "url": "https://research.example.org/nvidia-note-ai"
+            },
+            "at": "2026-11-17T14:05:00.000Z",
+            "asOf": "2026-11-08T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0f0f0f0f-0000-4000-8000-000000000109",
+            "kind": "coverage",
+            "symbol": "NVDA",
+            "fact": "An analyst note (aj) says the large cloud buyers keep ordering Nvidia accelerators for new AI data centers.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://research.example.org/nvidia-note-aj",
+              "label": "research.example.org · Nvidia note aj",
+              "url": "https://research.example.org/nvidia-note-aj"
+            },
+            "at": "2026-11-17T14:05:00.000Z",
+            "asOf": "2026-11-08T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0f0f0f0f-0000-4000-8000-000000000110",
+            "kind": "coverage",
+            "symbol": "NVDA",
+            "fact": "An analyst note (ak) says the large cloud buyers keep ordering Nvidia accelerators for new AI data centers.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://research.example.org/nvidia-note-ak",
+              "label": "research.example.org · Nvidia note ak",
+              "url": "https://research.example.org/nvidia-note-ak"
+            },
+            "at": "2026-11-17T14:05:00.000Z",
+            "asOf": "2026-11-08T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0f0f0f0f-0000-4000-8000-000000000111",
+            "kind": "coverage",
+            "symbol": "NVDA",
+            "fact": "An analyst note (al) says the large cloud buyers keep ordering Nvidia accelerators for new AI data centers.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://research.example.org/nvidia-note-al",
+              "label": "research.example.org · Nvidia note al",
+              "url": "https://research.example.org/nvidia-note-al"
+            },
+            "at": "2026-11-17T14:05:00.000Z",
+            "asOf": "2026-11-08T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0f0f0f0f-0000-4000-8000-000000000112",
+            "kind": "coverage",
+            "symbol": "NVDA",
+            "fact": "An analyst note (am) says the large cloud buyers keep ordering Nvidia accelerators for new AI data centers.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://research.example.org/nvidia-note-am",
+              "label": "research.example.org · Nvidia note am",
+              "url": "https://research.example.org/nvidia-note-am"
+            },
+            "at": "2026-11-17T14:05:00.000Z",
+            "asOf": "2026-11-08T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0f0f0f0f-0000-4000-8000-000000000113",
+            "kind": "coverage",
+            "symbol": "NVDA",
+            "fact": "An analyst note (an) says the large cloud buyers keep ordering Nvidia accelerators for new AI data centers.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://research.example.org/nvidia-note-an",
+              "label": "research.example.org · Nvidia note an",
+              "url": "https://research.example.org/nvidia-note-an"
+            },
+            "at": "2026-11-17T14:05:00.000Z",
+            "asOf": "2026-11-08T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0f0f0f0f-0000-4000-8000-000000000114",
+            "kind": "coverage",
+            "symbol": "NVDA",
+            "fact": "An analyst note (ao) says the large cloud buyers keep ordering Nvidia accelerators for new AI data centers.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://research.example.org/nvidia-note-ao",
+              "label": "research.example.org · Nvidia note ao",
+              "url": "https://research.example.org/nvidia-note-ao"
+            },
+            "at": "2026-11-17T14:05:00.000Z",
+            "asOf": "2026-11-08T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0f0f0f0f-0000-4000-8000-000000000115",
+            "kind": "coverage",
+            "symbol": "NVDA",
+            "fact": "An analyst note (ap) says the large cloud buyers keep ordering Nvidia accelerators for new AI data centers.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://research.example.org/nvidia-note-ap",
+              "label": "research.example.org · Nvidia note ap",
+              "url": "https://research.example.org/nvidia-note-ap"
+            },
+            "at": "2026-11-17T14:05:00.000Z",
+            "asOf": "2026-11-08T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0f0f0f0f-0000-4000-8000-000000000116",
+            "kind": "coverage",
+            "symbol": "NVDA",
+            "fact": "An analyst note (aq) says the large cloud buyers keep ordering Nvidia accelerators for new AI data centers.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://research.example.org/nvidia-note-aq",
+              "label": "research.example.org · Nvidia note aq",
+              "url": "https://research.example.org/nvidia-note-aq"
+            },
+            "at": "2026-11-17T14:05:00.000Z",
+            "asOf": "2026-11-08T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0f0f0f0f-0000-4000-8000-000000000117",
+            "kind": "coverage",
+            "symbol": "NVDA",
+            "fact": "An analyst note (ar) says the large cloud buyers keep ordering Nvidia accelerators for new AI data centers.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://research.example.org/nvidia-note-ar",
+              "label": "research.example.org · Nvidia note ar",
+              "url": "https://research.example.org/nvidia-note-ar"
+            },
+            "at": "2026-11-17T14:05:00.000Z",
+            "asOf": "2026-11-08T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0f0f0f0f-0000-4000-8000-000000000118",
+            "kind": "coverage",
+            "symbol": "NVDA",
+            "fact": "An analyst note (as) says the large cloud buyers keep ordering Nvidia accelerators for new AI data centers.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://research.example.org/nvidia-note-as",
+              "label": "research.example.org · Nvidia note as",
+              "url": "https://research.example.org/nvidia-note-as"
+            },
+            "at": "2026-11-17T14:05:00.000Z",
+            "asOf": "2026-11-08T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0f0f0f0f-0000-4000-8000-000000000119",
+            "kind": "coverage",
+            "symbol": "NVDA",
+            "fact": "An analyst note (at) says the large cloud buyers keep ordering Nvidia accelerators for new AI data centers.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://research.example.org/nvidia-note-at",
+              "label": "research.example.org · Nvidia note at",
+              "url": "https://research.example.org/nvidia-note-at"
+            },
+            "at": "2026-11-17T14:05:00.000Z",
+            "asOf": "2026-11-08T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0f0f0f0f-0000-4000-8000-000000000120",
+            "kind": "coverage",
+            "symbol": "NVDA",
+            "fact": "An analyst note (au) says the large cloud buyers keep ordering Nvidia accelerators for new AI data centers.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://research.example.org/nvidia-note-au",
+              "label": "research.example.org · Nvidia note au",
+              "url": "https://research.example.org/nvidia-note-au"
+            },
+            "at": "2026-11-17T14:05:00.000Z",
+            "asOf": "2026-11-08T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0f0f0f0f-0000-4000-8000-000000000121",
+            "kind": "coverage",
+            "symbol": "NVDA",
+            "fact": "An analyst note (av) says the large cloud buyers keep ordering Nvidia accelerators for new AI data centers.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://research.example.org/nvidia-note-av",
+              "label": "research.example.org · Nvidia note av",
+              "url": "https://research.example.org/nvidia-note-av"
+            },
+            "at": "2026-11-17T14:05:00.000Z",
+            "asOf": "2026-11-08T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0f0f0f0f-0000-4000-8000-000000000122",
+            "kind": "coverage",
+            "symbol": "NVDA",
+            "fact": "An analyst note (aw) says the large cloud buyers keep ordering Nvidia accelerators for new AI data centers.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://research.example.org/nvidia-note-aw",
+              "label": "research.example.org · Nvidia note aw",
+              "url": "https://research.example.org/nvidia-note-aw"
+            },
+            "at": "2026-11-17T14:05:00.000Z",
+            "asOf": "2026-11-08T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0f0f0f0f-0000-4000-8000-000000000123",
+            "kind": "coverage",
+            "symbol": "NVDA",
+            "fact": "An analyst note (ax) says the large cloud buyers keep ordering Nvidia accelerators for new AI data centers.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://research.example.org/nvidia-note-ax",
+              "label": "research.example.org · Nvidia note ax",
+              "url": "https://research.example.org/nvidia-note-ax"
+            },
+            "at": "2026-11-17T14:05:00.000Z",
+            "asOf": "2026-11-08T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0f0f0f0f-0000-4000-8000-000000000124",
+            "kind": "coverage",
+            "symbol": "NVDA",
+            "fact": "An analyst note (ay) says the large cloud buyers keep ordering Nvidia accelerators for new AI data centers.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://research.example.org/nvidia-note-ay",
+              "label": "research.example.org · Nvidia note ay",
+              "url": "https://research.example.org/nvidia-note-ay"
+            },
+            "at": "2026-11-17T14:05:00.000Z",
+            "asOf": "2026-11-08T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0f0f0f0f-0000-4000-8000-000000000125",
+            "kind": "coverage",
+            "symbol": "NVDA",
+            "fact": "An analyst note (az) says the large cloud buyers keep ordering Nvidia accelerators for new AI data centers.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://research.example.org/nvidia-note-az",
+              "label": "research.example.org · Nvidia note az",
+              "url": "https://research.example.org/nvidia-note-az"
+            },
+            "at": "2026-11-17T14:05:00.000Z",
+            "asOf": "2026-11-08T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0f0f0f0f-0000-4000-8000-000000000126",
+            "kind": "coverage",
+            "symbol": "NVDA",
+            "fact": "An analyst note (ba) says the large cloud buyers keep ordering Nvidia accelerators for new AI data centers.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://research.example.org/nvidia-note-ba",
+              "label": "research.example.org · Nvidia note ba",
+              "url": "https://research.example.org/nvidia-note-ba"
+            },
+            "at": "2026-11-17T14:05:00.000Z",
+            "asOf": "2026-11-08T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0f0f0f0f-0000-4000-8000-000000000127",
+            "kind": "coverage",
+            "symbol": "NVDA",
+            "fact": "An analyst note (bb) says the large cloud buyers keep ordering Nvidia accelerators for new AI data centers.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://research.example.org/nvidia-note-bb",
+              "label": "research.example.org · Nvidia note bb",
+              "url": "https://research.example.org/nvidia-note-bb"
+            },
+            "at": "2026-11-17T14:05:00.000Z",
+            "asOf": "2026-11-08T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0f0f0f0f-0000-4000-8000-000000000128",
+            "kind": "coverage",
+            "symbol": "NVDA",
+            "fact": "An analyst note (bc) says the large cloud buyers keep ordering Nvidia accelerators for new AI data centers.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://research.example.org/nvidia-note-bc",
+              "label": "research.example.org · Nvidia note bc",
+              "url": "https://research.example.org/nvidia-note-bc"
+            },
+            "at": "2026-11-17T14:05:00.000Z",
+            "asOf": "2026-11-08T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0f0f0f0f-0000-4000-8000-000000000129",
+            "kind": "coverage",
+            "symbol": "NVDA",
+            "fact": "An analyst note (bd) says the large cloud buyers keep ordering Nvidia accelerators for new AI data centers.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://research.example.org/nvidia-note-bd",
+              "label": "research.example.org · Nvidia note bd",
+              "url": "https://research.example.org/nvidia-note-bd"
+            },
+            "at": "2026-11-17T14:05:00.000Z",
+            "asOf": "2026-11-08T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          }
+        ],
+        "superseded": [],
+        "lines": {
+          "support": null,
+          "complication": null,
+          "missing": null
+        },
+        "nextAction": null,
+        "age": null
+      },
+      "companies": {
+        "supported": [
+          {
+            "symbol": "NVDA",
+            "name": "NVIDIA Corporation",
+            "role": "Product owner",
+            "relationship": "Nvidia designs the accelerator chips that most AI data centers buy.",
+            "relationshipFindingId": "f_0a0a0a01-0000-4000-8000-000000000013",
+            "evidence": [
+              "f_0a0a0a01-0000-4000-8000-000000000013",
+              "f_0f0f0f0f-0000-4000-8000-000000000100",
+              "f_0f0f0f0f-0000-4000-8000-000000000101",
+              "f_0f0f0f0f-0000-4000-8000-000000000102",
+              "f_0f0f0f0f-0000-4000-8000-000000000103",
+              "f_0f0f0f0f-0000-4000-8000-000000000104",
+              "f_0f0f0f0f-0000-4000-8000-000000000105",
+              "f_0f0f0f0f-0000-4000-8000-000000000106",
+              "f_0f0f0f0f-0000-4000-8000-000000000107",
+              "f_0f0f0f0f-0000-4000-8000-000000000108",
+              "f_0f0f0f0f-0000-4000-8000-000000000109",
+              "f_0f0f0f0f-0000-4000-8000-000000000110",
+              "f_0f0f0f0f-0000-4000-8000-000000000111",
+              "f_0f0f0f0f-0000-4000-8000-000000000112",
+              "f_0f0f0f0f-0000-4000-8000-000000000113",
+              "f_0f0f0f0f-0000-4000-8000-000000000114",
+              "f_0f0f0f0f-0000-4000-8000-000000000115",
+              "f_0f0f0f0f-0000-4000-8000-000000000116",
+              "f_0f0f0f0f-0000-4000-8000-000000000117",
+              "f_0f0f0f0f-0000-4000-8000-000000000118",
+              "f_0f0f0f0f-0000-4000-8000-000000000119",
+              "f_0f0f0f0f-0000-4000-8000-000000000120",
+              "f_0f0f0f0f-0000-4000-8000-000000000121",
+              "f_0f0f0f0f-0000-4000-8000-000000000122",
+              "f_0f0f0f0f-0000-4000-8000-000000000123",
+              "f_0f0f0f0f-0000-4000-8000-000000000124",
+              "f_0f0f0f0f-0000-4000-8000-000000000125",
+              "f_0f0f0f0f-0000-4000-8000-000000000126",
+              "f_0f0f0f0f-0000-4000-8000-000000000127",
+              "f_0f0f0f0f-0000-4000-8000-000000000128",
+              "f_0f0f0f0f-0000-4000-8000-000000000129"
+            ],
+            "openQuestion": null,
+            "claim": null,
+            "eligibility": "eligible"
+          },
+          {
+            "symbol": "AMD",
+            "name": "Advanced Micro Devices, Inc.",
+            "role": "Product owner",
+            "relationship": "AMD said cloud companies ordered its accelerator chips for new AI data centers.",
+            "relationshipFindingId": "f_0a0a0a02-0000-4000-8000-000000000014",
+            "evidence": [
+              "f_0a0a0a02-0000-4000-8000-000000000014"
+            ],
+            "openQuestion": null,
+            "claim": null,
+            "eligibility": "eligible"
+          },
+          {
+            "symbol": "AVGO",
+            "name": "Broadcom Inc.",
+            "role": "Supplier",
+            "relationship": "Broadcom designs custom AI chips for some of the largest cloud companies.",
+            "relationshipFindingId": "f_0a0a0a03-0000-4000-8000-000000000015",
+            "evidence": [
+              "f_0a0a0a03-0000-4000-8000-000000000015"
+            ],
+            "openQuestion": null,
+            "claim": null,
+            "eligibility": "eligible"
+          }
+        ],
+        "leads": [
+          {
+            "name": "Orrin Compute",
+            "symbol": null,
+            "findingIds": [
+              "f_0a0a0a04-0000-4000-8000-000000000016"
+            ],
+            "status": "verified",
+            "statusReason": null,
+            "unresolved": "identity_unresolved"
+          }
+        ]
+      },
+      "thesis": {
+        "schemaVersion": 1,
+        "rev": 8,
+        "parts": {
+          "theme": {
+            "state": "set",
+            "value": "I want to play AI",
+            "by": "player_wrote",
+            "suggestion": null
+          },
+          "segment": {
+            "state": "set",
+            "value": "Accelerator chips",
+            "by": "partner_suggested_confirmed",
+            "skipped": false,
+            "findingIds": [
+              "f_0a0a0a01-0000-4000-8000-000000000005"
+            ],
+            "map": [
+              {
+                "label": "Accelerator chips",
+                "line": "The processors that train and run AI models, where most data-center AI spending goes.",
+                "findingIds": [
+                  "f_0a0a0a01-0000-4000-8000-000000000005"
+                ]
+              },
+              {
+                "label": "Chip networking",
+                "line": "The high-speed links that tie thousands of accelerators into one training cluster.",
+                "findingIds": [
+                  "f_0a0a0a04-0000-4000-8000-000000000008"
+                ]
+              },
+              {
+                "label": "Data-center power",
+                "line": "Utilities and grid supply meeting new data-center demand.",
+                "findingIds": [
+                  "f_0a0a0a03-0000-4000-8000-000000000007",
+                  "f_0a0a0a02-0000-4000-8000-000000000006"
+                ]
+              },
+              {
+                "label": "Cloud spenders",
+                "line": "The large cloud companies that raise AI data-center spending and buy the capacity.",
+                "findingIds": [
+                  "f_0a0a0a01-0000-4000-8000-000000000005"
+                ]
+              }
+            ]
+          },
+          "names": {
+            "state": "set",
+            "value": [
+              "NVDA"
+            ],
+            "by": "player_chose",
+            "blocked": null
+          },
+          "why": {
+            "state": "set",
+            "by": "partner_suggested_confirmed",
+            "shared": "the large cloud buyers keep ordering Nvidia accelerators for new AI data centers",
+            "reasons": [
+              {
+                "symbol": "NVDA",
+                "text": "Note after note says the large cloud buyers keep ordering its accelerators.",
+                "findingIds": [
+                  "f_0a0a0a01-0000-4000-8000-000000000013",
+                  "f_0f0f0f0f-0000-4000-8000-000000000100",
+                  "f_0f0f0f0f-0000-4000-8000-000000000101",
+                  "f_0f0f0f0f-0000-4000-8000-000000000102",
+                  "f_0f0f0f0f-0000-4000-8000-000000000103",
+                  "f_0f0f0f0f-0000-4000-8000-000000000104",
+                  "f_0f0f0f0f-0000-4000-8000-000000000105",
+                  "f_0f0f0f0f-0000-4000-8000-000000000106",
+                  "f_0f0f0f0f-0000-4000-8000-000000000107",
+                  "f_0f0f0f0f-0000-4000-8000-000000000108",
+                  "f_0f0f0f0f-0000-4000-8000-000000000109",
+                  "f_0f0f0f0f-0000-4000-8000-000000000110",
+                  "f_0f0f0f0f-0000-4000-8000-000000000111",
+                  "f_0f0f0f0f-0000-4000-8000-000000000112",
+                  "f_0f0f0f0f-0000-4000-8000-000000000113",
+                  "f_0f0f0f0f-0000-4000-8000-000000000114",
+                  "f_0f0f0f0f-0000-4000-8000-000000000115",
+                  "f_0f0f0f0f-0000-4000-8000-000000000116",
+                  "f_0f0f0f0f-0000-4000-8000-000000000117",
+                  "f_0f0f0f0f-0000-4000-8000-000000000118",
+                  "f_0f0f0f0f-0000-4000-8000-000000000119",
+                  "f_0f0f0f0f-0000-4000-8000-000000000120",
+                  "f_0f0f0f0f-0000-4000-8000-000000000121",
+                  "f_0f0f0f0f-0000-4000-8000-000000000122",
+                  "f_0f0f0f0f-0000-4000-8000-000000000123",
+                  "f_0f0f0f0f-0000-4000-8000-000000000124",
+                  "f_0f0f0f0f-0000-4000-8000-000000000125",
+                  "f_0f0f0f0f-0000-4000-8000-000000000126",
+                  "f_0f0f0f0f-0000-4000-8000-000000000127",
+                  "f_0f0f0f0f-0000-4000-8000-000000000128",
+                  "f_0f0f0f0f-0000-4000-8000-000000000129"
+                ]
+              }
+            ],
+            "against": null,
+            "proposal": null
+          },
+          "wrongIf": {
+            "state": "set",
+            "by": "player_wrote",
+            "text": "the large cloud buyers stop ordering Nvidia accelerators",
+            "findingIds": [],
+            "options": [],
+            "priceLines": []
+          },
+          "timeFrame": {
+            "state": "set",
+            "by": "player_chose",
+            "value": "positional",
+            "label": "Positional · about 30 sessions",
+            "suggestion": null
+          }
+        },
+        "pick": null,
+        "filled": 6,
+        "saveIssue": {
+          "code": "too_many_evidence_refs",
+          "detail": 32
+        },
+        "ready": true,
+        "blockers": [],
+        "sentence": "My theme is I want to play AI, through Accelerator chips, built on NVDA, because the large cloud buyers keep ordering Nvidia accelerators for new AI data centers. It's wrong if the large cloud buyers stop ordering Nvidia accelerators. Time frame: Positional · about 30 sessions.",
+        "dependents": {
+          "segment": [
+            "names",
+            "why"
+          ],
+          "names": [
+            "why"
+          ]
+        },
+        "choices": {
+          "research": [
+            {
+              "goal": "strengthen",
+              "part": "theme"
+            },
+            {
+              "goal": "strengthen",
+              "part": "segment"
+            },
+            {
+              "goal": "strengthen",
+              "part": "names"
+            },
+            {
+              "goal": "strengthen",
+              "part": "why"
+            },
+            {
+              "goal": "strengthen",
+              "part": "wrongIf"
+            },
+            {
+              "goal": "strengthen",
+              "part": "timeFrame"
+            },
+            {
+              "goal": "direction"
+            }
+          ],
+          "free": [
+            {
+              "op": "set",
+              "part": "wrongIf",
+              "input": "priceLines",
+              "options": [
+                "NVDA"
+              ]
+            },
+            {
+              "op": "clear",
+              "part": "segment",
+              "clears": [
+                "names",
+                "why"
+              ]
+            },
+            {
+              "op": "clear",
+              "part": "names",
+              "clears": [
+                "why"
+              ]
+            },
+            {
+              "op": "clear",
+              "part": "why",
+              "clears": []
+            },
+            {
+              "op": "clear",
+              "part": "wrongIf",
+              "clears": []
+            },
+            {
+              "op": "clear",
+              "part": "timeFrame",
+              "clears": []
+            }
+          ]
+        }
+      },
+      "storedRows": [],
+      "previous": null,
+      "quota": {
+        "investigationsToday": 1,
+        "perDay": 3,
+        "framingsToday": 0,
+        "framingsPerDay": 10,
+        "stepsToday": 1,
+        "stepsPerDay": 30
+      }
+    }
   }
 }

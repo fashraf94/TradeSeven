@@ -69,7 +69,10 @@ export default function ThesisReady({ sr, agentName, phone, edit, setEdit, onKee
   const priceChoice = (thesis.choices?.free ?? []).find((c) => c.input === 'priceLines') ?? null;
   const over = edit !== null && edit.length > STATEMENT_MAX;
   const statement = edit !== null && edit.trim() && edit.trim() !== thesis.sentence ? edit.trim() : null;
-  const canSave = thesis.ready === true && !(thesis.saveIssue && edit === null) && !busy && !uncertain && status !== 'closed' && !sr.waiting && !sr.gated
+  // saveIssue judges the server's composed sentence (the refuter's R2): it holds Save unless the player's own sentence
+  // differs from it — and always for too_many_evidence_refs, which no wording changes (the server checks it first)
+  const issueHolds = Boolean(thesis.saveIssue) && (thesis.saveIssue.code === 'too_many_evidence_refs' || statement === null);
+  const canSave = thesis.ready === true && !issueHolds && !busy && !uncertain && status !== 'closed' && !sr.waiting && !sr.gated
     && !(edit !== null && (!edit.trim() || over));
   const panel = tapped ? panelOf(thesis, tapped) : null;
   const onFree = (choice, input) => {
@@ -78,7 +81,9 @@ export default function ThesisReady({ sr, agentName, phone, edit, setEdit, onKee
   };
   const confirmClear = async () => { const c = clearAsk; setClearAsk(null); if (c) await sr.cardOp(c); };
   const cardFailure = sr.failure?.action === 'card' ? sr.failure : null;
-  const blockers = status === 'failed' && Array.isArray(sr.save.blockers) ? sr.save.blockers : null;
+  // a Save refusal speaks of one card (the refuter's R3): shown only while that card is the one on screen
+  const refusalHere = ['failed', 'stale'].includes(status) && sr.save.atRev === thesis.rev;
+  const blockers = refusalHere && status === 'failed' && Array.isArray(sr.save.blockers) ? sr.save.blockers : null;
 
   return (
     <div data-screen-label={`Thesis ready · ${status}`} style={S.col}>
@@ -141,20 +146,20 @@ export default function ThesisReady({ sr, agentName, phone, edit, setEdit, onKee
       </section>
 
       {cardFailure && <Notice role="alert" attrs={{ 'data-sr-card-failed': cardFailure.code }}>{cardFailure.message}</Notice>}
-      {status === 'failed' && <Notice role="alert" attrs={{ 'data-sr-save': 'failed' }}>{sr.save.message}</Notice>}
+      {refusalHere && status === 'failed' && <Notice role="alert" attrs={{ 'data-sr-save': 'failed' }}>{sr.save.message}</Notice>}
       {blockers && blockers.length > 0 && <p style={S.small} data-sr-blockers="">{B.stillToSet(blockers.map((b) => B.parts[b.part] ?? b.part).join(', '))}</p>}
-      {status === 'stale' && <Notice role="alert" tone="gold" attrs={{ 'data-sr-save': 'stale' }}>{sr.save.message}</Notice>}
+      {refusalHere && status === 'stale' && <Notice role="alert" tone="gold" attrs={{ 'data-sr-save': 'stale' }}>{sr.save.message}</Notice>}
       {status === 'notsaved' && <Notice role="status" tone="teal" attrs={{ 'data-sr-save': 'notsaved' }}>{COPY.notSaved}</Notice>}
       <SaveStates sr={sr} phone={phone} />
 
       <div ref={footRef} data-sr-foot="ready" style={FOOT}>
         <Cover />
-        {thesis.saveIssue && edit === null && <Notice role="status" tone="gold" attrs={{ 'data-sr-save-issue': thesis.saveIssue.code, id: issueId }}>{B.saveIssue[thesis.saveIssue.code] ?? COPY.server.step_failed}</Notice>}
+        {issueHolds && <Notice role="status" tone="gold" attrs={{ 'data-sr-save-issue': thesis.saveIssue.code, id: issueId }}>{B.saveIssue[thesis.saveIssue.code] ?? COPY.server.step_failed}</Notice>}
         {status === 'saving' && <Running>{B.saving}</Running>}
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 8 }}>
           {!uncertain && status !== 'saving' && status !== 'closed' && (
-            <Button kind="primary" full disabled={!canSave} onClick={() => sr.adoptThesis({ statement })} attrs={{ 'data-sr-save-thesis': '', ...(thesis.saveIssue && edit === null ? { 'aria-describedby': issueId } : {}) }}>
-              {status === 'failed' || status === 'notsaved' ? COPY.retry : B.save}
+            <Button kind="primary" full disabled={!canSave} onClick={() => sr.adoptThesis({ statement })} attrs={{ 'data-sr-save-thesis': '', ...(issueHolds ? { 'aria-describedby': issueId } : {}) }}>
+              {(refusalHere && status === 'failed') || status === 'notsaved' ? COPY.retry : B.save}
             </Button>
           )}
           <Button kind="secondary" full disabled={busy} onClick={onKeepResearching} attrs={{ 'data-sr-keep-researching': '' }}>{B.keepResearching}</Button>

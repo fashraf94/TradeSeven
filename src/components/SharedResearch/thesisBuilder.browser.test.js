@@ -61,7 +61,7 @@ describe.skipIf(!BASE)('the thesis builder in a real browser (B4)', () => {
     const { chromium } = await import('playwright-core');
     browser = await chromium.launch({ headless: true, ...(CHANNEL ? { channel: CHANNEL } : {}) });
   }, ROW_TIMEOUT);
-  afterAll(async () => { await browser?.close(); browser = null; });
+  afterAll(async () => { await browser?.close(); browser = null; }, ROW_TIMEOUT);
 
   for (const [scenario, label, first] of [
     ['builder-midway', 'T4 (mid-way)', '[data-sr-foot] [data-sr-free]'],
@@ -150,7 +150,7 @@ describe.skipIf(!BASE)('the review\'s fixes in a real browser (4C)', () => {
     const { chromium } = await import('playwright-core');
     browser = await chromium.launch({ headless: true, ...(CHANNEL ? { channel: CHANNEL } : {}) });
   }, ROW_TIMEOUT);
-  afterAll(async () => { await browser?.close(); browser = null; });
+  afterAll(async () => { await browser?.close(); browser = null; }, ROW_TIMEOUT);
   const escapeCloses = async (page) => { await page.keyboard.press('Escape'); await page.waitForTimeout(300); return (await page.$('[role="dialog"]')) === null; };
 
   it('4C-1: 390×844 — a part opened and closed by keyboard, then Escape: the sheet closes (focus never fell to <body>)', async () => {
@@ -242,4 +242,32 @@ describe.skipIf(!BASE)('the review\'s fixes in a real browser (4C)', () => {
       expect(m.maxRight, JSON.stringify(m)).toBeLessThanOrEqual(m.vw);
     } finally { await ctx.close(); }
   }, ROW_TIMEOUT);
+
+  // ── the refuter's round ──────────────────────────────────────────────────────
+  it('refuter: 390×844 — the strip opened by keyboard puts focus on the card; Escape then closes the sheet', async () => {
+    const { ctx, page } = await pageAt(390, 844, 'builder-midway');
+    try {
+      await scrollSheet(page, 900);
+      await page.waitForTimeout(300);
+      await page.focus('[data-sr-strip]');
+      await page.keyboard.press('Enter');
+      await page.waitForTimeout(500);
+      expect(await page.$('[data-sr-strip]')).toBeNull();
+      expect(await page.evaluate(() => document.activeElement?.hasAttribute('data-sr-card'))).toBe(true);
+      expect(await escapeCloses(page)).toBe(true);
+    } finally { await ctx.close(); }
+  }, ROW_TIMEOUT);
+  for (const [w, h, scenario] of [[320, 568, 'builder-midway'], [320, 568, 'builder-names'], [390, 844, 'builder-midway'], [390, 844, 'builder-names'], [390, 844, 'builder-why']]) {
+    it(`refuter: ${w}×${h} ${scenario} — the whole foot (its choices, the composer, its lines) keeps within about half the sheet`, async () => {
+      const { ctx, page } = await pageAt(w, h, scenario);
+      try {
+        const m = await page.evaluate(() => {
+          const sheet = document.querySelector('[role="dialog"]');
+          const foot = document.querySelector('[data-sr-foot]');
+          return { foot: foot.getBoundingClientRect().height, sheet: sheet.clientHeight };
+        });
+        expect(m.foot / m.sheet, JSON.stringify(m)).toBeLessThanOrEqual(0.5);
+      } finally { await ctx.close(); }
+    }, ROW_TIMEOUT);
+  }
 });

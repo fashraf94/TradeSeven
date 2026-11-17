@@ -23,7 +23,7 @@ import { SR_COPY as COPY } from '../sharedResearchCopy';
 import { T, S, wash } from '../sharedResearchStyle';
 import { directionOfStep, evidenceOf, findingsById, formatDay, remainingOf, stateOf } from '../sharedResearchView';
 import {
-  frontPartOf, footOf, panelOf, conversationOf, hasSuggestedPart, partOfGoal, directionOffered, revisedWhyChoiceOf, horizonLabelOf,
+  footOf, panelOf, conversationOf, hasSuggestedPart, partOfGoal, directionOffered, revisedWhyChoiceOf, horizonLabelOf,
 } from '../thesisView';
 import {
   CardHead, CardLine, ClearConfirm, Composer, Count, Cover, EvidenceList, FOOT, FOOT_CHOICES, FreeButton, KeepReasons, Mark, Mine, NamesPick, PartPanel,
@@ -86,8 +86,8 @@ function AskedPick({ pick, agentName }) {
  * A thesis Save's refusal (K-12), wherever the builder stands: the server's line, and `not_ready`'s blockers. The ready
  * view draws it beside Save; the work view draws it when the card the refusal brought is no longer ready (review 4B-3).
  */
-export function SaveOutcome({ sr, sessionId }) {
-  if (sr.save.sessionId !== sessionId || !['failed', 'stale'].includes(sr.save.status)) return null;
+export function SaveOutcome({ sr, sessionId, rev }) {
+  if (sr.save.sessionId !== sessionId || !['failed', 'stale'].includes(sr.save.status) || sr.save.atRev !== rev) return null;
   const blockers = sr.save.status === 'failed' && Array.isArray(sr.save.blockers) ? sr.save.blockers : null;
   return (
     <>
@@ -105,6 +105,7 @@ function BuilderWork({ sr, agentName, phone, open, viewingEarlier, onBackToCurre
   const [folded, setFolded] = useState(false);
   const cardRef = useRef(null);
   const footRef = useRef(null);
+  const choicesRef = useRef(null);
   const endRef = useRef(null);
   const seenRows = useRef(null);
   const panelId = `sr-part-panel${useId()}`;
@@ -134,7 +135,10 @@ function BuilderWork({ sr, agentName, phone, open, viewingEarlier, onBackToCurre
     check();
     return () => scroller.removeEventListener('scroll', check);
   }, [phone]);
-  const unfold = () => cardRef.current?.scrollIntoView?.({ block: 'start' });
+  const unfold = () => {
+    cardRef.current?.scrollIntoView?.({ block: 'start' });
+    cardRef.current?.focus?.({ preventScroll: true });
+  };
   usePanelInView(tapped, panelId, footRef);
   // A new turn (a reply, a card line) comes into view just above the foot, as a conversation does (R3: the latest turn
   // sits on the foot); not on the first draw, which shows the card.
@@ -171,7 +175,7 @@ function BuilderWork({ sr, agentName, phone, open, viewingEarlier, onBackToCurre
     setTapped(null);
     setTimeout(() => cardRef.current?.querySelector(`[data-sr-slot="${part}"]`)?.focus({ preventScroll: true }), 0);
   };
-  const footCap = useFootRoom(footRef, { top: phone ? 84 : 0 });
+  const footCap = useFootRoom(footRef, { choicesRef, top: phone ? 84 : 0, active: open });
   const research = (g) => sr.buildStep({ goal: g.goal, part: g.part ?? null });
 
   // the failures (K-15): the one this page saw, or the session's (a reopened sheet)
@@ -190,7 +194,7 @@ function BuilderWork({ sr, agentName, phone, open, viewingEarlier, onBackToCurre
 
   const panel = tapped ? panelOf(thesis, tapped) : null;
   const card = (
-    <section ref={cardRef} aria-label={B.thesis} data-sr-card="" style={{ ...S.box, gap: 12 }}>
+    <section ref={cardRef} tabIndex={-1} aria-label={B.thesis} data-sr-card="" style={{ ...S.box, gap: 12, outline: 'none' }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <CardHead thesis={thesis} stepsLeft={stepsLeft} />
         <Rail thesis={thesis} working={working} />
@@ -272,7 +276,7 @@ function BuilderWork({ sr, agentName, phone, open, viewingEarlier, onBackToCurre
   const footer = open ? (
     <div ref={footRef} data-sr-foot={foot.part ?? 'none'} style={FOOT}>
       <Cover />
-      <div data-sr-foot-choices="" style={{ ...FOOT_CHOICES, maxHeight: footCap ?? (phone ? '36vh' : '42vh') }}>
+      <div ref={choicesRef} data-sr-foot-choices="" style={{ ...FOOT_CHOICES, maxHeight: footCap ?? (phone ? '30vh' : '36vh') }}>
       {running && <Running attrs={{ 'data-sr-working': '' }}>{B.workingLine(agentName)}</Running>}
       {!running && staleRunning && (
         <Notice role="status" tone="gold" attrs={{ 'data-sr-was-running': '' }}>
@@ -292,7 +296,7 @@ function BuilderWork({ sr, agentName, phone, open, viewingEarlier, onBackToCurre
         </>
       )}
       {closeRefusal && <Notice role="alert" attrs={{ 'data-sr-refusal': closeRefusal.code }}>{closeRefusal.message}</Notice>}
-      <SaveOutcome sr={sr} sessionId={session.sessionId} />
+      <SaveOutcome sr={sr} sessionId={session.sessionId} rev={thesis.rev} />
       {askFor('foot')}
       {!running && deadEnd && !(tapped && tapped !== foot.part) && (
         <>
