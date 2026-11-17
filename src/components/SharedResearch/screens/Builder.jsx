@@ -105,10 +105,12 @@ function BuilderWork({ sr, agentName, phone, wide, open, viewingEarlier, onBackT
   const [clearAsk, setClearAsk] = useState(null);
   const [folded, setFolded] = useState(false);
   const cardRef = useRef(null);
+  const stripRef = useRef(null);
   const footRef = useRef(null);
   const logRef = useRef(null);
   const seenRows = useRef(null);
   const panelId = `sr-part-panel${useId()}`;
+  const leadId = `sr-lead${useId()}`;
   const foot = footOf(thesis);
   const stepsLeft = remainingOf(session);
   const busy = sr.pending !== null || sr.waiting;
@@ -132,7 +134,10 @@ function BuilderWork({ sr, agentName, phone, wide, open, viewingEarlier, onBackT
     const check = () => {
       const c = card.getBoundingClientRect();
       const s = scroller.getBoundingClientRect();
-      setFolded(c.height !== 0 && s.top + 12 > c.bottom);
+      const next = c.height !== 0 && s.top + 12 > c.bottom;
+      // the strip is about to go with focus inside it (its unfold, its "⋯", Discard): focus goes to the card (5C-4)
+      if (!next && stripRef.current?.contains(document.activeElement)) card.focus({ preventScroll: true });
+      setFolded(next);
     };
     scroller.addEventListener('scroll', check, { passive: true });
     check();
@@ -179,7 +184,7 @@ function BuilderWork({ sr, agentName, phone, wide, open, viewingEarlier, onBackT
     setTapped(null);
     setTimeout(() => cardRef.current?.querySelector(`[data-sr-slot="${part}"]`)?.focus({ preventScroll: true }), 0);
   };
-  useFootRoom(footRef, { top: wide ? 0 : 84, active: hasComposer });
+  useFootRoom(footRef, { top: wide ? 0 : 84, active: open, anchorRef: cardRef });
   const research = (g) => sr.buildStep({ goal: g.goal, part: g.part ?? null });
   const more = (where) => (open ? <MoreActions onDiscard={onDiscard} disabled={busy} where={where} /> : null);
 
@@ -312,8 +317,14 @@ function BuilderWork({ sr, agentName, phone, wide, open, viewingEarlier, onBackT
         <>
           {outOfSteps && <Notice role="status" tone="gold" attrs={{ 'data-sr-out-of-steps': '' }}>{B.outOfSteps(session.stepBudget ?? 0)}</Notice>}
           {foot.change && <FreeButton label={B.change} sub={B.staleLine(B.parts[foot.part])} disabled={busy} onClick={() => onFreeInChoices(foot.change)} attrs={{ 'data-sr-free': `clear:${foot.part}` }} />}
-          {lead && <p style={{ ...S.meta, ...WRAP, fontWeight: 600, color: T.ink }} data-sr-lead={foot.part}>{lead}</p>}
-          <FreeChoices choices={foot.values} thesis={thesis} companies={companies} agentName={agentName} onFree={onFreeInChoices} disabled={busy} />
+          {lead
+            ? (
+              <div role="group" aria-labelledby={leadId} style={CHOICES}>
+                <p id={leadId} style={{ ...S.meta, ...WRAP, fontWeight: 600, color: T.ink }} data-sr-lead={foot.part}>{lead}</p>
+                <FreeChoices choices={foot.values} thesis={thesis} companies={companies} agentName={agentName} onFree={onFreeInChoices} disabled={busy} />
+              </div>
+            )
+            : <FreeChoices choices={foot.values} thesis={thesis} companies={companies} agentName={agentName} onFree={onFreeInChoices} disabled={busy} />}
           {foot.research.map((g) => <ResearchButton key={`${g.goal}:${g.part ?? ''}`} label={researchLabelOf(g)} stepsLeft={stepsLeft} disabled={busy} onClick={() => research(g)} attrs={{ 'data-sr-research': `${g.goal}${g.part ? `:${g.part}` : ''}` }} />)}
           {foot.skip && <FreeButton label={B.skipSegment} disabled={busy} onClick={() => onFree(foot.skip)} attrs={{ 'data-sr-free': 'set:segment:skip' }} />}
           {outOfSteps && <FreeButton label={B.concludeWithWhatWeHave} trail={B.keepsResearch} disabled={busy} onClick={() => sr.close('concluded')} attrs={{ 'data-sr-conclude': '' }} />}
@@ -332,7 +343,7 @@ function BuilderWork({ sr, agentName, phone, wide, open, viewingEarlier, onBackT
   ) : null;
 
   const strip = !wide ? (
-    <div style={{ position: 'sticky', top: 0, height: 0, zIndex: 2 }} data-sr-strip-holder="">
+    <div ref={stripRef} style={{ position: 'sticky', top: 0, height: 0, zIndex: 2 }} data-sr-strip-holder="">
       {folded && <div style={{ position: 'absolute', left: 0, right: 0, top: 0, background: T.bg }}><Cover side="above" /><Strip thesis={thesis} stepsLeft={stepsLeft} onOpen={unfold} more={more('strip')} /></div>}
     </div>
   ) : null;

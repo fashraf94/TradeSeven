@@ -184,7 +184,7 @@ export default function SharedResearchSheetBody({
       ? <Adopt key={adoptEpoch} sr={sr} agentName={name} agentId={agentId} equippedListLabel={equippedListLabel} preselect={preselect} phone={phone} onBack={() => setView('work')} onClose={onClose} />
       : <Running>{COPY.opening}</Running>;
   } else if (view === 'discard' && sr.inv?.record) {
-    body = <Discard sr={sr} phone={phone} onBack={() => setView('work')} onDone={() => setView('work')} />;
+    body = <Discard sr={sr} phone={phone} builder={isBuilderSession(sr.inv.session)} onBack={() => setView('work')} onDone={() => setView('work')} />;
   } else if (view === 'work' && sr.inv?.record) {
     body = sr.existing
       ? <ExistingContinue sr={sr} phone={phone} onClose={onClose} />

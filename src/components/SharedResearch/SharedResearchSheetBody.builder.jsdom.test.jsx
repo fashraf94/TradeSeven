@@ -1173,9 +1173,11 @@ describe('the phone round (P-2 to P-7)', () => {
     for (const sym of ['NVDA', 'AMD']) {
       const tags = $$(`[data-sr-name-row="${sym}"] [data-sr-name-pick]`);
       expect(tags).toHaveLength(1);
-      const line = tags[0].parentElement;
+      const line = tags[0].closest('[data-sr-name-line]');
       expect(line.textContent.startsWith(sym)).toBe(true);
       expect(line.style.whiteSpace).toBe('nowrap');
+      // a long agent name shrinks the tag (an ellipsis) on this line rather than running over the count (5C-3)
+      expect(tags[0].parentElement.style.textOverflow).toBe('ellipsis');
     }
     expect($$('[data-sr-name-row="AVGO"] [data-sr-name-pick]')).toHaveLength(0);
   });
@@ -1224,5 +1226,87 @@ describe('the phone round (P-2 to P-7)', () => {
     mounted.forEach((m) => m.unmount()); mounted = [];
     await openOn(TA.walkGetWrongIf);
     expect($('[data-sr-choices] [data-sr-lead="timeFrame"]').textContent).toBe(B.leadTimeFrame);
+  });
+});
+
+describe('lens (c) on the phone round: the fixes', () => {
+  it('5C-2: folding or unfolding a reply keeps the very same text nodes — the log never hears the reply again', async () => {
+    await openOn(TA.walkGetConfirmWhy);
+    const first = () => $$('[data-sr-said] [data-sr-said-text]')[0];
+    const nodes = [...first().childNodes];
+    await tap('[data-sr-said] [data-sr-said-more]');
+    expect([...first().childNodes]).toEqual(nodes);
+    for (const [a, b] of nodes.map((x, i) => [x, first().childNodes[i]])) expect(b).toBe(a);
+  });
+  it('5C-2: a new turn folds the reply before it without re-adding its text', async () => {
+    await openOn(TA.walkGetSegment, {}, { step: TA.walkNames });
+    const before = $$('[data-sr-said] [data-sr-said-text]').at(-1);
+    const kids = [...before.childNodes];
+    expect(before.closest('[data-sr-said]').dataset.srSaidFolded).toBe('false');
+    await tap('[data-sr-research="find_names"]');
+    const again = $$('[data-sr-said] [data-sr-said-text]').at(-2);
+    expect(again).toBe(before);
+    expect(again.closest('[data-sr-said]').dataset.srSaidFolded).toBe('true');
+    kids.forEach((k, i) => expect(again.childNodes[i]).toBe(k));
+  });
+  it('5C-1: a folded reply is measured again when its box resizes — More comes back when it stops fitting', async () => {
+    const realRO = globalThis.ResizeObserver;
+    const proto = HTMLElement.prototype;
+    const ch = Object.getOwnPropertyDescriptor(proto, 'clientHeight');
+    const sh = Object.getOwnPropertyDescriptor(proto, 'scrollHeight');
+    const observed = [];
+    let spill = 0;
+    globalThis.ResizeObserver = class { constructor(cb) { this.cb = cb; observed.push(this); } observe() {} disconnect() {} };
+    Object.defineProperty(proto, 'clientHeight', { configurable: true, get() { return this.hasAttribute?.('data-sr-said-text') ? 45 : 0; } });
+    Object.defineProperty(proto, 'scrollHeight', { configurable: true, get() { return this.hasAttribute?.('data-sr-said-text') ? 45 + spill : 0; } });
+    try {
+      await openOn(TA.walkGetConfirmWhy);
+      expect($('[data-sr-said] [data-sr-said-more]')).toBeNull(); // fits at this width: no More
+      spill = 23;
+      await act(async () => { for (const ro of observed) ro.cb([]); });
+      expect($('[data-sr-said] [data-sr-said-more]')).not.toBeNull();
+    } finally {
+      globalThis.ResizeObserver = realRO;
+      if (ch) Object.defineProperty(proto, 'clientHeight', ch); else delete proto.clientHeight;
+      if (sh) Object.defineProperty(proto, 'scrollHeight', sh); else delete proto.scrollHeight;
+    }
+  });
+  it('5C-6, 5C-8: More is at least 44 px and is named for whose reply it opens', async () => {
+    await openOn(TA.walkGetConfirmWhy);
+    const more = $('[data-sr-said] [data-sr-said-more]');
+    expect(more.style.minWidth).toBe('44px');
+    expect(more.style.minHeight).toBe('44px');
+    expect(more.getAttribute('aria-label')).toBe(B.moreReplyLabel('Atlas'));
+    expect(more.textContent).toBe(B.moreReply);
+    await tap('[data-sr-said] [data-sr-said-more]');
+    expect($('[data-sr-said] [data-sr-said-more]').getAttribute('aria-label')).toBe(B.lessReplyLabel('Atlas'));
+  });
+  it('5C-5: the Discard confirm opened from a builder says the sheet\'s close keeps it open (no "Continue later" there)', async () => {
+    await openOn(TA.walkGetConfirmWhy);
+    await tap('[data-sr-more="card"]');
+    await tap('[data-sr-discard="card"]');
+    expect(textOf()).toContain(B.discardAlt);
+    expect(textOf()).not.toContain(COPY.discardAlt);
+  });
+  it('5C-7: the pick\'s reason describes its button; a lead line names the group of choices it leads', async () => {
+    await openOn(TA.walkGetNames);
+    const pick = $('[data-sr-free="confirm:names"]');
+    expect(document.getElementById(pick.getAttribute('aria-describedby'))).toBe($('[data-sr-pick-reason]'));
+    mounted.forEach((m) => m.unmount()); mounted = [];
+    await openOn(TA.walkGetConfirmWhy);
+    const group = $('[data-sr-choices] [role="group"]');
+    expect(document.getElementById(group.getAttribute('aria-labelledby'))).toBe($('[data-sr-lead="wrongIf"]'));
+    expect(group.querySelectorAll('[data-sr-free="set:wrongIf"]').length).toBeGreaterThan(0);
+  });
+  it('5C-9: the "⋯" closes when a tap lands elsewhere, or focus leaves it', async () => {
+    await openOn(TA.walkGetConfirmWhy);
+    await tap('[data-sr-more="card"]');
+    expect($('[data-sr-discard="card"]')).not.toBeNull();
+    await act(async () => { $('[data-sr-conversation]').dispatchEvent(new Event('pointerdown', { bubbles: true })); });
+    expect($('[data-sr-discard="card"]')).toBeNull();
+    await tap('[data-sr-more="card"]');
+    expect($('[data-sr-discard="card"]')).not.toBeNull();
+    await act(async () => { $('[data-sr-more="card"]').dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: $('[data-sr-slot="theme"]') })); });
+    expect($('[data-sr-discard="card"]')).toBeNull();
   });
 });

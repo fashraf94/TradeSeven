@@ -127,6 +127,10 @@ const BUILDER = Object.freeze({
   // an earlier reply folds to two lines (P-5); Discard sits behind "⋯" (P-3)
   moreReply: 'More',
   lessReply: 'Less',
+  moreReplyLabel: (name) => `More of ${name}’s reply`,
+  lessReplyLabel: (name) => `Less of ${name}’s reply`,
+  // the Discard confirm, opened from a builder (5C-5): the builder has no "Continue later"; the sheet's close keeps it
+  discardAlt: 'Closing the sheet instead keeps it open; Continue brings you back to the same investigation.',
   moreActions: 'More actions',
   // ── the composer (K-6) ──────────────────────────────────────────────────────────
   composerLabel: 'Your words',

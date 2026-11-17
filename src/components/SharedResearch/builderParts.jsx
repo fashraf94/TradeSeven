@@ -76,10 +76,11 @@ export function scrollParentOf(el) {
  * control that takes focus is never left under the foot or the strip (review 4C-3). The box's own padding is put back
  * when the view goes, or when there is no foot (the refuter's 7). The foot holds no cap any more (P-2).
  */
-export function useFootRoom(footRef, { top = 0, active = true } = {}) {
+export function useFootRoom(footRef, { top = 0, active = true, anchorRef = null } = {}) {
   useEffect(() => {
     if (!active) return undefined;
-    const scroller = scrollParentOf(footRef.current);
+    // the foot finds the sheet's scroll box; with no foot (no composer on offer), the anchor does (5C-10)
+    const scroller = scrollParentOf(footRef.current ?? anchorRef?.current ?? null);
     if (!scroller) return undefined;
     const before = { bottom: scroller.style.scrollPaddingBottom, top: scroller.style.scrollPaddingTop };
     const measure = () => {
@@ -90,7 +91,7 @@ export function useFootRoom(footRef, { top = 0, active = true } = {}) {
     const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : null;
     if (footRef.current) ro?.observe(footRef.current);
     return () => { ro?.disconnect(); scroller.style.scrollPaddingBottom = before.bottom; scroller.style.scrollPaddingTop = before.top; };
-  }, [footRef, top, active]);
+  }, [footRef, top, active, anchorRef]);
 }
 
 /**
@@ -254,21 +255,35 @@ export function Said({ name, text, folded = false, attrs = {} }) {
   const boxRef = useRef(null);
   const id = `sr-said${useId()}`;
   const clamp = folded && !open;
+  // measured again whenever the box changes size (5C-1: a reply that fits at one width may not at the next)
   useEffect(() => {
     const el = boxRef.current;
-    if (!clamp || !el) return;
-    const spill = el.scrollHeight - el.clientHeight;
-    setFits(Boolean(el.clientHeight) && spill <= 1);
+    if (!clamp || !el) return undefined;
+    const measure = () => {
+      const spill = el.scrollHeight - el.clientHeight;
+      setFits(Boolean(el.clientHeight) && spill <= 1);
+    };
+    measure();
+    const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : null;
+    ro?.observe(el);
+    return () => ro?.disconnect();
   }, [clamp, text]);
   const paras = String(text ?? '').split(/\n{2,}/);
+  // the same nodes folded or not — only their style changes — so the log never hears the reply again (5C-2)
+  const box = clamp
+    ? { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }
+    : { display: 'flex', flexDirection: 'column', gap: 8 };
   return (
     <div {...attrs} data-sr-said-folded={clamp ? 'true' : 'false'} style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 }}>
       <span style={{ ...S.eyebrow, color: T.teal }}>{name}</span>
-      {clamp
-        ? <div ref={boxRef} id={id} data-sr-said-text="" style={{ fontSize: 15, color: T.ink, lineHeight: 1.5, ...WRAP, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{paras.join(' ')}</div>
-        : <div id={id} data-sr-said-text="" style={{ fontSize: 15, color: T.ink, lineHeight: 1.5, display: 'flex', flexDirection: 'column', gap: 8, ...WRAP }}>{paras.map((p, i) => <span key={i} style={{ display: 'block' }}>{p}</span>)}</div>}
+      <div ref={boxRef} id={id} data-sr-said-text="" style={{ fontSize: 15, color: T.ink, lineHeight: 1.5, ...WRAP, ...box }}>
+        {paras.map((p, i) => <React.Fragment key={i}>{i > 0 ? ' ' : null}<span style={{ display: clamp ? 'inline' : 'block' }}>{p}</span></React.Fragment>)}
+      </div>
       {folded && !(clamp && fits) && (
-        <div><LinkButton expanded={open} controls={id} onClick={() => setOpen((v) => !v)} attrs={{ 'data-sr-said-more': '' }}>{open ? B.lessReply : B.moreReply}</LinkButton></div>
+        <div>
+          <button type="button" aria-expanded={open} aria-controls={id} aria-label={open ? B.lessReplyLabel(name) : B.moreReplyLabel(name)} onClick={() => setOpen((v) => !v)} data-sr-said-more=""
+            style={{ ...linkStyle, minWidth: 44, minHeight: 44, justifyContent: 'flex-start' }}>{open ? B.lessReply : B.moreReply}</button>
+        </div>
       )}
     </div>
   );
@@ -326,8 +341,17 @@ export function CardHead({ thesis, stepsLeft, ready = false, more = null }) {
 export function MoreActions({ onDiscard, disabled = false, where }) {
   const [open, setOpen] = useState(false);
   const id = `sr-more${useId()}`;
+  const boxRef = useRef(null);
+  // closed by a tap elsewhere, or by focus leaving it (5C-9)
+  useEffect(() => {
+    if (!open) return undefined;
+    const away = (e) => { if (!boxRef.current?.contains(e.target)) setOpen(false); };
+    document.addEventListener('pointerdown', away, true);
+    return () => document.removeEventListener('pointerdown', away, true);
+  }, [open]);
+  const onBlur = (e) => { if (e.relatedTarget && !boxRef.current?.contains(e.relatedTarget)) setOpen(false); };
   return (
-    <span style={{ position: 'relative', display: 'inline-flex', flexShrink: 0 }}>
+    <span ref={boxRef} onBlur={onBlur} style={{ position: 'relative', display: 'inline-flex', flexShrink: 0 }}>
       <button type="button" aria-label={B.moreActions} aria-expanded={open} aria-controls={id} onClick={() => setOpen((v) => !v)} data-sr-more={where}
         style={{ ...linkStyle, color: T.ink2, textDecoration: 'none', width: 44, minWidth: 44, height: 44, justifyContent: 'center', margin: '-12px -10px -12px 0', fontSize: 18, letterSpacing: '0.05em' }}>⋯</button>
       {open && (
@@ -534,6 +558,7 @@ export function NamesPick({ choice, pickConfirm, thesis, companies, agentName, o
   const max = Number.isSafeInteger(choice.max) ? choice.max : 4;
   const ok = ticked.length >= min && ticked.length <= max;
   const toggle = (s) => setTicked((t) => (t.includes(s) ? t.filter((x) => x !== s) : (choice.options ?? []).filter((x) => x === s || t.includes(x))));
+  const reasonId = `sr-pick-reason${useId()}`;
   const pickLabel = pickConfirm ? freeLabelOf(pickConfirm, thesis, agentName) : null;
   const pickReason = pickConfirm && !thesis?.pick?.asked ? thesis?.pick?.reason ?? null : null;
   const reasonTag = thesis?.pick ? basisTagOf(thesis.pick.basis, agentName) : null;
@@ -550,9 +575,9 @@ export function NamesPick({ choice, pickConfirm, thesis, companies, agentName, o
             <label key={s} data-sr-name-row={s} style={{ display: 'grid', gridTemplateColumns: '20px minmax(0,1fr) auto', gap: 10, alignItems: 'start', padding: '9px 0', borderTop: `1px solid ${T.hair}`, cursor: disabled ? 'not-allowed' : 'pointer', minHeight: 44 }}>
               <input type="checkbox" checked={on} disabled={disabled} onChange={() => toggle(s)} style={{ width: 18, height: 18, marginTop: 2 }} />
               <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 10, whiteSpace: 'nowrap' }}>
-                  <span style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>{s}</span>
-                  {picked.includes(s) && <Mark tone="teal" attrs={{ 'data-sr-name-pick': s }}>{B.pickTag(agentName)}</Mark>}
+                <span style={{ display: 'flex', alignItems: 'center', gap: 10, whiteSpace: 'nowrap', minWidth: 0 }} data-sr-name-line="">
+                  <span style={{ fontSize: 13.5, fontWeight: 700, color: T.ink, flexShrink: 0 }}>{s}</span>
+                  {picked.includes(s) && <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}><Mark tone="teal" attrs={{ 'data-sr-name-pick': s }}>{B.pickTag(agentName)}</Mark></span>}
                 </span>
                 {c?.name && <span style={{ fontSize: 12.5, color: T.ink2, ...WRAP }} data-sr-name-company="">{c.name}</span>}
                 {c?.relationship && <span style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.4, overflowWrap: 'break-word' }}>{withoutRole(c.relationship)}</span>}
@@ -569,9 +594,9 @@ export function NamesPick({ choice, pickConfirm, thesis, companies, agentName, o
         ))}
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 4 }} data-sr-names-buttons="">
-        {pickConfirm && <FreeButton label={pickLabel.label} strong={pickLabel.strong} disabled={disabled} onClick={onConfirmPick} attrs={{ 'data-sr-free': 'confirm:names' }} />}
+        {pickConfirm && <FreeButton label={pickLabel.label} strong={pickLabel.strong} disabled={disabled} onClick={onConfirmPick} attrs={{ 'data-sr-free': 'confirm:names', ...(pickReason ? { 'aria-describedby': reasonId } : {}) }} />}
         {pickReason && (
-          <p style={{ ...S.meta, ...WRAP, color: T.ink }} data-sr-pick-reason="">{pickReason} {reasonTag && <span style={{ display: 'inline-flex', verticalAlign: 'middle' }}><Tag tone={reasonTag.tone}>{reasonTag.text}</Tag></span>}</p>
+          <p id={reasonId} style={{ ...S.meta, ...WRAP, color: T.ink }} data-sr-pick-reason="">{pickReason} {reasonTag && <span style={{ display: 'inline-flex', verticalAlign: 'middle' }}><Tag tone={reasonTag.tone}>{reasonTag.text}</Tag></span>}</p>
         )}
         <FreeButton label={B.namesBuild(joinNames(ticked))} strong disabled={disabled || !ok} onClick={build} attrs={{ 'data-sr-free': 'set:names' }} />
       </div>

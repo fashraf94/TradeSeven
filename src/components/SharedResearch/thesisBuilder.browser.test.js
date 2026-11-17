@@ -411,3 +411,55 @@ describe.skipIf(!BASE)('the phone round in a real browser (P-1 to P-4)', () => {
     } finally { await ctx.close(); }
   }, ROW_TIMEOUT);
 });
+
+describe.skipIf(!BASE)('lens (c) on the phone round, in a real browser', () => {
+  beforeAll(async () => {
+    if (browser) return;
+    const { chromium } = await import('playwright-core');
+    browser = await chromium.launch({ headless: true, ...(CHANNEL ? { channel: CHANNEL } : {}) });
+  }, ROW_TIMEOUT);
+  afterAll(async () => { await browser?.close(); browser = null; }, ROW_TIMEOUT);
+
+  it('5C-3: 320×568 — a 20-character agent name: the pick\'s tag stays on the symbol\'s line and never runs over the count', async () => {
+    const ctx = await browser.newContext({ viewport: { width: 320, height: 568 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, reducedMotion: 'reduce' });
+    const page = await ctx.newPage();
+    try {
+      await page.goto(`${BASE.replace(/\/$/, '')}/?srFixture=builder-names&delay=0&name=${encodeURIComponent('Bartholomew Quinnell')}`, { waitUntil: 'domcontentloaded', timeout: ROW_TIMEOUT });
+      await page.waitForSelector('[data-sr-names-pick]', { timeout: ROW_TIMEOUT });
+      const m = await page.evaluate(() => ['NVDA', 'AMD'].map((sym) => {
+        const row = document.querySelector(`[data-sr-name-row="${sym}"]`);
+        const tag = row.querySelector('[data-sr-name-pick]').parentElement.getBoundingClientRect();
+        const symbol = row.querySelector('[data-sr-name-line] > span').getBoundingClientRect();
+        const count = row.lastElementChild.getBoundingClientRect();
+        return { sym, overlap: Math.max(0, tag.right - count.left), sameLine: Math.abs(tag.top + tag.height / 2 - (symbol.top + symbol.height / 2)) < 4 };
+      }));
+      for (const r of m) expect(r, JSON.stringify(r)).toMatchObject({ overlap: 0, sameLine: true });
+    } finally { await ctx.close(); }
+  }, ROW_TIMEOUT);
+  it('5C-4: 393×852 — focus inside the strip ("⋯", Discard) when the strip goes away on a scroll to the top: focus goes to the card; Escape still closes', async () => {
+    const { ctx, page } = await pageAt(393, 852, 'builder-midway');
+    try {
+      await scrollSheet(page, 900);
+      await page.waitForTimeout(300);
+      await page.focus('[data-sr-more="strip"]');
+      await page.keyboard.press('Enter');
+      await page.keyboard.press('Tab');
+      expect(await page.evaluate(() => document.activeElement?.getAttribute('data-sr-discard'))).toBe('strip');
+      await scrollSheet(page, 0);
+      await page.waitForTimeout(400);
+      expect(await page.$('[data-sr-strip]')).toBeNull();
+      expect(await page.evaluate(() => document.activeElement?.hasAttribute('data-sr-card'))).toBe(true);
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(300);
+      expect(await page.$('[role="dialog"]')).toBeNull();
+    } finally { await ctx.close(); }
+  }, ROW_TIMEOUT);
+  it('5C-6: 393×852 — More is at least 44 × 44', async () => {
+    const { ctx, page } = await pageAt(393, 852, 'builder-midway');
+    try {
+      const r = await page.evaluate(() => { const b = document.querySelector('[data-sr-said-more]').getBoundingClientRect(); return { w: b.width, h: b.height }; });
+      expect(r.w, JSON.stringify(r)).toBeGreaterThanOrEqual(44);
+      expect(r.h, JSON.stringify(r)).toBeGreaterThanOrEqual(44);
+    } finally { await ctx.close(); }
+  }, ROW_TIMEOUT);
+});
