@@ -28,6 +28,7 @@ import {
 import {
   CardHead, CardLine, ClearConfirm, Composer, Count, Cover, EvidenceList, FOOT, FOOT_CHOICES, FreeButton, KeepReasons, Mark, Mine, NamesPick, PartPanel,
   PriceLines, Rail, ResearchButton, Said, Sentence, Strip, WhyBlock, WhyProposal, basisTagOf, freeLabelOf, researchLabelOf, usePanelInView,
+  scrollParentOf, useFootRoom, useFocusKept,
 } from '../builderParts';
 import { Button, LinkButton, Notice, Running, Tag } from '../parts';
 import ThesisReady from './ThesisReady';
@@ -37,14 +38,6 @@ const B = COPY.builder;
 const RETRYABLE = new Set(['step_failed', 'network', 'step_in_flight', 'server_error']);
 const paragraphs = (text) => String(text ?? '').split(/\n{2,}/).map((p, i) => <span key={i} style={{ display: 'block' }}>{p}</span>);
 
-/** The nearest scrolling ancestor (the sheet's own scroll box), else null — for the card's fold (K-7). */
-function scrollParentOf(el) {
-  for (let p = el?.parentElement ?? null; p; p = p.parentElement) {
-    const o = typeof getComputedStyle === 'function' ? getComputedStyle(p).overflowY : '';
-    if (o === 'auto' || o === 'scroll') return p;
-  }
-  return null;
-}
 
 /**
  * A list of free choices as buttons (K-5): the names pick and the why's "keep some" draw their own inputs; Change and a
@@ -75,7 +68,7 @@ function AskedPick({ pick, agentName }) {
     <div style={{ ...S.card, gap: 8, border: `1px dashed ${wash('teal', 0.5)}` }} data-sr-asked-pick={pick.part}>
       <div style={S.row}><Mark tone="teal">{B.pickTag(agentName)}</Mark><Mark>{B.suggested}</Mark></div>
       <p style={{ ...S.body, fontWeight: 700 }}>{value}</p>
-      {pick.reason && <p style={S.meta}>{pick.reason} <span style={{ display: 'inline-flex', verticalAlign: 'middle' }}><Tag tone={reasonTag.tone}>{reasonTag.text}</Tag></span></p>}
+      {pick.reason && <p style={{ ...S.meta, overflowWrap: 'anywhere' }}>{pick.reason} <span style={{ display: 'inline-flex', verticalAlign: 'middle' }}><Tag tone={reasonTag.tone}>{reasonTag.text}</Tag></span></p>}
       {(pick.reasons ?? []).map((r, i) => {
         const tag = basisTagOf(r.basis, agentName);
         return (
@@ -155,18 +148,30 @@ function BuilderWork({ sr, agentName, phone, open, viewingEarlier, onBackToCurre
   }, [rows.length]);
 
   // K-8: a Change that clears other parts (and a drop that clears the price lines) asks first; everything else is sent.
-  const onFree = (choice, input) => {
+  // The confirm opens beside the control that asked (review 4C-2): in the foot for the foot's, in the card for a panel's.
+  const onFree = (choice, input, where = 'card') => {
     if (Array.isArray(choice.clears) && choice.clears.length > 0 && (choice.op === 'clear' || choice.reason === 'drop_unsourced')) {
-      setClearAsk(choice);
+      setClearAsk({ choice, where });
       return null;
     }
     return sr.cardOp(choice, input);
   };
+  const onFreeInFoot = (choice, input) => onFree(choice, input, 'foot');
   const confirmClear = async () => {
-    const choice = clearAsk;
+    const choice = clearAsk?.choice ?? null;
     setClearAsk(null);
     if (choice) await sr.cardOp(choice);
   };
+  const askFor = (where) => (open && clearAsk?.where === where
+    ? <ClearConfirm choice={clearAsk.choice} disabled={busy} onConfirm={confirmClear} onCancel={() => setClearAsk(null)} />
+    : null);
+  // the panel's close puts focus back on its part (review 4C-1)
+  const closePanel = () => {
+    const part = tapped;
+    setTapped(null);
+    setTimeout(() => cardRef.current?.querySelector(`[data-sr-slot="${part}"]`)?.focus({ preventScroll: true }), 0);
+  };
+  const footCap = useFootRoom(footRef, { top: phone ? 84 : 0 });
   const research = (g) => sr.buildStep({ goal: g.goal, part: g.part ?? null });
 
   // the failures (K-15): the one this page saw, or the session's (a reopened sheet)
@@ -192,7 +197,7 @@ function BuilderWork({ sr, agentName, phone, open, viewingEarlier, onBackToCurre
       </div>
       <Sentence thesis={thesis} working={working} tapped={tapped} onTap={setTapped} panelId={panelId} agentName={agentName} />
       {panel && (
-        <PartPanel id={panelId} part={tapped} thesis={thesis} companies={companies} byId={byId} agentName={agentName} onClose={() => setTapped(null)}
+        <PartPanel id={panelId} part={tapped} thesis={thesis} companies={companies} byId={byId} agentName={agentName} onClose={closePanel}
           change={open ? panel.change : null} onChange={() => onFree(panel.change)}>
           {open && panel.revised && (
             <>
@@ -207,7 +212,7 @@ function BuilderWork({ sr, agentName, phone, open, viewingEarlier, onBackToCurre
           {open && panel.text && <Composer textChoice={panel.text} directionOn={false} agentName={agentName} disabled={busy} onFree={(c, words) => sr.cardOp(c, { text: words })} onDirection={() => null} />}
         </PartPanel>
       )}
-      {open && clearAsk && <ClearConfirm choice={clearAsk} disabled={busy} onConfirm={confirmClear} onCancel={() => setClearAsk(null)} />}
+      {askFor('card')}
       {['set', 'stale'].includes(thesis.parts?.why?.state) && <WhyBlock thesis={thesis} agentName={agentName} folded={foot.part !== null && foot.part !== 'why'} />}
       <div style={{ ...S.row, justifyContent: 'flex-end' }}>
         {open && revisedWhyChoiceOf(thesis) && tapped !== 'why' && <LinkButton onClick={() => setTapped('why')} attrs={{ 'data-sr-revised-waiting': '' }}>{B.revisedWaiting}</LinkButton>}
@@ -217,7 +222,7 @@ function BuilderWork({ sr, agentName, phone, open, viewingEarlier, onBackToCurre
   );
 
   const conversation = (
-    <section aria-label={COPY.exchanges} data-sr-conversation="" style={{ display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0, padding: '4px 0' }}>
+    <section role="log" aria-label={COPY.exchanges} data-sr-conversation="" style={{ display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0, padding: '4px 0' }}>
       {viewingEarlier && (
         <>
           <div><LinkButton disabled={busy} onClick={onBackToCurrent}>{COPY.backToCurrent}</LinkButton></div>
@@ -267,7 +272,7 @@ function BuilderWork({ sr, agentName, phone, open, viewingEarlier, onBackToCurre
   const footer = open ? (
     <div ref={footRef} data-sr-foot={foot.part ?? 'none'} style={FOOT}>
       <Cover />
-      <div data-sr-foot-choices="" style={{ ...FOOT_CHOICES, maxHeight: phone ? '42vh' : '46vh' }}>
+      <div data-sr-foot-choices="" style={{ ...FOOT_CHOICES, maxHeight: footCap ?? (phone ? '36vh' : '42vh') }}>
       {running && <Running attrs={{ 'data-sr-working': '' }}>{B.workingLine(agentName)}</Running>}
       {!running && staleRunning && (
         <Notice role="status" tone="gold" attrs={{ 'data-sr-was-running': '' }}>
@@ -288,19 +293,20 @@ function BuilderWork({ sr, agentName, phone, open, viewingEarlier, onBackToCurre
       )}
       {closeRefusal && <Notice role="alert" attrs={{ 'data-sr-refusal': closeRefusal.code }}>{closeRefusal.message}</Notice>}
       <SaveOutcome sr={sr} sessionId={session.sessionId} />
-      {!running && deadEnd && (
+      {askFor('foot')}
+      {!running && deadEnd && !(tapped && tapped !== foot.part) && (
         <>
           <FreeButton label={B.conclude} trail={B.keepsResearch} strong disabled={busy} onClick={() => sr.close('concluded')} attrs={{ 'data-sr-conclude': '' }} />
           {foot.values.length === 0 && (thesis.choices?.free ?? []).filter((c) => c.op === 'clear' && c.part === 'segment').map((c) => (
-            <FreeButton key="another" label={B.tryAnotherSegment} disabled={busy} onClick={() => onFree(c)} attrs={{ 'data-sr-free': 'clear:segment' }} />
+            <FreeButton key="another" label={B.tryAnotherSegment} disabled={busy} onClick={() => onFreeInFoot(c)} attrs={{ 'data-sr-free': 'clear:segment' }} />
           ))}
         </>
       )}
-      {!running && !deadEnd && (
+      {!running && !deadEnd && !(tapped && tapped !== foot.part) && (
         <>
           {outOfSteps && <Notice role="status" tone="gold" attrs={{ 'data-sr-out-of-steps': '' }}>{B.outOfSteps(session.stepBudget ?? 0)}</Notice>}
-          {foot.change && <FreeButton label={B.change} sub={B.staleLine(B.parts[foot.part])} disabled={busy} onClick={() => onFree(foot.change)} attrs={{ 'data-sr-free': `clear:${foot.part}` }} />}
-          <FreeChoices choices={foot.values} thesis={thesis} companies={companies} agentName={agentName} onFree={onFree} disabled={busy} />
+          {foot.change && <FreeButton label={B.change} sub={B.staleLine(B.parts[foot.part])} disabled={busy} onClick={() => onFreeInFoot(foot.change)} attrs={{ 'data-sr-free': `clear:${foot.part}` }} />}
+          <FreeChoices choices={foot.values} thesis={thesis} companies={companies} agentName={agentName} onFree={onFreeInFoot} disabled={busy} />
           {foot.research.map((g) => <ResearchButton key={`${g.goal}:${g.part ?? ''}`} label={researchLabelOf(g)} stepsLeft={stepsLeft} disabled={busy} onClick={() => research(g)} attrs={{ 'data-sr-research': `${g.goal}${g.part ? `:${g.part}` : ''}` }} />)}
           {foot.skip && <FreeButton label={B.skipSegment} disabled={busy} onClick={() => onFree(foot.skip)} attrs={{ 'data-sr-free': 'set:segment:skip' }} />}
           {outOfSteps && <FreeButton label={B.concludeWithWhatWeHave} trail={B.keepsResearch} disabled={busy} onClick={() => sr.close('concluded')} attrs={{ 'data-sr-conclude': '' }} />}
@@ -357,23 +363,26 @@ export default function Builder({ sr, agentName, agentId, phone, viewingEarlier 
   const [edit, setEdit] = useState(null); // the player's own sentence, kept through a refusal (K-12; review 4B-3)
   useEffect(() => { if (!thesis?.ready) setKeepResearching(false); }, [thesis?.ready]);
   const saveHere = sr.save.sessionId === session?.sessionId ? sr.save.status : 'idle';
+  const keptRef = useRef(null);
+  useFocusKept(keptRef);
+  const kept = (view) => <div ref={keptRef} style={{ minWidth: 0 }} data-sr-builder-view="">{view}</div>;
 
   if (!thesis) {
-    return (
+    return kept(
       <div style={S.col}>
         <Notice role="alert" attrs={{ 'data-sr-read-failed': 'thesis' }}>{COPY.loadFailed}</Notice>
         <div><LinkButton disabled={sr.pending !== null || sr.waiting} onClick={() => sr.loadSession(session.sessionId)}>{COPY.retry}</LinkButton></div>
       </div>
     );
   }
-  if (sub === 'evidence') return <AllEvidence sr={sr} onBack={() => setSub(null)} />;
+  if (sub === 'evidence') return kept(<AllEvidence sr={sr} onBack={() => setSub(null)} />);
   if (saveHere === 'saved' || saveHere === 'recovered' || (state === 'saved' && !viewingEarlier)) {
-    return <ThesisSaved sr={sr} agentName={agentName} agentId={agentId} onClose={onClose} />;
+    return kept(<ThesisSaved sr={sr} agentName={agentName} agentId={agentId} onClose={onClose} />);
   }
   if (open && thesis.ready && !keepResearching) {
-    return <ThesisReady sr={sr} agentName={agentName} phone={phone} edit={edit} setEdit={setEdit} onKeepResearching={() => setKeepResearching(true)} onAllEvidence={() => setSub('evidence')} />;
+    return kept(<ThesisReady sr={sr} agentName={agentName} phone={phone} edit={edit} setEdit={setEdit} onKeepResearching={() => setKeepResearching(true)} onAllEvidence={() => setSub('evidence')} />);
   }
-  return (
+  return kept(
     <BuilderWork sr={sr} agentName={agentName} phone={phone} open={open} viewingEarlier={viewingEarlier} onBackToCurrent={onBackToCurrent} onOpenEarlier={onOpenEarlier}
       onDiscard={onDiscard} onNewInvestigation={onNewInvestigation} onClose={onClose} onAllEvidence={() => setSub('evidence')}
       onBackToThesis={open && thesis.ready && keepResearching ? () => setKeepResearching(false) : null} />

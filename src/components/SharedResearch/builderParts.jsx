@@ -11,7 +11,7 @@
 // B2's running line), so reduced motion is instant by construction. Every button
 // these parts draw is one entry of `thesis.choices` handed in by the caller.
 
-import React, { useEffect, useId, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { SR_COPY as COPY } from './sharedResearchCopy';
 import { T, S, wash, buttonStyle, linkStyle } from './sharedResearchStyle';
 import { Finding, LinkButton, Tag } from './parts';
@@ -35,7 +35,66 @@ export const FOOT = Object.freeze({
 // a grid, not a flex column: under a height cap a flex column shrinks its buttons until their words overlap (B4 renders)
 /** A band of the page colour just past a pinned element's edge ('below' the foot, 'above' the strip). */
 export const Cover = ({ side = 'below' }) => <span aria-hidden="true" style={{ position: 'absolute', left: 0, right: 0, height: 40, background: T.bg, ...(side === 'below' ? { top: '100%' } : { bottom: '100%' }) }} />;
-export const FOOT_CHOICES = Object.freeze({ display: 'grid', gridAutoRows: 'max-content', gap: 8, overflowY: 'auto', overscrollBehavior: 'contain', minWidth: 0 });
+// a grid, not a flex column: under a height cap a flex column shrinks its buttons until their words overlap (B4 renders).
+// One minmax(0,1fr) column, so a long unbroken token in model text wraps instead of widening every choice (review 4C-6);
+// no overscroll containment, so a wheel or a swipe over the choices still scrolls the sheet (review 4C-5).
+export const FOOT_CHOICES = Object.freeze({ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gridAutoRows: 'max-content', gap: 8, overflowY: 'auto', minWidth: 0 });
+
+/** The sheet's scroll box (the nearest scrolling ancestor), or null. */
+export function scrollParentOf(el) {
+  for (let p = el?.parentElement ?? null; p; p = p.parentElement) {
+    const o = typeof getComputedStyle === 'function' ? getComputedStyle(p).overflowY : '';
+    if (o === 'auto' || o === 'scroll') return p;
+  }
+  return null;
+}
+
+/**
+ * The pinned foot's room, measured from the sheet's own scroll box (review 4C-4: a vh share ignores the sheet's header
+ * and a phone's toolbars): its choices may take `share` of the box's height. And scroll padding on that box — the
+ * foot's height below, `top` px above (the strip) — so a control that takes focus is never left under the foot or the
+ * strip (review 4C-3). The box's own padding is put back when the view goes.
+ */
+export function useFootRoom(footRef, { share = 0.36, top = 0 } = {}) {
+  const [cap, setCap] = useState(null);
+  useEffect(() => {
+    const scroller = scrollParentOf(footRef.current);
+    if (!scroller) return undefined;
+    const before = { bottom: scroller.style.scrollPaddingBottom, top: scroller.style.scrollPaddingTop };
+    const measure = () => {
+      if (scroller.clientHeight > 0) setCap(Math.round(scroller.clientHeight * share));
+      scroller.style.scrollPaddingBottom = `${(footRef.current?.offsetHeight ?? 0) + 28}px`;
+      scroller.style.scrollPaddingTop = top ? `${top}px` : before.top;
+    };
+    measure();
+    const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : null;
+    ro?.observe(scroller);
+    if (footRef.current) ro?.observe(footRef.current);
+    return () => { ro?.disconnect(); scroller.style.scrollPaddingBottom = before.bottom; scroller.style.scrollPaddingTop = before.top; };
+  }, [footRef, share, top]);
+  return cap;
+}
+
+/**
+ * Focus never falls to <body> inside a builder view (review 4C-1). The body's keeper runs when the BODY renders; a view's
+ * own state (a panel closed, Change's confirm answered, the strip unfolded, the ready view left) can unmount the focused
+ * control without that, and React dispatches no blur from an unmounted node. So after every click and key inside the
+ * view, once it has settled, the body's own rule: focus on <body> goes to the sheet body's root.
+ */
+export function useFocusKept(ref) {
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+    const keep = () => {
+      const root = ref.current?.closest?.('[data-shared-research-body]') ?? null;
+      if (document.activeElement === document.body && root?.isConnected && !root.closest('[inert]')) root.focus({ preventScroll: true });
+    };
+    const after = () => { setTimeout(keep, 0); };
+    el.addEventListener('click', after, true);
+    el.addEventListener('keydown', after, true);
+    return () => { el.removeEventListener('click', after, true); el.removeEventListener('keydown', after, true); };
+  }, [ref]);
+}
 
 /**
  * A tapped part's panel opens in view (K-7): scrolled clear of the pinned foot, so the panel is what lies under the
@@ -86,7 +145,7 @@ export function ResearchButton({ label, stepsLeft, onClick, disabled = false, at
     <button type="button" onClick={disabled ? undefined : onClick} disabled={disabled} {...attrs}
       style={{ ...buttonStyle('secondary', { full: true, disabled }), justifyContent: 'flex-start', minHeight: 50, padding: '8px 12px 8px 14px', background: wash('teal', 0.12), border: `1px solid ${wash('teal', 0.5)}` }}>
       <SearchGlyph />
-      <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 600, color: T.ink, lineHeight: 1.3 }}>{label}</span>
+      <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 600, color: T.ink, lineHeight: 1.3, overflowWrap: 'anywhere' }}>{label}</span>
       <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3, flexShrink: 0 }}>
         <Mark tone="teal" solid attrs={{ 'data-sr-cost': 'step' }}>{B.oneStep}</Mark>
         <span style={{ fontSize: 11, color: T.ink2, lineHeight: 1.2, whiteSpace: 'nowrap' }} data-sr-steps-left-choice="">{B.stepsLeft(stepsLeft)}</span>
@@ -106,9 +165,9 @@ export function FreeButton({ label, sub = null, mark = null, reason = null, reas
       <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
         {mark && <Mark tone="teal" attrs={{ 'data-sr-mark': '' }}>{mark}</Mark>}
         <span style={{ fontSize: 14.5, fontWeight: 600, color: T.ink, lineHeight: 1.3, overflowWrap: 'anywhere' }}>{label}</span>
-        {sub && <span style={{ fontSize: 12.5, color: T.ink2, lineHeight: 1.35 }}>{sub}</span>}
+        {sub && <span style={{ fontSize: 12.5, color: T.ink2, lineHeight: 1.35, overflowWrap: 'anywhere' }}>{sub}</span>}
         {reason && (
-          <span style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.4 }} data-sr-pick-reason="">
+          <span style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.4, overflowWrap: 'anywhere' }} data-sr-pick-reason="">
             {reason} {reasonTag && <span style={{ display: 'inline-flex', verticalAlign: 'middle' }}><Tag tone={reasonTag.tone}>{reasonTag.text}</Tag></span>}
           </span>
         )}
@@ -224,10 +283,10 @@ export function CardHead({ thesis, stepsLeft, ready = false }) {
  * out as an inline block, which broke the sentence's lines at every part (seen in the B4 renders). Enter and Space open
  * it as a button would; the padding widens the target without moving the line.
  */
-function InlinePart({ part, state, open, panelId, onTap, children }) {
+function InlinePart({ part, state, open, panelId, onTap, label = null, children }) {
   const toggle = () => onTap(open ? null : part);
   return (
-    <span role="button" tabIndex={0} aria-expanded={open} aria-controls={panelId} data-sr-slot={part} data-sr-slot-state={state}
+    <span role="button" tabIndex={0} aria-expanded={open} aria-controls={panelId} data-sr-slot={part} data-sr-slot-state={state} aria-label={label ? B.partLabel(B.parts[part], label) : undefined}
       onClick={toggle} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } }}
       style={{ cursor: 'pointer', padding: '6px 0', margin: '-6px 0', borderRadius: 4 }}>
       {children}
@@ -254,7 +313,7 @@ function Slot({ thesis, part, working, tapped, onTap, panelId, agentName }) {
   } else {
     inner = <span style={{ fontSize: '0.7em', letterSpacing: '0.03em', color: T.ink3, borderBottom: `1.5px dashed ${T.hair}`, padding: '0 6px 1px', whiteSpace: 'nowrap' }}>{B.blank[part]}</span>;
   }
-  return <InlinePart part={part} state={slot.state} open={open} panelId={panelId} onTap={onTap}>{inner}</InlinePart>;
+  return <InlinePart part={part} state={slot.state} open={open} panelId={panelId} onTap={onTap} label={slot.skipped ? B.skipped : slot.text ?? B.blank[part]}>{inner}</InlinePart>;
 }
 
 /**
@@ -268,7 +327,7 @@ export function Sentence({ thesis, working = null, tapped, onTap, panelId, agent
     return (
       <p style={p} data-sr-sentence="server">
         {sentenceRunsOf(thesis.sentence, thesis).map((r, i) => (r.part
-          ? <InlinePart key={i} part={r.part} state={r.state} open={tapped === r.part} panelId={panelId} onTap={onTap}>
+          ? <InlinePart key={i} part={r.part} state={r.state} open={tapped === r.part} panelId={panelId} onTap={onTap} label={r.text}>
             {r.state === 'stale'
               ? <span style={{ color: T.ink2, fontWeight: 600, borderBottom: `1.5px dashed ${T.copper}` }}>{r.text}</span>
               : <span style={{ color: T.ink, fontWeight: 700, borderBottom: `2px solid ${tapped === r.part ? T.teal : wash('teal', 0.5)}`, background: tapped === r.part ? wash('teal', 0.2) : 'transparent' }}>{r.text}</span>}
@@ -362,7 +421,7 @@ export function WhyProposal({ proposal, agentName, title = null, attrs = {} }) {
 export function Strip({ thesis, stepsLeft, onOpen }) {
   const crumbs = ['theme', 'segment', 'names'].map((p) => slotOf(thesis, p)).filter((s) => s.state === 'set' && (s.text || s.skipped)).map((s) => (s.skipped ? B.skipped : s.text));
   return (
-    <button type="button" onClick={onOpen} aria-label={B.stripOpen} data-sr-strip=""
+    <button type="button" onClick={onOpen} data-sr-strip=""
       style={{ appearance: 'none', font: 'inherit', width: '100%', textAlign: 'left', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 14px', background: T.surface, border: `1px solid ${T.hair}`, borderRadius: 12, color: T.ink, boxSizing: 'border-box' }}>
       <Rail thesis={thesis} />
       <span style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
@@ -379,12 +438,17 @@ export function Strip({ thesis, stepsLeft, onOpen }) {
 /** "Changing Segment also clears Names and Why." — from the choice's own `clears`, before anything is sent. */
 export function ClearConfirm({ choice, onConfirm, onCancel, disabled = false }) {
   const others = (choice.clears ?? []).map((p) => B.parts[p] ?? B.priceLinesName);
+  const keepRef = useRef(null);
+  useEffect(() => {
+    keepRef.current?.focus({ preventScroll: true });
+    keepRef.current?.scrollIntoView?.({ block: 'nearest' });
+  }, []);
   return (
     <div role="alertdialog" aria-label={B.change} data-sr-clear-confirm={choice.part} style={{ ...S.card, gap: 10, border: `1px solid ${wash('copper', 0.5)}`, background: wash('copper', 0.06) }}>
       <p style={S.body}>{B.clearsAlso(choice.reason === 'drop_unsourced' ? B.parts.names : B.parts[choice.part], joinNames(others))}</p>
       <div style={S.actions}>
         <button type="button" disabled={disabled} onClick={disabled ? undefined : onConfirm} style={buttonStyle('danger', { disabled })} data-sr-clear-yes="">{B.changeIt}</button>
-        <button type="button" onClick={onCancel} style={buttonStyle('ghost')} data-sr-clear-no="">{B.keepIt}</button>
+        <button ref={keepRef} type="button" onClick={onCancel} style={buttonStyle('ghost')} data-sr-clear-no="">{B.keepIt}</button>
       </div>
     </div>
   );
@@ -471,6 +535,8 @@ export function KeepReasons({ choice, proposal, agentName, onSend, disabled = fa
 export function Composer({ textChoice, directionOn, agentName, onFree, onDirection, disabled = false }) {
   const [mode, setMode] = useState(null);
   const [value, setValue] = useState('');
+  const inputId = `sr-composer${useId()}`;
+  const inputRef = useRef(null);
   const key = textChoice ? `${textChoice.part}` : 'none';
   useEffect(() => { setMode(null); setValue(''); }, [key]);
   const effective = textChoice ? (mode === 'direction' && directionOn ? 'direction' : 'free') : (directionOn ? 'direction' : null);
@@ -481,12 +547,15 @@ export function Composer({ textChoice, directionOn, agentName, onFree, onDirecti
     const words = value.trim();
     if (!words) return;
     const answer = effective === 'free' ? await onFree(textChoice, words) : await onDirection(words);
-    if (answer?.ok && !answer.body?.error) setValue('');
+    if (answer?.ok && !answer.body?.error) {
+      setValue('');
+      inputRef.current?.focus({ preventScroll: true });
+    }
   };
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }} data-sr-composer={effective}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
-        <input id="sr-composer" value={value} onChange={(e) => setValue(e.target.value)} maxLength={max} disabled={disabled} placeholder={placeholder} aria-label={placeholder}
+        <input ref={inputRef} id={inputId} data-sr-composer-input="" value={value} onChange={(e) => setValue(e.target.value)} maxLength={max} disabled={disabled} placeholder={placeholder} aria-label={placeholder}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (!disabled) send(); } }}
           style={{ ...S.input, flex: '1 1 160px', minWidth: 0 }} />
         <button type="button" disabled={disabled || !value.trim()} onClick={send} data-sr-composer-send={effective}
@@ -530,7 +599,7 @@ export function PartPanel({ id, part, thesis, companies, byId, agentName, onClos
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
         <span style={{ ...S.eyebrow, color: T.teal }}>{B.parts[part]}</span>
         <span style={{ fontSize: 13.5, fontWeight: 700, color: T.ink, flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{slot.skipped ? B.skipped : slot.text ?? B.blank[part]}</span>
-        <button type="button" onClick={onClose} aria-label={B.closePanel} style={{ ...linkStyle, color: T.ink3, textDecoration: 'none', padding: '0 4px' }}>×</button>
+        <button type="button" onClick={onClose} aria-label={B.closePart(B.parts[part])} data-sr-panel-close={part} style={{ ...linkStyle, color: T.ink3, textDecoration: 'none', padding: 0, width: 44, minWidth: 44, height: 44, justifyContent: 'center', margin: '-12px -8px -12px 0', flexShrink: 0 }}>×</button>
       </div>
       {slot.state === 'stale' && <p style={{ ...S.small, color: T.copper }} data-sr-stale-line="">{B.staleLine(B.parts[part])}</p>}
       {isSet && (

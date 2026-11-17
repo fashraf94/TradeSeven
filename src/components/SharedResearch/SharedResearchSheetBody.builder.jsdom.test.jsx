@@ -11,7 +11,7 @@
 // The switch is mocked at the flag module and read at call time (builderMode.js),
 // so a row sets it before it mounts.
 
-import React from 'react';
+import React, { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fetchWithAuth = vi.hoisted(() => vi.fn());
@@ -317,9 +317,9 @@ describe('K-6: the composer says what sending does', () => {
   it('free mode on the wrong-if: its placeholder, "free" beside Send, and a card op — never a step', async () => {
     await openOn(TA.walkGetConfirmWhy, {}, { card: TA.walkOwnWrongIf });
     expect($('[data-sr-composer]').dataset.srComposer).toBe('free');
-    expect($('#sr-composer').placeholder).toBe(B.placeholder.wrongIf);
+    expect($('[data-sr-composer-input]').placeholder).toBe(B.placeholder.wrongIf);
     expect($('[data-sr-composer-send] [data-sr-cost]').textContent).toBe(B.free);
-    typeInto($('#sr-composer'), 'AMD wins the big cloud accelerator orders instead');
+    typeInto($('[data-sr-composer-input]'), 'AMD wins the big cloud accelerator orders instead');
     await tap('[data-sr-composer-send]');
     expect(server.sent('step')).toHaveLength(0);
     expect(last('card')).toEqual({ action: 'card', sessionId: SID, opId: expect.stringMatching(UUID), rev: thesisOf('walkConfirmWhy').rev, op: 'set', part: 'wrongIf', value: { text: 'AMD wins the big cloud accelerator orders instead' } });
@@ -331,7 +331,7 @@ describe('K-6: the composer says what sending does', () => {
     click(sw);
     expect($('[data-sr-composer]').dataset.srComposer).toBe('direction');
     expect($('[data-sr-composer-send] [data-sr-cost]').textContent).toBe(B.oneStep);
-    typeInto($('#sr-composer'), 'look at the cloud buyers');
+    typeInto($('[data-sr-composer-input]'), 'look at the cloud buyers');
     await tap('[data-sr-composer-send]');
     expect(server.sent('card')).toHaveLength(0);
     expect(last('step')).toEqual({ action: 'step', sessionId: SID, stepId: expect.stringMatching(UUID), intent: 'build', goal: 'direction', direction: 'look at the cloud buyers' });
@@ -630,8 +630,11 @@ describe('the review\'s fixes (4B: state and wiring)', () => {
     await tap('[data-sr-research="find_names"]'); // lost
     await tap('[data-sr-slot="timeFrame"]');
     await tap('[data-sr-panel="timeFrame"] [data-sr-free="set:timeFrame"]'); // lost too
+    await tap('[data-sr-panel-close="timeFrame"]'); // (the foot folds its choices while another part's panel is open: 4C-4)
     await tap('[data-sr-research="find_names"]'); // lost again: the same stepId
+    await tap('[data-sr-slot="timeFrame"]');
     await tap('[data-sr-panel="timeFrame"] [data-sr-free="set:timeFrame"]'); // answered 409 step_in_flight
+    await tap('[data-sr-panel-close="timeFrame"]');
     await tap('[data-sr-research="find_names"]'); // answered
     const steps = server.sent('step').map((c) => c.body.stepId);
     expect(new Set(steps).size).toBe(1);
@@ -857,5 +860,55 @@ describe('K-16: one request at a time, taps included', () => {
     for (const b of $$('[data-sr-foot] button[data-sr-free]')) expect(b.disabled).toBe(true);
     held.resolve(TA.walkMap);
     await flush();
+  });
+});
+
+describe('the review\'s fixes (4C: accessibility and phone)', () => {
+  const settle = () => new Promise((r) => { setTimeout(r, 10); });
+  it('4C-2: the foot\'s Change asks in the foot, beside the control, and its safe answer takes focus', async () => {
+    await openOn(TA.getStaleSegment);
+    await tap('[data-sr-foot] [data-sr-free="clear:segment"]');
+    expect($('[data-sr-foot] [data-sr-clear-confirm="segment"]')).not.toBeNull();
+    expect($('[data-sr-card] [data-sr-clear-confirm]')).toBeNull();
+    expect(document.activeElement).toBe($('[data-sr-clear-no]'));
+  });
+  it('4C-1: the panel\'s close puts focus back on its part', async () => {
+    await openOn(TA.walkGetConfirmWhy);
+    await tap('[data-sr-slot="segment"]');
+    await tap('[data-sr-panel-close="segment"]');
+    await act(async () => { await settle(); });
+    expect(document.activeElement).toBe($('[data-sr-slot="segment"]'));
+  });
+  it('4C-4: while another part\'s panel is open, the foot folds its choices; they return when it closes', async () => {
+    await openOn(TA.walkGetOneStock);
+    expect($('[data-sr-foot] [data-sr-research="build_why"]')).not.toBeNull();
+    await tap('[data-sr-slot="timeFrame"]');
+    expect($('[data-sr-foot] [data-sr-research="build_why"]')).toBeNull();
+    expect($('[data-sr-panel="timeFrame"] [data-sr-free="set:timeFrame"]')).not.toBeNull();
+    await tap('[data-sr-panel-close="timeFrame"]');
+    expect($('[data-sr-foot] [data-sr-research="build_why"]')).not.toBeNull();
+  });
+  it('4C-7: the save issue\'s line sits beside Save and describes it', async () => {
+    await openOn(TA.getSaveIssue);
+    const line = $('[data-sr-foot] [data-sr-save-issue]');
+    expect(line).not.toBeNull();
+    expect($('[data-sr-save-thesis]').getAttribute('aria-describedby')).toBe(line.id);
+  });
+  it('4C-8: the panel\'s close is named for its part', async () => {
+    await openOn(TA.walkGetConfirmWhy);
+    await tap('[data-sr-slot="segment"]');
+    expect($('[data-sr-panel-close="segment"]').getAttribute('aria-label')).toBe(B.closePart('Segment'));
+  });
+  it('4C-9: the conversation is a log, so a new turn is announced', async () => {
+    await openOn(TA.walkGetConfirmWhy);
+    expect($('[data-sr-conversation]').getAttribute('role')).toBe('log');
+  });
+  it('4C nits: a part\'s name says which part it is; two composers never share an id', async () => {
+    await openOn(TA.walkGetWhy);
+    expect($('[data-sr-slot="names"]').getAttribute('aria-label')).toBe(B.partLabel('Names', 'NVDA'));
+    await tap('[data-sr-slot="wrongIf"]');
+    const ids = $$('[data-sr-composer-input]').map((i) => i.id);
+    expect(ids.length).toBe(2);
+    expect(new Set(ids).size).toBe(2);
   });
 });

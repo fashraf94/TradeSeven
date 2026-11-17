@@ -143,3 +143,103 @@ describe.skipIf(!BASE)('the thesis builder in a real browser (B4)', () => {
     }, ROW_TIMEOUT);
   }
 });
+
+describe.skipIf(!BASE)('the review\'s fixes in a real browser (4C)', () => {
+  beforeAll(async () => {
+    if (browser) return;
+    const { chromium } = await import('playwright-core');
+    browser = await chromium.launch({ headless: true, ...(CHANNEL ? { channel: CHANNEL } : {}) });
+  }, ROW_TIMEOUT);
+  afterAll(async () => { await browser?.close(); browser = null; });
+  const escapeCloses = async (page) => { await page.keyboard.press('Escape'); await page.waitForTimeout(300); return (await page.$('[role="dialog"]')) === null; };
+
+  it('4C-1: 390×844 — a part opened and closed by keyboard, then Escape: the sheet closes (focus never fell to <body>)', async () => {
+    const { ctx, page } = await pageAt(390, 844, 'builder-midway');
+    try {
+      await page.focus('[data-sr-slot="segment"]');
+      await page.keyboard.press('Enter');
+      await page.waitForTimeout(200);
+      await page.focus('[data-sr-panel-close="segment"]');
+      await page.keyboard.press('Enter');
+      await page.waitForTimeout(200);
+      expect(await page.evaluate(() => document.activeElement?.getAttribute('data-sr-slot'))).toBe('segment');
+      expect(await escapeCloses(page)).toBe(true);
+    } finally { await ctx.close(); }
+  }, ROW_TIMEOUT);
+  it('4C-1: 390×844 — Change, then Keep it, then Escape: the sheet closes', async () => {
+    const { ctx, page } = await pageAt(390, 844, 'builder-ready');
+    try {
+      await page.click('[data-sr-slot="segment"]');
+      await page.click('[data-sr-change="segment"]');
+      await page.click('[data-sr-clear-no]');
+      await page.waitForTimeout(200);
+      expect(await focusIn(page)).toMatchObject({ inSheet: true });
+      expect(await escapeCloses(page)).toBe(true);
+    } finally { await ctx.close(); }
+  }, ROW_TIMEOUT);
+  it('4C-2: 390×844 — the foot\'s Change on a stale part: its confirm is on screen, under its own tap, and holds focus', async () => {
+    const { ctx, page } = await pageAt(390, 844, 'builder-stale-part');
+    try {
+      await scrollSheet(page, 99999);
+      await page.click('[data-sr-foot] [data-sr-free="clear:segment"]');
+      await page.waitForTimeout(300);
+      const keep = await hitOf(page, '[data-sr-clear-no]');
+      expect(keep, JSON.stringify(keep)).toMatchObject({ found: true, inViewport: true, tapped: true });
+      expect(await page.evaluate(() => document.activeElement?.hasAttribute('data-sr-clear-no'))).toBe(true);
+    } finally { await ctx.close(); }
+  }, ROW_TIMEOUT);
+  it('4C-3: 390×844 — a link that takes focus is never left under the foot', async () => {
+    const { ctx, page } = await pageAt(390, 844, 'builder-midway');
+    try {
+      for (const sel of ['[data-sr-all-evidence-open]', '[data-sr-why-block] button']) {
+        await page.focus(sel);
+        await page.waitForTimeout(200);
+        const r = await page.evaluate((s) => {
+          const el = document.querySelector(s).getBoundingClientRect();
+          const foot = document.querySelector('[data-sr-foot]').getBoundingClientRect();
+          return { bottom: el.bottom, footTop: foot.top };
+        }, sel);
+        expect(r.bottom, `${sel} ${JSON.stringify(r)}`).toBeLessThanOrEqual(r.footTop);
+      }
+    } finally { await ctx.close(); }
+  }, ROW_TIMEOUT);
+  it('4C-4: 320×700 — another part\'s panel: its choices are on screen and under their own taps', async () => {
+    const { ctx, page } = await pageAt(320, 700, 'builder-midway');
+    try {
+      await page.click('[data-sr-slot="timeFrame"]');
+      await page.waitForTimeout(400);
+      for (const sel of ['[data-sr-panel="timeFrame"] [data-sr-free="set:timeFrame"]', '[data-sr-panel="timeFrame"] [data-sr-research]']) {
+        const hit = await hitOf(page, sel);
+        expect(hit, `${sel} ${JSON.stringify(hit)}`).toMatchObject({ found: true, inViewport: true, tapped: true });
+      }
+    } finally { await ctx.close(); }
+  }, ROW_TIMEOUT);
+  it('4C-5: 390×844 — a wheel over the foot\'s choices (not overflowing) scrolls the sheet', async () => {
+    const { ctx, page } = await pageAt(390, 844, 'builder-why');
+    try {
+      expect(await page.evaluate(() => { const c = document.querySelector('[data-sr-foot-choices]'); return c.scrollHeight <= c.clientHeight; })).toBe(true);
+      const box = await page.evaluate(() => { const r = document.querySelector('[data-sr-foot] [data-sr-free]').getBoundingClientRect(); return { x: r.left + 20, y: r.top + 10 }; });
+      await page.mouse.move(box.x, box.y);
+      await page.mouse.wheel(0, 300);
+      await page.waitForTimeout(300);
+      expect(await page.evaluate(() => document.querySelector('[role="dialog"]').scrollTop)).toBeGreaterThan(0);
+    } finally { await ctx.close(); }
+  }, ROW_TIMEOUT);
+  it('4C-6: 320×700 — a long unbroken token in a choice wraps; the cost marks stay on screen', async () => {
+    const { ctx, page } = await pageAt(320, 700, 'builder-map');
+    try {
+      await page.evaluate(() => {
+        const span = document.querySelector('[data-sr-foot] [data-sr-free] span span:nth-of-type(2)') ?? document.querySelector('[data-sr-foot] [data-sr-free] span');
+        span.textContent = `https://example.com/${'a'.repeat(120)}`;
+      });
+      await page.waitForTimeout(200);
+      const m = await page.evaluate(() => {
+        const choices = document.querySelector('[data-sr-foot-choices]');
+        const marks = [...document.querySelectorAll('[data-sr-foot] [data-sr-cost]')].map((x) => x.getBoundingClientRect().right);
+        return { scroll: choices.scrollWidth, client: choices.clientWidth, maxRight: Math.max(...marks), vw: innerWidth };
+      });
+      expect(m.scroll, JSON.stringify(m)).toBeLessThanOrEqual(m.client);
+      expect(m.maxRight, JSON.stringify(m)).toBeLessThanOrEqual(m.vw);
+    } finally { await ctx.close(); }
+  }, ROW_TIMEOUT);
+});

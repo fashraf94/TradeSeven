@@ -53,7 +53,6 @@ const BUILDER = Object.freeze({
   blocked: Object.freeze({ no_listed_company: 'no listed company' }),
   working: (name) => `${cap(name)} is working on this`,
   strip: 'Nothing set yet',
-  stripOpen: 'Show the whole card',
   // ── a tapped part (K-7) ──────────────────────────────────────────────────────
   by: Object.freeze({
     player_wrote: () => 'you wrote',
@@ -68,7 +67,8 @@ const BUILDER = Object.freeze({
   evidence: 'Evidence',
   hideEvidence: 'Hide evidence',
   staleLine: (part) => `${part} is out of date: a finding behind it changed. Change it, or check it again.`,
-  closePanel: 'Close',
+  closePart: (part) => `Close ${part}`,
+  partLabel: (part, text) => `${part}: ${text}`,
   allEvidence: 'All evidence',
   backToThesis: '← Back to the thesis',
   // ── the why (K-11; R3b WhyBlock2) ──────────────────────────────────────────────

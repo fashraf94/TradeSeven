@@ -14,13 +14,14 @@
 // the fresh one on screen. An answer that never came is UNCERTAIN: only "Check the
 // record" (B2's K-8), never a retry before it.
 
-import React, { useId, useRef, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { SR_COPY as COPY } from '../sharedResearchCopy';
 import { T, S } from '../sharedResearchStyle';
 import { findingsById, remainingOf, STATEMENT_MAX } from '../sharedResearchView';
 import { partFindingIdsOf, panelOf, revisedWhyChoiceOf } from '../thesisView';
 import {
   CardHead, ClearConfirm, Count, Cover, FOOT, FreeButton, PartPanel, PriceLines, Rail, ResearchButton, Sentence, WhyBlock, WhyProposal, freeLabelOf, researchLabelOf, usePanelInView,
+  useFootRoom,
 } from '../builderParts';
 import { Button, LinkButton, Notice, Running, Tag } from '../parts';
 import { SaveStates } from './Adopt';
@@ -44,7 +45,19 @@ export default function ThesisReady({ sr, agentName, phone, edit, setEdit, onKee
   const [clearAsk, setClearAsk] = useState(null);
   const panelId = `sr-ready-panel${useId()}`;
   const footRef = useRef(null);
+  const sentenceRef = useRef(null);
+  const editRef = useRef(null);
+  // the edit box takes focus when it opens (review 4C-1: the link that opened it is gone)
+  useEffect(() => { if (editing) editRef.current?.focus({ preventScroll: true }); }, [editing]);
   usePanelInView(tapped, panelId, footRef);
+  useFootRoom(footRef);
+  const issueId = `sr-save-issue${useId()}`;
+  // the panel's close puts focus back on its part (review 4C-1)
+  const closePanel = () => {
+    const part = tapped;
+    setTapped(null);
+    setTimeout(() => sentenceRef.current?.querySelector(`[data-sr-slot="${part}"]`)?.focus({ preventScroll: true }), 0);
+  };
   const byId = findingsById(record);
   const stepsLeft = remainingOf(session);
   const status = sr.save.sessionId === session.sessionId ? sr.save.status : 'idle';
@@ -77,7 +90,7 @@ export default function ThesisReady({ sr, agentName, phone, edit, setEdit, onKee
         {editing ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <label htmlFor="sr-thesis-edit" style={S.label}>{B.editLabel}</label>
-            <textarea id="sr-thesis-edit" value={edit ?? thesis.sentence ?? ''} disabled={busy} rows={6} onChange={(e) => setEdit(e.target.value)}
+            <textarea id="sr-thesis-edit" ref={editRef} value={edit ?? thesis.sentence ?? ''} disabled={busy} rows={6} onChange={(e) => setEdit(e.target.value)}
               aria-describedby="sr-thesis-edit-count" style={{ ...S.input, minHeight: 150, resize: 'vertical' }} />
             <div style={S.row}>
               <span id="sr-thesis-edit-count" style={{ ...S.small, color: over ? T.neg : T.ink3 }}>{COPY.count((edit ?? thesis.sentence ?? '').length)}{over ? COPY.over : ''}</span>
@@ -85,13 +98,13 @@ export default function ThesisReady({ sr, agentName, phone, edit, setEdit, onKee
             </div>
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div ref={sentenceRef} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <Sentence thesis={thesis} tapped={tapped} onTap={setTapped} panelId={panelId} agentName={agentName} />
             <div><LinkButton disabled={busy} onClick={() => setEditing(true)} attrs={{ 'data-sr-edit': '' }}>{B.edit}</LinkButton></div>
           </div>
         )}
         {panel && !editing && (
-          <PartPanel id={panelId} part={tapped} thesis={thesis} companies={companies} byId={byId} agentName={agentName} onClose={() => setTapped(null)}
+          <PartPanel id={panelId} part={tapped} thesis={thesis} companies={companies} byId={byId} agentName={agentName} onClose={closePanel}
             change={panel.change} onChange={() => onFree(panel.change)}>
             {panel.revised && (
               <>
@@ -127,7 +140,6 @@ export default function ThesisReady({ sr, agentName, phone, edit, setEdit, onKee
         {(thesis.filled ?? 0) > 1 && <div style={{ ...S.row, justifyContent: 'flex-end' }}><LinkButton onClick={onAllEvidence} attrs={{ 'data-sr-all-evidence-open': '' }}>{`${B.allEvidence} ›`}</LinkButton></div>}
       </section>
 
-      {thesis.saveIssue && edit === null && <Notice role="status" tone="gold" attrs={{ 'data-sr-save-issue': thesis.saveIssue.code }}>{B.saveIssue[thesis.saveIssue.code] ?? COPY.server.step_failed}</Notice>}
       {cardFailure && <Notice role="alert" attrs={{ 'data-sr-card-failed': cardFailure.code }}>{cardFailure.message}</Notice>}
       {status === 'failed' && <Notice role="alert" attrs={{ 'data-sr-save': 'failed' }}>{sr.save.message}</Notice>}
       {blockers && blockers.length > 0 && <p style={S.small} data-sr-blockers="">{B.stillToSet(blockers.map((b) => B.parts[b.part] ?? b.part).join(', '))}</p>}
@@ -137,10 +149,11 @@ export default function ThesisReady({ sr, agentName, phone, edit, setEdit, onKee
 
       <div ref={footRef} data-sr-foot="ready" style={FOOT}>
         <Cover />
+        {thesis.saveIssue && edit === null && <Notice role="status" tone="gold" attrs={{ 'data-sr-save-issue': thesis.saveIssue.code, id: issueId }}>{B.saveIssue[thesis.saveIssue.code] ?? COPY.server.step_failed}</Notice>}
         {status === 'saving' && <Running>{B.saving}</Running>}
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 8 }}>
           {!uncertain && status !== 'saving' && status !== 'closed' && (
-            <Button kind="primary" full disabled={!canSave} onClick={() => sr.adoptThesis({ statement })} attrs={{ 'data-sr-save-thesis': '' }}>
+            <Button kind="primary" full disabled={!canSave} onClick={() => sr.adoptThesis({ statement })} attrs={{ 'data-sr-save-thesis': '', ...(thesis.saveIssue && edit === null ? { 'aria-describedby': issueId } : {}) }}>
               {status === 'failed' || status === 'notsaved' ? COPY.retry : B.save}
             </Button>
           )}
