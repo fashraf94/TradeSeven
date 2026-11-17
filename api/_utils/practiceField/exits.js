@@ -69,6 +69,7 @@ import { coverageRefOf, coverageRef, coverageWithoutRef } from './coverage.js';
 import { assertReconciled } from './reconcile.js';
 import { fillSessionRefusal } from './sessions.js';
 import { firstWindowAfter, nextWindowAfter, compareWindows, ideaSaleSlots } from './windows.js';
+import { writeWindowActionReceipts, WINDOW_ACTION_KIND } from './windowLedger.js';
 import { MARK_REFUSAL, quotePastMaxAge } from './marks.js';
 import { toCents, fromCents } from './money.js';
 
@@ -396,6 +397,11 @@ export async function sellPendingHoldings(db, { bookRef, ideaId, tick, nowIso })
       });
     }
     if (plan.resulted) tx.set(coverageDocRef, plan.nextCoverage);
+    // T1a-2b-2 §4.1 (Astra T2B-05): the window's own receipts of each sale and of the result, in this transaction.
+    writeWindowActionReceipts(tx, bookRef, tick, [
+      ...plan.sold.map((s) => ({ kind: WINDOW_ACTION_KIND.SALE, id: s.decisionId, detail: { ideaId, symbol: s.symbol, decisionId: s.decisionId }, at: nowIso })),
+      ...(plan.resulted ? [{ kind: WINDOW_ACTION_KIND.RESULTED, id: ideaId, detail: { ideaId }, at: nowIso }] : []),
+    ]);
     return { outcome: plan.sold.length > 0 ? 'sold' : 'waiting', sold: plan.sold, waited: plan.waited, resulted: plan.resulted, alerts: plan.alerts };
   });
 }

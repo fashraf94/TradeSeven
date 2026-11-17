@@ -85,7 +85,7 @@ import { toCents, fromCents } from './money.js';
 import { buildResultPacket, evidenceRefOf, EVIDENCE_PACKET } from './evidence.js';
 import {
   windowsRefOf, expectedIntradayWindows, buildCloseWindowRow, windowOnlySessionsBefore, readWindowOnlySessions, writeWindowOnlySessions,
-  WINDOW_ONLY_SESSIONS_PER_TX, WINDOWS_ACCOUNTED_FIELD,
+  WINDOW_ONLY_SESSIONS_PER_TX, WINDOWS_ACCOUNTED_FIELD, writeWindowActionReceipts, WINDOW_ACTION_KIND,
 } from './windowLedger.js';
 import { windowRowId, CLOSE_WINDOW, sessionClosePassEndMs, nextSessionDate } from './windows.js';
 
@@ -434,7 +434,7 @@ function closeFilledIdea(idea, { date, closeSnapshot, actionsBySymbol: feedActio
  * @returns {Promise<{ closed: boolean, skipped?: string, session?: string, catchUp?: boolean, observed?: boolean,
  *                     row?: object, ideaRows?: object, endpoints?: object, cancelled?: string[], resulted?: string[], alerts: string[] }>}
  */
-async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false }) {
+async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false, windowTick = null }) {
   const nowIso = now.toISOString();
   const coverageDocRef = coverageRefOf(db);
 
@@ -752,6 +752,12 @@ async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false })
     // (T1a-2b-1 §4): each create-once, as each session is accounted for once.
     writeWindowOnlySessions(tx, bookRef, windowsAccounted);
     tx.create(windowsRefOf(bookRef).doc(windowRowId(session, CLOSE_WINDOW)), closeWindow.row);
+    // T1a-2b-2 §4.1 (Astra T2B-05): a session caught up AT A WINDOW leaves that window's own receipt, in this transaction.
+    // A catch-up that closes the book (its wind-down complete) leaves none: the closed book owes that window nothing,
+    // and its row is not written (the caught-up session's own close row records it).
+    if (catchUpOnly && windowTick && !completesWindDown) {
+      writeWindowActionReceipts(tx, bookRef, windowTick, [{ kind: WINDOW_ACTION_KIND.CAUGHT_UP, id: session, detail: { session, observed }, at: nowIso }]);
+    }
     if (coverageWrite) tx.set(coverageDocRef, coverageData);
     const bookPatch = {
       portfolio: nextBook.portfolio,
@@ -814,14 +820,15 @@ async function closeNextSessionKeepingAlerts(db, bookRef, args, committedAlerts)
  * @returns {Promise<{ complete: boolean, skipped?: string, caughtUp: Array<{ date: string, observed: boolean }>,
  *                     cancelled: string[], resulted: string[], alerts: string[] }>}
  */
-export async function catchUpIdeaBook(db, bookRef, { before, now = new Date() } = {}) {
+export async function catchUpIdeaBook(db, bookRef, { before, now = new Date(), tick = null } = {}) {
   if (!db || !bookRef) throw new Error('catchUpIdeaBook: db and bookRef required');
   if (typeof before !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(before)) throw new Error('catchUpIdeaBook: before required');
   const out = { complete: false, caughtUp: [], windowsAccounted: [], cancelled: [], resulted: [], alerts: [] };
   // 'off': no Practice Field code path runs, whoever calls. Before any read.
   if (!practiceFieldLive()) return { ...out, skipped: 'practice_field_off' };
   for (;;) {
-    const res = await closeNextSessionKeepingAlerts(db, bookRef, { date: before, now, catchUpOnly: true }, out.alerts);
+    // `tick`: the window this catch-up runs at, which keeps a receipt of each session it closes (T2B-05).
+    const res = await closeNextSessionKeepingAlerts(db, bookRef, { date: before, now, catchUpOnly: true, windowTick: tick }, out.alerts);
     out.alerts.push(...(res.alerts || []));
     out.windowsAccounted.push(...(res.windowsAccounted || []));
     out.cancelled.push(...(res.cancelled || []));

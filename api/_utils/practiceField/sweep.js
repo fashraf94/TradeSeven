@@ -214,7 +214,7 @@ export async function runIdeaBookWindow(db, { bookRef, tick, now = new Date() })
   if (last === null || next === null || next < tick.date) {
     let caught;
     try {
-      caught = await catchUpIdeaBook(db, bookRef, { before: tick.date, now });
+      caught = await catchUpIdeaBook(db, bookRef, { before: tick.date, now, tick });
     } catch (err) {
       console.error(`${LOG_PREFIX} idea book ${bookRef.id} catch-up failed before ${tick.tickKey}: ${err.message}`);
       return { ...out, complete: false, skipped: 'catch_up_failed', errors: 1 };
@@ -357,7 +357,9 @@ export async function runDrainingIdeaBookCloses(db, { date, now = new Date(), ow
         out.alerts.push(alert);
         console.error(`${LOG_PREFIX} ${bookRef.id} ${alert}`);
       }
-      if (res.closed) out.closed += 1;
+      // A catch-up session that completed the book's wind-down closed it (T1a-2b-1 §6): the close call answers
+      // `book_closed`, and the book is CLOSED by this fire — counted so, not as skipped (T1a-2b-2 §4.3, Q7).
+      if (res.closed || res.bookClosed === true) out.closed += 1;
       else {
         out.skipped += 1;
         if (ideaCloseLeftUnclosed(res)) out.unclosed += 1;

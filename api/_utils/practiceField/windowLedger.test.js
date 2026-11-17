@@ -97,6 +97,8 @@ describe('the intraday rows the idea-book pass writes', () => {
       attemptLog: [expect.objectContaining({ complete: true, errors: 0, entriesFilled: 1 })],
       code: { caughtUpSessions: [], sales: { filled: 0, waiting: 0 }, entries: { filled: 1, waiting: 0, cancelled: 0 }, ideasResulted: 0 },
       modelCalled: false, triggers: [], outcome: WINDOW_OUTCOME.CODE_ACTION,
+      // The entry's own receipt, written in the entry's transaction (T1a-2b-2 §4.1, Astra T2B-05).
+      actions: { [`entry:${ctx.ideaId}`]: { kind: 'entry', ideaId: ctx.ideaId, legs: 1, at: slotNowOf(DAYS.d1).toISOString() } },
     });
     await storeTickSnapshot(ctx.db, DAYS.d1, 'midday', QUOTES);
     await pass(ctx.db, DAYS.d1, 'midday');
@@ -447,6 +449,116 @@ describe('nothing a committed session or a filled sale did is lost to a later fa
     expect(getIdea(ctx.db, ctx.bookId, ctx.ideaId).status).toBe('holding'); // the entry filled
     await recordWindowAttempt(ctx.db, { bookRef: ctx.bookRef, tick: tickOf(DAYS.d1), win, now: slotNowOf(DAYS.d1) });
     expect(rowOf(ctx.db, ctx.bookId, DAYS.d1, 'open30')).toMatchObject({ served: false, errors: 1, code: { entries: { filled: 1 } }, outcome: 'code_action' });
+  });
+});
+
+describe('T1a-2b-2 §4.1 (Astra T2B-05) — a window\'s counts survive a failed write of its row: each action keeps its own receipt there', () => {
+  /** The same db, except that the window ledger's row transaction for `path` fails `times` times (its read throws). */
+  const rowWriteFails = (db, path, times = 1) => {
+    let left = times;
+    const run = db.runTransaction;
+    return {
+      ...db,
+      runTransaction: (fn, opts) => run((tx) => fn({
+        ...tx,
+        get: async (ref) => {
+          if (ref.path === path && left > 0) { left -= 1; throw Object.assign(new Error(`UNAVAILABLE: injected — the window row ${path} was not written`), { code: 14 }); }
+          return tx.get(ref);
+        },
+      }), opts),
+    };
+  };
+  const quiet = async (run) => { const original = console.error; console.error = () => {}; try { return await run(); } finally { console.error = original; } };
+  const nextFire = (date, slot = 'open30') => new Date(slotNowOf(date, slot).getTime() + IDEA_BOOK_EVAL_FIRE_EVERY_MIN * 60_000);
+
+  it('an ENTRY commits and its row write fails: no stamp, the receipt is on the row; the slot\'s next fire serves the window and the row shows the fill ONCE', async () => {
+    const ctx = await setup();
+    await storeTickSnapshot(ctx.db, DAYS.d1, 'open30', QUOTES);
+    const path = `mandates/${ctx.bookId}/windows/${DAYS.d1}_open30`;
+    const first = await quiet(() => pass(rowWriteFails(ctx.db, path), DAYS.d1, 'open30'));
+    expect(first).toMatchObject({ entered: 1, errors: 1 });
+    expect(getIdea(ctx.db, ctx.bookId, ctx.ideaId).status).toBe('holding');
+    expect(getBook(ctx.db, ctx.bookId).execState.lastIdeaTickKey ?? null).toBeNull();
+    // Only the receipt the entry's own transaction wrote: the attempt was lost with the row.
+    expect(rowOf(ctx.db, ctx.bookId, DAYS.d1, 'open30')).toEqual({
+      actions: { [`entry:${ctx.ideaId}`]: { kind: 'entry', ideaId: ctx.ideaId, legs: 1, at: slotNowOf(DAYS.d1).toISOString() } },
+    });
+    const second = await pass(ctx.db, DAYS.d1, 'open30', nextFire(DAYS.d1));
+    expect(second).toMatchObject({ entered: 0, errors: 0 });
+    expect(rowOf(ctx.db, ctx.bookId, DAYS.d1, 'open30')).toMatchObject({
+      served: true, attempts: 1, errors: 0, code: { entries: { filled: 1, waiting: 0, cancelled: 0 }, sales: { filled: 0 } }, outcome: 'code_action',
+    });
+    // A served row is never written again: a third fire changes nothing.
+    const bytes = JSON.stringify(rowOf(ctx.db, ctx.bookId, DAYS.d1, 'open30'));
+    await ctx.db.collection('mandates').doc(ctx.bookId).set({ execState: { lastIdeaTickKey: null } }, { merge: true });
+    await pass(ctx.db, DAYS.d1, 'open30', new Date(nextFire(DAYS.d1).getTime() + 60_000));
+    expect(JSON.stringify(rowOf(ctx.db, ctx.bookId, DAYS.d1, 'open30'))).toBe(bytes);
+  });
+
+  it('a SALE commits and its row write fails TWICE: the third fire\'s row shows the one sale, with the two later attempts', async () => {
+    const ctx = await setup();
+    await storeTickSnapshot(ctx.db, DAYS.d1, 'open30', QUOTES);
+    await pass(ctx.db, DAYS.d1, 'open30');
+    const level = getIdea(ctx.db, ctx.bookId, ctx.ideaId).lines[0].level;
+    await closeOn(ctx.db, ctx.bookId, DAYS.d1, { AAPL: Math.round((level - 0.02) * 100) / 100, SPY: 600.1 });
+    await storeTickSnapshot(ctx.db, DAYS.d2, 'open30', { AAPL: 216.3, SPY: 600.1 });
+    const path = `mandates/${ctx.bookId}/windows/${DAYS.d2}_open30`;
+    const flaky = rowWriteFails(ctx.db, path, 2);
+    expect(await quiet(() => pass(flaky, DAYS.d2, 'open30'))).toMatchObject({ sold: 1, errors: 1 });
+    expect(await quiet(() => pass(flaky, DAYS.d2, 'open30', nextFire(DAYS.d2)))).toMatchObject({ sold: 0, errors: 1 });
+    expect(await pass(ctx.db, DAYS.d2, 'open30', new Date(nextFire(DAYS.d2).getTime() + 15 * 60_000))).toMatchObject({ sold: 0, errors: 0 });
+    const sale = Object.keys(rowOf(ctx.db, ctx.bookId, DAYS.d2, 'open30').actions);
+    expect(sale).toEqual([`sale:${ctx.ideaId}__line_exit__AAPL`]);
+    expect(rowOf(ctx.db, ctx.bookId, DAYS.d2, 'open30')).toMatchObject({ served: true, attempts: 1, code: { sales: { filled: 1, waiting: 0 }, entries: { filled: 0 } }, outcome: 'code_action' });
+    expect(getIdea(ctx.db, ctx.bookId, ctx.ideaId).ledger.saleReceipts).toHaveLength(1);
+  });
+
+  it('a session CAUGHT UP at a window, then the row write fails: the next fire\'s row still lists the session (and a catch-up run at no window leaves no receipt)', async () => {
+    const ctx = await setup();
+    await storeTickSnapshot(ctx.db, DAYS.d1, 'open30', QUOTES);
+    await pass(ctx.db, DAYS.d1, 'open30');
+    await storeCloseSnapshot(ctx.db, DAYS.d1, QUOTES); // d1's close fire never ran
+    await storeTickSnapshot(ctx.db, DAYS.d2, 'open30', QUOTES);
+    const path = `mandates/${ctx.bookId}/windows/${DAYS.d2}_open30`;
+    expect(await quiet(() => pass(rowWriteFails(ctx.db, path), DAYS.d2, 'open30'))).toMatchObject({ caughtUp: 1, errors: 1 });
+    expect(rowOf(ctx.db, ctx.bookId, DAYS.d2, 'open30').actions).toEqual({
+      [`caught_up:${DAYS.d1}`]: { kind: 'caught_up', session: DAYS.d1, observed: true, at: slotNowOf(DAYS.d2).toISOString() },
+    });
+    expect(await quiet(() => pass(ctx.db, DAYS.d2, 'open30', nextFire(DAYS.d2)))).toMatchObject({ caughtUp: 0, errors: 0 });
+    expect(rowOf(ctx.db, ctx.bookId, DAYS.d2, 'open30')).toMatchObject({ served: true, code: { caughtUpSessions: [{ date: DAYS.d1, observed: true }] }, outcome: 'code_action' });
+    // The same catch-up called with no window (a close's, or a caller's own) writes no window row.
+    const other = await setup();
+    await storeTickSnapshot(other.db, DAYS.d1, 'open30', QUOTES);
+    await pass(other.db, DAYS.d1, 'open30');
+    await storeCloseSnapshot(other.db, DAYS.d1, QUOTES);
+    await quiet(() => catchUpIdeaBook(other.db, other.bookRef, { before: DAYS.d2, now: slotNowOf(DAYS.d2) }));
+    expect(rowOf(other.db, other.bookId, DAYS.d2, 'open30')).toBeUndefined();
+  });
+
+  it('an entry TIMEOUT at the last window, then the row write fails: the next fire\'s row counts it once', async () => {
+    const ctx = await setup();
+    // AAPL never priced on d1: the idea waits at 10:00 and 12:45 and times out at 15:30, its last entry slot.
+    for (const slot of ['open30', 'midday']) {
+      await storeTickSnapshot(ctx.db, DAYS.d1, slot, { SPY: 600.1 });
+      await pass(ctx.db, DAYS.d1, slot);
+    }
+    await storeTickSnapshot(ctx.db, DAYS.d1, 'preClose', { SPY: 600.1 });
+    const path = `mandates/${ctx.bookId}/windows/${DAYS.d1}_preClose`;
+    expect(await quiet(() => pass(rowWriteFails(ctx.db, path), DAYS.d1, 'preClose'))).toMatchObject({ cancelled: 1, errors: 1 });
+    expect(getIdea(ctx.db, ctx.bookId, ctx.ideaId).status).toBe('cancelled');
+    await pass(ctx.db, DAYS.d1, 'preClose', nextFire(DAYS.d1, 'preClose'));
+    expect(rowOf(ctx.db, ctx.bookId, DAYS.d1, 'preClose')).toMatchObject({ served: true, code: { entries: { filled: 0, waiting: 0, cancelled: 1 } }, outcome: 'code_action' });
+  });
+
+  it('foldWindowAttempt: each count is the larger of the attempts\' and the receipts\' — equal when every attempt was recorded, never doubled', () => {
+    const tick = tickOf(DAYS.d1);
+    const receipts = { 'entry:i1': { kind: 'entry', ideaId: 'i1' }, 'sale:d1': { kind: 'sale' }, 'sale:d2': { kind: 'sale' }, 'resulted:i2': { kind: 'resulted' }, 'entry_timeout:i3': { kind: 'entry_timeout' } };
+    const recorded = foldWindowAttempt({ actions: receipts }, attemptOf({ complete: true, errors: 0, sales: { sold: 2, resulted: 1 }, entries: { entered: 1, cancelled: 1 } }, { nowIso: 'A' }), { bookId: 'b', tick });
+    expect(recorded.code).toMatchObject({ sales: { filled: 2 }, entries: { filled: 1, cancelled: 1 }, ideasResulted: 1 });
+    const lost = foldWindowAttempt({ actions: receipts }, attemptOf({ complete: true, errors: 0 }, { nowIso: 'B' }), { bookId: 'b', tick });
+    expect(lost.code).toMatchObject({ sales: { filled: 2 }, entries: { filled: 1, cancelled: 1 }, ideasResulted: 1 });
+    expect(lost.actions).toEqual(receipts);
+    expect(foldWindowAttempt(null, attemptOf({ complete: true, errors: 0 }, { nowIso: 'C' }), { bookId: 'b', tick })).not.toHaveProperty('actions');
   });
 });
 

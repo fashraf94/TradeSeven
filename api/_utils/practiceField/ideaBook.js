@@ -219,18 +219,22 @@ export async function createIdeaBook(db, { uid, attributionAgentId, archetypeCod
     const registrySnap = await tx.get(registryRef);
     const bookSnap = await tx.get(bookRef);
 
+    // THIS operation's own book first (T1a-2b-2 §4.2; Astra T2B-06): its id is derived from (owner, operation), so a
+    // book at it is the one this operation created — open, draining or closed since. A replay answers with ITS creation
+    // receipt (the book's own record of who made it, for which agent and archetype), before the owner's claim is read
+    // for today's open book: a creation that committed book A, replayed after A closed and B opened, answers A — never
+    // `open_book_exists` naming B. The same operation asking for a different book is a conflict, not a replay.
+    if (bookSnap.exists) {
+      const made = bookSnap.data();
+      const ours = made?.userId === uid && made?.createOpId === opId;
+      if (!ours || made.attributionAgentId !== attributionAgentId || made.archetypeCodeId !== archetypeCodeId) return { ok: false, code: 'op_id_conflict', bookId };
+      return { ok: true, bookId, epochId, idempotentReplay: true }; // the creation's epoch: a book is created at its first
+    }
     const claim = claimSnap.exists ? claimSnap.data() : null;
     if (claim && typeof claim.bookId === 'string' && claim.bookId.length > 0) {
-      // A replay of THIS creation returns the book it already made; anything else meets the one-open-book rule.
-      if (claim.createOpId === opId && claim.bookId === bookId) {
-        // The same operation asking for a different book (another archetype or agent) is a conflict, not a replay.
-        if (claim.attributionAgentId !== attributionAgentId || claim.archetypeCodeId !== archetypeCodeId) return { ok: false, code: 'op_id_conflict', bookId };
-        return { ok: true, bookId, epochId: claim.epochId ?? epochId, idempotentReplay: true };
-      }
+      // Another book is open for the owner: the one-open-book rule.
       return { ok: false, code: 'open_book_exists', bookId: claim.bookId };
     }
-    // The same owner and operation once made a book that has since closed: never a second book under one id.
-    if (bookSnap.exists) return { ok: false, code: 'op_id_conflict', bookId };
 
     const registry = registrySnap.exists ? registrySnap.data() : {};
     const openBooks = { ...(registry.openBooks || {}) };

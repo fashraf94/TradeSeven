@@ -11,12 +11,12 @@ import {
   runFounderAction, isPracticeFieldFounder, founderAllowlist, planControl, FOUNDER_ACTIONS, founderRequestFingerprint,
 } from './founderControls.js';
 import { founderAllowlist as mandateFounderAllowlist } from '../../mandate/create.js';
-import { runIdeaBookEvalPass, readIdeaBookPresence, ideaCloseLeftUnclosed } from './sweep.js';
+import { runIdeaBookEvalPass, readIdeaBookPresence, ideaCloseLeftUnclosed, runDrainingIdeaBookCloses } from './sweep.js';
 import { assertReconciled } from './reconcile.js';
 import { roundUsd } from '../mandateRounding.js';
 import { COCKPIT_ALLOWLIST_ENV } from '../callRecords/allowlist.js';
 import {
-  makeMandateFakeDb, seedBook, contractOf, closeOn, storeTickSnapshot, storeCloseSnapshot, tickOf, slotNowOf, etIso, ADMIT_ISO, getBook, getIdea, dumpStore,
+  makeMandateFakeDb, seedBook, contractOf, closeOn, storeTickSnapshot, storeCloseSnapshot, tickOf, slotNowOf, etIso, ADMIT_ISO, getBook, getIdea, dumpStore, closeNowOf,
 } from './__testsupport__/fixtures.js';
 
 const UID = 'founder-1';
@@ -388,6 +388,18 @@ describe('the lifecycles', () => {
     expect(getBook(two.db, two.bookId)).toMatchObject({ status: 'closed', closedOn: S[1], execState: { lastCloseKey: S[1] } });
   });
 
+  it('T1a-2b-2 §4.3 (Q7) — the DRAINING close sweep counts a catch-up that closed the book as CLOSED, not skipped (and not left unclosed)', async () => {
+    const three = await emptyBookClosedOnS0();
+    await act(three.db, 'wind_down', 'w-1', {}, { nowIso: etIso(S[1], 9, 0) }); // before S[1]'s close
+    await storeCloseSnapshot(three.db, S[1], quotes()); // S[1]'s close fire never ran
+    await storeCloseSnapshot(three.db, S[2], quotes());
+    const out = await runDrainingIdeaBookCloses(three.db, { date: S[2], now: closeNowOf(S[2]), ownerToken: 'owner-token' });
+    expect({ ...out, alerts: [] }).toEqual({ books: 1, closed: 1, skipped: 0, unclosed: 0, errors: 0, leaseSkips: 0, alerts: [] });
+    expect(getBook(three.db, three.bookId)).toMatchObject({ status: 'closed', closedOn: S[1] });
+    // The next fire finds no draining book: nothing to count.
+    expect(await runDrainingIdeaBookCloses(three.db, { date: S[2], now: closeNowOf(S[2]), ownerToken: 'owner-token' })).toMatchObject({ books: 0, closed: 0, skipped: 0 });
+  });
+
   it('C2 — a caught-up session that ended BEFORE the wind-down was requested is closed as the active session it was: the wind-down completes at a later session, and no active session loses its rows', async () => {
     // Requested on S[2] at 09:00, with S[1]'s close missed: S[1] closes active; S[2]'s close completes the wind-down.
     const a = await emptyBookClosedOnS0();
@@ -505,5 +517,31 @@ describe('T1a-2b-2 §1 — admit_fixture returns admission\'s two new refusals u
     }]);
     // Each refusal was stored with its request and replays unchanged.
     expect((await act(db, 'admit_fixture', 'f-unmarked', { contract: contractOf({ slot: 'medium', names: ['NVDA'], capitalUsd: 1000 }) }, { nowIso: etIso(S[1], 9, 45) })).body.refusals).toEqual(unmarked.body.refusals);
+  });
+});
+
+describe('T1a-2b-2 §4.2 (Astra T2B-06) — a pending creation is answered with its own book', () => {
+  it('Astra\'s sequence: a create that committed book A but failed to store its response, replayed after A closed and B opened, answers A — not `open_book_exists` naming B; B is untouched', async () => {
+    const db = makeMandateFakeDb(agents());
+    const opPath = `practiceFieldBooks/${UID}/founderOps/create-1`;
+    db.failNextWrites(opPath, 1); // the request's `done` write fails after the book committed
+    await expect(act(db, 'create_book', 'create-1')).rejects.toThrow(/INJECTED/);
+    expect(db._get(opPath)).toMatchObject({ state: 'pending', action: 'create_book' });
+    const a = db._get(`practiceFieldBooks/${UID}`).bookId;
+    expect(getBook(db, a)).toMatchObject({ status: 'active', createOpId: 'create-1' });
+    // A winds down and the next close completes it (no open idea); B opens.
+    expect((await act(db, 'wind_down', 'w-1', {}, { nowIso: etIso(S[0], 9, 0) })).body).toMatchObject({ ok: true, outcome: 'draining' });
+    await closeOn(db, a, S[0], quotes());
+    expect(getBook(db, a)).toMatchObject({ status: 'closed', closedOn: S[0] });
+    const b = await act(db, 'create_book', 'create-2', {}, { nowIso: etIso(S[0], 17, 0) });
+    expect(b).toMatchObject({ status: 201, body: { ok: true } });
+    const bBefore = JSON.stringify(getBook(db, b.body.bookId));
+    const replay = await act(db, 'create_book', 'create-1', {}, { nowIso: etIso(S[1], 9, 0) });
+    expect(replay).toEqual({ status: 200, body: { ok: true, action: 'create_book', bookId: a, epochId: 'epoch-0001', attributionAgentId: `agent-${UID}`, archetypeCodeId: 'momentum_chaser', idempotentReplay: true } });
+    // Stored now, and replayed as stored.
+    expect(db._get(opPath)).toMatchObject({ state: 'done', response: { body: { bookId: a } } });
+    expect((await act(db, 'create_book', 'create-1')).body).toMatchObject({ ok: true, bookId: a, idempotentReplay: true });
+    expect(JSON.stringify(getBook(db, b.body.bookId))).toBe(bBefore);
+    expect(db._get(`practiceFieldBooks/${UID}`)).toMatchObject({ bookId: b.body.bookId, status: 'active' });
   });
 });

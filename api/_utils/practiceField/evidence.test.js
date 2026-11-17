@@ -14,6 +14,7 @@ import { closeIdeaBook, catchUpIdeaBook } from './close.js';
 import { assertReconciled } from './reconcile.js';
 import {
   verifyPacket, resultPacketMissingMarks, resultPacketProvenanceProblems, recomputeResultFromPacket, jsonPure, EVIDENCE_HASH_ALGORITHM,
+  buildAdmissionPacket,
 } from './evidence.js';
 import { nextSessionDate } from './windows.js';
 import { valueLedger } from './ledger.js';
@@ -177,9 +178,17 @@ describe('the admission packet — in admission\'s own transaction, create-once'
 
   it('review B12 — the hash is of what Firestore stores: a lone surrogate (stored as U+FFFD) is made well-formed first, so the packet still verifies after the round trip', async () => {
     const ctx = await seedBook();
-    const res = await admitIdea(ctx.db, { bookId: ctx.bookId, contract: contractOf({ thesis: { text: `A thesis with a broken character \uD800 inside it, for the round trip.`, author: 'founder_fixture' } }), opId: 'surrogate', nowIso: ADMIT_ISO });
-    expect(res.ok).toBe(true);
-    const packet = ctx.db._get(`mandates/${ctx.bookId}/ideas/${res.ideaId}/evidence/admission`);
+    const broken = `A thesis with a broken character \uD800 inside it, for the round trip.`;
+    // Since T1a-2b-2 §2 admission refuses such a thesis before any packet is built …
+    expect(await admitIdea(ctx.db, { bookId: ctx.bookId, contract: contractOf({ thesis: { text: broken, author: 'founder_fixture' } }), opId: 'surrogate', nowIso: ADMIT_ISO }))
+      .toMatchObject({ ok: false, refusals: [{ code: 'text_invalid', field: 'thesis.text' }] });
+    // … and the packet's own guard stays behind it: a packet sealed over a contract holding one.
+    const res = await admitIdea(ctx.db, { bookId: ctx.bookId, contract: contractOf(), opId: 'whole', nowIso: ADMIT_ISO });
+    const idea = getIdea(ctx.db, ctx.bookId, res.ideaId);
+    const packet = buildAdmissionPacket({
+      bookId: ctx.bookId, book: getBook(ctx.db, ctx.bookId), ideas: [], verdict: null, nowIso: ADMIT_ISO,
+      idea: { ...idea, contract: { ...idea.contract, thesis: { ...idea.contract.thesis, text: broken } } },
+    });
     expect(packet.contract.thesis.text).toContain('�');
     expect(packet.contract.thesis.text).not.toContain('\uD800');
     // What Firestore hands back: every lone surrogate replaced. The packet verifies before and after.
