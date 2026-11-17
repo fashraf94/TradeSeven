@@ -854,6 +854,7 @@ const WRITE_CALLS = new Set(['set', 'update', 'delete', 'add', 'create', 'batch'
 const NON_FIRESTORE_CALLS = Object.freeze([
   { file: 'api/_utils/filmTape/tapeSources.js', name: 'add', count: 1, why: 'the same Set of evaluation ids as NON_FIRESTORE_HITS' },
   { file: 'src/utils/filmRoomMoments.js', name: 'set', count: 1, why: 'the same Map grouping tag items as NON_FIRESTORE_HITS' },
+  { file: 'src/constants/leagueTournament.js', name: 'set', count: 1, why: 'the same Map of owner id to seat key as NON_FIRESTORE_HITS' },
 ]);
 /**
  * The refuter's CXV-5: a write need not name its method where it calls it — `ref.set.call(…)`, `(0, ref.set)(…)`,
@@ -881,6 +882,7 @@ const unexplainedCalls = (hits) => {
 const NON_FIRESTORE_HITS = Object.freeze([
   { file: 'api/_utils/filmTape/tapeSources.js', text: 'snaps.forEach((s, i) => { if (s && s.exists) present.add(evalIds[i]); });', count: 1, why: 'a Set of evaluation ids (readDeclarationPresence), never called by the excerpt' },
   { file: 'src/utils/filmRoomMoments.js', text: 'if (!groups.has(key)) groups.set(key, []);', count: 1, why: 'a Map grouping tag items by situation and symbol (momentsOf)' },
+  { file: 'src/constants/leagueTournament.js', text: "if (p && typeof p.odUserId === 'string' && p.odUserId && !out.has(p.odUserId)) out.set(p.odUserId, String(i));", count: 1, why: 'a Map of owner id to seat key (seatIndexByOwner, the security pack #1077), never a Firestore write' },
 ]);
 const writeHitsOf = (closure) => {
   const hits = [];
@@ -923,6 +925,7 @@ describe('THE WRITE GATE — no write call in momentExcerpt.js or anything it im
       ['api/_utils/filmRoom/sourceDay.js', 'export const w = (ref) => ref.update({ a: 1 });'],
       ['src/constants/filmTape.js', 'export const w = (col) => col.add({});'],
       ['src/utils/filmRoomMoments.js', 'if (!groups.has(key)) groups.set(key, []);'],
+      ['src/constants/leagueTournament.js', "if (p && typeof p.odUserId === 'string' && p.odUserId && !out.has(p.odUserId)) out.set(p.odUserId, String(i));"],
     ]) expect(unexplained(writeHitsOf(closureOf(EXCERPT_FILE, plant(target, extra)))).length, `${target}: ${extra}`).toBeGreaterThan(0);
   });
   it('THE SECOND READING (CX2-4): the closure\'s write-named calls are exactly the two pinned non-Firestore ones; the excerpt, the day check, the subject module and the text policy hold none', () => {
