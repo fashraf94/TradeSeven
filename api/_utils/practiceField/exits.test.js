@@ -26,6 +26,7 @@ import { roundUsd, roundShares } from '../mandateRounding.js';
 import {
   seedBook, admitAndEnter, closeOn, windowAt, storeTickSnapshot, storeCloseSnapshot, contractOf, getBook, getIdea, getRow, tickOf, tickSnapshot,
   slotNowOf, slotOpenIso, closeNowOf, etIso, ADMIT_ISO, takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, countResults, moneyStoreBytes,
+  withoutWindowAlerts,
 } from './__testsupport__/fixtures.js';
 
 // A short idea admitted on Friday 13 Nov 2026 starts on Monday the 16th (session 0) and is due ten sessions later.
@@ -132,7 +133,7 @@ describe('B-LINE, B-EXIT-ONE (E1, E6) — a line is a stop on its own holding', 
     // S[1]: MSFT closes below its line. The close RECOGNISES it; it sells nothing.
     const breachClose = below(level);
     const closed = await closeDay(ctx, S[1], { MSFT: breachClose });
-    expect(closed.alerts).toEqual([]);
+    expect(withoutWindowAlerts(closed.alerts)).toEqual([]);
     const pending = ideaOf(ctx);
     expect(pending.status).toBe('line_hit_exit_pending');
     expect(pending.statusHistory.map((h) => h.status)).toEqual(['accepted', 'entering', 'holding', 'line_hit_exit_pending']);
@@ -364,7 +365,7 @@ describe('B-ENDPOINT (E4, E5) — a liquidation value, computed the same way on 
     await closeRange(ctx, 0, 9);
     const before = { idea: ideaOf(ctx), book: bookOf(ctx) };
     const closed = await closeDay(ctx, DUE, DUE_PX);
-    expect(closed.alerts).toEqual([]);
+    expect(withoutWindowAlerts(closed.alerts)).toEqual([]);
     const idea = ideaOf(ctx);
     const ep = endpointRowOf(ctx);
     const own = liquidationOf(before.idea.ledger, DUE_PX, () => 3);
@@ -563,7 +564,7 @@ describe('B-WAIT (E9) — a sale with no eligible price waits', () => {
       expect(decisionsOf(ctx), label).toHaveLength(2);
       expect(idea.status, label).toBe('line_hit_exit_pending');
     };
-    const stale = (date, slot) => new Date(Date.parse(slotNowOf(date, slot).toISOString()) - 60_000 - 21 * 60_000).toISOString(); // 21 minutes before the build
+    const stale = (date, slot) => new Date(Date.parse(slotNowOf(date, slot).toISOString()) - 60_000 - 31 * 60_000).toISOString(); // 31 minutes before the build (Q-D: the idea book's 30 minutes)
 
     // Session S[1]: three windows, three different reasons there is no eligible price.
     const w1 = await windowAt(ctx.db, ctx.bookId, { date: S[1], slot: 'open30' }); // no stored snapshot at all
@@ -571,7 +572,7 @@ describe('B-WAIT (E9) — a sale with no eligible price waits', () => {
     noSale('no stored snapshot');
     await win(ctx, S[1], 'midday', { AAPL: { price: 215.2, at: etIso(S[0], 15, 59) } }); // the vendor's last print is yesterday's: a carried mark
     noSale('carried');
-    await win(ctx, S[1], 'preClose', { AAPL: { price: 215.2, at: stale(S[1], 'preClose') } }); // Q-2: 21 minutes old at the window's tick
+    await win(ctx, S[1], 'preClose', { AAPL: { price: 215.2, at: stale(S[1], 'preClose') } }); // Q-2, Q-D: 31 minutes old at the window's tick
     noSale('stale');
     let waiting = ideaOf(ctx).ledger.holdings.AAPL.exitPending.waiting;
     expect(waiting).toMatchObject({ attempts: 3, sessions: [S[1]], firstTickKey: `${S[1]}_open30`, lastTickKey: `${S[1]}_preClose`, lastRefusal: 'stale_quote', alertedOn: null });
@@ -676,10 +677,10 @@ describe('B-DUE-BREACH (E7) — on the due session the due date wins', () => {
 });
 
 describe('Q-2 and FR-A7 — one rule for every fill: a maximum age, and the stored snapshot', () => {
-  const staleAt = (date, slot) => new Date(Date.parse(slotNowOf(date, slot).toISOString()) - 60_000 - 21 * 60_000).toISOString();
-  const freshEnoughAt = (date, slot) => new Date(Date.parse(slotNowOf(date, slot).toISOString()) - 60_000 - 20 * 60_000).toISOString();
+  const staleAt = (date, slot) => new Date(Date.parse(slotNowOf(date, slot).toISOString()) - 60_000 - 31 * 60_000).toISOString();
+  const freshEnoughAt = (date, slot) => new Date(Date.parse(slotNowOf(date, slot).toISOString()) - 60_000 - 30 * 60_000).toISOString();
 
-  it('a 21-minute-old quote is refused `stale_quote` for an ENTRY and for a SALE; a 20-minute-old one fills', async () => {
+  it('Q-D — a 31-minute-old quote is refused `stale_quote` for an ENTRY and for a SALE; a 30-minute-old one fills (the idea book\'s own 30 minutes; the engine\'s 20 is not read)', async () => {
     // Entry.
     const { db, bookId, bookRef } = await seedBook();
     const a = await admitIdea(db, { bookId, contract: contractOf({ names: ['AAPL'] }), opId: 'idea-1', nowIso: ADMIT_ISO });

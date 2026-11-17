@@ -56,14 +56,14 @@
 
 import { PracticeFieldError } from './errors.js';
 import {
-  OPEN_IDEA_STATUSES, FILLED_IDEA_STATUSES, IDEA_STATUS, DECISION_ORIGIN_LINE_EXIT, DECISION_ORIGIN_SETTLEMENT,
+  OPEN_IDEA_STATUSES, FILLED_IDEA_STATUSES, IDEA_STATUS, SALE_ORIGINS,
 } from './constants.js';
 import { toCents, toMicroShares } from './money.js';
 import { markedEquityCents } from './ledger.js';
 import { isCostTier } from './fills.js';
 
-/** The sales this build makes (exits.js). */
-const SALE_KINDS = Object.freeze([DECISION_ORIGIN_LINE_EXIT, DECISION_ORIGIN_SETTLEMENT]);
+/** The sales code makes (exits.js): a line exit, a delisting exit (Q-G, T1a-2b-1) and a settlement sale. */
+const SALE_KINDS = SALE_ORIGINS;
 
 /** The two paper ledgers beside an idea's own (rule 8). */
 const PAPER_LEDGERS = Object.freeze([['comparison', 'comparisonLedger'], ['spy', 'spyLedger']]);

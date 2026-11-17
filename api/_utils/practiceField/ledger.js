@@ -857,16 +857,48 @@ export function markedEquityCents(treasuryUnreservedCash, ideas) {
   return { treasuryCents, cashCents, holdingsCents, equityCents: treasuryCents + cashCents + holdingsCents };
 }
 
+// ── THE PROVENANCE OF A HOLDING'S RECORDED MARK (Astra T2B-01) ─────────────────────────────────────────────────
+// Every holding's `lastMark` carries, beside it, `lastMarkProvenance`: where THAT price came from — `{ source, symbol,
+// session, snapshotKey, quality, vendorTimeIso }`. It is written wherever a holding's mark is set from a quote, on every
+// ledger (the idea's, its comparison's, its SPY line's) and on the book's mirror of the idea's positions:
+//   source 'fill'   a fill priced the holding (fills.js executeIdeaFill): the slot snapshot's key, `vendor_time` (the
+//                   eligible-mark rule admits only a quote the vendor timed in the session), and that quote's time;
+//   source 'close'  a close marked it FROM its stored snapshot (withCloseMarks): the close snapshot's key, the close's
+//                   quality for it, and the vendor's time — NULL when the quote had none (`receipt_time_fallback`).
+// A CARRY COPIES IT UNCHANGED: a mark the close could not take from its snapshot, an unobserved session, a split's
+// adjustment of the mark (the engine divides `lastMark`; the receipts say by what) and a ticker change all leave the
+// provenance as it was, so an untimed source stays untimed through any number of carries. `symbol` is the symbol the
+// quote was for (a ticker change renames the holding, not its source).
+//
+// `lastMarkAsOf` IS NOT PROVENANCE. It is the engine's position field, kept exactly as before: the time of the last
+// VENDOR-TIMED mark, which a later untimed quote does not replace. The gap screen reads it (markSessionOf: the session of
+// the last trusted mark), so changing it would move which cash actions wait — a money change this round may not make.
+// Nothing that states where a price came from reads it: the packets read `lastMarkProvenance`.
+
+/** Where a recorded mark came from (see above). */
+export const MARK_PROVENANCE_SOURCE = Object.freeze({ FILL: 'fill', CLOSE: 'close' });
+
+/** A holding's mark provenance (see above). Every field is present; the unknown ones are null. */
+export function markProvenance({ source, symbol, session, snapshotKey, quality, vendorTimeIso }) {
+  return {
+    source, symbol: symbol ?? null, session: session ?? null, snapshotKey: snapshotKey ?? null,
+    quality: quality ?? null, vendorTimeIso: vendorTimeIso ?? null,
+  };
+}
+
 /**
  * Write a valuation's marks back onto the ledger's holdings (tomorrow's gap screen compares against today's
  * mark). Cash, quantities and basis are untouched.
+ *
+ * A fresh mark takes this close's provenance (`date`, `snapshotKey`, its quality and vendor time — null when the quote
+ * had none); a carried mark keeps the provenance it had (Astra T2B-01). `lastMarkAsOf` is written as before (see above).
  *
  * A fresh mark written over a suspicion the founder has resolved SPENDS that ruling (fix round 3, review F1 and second
  * refuter): the record gains `spentOn` (the session), and from then on the screen compares against the fresh mark, so
  * a later split-shaped move is a new suspicion. Keyed on the mark being fresh, not on `lastMarkAsOf`, which a
  * receipt-time mark (no vendor time) leaves unchanged. Nothing is removed from the record.
  */
-export function withCloseMarks(ledger, valuation, { date = null } = {}) {
+export function withCloseMarks(ledger, valuation, { date = null, snapshotKey = null } = {}) {
   const next = cloneLedger(ledger);
   for (const [sym, h] of Object.entries(next.holdings)) {
     const m = valuation.marks[sym];
@@ -877,6 +909,11 @@ export function withCloseMarks(ledger, valuation, { date = null } = {}) {
       lastMark: m.mark,
       lastMarkAsOf: fresh ? (m.vendorTimeIso ?? h.lastMarkAsOf ?? null) : (h.lastMarkAsOf ?? null),
       lastMarkSource: fresh ? 'snapshot' : m.markSource,
+      ...(fresh ? {
+        lastMarkProvenance: markProvenance({
+          source: MARK_PROVENANCE_SOURCE.CLOSE, symbol: sym, session: date, snapshotKey, quality: m.quality, vendorTimeIso: m.vendorTimeIso,
+        }),
+      } : {}),
     };
     if (fresh && founderResolved(h.basisSuspicion) && h.basisSuspicion.spentOn == null) {
       next.holdings[sym].basisSuspicion = { ...h.basisSuspicion, spentOn: date ?? m.vendorTimeIso ?? 'fresh_mark' };

@@ -18,6 +18,7 @@ import { admitIdea } from '../admission.js';
 import { enterIdea, runIdeaBookEntryPass } from '../entry.js';
 import { runIdeaBookWindow } from '../sweep.js';
 import { closeIdeaBook } from '../close.js';
+import { runFounderAction } from '../founderControls.js';
 
 export { makeMandateFakeDb };
 
@@ -294,6 +295,31 @@ export async function closeOn(db, bookId, date, quotes) {
   const bookRef = db.collection('mandates').doc(bookId);
   await storeCloseSnapshot(db, date, quotes);
   return closeIdeaBook(db, bookRef, { date, now: closeNowOf(date) });
+}
+
+/**
+ * A close's alerts without the window ledger's `PRACTICE_FIELD_WINDOW_MISSED` lines (T1a-2b-1 §4). A row that closes a
+ * book WITHOUT running its windows is told, correctly, that each window was missed; rows about something else — a
+ * corporate action, a line — assert on the rest. The missed windows themselves are windowLedger.test.js's.
+ */
+export const withoutWindowAlerts = (alerts) => (alerts || []).filter((a) => !/^PRACTICE_FIELD_WINDOW_MISSED /.test(a));
+
+/**
+ * THE REAL WIND-DOWN (T1a-2b-1 §6; T1a-2a C-1): the founder's `wind_down` action, through the same dispatcher the
+ * endpoint calls (founderControls.js), for the book's owner — never a fixture status. The owner is made the founder
+ * for the call (MANDATE_FOUNDER_UIDS, restored after). The mode must not be 'off' (the caller's test sets it).
+ */
+export async function windDownBook(db, { uid = 'owner-1', requestKey = 'wind-down-1', nowIso = etIso(DAYS.d1, 8, 0) } = {}) {
+  const prev = process.env.MANDATE_FOUNDER_UIDS;
+  process.env.MANDATE_FOUNDER_UIDS = uid;
+  try {
+    const out = await runFounderAction(db, { uid, body: { action: 'wind_down', requestKey }, nowIso });
+    if (out.status !== 200 || out.body.ok !== true) throw new Error(`windDownBook: ${JSON.stringify(out)}`);
+    return out.body;
+  } finally {
+    if (prev === undefined) delete process.env.MANDATE_FOUNDER_UIDS;
+    else process.env.MANDATE_FOUNDER_UIDS = prev;
+  }
 }
 
 /** Read helpers. */

@@ -30,8 +30,9 @@ import { roundUsd } from '../mandateRounding.js';
 import { PracticeFieldError } from './errors.js';
 import { eligibleMark } from './marks.js';
 import { frictionForSymbol, normSymbol } from './symbols.js';
-import { cloneLedger } from './ledger.js';
+import { cloneLedger, markProvenance, MARK_PROVENANCE_SOURCE } from './ledger.js';
 import { addUsd } from './money.js';
+import { MARK_QUALITY } from './constants.js';
 
 const FILL_VERBS = Object.freeze(['BUY', 'ADD', 'SELL', 'TRIM']);
 
@@ -131,9 +132,18 @@ export function executeIdeaFill({
   next.holdings = exec.mutation.positions;
   // The engine builds a bought position fresh: the holding keeps the tier it ENTERED with (E5) — and anything else
   // this build records on a holding — across a top-up; a new holding takes this fill's tier.
+  // A holding left after the fill (a buy, a top-up, a trim) is marked at this fill's own quote (the engine wrote
+  // `lastMark` from it): its provenance is this fill's — the slot snapshot, the vendor's time (Astra T2B-01; ledger.js).
   if (next.holdings[sym]) {
     const prior = ledger.holdings?.[sym] || null;
-    next.holdings[sym] = { ...next.holdings[sym], costTier: prior?.costTier ?? costTierOf(friction) };
+    next.holdings[sym] = {
+      ...next.holdings[sym],
+      costTier: prior?.costTier ?? costTierOf(friction),
+      lastMarkProvenance: markProvenance({
+        source: MARK_PROVENANCE_SOURCE.FILL, symbol: sym, session: sessionDate, snapshotKey: snapshot?.tickKey ?? null,
+        quality: MARK_QUALITY.VENDOR_TIME, vendorTimeIso: mark.vendorTimeIso,
+      }),
+    };
   }
   next.cash = exec.mutation.cash;
   next.costsPaidUsd = addUsd(next.costsPaidUsd, exec.receipt.friction.frictionPaid);

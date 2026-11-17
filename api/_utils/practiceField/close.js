@@ -44,7 +44,18 @@
 //      or `resulted` at once, its cash back in the treasury and its slot free, when nothing is left to sell;
 //   5. ROWS: the book's `dailyRows/{date}` and each filled idea's `ideas/{ideaId}/rows/{date}`;
 //   6. RECONCILIATION of the book as read, before step 0 (reject, never repair — Astra T1A-02), and of the book as it
-//      will be written, before anything is written.
+//      will be written, before anything is written;
+//   7. (T1a-2b-1 §3) THE RESULT EVIDENCE of every idea whose endpoint this close writes — a copy of every price its
+//      result relied on (evidence.js), create-once, beside the endpoint row;
+//   8. (T1a-2b-1 §4) THE CLOSE'S WINDOW ROW, create-once: the session's expected windows against the served ones, and
+//      one PRACTICE_FIELD_WINDOW_MISSED alert per missed window (windowLedger.js) — after the rows of every earlier
+//      session the window ledger's OWN cursor has not yet accounted for (Astra T2B-02: the sessions from the book's
+//      creation before the valuation's first, which no valuation closes), each `valued: false`, with no valuation row;
+//   9. (T1a-2b-1 §6) WIND-DOWN COMPLETES HERE: a `draining` book with no open idea left after this close is set
+//      `closed`, taken off the founder-cap registry and its owner's claim closed — all in this transaction. Nothing
+//      else removes a registry entry, and never while a book is active or draining (registryPresence.test.js).
+// Every read of 7–9 (each idea's inception row, the session's window rows, the claim and the registry) is made
+// before any write, as a Firestore transaction requires.
 
 import { buildCorporateAction } from '../mandateSchema.js';
 import { applyCorporateAction, deriveActionId } from '../mandateCorporateActions.js';
@@ -55,13 +66,14 @@ import { MANDATE_SCHEMA_VERSION } from '../mandateConfig.js';
 import { isIdeaBook, IDEA_BOOK_KIND } from '../mandateBookKind.js';
 import {
   IDEA_SCHEMA_VERSION, IDEA_STATUS, CANCEL_REASON, VALUATION_LABEL, VALUATION_LABEL_UNOBSERVED, MARK_QUALITY, FILLED_IDEA_STATUSES,
-  RUNNING_IDEA_STATUSES, EXIT_REASON, CATCH_UP_MAX_SESSIONS_PER_CALL, PROCESS_QUALITY,
+  RUNNING_IDEA_STATUSES, EXIT_REASON, CATCH_UP_MAX_SESSIONS_PER_CALL, PROCESS_QUALITY, PRACTICE_FIELD_BOOK_REGISTRY_ID,
 } from './constants.js';
 import { PracticeFieldError } from './errors.js';
 import { practiceFieldLive } from './mode.js';
 import {
   applyLedgerActions, valueLedger, withCloseMarks, suspectedActionSymbols, markedEquityCents, unsettledConflicts, cloneLedger,
   shareBasisHolds, heldActionRecords, withBasisSuspicions, basisSuspicionRecords, delistingWaitingSymbols,
+  markProvenance, MARK_PROVENANCE_SOURCE,
 } from './ledger.js';
 import { closeMarkQuality } from './marks.js';
 import { planRelease } from './admission.js';
@@ -70,6 +82,12 @@ import { assertReconciled } from './reconcile.js';
 import { readLines, buildEndpoint, foldCloseIntoTrack, pendingSaleOf, completedLiquidation, ENDPOINT_KIND } from './settlement.js';
 import { firstUnclosedSessionBefore } from './sessions.js';
 import { toCents, fromCents } from './money.js';
+import { buildResultPacket, evidenceRefOf, EVIDENCE_PACKET } from './evidence.js';
+import {
+  windowsRefOf, expectedIntradayWindows, buildCloseWindowRow, windowOnlySessionsBefore, readWindowOnlySessions, writeWindowOnlySessions,
+  WINDOW_ONLY_SESSIONS_PER_TX, WINDOWS_ACCOUNTED_FIELD,
+} from './windowLedger.js';
+import { windowRowId, CLOSE_WINDOW, sessionClosePassEndMs, nextSessionDate } from './windows.js';
 
 /** The key of THE close snapshot for a date. */
 export const closeSnapshotKeyFor = (date) => `${date}_close`;
@@ -82,8 +100,14 @@ const toIso = (v) => {
 };
 
 const quantitiesOf = (ledger) => Object.fromEntries(Object.entries(ledger.holdings).map(([s, h]) => [s, h.shares]));
-const marksOf = (valuation) => Object.fromEntries(Object.entries(valuation.marks).map(([s, m]) => [s, {
+/**
+ * A row's marks. A mark CARRIED at this close (not from its snapshot) names where its price came from — the holding's
+ * own `lastMarkProvenance`, which a carry leaves unchanged (Astra T2B-01) — as `carriedFrom`; a fresh mark is this
+ * close's snapshot's (the row names its key).
+ */
+const marksOf = (valuation, ledger) => Object.fromEntries(Object.entries(valuation.marks).map(([s, m]) => [s, {
   mark: m.mark, quality: m.quality, markSource: m.markSource, vendorTimeIso: m.vendorTimeIso,
+  ...(m.markSource !== 'snapshot' ? { carriedFrom: ledger?.holdings?.[s]?.lastMarkProvenance ?? null } : {}),
 }]));
 
 /** What applyLedgerActions answers when there is nothing to apply: the session has no stored snapshot, so no feed. */
@@ -233,9 +257,9 @@ function closeFilledIdea(idea, { date, closeSnapshot, actionsBySymbol: feedActio
   // An unobserved session changes no ledger: there is nothing to write a mark from.
   let next = {
     ...idea,
-    ledger: observed ? withCloseMarks(ownLedger, ownV.valuation, { date }) : ownLedger,
-    comparisonLedger: observed ? withCloseMarks(cmp.ledger, cmpV.valuation, { date }) : cmp.ledger,
-    spyLedger: observed ? withCloseMarks(spy.ledger, spyV.valuation, { date }) : spy.ledger,
+    ledger: observed ? withCloseMarks(ownLedger, ownV.valuation, { date, snapshotKey: snapshotMeta.key }) : ownLedger,
+    comparisonLedger: observed ? withCloseMarks(cmp.ledger, cmpV.valuation, { date, snapshotKey: snapshotMeta.key }) : cmp.ledger,
+    spyLedger: observed ? withCloseMarks(spy.ledger, spyV.valuation, { date, snapshotKey: snapshotMeta.key }) : spy.ledger,
     lines,
     lastValuedOn: observed ? date : (idea.lastValuedOn ?? null),
     lastClosedOn: date,
@@ -288,19 +312,19 @@ function closeFilledIdea(idea, { date, closeSnapshot, actionsBySymbol: feedActio
     cash: ownV.valuation.cash,
     markedHoldingsValue: ownV.valuation.markedHoldingsValue,
     quantities: quantitiesOf(ownLedger),
-    marks: marksOf(ownV.valuation),
+    marks: marksOf(ownV.valuation, ownLedger),
     cumulativeCostsUsd: ownLedger.costsPaidUsd,
     dividendsToDateUsd: ownLedger.dividendsUsd,
     comparisonType: idea.contract.comparison.type,
     comparisonMarkedValue: cmpV.valuation.markedValue,
     comparisonCash: cmpV.valuation.cash,
     comparisonQuantities: quantitiesOf(cmp.ledger),
-    comparisonMarks: marksOf(cmpV.valuation),
+    comparisonMarks: marksOf(cmpV.valuation, cmp.ledger),
     comparisonCumulativeCostsUsd: cmp.ledger.costsPaidUsd,
     spyMarkedValue: spyV.valuation.markedValue,
     spyCash: spyV.valuation.cash,
     spyQuantities: quantitiesOf(spy.ledger),
-    spyMarks: marksOf(spyV.valuation),
+    spyMarks: marksOf(spyV.valuation, spy.ledger),
     markedGapUsd: fromCents(valueCents - comparisonCents),
     markedGapPct: ((valueCents - comparisonCents) * 100) / reservedCents,
     markedGapToSpyUsd: fromCents(valueCents - spyCents),
@@ -437,8 +461,26 @@ async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false })
     }
     // E12: the session this transaction closes — the first one the book has missed, or the requested date.
     const missed = firstUnclosedSessionBefore(book, ideas, date);
-    if (catchUpOnly && missed === null) return { closed: false, skipped: 'nothing_to_catch_up', alerts };
-    const session = missed ?? date;
+    // T2B-02 — THE WINDOW LEDGER'S OWN CURSOR (windowLedger.js). Every session the book was due since its creation is
+    // accounted for, in order, before the cursor passes it: a session BEFORE the one this transaction values — before
+    // any idea filled, or any close ran — gets its close row here (`valued: false`), with its missing windows and their
+    // alerts, and no valuation row; the session the valuation closes writes its own below. Read now, before any write.
+    // When there is nothing to value (a catch-up of a book with no session to close), or more such sessions than one
+    // transaction takes, this transaction accounts for them alone and the caller goes on.
+    const valuationSession = catchUpOnly && missed === null ? null : (missed ?? date);
+    const windowOnly = windowOnlySessionsBefore(book, valuationSession ?? date, WINDOW_ONLY_SESSIONS_PER_TX + 1);
+    const windowsAccounted = await readWindowOnlySessions(tx, bookRef, book, windowOnly.slice(0, WINDOW_ONLY_SESSIONS_PER_TX), { nowIso });
+    const accountedSummary = windowsAccounted.map((a) => ({ session: a.session, missing: a.missing }));
+    if (valuationSession === null || windowOnly.length > WINDOW_ONLY_SESSIONS_PER_TX) {
+      if (windowsAccounted.length === 0) return { closed: false, skipped: 'nothing_to_catch_up', alerts };
+      // Their alerts go with the rows that record them — only when those rows are written.
+      for (const a of windowsAccounted) alerts.push(...a.alerts);
+      writeWindowOnlySessions(tx, bookRef, windowsAccounted);
+      tx.update(bookRef, { [`execState.${WINDOWS_ACCOUNTED_FIELD}`]: windowsAccounted[windowsAccounted.length - 1].session });
+      const more = windowOnly.length > WINDOW_ONLY_SESSIONS_PER_TX;
+      return { closed: false, skipped: more ? 'windows_accounted' : 'nothing_to_catch_up', windowsAccounted: accountedSummary, alerts };
+    }
+    const session = valuationSession;
     const catchUp = session !== date;
     // Nothing moves past an unclosed session (sessions.js): an idea that filled AFTER the session being closed cannot
     // exist — every fill refuses to run while an earlier session is unclosed. If one does, the book's present is not
@@ -563,6 +605,13 @@ async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false })
         lastMark: m.mark,
         lastMarkAsOf: fresh ? (q.vendorTimeIso ?? pos.lastMarkAsOf ?? null) : (pos.lastMarkAsOf ?? null),
         lastMarkSource: fresh ? 'snapshot' : m.markSource,
+        // The same provenance the idea's holding records (ledger.js withCloseMarks; Astra T2B-01): this close's, or —
+        // carried — the one it had.
+        ...(fresh ? {
+          lastMarkProvenance: markProvenance({
+            source: MARK_PROVENANCE_SOURCE.CLOSE, symbol: sym, session, snapshotKey: snapshotMeta.key, quality: q.quality, vendorTimeIso: q.vendorTimeIso,
+          }),
+        } : {}),
       };
     }
 
@@ -582,13 +631,82 @@ async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false })
     const markedEquity = fromCents(equity.equityCents);
     const costsToDateUsd = roundUsd(working.portfolio.frictionPaidCum || 0);
 
+    // 9. WIND-DOWN COMPLETES AT A CLOSE (T1a-2b-1 §6; contract §3.2, §11): a draining book with no open idea left after
+    //    this close — every idea resulted or timed out — is closed by it. Decided here, on the book as this close
+    //    leaves it. A caught-up session is closed exactly as its own close would have been (E12; review C2): its
+    //    on-time close runs within the engine's close window, so a wind-down requested before that window ENDS
+    //    (18:00 Eastern on a regular session) is one its close could have completed — a request at 16:05, before
+    //    the 16:25 close, is completed by it (fix-round refuter NF-1). One requested only after the window ended
+    //    came when that session's close had run with the book active; a later session's close completes it, so no
+    //    session the book was active through goes without its rows.
+    const windDownAtMs = Date.parse(book.windDown?.requestedAt ?? '');
+    const closePassEndMs = sessionClosePassEndMs(session);
+    const windDownInForce = book.status === 'draining'
+      && (!Number.isFinite(windDownAtMs) || closePassEndMs === null || windDownAtMs < closePassEndMs);
+    const completesWindDown = windDownInForce && (working.openIdeaIds || []).length === 0;
     const nextBook = {
       ...working,
       portfolio: { ...working.portfolio, positions: nextPositions, cash: roundUsd(bookCash), totalValue: markedEquity },
       revision: (working.revision || 0) + 1,
+      ...(completesWindDown ? { status: 'closed' } : {}),
     };
     // 6. Reconcile BEFORE anything is written.
     assertReconciled(nextBook, openIdeas);
+
+    // ── The reads of 7–9, every one before the first write ──────────────────────────────────────────────────────
+    // 7. Each idea reaching its endpoint here: its inception row, where every ledger's entry fills are — and (Astra
+    //    T2B-03) its own row of EVERY close from its entry session to this one, the closes its largest decline and
+    //    exposure were folded from (every close writes the row of every filled idea, so each is there). This close's
+    //    row is the one about to be written.
+    const inceptions = {};
+    const closeRowsOf = {};
+    for (const ideaId of Object.keys(endpoints)) {
+      const rowsRef = bookRef.collection('ideas').doc(ideaId).collection('rows');
+      const snap = await tx.get(rowsRef.doc('inception'));
+      inceptions[ideaId] = snap.exists ? snap.data() : null;
+      const rows = [];
+      const entered = nextIdeas.get(ideaId)?.entry?.sessionDate ?? null;
+      for (let s = entered; typeof s === 'string' && s < session; s = nextSessionDate(s)) {
+        const r = await tx.get(rowsRef.doc(s));
+        rows.push(r.exists ? r.data() : { date: s, missing: true });
+      }
+      rows.push(ideaRows[ideaId]);
+      closeRowsOf[ideaId] = rows;
+    }
+    // 8. The session's intraday window rows (windows.js names the windows the book was due).
+    const windowRows = {};
+    for (const w of expectedIntradayWindows(book, session)) {
+      const snap = await tx.get(windowsRefOf(bookRef).doc(windowRowId(session, w.window)));
+      windowRows[w.window] = snap.exists ? snap.data() : null;
+    }
+    // 9. The owner's claim and the founder-cap registry — read only by the close that completes a wind-down. The
+    //    collection by its literal name, for the protected-store scan.
+    let claimRef = null;
+    let claim = null;
+    let registryRef = null;
+    let registry = null;
+    if (completesWindDown) {
+      claimRef = db.collection('practiceFieldBooks').doc(book.userId);
+      registryRef = db.collection('practiceFieldBooks').doc(PRACTICE_FIELD_BOOK_REGISTRY_ID);
+      const claimSnap = await tx.get(claimRef);
+      const registrySnap = await tx.get(registryRef);
+      claim = claimSnap.exists ? claimSnap.data() : null;
+      registry = registrySnap.exists ? registrySnap.data() : null;
+    }
+
+    // 7. The result packets: every price each result relied on, copied (evidence.js).
+    const resultPackets = Object.keys(endpoints).map((ideaId) => [ideaId, buildResultPacket({
+      bookId: bookRef.id, idea: nextIdeas.get(ideaId), endpointRow: endpoints[ideaId], inception: inceptions[ideaId],
+      closeRows: closeRowsOf[ideaId], nowIso,
+    })]);
+    // 8. The close's own window row and the session's summary: expected against served, one alert per missed window —
+    //    after those of the sessions before it that only the window cursor accounts for (T2B-02), in session order.
+    const closeWindow = buildCloseWindowRow({
+      bookId: bookRef.id, book, session, windowRows, observed, catchUp, snapshotMeta, nowIso, bookClosed: completesWindDown,
+      code: { ideasValued: Object.keys(ideaRows).length, endpoints: Object.keys(endpoints), resulted, cancelled },
+    });
+    for (const a of windowsAccounted) alerts.push(...a.alerts);
+    alerts.push(...closeWindow.alerts);
 
     const row = {
       schemaVersion: MANDATE_SCHEMA_VERSION,
@@ -625,7 +743,15 @@ async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false })
     for (const [ideaId, endpointRow] of Object.entries(endpoints)) {
       tx.create(bookRef.collection('ideas').doc(ideaId).collection('rows').doc('endpoint'), endpointRow);
     }
+    // …and one result packet, created beside it (T1a-2b-1 §3): a second one aborts the whole close too.
+    for (const [ideaId, packet] of resultPackets) {
+      tx.create(evidenceRefOf(bookRef.collection('ideas').doc(ideaId), EVIDENCE_PACKET.RESULT), packet);
+    }
     tx.set(bookRef.collection('dailyRows').doc(session), row);
+    // The sessions before this one that only the window cursor accounts for (T2B-02), then this close's own window row
+    // (T1a-2b-1 §4): each create-once, as each session is accounted for once.
+    writeWindowOnlySessions(tx, bookRef, windowsAccounted);
+    tx.create(windowsRefOf(bookRef).doc(windowRowId(session, CLOSE_WINDOW)), closeWindow.row);
     if (coverageWrite) tx.set(coverageDocRef, coverageData);
     const bookPatch = {
       portfolio: nextBook.portfolio,
@@ -636,12 +762,48 @@ async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false })
       'health.lastCloseAttemptAt': now,
       'health.consecutiveCloseFailures': 0,
       'execState.lastCloseKey': session,
+      // The window cursor stands at the session just accounted for (T2B-02): the valuation's, after any before it.
+      [`execState.${WINDOWS_ACCOUNTED_FIELD}`]: session,
     };
     // An unobserved session marked nothing: the last-mark time stays where the last real mark left it.
     if (observed) bookPatch['health.lastCloseMarkAt'] = now;
+    if (completesWindDown) {
+      // 9. The book closes: no clock moves and no cash is reset (contract §11) — the treasury keeps every dollar.
+      bookPatch.status = 'closed';
+      bookPatch.closedAt = nowIso;
+      bookPatch.closedOn = session;
+      bookPatch.windDown = { ...(book.windDown || {}), completedAt: nowIso, completedSession: session };
+      // …it leaves the founder-cap registry (the ONE removal of an entry — registryPresence.test.js)…
+      const openBooks = { ...((registry && typeof registry.openBooks === 'object' && registry.openBooks) || {}) };
+      if (Object.hasOwn(openBooks, bookRef.id)) {
+        delete openBooks[bookRef.id];
+        tx.set(registryRef, { ...registry, openBooks, updatedAt: nowIso });
+      }
+      // …and the owner's claim is closed, so the owner may open another book. Only a claim that names THIS book.
+      if (claim && claim.bookId === bookRef.id) {
+        tx.set(claimRef, { ...claim, bookId: null, status: 'closed', closedBookId: bookRef.id, closedAt: nowIso, updatedAt: nowIso });
+      }
+    }
     tx.update(bookRef, bookPatch);
-    return { closed: true, session, catchUp, observed, row, ideaRows, endpoints, cancelled, resulted, alerts };
+    return {
+      closed: true, session, catchUp, observed, row, ideaRows, endpoints, cancelled, resulted, alerts,
+      missedWindows: closeWindow.missing, windowsAccounted: accountedSummary, ...(completesWindDown ? { bookClosed: true } : {}),
+    };
   });
+}
+
+/**
+ * One closeNextSession of a multi-session call. If it THROWS, the alerts of the sessions this call already committed
+ * (each one's window-missed, unobserved and corporate-action lines) would be lost with the call's return value — and
+ * those sessions are never closed again. So they are logged here, once, before the error goes on (review B3).
+ */
+async function closeNextSessionKeepingAlerts(db, bookRef, args, committedAlerts) {
+  try {
+    return await closeNextSession(db, bookRef, args);
+  } catch (err) {
+    for (const alert of committedAlerts) console.error(`[PracticeFieldClose] ${bookRef.id} ${alert}`);
+    throw err;
+  }
 }
 
 /**
@@ -655,17 +817,23 @@ async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false })
 export async function catchUpIdeaBook(db, bookRef, { before, now = new Date() } = {}) {
   if (!db || !bookRef) throw new Error('catchUpIdeaBook: db and bookRef required');
   if (typeof before !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(before)) throw new Error('catchUpIdeaBook: before required');
-  const out = { complete: false, caughtUp: [], cancelled: [], resulted: [], alerts: [] };
+  const out = { complete: false, caughtUp: [], windowsAccounted: [], cancelled: [], resulted: [], alerts: [] };
   // 'off': no Practice Field code path runs, whoever calls. Before any read.
   if (!practiceFieldLive()) return { ...out, skipped: 'practice_field_off' };
   for (;;) {
-    const res = await closeNextSession(db, bookRef, { date: before, now, catchUpOnly: true });
+    const res = await closeNextSessionKeepingAlerts(db, bookRef, { date: before, now, catchUpOnly: true }, out.alerts);
     out.alerts.push(...(res.alerts || []));
+    out.windowsAccounted.push(...(res.windowsAccounted || []));
     out.cancelled.push(...(res.cancelled || []));
     out.resulted.push(...(res.resulted || []));
+    // T2B-02: a transaction that only accounted for sessions by the window cursor, with more left — go on.
+    if (!res.closed && res.skipped === 'windows_accounted') continue;
     if (!res.closed) return { ...out, complete: res.skipped === 'nothing_to_catch_up', skipped: res.skipped };
     out.caughtUp.push({ date: res.session, observed: res.observed });
     if (!res.observed) out.alerts.push(`PRACTICE_FIELD_SESSION_UNOBSERVED ${bookRef.id} ${res.session} — no stored close snapshot; the session is recorded as unobserved`);
+    // A caught-up close completed the book's wind-down (T1a-2b-1 §6): nothing is left to catch up — the book is closed.
+    // Complete, so the window that ran the catch-up is not counted as one that failed.
+    if (res.bookClosed) return { ...out, complete: true, bookClosed: true };
     if (out.caughtUp.length >= CATCH_UP_MAX_SESSIONS_PER_CALL) return { ...out, skipped: 'catch_up_incomplete' };
   }
 }
@@ -685,22 +853,30 @@ export async function closeIdeaBook(db, bookRef, { date, now = new Date() } = {}
   if (!practiceFieldLive()) return { closed: false, skipped: 'practice_field_off', alerts: [] };
 
   const caughtUp = [];
+  const windowsAccounted = [];
   const alerts = [];
   const cancelled = [];
   const resulted = [];
   for (;;) {
-    const res = await closeNextSession(db, bookRef, { date, now });
+    const res = await closeNextSessionKeepingAlerts(db, bookRef, { date, now }, alerts);
     alerts.push(...(res.alerts || []));
+    windowsAccounted.push(...(res.windowsAccounted || []));
     cancelled.push(...(res.cancelled || []));
     resulted.push(...(res.resulted || []));
-    if (res.closed && res.session === date) return { ...res, cancelled, resulted, caughtUp, alerts };
+    if (res.closed && res.session === date) return { ...res, cancelled, resulted, caughtUp, windowsAccounted, alerts };
+    // T2B-02: a transaction that only accounted for sessions by the window cursor, with more left before the one to
+    // value — go on (it is not a valuation, so it does not count against the catch-up's bound).
+    if (!res.closed && res.skipped === 'windows_accounted') continue;
     if (!res.closed) {
-      // A refusal says only what it refused — plus whatever sessions this call caught up before it.
-      return caughtUp.length > 0 ? { ...res, cancelled, resulted, caughtUp, alerts } : { ...res, alerts };
+      // A refusal says only what it refused — plus whatever sessions this call caught up or accounted for before it.
+      return caughtUp.length > 0 || windowsAccounted.length > 0 ? { ...res, cancelled, resulted, caughtUp, windowsAccounted, alerts } : { ...res, alerts };
     }
     caughtUp.push({ date: res.session, observed: res.observed });
     if (!res.observed) alerts.push(`PRACTICE_FIELD_SESSION_UNOBSERVED ${bookRef.id} ${res.session} — no stored close snapshot; the session is recorded as unobserved`);
+    // A caught-up session's close completed the wind-down (T1a-2b-1 §6): the book is closed, and `date` is not a
+    // session it is owed. Not "left unclosed" (sweep.js ideaCloseLeftUnclosed).
+    if (res.bookClosed) return { closed: false, skipped: 'book_closed', bookClosed: true, cancelled, resulted, caughtUp, windowsAccounted, alerts };
     // A bound on one call's work, never on the catch-up: the next fire continues from where this one stopped.
-    if (caughtUp.length >= CATCH_UP_MAX_SESSIONS_PER_CALL) return { closed: false, skipped: 'catch_up_incomplete', cancelled, resulted, caughtUp, alerts };
+    if (caughtUp.length >= CATCH_UP_MAX_SESSIONS_PER_CALL) return { closed: false, skipped: 'catch_up_incomplete', cancelled, resulted, caughtUp, windowsAccounted, alerts };
   }
 }

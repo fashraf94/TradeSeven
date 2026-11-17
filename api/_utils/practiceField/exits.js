@@ -5,14 +5,16 @@
 // idea-book pass calls `runIdeaBookSalesPass` at every window BEFORE the entry pass (E8: sales come first). It makes
 // no model call.
 //
-// TWO SALES, ONE PATH. A holding is sold only because a CLOSE said so (close.js, settlement.js), under one of the
-// two origins the build prompt names:
-//   `line_exit`      a sale BEFORE the endpoint. Either the holding's own line was recognised: that holding, whole,
-//                    and no other (E1) — or a delisting with no cash amount left the holding waiting (E11). The
-//                    second recognised no line: the record keeps the origin and says what queued it
-//                    (`queuedBy.reason: 'delisting'`), the result counts it apart from the line exits and the
-//                    process column names it by its cause. The proceeds stay in the idea's cash; the idea goes back
-//                    to `holding` while other holdings remain;
+// THREE SALES, ONE PATH. A holding is sold only because a CLOSE said so (close.js, settlement.js), under one of three
+// origins:
+//   `line_exit`      a sale BEFORE the endpoint because the holding's own line was recognised: that holding, whole,
+//                    and no other (E1). The proceeds stay in the idea's cash; the idea goes back to `holding` while
+//                    other holdings remain;
+//   `delisting_exit` a sale BEFORE the endpoint of a holding a delisting with no cash amount left waiting (E11). It
+//                    recognised no line, so since T1a-2b-1 (§7, Q-G) its decision record and receipt carry their own
+//                    origin; what queued it still says `queuedBy.reason: 'delisting'`, the result counts it apart
+//                    from the line exits (T1a-2a's counts, unchanged) and the process column names it by the same
+//                    word. Otherwise exactly a line exit;
 //   `settlement`     the idea reached its endpoint and is `settled`: everything it still holds. When the last one
 //                    has filled, in the SAME transaction the idea's cash returns to the treasury, its slot and its
 //                    coverage are released and it becomes `resulted`, with the liquidation's proceeds and its
@@ -54,7 +56,8 @@ import { buildDecision } from '../mandateSchema.js';
 import { MANDATE_FRICTION_MODEL_VERSION } from '../mandateConfig.js';
 import { isIdeaBook } from '../mandateBookKind.js';
 import {
-  IDEA_STATUS, RUNNING_IDEA_STATUSES, DECISION_ORIGIN_LINE_EXIT, DECISION_ORIGIN_SETTLEMENT, SALE_CAUSE_DELISTING, PROCESS_QUALITY, EXIT_REASON,
+  IDEA_STATUS, RUNNING_IDEA_STATUSES, DECISION_ORIGIN_LINE_EXIT, DECISION_ORIGIN_DELISTING_EXIT, DECISION_ORIGIN_SETTLEMENT, SALE_CAUSE_DELISTING,
+  PROCESS_QUALITY, EXIT_REASON,
   PRACTICE_FIELD_CONTRACT_VERSION, SALE_WAITING_ALERT_SESSIONS, SALE_WAITING_REFUSALS_KEPT,
 } from './constants.js';
 import { PracticeFieldError, isPracticeFieldError } from './errors.js';
@@ -138,10 +141,11 @@ export function planPendingSales({ book, idea, others, snapshot, daily = null, c
     const pending = pendingSaleOf(holding);
     if (!pending) continue;
     const settlement = holding.settlementPending != null;
-    // The two origins the build prompt names. A holding a delisting left waiting is sold as a `line_exit` too — the
-    // only sale before the endpoint — and its CAUSE is kept beside it for the process column and the result's counts.
-    const origin = settlement ? DECISION_ORIGIN_SETTLEMENT : DECISION_ORIGIN_LINE_EXIT;
-    const cause = settlement ? 'settlement_sale' : (pending.reason === EXIT_REASON.DELISTING ? SALE_CAUSE_DELISTING : DECISION_ORIGIN_LINE_EXIT);
+    // The three origins (Q-G): a holding a delisting left waiting is sold under its own, `delisting_exit` — the word
+    // the process column already names it by, so before the endpoint the CAUSE and the origin are one.
+    const delisting = !settlement && pending.reason === EXIT_REASON.DELISTING;
+    const origin = settlement ? DECISION_ORIGIN_SETTLEMENT : (delisting ? DECISION_ORIGIN_DELISTING_EXIT : DECISION_ORIGIN_LINE_EXIT);
+    const cause = settlement ? 'settlement_sale' : (delisting ? SALE_CAUSE_DELISTING : DECISION_ORIGIN_LINE_EXIT);
     // The first eligible window is the first that opens after the close that queued the sale. Before it, nothing is
     // attempted and nothing is recorded: no quote in an earlier window can have been observed after the decision.
     // A window whose quotes all predate the decision (a close that ran late, just before a slot) was refused

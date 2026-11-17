@@ -25,8 +25,9 @@
 //                                A draining book gets 1 and 2 and no entry. NO model call.
 //
 //   runIdeaBookEvalPass          the eval handler's idea-book pass: `runIdeaBookWindow` for every active or
-//                                draining idea book, a lease per book, a fresh read under it, and its own
-//                                within-slot stamp (`execState.lastIdeaTickKey`).
+//                                draining idea book, a lease per book, a fresh read under it, its own within-slot
+//                                stamp (`execState.lastIdeaTickKey`), and (T1a-2b-1 §4) the window's row in the
+//                                book's window ledger (windowLedger.js) — served only when the stamp is written.
 //
 //   runDrainingIdeaBookCloses    the close of every draining idea book for a date (E13): the engine's close sweep
 //                                pages active books only.
@@ -38,9 +39,11 @@
 // ONCE (readIdeaBookPresence) and hands that one answer to the snapshot build, the eval pass and the close. A missing
 // registry document, or one whose `openBooks` is empty, means there is no idea book: every discovery query here is
 // skipped, so nothing of the Practice Field reaches the fire's response, error count, completion, retention or logs.
-// The registry is a complete list: it is written in the transaction that creates a book (ideaBook.js createIdeaBook,
-// the ONLY builder of an idea-book document) and nothing removes an entry — pinned by registryPresence.test.js. If
-// the read itself fails the answer is "unknown" and discovery runs as before (its own failures count as before).
+// The registry is a complete list of OPEN idea books: it is written in the transaction that creates a book
+// (ideaBook.js createIdeaBook, the ONLY builder of an idea-book document), and an entry is removed at exactly one
+// place — the close that completes a wind-down sets the book `closed` in the same transaction (close.js, T1a-2b-1 §6)
+// — never while a book is active or draining. A closed book owes no fire anything. Pinned by registryPresence.test.js.
+// If the read itself fails the answer is "unknown" and discovery runs as before (its own failures count as before).
 //
 // The founder cap (B8) is four books, so each pass reads them in one bounded page; paging and measured capacity
 // are T5.
@@ -54,6 +57,7 @@ import { runIdeaBookEntryPass } from './entry.js';
 import { runIdeaBookSalesPass } from './exits.js';
 import { closeIdeaBook, catchUpIdeaBook } from './close.js';
 import { nextSessionDate } from './windows.js';
+import { recordWindowAttempt } from './windowLedger.js';
 import { practiceFieldLive } from './mode.js';
 import { PRACTICE_FIELD_BOOK_REGISTRY_ID } from './constants.js';
 
@@ -217,11 +221,25 @@ export async function runIdeaBookWindow(db, { bookRef, tick, now = new Date() })
     }
     out.caughtUp = caught.caughtUp;
     for (const alert of caught.alerts || []) console.error(`${LOG_PREFIX} ${bookRef.id} ${alert}`);
+    // A caught-up close completed the book's wind-down (T1a-2b-1 §6): the book is closed and owes this window nothing.
+    if (caught.bookClosed) return { ...out, served: false, complete: true, skipped: 'book_closed' };
     if (!caught.complete) return { ...out, complete: false, skipped: caught.skipped ?? 'catch_up_incomplete' };
   }
-  // 2, 3. E8 (B-ORDER): within a window, sales come first — then entries.
-  out.sales = await runIdeaBookSalesPass(db, { bookRef, tick, now });
-  out.entries = await runIdeaBookEntryPass(db, { bookRef, tick, now });
+  // 2, 3. E8 (B-ORDER): within a window, sales come first — then entries. Each pass isolates its ideas; a pass that
+  // throws as a whole (its own read of the book) is counted as an error HERE, so what the other pass did stays on this
+  // window's answer — and on its window-ledger row (review B4): a sale filled before the entry pass threw is not lost.
+  try {
+    out.sales = await runIdeaBookSalesPass(db, { bookRef, tick, now });
+  } catch (err) {
+    console.error(`${LOG_PREFIX} idea book ${bookRef.id} sales pass failed at ${tick.tickKey}: ${err.message}`);
+    out.sales = { ...NO_SALES, alerts: [], errors: 1 };
+  }
+  try {
+    out.entries = await runIdeaBookEntryPass(db, { bookRef, tick, now });
+  } catch (err) {
+    console.error(`${LOG_PREFIX} idea book ${bookRef.id} entry pass failed at ${tick.tickKey}: ${err.message}`);
+    out.entries = { ...NO_ENTRIES, errors: 1 };
+  }
   out.errors = out.sales.errors + out.entries.errors;
   return out;
 }
@@ -280,10 +298,17 @@ export async function runIdeaBookEvalPass(db, { tick, now = new Date(), ownerTok
       // A window that could not finish catching up made no fill: the slot's next fire must serve it. Counted, so the
       // fire does not claim every book served.
       if (!win.complete && win.skipped !== 'session_already_closed' && win.errors === 0) out.errors += 1;
+      // T1a-2b-1 §4 — THE WINDOW LEDGER: this attempt, folded into the window's row (windowLedger.js). `served` only
+      // for a complete pass with no error — the stamp's own condition, below; a served row is never written again.
+      // Not for a session whose close is already written (nothing was attempted), nor for a book the catch-up just
+      // closed (it owes no window any more). A failure here is this book's failure: counted, and no stamp.
+      if (win.served && win.skipped !== 'session_already_closed') await recordWindowAttempt(db, { bookRef, tick, win, now });
       // The within-slot stamp — ONLY for a complete pass with no error (review L3-1): the pass bills nothing, so a
       // transient failure is retried by the slot's next fire instead of costing the idea its last entry slot.
-      // Bookkeeping, not money: no revision bump (the engine's own stamps are written the same way).
-      if (win.complete && win.errors === 0) await bookRef.set({ execState: { lastIdeaTickKey: tick.tickKey } }, { merge: true });
+      // Bookkeeping, not money: no revision bump (the engine's own stamps are written the same way). Only a book the
+      // window SERVED is stamped: one the window found not open — closed by this window's catch-up, or by another
+      // fire's (review N1) — gets no write.
+      if (win.served && win.complete && win.errors === 0) await bookRef.set({ execState: { lastIdeaTickKey: tick.tickKey } }, { merge: true });
     } catch (err) {
       out.errors += 1;
       console.error(`${LOG_PREFIX} idea book ${bookRef.id} pass failed at ${tick.tickKey}: ${err.message}`);
