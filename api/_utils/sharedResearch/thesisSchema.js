@@ -38,6 +38,12 @@ import { STEP_SCHEMA, validateStepTurn, forbiddenIn, strayTickersOf, strayNumber
 import { gameUniverse, companiesOf, resolveSymbol, isSameCompany } from './companies.js';
 
 // ── the schema (structured outputs: every object closed, every key required, nullable through anyOf) ──
+//
+// The API compiles the schema into a grammar and allows at most 16 parameters with union types (anyOf or a type
+// array) per request (platform docs, "Schema complexity limits"); B1's step schema holds 15. The builder keeps B1's
+// findings and companies (10) and so writes three of its own "none" values as an EMPTY STRING rather than null — the
+// theme suggestion, a reason's symbol and the point against's text — leaving 13 (UNION_PARAMETERS, pinned by test).
+// The validator reads an empty string and a null alike.
 
 const str = (description) => ({ type: 'string', description });
 const nullable = (t) => ({ anyOf: [t, { type: 'null' }] });
@@ -48,7 +54,7 @@ export const BUILD_SCHEMA = Object.freeze(obj({
   reply: str('Two or three plain sentences: what this step found and what it proposes for the card. At most 600 characters.'),
   findings: STEP_SCHEMA.properties.findings,
   companies: STEP_SCHEMA.properties.companies,
-  themeSuggestion: nullable(str('A theme for the thesis in a short phrase (at most 80 characters), only when the card has no theme; else null.')),
+  themeSuggestion: str('A theme for the thesis in a short phrase (at most 80 characters), only when the card has no theme; else an empty string.'),
   segments: {
     type: 'array',
     description: 'map_segments: two to five segments of the theme; otherwise empty.',
@@ -65,15 +71,15 @@ export const BUILD_SCHEMA = Object.freeze(obj({
       description: 'One to three reasons per name, each resting on Source-backed findings about that company.',
       items: obj({
         companyName: str('The company, in words.'),
-        symbolCandidate: nullable(str('Its symbol, from the names on the card.')),
+        symbolCandidate: str('Its symbol, from the names on the card; an empty string when you do not know it.'),
         text: str('The reason, at most 200 characters.'),
         refs: refs('The Source-backed finding ids or tempIds about this company it rests on.'),
       }),
     },
-    against: nullable(obj({
-      text: str('The strongest point against, at most 240 characters.'),
+    against: obj({
+      text: str('The strongest point against, at most 240 characters; an empty string when you found none.'),
       refs: refs('The finding ids or tempIds it rests on.'),
-    })),
+    }),
   })),
   wrongIfOptions: {
     type: 'array',
@@ -100,6 +106,8 @@ export const BUILD_SCHEMA = Object.freeze(obj({
 // ── what each goal may land ───────────────────────────────────────────────────
 
 export const PROPOSAL_FIELDS = Object.freeze(['themeSuggestion', 'segments', 'why', 'wrongIfOptions', 'timeFramePick', 'pick']);
+/** The schema's parameters with union types (anyOf): under the API's limit of 16 per request, as B1's 15 are. */
+export const UNION_PARAMETERS = 13;
 const ACCEPTS = Object.freeze({
   verify_source: ['themeSuggestion'],
   map_segments: ['themeSuggestion', 'segments', 'pick'],
@@ -186,7 +194,7 @@ export function validateBuildTurn(output, ctx) {
   const accepts = acceptsOf(goal, part);
   const given = (field) => {
     const v = output[field];
-    return Array.isArray(v) ? v.length > 0 : v !== null && v !== undefined;
+    return Array.isArray(v) ? v.length > 0 : typeof v === 'string' ? v.trim() !== '' : v !== null && v !== undefined;
   };
   for (const field of PROPOSAL_FIELDS) if (given(field) && !accepts.includes(field)) notes.push(`ignored:${field}`);
   const takes = (field) => given(field) && accepts.includes(field);
@@ -234,7 +242,9 @@ export function validateBuildTurn(output, ctx) {
       (Array.isArray(w.reasons) ? w.reasons : []).forEach((r, i) => {
         const text = lineOf(r?.text, L.reason);
         const companyName = clean(r?.companyName) || null;
-        const symbol = resolveSymbol(r?.symbolCandidate, universe) ?? (companyName ? resolveSymbol(companyName, universe) : null);
+        // the symbol given; else the name written as a ticker; else the one card name whose stored company name it IS
+        const symbol = resolveSymbol(r?.symbolCandidate, universe) ?? (companyName ? resolveSymbol(companyName, universe) : null)
+          ?? (companyName ? (forNames.filter((s) => isSameCompany(companyName, { symbol: s, name: names[s] })).length === 1 ? forNames.find((s) => isSameCompany(companyName, { symbol: s, name: names[s] })) : null) : null);
         if (!text) return drop(`why.reason:${i}`, 'length');
         if (!symbol || !forNames.includes(symbol)) return drop(`why.reason:${i}`, 'not_a_name');
         if (companyName && !isSameCompany(companyName, { symbol, name: names[symbol] })) return drop(`why.reason:${i}`, 'identity_mismatch');
@@ -253,7 +263,8 @@ export function validateBuildTurn(output, ctx) {
         drop('why', `shared_${sharedFail}`);
       } else {
         let against = null;
-        if (w.against) {
+        // none: null, or an empty text with no refs (the schema's empty-string "none")
+        if (w.against && (clean(w.against.text) !== '' || (Array.isArray(w.against.refs) && w.against.refs.length > 0))) {
           const text = lineOf(w.against.text, L.against);
           const ids = resolveAll(w.against.refs);
           const f = !text ? 'length' : ids === null ? 'invalid_source' : ids.length === 0 ? 'no_finding' : lineFail(text, verifiedOf(ids));

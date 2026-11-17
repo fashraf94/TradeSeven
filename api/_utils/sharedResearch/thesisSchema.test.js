@@ -7,7 +7,7 @@
 // replaced by a plain line when the goal's own proposal is dropped whole.
 
 import { describe, it, expect } from 'vitest';
-import { validateBuildTurn, BUILD_SCHEMA, NAMES_A_PRICE, builderFallbackReplyOf, unsourcedLineOf, acceptsOf } from './thesisSchema.js';
+import { validateBuildTurn, BUILD_SCHEMA, NAMES_A_PRICE, builderFallbackReplyOf, unsourcedLineOf, acceptsOf, UNION_PARAMETERS } from './thesisSchema.js';
 import { STEP_SCHEMA } from './stepSchema.js';
 import { emptyCard } from './thesis.js';
 
@@ -60,6 +60,29 @@ describe('the schema (§B4.2)', () => {
     expect(BUILD_SCHEMA.properties.companies).toBe(STEP_SCHEMA.properties.companies);
     expect(BUILD_SCHEMA.required).toEqual(Object.keys(BUILD_SCHEMA.properties));
     expect(BUILD_SCHEMA.properties.pick.anyOf[0].properties.reasons.items.required).toEqual(['text', 'refs']); // §B10 S-B3
+  });
+  it('stays inside the API\'s schema limits: fewer than 16 union-type parameters (13), no optional parameter', () => {
+    const unions = [];
+    let optional = 0;
+    const walk = (s, at) => {
+      if (!s || typeof s !== 'object') return;
+      if (Array.isArray(s.anyOf) || Array.isArray(s.type)) unions.push(at);
+      for (const branch of [s, ...(s.anyOf ?? [])]) {
+        if (branch.type === 'object' && branch.properties) {
+          for (const [k, v] of Object.entries(branch.properties)) { if (!(branch.required ?? []).includes(k)) optional += 1; walk(v, `${at}.${k}`); }
+        }
+        if (branch.items) walk(branch.items, `${at}[]`);
+      }
+    };
+    walk(BUILD_SCHEMA, '');
+    expect(unions).toHaveLength(UNION_PARAMETERS);
+    expect(UNION_PARAMETERS).toBeLessThan(16);
+    expect(optional).toBe(0);
+  });
+  it('reads the schema\'s empty-string none like null: no theme, no point against, no symbol', () => {
+    const v = validate(base({ themeSuggestion: '', why: WHY({ against: { text: '', refs: [] }, reasons: [{ companyName: 'Nvidia', symbolCandidate: '', text: 'Data centers are most of its sales.', refs: [id(2)] }] }) }));
+    expect(v.notes.filter((n) => n.startsWith('dropped:') || n.startsWith('ignored:'))).toEqual([]);
+    expect(v.proposals.why).toMatchObject({ against: null, reasons: [{ symbol: 'NVDA' }] });
   });
 });
 
