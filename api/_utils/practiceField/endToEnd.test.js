@@ -29,9 +29,11 @@ import { setPracticeFieldModeForTests } from './mode.js';
 import { roundUsd } from '../mandateRounding.js';
 import {
   seedBook, closeOn, windowAt, contractOf, getBook, getIdea, getRow, dumpStore, countDocs, etIso, ADMIT_ISO,
-  takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, countResults, withoutWindowAlerts,
+  takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, countResults, withoutWindowAlerts, storeDailyLayer,
 } from './__testsupport__/fixtures.js';
-import { verifyPacket, resultPacketMissingMarks, resultPacketProvenanceProblems, recomputeResultFromPacket } from './evidence.js';
+import {
+  verifyPacket, resultPacketMissingMarks, resultPacketProvenanceProblems, recomputeResultFromPacket, resultPacketPartProblems, resultPacketReceipts,
+} from './evidence.js';
 
 // The pinned evidence. A change here is a change to what the idea book records: re-pin it only with a reviewed
 // change, and carry the new figures into the build report.
@@ -59,7 +61,23 @@ import { verifyPacket, resultPacketMissingMarks, resultPacketProvenanceProblems,
 //     endpoint, copied from the idea's rows), and those packets' `contentHash` changed with them. Nothing else.
 //   The round's review (W-1): f9c91e33…, 384,605 bytes, 155 documents. One leaf changed: 13 Nov's window-only close
 //     row says `code.caughtUpSession: null` (nothing was caught up for it), not `true`.
-const EXPECTED_DUMP = { sha256: 'f9c91e33f6bafa05b46ec4d7ce5d67d8ad1a8a80a4b92d42b4412fcbf76ad6ed', bytes: 384605 };
+// T1a-2b-2: re-pinned from f9c91e33…, leaf-compared base (main 57f50409) against head. NO MONEY LEAF CHANGED — every
+// admission here is made by a book holding nothing, so the equity measured at its marks (§1) is the recorded one. 8
+// documents ADDED: B's result packet's one receipt part (`evidence/result_actions_001`: its split and dividend, §4.4),
+// and 7 intraday window rows holding only the receipt of what code did there (an entry, a sale, a result — §4.1; the
+// run drives its windows directly, so no attempt is recorded on them). 63 leaves ADDED: each admission packet's
+// `admissionMarks` (with `passedOver`, review A7) and `recordedEquityUsd` (§1); each result packet's receipt summary (`receipts`, `byLedger`,
+// `parts`); and on 7 close rows `session.notServedButAttempted` names that window (it was acted at and never recorded).
+// 37 leaves REMOVED: the result packets' inline receipts (B's two, now in its part) and their per-ledger arrays. 6
+// leaves CHANGED: the six packets' `contentHash`, following the above.
+// The run also makes one admission while B holds XOM (review A10): refused at S[7]'s 10:00 snapshot, it writes nothing.
+// T2C-01 (17 Nov 2026, Astra): re-pinned from 288b0c89…, leaf-compared base (7687cfa5) against head. No document added
+// or removed; NO MONEY LEAF CHANGED. 9 leaves ADDED: on each of the three admission packets, `admissionMarks.caCoverage`
+// — the daily layer's key, `dailyPresent: false` (this run stores none) and no held name (every admission here is made
+// by a book holding nothing). 3 leaves CHANGED: those packets' `contentHash`. The A10 probe now first shows the
+// refusal of an uncovered XOM (`ca_daily_missing`), then, with S[7]'s daily layer placed for the probe and removed
+// after it, the measured refusal as before: both write nothing.
+const EXPECTED_DUMP = { sha256: 'f061fb0ebd9d57e49b6196b6f87e7503cb872bf67fd133952e0c23612fdc3cc7', bytes: 390122 };
 
 // Twenty-nine sessions from Monday 16 November 2026 (Thanksgiving and Christmas are not sessions).
 const SESSIONS = ['2026-11-16'];
@@ -176,6 +194,32 @@ describe('the end-to-end synthetic run', () => {
     await close(6, { JPM: roundUsd(lineJpm - 1.07) }); // JPM's line is hit; XOM's is not
     expect(idea(b.ideaId).ledger.holdings.XOM.exitPending).toBeUndefined();
     expect((await win(7, { JPM: roundUsd(lineJpm - 2.3) })).sales).toMatchObject({ sold: 1 });
+    // T1a-2b-2 §1, end to end (review A10): an admission at 11:00 on S[7], while B holds XOM, is measured at S[7]'s
+    // 10:00 window snapshot — not at the equity the book recorded — and refused; a refusal writes nothing (the pin holds).
+    {
+      const probeContract = contractOf({ slot: 'medium', names: ['LLY'], capitalUsd: 33000, comparison: { type: 'sector_fund', symbols: ['XLV'] } });
+      // Astra T2C-01: this run stores no daily layer, so S[7]'s corporate-action coverage of XOM is unknown — refused by
+      // name, no dollar limit measured, nothing written.
+      const unknown = dumpStore(db);
+      const uncovered = await admitIdea(db, { bookId, contract: probeContract, opId: 'probe-a10-uncovered', nowIso: etIso(SESSIONS[7], 11, 0) });
+      expect(uncovered).toMatchObject({ ok: false, permittedMaxUsd: null, refusals: [{ code: 'admission_marks_unavailable', symbols: ['XOM'], unavailable: [{ symbol: 'XOM', reason: 'ca_daily_missing' }] }] });
+      expect(dumpStore(db)).toBe(unknown);
+      // With S[7]'s daily layer covering XOM (its fetch succeeded, nothing listed) — placed for this probe only, and
+      // removed after it, so the run's documents are the ones it made.
+      storeDailyLayer(db, SESSIONS[7], ['XOM']);
+      const before = dumpStore(db);
+      const snap = db._get(`mandateUniverseSnapshots/${SESSIONS[7]}_open30`);
+      const held = idea(b.ideaId);
+      expect(Object.keys(held.ledger.holdings)).toEqual(['XOM']);
+      const equityCents = cents(book().treasury.unreservedCash) + cents(held.ledger.cash) + cents(roundUsd(held.ledger.holdings.XOM.shares * snap.symbols.XOM.price));
+      const probe = await admitIdea(db, { bookId, contract: probeContract, opId: 'probe-a10', nowIso: etIso(SESSIONS[7], 11, 0) });
+      expect(probe).toMatchObject({ ok: false, permittedMaxUsd: Math.floor((equityCents * 300000) / 1e6) / 100 });
+      expect(probe.refusals.map((r) => r.code)).toEqual(['capital_exceeds_slot_cap']);
+      expect(cents(book().portfolio.totalValue)).not.toBe(equityCents); // the recorded figure is not what it measured
+      expect(dumpStore(db)).toBe(before);
+      db._store.delete(`mandateUniverseDaily/${SESSIONS[7]}`);
+      expect(dumpStore(db)).toBe(unknown);
+    }
     expect(idea(b.ideaId).status).toBe('holding'); // E14: back to holding with XOM
     const xomBeforeSplit = idea(b.ideaId).ledger.holdings.XOM.shares;
     const xomLineBeforeSplit = idea(b.ideaId).lines.find((l) => l.symbol === 'XOM').level;
@@ -248,10 +292,18 @@ describe('the end-to-end synthetic run', () => {
       expect(re.observations, id).toBe(result.result.dataQuality.rows);
       expect(re.largestDecline, id).toEqual(result.result.largestDecline);
       expect(re.investedExposure, id).toEqual(result.result.investedExposure);
+      // T1a-2b-2 §4.4: its corporate-action receipts, in their numbered parts, whole — every one the idea applied.
+      const partDocs = Object.fromEntries(result.corporateActions.parts.map((p) => [p.id, db._get(`mandates/${bookId}/ideas/${id}/evidence/${p.id}`)]));
+      expect(resultPacketPartProblems(result, partDocs), id).toEqual([]);
+      const applied = ['ledger', 'comparisonLedger', 'spyLedger'].flatMap((f) => (idea(id)[f].corporateActionReceipts || []).filter((r) => r.applied).map((r) => r.actionId));
+      expect(resultPacketReceipts(result, partDocs).map((r) => r.actionId), id).toEqual(applied);
     }
+    expect(idea(b.ideaId).ledger.corporateActionReceipts.filter((r) => r.applied)).toHaveLength(2);
     // …and (Astra T2B-02) the book's creation day, 13 Nov, before its first idea filled: accounted for by the window
     // ledger's own cursor, its windows missed, with no valuation row.
-    expect(countDocs(db, `mandates/${bookId}/windows/`)).toBe(29);
+    // (T1a-2b-2 §4.1: plus one intraday row for each window where code acted — an entry, a sale, a result — holding that
+    // action's own receipt: the run drives its windows directly, so no attempt is recorded on them.)
+    expect(countDocs(db, `mandates/${bookId}/windows/`)).toBe(36);
     expect(db._get(`mandates/${bookId}/windows/2026-11-13_close`)).toMatchObject({ valued: false, session: { missing: ['open30', 'midday', 'preClose'] } });
     expect(db._get(`mandates/${bookId}/dailyRows/2026-11-13`)).toBeUndefined();
 

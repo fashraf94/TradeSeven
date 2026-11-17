@@ -59,7 +59,7 @@ import { nextSessionDate } from '../_utils/practiceField/windows.js';
 import { PRACTICE_FIELD_FUNDS } from '../../src/data/practiceFieldFunds.js';
 import {
   seedBook as seedIdeaBook, admitAndEnter, contractOf, getBook, getIdea, getRow, etIso, etMs, tickOf, DAYS, ADMIT_ISO, countDocs,
-  takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, windDownBook,
+  takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, windDownBook, coverHeldNames,
 } from '../_utils/practiceField/__testsupport__/fixtures.js';
 
 const PRICES = { AAPL: 231.47, MSFT: 418.13, LLY: 803.17, SPY: 597.31, XLK: 233.59, JPM: 241.37 };
@@ -572,6 +572,7 @@ describe('the shared snapshot\'s build set, by book kind (build prompt §5)', ()
     const symbols = { ...cov.symbols };
     for (let i = 0; i < room; i += 1) { const s = `ZZ${String(i).padStart(3, '0')}`; symbols[s] = { roles: ['held'], refs: ['x/y'], byRef: { 'x/y': ['held'] } }; quoteBook[s] = 10.01; }
     await db.collection('practiceFieldCoverage').doc('current').set({ ...cov, symbols });
+    coverHeldNames(db, bookId, etIso(DAYS.d1, 11, 0)); // D1's corporate-action coverage (Astra T2C-01)
     const refused = await admitIdea(db, { bookId, contract: contractOf({ slot: 'medium', names: ['LLY'], comparison: { type: 'sector_fund', symbols: ['XLV'] }, capitalUsd: 25000 }), opId: 'over', nowIso: etIso(DAYS.d1, 11, 0) });
     expect(refused.refusals.map((r) => r.code)).toEqual(['coverage_unavailable']); // XLV would be symbol 301
     await evalOnce(db);
@@ -893,6 +894,7 @@ describe('T1a-2a — the real sweeps: sales at the window, the lines at the clos
     const db = makeMandateFakeDb();
     const { bookId, bookRef, ideaId } = await populatedIdeaBook(db);
     // A second idea is pending for D2, and AAPL's line is hit at D1's close.
+    coverHeldNames(db, bookId, etIso(DAYS.d1, 11, 0)); // D1's corporate-action coverage (Astra T2C-01)
     const pending = await admitIdea(db, { bookId, contract: contractOf({ slot: 'medium', names: ['JPM'], capitalUsd: 25000 }), opId: 'idea-2', nowIso: etIso(DAYS.d1, 11, 0) });
     expect(pending).toMatchObject({ ok: true, startSession: DAYS.d2 });
     quoteBook.AAPL = Math.round((lineOf(db, bookId, ideaId, 'AAPL').level - 0.02) * 100) / 100;

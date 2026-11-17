@@ -36,6 +36,23 @@ import {
 const isPlain = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const codePoints = (s) => [...s].length;
 
+/**
+ * An unpaired UTF-16 surrogate — a high one not followed by a low one, or a low one not preceded by a high one (T1a-2b-2
+ * §2; T1a-2b-1 report §8 item 1). Firestore stores a long string holding one as U+FFFD (so the stored text is not what
+ * was admitted) and refuses a short one, failing admission's whole transaction. A paired surrogate (an emoji, an astral
+ * character) is a whole character and passes.
+ */
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+export const hasLoneSurrogate = (s) => typeof s === 'string' && LONE_SURROGATE.test(s);
+
+/**
+ * THE CONTRACT'S FREE-TEXT FIELDS — every string admission stores from a draft that no fixed vocabulary checks: the
+ * thesis's text and each source's reference. Every other string the contract carries is matched against a closed list
+ * (the author, the slot, the comparison type, the origin's kind and initiator, a source's kind) or the house universe
+ * (names, the comparison's symbols, the lines' symbols, the weights' keys), so it cannot hold a broken character.
+ */
+export const CONTRACT_FREE_TEXT_FIELDS = Object.freeze(['thesis.text', 'sources[].ref']);
+
 /** A name's weight as an exact rational `{ num, den }`. */
 export function weightOf(contract, symbol) {
   if (contract.weights.mode === 'equal') return { num: 1, den: contract.names.length };
@@ -80,6 +97,8 @@ export function normalizeIdeaContract(raw) {
   const thesisText = typeof input.thesis?.text === 'string' ? input.thesis.text.trim() : '';
   if (thesisText.length === 0) refuse('thesis_missing');
   else if (codePoints(thesisText) > THESIS_MAX_CODE_POINTS) refuse('thesis_too_long', { codePoints: codePoints(thesisText), max: THESIS_MAX_CODE_POINTS });
+  // T1a-2b-2 §2: a broken character is refused, by field — never stored as U+FFFD, never a failed transaction.
+  if (hasLoneSurrogate(thesisText)) refuse('text_invalid', { field: 'thesis.text' });
   const author = input.thesis?.author;
   if (!THESIS_AUTHORS.includes(author)) refuse('thesis_author_invalid');
 
@@ -87,9 +106,11 @@ export function normalizeIdeaContract(raw) {
   const sourcesIn = Array.isArray(input.sources) ? input.sources : null;
   const sources = [];
   let sourcesOk = sourcesIn !== null;
-  for (const s of sourcesIn || []) {
-    if (isPlain(s) && PRACTICE_FIELD_ORIGIN_KINDS.includes(s.kind) && typeof s.ref === 'string' && s.ref.length > 0 && s.ref.length <= 200) sources.push({ kind: s.kind, ref: s.ref });
-    else sourcesOk = false;
+  for (const [i, s] of (sourcesIn || []).entries()) {
+    if (isPlain(s) && PRACTICE_FIELD_ORIGIN_KINDS.includes(s.kind) && typeof s.ref === 'string' && s.ref.length > 0 && s.ref.length <= 200) {
+      if (hasLoneSurrogate(s.ref)) refuse('text_invalid', { field: `sources[${i}].ref` });
+      sources.push({ kind: s.kind, ref: s.ref });
+    } else sourcesOk = false;
   }
   if (!sourcesOk) refuse('sources_invalid');
   const origin = isPlain(input.origin) ? { kind: input.origin.kind, initiatedBy: input.origin.initiatedBy } : null;

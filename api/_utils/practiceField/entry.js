@@ -61,6 +61,7 @@ import { planRelease } from './admission.js';
 import { coverageRefOf, coverageRef, ideaCoveragePlan, coverageWithRef } from './coverage.js';
 import { assertReconciled } from './reconcile.js';
 import { fillSessionRefusal } from './sessions.js';
+import { writeWindowActionReceipts, WINDOW_ACTION_KIND } from './windowLedger.js';
 import { toCents, fromCents, addUsd } from './money.js';
 
 const LOG_PREFIX = '[PracticeFieldEntry]';
@@ -215,6 +216,8 @@ export async function enterIdea(db, { bookRef, ideaId, tick, nowIso }) {
       tx.set(ideaRef, { ...nextIdea, lastEntryAttempt: detail ?? idea.lastEntryAttempt ?? null });
       tx.update(bookRef, { treasury: nextBook.treasury, slots: nextBook.slots, openIdeaIds: nextBook.openIdeaIds, revision: nextBook.revision });
       tx.set(coverageDocRef, nextCoverage);
+      // T1a-2b-2 §4.1 (Astra T2B-05): the window's own receipt of this timeout, in this transaction.
+      writeWindowActionReceipts(tx, bookRef, tick, [{ kind: WINDOW_ACTION_KIND.ENTRY_TIMEOUT, id: ideaId, detail: { ideaId }, at: nowIso }]);
       return { outcome: 'cancelled', reason: CANCEL_REASON.ENTRY_TIMEOUT };
     };
 
@@ -366,6 +369,8 @@ export async function enterIdea(db, { bookRef, ideaId, tick, nowIso }) {
     for (const [ref, doc] of decisions) tx.set(ref, doc);
     tx.update(bookRef, { portfolio: nextBook.portfolio, revision: nextBook.revision });
     tx.set(coverageDocRef, coverageWithRef(coverageData, coverageRef(idea.bookId, ideaId), ideaCoveragePlan(idea.contract, { filled: true }), nowIso));
+    // T1a-2b-2 §4.1 (Astra T2B-05): the window's own receipt of this entry, in this transaction.
+    writeWindowActionReceipts(tx, bookRef, tick, [{ kind: WINDOW_ACTION_KIND.ENTRY, id: ideaId, detail: { ideaId, legs: entry.receipts.idea.length }, at: nowIso }]);
     return { outcome: 'entered', legs: entry.receipts.idea.length };
   });
 }

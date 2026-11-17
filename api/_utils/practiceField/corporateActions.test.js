@@ -19,7 +19,7 @@ import { roundUsd } from '../mandateRounding.js';
 import {
   seedBook, admitAndEnter, closeOn, windowAt, contractOf, getBook, getIdea, getRow, closeNowOf, countDocs,
   takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, etIso as etIsoOf, tickSnapshot, closeSnapshot as closeSnapshotOf,
-  withoutWindowAlerts,
+  withoutWindowAlerts, admitAllThenEnter, storeTickSnapshot, coverHeldNames,
 } from './__testsupport__/fixtures.js';
 import { ledgerEndpoint } from './settlement.js';
 
@@ -171,8 +171,11 @@ describe('a ticker change (E11) — the holding is renamed everywhere it is held
 
   it('a ticker change INTO a symbol another idea of the book holds is applied to no ledger of the idea — one name, one idea — and the book\'s close still completes, with an alert and a carried mark', async () => {
     const { db, bookId, bookRef } = await seedBook({ archetypeCodeId: 'degen' });
-    const a = await admitAndEnter(db, bookId, { contract: contractOf({ names: ['AAPL', 'MSFT'] }), quotes: quotes(), date: S[0] });
-    const b = await admitAndEnter(db, bookId, { contract: contractOf({ slot: 'medium', names: ['NVDA'], capitalUsd: 15000 }), opId: 'idea-2', quotes: quotes(), date: S[0], slot: 'midday' });
+    // Both admitted before either fills (T1a-2b-2 §1: admission measures the book at the marks of its moment).
+    const [a, b] = await admitAllThenEnter(db, bookId, [
+      { contract: contractOf({ names: ['AAPL', 'MSFT'] }), opId: 'idea-1', quotes: quotes(), date: S[0] },
+      { contract: contractOf({ slot: 'medium', names: ['NVDA'], capitalUsd: 15000 }), opId: 'idea-2', quotes: quotes(), date: S[0], slot: 'midday' },
+    ]);
     expect(b.entry.outcome).toBe('entered');
     const ctx = { db, bookId, bookRef, ideaId: a.ideaId };
     await closeDay(ctx, S[0]);
@@ -642,14 +645,23 @@ describe('Astra T2A-01 — a ticker change waits while the holding\'s share basi
 
   it('while a rename waits, its TARGET is the waiting idea\'s at ADMISSION (review finding 1): another idea naming it is refused, as it would be had the rename applied', async () => {
     const { ctx } = await waitingOnAmd();
+    coverHeldNames(ctx.db, ctx.bookId, etIsoOf(S[1], 18, 0)); // S[1]'s corporate-action coverage (Astra T2C-01): the conflict is what refuses AAPL
     const late = await admitIdea(ctx.db, { bookId: ctx.bookId, opId: 'idea-late', contract: contractOf({ slot: 'medium', names: ['AMD'], capitalUsd: 15000 }), nowIso: etIsoOf(S[1], 18, 0) });
     expect(late.ok).toBe(false);
-    expect(late.refusals).toEqual([expect.objectContaining({ code: 'ticker_held_by_other_idea', symbol: 'AMD', ideaId: ctx.ideaId })]);
+    // T1a-2b-2 §1: AAPL's share basis is unresolved (the split conflict), so S[1]'s close price is no mark admission can
+    // measure it at — refused by name beside the name check this row is about.
+    expect(late.refusals).toEqual([
+      expect.objectContaining({ code: 'admission_marks_unavailable', symbols: ['AAPL'], snapshotKey: `${S[1]}_close` }),
+      expect.objectContaining({ code: 'ticker_held_by_other_idea', symbol: 'AMD', ideaId: ctx.ideaId }),
+    ]);
   });
 
   it('…and at ENTRY: an idea naming the target, admitted before the wait began, does not buy it — it WAITS, refused by name, as a leg with no price would; no error, no money moves', async () => {
     const { ctx, price, extra: early } = await waitingOnAmd(async (c) => {
-      // Admitted on S[1] before the close (it starts on S[2]): nothing reserved AMD then.
+      // Admitted on S[1] before the close (it starts on S[2]): nothing reserved AMD then. At 11:00 admission measures the
+      // book at S[1]'s 10:00 window snapshot (T1a-2b-2 §1).
+      await storeTickSnapshot(c.db, S[1], 'open30', quotes());
+      coverHeldNames(c.db, c.bookId, etIsoOf(S[1], 11, 0)); // S[1]'s corporate-action coverage (Astra T2C-01)
       const r = await admitIdea(c.db, { bookId: c.bookId, opId: 'idea-early', contract: contractOf({ slot: 'medium', names: ['AMD'], capitalUsd: 15000 }), nowIso: etIsoOf(S[1], 11, 0) });
       expect(r).toMatchObject({ ok: true, startSession: S[2] });
       return r;
@@ -666,8 +678,11 @@ describe('Astra T2A-01 — a ticker change waits while the holding\'s share basi
 
   it('…and against another idea\'s RENAME (refuter F1): a clean ticker change into a waiting target is not applied — R-36 counts the waiting target as held — and the waiting rename applies once its basis settles', async () => {
     const { db, bookId, bookRef } = await seedBook({ archetypeCodeId: 'degen' });
-    const a = await admitAndEnter(db, bookId, { contract: contractOf({ names: ['AAPL'] }), quotes: quotes(), date: S[0] });
-    const other = await admitAndEnter(db, bookId, { contract: contractOf({ slot: 'medium', names: ['MSFT'], capitalUsd: 15000 }), opId: 'idea-msft', quotes: quotes(), date: S[0], slot: 'midday' });
+    // Both admitted before either fills (T1a-2b-2 §1: admission measures the book at the marks of its moment).
+    const [a, other] = await admitAllThenEnter(db, bookId, [
+      { contract: contractOf({ names: ['AAPL'] }), opId: 'idea-1', quotes: quotes(), date: S[0] },
+      { contract: contractOf({ slot: 'medium', names: ['MSFT'], capitalUsd: 15000 }), opId: 'idea-msft', quotes: quotes(), date: S[0], slot: 'midday' },
+    ]);
     expect(other.entry.outcome).toBe('entered');
     const ctx = { db, bookId, bookRef, ideaId: a.ideaId };
     await closeDay(ctx, S[0]);
@@ -690,8 +705,13 @@ describe('Astra T2A-01 — a ticker change waits while the holding\'s share basi
     const out = await closeDay(ctx, S[2], { AAPL: { price, corporateActions: [basisRow('split', 1.5), basisRow('split', 1.6), rename('AAPL', 'NVDA')] } });
     expect(ideaOf(ctx).ledger.holdings.AAPL.deferredRename).toEqual({ from: 'AAPL', to: 'NVDA', actionId: `ticker_change_AAPL_${S[1]}`, effectiveDate: S[1], deferredOn: S[1] });
     expect(out.alerts.some((a) => a.includes('AAPL→NVDA'))).toBe(true);
+    coverHeldNames(ctx.db, ctx.bookId, etIsoOf(S[2], 18, 0)); // S[2]'s corporate-action coverage (Astra T2C-01): the basis is what refuses AAPL
     const nvda = await admitIdea(ctx.db, { bookId: ctx.bookId, opId: 'idea-nvda', contract: contractOf({ slot: 'medium', names: ['NVDA'], capitalUsd: 15000 }), nowIso: etIsoOf(S[2], 18, 0) });
-    expect(nvda.refusals).toEqual([expect.objectContaining({ code: 'ticker_held_by_other_idea', symbol: 'NVDA' })]);
+    // (and, T1a-2b-2 §1, AAPL's unresolved share basis leaves it no mark to measure at)
+    expect(nvda.refusals).toEqual([
+      expect.objectContaining({ code: 'admission_marks_unavailable', symbols: ['AAPL'] }),
+      expect.objectContaining({ code: 'ticker_held_by_other_idea', symbol: 'NVDA' }),
+    ]);
     // The basis settles; the corrected row is dropped: the record renames to NVDA, not to the stale AMD.
     await closeDay(ctx, S[3], { AAPL: { price, corporateActions: [basisRow('split', 1.5)] }, NVDA: price });
     expect(Object.keys(ideaOf(ctx).ledger.holdings)).toEqual(['NVDA']);
@@ -699,8 +719,11 @@ describe('Astra T2A-01 — a ticker change waits while the holding\'s share basi
 
   it('a record does NOT stand in for a row R-36 screened out, and TAKES its target (refuters F2, S1): with the corrected target held by another idea, the waiting holding keeps its symbol, blocked — never renamed to the stale target, even after the feed drops the row', async () => {
     const { db, bookId, bookRef } = await seedBook({ archetypeCodeId: 'degen' });
-    const a = await admitAndEnter(db, bookId, { contract: contractOf({ names: ['AAPL'] }), quotes: quotes(), date: S[0] });
-    const b = await admitAndEnter(db, bookId, { contract: contractOf({ slot: 'medium', names: ['NVDA'], capitalUsd: 15000 }), opId: 'idea-2', quotes: quotes(), date: S[0], slot: 'midday' });
+    // Both admitted before either fills (T1a-2b-2 §1: admission measures the book at the marks of its moment).
+    const [a, b] = await admitAllThenEnter(db, bookId, [
+      { contract: contractOf({ names: ['AAPL'] }), opId: 'idea-1', quotes: quotes(), date: S[0] },
+      { contract: contractOf({ slot: 'medium', names: ['NVDA'], capitalUsd: 15000 }), opId: 'idea-2', quotes: quotes(), date: S[0], slot: 'midday' },
+    ]);
     expect(b.entry.outcome).toBe('entered');
     const ctx = { db, bookId, bookRef, ideaId: a.ideaId };
     await closeDay(ctx, S[0]);
@@ -728,8 +751,11 @@ describe('Astra T2A-01 — a ticker change waits while the holding\'s share basi
 
   it('the R-36 screen does not break up a CONFLICT (refuter S2): two rows of one rename id with different targets, one of them held by another idea, apply neither', async () => {
     const { db, bookId, bookRef } = await seedBook({ archetypeCodeId: 'degen' });
-    const a = await admitAndEnter(db, bookId, { contract: contractOf({ names: ['AAPL'] }), quotes: quotes(), date: S[0] });
-    const b = await admitAndEnter(db, bookId, { contract: contractOf({ slot: 'medium', names: ['NVDA'], capitalUsd: 15000 }), opId: 'idea-2', quotes: quotes(), date: S[0], slot: 'midday' });
+    // Both admitted before either fills (T1a-2b-2 §1: admission measures the book at the marks of its moment).
+    const [a, b] = await admitAllThenEnter(db, bookId, [
+      { contract: contractOf({ names: ['AAPL'] }), opId: 'idea-1', quotes: quotes(), date: S[0] },
+      { contract: contractOf({ slot: 'medium', names: ['NVDA'], capitalUsd: 15000 }), opId: 'idea-2', quotes: quotes(), date: S[0], slot: 'midday' },
+    ]);
     expect(b.entry.outcome).toBe('entered');
     const ctx = { db, bookId, bookRef, ideaId: a.ideaId };
     await closeDay(ctx, S[0]);
@@ -745,8 +771,11 @@ describe('Astra T2A-01 — a ticker change waits while the holding\'s share basi
 
   it('R-36 comes FIRST: a rename into a symbol another idea holds is blocked, not deferred, even while the share basis is unresolved — no record is made (R-36 unchanged)', async () => {
     const { db, bookId, bookRef } = await seedBook({ archetypeCodeId: 'degen' });
-    const a = await admitAndEnter(db, bookId, { contract: contractOf({ names: ['AAPL'] }), quotes: quotes(), date: S[0] });
-    const b = await admitAndEnter(db, bookId, { contract: contractOf({ slot: 'medium', names: ['NVDA'], capitalUsd: 15000 }), opId: 'idea-2', quotes: quotes(), date: S[0], slot: 'midday' });
+    // Both admitted before either fills (T1a-2b-2 §1: admission measures the book at the marks of its moment).
+    const [a, b] = await admitAllThenEnter(db, bookId, [
+      { contract: contractOf({ names: ['AAPL'] }), opId: 'idea-1', quotes: quotes(), date: S[0] },
+      { contract: contractOf({ slot: 'medium', names: ['NVDA'], capitalUsd: 15000 }), opId: 'idea-2', quotes: quotes(), date: S[0], slot: 'midday' },
+    ]);
     expect(b.entry.outcome).toBe('entered');
     const ctx = { db, bookId, bookRef, ideaId: a.ideaId };
     await closeDay(ctx, S[0]);

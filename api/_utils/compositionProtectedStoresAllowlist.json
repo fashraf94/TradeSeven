@@ -145,6 +145,7 @@
     "api/_utils/mandateRollover.js::catchUpBook::call:rollOneBoundary#1::unresolved": 1,
     "api/_utils/mandateRollover.js::rollOneBoundary::update::unresolved": 1,
     "api/_utils/mandateUniverseSnapshot.js::bumpUpstreamCounter::set::unresolved": 1,
+    "api/_utils/mandateUniverseSnapshot.js::publishTopUp::set::unresolved": 1,
     "api/_utils/mandateVintage.js::publishVintage::set::unresolved": 1,
     "api/_utils/marketDataCache.js::invalidateCache::delete::unresolved": 1,
     "api/_utils/masterySettlement.js::commitZeroReceipt::set::unresolved": 1,
@@ -523,13 +524,14 @@
     "scripts/rule-compat-cleanup.js::main::update::unresolved": 2,
     "scripts/ws1-observe-walk.js::removeTestAgent::delete::unresolved": 1,
     "api/_utils/practiceField/admission.js::admitIdea::create::unresolved": 1,
-    "api/_utils/practiceField/close.js::closeNextSession::create::unresolved": 2,
+    "api/_utils/practiceField/close.js::closeNextSession::create::unresolved": 3,
     "api/_utils/practiceField/close.js::closeNextSession::set::practiceFieldBooks": 2,
     "api/_utils/practiceField/founderControls.js::applyControl::update::mandates": 1,
     "api/_utils/practiceField/founderControls.js::applyControl::update::practiceFieldBooks": 1,
     "api/_utils/practiceField/spend.js::reserveSpend::update::unresolved": 1,
     "api/_utils/practiceField/spend.js::settleSpend::update::unresolved": 2,
     "api/_utils/practiceField/windowLedger.js::recordWindowAttempt::set::unresolved": 1,
+    "api/_utils/practiceField/windowLedger.js::writeWindowActionReceipts::set::unresolved": 1,
     "api/_utils/practiceField/windowLedger.js::writeWindowOnlySessions::create::unresolved": 1,
     "api/_utils/practiceField/close.js::closeNextSessionKeepingAlerts::call:closeNextSession#1::unresolved": 1,
     "api/_utils/practiceField/founderControls.js::applyControl::create::unresolved": 1,
@@ -815,5 +817,11 @@
     "api/_utils/practiceField/founderControls.js::applyControl::create::unresolved": "T1a-2b-1 §6, review C1. One tx.create: practiceFieldBooks/{uid}/founderOps/{requestKey} — the pause / resume / wind_down request recorded per OWNER, with the book it acted on and its response, in the transaction that applies it; a replay answers it whatever book the claim names later. Server-only (no rule matches it). Unresolved: the ref comes from founderOpRefOf.",
     "api/_utils/practiceField/founderControls.js::recordedRequest::create::unresolved": "T1a-2b-1 §6, review C1, C4. One tx.create: practiceFieldBooks/{uid}/founderOps/{requestKey} — a create_book or admit_fixture request recorded per OWNER as pending, with the target it resolved to (the book; the ranked agent and archetype), before the engine's own idempotent call runs against that RECORDED target; the response is then stored on it. Server-only. Unresolved: the ref comes from founderOpRefOf.",
     "api/_utils/practiceField/spend.js::reserveSpend::create::unresolved": "T1a-2b-1 §5, review B6. One tx.create in the CALLER's transaction: mandates/{bookId}/spendOps/{opId} — the reservation's own record (month, purpose, model, token ceilings, maximum charge, price-table version, state), create-once, so the book document holds the month's totals only and never grows with the number of calls. No caller yet. Server-only (no rule matches it). Unresolved: the ref comes from the book snapshot's ref."
+  },
+  "_notes_practice_field_t1a2b2": {
+    "_scope": "T1a-2b-2 (admission and records, finished): the write sites this build adds. Every Practice Field one is reached only while PRACTICE_FIELD_MODE is not 'off'.",
+    "api/_utils/mandateUniverseSnapshot.js::publishTopUp::set::unresolved": "T1a-2b-2 §3 (Astra T1A-06). One tx.set: mandateUniverseDaily/{date} — the day doc's TOP-UP (an idea-only build's doc, `candidateUniverseOmitted`, rebuilt once with the candidate universe), published in a transaction against the document as it stands at commit: every prior entry kept, and a rebuild that finds another's result adopts it and adds only what it fetched that the stored entry lacks; nothing is written when it adds nothing. Not a protected store and not money (the daily slow layer: classifications and corporate-action windows). Reached only on the top-up branch (an omitted doc exists, so an idea book built today); the first build and `force` still publish through createOrAdopt, unchanged. Unresolved: the scanner does not resolve a tx.set handle-form argument here, as for bumpUpstreamCounter beside it.",
+    "api/_utils/practiceField/close.js::closeNextSession::create::unresolved": "T1a-2b-2 §4.4 — now THREE tx.create sites in the close's one transaction (was two, T1a-2b-1 §3, §4): (1) the RESULT EVIDENCE PACKET and (2) the close's WINDOW LEDGER row, as before; (3) NEW: each of the result packet's numbered RECEIPT PARTS, mandates/{bookId}/ideas/{ideaId}/evidence/result_actions_NNN — the corporate-action receipts the result rests on, split by size (each at most 512 KiB by the storage rules) because at the bound (3,549 receipts) they pass 900 KiB; create-once, each sealed with its own hash, which the packet records. None moves money. Unresolved: the refs come from evidence.js evidenceRefOf.",
+    "api/_utils/practiceField/windowLedger.js::writeWindowActionReceipts::set::unresolved": "T1a-2b-2 §4.1 (Astra T2B-05). One tx.set with { merge: true }, in the CALLER's transaction — an entry's or its timeout's (entry.js enterIdea), a sale's and its result's (exits.js sellPendingHoldings), a window catch-up's close (close.js closeNextSession): mandates/{bookId}/windows/{date}_{slot}.actions.{key} — the window's PENDING-WINDOW RECEIPT of each action, keyed by the action's own id (a re-run transaction writes the same key once). The window's row fold (recordWindowAttempt) counts each kind as the larger of its attempts' and its receipts', so a fill whose row write failed is counted once. Bookkeeping, not money. Unresolved: the ref comes from windowsRefOf(bookRef)."
   }
 }

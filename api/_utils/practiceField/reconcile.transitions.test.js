@@ -161,12 +161,13 @@ describe('the next-state reconciliation of each money path, with the book as rea
 
   it('the close: a ledger written back a cent away from the book is refused, and so is a timeout a cent out', async () => {
     const { db, bookId, bookRef } = await seedBook({ archetypeCodeId: 'degen' });
+    // An accepted idea whose start session is over times out inside the close: b, admitted beside a before a fills
+    // (T1a-2b-2 §1: admission measures the book at the marks of its moment), never enters.
+    await admitIdea(db, { bookId, contract: contractOf({ slot: 'medium', names: ['LLY'], capitalUsd: 25000 }), opId: 'b', nowIso: ADMIT_ISO });
     await admitAndEnter(db, bookId, { contract: contractOf(), opId: 'a', quotes: QUOTES });
     await storeCloseSnapshot(db, DAYS.d1, { AAPL: 100.13, SPY: 500 });
     const close = () => closeIdeaBook(db, bookRef, { date: DAYS.d1, now: new Date(etIso(DAYS.d1, 16, 25)) });
     await refusedByTheNextStateCheck(db, 'withCloseMarks', close, 'cash_mismatch');
-    // An accepted idea whose start session is over times out inside the close.
-    await admitIdea(db, { bookId, contract: contractOf({ slot: 'medium', names: ['LLY'], capitalUsd: 25000 }), opId: 'b', nowIso: ADMIT_ISO });
     await refusedByTheNextStateCheck(db, 'planRelease', close, 'cash_mismatch');
     const out = await close();
     expect(out.closed).toBe(true);

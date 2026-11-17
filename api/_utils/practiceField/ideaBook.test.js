@@ -232,6 +232,25 @@ describe('createIdeaBook', () => {
     expect(db._get(`mandates/${first.bookId}`)).toMatchObject({ archetypeCodeId: 'momentum_chaser', attributionAgentId: 'agent-ranked-1' });
   });
 
+  it('T1a-2b-2 §4.2 (Astra T2B-06) — a replay answers with ITS OWN book, read before the owner\'s claim: after that book closed and another opened, still the first, writing nothing; never `open_book_exists` naming the second', async () => {
+    const db = makeMandateFakeDb();
+    const a = await createIdeaBook(db, args());
+    // A closes, as the close that completes a wind-down leaves it: the book closed, the claim closed, off the registry.
+    await db.doc(`mandates/${a.bookId}`).set({ status: 'closed' }, { merge: true });
+    await db.doc('practiceFieldBooks/owner-1').set({ bookId: null, status: 'closed', closedBookId: a.bookId }, { merge: true });
+    const registry = db._get('practiceFieldBooks/_registry');
+    await db.doc('practiceFieldBooks/_registry').set({ ...registry, openBooks: {} });
+    const b = await createIdeaBook(db, args({ opId: 'create-2' }));
+    expect(b).toMatchObject({ ok: true, idempotentReplay: false });
+    const versions = [...db._store.keys()].map((p) => [p, db._versionOf(p)]);
+    expect(await createIdeaBook(db, args({ nowIso: etIso(DAYS.d2, 9, 0) }))).toEqual({ ok: true, bookId: a.bookId, epochId: 'epoch-0001', idempotentReplay: true });
+    // The same operation asking for another book is still a conflict — naming ITS book, not today's open one.
+    expect(await createIdeaBook(db, args({ archetypeCodeId: 'degen' }))).toEqual({ ok: false, code: 'op_id_conflict', bookId: a.bookId });
+    expect(await createIdeaBook(db, args({ attributionAgentId: 'agent-other' }))).toEqual({ ok: false, code: 'op_id_conflict', bookId: a.bookId });
+    expect([...db._store.keys()].map((p) => [p, db._versionOf(p)])).toEqual(versions);
+    expect(db._get('practiceFieldBooks/owner-1')).toMatchObject({ bookId: b.bookId, status: 'active' });
+  });
+
   it('refuses a second open book for the owner, an unknown archetype and a casual clone as the attribution agent', async () => {
     const db = makeMandateFakeDb();
     const first = await createIdeaBook(db, args());

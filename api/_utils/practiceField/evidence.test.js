@@ -14,14 +14,20 @@ import { closeIdeaBook, catchUpIdeaBook } from './close.js';
 import { assertReconciled } from './reconcile.js';
 import {
   verifyPacket, resultPacketMissingMarks, resultPacketProvenanceProblems, recomputeResultFromPacket, jsonPure, EVIDENCE_HASH_ALGORITHM,
+  buildAdmissionPacket, RESULT_RECEIPT_PART_PREFIX, resultPacketPartProblems, resultPacketReceipts,
+  buildResultEvidence, firestoreValueBytes, RESULT_RECEIPT_BOUND, RESULT_RECEIPT_PART_MAX_BYTES,
 } from './evidence.js';
-import { nextSessionDate } from './windows.js';
+import { nextSessionDate, sessionAfter, slotSessions } from './windows.js';
+import { FROZEN_BASKET_SIZE } from './constants.js';
+import { parseSplitsPayload, parseDividendsPayload } from '../mandateCorporateActions.js';
+import { PRACTICE_FIELD_SLOTS } from '../../../src/data/practiceFieldSlots.js';
 import { valueLedger } from './ledger.js';
 import { canonicalContentHash } from '../canonicalHash.js';
 import { runRetentionCleanup } from '../mandateClosePass.js';
 import { roundUsd } from '../mandateRounding.js';
 import {
   seedBook, admitAndEnter, contractOf, closeOn, windowAt, getBook, getIdea, dumpStore, closeNowOf, etIso, ADMIT_ISO, makeMandateFakeDb,
+  storeTickSnapshot, coverHeldNames,
 } from './__testsupport__/fixtures.js';
 
 const S = ['2026-11-16', '2026-11-17', '2026-11-18', '2026-11-19', '2026-11-20', '2026-11-23', '2026-11-24', '2026-11-25', '2026-11-27', '2026-11-30', '2026-12-01', '2026-12-02'];
@@ -69,8 +75,12 @@ describe('the admission packet — in admission\'s own transaction, create-once'
     // A first idea, entered and closed, so the book has a position, a recorded mark and a last close.
     const first = await admitAndEnter(ctx.db, ctx.bookId, { contract: contractOf({ names: ['MSFT'] }), opId: 'first', quotes: quotes(), date: S[0] });
     await closeDay({ ...ctx, ideaId: first.ideaId }, S[0], { MSFT: 420.11 });
+    // S[1]'s 10:00 window snapshot: admission at 11:00 measures the book at it (T1a-2b-2 §1). MSFT is there at the
+    // close's price, so the measured equity is the recorded one — the packet carries both.
+    await storeTickSnapshot(ctx.db, S[1], 'open30', quotes({ MSFT: 420.11 }));
     const bookBefore = getBook(ctx.db, ctx.bookId);
     const contract = contractOf({ slot: 'medium', names: ['AAPL'], capitalUsd: 25000, origin: { kind: 'research', initiatedBy: 'agent' }, sources: [{ kind: 'research', ref: 'rw-0042' }] });
+    coverHeldNames(ctx.db, ctx.bookId, etIso(S[1], 11, 0)); // S[1]'s corporate-action coverage (Astra T2C-01)
     const res = await admitIdea(ctx.db, { bookId: ctx.bookId, contract, opId: 'second', nowIso: etIso(S[1], 11, 0) });
     expect(res.ok).toBe(true);
     const idea = getIdea(ctx.db, ctx.bookId, res.ideaId);
@@ -81,8 +91,15 @@ describe('the admission packet — in admission\'s own transaction, create-once'
       admittedAt: etIso(S[1], 11, 0), writtenAt: etIso(S[1], 11, 0), hashAlgorithm: EVIDENCE_HASH_ALGORITHM,
       sources: { origin: { kind: 'research', initiatedBy: 'agent' }, references: [{ kind: 'research', ref: 'rw-0042' }] },
       measuredAgainst: {
-        bookRevision: bookBefore.revision, equityUsd: bookBefore.portfolio.totalValue, cashUsd: bookBefore.portfolio.cash,
-        treasuryUnreservedUsd: bookBefore.treasury.unreservedCash,
+        bookRevision: bookBefore.revision, equityUsd: bookBefore.portfolio.totalValue, recordedEquityUsd: bookBefore.portfolio.totalValue,
+        cashUsd: bookBefore.portfolio.cash, treasuryUnreservedUsd: bookBefore.treasury.unreservedCash,
+        // T1a-2b-2 §1: the ONE set it was measured at — S[1]'s newest snapshot at 11:00, its 10:00 window's — each mark
+        // copied with its quality, vendor time and age, and the equity derived from them.
+        admissionMarks: {
+          basis: 'session_snapshot', session: S[1], snapshotKey: `${S[1]}_open30`, considered: [`${S[1]}_open30`], at: etIso(S[1], 11, 0),
+          marks: { MSFT: { price: 420.11, quality: 'vendor_time', vendorTimeIso: etIso(S[1], 9, 45), ageAtAdmissionMs: 75 * 60_000, snapshotKey: `${S[1]}_open30` } },
+          treasuryUsd: bookBefore.treasury.unreservedCash, equityUsd: bookBefore.portfolio.totalValue,
+        },
         positions: { MSFT: {
           shares: bookBefore.portfolio.positions.MSFT.shares, lastMark: 420.11, lastMarkSource: 'snapshot', ideaId: first.ideaId,
           // The mark's own source: S[0]'s stored close snapshot, at the vendor's time, full quality.
@@ -105,6 +122,7 @@ describe('the admission packet — in admission\'s own transaction, create-once'
     const a = await seedBook();
     const first = await admitAndEnter(a.db, a.bookId, { contract: contractOf({ names: ['MSFT'] }), opId: 'first', quotes: quotes(), date: S[0] });
     await windowAt(a.db, a.bookId, { date: S[0], slot: 'midday', quotes: quotes({ MSFT: 425.5 }) });
+    coverHeldNames(a.db, a.bookId, etIso(S[0], 13, 30)); // S[0]'s corporate-action coverage (Astra T2C-01)
     const ra = await admitIdea(a.db, { bookId: a.bookId, contract: contractOf({ slot: 'medium', names: ['AAPL'], capitalUsd: 25000 }), opId: 'second', nowIso: etIso(S[0], 13, 30) });
     const pa = a.db._get(`mandates/${a.bookId}/ideas/${ra.ideaId}/evidence/admission`);
     expect(pa.measuredAgainst.lastClose).toBeNull();
@@ -112,7 +130,10 @@ describe('the admission packet — in admission\'s own transaction, create-once'
     // The fill's quote's own time — the open30 snapshot's quotes are observed 15 minutes before the slot opens.
     expect(pa.measuredAgainst.positions.MSFT.markSource.vendorTimeIso).toBe(getIdea(a.db, a.bookId, first.ideaId).ledger.holdings.MSFT.lastMarkProvenance.vendorTimeIso);
     expect(typeof pa.measuredAgainst.positions.MSFT.markSource.vendorTimeIso).toBe('string');
-    expect(JSON.stringify(pa)).not.toMatch(/_midday/); // the window that bought nothing is not named as a source
+    // The window that bought nothing is not named as the SOURCE of a recorded mark — it is the snapshot admission
+    // measured against at 13:30 (T1a-2b-2 §1: the newest of the session), and the packet says that, apart.
+    expect(JSON.stringify(pa.measuredAgainst.positions)).not.toMatch(/_midday/);
+    expect(pa.measuredAgainst.admissionMarks).toMatchObject({ basis: 'session_snapshot', snapshotKey: `${S[0]}_midday`, marks: { MSFT: { price: 425.5 } } });
     expect(first.entry.outcome).toBe('entered');
     // (b) S[0] closed; S[1] never stored, caught up as unobserved by S[2]'s window; admission on S[2].
     const b = await seedBook({ uid: 'owner-2', opId: 'c2' });
@@ -122,6 +143,7 @@ describe('the admission packet — in admission\'s own transaction, create-once'
     const original = console.error; console.error = () => {};
     try { await windowAt(b.db, b.bookId, { date: S[2], quotes: quotes() }); } finally { console.error = original; }
     expect(getBook(b.db, b.bookId).execState.lastCloseKey).toBe(S[1]);
+    coverHeldNames(b.db, b.bookId, etIso(S[2], 11, 0)); // S[2]'s corporate-action coverage (Astra T2C-01)
     const rb = await admitIdea(b.db, { bookId: b.bookId, contract: contractOf({ slot: 'medium', names: ['AAPL'], capitalUsd: 25000 }), opId: 'second', nowIso: etIso(S[2], 11, 0) });
     const pb = b.db._get(`mandates/${b.bookId}/ideas/${rb.ideaId}/evidence/admission`);
     expect(pb.measuredAgainst.lastClose).toEqual({ session: S[1], observed: false, closeSnapshotKey: null });
@@ -134,6 +156,8 @@ describe('the admission packet — in admission\'s own transaction, create-once'
     const c = await seedBook({ uid: 'owner-3', opId: 'c3' });
     const fc = await admitAndEnter(c.db, c.bookId, { contract: contractOf({ names: ['MSFT'] }), opId: 'first', quotes: quotes(), date: S[0] });
     await closeDay({ ...c, ideaId: fc.ideaId }, S[0], { MSFT: { price: 431.17, at: null } });
+    await storeTickSnapshot(c.db, S[1], 'open30', quotes()); // S[1]'s 10:00 window (T1a-2b-2 §1)
+    coverHeldNames(c.db, c.bookId, etIso(S[1], 11, 0)); // S[1]'s corporate-action coverage (Astra T2C-01)
     const rc = await admitIdea(c.db, { bookId: c.bookId, contract: contractOf({ slot: 'medium', names: ['AAPL'], capitalUsd: 25000 }), opId: 'second', nowIso: etIso(S[1], 11, 0) });
     const pc = c.db._get(`mandates/${c.bookId}/ideas/${rc.ideaId}/evidence/admission`);
     expect(pc.measuredAgainst.positions.MSFT).toMatchObject({
@@ -150,6 +174,7 @@ describe('the admission packet — in admission\'s own transaction, create-once'
     const quiet = console.error; console.error = () => {};
     try { await windowAt(d.db, d.bookId, { date: S[2], quotes: quotes() }); } finally { console.error = quiet; }
     expect(getBook(d.db, d.bookId).execState.lastCloseKey).toBe(S[1]);
+    coverHeldNames(d.db, d.bookId, etIso(S[2], 11, 0)); // S[2]'s corporate-action coverage (Astra T2C-01)
     const rd = await admitIdea(d.db, { bookId: d.bookId, contract: contractOf({ slot: 'medium', names: ['AAPL'], capitalUsd: 25000 }), opId: 'second', nowIso: etIso(S[2], 11, 0) });
     const pd = d.db._get(`mandates/${d.bookId}/ideas/${rd.ideaId}/evidence/admission`);
     expect(pd.measuredAgainst.positions.MSFT.markSource).toEqual({
@@ -162,9 +187,17 @@ describe('the admission packet — in admission\'s own transaction, create-once'
 
   it('review B12 — the hash is of what Firestore stores: a lone surrogate (stored as U+FFFD) is made well-formed first, so the packet still verifies after the round trip', async () => {
     const ctx = await seedBook();
-    const res = await admitIdea(ctx.db, { bookId: ctx.bookId, contract: contractOf({ thesis: { text: `A thesis with a broken character \uD800 inside it, for the round trip.`, author: 'founder_fixture' } }), opId: 'surrogate', nowIso: ADMIT_ISO });
-    expect(res.ok).toBe(true);
-    const packet = ctx.db._get(`mandates/${ctx.bookId}/ideas/${res.ideaId}/evidence/admission`);
+    const broken = `A thesis with a broken character \uD800 inside it, for the round trip.`;
+    // Since T1a-2b-2 §2 admission refuses such a thesis before any packet is built …
+    expect(await admitIdea(ctx.db, { bookId: ctx.bookId, contract: contractOf({ thesis: { text: broken, author: 'founder_fixture' } }), opId: 'surrogate', nowIso: ADMIT_ISO }))
+      .toMatchObject({ ok: false, refusals: [{ code: 'text_invalid', field: 'thesis.text' }] });
+    // … and the packet's own guard stays behind it: a packet sealed over a contract holding one.
+    const res = await admitIdea(ctx.db, { bookId: ctx.bookId, contract: contractOf(), opId: 'whole', nowIso: ADMIT_ISO });
+    const idea = getIdea(ctx.db, ctx.bookId, res.ideaId);
+    const packet = buildAdmissionPacket({
+      bookId: ctx.bookId, book: getBook(ctx.db, ctx.bookId), ideas: [], verdict: null, nowIso: ADMIT_ISO,
+      idea: { ...idea, contract: { ...idea.contract, thesis: { ...idea.contract.thesis, text: broken } } },
+    });
     expect(packet.contract.thesis.text).toContain('�');
     expect(packet.contract.thesis.text).not.toContain('\uD800');
     // What Firestore hands back: every lone surrogate replaced. The packet verifies before and after.
@@ -245,9 +278,12 @@ describe('the result packet — in the endpoint close\'s transaction, a copy of 
     expect(packet.salesBeforeEndpoint.idea).toEqual([expect.objectContaining({ kind: 'line_exit', symbol: 'MSFT', tickKey: `${S[2]}_open30`, executedPrice: idea.ledger.saleReceipts[0].executedPrice })]);
     expect(packet.salesBeforeEndpoint.comparison).toEqual([]);
     expect(packet.salesBeforeEndpoint.spy).toEqual([]);
-    // The corporate actions applied: AAPL's dividend on the idea's ledger only (the comparison holds XLK, SPY holds SPY).
-    expect(packet.corporateActions.idea.map((r) => r.actionId)).toEqual([`cash_dividend_AAPL_${S[4]}`]);
-    expect(packet.corporateActions.comparison).toEqual([]);
+    // The corporate actions applied: AAPL's dividend on the idea's ledger only (the comparison holds XLK, SPY holds SPY)
+    // — in the packet's one numbered part (T1a-2b-2 §4.4), whose hash the packet records.
+    const partDocs = { [`${RESULT_RECEIPT_PART_PREFIX}001`]: ctx.db._get(`mandates/${ctx.bookId}/ideas/${ctx.ideaId}/evidence/${RESULT_RECEIPT_PART_PREFIX}001`) };
+    expect(packet.corporateActions).toMatchObject({ receipts: 1, byLedger: { idea: 1, comparison: 0, spy: 0 }, parts: [{ id: `${RESULT_RECEIPT_PART_PREFIX}001`, receipts: 1 }] });
+    expect(resultPacketPartProblems(packet, partDocs)).toEqual([]);
+    expect(resultPacketReceipts(packet, partDocs).map((r) => `${r.ledger}:${r.actionId}`)).toEqual([`idea:cash_dividend_AAPL_${S[4]}`]);
     // Every endpoint mark of every ledger, with its vendor time and quality, and the endpoint snapshot's key.
     expect(packet.endpoint).toMatchObject({ session: DUE, kind: 'due_session', closeSnapshotKey: `${DUE}_close`, observed: true });
     expect(resultPacketMissingMarks(packet, endpointRow)).toEqual([]);
@@ -550,6 +586,95 @@ describe('the result packet — in the endpoint close\'s transaction, a copy of 
       const jsonBytes = Buffer.byteLength(JSON.stringify(packet), 'utf8');
       console.log(`PF_RESULT_PACKET_SIZE firestore=${size} json=${jsonBytes} observations=${packet.observations.length}`);
       expect(size).toBeLessThan(256 * 1024);
+
+      // ── T1a-2b-2 §4.4 — THE RECEIPT BOUND, derived here from the code and the calendar ──────────────────────────
+      // H: four names, an eight-name frozen basket, SPY.
+      expect(PRACTICE_FIELD_SLOTS.B3_NAMES_PER_IDEA.max + FROZEN_BASKET_SIZE.max + 1).toBe(RESULT_RECEIPT_BOUND.holdings);
+      // T: every kind the corporate-action feed's two parsers can produce (a forward and a reverse split, a dividend).
+      const kinds = new Set([
+        ...parseSplitsPayload('aapl', [{ date: '2026-11-20', split: '2/1' }, { date: '2026-11-20', split: '1/2' }, { date: '2026-11-20', split: '3.000000/2.000000' }]).actions,
+        ...parseDividendsPayload('aapl', [{ date: '2026-11-20', value: 0.26 }, { date: '2026-11-20', unadjustedValue: 0.25 }]).actions,
+      ].map((a) => a.type));
+      expect([...kinds].sort()).toEqual(['cash_dividend', 'reverse_split', 'split']);
+      expect(kinds.size).toBe(RESULT_RECEIPT_BOUND.kindsPerDate);
+      // D: the most calendar dates after a long slot's entry session and on or before its due session, over every start
+      // session of the maintained calendar.
+      let maxDates = 0;
+      for (let s = '2026-01-02'; s; s = nextSessionDate(s)) {
+        const due = sessionAfter(s, slotSessions('long'));
+        if (!due) break;
+        maxDates = Math.max(maxDates, (Date.parse(`${due}T12:00:00Z`) - Date.parse(`${s}T12:00:00Z`)) / 86_400_000);
+      }
+      expect(maxDates).toBe(RESULT_RECEIPT_BOUND.calendarDates);
+      expect(RESULT_RECEIPT_BOUND.receipts).toBe(3549);
+
+      // This shape's ideas carried to the bound: every holding of every ledger a receipt of each kind on every date —
+      // each receipt with every field the applier can write (ledger.js: an applied action's receipt, `held` from a
+      // record it waited on, `explainedSuspicion` from a suspicion it settled) at long but real values.
+      const ideaAtEnd = getIdea(db, bookId, r.ideaId);
+      const dates = [];
+      for (let d = new Date(`${S[0]}T12:00:00Z`).getTime() + 86_400_000; dates.length < RESULT_RECEIPT_BOUND.calendarDates; d += 86_400_000) dates.push(new Date(d).toISOString().slice(0, 10));
+      const receiptsFor = (ledger) => Object.keys(ledger.holdings).length > 0 ? Object.keys(ledger.holdings) : [];
+      const symbolsOf = { ledger: [...NAMES], comparisonLedger: [...BASKET], spyLedger: ['SPY'] };
+      const big = (sym, type, date) => ({
+        actionId: `${type}_${sym}_${date}`, type, ticker: sym, effectiveDate: date,
+        ratio: type === 'cash_dividend' ? null : 1.6, amount: type === 'cash_dividend' ? 1.234567 : null, incomeUsd: type === 'cash_dividend' ? 12345.67 : 0,
+        applied: true, appliedOn: date, source: type === 'cash_dividend' ? 'eodhd_dividends' : 'eodhd_splits',
+        note: type === 'cash_dividend' ? 'cash_dividend $1.234567/sh × 123456.789012 sh = $152415.79 (income, not trading P&L)' : `${type} ×1.6: shares 123456.789012→197530.862419, basis unchanged`,
+        held: true, heldOn: date, explainedSuspicion: { suspectedOn: date, ratio: 1.6, frozenMark: 1234.567891 },
+      });
+      const atBound = { ...ideaAtEnd };
+      let made = 0;
+      for (const field of ['ledger', 'comparisonLedger', 'spyLedger']) {
+        const list = [];
+        for (const sym of symbolsOf[field]) for (const date of dates) for (const type of ['cash_dividend', 'reverse_split', 'split']) list.push(big(sym, type, date));
+        made += list.length;
+        atBound[field] = { ...ideaAtEnd[field], corporateActionReceipts: list };
+      }
+      expect(receiptsFor(ideaAtEnd.spyLedger)).toEqual(['SPY']);
+      expect(made).toBe(RESULT_RECEIPT_BOUND.receipts);
+      const rowsRef = (id) => db._get(`mandates/${bookId}/ideas/${r.ideaId}/rows/${id}`);
+      const { packet: boundPacket, parts } = buildResultEvidence({
+        bookId, idea: atBound, endpointRow: rowsRef('endpoint'), inception: rowsRef('inception'), closeRows: sessions.map(rowsRef), nowIso: packet.writtenAt,
+      });
+      const docBytes = (id, doc) => firestoreDocumentBytes(`projects/p/databases/(default)/documents/mandates/${bookId}/ideas/${r.ideaId}/evidence/${id}`, doc);
+      const receiptBytes = parts.reduce((n, p) => n + firestoreValueBytes(p.doc.receipts), 0);
+      const partBytes = parts.map((p) => docBytes(p.id, p.doc));
+      const boundBytes = docBytes('result', boundPacket);
+      console.log(`PF_RESULT_RECEIPT_BOUND receipts=${made} receiptBytes=${receiptBytes} parts=${parts.length} partBytes=${partBytes.join(',')} packet=${boundBytes}`);
+      // At the bound the receipts alone pass 900 KiB — so one document could not hold them beside the closes …
+      expect(receiptBytes + size).toBeGreaterThan(900 * 1024);
+      // … and so they are in numbered parts, each well under it, and the packet stays the size it was without them.
+      expect(parts.map((p) => p.id)).toEqual(parts.map((_p, i) => `${RESULT_RECEIPT_PART_PREFIX}${String(i + 1).padStart(3, '0')}`));
+      for (const b of partBytes) expect(b).toBeLessThan(RESULT_RECEIPT_PART_MAX_BYTES + 1024);
+      for (const b of partBytes) expect(b).toBeLessThan(900 * 1024);
+      expect(boundBytes).toBeLessThan(256 * 1024);
+      expect(boundPacket.corporateActions).toMatchObject({ receipts: 3549, byLedger: { idea: 4 * 91 * 3, comparison: 8 * 91 * 3, spy: 91 * 3 } });
+      const partDocs = Object.fromEntries(parts.map((p) => [p.id, jsonPure(p.doc)]));
+      expect(resultPacketPartProblems(boundPacket, partDocs)).toEqual([]);
+      expect(resultPacketReceipts(boundPacket, partDocs).map((x) => `${x.ledger}:${x.actionId}`)).toEqual(
+        ['idea', 'comparison', 'spy'].flatMap((name, i) => atBound[['ledger', 'comparisonLedger', 'spyLedger'][i]].corporateActionReceipts.map((x) => `${name}:${x.actionId}`)),
+      );
+      // A part changed, missing, or out of order is named; the packet's own hash covers every part's.
+      const [first] = parts;
+      expect(resultPacketPartProblems(boundPacket, { ...partDocs, [first.id]: { ...partDocs[first.id], receipts: partDocs[first.id].receipts.slice(1) } })).toEqual([`part:${first.id}:hash`, `part:${first.id}:count`, 'parts:count']);
+      expect(resultPacketPartProblems(boundPacket, { ...partDocs, [first.id]: undefined })).toEqual([`part:${first.id}:missing`, 'parts:count']);
+      expect(verifyPacket({ ...boundPacket, corporateActions: { ...boundPacket.corporateActions, parts: boundPacket.corporateActions.parts.slice(1) } })).toBe(false);
+
+      // Review C1 and its refuter: the BINDING document is now the IDEA, which keeps every receipt on its ledgers and is
+      // rewritten by every close. Measured at this shape: past 1 MiB at the bound, and the count it holds — the limit a
+      // real feed (tens of receipts) never nears. Taking the receipts off it is T1a-2b-3's (ledger.js).
+      const ideaPath = `projects/p/databases/(default)/documents/mandates/${bookId}/ideas/${r.ideaId}`;
+      const ideaDocBytes = firestoreDocumentBytes(ideaPath, jsonPure(atBound));
+      const baseIdeaBytes = firestoreDocumentBytes(ideaPath, jsonPure(ideaAtEnd));
+      const perReceipt = (ideaDocBytes - baseIdeaBytes) / made;
+      const fits = Math.floor((1024 * 1024 - baseIdeaBytes) / perReceipt);
+      console.log(`PF_IDEA_DOC_AT_BOUND bytes=${ideaDocBytes} withoutReceipts=${baseIdeaBytes} perReceipt=${perReceipt.toFixed(1)} fits=${fits}`);
+      expect(ideaDocBytes).toBeGreaterThan(1024 * 1024);
+      expect(fits).toBeGreaterThan(2000);
+      expect(fits).toBeLessThan(RESULT_RECEIPT_BOUND.receipts);
+      // Every holding paying monthly over the long slot is about 52 receipts: far inside.
+      expect(baseIdeaBytes + 52 * perReceipt).toBeLessThan(64 * 1024);
     }, 60_000);
   });
 
