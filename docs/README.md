@@ -306,6 +306,8 @@ The Huddle arc (internal name DRB, the Daily Regime Brief redesign): Shadow's pe
 | `audits/20261107_HUDDLE_S1_FABLE_REVIEW.md` | **Fable's review of the S1 build report (Nov 7, 2026; SHA-256 `d653f6dcd96e03c3f0607fd43610d1618f6b440969e69b23e04cee4b1a9a6792`)** — verdict MERGE after the founder smoke; rulings R-16–R-21 on the five founder questions and the cohort; the four script rules R-22–R-25; the pre-smoke steps; the items for the Command Center chat. Committed with Amendment E in the S1.1 PR. |
 | `audits/20261110_BUILD_HUDDLE_S1_1.md` | Build report, Huddle S1.1 — the smoke follow-ups and the cohort flip, Amendment E (Claude Code, Nov 10–11, 2026; base `7f883c9c`). |
 | `audits/20261110_HUDDLE_S1_1_BUILD_REVIEW.md` | The S1.1 build's BUILD_RULES §2 review record: three lenses (cohort and fail-closed, the server domain, the hub), the refute pass, the mutation lens, every finding's disposition (Claude Code, Nov 11, 2026). |
+| `specs/CHART_EVIDENCE_SPEC_V1.md` | Spec of record V1, the chart's evidence: the read route `GET /api/research/setup-read` (rulings RR-1–RR-9, behind `CHART_READ_MODE`) and the daily setup-evidence sweep (SW-1–SW-9, behind `SETUP_EVIDENCE_SWEEP_ENABLED`); the readings made as built (R-1–R-17) and the projection's field list, the contract for the Chart view's read (Claude Code, Nov 16, 2026; PRs A, B, C). |
+| `audits/20261116_BUILD_CHART_EVIDENCE.md` | Build report, the chart's evidence — Phase 0's seven findings (the activation observer's 0 pointers are by design), the rulings as built, the BUILD_RULES §2 review (three lenses, three refuters, 18 + 9 findings) and the mutation battery (79/79), the cron times, the cost line and the day-after check (Claude Code, Nov 16, 2026; base `71bc6bde`). |
 
 ## Maintenance rules
 
