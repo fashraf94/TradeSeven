@@ -15,7 +15,14 @@
 // from its part on the card. The functions below only sort the server's entries
 // into those places: every entry they return is one the server offered, unchanged.
 
-import { THESIS_PARTS, HORIZON_LABELS } from '../../constants/sharedResearch';
+import { HORIZON_LABELS } from '../../constants/sharedResearch';
+
+/**
+ * The card's six parts in the sentence's order — src/constants/sharedResearch.js THESIS_PARTS, restated and pinned
+ * equal by thesisView.test.js (the GENERIC_NAME_WORDS precedent). Not imported: that module lives in the hub chunk,
+ * and a new import from this lazy chunk would add an export to the hub chunk's bytes (review 4D-1).
+ */
+export const THESIS_PARTS = Object.freeze(['theme', 'segment', 'names', 'why', 'wrongIf', 'timeFrame']);
 
 /** A builder session (§B2; §B10 S-B2): stamped so by the server. The view is chosen by the SESSION, never the flag (K-2). */
 export const isBuilderSession = (session) => session?.shape === 'builder';

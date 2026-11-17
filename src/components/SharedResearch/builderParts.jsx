@@ -16,11 +16,12 @@ import { SR_COPY as COPY } from './sharedResearchCopy';
 import { T, S, wash, buttonStyle, linkStyle } from './sharedResearchStyle';
 import { Finding, LinkButton, Tag } from './parts';
 import { withoutRole } from './sharedResearchView';
-import { joinNames, horizonLabelOf, slotOf, sentenceRunsOf, confirmMarkOf, partFindingIdsOf } from './thesisView';
-import { STATUS_LABELS, THESIS_PARTS } from '../../constants/sharedResearch';
+import { joinNames, horizonLabelOf, slotOf, sentenceRunsOf, confirmMarkOf, partFindingIdsOf, THESIS_PARTS } from './thesisView';
+import { findingLabelOf } from '../../constants/sharedResearch';
 
 const B = COPY.builder;
-const SOURCE_BACKED = STATUS_LABELS.verified;
+/** "Source-backed": the shared rule's label for a verified finding (findingLabelOf, already this chunk's; review 4D-1). */
+const SOURCE_BACKED = findingLabelOf({ status: 'verified' });
 
 /**
  * The foot (K-4, K-17): pinned to the sheet's bottom while the card and the conversation scroll above it. Its choices

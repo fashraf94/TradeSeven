@@ -6,8 +6,9 @@ import { describe, expect, it } from 'vitest';
 import A from './__fixtures__/thesisAnswers.json';
 import {
   frontPartOf, footOf, panelOf, valueChoicesOf, confirmMarkOf, slotOf, sentenceRunsOf, conversationOf, partFindingIdsOf,
-  isBuilderSession, joinNames, horizonLabelOf, hasSuggestedPart, partOfGoal, directionOffered, revisedWhyChoiceOf, PARTLESS_GOALS,
+  isBuilderSession, joinNames, horizonLabelOf, hasSuggestedPart, partOfGoal, directionOffered, revisedWhyChoiceOf, PARTLESS_GOALS, THESIS_PARTS,
 } from './thesisView';
+import { THESIS_PARTS as SHARED_THESIS_PARTS, STATUS_LABELS, findingLabelOf } from '../../constants/sharedResearch';
 
 const T = (k) => A[k].body.thesis;
 const offered = (thesis) => [...thesis.choices.research, ...thesis.choices.free];
@@ -222,6 +223,15 @@ describe('K-9: the conversation is the exchanges, in order', () => {
     const s = A.walkGetReady.body.session;
     const said = conversationOf(s).filter((r) => r.kind === 'said').map((r) => r.text);
     expect(said).toEqual(s.exchanges.filter((e) => e.who === 'partner').map((e) => e.text));
+  });
+});
+
+describe('restated, pinned equal (review 4D-1: no new import from the hub chunk)', () => {
+  it('the six parts are the shared vocabulary\'s, in order', () => {
+    expect([...THESIS_PARTS]).toEqual([...SHARED_THESIS_PARTS]);
+  });
+  it('"Source-backed" is the shared label for a verified finding', () => {
+    expect(findingLabelOf({ status: 'verified' })).toBe(STATUS_LABELS.verified);
   });
 });
 

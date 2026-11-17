@@ -166,7 +166,8 @@ describe('the thesis builder\'s files (B4 build prompt K-2, K-3, K-18 d)', () =>
     expect(readers.map((p) => relative(HERE, p).replace(/\\/g, '/'))).toEqual(['builderMode.js']);
     // ...and it reads at call time, inside the function: no module-scope read of the literal
     const reader = stripComments(readFileSync(join(HERE, 'builderMode.js'), 'utf8'));
-    expect(reader).toMatch(/export function sharedResearchBuilderMode\(\) \{\s*try \{\s*return SHARED_RESEARCH_BUILDER_MODE === 'on' \? 'on' : 'off';/);
+    expect(reader).toMatch(/export function sharedResearchBuilderMode\(\) \{\s*return SHARED_RESEARCH_BUILDER_MODE === 'on' \? 'on' : 'off';\s*\}/);
+    expect(reader).not.toMatch(/\btry\b/); // a try would stop Rollup folding the literal (review 4D-1)
     expect(reader.match(/SHARED_RESEARCH_BUILDER_MODE/g)).toHaveLength(2); // the import and the one read
   });
   it('the body reads the mode only for Start, and chooses the view by the session (K-2)', () => {
