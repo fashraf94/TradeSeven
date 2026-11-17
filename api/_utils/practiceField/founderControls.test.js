@@ -315,9 +315,11 @@ describe('the lifecycles', () => {
     const db = makeMandateFakeDb(agents());
     const { body: { bookId } } = await act(db, 'create_book', 'create-1');
     const { body: { ideaId } } = await act(db, 'admit_fixture', 'a-1', { contract: contractOf({ names: ['AAPL', 'MSFT'] }) });
+    expect((await pass(db, bookId, S[0])).entered).toBe(1);
+    // Admitted at 11:00, after S[0]'s 10:00 window (which caught the book up and entered a-1): admission measures the
+    // book at that window's snapshot (T1a-2b-2 §1). It starts on S[1].
     const pending = await act(db, 'admit_fixture', 'a-2', { contract: contractOf({ slot: 'medium', names: ['JPM'], capitalUsd: 25000 }) }, { nowIso: etIso(S[0], 11, 0) });
     expect(pending.body).toMatchObject({ startSession: S[1] });
-    expect((await pass(db, bookId, S[0])).entered).toBe(1);
     const level = getIdea(db, bookId, ideaId).lines.find((l) => l.symbol === 'MSFT').level;
     await close(db, bookId, S[0], { MSFT: roundUsd(level - 0.02) });
     // Wound down after S[0]'s close.
@@ -478,5 +480,30 @@ describe('the lifecycles', () => {
     expect(idea).toMatchObject({ status: 'settled', result: { endpointSession: S[10], endpointKind: 'due_session' } });
     expect(await pass(db, bookId, S[11])).toMatchObject({ sold: 1, resulted: 1 });
     expect(getBook(db, bookId)).toMatchObject({ status: 'active', drafting: 'paused', openIdeaIds: [] });
+  });
+});
+
+describe('T1a-2b-2 §1 — admit_fixture returns admission\'s two new refusals unchanged', () => {
+  it('close_owed (a completed session unclosed) and admission_marks_unavailable (a held name with no mark in the set): 422, the refusals exactly as admission gave them', async () => {
+    const db = makeMandateFakeDb(agents());
+    const { body: { bookId } } = await act(db, 'create_book', 'create-1'); // Friday 13 Nov, 11:00
+    // Monday 11:00: Friday's close was never written.
+    const owed = await act(db, 'admit_fixture', 'f-owed', { contract: contractOf() }, { nowIso: etIso(S[0], 11, 0) });
+    expect(owed).toEqual({ status: 422, body: { ok: false, error: 'admission_refused', refusals: [{ code: 'close_owed', session: '2026-11-13', completedAt: etIso('2026-11-13', 16, 0) }], permittedMaxUsd: 20000, binding: [{ constraint: 'slot_cap', slot: 'short', limitUsd: 20000 }] } });
+    // A held book (the 10:00 window catches Friday up and enters a fixture), closed on Monday; Tuesday at 09:45 no
+    // window has built a snapshot yet.
+    const { body: held } = await act(db, 'admit_fixture', 'f-held', { contract: contractOf({ names: ['AAPL', 'MSFT'] }) });
+    await storeTickSnapshot(db, S[0], 'open30', quotes());
+    expect((await runIdeaBookEvalPass(db, { tick: tickOf(S[0]), now: slotNowOf(S[0]), ownerToken: 'owner-token' })).entered).toBe(1);
+    await closeOn(db, bookId, S[0], quotes());
+    const unmarked = await act(db, 'admit_fixture', 'f-unmarked', { contract: contractOf({ slot: 'medium', names: ['NVDA'], capitalUsd: 1000 }) }, { nowIso: etIso(S[1], 9, 45) });
+    expect(unmarked.status).toBe(422);
+    expect(unmarked.body.refusals).toEqual([{
+      code: 'admission_marks_unavailable', symbols: ['AAPL', 'MSFT'],
+      unavailable: [{ symbol: 'AAPL', ideaId: held.ideaId, reason: 'no_snapshot_yet' }, { symbol: 'MSFT', ideaId: held.ideaId, reason: 'no_snapshot_yet' }],
+      basis: 'session_snapshot', session: S[1], snapshotKey: null,
+    }]);
+    // Each refusal was stored with its request and replays unchanged.
+    expect((await act(db, 'admit_fixture', 'f-unmarked', { contract: contractOf({ slot: 'medium', names: ['NVDA'], capitalUsd: 1000 }) }, { nowIso: etIso(S[1], 9, 45) })).body.refusals).toEqual(unmarked.body.refusals);
   });
 });

@@ -17,7 +17,7 @@ import { SLOT_NAMES } from '../mandateSessionSlots.js';
 import {
   seedBook, admitAndEnter, contractOf, getBook, getIdea, tickOf, tickSnapshot, closeSnapshot, slotOpenIso, etIso, DAYS, ADMIT_ISO, countDocs,
   takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, closeOn, storeCloseSnapshot, enterIdeaWith, entryPassWith, placeSnapshot, moneyStoreBytes,
-  windDownBook,
+  windDownBook, admitAllThenEnter,
 } from './__testsupport__/fixtures.js';
 
 const CAP = { AAPL: 3.4e12, MSFT: 3.1e12, NVDA: 3.5e12, AMD: 2.6e11, LLY: 7.5e11, JPM: 6.8e11, XOM: 5.2e11, AVGO: 8.2e11 };
@@ -695,9 +695,10 @@ describe('Astra T1A-02 — the reconciliation covers the marked book and all thr
 
   it('reject, never repair — an equity a cent off is refused by ANOTHER idea\'s entry (which rewrites the equity), by its release and by its entry timeout', async () => {
     const { db, bookId, bookRef } = await seedBook({ archetypeCodeId: 'degen' });
-    await admitAndEnter(db, bookId, { contract: contractOf(), opId: 'a', quotes: QUOTES });
+    // b is admitted beside a, before a fills (T1a-2b-2 §1: admission measures the book at the marks of its moment).
     const b = await admitIdea(db, { bookId, contract: contractOf({ slot: 'medium', names: ['LLY'], capitalUsd: 25000 }), opId: 'b', nowIso: ADMIT_ISO });
     expect(b.ok).toBe(true);
+    await admitAndEnter(db, bookId, { contract: contractOf(), opId: 'a', quotes: QUOTES });
     const book = getBook(db, bookId);
     await bookRef.update({ 'portfolio.totalValue': Math.round((book.portfolio.totalValue + 0.01) * 100) / 100 });
     await refusedWritingNothing(db, () => enterIdeaWith(db, { bookRef, ideaId: b.ideaId, tick: tickOf(DAYS.d1, 'midday'), snapshot: tickSnapshot(DAYS.d1, 'midday', q('LLY', 'SPY')), nowIso: nowAt(DAYS.d1, 'midday') }), ['equity_mismatch']);
@@ -712,7 +713,9 @@ describe('Astra T1A-02 — the reconciliation covers the marked book and all thr
 
   it('nothing moves past an unclosed session (review RH-1): an entry is refused while an earlier session of the book is unclosed, and in a session whose close is already written', async () => {
     const { db, bookId, bookRef } = await seedBook({ archetypeCodeId: 'degen' });
-    await admitAndEnter(db, bookId, { contract: contractOf(), opId: 'a', quotes: QUOTES }); // filled on D1; D1 is never closed
+    // Filled on D1; D1 is never closed. D1's 10:00 snapshot carries LLY too: the admissions below, dated on D1 after
+    // the code-order events of D2 they follow, measure the book — LLY held by then — at it (T1a-2b-2 §1).
+    await admitAndEnter(db, bookId, { contract: contractOf(), opId: 'a', quotes: { ...QUOTES, LLY: { price: 803.17, marketCap: 7.5e11 } } });
     const b = await admitIdea(db, { bookId, contract: contractOf({ slot: 'medium', names: ['LLY'], capitalUsd: 25000 }), opId: 'b', nowIso: etIso(DAYS.d1, 11, 0) });
     expect(b).toMatchObject({ ok: true, startSession: DAYS.d2 });
     const enterB = (date, slot) => enterIdeaWith(db, { bookRef, ideaId: b.ideaId, tick: tickOf(date, slot), snapshot: tickSnapshot(date, slot, { ...QUOTES, LLY: { price: 803.17, marketCap: 7.5e11 } }), nowIso: nowAt(date, slot) });
@@ -745,8 +748,9 @@ describe('Astra T1A-02 — the reconciliation covers the marked book and all thr
 
   it('the entry\'s own one-name-one-idea check is reached by a stored accepted idea whose contract names a ticker another idea holds (no as-read rule reads an accepted idea\'s names): refused, nothing written (review FR-A6)', async () => {
     const { db, bookId, bookRef } = await seedBook({ archetypeCodeId: 'degen' });
-    await admitAndEnter(db, bookId, { contract: contractOf(), opId: 'a', quotes: QUOTES }); // holds AAPL
+    // b is admitted before a fills (T1a-2b-2 §1: admission measures the book at the marks of its moment).
     const b = await admitIdea(db, { bookId, contract: contractOf({ slot: 'medium', names: ['LLY'], capitalUsd: 25000 }), opId: 'b', nowIso: ADMIT_ISO });
+    await admitAndEnter(db, bookId, { contract: contractOf(), opId: 'a', quotes: QUOTES }); // holds AAPL
     const ref = db.collection('mandates').doc(bookId).collection('ideas').doc(b.ideaId);
     const stored = getIdea(db, bookId, b.ideaId);
     await ref.set({ ...stored, contract: { ...stored.contract, names: ['AAPL'], lines: [{ symbol: 'AAPL', distancePct: 0.1 }], comparison: { ...stored.contract.comparison, symbols: ['AAPL'] } } });
@@ -760,8 +764,11 @@ describe('Astra T1A-02 — the reconciliation covers the marked book and all thr
   it('the R-19 basis at ENTRY: with two ideas holding, the entry writes the per-idea sum ($99,986.50) — not the whole book rounded once ($99,986.51)', async () => {
     const { db, bookId } = await seedBook({ archetypeCodeId: 'degen' });
     const quotes = { AAPL: { price: 231.47, marketCap: 3e12 }, LLY: { price: 803.17, marketCap: 7.5e11 }, SPY: 597.31 };
-    await admitAndEnter(db, bookId, { contract: contractOf({ slot: 'short', names: ['AAPL'], capitalUsd: 20000 }), opId: 'a', quotes });
-    await admitAndEnter(db, bookId, { contract: contractOf({ slot: 'medium', names: ['LLY'], capitalUsd: 24995.23 }), opId: 'b', slot: 'midday', quotes });
+    // Both admitted before either fills (T1a-2b-2 §1: admission measures the book at the marks of its moment).
+    await admitAllThenEnter(db, bookId, [
+      { contract: contractOf({ slot: 'short', names: ['AAPL'], capitalUsd: 20000 }), opId: 'a', quotes },
+      { contract: contractOf({ slot: 'medium', names: ['LLY'], capitalUsd: 24995.23 }), opId: 'b', slot: 'midday', quotes },
+    ]);
     const book = getBook(db, bookId);
     const ideas = book.openIdeaIds.map((id) => getIdea(db, bookId, id));
     expect(ideas.map((i) => i.status)).toEqual(['holding', 'holding']);

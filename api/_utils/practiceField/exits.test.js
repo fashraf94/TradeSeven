@@ -26,7 +26,7 @@ import { roundUsd, roundShares } from '../mandateRounding.js';
 import {
   seedBook, admitAndEnter, closeOn, windowAt, storeTickSnapshot, storeCloseSnapshot, contractOf, getBook, getIdea, getRow, tickOf, tickSnapshot,
   slotNowOf, slotOpenIso, closeNowOf, etIso, ADMIT_ISO, takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, countResults, moneyStoreBytes,
-  withoutWindowAlerts,
+  withoutWindowAlerts, admitAllThenEnter,
 } from './__testsupport__/fixtures.js';
 
 // A short idea admitted on Friday 13 Nov 2026 starts on Monday the 16th (session 0) and is due ten sessions later.
@@ -277,7 +277,9 @@ describe('B-ORDER (E8) — within a window, sales come first, then entries', () 
   it('the idea-book pass sells a pending line exit BEFORE it enters a second idea in the same window', async () => {
     const ctx = await setup({ contract: { names: ['AAPL'] } });
     await closeDay(ctx, S[0]);
-    // A second idea is admitted during S[1]: its start session is S[2].
+    // A second idea is admitted during S[1]: its start session is S[2]. At 11:00 admission measures the book at S[1]'s
+    // 10:00 window snapshot (T1a-2b-2 §1).
+    await storeTickSnapshot(ctx.db, S[1], 'open30', quotes());
     const second = await admitIdea(ctx.db, { bookId: ctx.bookId, contract: contractOf({ slot: 'medium', names: ['JPM'], capitalUsd: 25000 }), opId: 'idea-2', nowIso: etIso(S[1], 11, 0) });
     expect(second).toMatchObject({ ok: true, startSession: S[2] });
     await closeDay(ctx, S[1], { AAPL: below(lineOf(ctx, 'AAPL').level) });
@@ -738,8 +740,15 @@ describe('Q-2 and FR-A7 — one rule for every fill: a maximum age, and the stor
   });
 
   it('the sales pass serves an active or a draining book and nothing else; one idea\'s failure does not block another\'s sale', async () => {
-    const ctx = await setup({ contract: { names: ['AAPL'] } });
-    const second = await admitAndEnter(ctx.db, ctx.bookId, { contract: contractOf({ slot: 'medium', names: ['JPM'], capitalUsd: 25000 }), opId: 'idea-2', quotes: quotes(), date: S[0] });
+    // Both ideas admitted before either fills (T1a-2b-2 §1: admission measures the book at the marks of its moment).
+    const { db, bookId, bookRef } = await seedBook();
+    const [first, second] = await admitAllThenEnter(db, bookId, [
+      { contract: contractOf({ names: ['AAPL'] }), opId: 'idea-1', quotes: quotes(), date: S[0] },
+      { contract: contractOf({ slot: 'medium', names: ['JPM'], capitalUsd: 25000 }), opId: 'idea-2', quotes: quotes(), date: S[0] },
+    ]);
+    expect([first.entry.outcome, second.entry.outcome]).toEqual(['entered', 'entered']);
+    const ctx = { db, bookId, bookRef, ideaId: first.ideaId };
+    recon(ctx);
     await closeDay(ctx, S[0], { AAPL: below(lineOf(ctx, 'AAPL').level), JPM: below(lineOf(ctx, 'JPM', second.ideaId).level) });
     await storeTickSnapshot(ctx.db, S[1], 'open30', quotes());
     const tick = tickOf(S[1], 'open30');

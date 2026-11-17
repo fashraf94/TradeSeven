@@ -22,6 +22,7 @@ import { runRetentionCleanup } from '../mandateClosePass.js';
 import { roundUsd } from '../mandateRounding.js';
 import {
   seedBook, admitAndEnter, contractOf, closeOn, windowAt, getBook, getIdea, dumpStore, closeNowOf, etIso, ADMIT_ISO, makeMandateFakeDb,
+  storeTickSnapshot,
 } from './__testsupport__/fixtures.js';
 
 const S = ['2026-11-16', '2026-11-17', '2026-11-18', '2026-11-19', '2026-11-20', '2026-11-23', '2026-11-24', '2026-11-25', '2026-11-27', '2026-11-30', '2026-12-01', '2026-12-02'];
@@ -69,6 +70,9 @@ describe('the admission packet — in admission\'s own transaction, create-once'
     // A first idea, entered and closed, so the book has a position, a recorded mark and a last close.
     const first = await admitAndEnter(ctx.db, ctx.bookId, { contract: contractOf({ names: ['MSFT'] }), opId: 'first', quotes: quotes(), date: S[0] });
     await closeDay({ ...ctx, ideaId: first.ideaId }, S[0], { MSFT: 420.11 });
+    // S[1]'s 10:00 window snapshot: admission at 11:00 measures the book at it (T1a-2b-2 §1). MSFT is there at the
+    // close's price, so the measured equity is the recorded one — the packet carries both.
+    await storeTickSnapshot(ctx.db, S[1], 'open30', quotes({ MSFT: 420.11 }));
     const bookBefore = getBook(ctx.db, ctx.bookId);
     const contract = contractOf({ slot: 'medium', names: ['AAPL'], capitalUsd: 25000, origin: { kind: 'research', initiatedBy: 'agent' }, sources: [{ kind: 'research', ref: 'rw-0042' }] });
     const res = await admitIdea(ctx.db, { bookId: ctx.bookId, contract, opId: 'second', nowIso: etIso(S[1], 11, 0) });
@@ -81,8 +85,15 @@ describe('the admission packet — in admission\'s own transaction, create-once'
       admittedAt: etIso(S[1], 11, 0), writtenAt: etIso(S[1], 11, 0), hashAlgorithm: EVIDENCE_HASH_ALGORITHM,
       sources: { origin: { kind: 'research', initiatedBy: 'agent' }, references: [{ kind: 'research', ref: 'rw-0042' }] },
       measuredAgainst: {
-        bookRevision: bookBefore.revision, equityUsd: bookBefore.portfolio.totalValue, cashUsd: bookBefore.portfolio.cash,
-        treasuryUnreservedUsd: bookBefore.treasury.unreservedCash,
+        bookRevision: bookBefore.revision, equityUsd: bookBefore.portfolio.totalValue, recordedEquityUsd: bookBefore.portfolio.totalValue,
+        cashUsd: bookBefore.portfolio.cash, treasuryUnreservedUsd: bookBefore.treasury.unreservedCash,
+        // T1a-2b-2 §1: the ONE set it was measured at — S[1]'s newest snapshot at 11:00, its 10:00 window's — each mark
+        // copied with its quality, vendor time and age, and the equity derived from them.
+        admissionMarks: {
+          basis: 'session_snapshot', session: S[1], snapshotKey: `${S[1]}_open30`, considered: [`${S[1]}_open30`], at: etIso(S[1], 11, 0),
+          marks: { MSFT: { price: 420.11, quality: 'vendor_time', vendorTimeIso: etIso(S[1], 9, 45), ageAtAdmissionMs: 75 * 60_000, snapshotKey: `${S[1]}_open30` } },
+          treasuryUsd: bookBefore.treasury.unreservedCash, equityUsd: bookBefore.portfolio.totalValue,
+        },
         positions: { MSFT: {
           shares: bookBefore.portfolio.positions.MSFT.shares, lastMark: 420.11, lastMarkSource: 'snapshot', ideaId: first.ideaId,
           // The mark's own source: S[0]'s stored close snapshot, at the vendor's time, full quality.
@@ -112,7 +123,10 @@ describe('the admission packet — in admission\'s own transaction, create-once'
     // The fill's quote's own time — the open30 snapshot's quotes are observed 15 minutes before the slot opens.
     expect(pa.measuredAgainst.positions.MSFT.markSource.vendorTimeIso).toBe(getIdea(a.db, a.bookId, first.ideaId).ledger.holdings.MSFT.lastMarkProvenance.vendorTimeIso);
     expect(typeof pa.measuredAgainst.positions.MSFT.markSource.vendorTimeIso).toBe('string');
-    expect(JSON.stringify(pa)).not.toMatch(/_midday/); // the window that bought nothing is not named as a source
+    // The window that bought nothing is not named as the SOURCE of a recorded mark — it is the snapshot admission
+    // measured against at 13:30 (T1a-2b-2 §1: the newest of the session), and the packet says that, apart.
+    expect(JSON.stringify(pa.measuredAgainst.positions)).not.toMatch(/_midday/);
+    expect(pa.measuredAgainst.admissionMarks).toMatchObject({ basis: 'session_snapshot', snapshotKey: `${S[0]}_midday`, marks: { MSFT: { price: 425.5 } } });
     expect(first.entry.outcome).toBe('entered');
     // (b) S[0] closed; S[1] never stored, caught up as unobserved by S[2]'s window; admission on S[2].
     const b = await seedBook({ uid: 'owner-2', opId: 'c2' });
@@ -134,6 +148,7 @@ describe('the admission packet — in admission\'s own transaction, create-once'
     const c = await seedBook({ uid: 'owner-3', opId: 'c3' });
     const fc = await admitAndEnter(c.db, c.bookId, { contract: contractOf({ names: ['MSFT'] }), opId: 'first', quotes: quotes(), date: S[0] });
     await closeDay({ ...c, ideaId: fc.ideaId }, S[0], { MSFT: { price: 431.17, at: null } });
+    await storeTickSnapshot(c.db, S[1], 'open30', quotes()); // S[1]'s 10:00 window (T1a-2b-2 §1)
     const rc = await admitIdea(c.db, { bookId: c.bookId, contract: contractOf({ slot: 'medium', names: ['AAPL'], capitalUsd: 25000 }), opId: 'second', nowIso: etIso(S[1], 11, 0) });
     const pc = c.db._get(`mandates/${c.bookId}/ideas/${rc.ideaId}/evidence/admission`);
     expect(pc.measuredAgainst.positions.MSFT).toMatchObject({

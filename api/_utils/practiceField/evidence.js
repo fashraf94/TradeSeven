@@ -4,9 +4,11 @@
 // `mandates/{bookId}/ideas/{ideaId}/evidence/{packetId}`, each CREATE-ONCE and immutable, each carrying a content hash:
 //
 //   `admission`  written in admission's own transaction (admission.js admitIdea): the contract as frozen, the source
-//                references, and what admission measured the idea against — the book's recorded equity, treasury
-//                and positions with their marks, the snapshot those marks were last written from, the other open
-//                ideas, and the limits it computed — and the time;
+//                references, and what admission measured the idea against — the ONE set of marks it was measured at
+//                (T1a-2b-2 §1: the snapshot's key, every mark with its source, quality, vendor time and age, and the
+//                equity derived from them), the book's recorded equity, treasury and positions with their marks and
+//                the snapshot those were last written from, the other open ideas, and the limits it computed — and
+//                the time;
 //   `result`     written in the transaction of the close that writes the idea's endpoint and result (close.js
 //                closeNextSession): a COPY of every price the result relied on, for every ledger — the entry fills
 //                (from the inception row), each line's level and each line breach's close, every sale filled before
@@ -33,6 +35,7 @@ import { newTrack, foldCloseIntoTrack, trackStatistics } from './settlement.js';
 import { roundUsd } from '../mandateRounding.js';
 import { toCents, fromCents } from './money.js';
 import { nextSessionDate } from './windows.js';
+import { admissionMarksRecord } from './admissionMarks.js';
 
 /** The packet's own version (its own family; starts at 1). */
 export const EVIDENCE_PACKET_VERSION = 1;
@@ -153,15 +156,20 @@ export function buildAdmissionPacket({ bookId, book, ideas, idea, verdict, nowIs
     contract: idea.contract,
     // The sources the idea names, by reference (`{ kind, ref }`), and its origin. No excerpt exists in this build.
     sources: { origin: idea.contract?.origin ?? null, references: idea.contract?.sources ?? [] },
-    // What admission measured against: the book's RECORDED state (contract §5.4 check 7 — the equity every limit is a
-    // share of is `portfolio.totalValue`, the figure the last close or the last fill wrote from these same marks; each
-    // position's mark is the one last written on it, and `markSource` names where THAT mark came from — the entry's
-    // window snapshot, the last close's stored snapshot, or a mark carried at the last close — with its observation
-    // time and quality). `lastClose` is the book's last closed session as its own row records it: whether it was
-    // observed, and the stored snapshot it was valued from (null for an unobserved session).
+    // What admission measured against (T1a-2b-2 §1, Astra T1A-05): `admissionMarks`, the ONE set of marks — the newest
+    // snapshot of the session in progress, or the last completed session's close — with its key, every held name's mark
+    // copied with its quality, vendor time and age at admission, and the equity derived from them; `equityUsd` is that
+    // equity, the figure every limit is a share of. Beside it, the book's RECORDED state as the transaction read it:
+    // `recordedEquityUsd` (`portfolio.totalValue`, the last close's or fill's), and each position's recorded mark,
+    // with `markSource` naming where THAT mark came from — the entry's window snapshot, the last close's stored
+    // snapshot, or a mark carried at the last close — with its observation time and quality. `lastClose` is the book's
+    // last closed session as its own row records it: whether it was observed, and the stored snapshot it was valued
+    // from (null for an unobserved session).
     measuredAgainst: {
       bookRevision: book?.revision ?? null,
-      equityUsd: book?.portfolio?.totalValue ?? null,
+      equityUsd: Number.isInteger(verdict?.measured?.equityCents) ? fromCents(verdict.measured.equityCents) : null,
+      recordedEquityUsd: book?.portfolio?.totalValue ?? null,
+      admissionMarks: admissionMarksRecord({ markSet: verdict?.markSet ?? null, measured: verdict?.measured ?? null, nowIso }),
       cashUsd: book?.portfolio?.cash ?? null,
       treasuryUnreservedUsd: book?.treasury?.unreservedCash ?? null,
       positions,

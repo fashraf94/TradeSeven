@@ -341,7 +341,9 @@ describe('B-CATCHUP (E12) — missed closes are caught up before the next close,
     const ctx = await setup({ names: ['AAPL'] });
     await closeDay(ctx, S[0], { AAPL: roundUsd(BASE.AAPL * 0.9) }); // below its line: a line exit waits for a window
     expect(ideaOf(ctx).ledger.holdings.AAPL.exitPending).toMatchObject({ reason: 'line', session: S[0] });
-    // A second idea, admitted on S[1], starts on S[2].
+    // A second idea, admitted on S[1], starts on S[2]. At 11:00 admission measures the book at S[1]'s 10:00 window
+    // snapshot (T1a-2b-2 §1).
+    await storeTickSnapshot(ctx.db, S[1], 'open30', quotes());
     const admitted = await admitIdea(ctx.db, { bookId: ctx.bookId, opId: 'later', contract: contractOf({ names: ['MSFT'], slot: 'medium', capitalUsd: 5000 }), nowIso: etIso(S[1], 11, 0) });
     expect(admitted).toMatchObject({ ok: true, startSession: S[2] });
     // S[1] is never closed. A window snapshot for S[2] is stored; each fill is then called DIRECTLY — no window pass,
@@ -375,6 +377,8 @@ describe('B-DRAIN (E13), as far as this build owns it — a draining book gets e
   async function drainingBook() {
     const ctx = await setup({ names: ['AAPL'] });
     await closeDay(ctx, S[0]);
+    // At 11:00 on S[1] admission measures the book at S[1]'s 10:00 window snapshot (T1a-2b-2 §1).
+    await storeTickSnapshot(ctx.db, S[1], 'open30', quotes());
     const second = await admitIdea(ctx.db, { bookId: ctx.bookId, contract: contractOf({ slot: 'medium', names: ['JPM'], capitalUsd: 25000 }), opId: 'idea-2', nowIso: etIso(S[1], 11, 0) });
     await closeDay(ctx, S[1], { AAPL: roundUsd(lineOf(ctx, 'AAPL').level - 0.02) });
     expect(await windDownBook(ctx.db, { uid: 'owner-1', nowIso: etIso(S[1], 17, 0) })).toMatchObject({ outcome: 'draining', status: 'draining' });

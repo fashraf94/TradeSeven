@@ -7,15 +7,19 @@
 // THE CHECKS (every failure returned together, each a typed `{ code, … }`):
 //   0, 0b, 3–5  the contract's own shape — contract.js;
 //   1  the mode admits the owner; the book is active and its drafting is not paused;
+//   1b (T1a-2b-2 §1, C-2) no close is owed: every session the book was due that has COMPLETED by now (its scheduled
+//      end, 16:00 Eastern or 13:00 on an early close) is closed (`close_owed`) — admissionMarks.js closeOwedSession;
 //   2  the slot is open (one idea per slot per book);
 //   3  no name is held or pending in another idea of the book (`ticker_held_by_other_idea`);
 //   6  the start session, the due session and the session after it — where the settlement sale fills (Amendment
 //      E17) — are all on the maintained calendar (`calendar_unsupported`);
-//   7  capital, on the book's recorded marked equity: the slot cap (B1), the cash floor (B2) on what the treasury
-//      keeps unreserved, and — for each name's planned dollars — the single-position cap, the sector cap (the
-//      archetype's, translated; sectors through the one bridge; other ideas' PENDING plans count beside what is
-//      held) and the position count (positions + pending names ≤ 15). The answer always carries the PERMITTED
-//      MAXIMUM and every constraint that binds it;
+//   7  capital, on the book's marked equity AT ADMISSION'S ONE SET OF MARKS (T1a-2b-2 §1, Astra T1A-05;
+//      admissionMarks.js — the newest snapshot of the session in progress, else the last completed session's close;
+//      a held name with no full-quality mark there is `admission_marks_unavailable`, and nothing is measured): the
+//      slot cap (B1), the cash floor (B2) on what the treasury keeps unreserved, and — for each name's planned dollars
+//      — the single-position cap, the sector cap (the archetype's, translated; sectors through the one bridge; what is
+//      held at THOSE marks, and other ideas' PENDING plans beside it) and the position count (positions + pending names
+//      ≤ 15). The answer always carries the PERMITTED MAXIMUM and every constraint that binds it;
 //   8  coverage: every name, the comparison's symbols and SPY fit the reserved universe (`coverage_unavailable`).
 //
 // ONE TRANSACTION, ONE CODE PATH. The whole evaluation runs inside the transaction, on the book, the epoch, every
@@ -52,6 +56,7 @@ import {
 } from './coverage.js';
 import { assertReconciled } from './reconcile.js';
 import { buildAdmissionPacket, readAdmissionMarkSources, evidenceRefOf, EVIDENCE_PACKET } from './evidence.js';
+import { readAdmissionMarkSet, admissionMarksOf, closeOwedSession } from './admissionMarks.js';
 import {
   toCents, fromCents, shareLimitCents, shareCeilCents, ratioLimitCents, floorMulDiv,
 } from './money.js';
@@ -104,13 +109,14 @@ function namesTakenBy(ideas) {
 }
 
 /**
- * The book-state half of admission (checks 1, 2, 3, 6, 7, 8). Pure: everything it needs is handed in as the
- * transaction read it.
+ * The book-state half of admission (checks 1, 1b, 2, 3, 6, 7, 8). Pure: everything it needs is handed in as the
+ * transaction read it — `markSet` is the ONE snapshot admission measures against (admissionMarks.js
+ * readAdmissionMarkSet; null: none, which only a book holding nothing can be measured without).
  *
  * @returns {{ refusals: Array<object>, permittedMaxUsd: number|null, binding: Array<object>, limits: Array<object>,
- *             schedule: object|null, coveragePlan: object|null }}
+ *             schedule: object|null, coveragePlan: object|null, measured: object, markSet: object|null }}
  */
-export function evaluateAdmission({ book, epoch, ideas, coverageData, contract, ideaRefKey, nowIso, admitsOwner }) {
+export function evaluateAdmission({ book, epoch, ideas, coverageData, contract, ideaRefKey, nowIso, admitsOwner, markSet = null }) {
   const refusals = [];
   const refuse = (code, detail = {}) => { refusals.push({ code, ...detail }); };
   const gate = epoch?.gateConfig || null;
@@ -121,6 +127,20 @@ export function evaluateAdmission({ book, epoch, ideas, coverageData, contract, 
   if (book.status !== 'active') refuse('book_not_active', { status: book.status ?? null });
   if (book.drafting === 'paused' || book.windDown) refuse('drafting_paused');
   if (!gate || !rails || !isSectorCapCorrected(gate)) refuse(VINTAGE_UNCORRECTED);
+
+  // 1b. C-2: no admission while the book owes a close — so it never appears on a caught-up past row.
+  const owed = closeOwedSession(book, nowIso);
+  if (owed !== null) refuse('close_owed', { session: owed.session, completedAt: owed.completedAtIso });
+
+  // The ONE set of marks the whole decision is measured against (Astra T1A-05). FAIL CLOSED: a held name with no
+  // full-quality mark in it is refused by symbol, and check 7 measures nothing — never `lastMark` or `totalValue`.
+  const measured = admissionMarksOf({ book, ideas, markSet, nowIso });
+  if (!measured.ok) {
+    refuse('admission_marks_unavailable', {
+      symbols: [...new Set(measured.unavailable.map((u) => u.symbol))], unavailable: measured.unavailable,
+      basis: markSet?.basis ?? null, session: markSet?.session ?? null, snapshotKey: markSet?.snapshotKey ?? null,
+    });
+  }
 
   // 2. The slot is open.
   const occupant = book.slots?.[contract.slot] ?? null;
@@ -140,13 +160,13 @@ export function evaluateAdmission({ book, epoch, ideas, coverageData, contract, 
   // 7. Capital.
   const limits = [];
   let permittedMaxCents = null;
-  if (gate && rails && isSectorCapCorrected(gate)) {
-    // The equity every share is taken of is the book's DISPLAYED equity — `portfolio.totalValue`, the number the
-    // last close (or the last fill) wrote — never a second valuation of the same positions that could differ from
-    // it by a cent (BUILD_RULES §9; refuter RF1-2). Admission and release do not change it.
-    const displayedEquity = book.portfolio?.totalValue;
-    const equityOk = typeof displayedEquity === 'number' && Number.isFinite(displayedEquity) && displayedEquity >= 0;
-    const equityCents = equityOk ? toCents(displayedEquity) : NaN;
+  if (gate && rails && isSectorCapCorrected(gate) && measured.ok) {
+    // The equity every share is taken of is the book's marked equity AT THE SET'S MARKS (admissionMarks.js; the R-19
+    // basis: the treasury + each open idea's cash + its holdings at those marks, rounded once per idea), in whole
+    // cents. The limits, the sector exposure and the headroom this answer returns come from the same marks, and the
+    // admission packet records them (BUILD_RULES §9: one source for every figure of the decision).
+    const equityOk = Number.isInteger(measured.equityCents) && measured.equityCents >= 0;
+    const equityCents = equityOk ? measured.equityCents : NaN;
     const unreservedCents = toCents(book.treasury?.unreservedCash);
     const capitalCents = toCents(contract.capitalUsd);
 
@@ -173,14 +193,14 @@ export function evaluateAdmission({ book, epoch, ideas, coverageData, contract, 
       limits.push({ constraint: 'single_position_cap', code: 'single_position_cap_exceeded', limitCents: floorMulDiv(singleCapCents, w.den, w.num), symbol: name });
     }
 
-    // Sector: what the book already carries in the sector (held at its recorded mark, plus other ideas' pending
-    // plans) + this idea's planned dollars there ≤ cap × equity. All sectors through the one bridge.
+    // Sector: what the book already carries in the sector (held at the set's mark, plus other ideas' pending plans)
+    // + this idea's planned dollars there ≤ cap × equity. All sectors through the one bridge.
     if (gate.sectorConcentrationCap !== null) {
       const capCents = ratioLimitCents(equityCents, gate.sectorCapSlots, gate.sectorCapDenominator);
       const exposureCents = {};
       const addExposure = (sym, cents) => { const s = mandateSectorOf(sym) ?? '__unknown__'; exposureCents[s] = (exposureCents[s] || 0) + cents; };
       for (const [sym, pos] of Object.entries(book.portfolio?.positions || {})) {
-        addExposure(sym, toCents((Number(pos.shares) || 0) * (Number.isFinite(pos.lastMark) ? pos.lastMark : 0)));
+        addExposure(sym, toCents((Number(pos.shares) || 0) * measured.marks[sym].price));
       }
       for (const idea of ideas) {
         if (idea.status !== IDEA_STATUS.ACCEPTED) continue; // a filled idea's dollars are the positions above
@@ -239,6 +259,8 @@ export function evaluateAdmission({ book, epoch, ideas, coverageData, contract, 
     limits: limits.map(publicLimit),
     schedule,
     coveragePlan,
+    measured,
+    markSet,
   };
 }
 
@@ -345,6 +367,8 @@ export async function admitIdea(db, { bookId, contract: rawContract, opId, nowIs
     // T1a-2b-1 §3 (review B1): the last close's own row, for the admission packet — read now, before any write. Each
     // position's mark names its own source (`lastMarkProvenance`, Astra T2B-01).
     const markSources = await readAdmissionMarkSources(tx, bookRef, book);
+    // T1a-2b-2 §1: the ONE snapshot this decision is measured against — read now, before any write.
+    const markSet = await readAdmissionMarkSet(tx, db, { nowIso });
     // Reject, never repair (Astra T1A-02): a book that does not reconcile AS READ — its marks, its equity, any of its
     // ideas' three ledgers — admits nothing. The limits below are shares of that equity.
     assertReconciled(book, ideas);
@@ -359,7 +383,7 @@ export async function admitIdea(db, { bookId, contract: rawContract, opId, nowIs
       return refused([...shape.refusals, ...extra]);
     }
     const contract = shape.contract;
-    const verdict = evaluateAdmission({ book, epoch, ideas, coverageData, contract, ideaRefKey, nowIso, admitsOwner });
+    const verdict = evaluateAdmission({ book, epoch, ideas, coverageData, contract, ideaRefKey, nowIso, admitsOwner, markSet });
     if (verdict.refusals.length > 0) {
       return { ok: false, refusals: verdict.refusals, permittedMaxUsd: verdict.permittedMaxUsd, binding: verdict.binding };
     }

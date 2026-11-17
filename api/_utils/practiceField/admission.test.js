@@ -14,7 +14,7 @@ import { MANDATE_UNIVERSE_MAX_SYMBOLS } from '../mandateConfig.js';
 import { assertReconciled } from './reconcile.js';
 import { runFounderAction } from './founderControls.js';
 import {
-  seedBook, admitAndEnter, closeOn, contractOf, getBook, getIdea, etIso, DAYS, ADMIT_ISO, makeMandateFakeDb,
+  seedBook, admitAndEnter, closeOn, contractOf, getBook, getIdea, etIso, DAYS, ADMIT_ISO, makeMandateFakeDb, storeTickSnapshot,
 } from './__testsupport__/fixtures.js';
 
 const untouchable = new Proxy({}, { get() { throw new Error('the database was touched'); } });
@@ -246,11 +246,13 @@ describe('admitIdea — reserving capital and coverage', () => {
   });
 
   it('check 6 — the calendar: a window past the maintained years is calendar_unsupported (the long slot first, then every slot)', async () => {
-    const { db, bookId } = await seedBook();
+    // Each book is created the morning it admits, so it owes no close (T1a-2b-2 §1, C-2): only the calendar speaks.
+    const { db, bookId } = await seedBook({ nowIso: '2027-11-01T13:00:00.000Z' });
     const nov = '2027-11-01T16:00:00.000Z';
     expect((await admit(db, bookId, contractOf({ slot: 'short' }), 'idea-s', nov)).ok).toBe(true); // 10 sessions end in November 2027
     expect(codes(await admit(db, bookId, contractOf({ slot: 'long', names: ['NVDA'] }), 'idea-l', nov))).toEqual(['calendar_unsupported']); // 60 sessions end in 2028
-    expect(codes(await admit(db, bookId, contractOf({ slot: 'medium', names: ['MSFT'] }), 'idea-m', '2027-12-31T16:00:00.000Z'))).toEqual(['calendar_unsupported']); // the START session is in 2028
+    const dec = await seedBook({ nowIso: '2027-12-31T14:00:00.000Z' });
+    expect(codes(await admit(dec.db, dec.bookId, contractOf({ slot: 'medium', names: ['MSFT'] }), 'idea-m', '2027-12-31T16:00:00.000Z'))).toEqual(['calendar_unsupported']); // the START session is in 2028
   });
 });
 
@@ -423,21 +425,32 @@ describe('check 7 — capital, with the permitted maximum and every binding cons
     expect(err?.code).toBe('recon_failed');
     expect(err.detail.problems.map((p) => p.rule)).toEqual(['not_a_number', 'equity_mismatch']);
     expect(JSON.stringify([...db._store.entries()])).toBe(before);
-    // … and the limit computation's own fail-closed check stays, behind it.
+    // … and the limit computation's own fail-closed check stays, behind it. Since T1a-2b-2 §1 the equity is derived at
+    // admission's marks (the treasury + the ideas' cash + their holdings at those marks), so `totalValue` is not read:
+    // a treasury that is not a number — a null, which must never read as zero — makes an equity that is not one.
     const epochNow = (await epochRef.get()).data();
     const noEquity = evaluateAdmission({
-      book: { ...good, portfolio: { ...good.portfolio, totalValue: null } }, epoch: epochNow, ideas: [], coverageData: null,
+      book: { ...good, treasury: { ...good.treasury, unreservedCash: null } }, epoch: epochNow, ideas: [], coverageData: null,
       contract: normalizeIdeaContract(contractOf({ capitalUsd: 1000 })).contract, ideaRefKey: `${bookId}/x`, nowIso: ADMIT_ISO, admitsOwner: true,
     });
     expect(codes(noEquity)).toContain('epoch_config_invalid');
     expect(noEquity.refusals.find((r) => r.code === 'epoch_config_invalid').constraints).toContain('book_equity');
     expect(noEquity.permittedMaxUsd).toBe(0);
+    // …and `totalValue` itself no longer moves any limit: a recorded equity of null, with the treasury intact, measures
+    // the same book as the good one.
+    const ignored = evaluateAdmission({
+      book: { ...good, portfolio: { ...good.portfolio, totalValue: null } }, epoch: epochNow, ideas: [], coverageData: null,
+      contract: normalizeIdeaContract(contractOf({ capitalUsd: 1000 })).contract, ideaRefKey: `${bookId}/x`, nowIso: ADMIT_ISO, admitsOwner: true,
+    });
+    expect(ignored.refusals).toEqual([]);
+    expect(ignored.measured.equityCents).toBe(10000000);
   });
 
-  it('the limits are shares of the equity the book DISPLAYS — `portfolio.totalValue` — never a second valuation a cent away (refuter RF1-2)', async () => {
+  it('a book that holds nothing is measured at its cash: the limits are shares of exactly the equity it displays, to the cent (refuter RF1-2; T1a-2b-2 §1)', async () => {
     const { db, bookId, bookRef } = await seedBook();
-    // The displayed equity after a close, to the cent; the long slot may take 40% of exactly that. (The book's cash
-    // and treasury move with it, so the book reconciles as read — Astra T1A-02's rule 7.)
+    // The equity after a close, to the cent; the long slot may take 40% of exactly that. (The book's cash and treasury
+    // move with it, so the book reconciles as read — Astra T1A-02's rule 7.) A book holding nothing needs no mark, so
+    // admission's equity — the treasury + its ideas' cash — is that figure exactly.
     const at = { portfolio: { totalValue: 99684.40, cash: 99684.40 }, treasury: { unreservedCash: 99684.40 } };
     await bookRef.set(at, { merge: true });
     const atMax = await admit(db, bookId, contractOf({ slot: 'long', names: ['AAPL', 'JPM', 'LLY'], capitalUsd: 39873.76 }), 'a');
@@ -473,8 +486,9 @@ describe('check 7 — capital, with the permitted maximum and every binding cons
     await bookRef.update({ drafting: 'paused' });
     const res = await admit(db, bookId, contractOf({ slot: 'long', names: ['AAPL', 'MSFT'], capitalUsd: 45000 }), 'b', '2027-12-31T16:00:00.000Z');
     expect(codes(res)).toEqual([
-      'calendar_unsupported', 'capital_exceeds_slot_cap', 'drafting_paused', 'sector_cap_exceeded', 'slot_occupied', 'ticker_held_by_other_idea',
+      'calendar_unsupported', 'capital_exceeds_slot_cap', 'close_owed', 'drafting_paused', 'sector_cap_exceeded', 'slot_occupied', 'ticker_held_by_other_idea',
     ]);
+    expect(res.refusals.find((r) => r.code === 'close_owed')).toEqual({ code: 'close_owed', session: DAYS.admit, completedAt: etIso(DAYS.admit, 16, 0) });
     expect(res.permittedMaxUsd).toBe(3333.33);
     expect(res.binding.map((b) => b.constraint)).toEqual(['sector_cap']);
   });
@@ -501,6 +515,9 @@ describe('B-RESERVE — two admissions racing for the same cash', () => {
     expect(Math.round(mediumCapital * 100)).toBeLessThanOrEqual(roomCents); // alone, either fits
 
     const now = etIso(DAYS.d2, 11, 0);
+    // T1a-2b-2 §1: at 11:00 on D2 admission measures the book at D2's newest snapshot — its 10:00 window's, here at the
+    // D1 close's prices, so its equity is the one recorded above.
+    await storeTickSnapshot(db, DAYS.d2, 'open30', { JPM: 362.11, XOM: 177.83, SPY: 598.02 });
     const short = contractOf({ slot: 'short', names: ['AAPL'], capitalUsd: shortCapital });
     const medium = contractOf({ slot: 'medium', names: ['LLY'], capitalUsd: mediumCapital });
     // The short admission reads the book; the medium one commits first; the short one is retried against it.

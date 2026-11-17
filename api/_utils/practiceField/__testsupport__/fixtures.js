@@ -17,7 +17,7 @@ import { createIdeaBook } from '../ideaBook.js';
 import { admitIdea } from '../admission.js';
 import { enterIdea, runIdeaBookEntryPass } from '../entry.js';
 import { runIdeaBookWindow } from '../sweep.js';
-import { closeIdeaBook } from '../close.js';
+import { closeIdeaBook, catchUpIdeaBook } from '../close.js';
 import { runFounderAction } from '../founderControls.js';
 
 export { makeMandateFakeDb };
@@ -265,13 +265,49 @@ export async function windowAt(db, bookId, { date, slot = 'open30', quotes, now 
   return runIdeaBookWindow(db, { bookRef, tick: tickOf(date, slot), now: now ?? slotNowOf(date, slot) });
 }
 
-/** Admit and (optionally) enter an idea in its start session. Returns `{ ideaId, admission, entry }`. */
+/**
+ * The catch-up a window runs before it sells or enters (sweep.js runIdeaBookWindow; sessions.js: nothing moves past an
+ * unclosed session): every session before `date` the book has not closed is closed, or accounted for by the window
+ * ledger's own cursor (T2B-02), from stored snapshots only. An entry the fixtures make "at a window" runs it first, as
+ * the window does — so a book's creation day is accounted for before its first fill (T1a-2b-2 §1: admission refuses
+ * while a completed session is unclosed, C-2).
+ */
+export async function catchUpAt(db, bookId, { date, slot = 'open30', now } = {}) {
+  const bookRef = db.collection('mandates').doc(bookId);
+  return catchUpIdeaBook(db, bookRef, { before: date, now: now ?? slotNowOf(date, slot) });
+}
+
+/** Admit and (optionally) enter an idea in its start session — at a window, after its catch-up. Returns `{ ideaId, admission, entry }`. */
 export async function admitAndEnter(db, bookId, { contract, opId = 'idea-1', admitIso = ADMIT_ISO, quotes, date = DAYS.d1, slot = 'open30' }) {
   const admission = await admitIdea(db, { bookId, contract, opId, nowIso: admitIso });
   if (!admission.ok) throw new Error(`admitAndEnter: ${JSON.stringify(admission.refusals)}`);
   const snapshot = await storeTickSnapshot(db, date, slot, quotes);
+  await catchUpAt(db, bookId, { date, slot });
   const entry = await enterAt(db, bookId, admission.ideaId, { date, slot });
   return { ideaId: admission.ideaId, admission, entry, snapshot };
+}
+
+/**
+ * Admit SEVERAL ideas — each at its own instant, all before any of them enters — THEN enter each at its window, in the
+ * order given, after the window's catch-up. For a book holding two ideas entered in one session: admission measures a
+ * book at the marks of its moment (T1a-2b-2 §1), so an idea is admitted before, not after, a later fill. Each spec:
+ * `{ contract, opId, admitIso?, quotes, date?, slot? }`. Returns `[{ ideaId, admission, entry, snapshot }]`.
+ */
+export async function admitAllThenEnter(db, bookId, specs) {
+  const out = [];
+  for (const [i, s] of specs.entries()) {
+    const admission = await admitIdea(db, { bookId, contract: s.contract, opId: s.opId ?? `idea-${i + 1}`, nowIso: s.admitIso ?? ADMIT_ISO });
+    if (!admission.ok) throw new Error(`admitAllThenEnter: ${JSON.stringify(admission.refusals)}`);
+    out.push({ ideaId: admission.ideaId, admission });
+  }
+  for (const [i, s] of specs.entries()) {
+    const date = s.date ?? DAYS.d1;
+    const slot = s.slot ?? 'open30';
+    out[i].snapshot = await storeTickSnapshot(db, date, slot, s.quotes);
+    await catchUpAt(db, bookId, { date, slot });
+    out[i].entry = await enterAt(db, bookId, out[i].ideaId, { date, slot });
+  }
+  return out;
 }
 
 /**
