@@ -34,6 +34,8 @@ export default function ThesisSaved({ sr, agentName, agentId, onClose }) {
   const names = thesis?.parts?.names?.value ?? [];
   const eq = sr.equip;
   const canEquip = typeof agentId === 'string' && agentId.length > 0 && typeof watchlistId === 'string' && watchlistId.length > 0;
+  // the read after the save is in flight (K-16): equip waits for it (refuter 2)
+  const busy = sr.pending !== null;
   return (
     <section data-screen-label={`Thesis saved · equip ${canEquip ? eq.status : 'not offered'}`} style={{ ...S.col, gap: 18 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -55,13 +57,13 @@ export default function ThesisSaved({ sr, agentName, agentId, onClose }) {
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <FreeButton label={B.done} trail="" strong onClick={onClose} attrs={{ 'data-sr-done': '' }} />
-        {canEquip && eq.status === 'none' && <FreeButton label={COPY.useNext} trail={B.optional} onClick={() => sr.equipNow({ agentId, watchlistId })} attrs={{ 'data-sr-equip': '' }} />}
+        {canEquip && eq.status === 'none' && <FreeButton label={COPY.useNext} trail={B.optional} disabled={busy} onClick={() => sr.equipNow({ agentId, watchlistId })} attrs={{ 'data-sr-equip': '' }} />}
         {canEquip && eq.status === 'running' && <Running>{COPY.equipping}</Running>}
         {canEquip && eq.status === 'done' && <p style={S.body} data-sr-equipped="">{COPY.equipped}</p>}
         {canEquip && eq.status === 'failed' && (
           <>
             <Notice role="alert" attrs={{ 'data-sr-equip-failed': '' }}>{COPY.equipFailed}</Notice>
-            <FreeButton label={COPY.retry} trail={B.optional} onClick={() => sr.equipNow({ agentId, watchlistId })} />
+            <FreeButton label={COPY.retry} trail={B.optional} disabled={busy} onClick={() => sr.equipNow({ agentId, watchlistId })} />
           </>
         )}
       </div>

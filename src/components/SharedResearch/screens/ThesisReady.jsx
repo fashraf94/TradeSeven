@@ -67,7 +67,7 @@ export default function ThesisReady({ sr, agentName, phone, edit, setEdit, onKee
   const names = thesis.parts.names.value ?? [];
   const lines = thesis.parts.wrongIf.priceLines ?? [];
   const priceChoice = (thesis.choices?.free ?? []).find((c) => c.input === 'priceLines') ?? null;
-  const over = edit !== null && edit.length > STATEMENT_MAX;
+  const over = edit !== null && edit.trim().length > STATEMENT_MAX; // the server trims first (refuter 2)
   const statement = edit !== null && edit.trim() && edit.trim() !== thesis.sentence ? edit.trim() : null;
   // saveIssue judges the server's composed sentence (the refuter's R2): it holds Save unless the player's own sentence
   // differs from it — and always for too_many_evidence_refs, which no wording changes (the server checks it first)

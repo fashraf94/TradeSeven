@@ -29,7 +29,7 @@ vi.mock('../../config/sharedResearchFlags', async (importOriginal) => {
 const { default: Body } = await import('./SharedResearchSheetBody');
 const { SR_COPY: COPY } = await import('./sharedResearchCopy');
 const { sharedResearchBuilderMode } = await import('./builderMode');
-const { formatWhen } = await import('./sharedResearchView');
+const { formatWhen, STATEMENT_MAX } = await import('./sharedResearchView');
 const { SR_SERVER_COPY } = await import('../../../api/_utils/sharedResearch/copy.js');
 const kit = await import('./__fixtures__/srKit');
 const { default: TA } = await import('./__fixtures__/thesisAnswers.json');
@@ -921,7 +921,7 @@ describe('the refuter\'s round (fixes that regressed or fell short)', () => {
     return { status: 200, body: { ...base.body, session: { ...s, stepsUsed: s.stepsUsed + 1, lastStep: { ...s.lastStep, stepId }, exchanges: [...s.exchanges, partner] } } };
   };
 
-  it('R1: a lost tap sent again after the card moved on: the same opId, with the card\'s rev as it is now', async () => {
+  it('R1: a lost tap that never landed, sent again after the card moved on: a new tap — a fresh opId, the card\'s rev as it is now', async () => {
     await openOn(TA.walkGetSegment, {}, { card: [NETWORK, TA.stepInFlight], step: TA.walkNames });
     await tap('[data-sr-slot="timeFrame"]');
     await tap('[data-sr-panel="timeFrame"] [data-sr-free="set:timeFrame"]'); // lost
@@ -932,7 +932,23 @@ describe('the refuter\'s round (fixes that regressed or fell short)', () => {
     const [a, b] = server.sent('card').map((c) => c.body);
     expect(thesisOf('walkNames').rev).not.toBe(thesisOf('walkGetSegment').rev);
     expect(a.rev).toBe(thesisOf('walkGetSegment').rev);
-    expect(b).toEqual({ ...a, rev: thesisOf('walkNames').rev });
+    expect(b).toEqual({ ...a, opId: expect.stringMatching(UUID), rev: thesisOf('walkNames').rev });
+    expect(b.opId).not.toBe(a.opId);
+  });
+  it('R1 (refuter 2): a lost tap that DID land, tapped again after the part was changed: a new tap the server applies, never the landed opId', async () => {
+    const r = thesisOf('walkGetSegment').rev;
+    await openOn(TA.walkGetSegment, {}, { card: [NETWORK, TA.timeFrameLanded, TA.clearTimeFrameAgain, TA.swingAgain] });
+    await tap('[data-sr-slot="timeFrame"]');
+    await tap('[data-sr-panel="timeFrame"] [data-sr-free="set:timeFrame"][data-sr-free-value="swing"]'); // lost: the server set swing
+    await tap('[data-sr-panel="timeFrame"] [data-sr-free="set:timeFrame"][data-sr-free-value="positional"]'); // 409: the card swing made
+    expect($('[data-sr-slot="timeFrame"]').dataset.srSlotState).toBe('set');
+    await tap('[data-sr-change="timeFrame"]'); // the player changes it
+    await tap('[data-sr-panel="timeFrame"] [data-sr-free="set:timeFrame"][data-sr-free-value="swing"]'); // and wants swing now
+    const bodies = server.sent('card').map((c) => c.body);
+    expect(bodies.map((b) => b.rev)).toEqual([r, r, r + 1, r + 2]);
+    expect(bodies[3]).toMatchObject({ op: 'set', part: 'timeFrame', value: 'swing', rev: thesisOf('clearTimeFrameAgain').rev });
+    expect(bodies[3].opId).not.toBe(bodies[0].opId);
+    expect($('[data-sr-slot="timeFrame"]').dataset.srSlotState).toBe('set');
   });
   it('R1: a lost step that has since landed (its exchange is on screen): a new tap is a new step, with a new stepId', async () => {
     await openOn(TA.walkGetSegment, {}, {
@@ -969,39 +985,40 @@ describe('the refuter\'s round (fixes that regressed or fell short)', () => {
     expect($('[data-sr-save-thesis]').disabled).toBe(true);
     expect($('[data-sr-save-issue="too_many_evidence_refs"]').textContent).toBe(B.saveIssue.too_many_evidence_refs);
   });
-  it('R3: a not_ready refusal belongs to its card: once a later card is ready, no "Still to set", no failed line, Save reads Save', async () => {
-    await openOn(TA.walkGetReady, {}, { adopt: TA.notReady, get: [TA.walkGetReady, TA.walkGetWrongIf], card: TA.walkTimeFrame });
+  it('R3: not_ready on the card the screen holds: the read brings the card the server judged (the same rev); the refusal and its blockers show on it, and leave when the card changes', async () => {
+    await openOn(TA.walkGetReady, {}, { adopt: TA.notReadyStaleWhy, get: [TA.walkGetReady, TA.getStaleWhy], card: TA.clearStaleWhy });
     await tap('[data-sr-save-thesis]');
-    // the card the server judged, read again: the work view, the refusal and its blockers on it
+    expect(thesisOf('getStaleWhy').rev).toBe(thesisOf('walkGetReady').rev);
     expect($('[data-sr-ready]')).toBeNull();
-    expect($('[data-sr-builder] [data-sr-save="failed"]').textContent).toBe(TA.notReady.body.message);
-    expect($('[data-sr-blockers]')).not.toBeNull();
-    await tap('[data-sr-free="confirm:timeFrame"]');
+    expect($('[data-sr-builder] [data-sr-save="failed"]').textContent).toBe(TA.notReadyStaleWhy.body.message);
+    expect($('[data-sr-blockers]').textContent).toBe(B.stillToSet(B.parts.why));
+    await tap('[data-sr-slot="why"]');
+    await tap('[data-sr-change="why"]');
+    if ($('[data-sr-clear-yes]')) await tap('[data-sr-clear-yes]');
+    expect(server.sent('card')).toHaveLength(1);
+    expect($('[data-sr-builder]')).not.toBeNull();
+    expect($('[data-sr-save="failed"]')).toBeNull();
+    expect($('[data-sr-blockers]')).toBeNull();
+  });
+  it('R3 (refuter 2): a not_ready refusal is never drawn on a later card the read finds (another writer moved it): the server never judged that card', async () => {
+    await openOn(TA.walkGetReady, {}, { adopt: TA.notReadyStaleWhy, get: [TA.walkGetReady, TA.getPriced] });
+    await tap('[data-sr-save-thesis]');
+    expect(thesisOf('getPriced').rev).toBeGreaterThan(thesisOf('walkGetReady').rev);
     expect($('[data-sr-ready]')).not.toBeNull();
     expect($('[data-sr-blockers]')).toBeNull();
     expect($('[data-sr-save="failed"]')).toBeNull();
     expect($('[data-sr-save-thesis]').textContent).toBe(B.save);
   });
-  it('R3: on the work view, a refusal leaves once the card changes (still not ready)', async () => {
-    const staleNotReady = { status: 409, body: { ...TA.adoptStale.body, thesis: TA.cardStale.body.thesis } };
-    await openOn(TA.walkGetReady, {}, { adopt: staleNotReady, card: TA.walkConfirmWhy });
+  it('R3: a stale refusal on the ready view (another tap moved the card on) leaves when the card changes again', async () => {
+    await openOn(TA.walkGetReady, {}, { adopt: TA.adoptStalePriced, card: TA.walkPriceLineAgain });
     await tap('[data-sr-save-thesis]');
-    expect($('[data-sr-builder] [data-sr-save="stale"]')).not.toBeNull();
-    await tap('[data-sr-free="confirm:why"]');
-    expect(thesisOf('walkConfirmWhy').ready).toBe(false);
-    expect(thesisOf('walkConfirmWhy').rev).not.toBe(TA.cardStale.body.thesis.rev);
-    expect($('[data-sr-builder]')).not.toBeNull();
-    expect($('[data-sr-save="stale"]')).toBeNull();
-  });
-  it('R3: a stale refusal on the ready view leaves when the card changes again', async () => {
-    const staleReady = { status: 409, body: { ...TA.adoptStale.body, thesis: thesisOf('walkGetReady') } };
-    await openOn(TA.walkGetReady, {}, { adopt: staleReady, card: TA.walkPriceLine });
-    await tap('[data-sr-save-thesis]');
-    expect($('[data-sr-save="stale"]')).not.toBeNull();
+    expect($('[data-sr-ready]')).not.toBeNull();
+    expect($('[data-sr-save="stale"]').textContent).toBe(SR_SERVER_COPY.card_stale);
     await tap('[data-sr-price-open]');
-    typeInto($('[data-sr-price-level="NVDA"]'), '120');
+    typeInto($('[data-sr-price-level="NVDA"]'), '110');
     await tap('[data-sr-free="set:wrongIf:priceLines"]');
-    expect(thesisOf('walkPriceLine').rev).not.toBe(thesisOf('walkGetReady').rev);
+    expect(server.sent('card')).toHaveLength(1);
+    expect($('[data-sr-ready]')).not.toBeNull();
     expect($('[data-sr-save="stale"]')).toBeNull();
   });
   it('R4: the read after a card answer goes through the one-request rule: every choice held while it is out', async () => {
@@ -1032,5 +1049,42 @@ describe('the refuter\'s round (fixes that regressed or fell short)', () => {
     expect(server.sent('adopt')).toHaveLength(1);
     held.resolve(TA.walkGetWrongIf);
     await flush();
+  });
+  it('R4 (refuter 2): the read after a landed step fails: the line says so, and the next card answer reads again', async () => {
+    await openOn(TA.walkGetSegment, {}, { step: NETWORK, card: [TA.namesTimeFrame, TA.namesTimeFrameCleared], get: [TA.walkGetSegment, NETWORK, TA.getNamesTimeFrameCleared] });
+    await tap('[data-sr-research="find_names"]'); // lost — the server ran it
+    await tap('[data-sr-slot="timeFrame"]');
+    await tap('[data-sr-panel="timeFrame"] [data-sr-free="set:timeFrame"][data-sr-free-value="swing"]'); // shows the step landed: read → fails
+    expect(server.sent('get')).toHaveLength(2);
+    expect($('[data-sr-read-failed="network"]')).not.toBeNull();
+    await tap('[data-sr-change="timeFrame"]'); // the next card answer reads again
+    expect(server.sent('card')).toHaveLength(2);
+    expect(server.sent('get')).toHaveLength(3);
+    expect($('[data-sr-read-failed]')).toBeNull();
+  });
+  it('K-16 on the saved view (refuter 2): the read after the save goes through the one-request rule; equip waits for it', async () => {
+    const held = deferred();
+    transitionHypothesis.mockResolvedValue({});
+    equipLoadoutBook.mockResolvedValue({ ok: true });
+    await openOn(TA.walkGetReady, {}, { adopt: TA.walkSaved, get: [TA.walkGetReady, () => held.promise] });
+    await tap('[data-sr-save-thesis]');
+    expect(server.sent('get')).toHaveLength(2);
+    expect($('[data-sr-thesis-saved]')).not.toBeNull();
+    expect($('[data-sr-equip]').disabled).toBe(true);
+    click($('[data-sr-equip]'));
+    await flush();
+    expect(transitionHypothesis).not.toHaveBeenCalled();
+    expect(equipLoadoutBook).not.toHaveBeenCalled();
+    held.resolve(TA.walkGetSaved);
+    await flush();
+    expect($('[data-sr-equip]').disabled).toBe(false);
+  });
+  it('refuter 2: an edit is measured as the server measures it (trimmed): a padded sentence within the limit can be saved', async () => {
+    await openOn(TA.walkGetReady);
+    await tap('[data-sr-edit]');
+    const mine = `${thesisOf('walkGetReady').sentence} Mine.`;
+    typeInto($('#sr-thesis-edit'), `${mine}${' '.repeat(STATEMENT_MAX - mine.length + 5)}`);
+    await flush();
+    expect($('[data-sr-save-thesis]').disabled).toBe(false);
   });
 });

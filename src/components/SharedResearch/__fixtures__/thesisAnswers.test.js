@@ -371,7 +371,8 @@ function build() {
       at: at(minute), asOf: null, status: 'unavailable', statusReason: 'single_source', supersedes: f.findingId,
     }], at(minute)), at(minute));
   };
-  A.getStaleWhy = { status: 200, body: getAnswerOf({ ...ready, record: supersede(ready, ready.session.thesis.why.reasons[0].findingIds[0], 11) }) };
+  const staleWhyInv = { ...ready, record: supersede(ready, ready.session.thesis.why.reasons[0].findingIds[0], 11) };
+  A.getStaleWhy = { status: 200, body: getAnswerOf(staleWhyInv) };
   const proposalRef = afterWhyStep.session.thesis.why.proposal.reasons[0].findingIds[0];
   A.getProposalCorrected = { status: 200, body: getAnswerOf({ ...afterWhyStep, record: supersede(afterWhyStep, proposalRef, 11) }) };
 
@@ -498,6 +499,31 @@ function build() {
   many = tap(many, { op: 'set', part: 'wrongIf', value: { text: 'the large cloud buyers stop ordering Nvidia accelerators' }, nowIso: at(8) }).inv;
   many = tap(many, { op: 'set', part: 'timeFrame', value: 'positional', nowIso: at(9) }).inv;
   A.getTooManyRefs = { status: 200, body: getAnswerOf(many) };
+
+  // ── the refuters' second round: each sequence as a server would answer it ──
+  // not_ready on the ready card the screen holds: a correction made its why stale with no card op (the rev unchanged)
+  A.notReadyStaleWhy = refusal(409, 'not_ready', { blockers: thesisOf(staleWhyInv).blockers });
+  A.clearStaleWhy = tap(staleWhyInv, { op: 'clear', part: 'why', nowIso: at(12) }).answer;
+  // card_stale on Save: a price line set elsewhere moved the card on; the GET of that card; then the card moves again
+  A.adoptStalePriced = refusal(409, 'card_stale', { thesis: thesisOf(priced.inv) });
+  A.getPriced = { status: 200, body: getAnswerOf(priced.inv) };
+  A.walkPriceLineAgain = tap(priced.inv, { op: 'set', part: 'wrongIf', value: { priceLines: [{ symbol: 'NVDA', level: 110 }] }, nowIso: at(12) }).answer;
+  // a lost tap that landed (swing): the next tap (positional) is refused with the card swing made; the time frame is
+  // changed (cleared), then swing is tapped again — a new tap the server must apply
+  const swung = tap(afterSegment, { op: 'set', part: 'timeFrame', value: 'swing', nowIso: at(12) });
+  A.timeFrameLanded = refusal(409, 'card_stale', { thesis: thesisOf(swung.inv) });
+  const unswung = tap(swung.inv, { op: 'clear', part: 'timeFrame', nowIso: at(13) });
+  A.clearTimeFrameAgain = unswung.answer;
+  A.swingAgain = tap(unswung.inv, { op: 'set', part: 'timeFrame', value: 'swing', nowIso: at(14) }).answer;
+  // a later free tap after a step landed unheard (its read may fail; the next card answer reads again)
+  A.oneStockTimeFrame = tap(afterOneStock, { op: 'set', part: 'timeFrame', value: 'swing', nowIso: at(12) }).answer;
+  // the screen holds the segment; find_names landed but its answer was lost; the player sets swing (the answer shows the
+  // step), then changes it (the next card answer); the GET after that change
+  const namesSwing = tap(afterNames, { op: 'set', part: 'timeFrame', value: 'swing', nowIso: at(12) });
+  A.namesTimeFrame = namesSwing.answer;
+  const namesUnswung = tap(namesSwing.inv, { op: 'clear', part: 'timeFrame', nowIso: at(13) });
+  A.namesTimeFrameCleared = namesUnswung.answer;
+  A.getNamesTimeFrameCleared = { status: 200, body: getAnswerOf(namesUnswung.inv) };
   return A;
 }
 
@@ -552,6 +578,19 @@ describe('the thesis builder\'s client fixtures are the server\'s answers (B4 Te
     expect(t('getSaveIssue')).toMatchObject({ ready: true, saveIssue: { code: 'names_not_supported', detail: { deselected: 'AMD' } } });
     expect(t('getTooManyRefs')).toMatchObject({ ready: true, saveIssue: { code: 'too_many_evidence_refs' } });
     expect(t('getTooManyRefs').saveIssue.detail).toBeGreaterThan(28);
+    // the second round's sequences hold the revs their rows rely on (revs only grow; not_ready keeps the rev)
+    expect(t('getStaleWhy')).toMatchObject({ rev: t('walkGetReady').rev, ready: false });
+    expect(A.notReadyStaleWhy.body.blockers).toEqual([{ part: 'why', state: 'stale' }]);
+    expect(t('clearStaleWhy').rev).toBe(t('getStaleWhy').rev + 1);
+    expect(A.adoptStalePriced.body.thesis).toMatchObject({ rev: t('walkGetReady').rev + 1, ready: true });
+    expect(t('walkPriceLineAgain')).toMatchObject({ rev: t('walkGetReady').rev + 2, ready: true });
+    expect(A.timeFrameLanded.body.thesis.rev).toBe(t('walkGetSegment').rev + 1);
+    expect(A.timeFrameLanded.body.thesis.parts.timeFrame).toMatchObject({ state: 'set', value: 'swing' });
+    expect(t('clearTimeFrameAgain').rev).toBe(t('walkGetSegment').rev + 2);
+    expect(t('swingAgain').parts.timeFrame).toMatchObject({ state: 'set', value: 'swing' });
+    expect(t('oneStockTimeFrame').rev).toBe(t('walkOneStock').rev + 1);
+    expect(A.namesTimeFrame.body.session.stepsUsed).toBe(A.walkGetSegment.body.session.stepsUsed + 1);
+    expect(t('getNamesTimeFrameCleared').rev).toBe(t('namesTimeFrameCleared').rev);
     expect(t('getStaleSegment').parts.segment.state).toBe('stale');
     expect(t('getStaleSegment').ready).toBe(false);
     expect(t('getStaleSegment').blockers[0]).toEqual({ part: 'segment', state: 'stale' });

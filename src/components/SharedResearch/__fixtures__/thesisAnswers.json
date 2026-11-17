@@ -25482,5 +25482,3564 @@
         "stepsPerDay": 30
       }
     }
+  },
+  "notReadyStaleWhy": {
+    "status": 409,
+    "body": {
+      "error": "not_ready",
+      "message": "The thesis is not ready to save yet. Set the names, the why, what would prove it wrong and the time frame.",
+      "blockers": [
+        {
+          "part": "why",
+          "state": "stale"
+        }
+      ]
+    }
+  },
+  "clearStaleWhy": {
+    "status": 200,
+    "body": {
+      "session": {
+        "sessionId": "7a7a7a7a-0000-4000-8000-000000000001",
+        "status": "open",
+        "entry": {
+          "kind": "observation",
+          "itemRef": null,
+          "observation": "I want to play AI",
+          "direction": null,
+          "topic": null,
+          "names": []
+        },
+        "frame": null,
+        "lastError": null,
+        "exchanges": [
+          {
+            "who": "player",
+            "kind": "observation",
+            "text": "I want to play AI",
+            "at": "2026-11-17T14:00:00.000Z"
+          },
+          {
+            "who": "partner",
+            "kind": "step",
+            "text": "Your observation is \"I want to play AI\"; the retrieved items point to four places the theme touches: accelerator chips, networking between chips, data-center power and the cloud companies that spend on it all. I would stand on accelerator chips, since the cloud spending report names them as where most of the money goes. No listed company has a sourced connection yet, so the next steps need to find who earns from this.",
+            "at": "2026-11-17T14:01:00.000Z",
+            "stepId": "5e5e5e5e-0000-4000-8000-000000000003",
+            "intent": "build",
+            "goal": "map_segments"
+          },
+          {
+            "who": "player",
+            "kind": "card",
+            "text": "Segment: Accelerator chips",
+            "at": "2026-11-17T14:02:00.000Z",
+            "card": {
+              "op": "confirm",
+              "part": "segment"
+            }
+          },
+          {
+            "who": "partner",
+            "kind": "step",
+            "text": "Three listed companies have a sourced connection to accelerator chips: Nvidia, AMD and Broadcom. A packaging supplier came up too, but it is privately held, so it stays a lead. Each connection rests on one source, and none says how much of the company's revenue it is.",
+            "at": "2026-11-17T14:03:00.000Z",
+            "stepId": "5e5e5e5e-0000-4000-8000-000000000011",
+            "intent": "build",
+            "goal": "find_names"
+          },
+          {
+            "who": "player",
+            "kind": "card",
+            "text": "Names: NVDA",
+            "at": "2026-11-17T14:04:00.000Z",
+            "card": {
+              "op": "set",
+              "part": "names"
+            }
+          },
+          {
+            "who": "partner",
+            "kind": "step",
+            "text": "Nvidia's data-center segment, which sells accelerators and systems to cloud companies, was the large majority of its revenue last quarter, so the AI link carries real weight for the company. The strongest point against is that its largest customers also design their own AI chips. I propose a wrong-if tied to that customer concentration, and a positional time frame.",
+            "at": "2026-11-17T14:05:00.000Z",
+            "stepId": "5e5e5e5e-0000-4000-8000-000000000019",
+            "intent": "build",
+            "goal": "build_why"
+          },
+          {
+            "who": "player",
+            "kind": "card",
+            "text": "Why: confirmed",
+            "at": "2026-11-17T14:06:00.000Z",
+            "card": {
+              "op": "confirm",
+              "part": "why"
+            }
+          },
+          {
+            "who": "player",
+            "kind": "card",
+            "text": "Wrong if: the big cloud companies shift more of their AI workloads onto chips they design themselves, away from Nvidia accelerators",
+            "at": "2026-11-17T14:07:00.000Z",
+            "card": {
+              "op": "confirm",
+              "part": "wrongIf"
+            }
+          },
+          {
+            "who": "player",
+            "kind": "card",
+            "text": "Time frame: Positional · about 30 sessions",
+            "at": "2026-11-17T14:08:00.000Z",
+            "card": {
+              "op": "confirm",
+              "part": "timeFrame"
+            }
+          },
+          {
+            "who": "player",
+            "kind": "card",
+            "text": "Changed why",
+            "at": "2026-11-17T14:12:00.000Z",
+            "card": {
+              "op": "clear",
+              "part": "why"
+            }
+          }
+        ],
+        "stepsUsed": 3,
+        "stepBudget": 10,
+        "lastStep": {
+          "stepId": "5e5e5e5e-0000-4000-8000-000000000019",
+          "intent": "build",
+          "status": "completed",
+          "startedAt": "2026-11-17T14:05:00.000Z",
+          "endedAt": "2026-11-17T14:05:00.000Z",
+          "error": null,
+          "query": "q",
+          "summaryWithheld": false
+        },
+        "researchWorkId": "sr_7a7a7a7a-0000-4000-8000-000000000001",
+        "adoption": null,
+        "createdAt": "2026-11-17T14:00:00.000Z",
+        "updatedAt": "2026-11-17T14:12:00.000Z",
+        "shape": "builder"
+      },
+      "thesis": {
+        "schemaVersion": 1,
+        "rev": 9,
+        "parts": {
+          "theme": {
+            "state": "set",
+            "value": "I want to play AI",
+            "by": "player_wrote",
+            "suggestion": null
+          },
+          "segment": {
+            "state": "set",
+            "value": "Accelerator chips",
+            "by": "partner_suggested_confirmed",
+            "skipped": false,
+            "findingIds": [
+              "f_0a0a0a01-0000-4000-8000-000000000005"
+            ],
+            "map": [
+              {
+                "label": "Accelerator chips",
+                "line": "The processors that train and run AI models, where most data-center AI spending goes.",
+                "findingIds": [
+                  "f_0a0a0a01-0000-4000-8000-000000000005"
+                ]
+              },
+              {
+                "label": "Chip networking",
+                "line": "The high-speed links that tie thousands of accelerators into one training cluster.",
+                "findingIds": [
+                  "f_0a0a0a04-0000-4000-8000-000000000008"
+                ]
+              },
+              {
+                "label": "Data-center power",
+                "line": "Utilities and grid supply meeting new data-center demand.",
+                "findingIds": [
+                  "f_0a0a0a03-0000-4000-8000-000000000007",
+                  "f_0a0a0a02-0000-4000-8000-000000000006"
+                ]
+              },
+              {
+                "label": "Cloud spenders",
+                "line": "The large cloud companies that raise AI data-center spending and buy the capacity.",
+                "findingIds": [
+                  "f_0a0a0a01-0000-4000-8000-000000000005"
+                ]
+              }
+            ]
+          },
+          "names": {
+            "state": "set",
+            "value": [
+              "NVDA"
+            ],
+            "by": "player_chose",
+            "blocked": null
+          },
+          "why": {
+            "state": "unset",
+            "by": null,
+            "shared": null,
+            "reasons": [],
+            "against": null,
+            "proposal": null
+          },
+          "wrongIf": {
+            "state": "set",
+            "by": "partner_suggested_confirmed",
+            "text": "the big cloud companies shift more of their AI workloads onto chips they design themselves, away from Nvidia accelerators",
+            "findingIds": [
+              "f_0a0a0a03-0000-4000-8000-000000000023"
+            ],
+            "options": [
+              {
+                "text": "the big cloud companies shift more of their AI workloads onto chips they design themselves, away from Nvidia accelerators",
+                "findingIds": [
+                  "f_0a0a0a03-0000-4000-8000-000000000023"
+                ]
+              },
+              {
+                "text": "the largest cloud companies cut or pause their AI data-center spending plans",
+                "findingIds": [
+                  "f_0a0a0a04-0000-4000-8000-000000000024"
+                ]
+              },
+              {
+                "text": "data-center accelerators stop being the large majority of Nvidia's revenue",
+                "findingIds": [
+                  "f_0a0a0a01-0000-4000-8000-000000000021"
+                ]
+              }
+            ],
+            "priceLines": []
+          },
+          "timeFrame": {
+            "state": "set",
+            "by": "partner_suggested_confirmed",
+            "value": "positional",
+            "label": "Positional · about 30 sessions",
+            "suggestion": null
+          }
+        },
+        "pick": null,
+        "filled": 5,
+        "saveIssue": null,
+        "ready": false,
+        "blockers": [
+          {
+            "part": "why",
+            "state": "unset"
+          }
+        ],
+        "sentence": null,
+        "dependents": {
+          "segment": [
+            "names",
+            "why"
+          ],
+          "names": [
+            "why"
+          ]
+        },
+        "choices": {
+          "research": [
+            {
+              "goal": "build_why"
+            },
+            {
+              "goal": "strengthen",
+              "part": "theme"
+            },
+            {
+              "goal": "strengthen",
+              "part": "segment"
+            },
+            {
+              "goal": "strengthen",
+              "part": "names"
+            },
+            {
+              "goal": "strengthen",
+              "part": "wrongIf"
+            },
+            {
+              "goal": "strengthen",
+              "part": "timeFrame"
+            },
+            {
+              "goal": "direction"
+            }
+          ],
+          "free": [
+            {
+              "op": "set",
+              "part": "wrongIf",
+              "input": "priceLines",
+              "options": [
+                "NVDA"
+              ]
+            },
+            {
+              "op": "clear",
+              "part": "segment",
+              "clears": [
+                "names",
+                "why"
+              ]
+            },
+            {
+              "op": "clear",
+              "part": "names",
+              "clears": [
+                "why"
+              ]
+            },
+            {
+              "op": "clear",
+              "part": "wrongIf",
+              "clears": []
+            },
+            {
+              "op": "clear",
+              "part": "timeFrame",
+              "clears": []
+            }
+          ]
+        }
+      },
+      "applied": true
+    }
+  },
+  "adoptStalePriced": {
+    "status": 409,
+    "body": {
+      "error": "card_stale",
+      "message": "The thesis changed since you last saw it. Check the card and choose again.",
+      "thesis": {
+        "schemaVersion": 1,
+        "rev": 9,
+        "parts": {
+          "theme": {
+            "state": "set",
+            "value": "I want to play AI",
+            "by": "player_wrote",
+            "suggestion": null
+          },
+          "segment": {
+            "state": "set",
+            "value": "Accelerator chips",
+            "by": "partner_suggested_confirmed",
+            "skipped": false,
+            "findingIds": [
+              "f_0a0a0a01-0000-4000-8000-000000000005"
+            ],
+            "map": [
+              {
+                "label": "Accelerator chips",
+                "line": "The processors that train and run AI models, where most data-center AI spending goes.",
+                "findingIds": [
+                  "f_0a0a0a01-0000-4000-8000-000000000005"
+                ]
+              },
+              {
+                "label": "Chip networking",
+                "line": "The high-speed links that tie thousands of accelerators into one training cluster.",
+                "findingIds": [
+                  "f_0a0a0a04-0000-4000-8000-000000000008"
+                ]
+              },
+              {
+                "label": "Data-center power",
+                "line": "Utilities and grid supply meeting new data-center demand.",
+                "findingIds": [
+                  "f_0a0a0a03-0000-4000-8000-000000000007",
+                  "f_0a0a0a02-0000-4000-8000-000000000006"
+                ]
+              },
+              {
+                "label": "Cloud spenders",
+                "line": "The large cloud companies that raise AI data-center spending and buy the capacity.",
+                "findingIds": [
+                  "f_0a0a0a01-0000-4000-8000-000000000005"
+                ]
+              }
+            ]
+          },
+          "names": {
+            "state": "set",
+            "value": [
+              "NVDA"
+            ],
+            "by": "player_chose",
+            "blocked": null
+          },
+          "why": {
+            "state": "set",
+            "by": "partner_suggested_confirmed",
+            "shared": "Nvidia earns most of its revenue from accelerators sold into AI data centers, as its own results show",
+            "reasons": [
+              {
+                "symbol": "NVDA",
+                "text": "Data-center accelerators and systems were the large majority of last quarter's revenue, and big cloud buyers plan to raise AI spending next year.",
+                "findingIds": [
+                  "f_0a0a0a01-0000-4000-8000-000000000021",
+                  "f_0a0a0a04-0000-4000-8000-000000000024"
+                ]
+              }
+            ],
+            "against": {
+              "text": "Its largest customers also design their own AI chips and use them alongside Nvidia's, which could limit how much of their spending it keeps.",
+              "findingIds": [
+                "f_0a0a0a02-0000-4000-8000-000000000022",
+                "f_0a0a0a03-0000-4000-8000-000000000023"
+              ]
+            },
+            "proposal": null
+          },
+          "wrongIf": {
+            "state": "set",
+            "by": "partner_suggested_confirmed",
+            "text": "the big cloud companies shift more of their AI workloads onto chips they design themselves, away from Nvidia accelerators",
+            "findingIds": [
+              "f_0a0a0a03-0000-4000-8000-000000000023"
+            ],
+            "options": [
+              {
+                "text": "the big cloud companies shift more of their AI workloads onto chips they design themselves, away from Nvidia accelerators",
+                "findingIds": [
+                  "f_0a0a0a03-0000-4000-8000-000000000023"
+                ]
+              },
+              {
+                "text": "the largest cloud companies cut or pause their AI data-center spending plans",
+                "findingIds": [
+                  "f_0a0a0a04-0000-4000-8000-000000000024"
+                ]
+              },
+              {
+                "text": "data-center accelerators stop being the large majority of Nvidia's revenue",
+                "findingIds": [
+                  "f_0a0a0a01-0000-4000-8000-000000000021"
+                ]
+              }
+            ],
+            "priceLines": [
+              {
+                "symbol": "NVDA",
+                "level": 120
+              }
+            ]
+          },
+          "timeFrame": {
+            "state": "set",
+            "by": "partner_suggested_confirmed",
+            "value": "positional",
+            "label": "Positional · about 30 sessions",
+            "suggestion": null
+          }
+        },
+        "pick": null,
+        "filled": 6,
+        "saveIssue": null,
+        "ready": true,
+        "blockers": [],
+        "sentence": "My theme is I want to play AI, through Accelerator chips, built on NVDA, because Nvidia earns most of its revenue from accelerators sold into AI data centers, as its own results show. It's wrong if the big cloud companies shift more of their AI workloads onto chips they design themselves, away from Nvidia accelerators. Time frame: Positional · about 30 sessions.",
+        "dependents": {
+          "segment": [
+            "names",
+            "why"
+          ],
+          "names": [
+            "why"
+          ]
+        },
+        "choices": {
+          "research": [
+            {
+              "goal": "strengthen",
+              "part": "theme"
+            },
+            {
+              "goal": "strengthen",
+              "part": "segment"
+            },
+            {
+              "goal": "strengthen",
+              "part": "names"
+            },
+            {
+              "goal": "strengthen",
+              "part": "why"
+            },
+            {
+              "goal": "strengthen",
+              "part": "wrongIf"
+            },
+            {
+              "goal": "strengthen",
+              "part": "timeFrame"
+            },
+            {
+              "goal": "direction"
+            }
+          ],
+          "free": [
+            {
+              "op": "set",
+              "part": "wrongIf",
+              "input": "priceLines",
+              "options": [
+                "NVDA"
+              ]
+            },
+            {
+              "op": "clear",
+              "part": "segment",
+              "clears": [
+                "names",
+                "why"
+              ]
+            },
+            {
+              "op": "clear",
+              "part": "names",
+              "clears": [
+                "why"
+              ]
+            },
+            {
+              "op": "clear",
+              "part": "why",
+              "clears": []
+            },
+            {
+              "op": "clear",
+              "part": "wrongIf",
+              "clears": []
+            },
+            {
+              "op": "clear",
+              "part": "timeFrame",
+              "clears": []
+            }
+          ]
+        }
+      }
+    }
+  },
+  "getPriced": {
+    "status": 200,
+    "body": {
+      "session": {
+        "sessionId": "7a7a7a7a-0000-4000-8000-000000000001",
+        "status": "open",
+        "entry": {
+          "kind": "observation",
+          "itemRef": null,
+          "observation": "I want to play AI",
+          "direction": null,
+          "topic": null,
+          "names": []
+        },
+        "frame": null,
+        "lastError": null,
+        "exchanges": [
+          {
+            "who": "player",
+            "kind": "observation",
+            "text": "I want to play AI",
+            "at": "2026-11-17T14:00:00.000Z"
+          },
+          {
+            "who": "partner",
+            "kind": "step",
+            "text": "Your observation is \"I want to play AI\"; the retrieved items point to four places the theme touches: accelerator chips, networking between chips, data-center power and the cloud companies that spend on it all. I would stand on accelerator chips, since the cloud spending report names them as where most of the money goes. No listed company has a sourced connection yet, so the next steps need to find who earns from this.",
+            "at": "2026-11-17T14:01:00.000Z",
+            "stepId": "5e5e5e5e-0000-4000-8000-000000000003",
+            "intent": "build",
+            "goal": "map_segments"
+          },
+          {
+            "who": "player",
+            "kind": "card",
+            "text": "Segment: Accelerator chips",
+            "at": "2026-11-17T14:02:00.000Z",
+            "card": {
+              "op": "confirm",
+              "part": "segment"
+            }
+          },
+          {
+            "who": "partner",
+            "kind": "step",
+            "text": "Three listed companies have a sourced connection to accelerator chips: Nvidia, AMD and Broadcom. A packaging supplier came up too, but it is privately held, so it stays a lead. Each connection rests on one source, and none says how much of the company's revenue it is.",
+            "at": "2026-11-17T14:03:00.000Z",
+            "stepId": "5e5e5e5e-0000-4000-8000-000000000011",
+            "intent": "build",
+            "goal": "find_names"
+          },
+          {
+            "who": "player",
+            "kind": "card",
+            "text": "Names: NVDA",
+            "at": "2026-11-17T14:04:00.000Z",
+            "card": {
+              "op": "set",
+              "part": "names"
+            }
+          },
+          {
+            "who": "partner",
+            "kind": "step",
+            "text": "Nvidia's data-center segment, which sells accelerators and systems to cloud companies, was the large majority of its revenue last quarter, so the AI link carries real weight for the company. The strongest point against is that its largest customers also design their own AI chips. I propose a wrong-if tied to that customer concentration, and a positional time frame.",
+            "at": "2026-11-17T14:05:00.000Z",
+            "stepId": "5e5e5e5e-0000-4000-8000-000000000019",
+            "intent": "build",
+            "goal": "build_why"
+          },
+          {
+            "who": "player",
+            "kind": "card",
+            "text": "Why: confirmed",
+            "at": "2026-11-17T14:06:00.000Z",
+            "card": {
+              "op": "confirm",
+              "part": "why"
+            }
+          },
+          {
+            "who": "player",
+            "kind": "card",
+            "text": "Wrong if: the big cloud companies shift more of their AI workloads onto chips they design themselves, away from Nvidia accelerators",
+            "at": "2026-11-17T14:07:00.000Z",
+            "card": {
+              "op": "confirm",
+              "part": "wrongIf"
+            }
+          },
+          {
+            "who": "player",
+            "kind": "card",
+            "text": "Time frame: Positional · about 30 sessions",
+            "at": "2026-11-17T14:08:00.000Z",
+            "card": {
+              "op": "confirm",
+              "part": "timeFrame"
+            }
+          },
+          {
+            "who": "player",
+            "kind": "card",
+            "text": "Wrong if: the big cloud companies shift more of their AI workloads onto chips they design themselves, away from Nvidia accelerators · price line NVDA below 120",
+            "at": "2026-11-17T14:09:00.000Z",
+            "card": {
+              "op": "set",
+              "part": "wrongIf"
+            }
+          }
+        ],
+        "stepsUsed": 3,
+        "stepBudget": 10,
+        "lastStep": {
+          "stepId": "5e5e5e5e-0000-4000-8000-000000000019",
+          "intent": "build",
+          "status": "completed",
+          "startedAt": "2026-11-17T14:05:00.000Z",
+          "endedAt": "2026-11-17T14:05:00.000Z",
+          "error": null,
+          "query": "q",
+          "summaryWithheld": false
+        },
+        "researchWorkId": "sr_7a7a7a7a-0000-4000-8000-000000000001",
+        "adoption": null,
+        "createdAt": "2026-11-17T14:00:00.000Z",
+        "updatedAt": "2026-11-17T14:09:00.000Z",
+        "shape": "builder"
+      },
+      "record": {
+        "researchWorkId": "sr_7a7a7a7a-0000-4000-8000-000000000001",
+        "question": "Build a thesis on: I want to play AI",
+        "state": "open",
+        "terminalReason": null,
+        "endedAt": null,
+        "createdAt": "2026-11-17T14:00:00.000Z",
+        "lastTurnAt": null,
+        "summary": null,
+        "answerStale": false,
+        "summaryRevisions": [],
+        "findings": [
+          {
+            "findingId": "f_0f0f0f0f-0000-4000-8000-000000000002",
+            "kind": "observation",
+            "symbol": null,
+            "fact": "I want to play AI",
+            "source": {
+              "recordKind": "exchange",
+              "recordId": null,
+              "label": "Your words"
+            },
+            "at": "2026-11-17T14:00:00.000Z",
+            "asOf": null,
+            "status": "unverified",
+            "statusReason": "player_words",
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0a0a0a01-0000-4000-8000-000000000005",
+            "kind": "coverage",
+            "symbol": null,
+            "fact": "The largest cloud companies said they would keep raising AI data-center spending next year, most of it on accelerator chips.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://news.example.com/ai-capex",
+              "label": "news.example.com · Cloud companies keep raising AI data-center spending",
+              "url": "https://news.example.com/ai-capex"
+            },
+            "at": "2026-11-10T00:00:00.000Z",
+            "asOf": "2026-11-10T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0a0a0a02-0000-4000-8000-000000000006",
+            "kind": "coverage",
+            "symbol": null,
+            "fact": "Executives named chip supply, power and networking as the limits on how fast new AI capacity comes online.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://news.example.com/ai-capex",
+              "label": "news.example.com · Cloud companies keep raising AI data-center spending",
+              "url": "https://news.example.com/ai-capex"
+            },
+            "at": "2026-11-10T00:00:00.000Z",
+            "asOf": "2026-11-10T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0a0a0a03-0000-4000-8000-000000000007",
+            "kind": "coverage",
+            "symbol": null,
+            "fact": "Utilities said data-center projects now make up a large share of requests for new grid connections.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://industry.example.org/dc-power",
+              "label": "industry.example.org · Utilities see data centers driving new demand",
+              "url": "https://industry.example.org/dc-power"
+            },
+            "at": "2026-11-04T00:00:00.000Z",
+            "asOf": "2026-11-04T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0a0a0a04-0000-4000-8000-000000000008",
+            "kind": "coverage",
+            "symbol": null,
+            "fact": "Training clusters need high-speed networking between thousands of accelerators, a market several chip and equipment makers serve.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://news.example.com/ai-networking",
+              "label": "news.example.com · The links between AI chips · undated",
+              "url": "https://news.example.com/ai-networking"
+            },
+            "at": "2026-11-16T15:00:00.000Z",
+            "asOf": null,
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0a0a0a01-0000-4000-8000-000000000013",
+            "kind": "relationship",
+            "symbol": "NVDA",
+            "fact": "Product owner · Nvidia designs the accelerator chips that most AI data centers buy.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://news.example.com/nvda-accel",
+              "label": "news.example.com · Nvidia accelerators lead AI data centers",
+              "url": "https://news.example.com/nvda-accel"
+            },
+            "at": "2026-11-09T00:00:00.000Z",
+            "asOf": "2026-11-09T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0a0a0a02-0000-4000-8000-000000000014",
+            "kind": "relationship",
+            "symbol": "AMD",
+            "fact": "Product owner · AMD said cloud companies ordered its accelerator chips for new AI data centers.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://news.example.com/amd-cloud",
+              "label": "news.example.com · AMD wins accelerator orders from cloud buyers",
+              "url": "https://news.example.com/amd-cloud"
+            },
+            "at": "2026-11-08T00:00:00.000Z",
+            "asOf": "2026-11-08T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0a0a0a03-0000-4000-8000-000000000015",
+            "kind": "relationship",
+            "symbol": "AVGO",
+            "fact": "Supplier · Broadcom designs custom AI chips for some of the largest cloud companies.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://industry.example.org/custom-ai-chips",
+              "label": "industry.example.org · Who builds the custom chips",
+              "url": "https://industry.example.org/custom-ai-chips"
+            },
+            "at": "2026-11-06T00:00:00.000Z",
+            "asOf": "2026-11-06T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0a0a0a04-0000-4000-8000-000000000016",
+            "kind": "relationship",
+            "symbol": null,
+            "fact": "Supplier · Orrin Compute: Orrin Compute packages accelerator chips for several chip designers.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://industry.example.org/ai-packaging",
+              "label": "industry.example.org · Who packages AI chips",
+              "url": "https://industry.example.org/ai-packaging"
+            },
+            "at": "2026-11-05T00:00:00.000Z",
+            "asOf": "2026-11-05T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0a0a0a01-0000-4000-8000-000000000021",
+            "kind": "earnings_fact",
+            "symbol": "NVDA",
+            "fact": "Nvidia said its data-center segment, which sells accelerators and systems to cloud companies, was the large majority of its revenue last quarter. The exact share was not stated in the source.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://news.example.com/nvda-results",
+              "label": "news.example.com · Nvidia: data centers are most of the business",
+              "url": "https://news.example.com/nvda-results"
+            },
+            "at": "2026-11-12T00:00:00.000Z",
+            "asOf": "2026-11-12T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0a0a0a02-0000-4000-8000-000000000022",
+            "kind": "relationship",
+            "symbol": "NVDA",
+            "fact": "Other · Nvidia named the big cloud companies as its largest customers, so its AI revenue depends on a small group of buyers.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://news.example.com/nvda-results",
+              "label": "news.example.com · Nvidia: data centers are most of the business",
+              "url": "https://news.example.com/nvda-results"
+            },
+            "at": "2026-11-12T00:00:00.000Z",
+            "asOf": "2026-11-12T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0a0a0a03-0000-4000-8000-000000000023",
+            "kind": "coverage",
+            "symbol": null,
+            "fact": "Several of the largest cloud companies design their own AI chips and use them alongside the accelerators they buy.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://industry.example.org/custom-chips",
+              "label": "industry.example.org · Big buyers design their own AI chips",
+              "url": "https://industry.example.org/custom-chips"
+            },
+            "at": "2026-11-07T00:00:00.000Z",
+            "asOf": "2026-11-07T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0a0a0a04-0000-4000-8000-000000000024",
+            "kind": "coverage",
+            "symbol": null,
+            "fact": "The largest cloud companies said they plan to keep raising AI data-center spending next year.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://news.example.com/capex-plans",
+              "label": "news.example.com · Spending plans for next year",
+              "url": "https://news.example.com/capex-plans"
+            },
+            "at": "2026-11-10T00:00:00.000Z",
+            "asOf": "2026-11-10T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0a0a0a05-0000-4000-8000-000000000025",
+            "kind": "inference",
+            "symbol": "NVDA",
+            "fact": "The customers that fund Nvidia's AI demand are also building their own chips, so the same buyers could both raise and cap Nvidia's share of their spending. This is an inference from the findings above.",
+            "source": {
+              "recordKind": "exchange",
+              "recordId": null,
+              "label": "Inferred in this step"
+            },
+            "at": "2026-11-17T14:05:00.000Z",
+            "asOf": null,
+            "status": "unverified",
+            "statusReason": "inference",
+            "supersedes": null
+          }
+        ],
+        "superseded": [],
+        "lines": {
+          "support": null,
+          "complication": null,
+          "missing": null
+        },
+        "nextAction": null,
+        "age": null
+      },
+      "companies": {
+        "supported": [
+          {
+            "symbol": "NVDA",
+            "name": "NVIDIA Corporation",
+            "role": "Other",
+            "relationship": "Nvidia named the big cloud companies as its largest customers, so its AI revenue depends on a small group of buyers.",
+            "relationshipFindingId": "f_0a0a0a02-0000-4000-8000-000000000022",
+            "evidence": [
+              "f_0a0a0a01-0000-4000-8000-000000000013",
+              "f_0a0a0a01-0000-4000-8000-000000000021",
+              "f_0a0a0a02-0000-4000-8000-000000000022"
+            ],
+            "openQuestion": null,
+            "claim": null,
+            "eligibility": "eligible"
+          },
+          {
+            "symbol": "AMD",
+            "name": "Advanced Micro Devices, Inc.",
+            "role": "Product owner",
+            "relationship": "AMD said cloud companies ordered its accelerator chips for new AI data centers.",
+            "relationshipFindingId": "f_0a0a0a02-0000-4000-8000-000000000014",
+            "evidence": [
+              "f_0a0a0a02-0000-4000-8000-000000000014"
+            ],
+            "openQuestion": null,
+            "claim": null,
+            "eligibility": "eligible"
+          },
+          {
+            "symbol": "AVGO",
+            "name": "Broadcom Inc.",
+            "role": "Supplier",
+            "relationship": "Broadcom designs custom AI chips for some of the largest cloud companies.",
+            "relationshipFindingId": "f_0a0a0a03-0000-4000-8000-000000000015",
+            "evidence": [
+              "f_0a0a0a03-0000-4000-8000-000000000015"
+            ],
+            "openQuestion": null,
+            "claim": null,
+            "eligibility": "eligible"
+          }
+        ],
+        "leads": [
+          {
+            "name": "Orrin Compute",
+            "symbol": null,
+            "findingIds": [
+              "f_0a0a0a04-0000-4000-8000-000000000016"
+            ],
+            "status": "verified",
+            "statusReason": null,
+            "unresolved": "identity_unresolved"
+          }
+        ]
+      },
+      "thesis": {
+        "schemaVersion": 1,
+        "rev": 9,
+        "parts": {
+          "theme": {
+            "state": "set",
+            "value": "I want to play AI",
+            "by": "player_wrote",
+            "suggestion": null
+          },
+          "segment": {
+            "state": "set",
+            "value": "Accelerator chips",
+            "by": "partner_suggested_confirmed",
+            "skipped": false,
+            "findingIds": [
+              "f_0a0a0a01-0000-4000-8000-000000000005"
+            ],
+            "map": [
+              {
+                "label": "Accelerator chips",
+                "line": "The processors that train and run AI models, where most data-center AI spending goes.",
+                "findingIds": [
+                  "f_0a0a0a01-0000-4000-8000-000000000005"
+                ]
+              },
+              {
+                "label": "Chip networking",
+                "line": "The high-speed links that tie thousands of accelerators into one training cluster.",
+                "findingIds": [
+                  "f_0a0a0a04-0000-4000-8000-000000000008"
+                ]
+              },
+              {
+                "label": "Data-center power",
+                "line": "Utilities and grid supply meeting new data-center demand.",
+                "findingIds": [
+                  "f_0a0a0a03-0000-4000-8000-000000000007",
+                  "f_0a0a0a02-0000-4000-8000-000000000006"
+                ]
+              },
+              {
+                "label": "Cloud spenders",
+                "line": "The large cloud companies that raise AI data-center spending and buy the capacity.",
+                "findingIds": [
+                  "f_0a0a0a01-0000-4000-8000-000000000005"
+                ]
+              }
+            ]
+          },
+          "names": {
+            "state": "set",
+            "value": [
+              "NVDA"
+            ],
+            "by": "player_chose",
+            "blocked": null
+          },
+          "why": {
+            "state": "set",
+            "by": "partner_suggested_confirmed",
+            "shared": "Nvidia earns most of its revenue from accelerators sold into AI data centers, as its own results show",
+            "reasons": [
+              {
+                "symbol": "NVDA",
+                "text": "Data-center accelerators and systems were the large majority of last quarter's revenue, and big cloud buyers plan to raise AI spending next year.",
+                "findingIds": [
+                  "f_0a0a0a01-0000-4000-8000-000000000021",
+                  "f_0a0a0a04-0000-4000-8000-000000000024"
+                ]
+              }
+            ],
+            "against": {
+              "text": "Its largest customers also design their own AI chips and use them alongside Nvidia's, which could limit how much of their spending it keeps.",
+              "findingIds": [
+                "f_0a0a0a02-0000-4000-8000-000000000022",
+                "f_0a0a0a03-0000-4000-8000-000000000023"
+              ]
+            },
+            "proposal": null
+          },
+          "wrongIf": {
+            "state": "set",
+            "by": "partner_suggested_confirmed",
+            "text": "the big cloud companies shift more of their AI workloads onto chips they design themselves, away from Nvidia accelerators",
+            "findingIds": [
+              "f_0a0a0a03-0000-4000-8000-000000000023"
+            ],
+            "options": [
+              {
+                "text": "the big cloud companies shift more of their AI workloads onto chips they design themselves, away from Nvidia accelerators",
+                "findingIds": [
+                  "f_0a0a0a03-0000-4000-8000-000000000023"
+                ]
+              },
+              {
+                "text": "the largest cloud companies cut or pause their AI data-center spending plans",
+                "findingIds": [
+                  "f_0a0a0a04-0000-4000-8000-000000000024"
+                ]
+              },
+              {
+                "text": "data-center accelerators stop being the large majority of Nvidia's revenue",
+                "findingIds": [
+                  "f_0a0a0a01-0000-4000-8000-000000000021"
+                ]
+              }
+            ],
+            "priceLines": [
+              {
+                "symbol": "NVDA",
+                "level": 120
+              }
+            ]
+          },
+          "timeFrame": {
+            "state": "set",
+            "by": "partner_suggested_confirmed",
+            "value": "positional",
+            "label": "Positional · about 30 sessions",
+            "suggestion": null
+          }
+        },
+        "pick": null,
+        "filled": 6,
+        "saveIssue": null,
+        "ready": true,
+        "blockers": [],
+        "sentence": "My theme is I want to play AI, through Accelerator chips, built on NVDA, because Nvidia earns most of its revenue from accelerators sold into AI data centers, as its own results show. It's wrong if the big cloud companies shift more of their AI workloads onto chips they design themselves, away from Nvidia accelerators. Time frame: Positional · about 30 sessions.",
+        "dependents": {
+          "segment": [
+            "names",
+            "why"
+          ],
+          "names": [
+            "why"
+          ]
+        },
+        "choices": {
+          "research": [
+            {
+              "goal": "strengthen",
+              "part": "theme"
+            },
+            {
+              "goal": "strengthen",
+              "part": "segment"
+            },
+            {
+              "goal": "strengthen",
+              "part": "names"
+            },
+            {
+              "goal": "strengthen",
+              "part": "why"
+            },
+            {
+              "goal": "strengthen",
+              "part": "wrongIf"
+            },
+            {
+              "goal": "strengthen",
+              "part": "timeFrame"
+            },
+            {
+              "goal": "direction"
+            }
+          ],
+          "free": [
+            {
+              "op": "set",
+              "part": "wrongIf",
+              "input": "priceLines",
+              "options": [
+                "NVDA"
+              ]
+            },
+            {
+              "op": "clear",
+              "part": "segment",
+              "clears": [
+                "names",
+                "why"
+              ]
+            },
+            {
+              "op": "clear",
+              "part": "names",
+              "clears": [
+                "why"
+              ]
+            },
+            {
+              "op": "clear",
+              "part": "why",
+              "clears": []
+            },
+            {
+              "op": "clear",
+              "part": "wrongIf",
+              "clears": []
+            },
+            {
+              "op": "clear",
+              "part": "timeFrame",
+              "clears": []
+            }
+          ]
+        }
+      },
+      "storedRows": [],
+      "previous": null,
+      "quota": {
+        "investigationsToday": 1,
+        "perDay": 3,
+        "framingsToday": 0,
+        "framingsPerDay": 10,
+        "stepsToday": 1,
+        "stepsPerDay": 30
+      }
+    }
+  },
+  "walkPriceLineAgain": {
+    "status": 200,
+    "body": {
+      "session": {
+        "sessionId": "7a7a7a7a-0000-4000-8000-000000000001",
+        "status": "open",
+        "entry": {
+          "kind": "observation",
+          "itemRef": null,
+          "observation": "I want to play AI",
+          "direction": null,
+          "topic": null,
+          "names": []
+        },
+        "frame": null,
+        "lastError": null,
+        "exchanges": [
+          {
+            "who": "player",
+            "kind": "observation",
+            "text": "I want to play AI",
+            "at": "2026-11-17T14:00:00.000Z"
+          },
+          {
+            "who": "partner",
+            "kind": "step",
+            "text": "Your observation is \"I want to play AI\"; the retrieved items point to four places the theme touches: accelerator chips, networking between chips, data-center power and the cloud companies that spend on it all. I would stand on accelerator chips, since the cloud spending report names them as where most of the money goes. No listed company has a sourced connection yet, so the next steps need to find who earns from this.",
+            "at": "2026-11-17T14:01:00.000Z",
+            "stepId": "5e5e5e5e-0000-4000-8000-000000000003",
+            "intent": "build",
+            "goal": "map_segments"
+          },
+          {
+            "who": "player",
+            "kind": "card",
+            "text": "Segment: Accelerator chips",
+            "at": "2026-11-17T14:02:00.000Z",
+            "card": {
+              "op": "confirm",
+              "part": "segment"
+            }
+          },
+          {
+            "who": "partner",
+            "kind": "step",
+            "text": "Three listed companies have a sourced connection to accelerator chips: Nvidia, AMD and Broadcom. A packaging supplier came up too, but it is privately held, so it stays a lead. Each connection rests on one source, and none says how much of the company's revenue it is.",
+            "at": "2026-11-17T14:03:00.000Z",
+            "stepId": "5e5e5e5e-0000-4000-8000-000000000011",
+            "intent": "build",
+            "goal": "find_names"
+          },
+          {
+            "who": "player",
+            "kind": "card",
+            "text": "Names: NVDA",
+            "at": "2026-11-17T14:04:00.000Z",
+            "card": {
+              "op": "set",
+              "part": "names"
+            }
+          },
+          {
+            "who": "partner",
+            "kind": "step",
+            "text": "Nvidia's data-center segment, which sells accelerators and systems to cloud companies, was the large majority of its revenue last quarter, so the AI link carries real weight for the company. The strongest point against is that its largest customers also design their own AI chips. I propose a wrong-if tied to that customer concentration, and a positional time frame.",
+            "at": "2026-11-17T14:05:00.000Z",
+            "stepId": "5e5e5e5e-0000-4000-8000-000000000019",
+            "intent": "build",
+            "goal": "build_why"
+          },
+          {
+            "who": "player",
+            "kind": "card",
+            "text": "Why: confirmed",
+            "at": "2026-11-17T14:06:00.000Z",
+            "card": {
+              "op": "confirm",
+              "part": "why"
+            }
+          },
+          {
+            "who": "player",
+            "kind": "card",
+            "text": "Wrong if: the big cloud companies shift more of their AI workloads onto chips they design themselves, away from Nvidia accelerators",
+            "at": "2026-11-17T14:07:00.000Z",
+            "card": {
+              "op": "confirm",
+              "part": "wrongIf"
+            }
+          },
+          {
+            "who": "player",
+            "kind": "card",
+            "text": "Time frame: Positional · about 30 sessions",
+            "at": "2026-11-17T14:08:00.000Z",
+            "card": {
+              "op": "confirm",
+              "part": "timeFrame"
+            }
+          },
+          {
+            "who": "player",
+            "kind": "card",
+            "text": "Wrong if: the big cloud companies shift more of their AI workloads onto chips they design themselves, away from Nvidia accelerators · price line NVDA below 120",
+            "at": "2026-11-17T14:09:00.000Z",
+            "card": {
+              "op": "set",
+              "part": "wrongIf"
+            }
+          },
+          {
+            "who": "player",
+            "kind": "card",
+            "text": "Wrong if: the big cloud companies shift more of their AI workloads onto chips they design themselves, away from Nvidia accelerators · price line NVDA below 110",
+            "at": "2026-11-17T14:12:00.000Z",
+            "card": {
+              "op": "set",
+              "part": "wrongIf"
+            }
+          }
+        ],
+        "stepsUsed": 3,
+        "stepBudget": 10,
+        "lastStep": {
+          "stepId": "5e5e5e5e-0000-4000-8000-000000000019",
+          "intent": "build",
+          "status": "completed",
+          "startedAt": "2026-11-17T14:05:00.000Z",
+          "endedAt": "2026-11-17T14:05:00.000Z",
+          "error": null,
+          "query": "q",
+          "summaryWithheld": false
+        },
+        "researchWorkId": "sr_7a7a7a7a-0000-4000-8000-000000000001",
+        "adoption": null,
+        "createdAt": "2026-11-17T14:00:00.000Z",
+        "updatedAt": "2026-11-17T14:12:00.000Z",
+        "shape": "builder"
+      },
+      "thesis": {
+        "schemaVersion": 1,
+        "rev": 10,
+        "parts": {
+          "theme": {
+            "state": "set",
+            "value": "I want to play AI",
+            "by": "player_wrote",
+            "suggestion": null
+          },
+          "segment": {
+            "state": "set",
+            "value": "Accelerator chips",
+            "by": "partner_suggested_confirmed",
+            "skipped": false,
+            "findingIds": [
+              "f_0a0a0a01-0000-4000-8000-000000000005"
+            ],
+            "map": [
+              {
+                "label": "Accelerator chips",
+                "line": "The processors that train and run AI models, where most data-center AI spending goes.",
+                "findingIds": [
+                  "f_0a0a0a01-0000-4000-8000-000000000005"
+                ]
+              },
+              {
+                "label": "Chip networking",
+                "line": "The high-speed links that tie thousands of accelerators into one training cluster.",
+                "findingIds": [
+                  "f_0a0a0a04-0000-4000-8000-000000000008"
+                ]
+              },
+              {
+                "label": "Data-center power",
+                "line": "Utilities and grid supply meeting new data-center demand.",
+                "findingIds": [
+                  "f_0a0a0a03-0000-4000-8000-000000000007",
+                  "f_0a0a0a02-0000-4000-8000-000000000006"
+                ]
+              },
+              {
+                "label": "Cloud spenders",
+                "line": "The large cloud companies that raise AI data-center spending and buy the capacity.",
+                "findingIds": [
+                  "f_0a0a0a01-0000-4000-8000-000000000005"
+                ]
+              }
+            ]
+          },
+          "names": {
+            "state": "set",
+            "value": [
+              "NVDA"
+            ],
+            "by": "player_chose",
+            "blocked": null
+          },
+          "why": {
+            "state": "set",
+            "by": "partner_suggested_confirmed",
+            "shared": "Nvidia earns most of its revenue from accelerators sold into AI data centers, as its own results show",
+            "reasons": [
+              {
+                "symbol": "NVDA",
+                "text": "Data-center accelerators and systems were the large majority of last quarter's revenue, and big cloud buyers plan to raise AI spending next year.",
+                "findingIds": [
+                  "f_0a0a0a01-0000-4000-8000-000000000021",
+                  "f_0a0a0a04-0000-4000-8000-000000000024"
+                ]
+              }
+            ],
+            "against": {
+              "text": "Its largest customers also design their own AI chips and use them alongside Nvidia's, which could limit how much of their spending it keeps.",
+              "findingIds": [
+                "f_0a0a0a02-0000-4000-8000-000000000022",
+                "f_0a0a0a03-0000-4000-8000-000000000023"
+              ]
+            },
+            "proposal": null
+          },
+          "wrongIf": {
+            "state": "set",
+            "by": "partner_suggested_confirmed",
+            "text": "the big cloud companies shift more of their AI workloads onto chips they design themselves, away from Nvidia accelerators",
+            "findingIds": [
+              "f_0a0a0a03-0000-4000-8000-000000000023"
+            ],
+            "options": [
+              {
+                "text": "the big cloud companies shift more of their AI workloads onto chips they design themselves, away from Nvidia accelerators",
+                "findingIds": [
+                  "f_0a0a0a03-0000-4000-8000-000000000023"
+                ]
+              },
+              {
+                "text": "the largest cloud companies cut or pause their AI data-center spending plans",
+                "findingIds": [
+                  "f_0a0a0a04-0000-4000-8000-000000000024"
+                ]
+              },
+              {
+                "text": "data-center accelerators stop being the large majority of Nvidia's revenue",
+                "findingIds": [
+                  "f_0a0a0a01-0000-4000-8000-000000000021"
+                ]
+              }
+            ],
+            "priceLines": [
+              {
+                "symbol": "NVDA",
+                "level": 110
+              }
+            ]
+          },
+          "timeFrame": {
+            "state": "set",
+            "by": "partner_suggested_confirmed",
+            "value": "positional",
+            "label": "Positional · about 30 sessions",
+            "suggestion": null
+          }
+        },
+        "pick": null,
+        "filled": 6,
+        "saveIssue": null,
+        "ready": true,
+        "blockers": [],
+        "sentence": "My theme is I want to play AI, through Accelerator chips, built on NVDA, because Nvidia earns most of its revenue from accelerators sold into AI data centers, as its own results show. It's wrong if the big cloud companies shift more of their AI workloads onto chips they design themselves, away from Nvidia accelerators. Time frame: Positional · about 30 sessions.",
+        "dependents": {
+          "segment": [
+            "names",
+            "why"
+          ],
+          "names": [
+            "why"
+          ]
+        },
+        "choices": {
+          "research": [
+            {
+              "goal": "strengthen",
+              "part": "theme"
+            },
+            {
+              "goal": "strengthen",
+              "part": "segment"
+            },
+            {
+              "goal": "strengthen",
+              "part": "names"
+            },
+            {
+              "goal": "strengthen",
+              "part": "why"
+            },
+            {
+              "goal": "strengthen",
+              "part": "wrongIf"
+            },
+            {
+              "goal": "strengthen",
+              "part": "timeFrame"
+            },
+            {
+              "goal": "direction"
+            }
+          ],
+          "free": [
+            {
+              "op": "set",
+              "part": "wrongIf",
+              "input": "priceLines",
+              "options": [
+                "NVDA"
+              ]
+            },
+            {
+              "op": "clear",
+              "part": "segment",
+              "clears": [
+                "names",
+                "why"
+              ]
+            },
+            {
+              "op": "clear",
+              "part": "names",
+              "clears": [
+                "why"
+              ]
+            },
+            {
+              "op": "clear",
+              "part": "why",
+              "clears": []
+            },
+            {
+              "op": "clear",
+              "part": "wrongIf",
+              "clears": []
+            },
+            {
+              "op": "clear",
+              "part": "timeFrame",
+              "clears": []
+            }
+          ]
+        }
+      },
+      "applied": true
+    }
+  },
+  "timeFrameLanded": {
+    "status": 409,
+    "body": {
+      "error": "card_stale",
+      "message": "The thesis changed since you last saw it. Check the card and choose again.",
+      "thesis": {
+        "schemaVersion": 1,
+        "rev": 3,
+        "parts": {
+          "theme": {
+            "state": "set",
+            "value": "I want to play AI",
+            "by": "player_wrote",
+            "suggestion": null
+          },
+          "segment": {
+            "state": "set",
+            "value": "Accelerator chips",
+            "by": "partner_suggested_confirmed",
+            "skipped": false,
+            "findingIds": [
+              "f_0a0a0a01-0000-4000-8000-000000000005"
+            ],
+            "map": [
+              {
+                "label": "Accelerator chips",
+                "line": "The processors that train and run AI models, where most data-center AI spending goes.",
+                "findingIds": [
+                  "f_0a0a0a01-0000-4000-8000-000000000005"
+                ]
+              },
+              {
+                "label": "Chip networking",
+                "line": "The high-speed links that tie thousands of accelerators into one training cluster.",
+                "findingIds": [
+                  "f_0a0a0a04-0000-4000-8000-000000000008"
+                ]
+              },
+              {
+                "label": "Data-center power",
+                "line": "Utilities and grid supply meeting new data-center demand.",
+                "findingIds": [
+                  "f_0a0a0a03-0000-4000-8000-000000000007",
+                  "f_0a0a0a02-0000-4000-8000-000000000006"
+                ]
+              },
+              {
+                "label": "Cloud spenders",
+                "line": "The large cloud companies that raise AI data-center spending and buy the capacity.",
+                "findingIds": [
+                  "f_0a0a0a01-0000-4000-8000-000000000005"
+                ]
+              }
+            ]
+          },
+          "names": {
+            "state": "unset",
+            "value": [],
+            "by": null,
+            "blocked": null
+          },
+          "why": {
+            "state": "unset",
+            "by": null,
+            "shared": null,
+            "reasons": [],
+            "against": null,
+            "proposal": null
+          },
+          "wrongIf": {
+            "state": "unset",
+            "by": null,
+            "text": null,
+            "findingIds": [],
+            "options": [],
+            "priceLines": []
+          },
+          "timeFrame": {
+            "state": "set",
+            "by": "player_chose",
+            "value": "swing",
+            "label": "Swing · about 10 sessions",
+            "suggestion": null
+          }
+        },
+        "pick": null,
+        "filled": 3,
+        "saveIssue": null,
+        "ready": false,
+        "blockers": [
+          {
+            "part": "names",
+            "state": "unset"
+          },
+          {
+            "part": "why",
+            "state": "unset"
+          },
+          {
+            "part": "wrongIf",
+            "state": "unset"
+          }
+        ],
+        "sentence": null,
+        "dependents": {
+          "segment": [
+            "names",
+            "why"
+          ],
+          "names": [
+            "why"
+          ]
+        },
+        "choices": {
+          "research": [
+            {
+              "goal": "find_names"
+            },
+            {
+              "goal": "strengthen",
+              "part": "theme"
+            },
+            {
+              "goal": "strengthen",
+              "part": "segment"
+            },
+            {
+              "goal": "strengthen",
+              "part": "timeFrame"
+            },
+            {
+              "goal": "direction"
+            }
+          ],
+          "free": [
+            {
+              "op": "set",
+              "part": "wrongIf",
+              "input": "text",
+              "max": 200
+            },
+            {
+              "op": "clear",
+              "part": "segment",
+              "clears": [
+                "names",
+                "why"
+              ]
+            },
+            {
+              "op": "clear",
+              "part": "timeFrame",
+              "clears": []
+            }
+          ]
+        }
+      }
+    }
+  },
+  "clearTimeFrameAgain": {
+    "status": 200,
+    "body": {
+      "session": {
+        "sessionId": "7a7a7a7a-0000-4000-8000-000000000001",
+        "status": "open",
+        "entry": {
+          "kind": "observation",
+          "itemRef": null,
+          "observation": "I want to play AI",
+          "direction": null,
+          "topic": null,
+          "names": []
+        },
+        "frame": null,
+        "lastError": null,
+        "exchanges": [
+          {
+            "who": "player",
+            "kind": "observation",
+            "text": "I want to play AI",
+            "at": "2026-11-17T14:00:00.000Z"
+          },
+          {
+            "who": "partner",
+            "kind": "step",
+            "text": "Your observation is \"I want to play AI\"; the retrieved items point to four places the theme touches: accelerator chips, networking between chips, data-center power and the cloud companies that spend on it all. I would stand on accelerator chips, since the cloud spending report names them as where most of the money goes. No listed company has a sourced connection yet, so the next steps need to find who earns from this.",
+            "at": "2026-11-17T14:01:00.000Z",
+            "stepId": "5e5e5e5e-0000-4000-8000-000000000003",
+            "intent": "build",
+            "goal": "map_segments"
+          },
+          {
+            "who": "player",
+            "kind": "card",
+            "text": "Segment: Accelerator chips",
+            "at": "2026-11-17T14:02:00.000Z",
+            "card": {
+              "op": "confirm",
+              "part": "segment"
+            }
+          },
+          {
+            "who": "player",
+            "kind": "card",
+            "text": "Time frame: Swing · about 10 sessions",
+            "at": "2026-11-17T14:12:00.000Z",
+            "card": {
+              "op": "set",
+              "part": "timeFrame"
+            }
+          },
+          {
+            "who": "player",
+            "kind": "card",
+            "text": "Changed time frame",
+            "at": "2026-11-17T14:13:00.000Z",
+            "card": {
+              "op": "clear",
+              "part": "timeFrame"
+            }
+          }
+        ],
+        "stepsUsed": 1,
+        "stepBudget": 10,
+        "lastStep": {
+          "stepId": "5e5e5e5e-0000-4000-8000-000000000003",
+          "intent": "build",
+          "status": "completed",
+          "startedAt": "2026-11-17T14:01:00.000Z",
+          "endedAt": "2026-11-17T14:01:00.000Z",
+          "error": null,
+          "query": "q",
+          "summaryWithheld": false
+        },
+        "researchWorkId": "sr_7a7a7a7a-0000-4000-8000-000000000001",
+        "adoption": null,
+        "createdAt": "2026-11-17T14:00:00.000Z",
+        "updatedAt": "2026-11-17T14:13:00.000Z",
+        "shape": "builder"
+      },
+      "thesis": {
+        "schemaVersion": 1,
+        "rev": 4,
+        "parts": {
+          "theme": {
+            "state": "set",
+            "value": "I want to play AI",
+            "by": "player_wrote",
+            "suggestion": null
+          },
+          "segment": {
+            "state": "set",
+            "value": "Accelerator chips",
+            "by": "partner_suggested_confirmed",
+            "skipped": false,
+            "findingIds": [
+              "f_0a0a0a01-0000-4000-8000-000000000005"
+            ],
+            "map": [
+              {
+                "label": "Accelerator chips",
+                "line": "The processors that train and run AI models, where most data-center AI spending goes.",
+                "findingIds": [
+                  "f_0a0a0a01-0000-4000-8000-000000000005"
+                ]
+              },
+              {
+                "label": "Chip networking",
+                "line": "The high-speed links that tie thousands of accelerators into one training cluster.",
+                "findingIds": [
+                  "f_0a0a0a04-0000-4000-8000-000000000008"
+                ]
+              },
+              {
+                "label": "Data-center power",
+                "line": "Utilities and grid supply meeting new data-center demand.",
+                "findingIds": [
+                  "f_0a0a0a03-0000-4000-8000-000000000007",
+                  "f_0a0a0a02-0000-4000-8000-000000000006"
+                ]
+              },
+              {
+                "label": "Cloud spenders",
+                "line": "The large cloud companies that raise AI data-center spending and buy the capacity.",
+                "findingIds": [
+                  "f_0a0a0a01-0000-4000-8000-000000000005"
+                ]
+              }
+            ]
+          },
+          "names": {
+            "state": "unset",
+            "value": [],
+            "by": null,
+            "blocked": null
+          },
+          "why": {
+            "state": "unset",
+            "by": null,
+            "shared": null,
+            "reasons": [],
+            "against": null,
+            "proposal": null
+          },
+          "wrongIf": {
+            "state": "unset",
+            "by": null,
+            "text": null,
+            "findingIds": [],
+            "options": [],
+            "priceLines": []
+          },
+          "timeFrame": {
+            "state": "unset",
+            "by": null,
+            "value": null,
+            "label": null,
+            "suggestion": null
+          }
+        },
+        "pick": null,
+        "filled": 2,
+        "saveIssue": null,
+        "ready": false,
+        "blockers": [
+          {
+            "part": "names",
+            "state": "unset"
+          },
+          {
+            "part": "why",
+            "state": "unset"
+          },
+          {
+            "part": "wrongIf",
+            "state": "unset"
+          },
+          {
+            "part": "timeFrame",
+            "state": "unset"
+          }
+        ],
+        "sentence": null,
+        "dependents": {
+          "segment": [
+            "names",
+            "why"
+          ],
+          "names": [
+            "why"
+          ]
+        },
+        "choices": {
+          "research": [
+            {
+              "goal": "find_names"
+            },
+            {
+              "goal": "strengthen",
+              "part": "theme"
+            },
+            {
+              "goal": "strengthen",
+              "part": "segment"
+            },
+            {
+              "goal": "direction"
+            }
+          ],
+          "free": [
+            {
+              "op": "set",
+              "part": "wrongIf",
+              "input": "text",
+              "max": 200
+            },
+            {
+              "op": "set",
+              "part": "timeFrame",
+              "value": "swing"
+            },
+            {
+              "op": "set",
+              "part": "timeFrame",
+              "value": "positional"
+            },
+            {
+              "op": "set",
+              "part": "timeFrame",
+              "value": "longterm"
+            },
+            {
+              "op": "clear",
+              "part": "segment",
+              "clears": [
+                "names",
+                "why"
+              ]
+            }
+          ]
+        }
+      },
+      "applied": true
+    }
+  },
+  "swingAgain": {
+    "status": 200,
+    "body": {
+      "session": {
+        "sessionId": "7a7a7a7a-0000-4000-8000-000000000001",
+        "status": "open",
+        "entry": {
+          "kind": "observation",
+          "itemRef": null,
+          "observation": "I want to play AI",
+          "direction": null,
+          "topic": null,
+          "names": []
+        },
+        "frame": null,
+        "lastError": null,
+        "exchanges": [
+          {
+            "who": "player",
+            "kind": "observation",
+            "text": "I want to play AI",
+            "at": "2026-11-17T14:00:00.000Z"
+          },
+          {
+            "who": "partner",
+            "kind": "step",
+            "text": "Your observation is \"I want to play AI\"; the retrieved items point to four places the theme touches: accelerator chips, networking between chips, data-center power and the cloud companies that spend on it all. I would stand on accelerator chips, since the cloud spending report names them as where most of the money goes. No listed company has a sourced connection yet, so the next steps need to find who earns from this.",
+            "at": "2026-11-17T14:01:00.000Z",
+            "stepId": "5e5e5e5e-0000-4000-8000-000000000003",
+            "intent": "build",
+            "goal": "map_segments"
+          },
+          {
+            "who": "player",
+            "kind": "card",
+            "text": "Segment: Accelerator chips",
+            "at": "2026-11-17T14:02:00.000Z",
+            "card": {
+              "op": "confirm",
+              "part": "segment"
+            }
+          },
+          {
+            "who": "player",
+            "kind": "card",
+            "text": "Time frame: Swing · about 10 sessions",
+            "at": "2026-11-17T14:12:00.000Z",
+            "card": {
+              "op": "set",
+              "part": "timeFrame"
+            }
+          },
+          {
+            "who": "player",
+            "kind": "card",
+            "text": "Changed time frame",
+            "at": "2026-11-17T14:13:00.000Z",
+            "card": {
+              "op": "clear",
+              "part": "timeFrame"
+            }
+          },
+          {
+            "who": "player",
+            "kind": "card",
+            "text": "Time frame: Swing · about 10 sessions",
+            "at": "2026-11-17T14:14:00.000Z",
+            "card": {
+              "op": "set",
+              "part": "timeFrame"
+            }
+          }
+        ],
+        "stepsUsed": 1,
+        "stepBudget": 10,
+        "lastStep": {
+          "stepId": "5e5e5e5e-0000-4000-8000-000000000003",
+          "intent": "build",
+          "status": "completed",
+          "startedAt": "2026-11-17T14:01:00.000Z",
+          "endedAt": "2026-11-17T14:01:00.000Z",
+          "error": null,
+          "query": "q",
+          "summaryWithheld": false
+        },
+        "researchWorkId": "sr_7a7a7a7a-0000-4000-8000-000000000001",
+        "adoption": null,
+        "createdAt": "2026-11-17T14:00:00.000Z",
+        "updatedAt": "2026-11-17T14:14:00.000Z",
+        "shape": "builder"
+      },
+      "thesis": {
+        "schemaVersion": 1,
+        "rev": 5,
+        "parts": {
+          "theme": {
+            "state": "set",
+            "value": "I want to play AI",
+            "by": "player_wrote",
+            "suggestion": null
+          },
+          "segment": {
+            "state": "set",
+            "value": "Accelerator chips",
+            "by": "partner_suggested_confirmed",
+            "skipped": false,
+            "findingIds": [
+              "f_0a0a0a01-0000-4000-8000-000000000005"
+            ],
+            "map": [
+              {
+                "label": "Accelerator chips",
+                "line": "The processors that train and run AI models, where most data-center AI spending goes.",
+                "findingIds": [
+                  "f_0a0a0a01-0000-4000-8000-000000000005"
+                ]
+              },
+              {
+                "label": "Chip networking",
+                "line": "The high-speed links that tie thousands of accelerators into one training cluster.",
+                "findingIds": [
+                  "f_0a0a0a04-0000-4000-8000-000000000008"
+                ]
+              },
+              {
+                "label": "Data-center power",
+                "line": "Utilities and grid supply meeting new data-center demand.",
+                "findingIds": [
+                  "f_0a0a0a03-0000-4000-8000-000000000007",
+                  "f_0a0a0a02-0000-4000-8000-000000000006"
+                ]
+              },
+              {
+                "label": "Cloud spenders",
+                "line": "The large cloud companies that raise AI data-center spending and buy the capacity.",
+                "findingIds": [
+                  "f_0a0a0a01-0000-4000-8000-000000000005"
+                ]
+              }
+            ]
+          },
+          "names": {
+            "state": "unset",
+            "value": [],
+            "by": null,
+            "blocked": null
+          },
+          "why": {
+            "state": "unset",
+            "by": null,
+            "shared": null,
+            "reasons": [],
+            "against": null,
+            "proposal": null
+          },
+          "wrongIf": {
+            "state": "unset",
+            "by": null,
+            "text": null,
+            "findingIds": [],
+            "options": [],
+            "priceLines": []
+          },
+          "timeFrame": {
+            "state": "set",
+            "by": "player_chose",
+            "value": "swing",
+            "label": "Swing · about 10 sessions",
+            "suggestion": null
+          }
+        },
+        "pick": null,
+        "filled": 3,
+        "saveIssue": null,
+        "ready": false,
+        "blockers": [
+          {
+            "part": "names",
+            "state": "unset"
+          },
+          {
+            "part": "why",
+            "state": "unset"
+          },
+          {
+            "part": "wrongIf",
+            "state": "unset"
+          }
+        ],
+        "sentence": null,
+        "dependents": {
+          "segment": [
+            "names",
+            "why"
+          ],
+          "names": [
+            "why"
+          ]
+        },
+        "choices": {
+          "research": [
+            {
+              "goal": "find_names"
+            },
+            {
+              "goal": "strengthen",
+              "part": "theme"
+            },
+            {
+              "goal": "strengthen",
+              "part": "segment"
+            },
+            {
+              "goal": "strengthen",
+              "part": "timeFrame"
+            },
+            {
+              "goal": "direction"
+            }
+          ],
+          "free": [
+            {
+              "op": "set",
+              "part": "wrongIf",
+              "input": "text",
+              "max": 200
+            },
+            {
+              "op": "clear",
+              "part": "segment",
+              "clears": [
+                "names",
+                "why"
+              ]
+            },
+            {
+              "op": "clear",
+              "part": "timeFrame",
+              "clears": []
+            }
+          ]
+        }
+      },
+      "applied": true
+    }
+  },
+  "oneStockTimeFrame": {
+    "status": 200,
+    "body": {
+      "session": {
+        "sessionId": "7a7a7a7a-0000-4000-8000-000000000001",
+        "status": "open",
+        "entry": {
+          "kind": "observation",
+          "itemRef": null,
+          "observation": "I want to play AI",
+          "direction": null,
+          "topic": null,
+          "names": []
+        },
+        "frame": null,
+        "lastError": null,
+        "exchanges": [
+          {
+            "who": "player",
+            "kind": "observation",
+            "text": "I want to play AI",
+            "at": "2026-11-17T14:00:00.000Z"
+          },
+          {
+            "who": "partner",
+            "kind": "step",
+            "text": "Your observation is \"I want to play AI\"; the retrieved items point to four places the theme touches: accelerator chips, networking between chips, data-center power and the cloud companies that spend on it all. I would stand on accelerator chips, since the cloud spending report names them as where most of the money goes. No listed company has a sourced connection yet, so the next steps need to find who earns from this.",
+            "at": "2026-11-17T14:01:00.000Z",
+            "stepId": "5e5e5e5e-0000-4000-8000-000000000003",
+            "intent": "build",
+            "goal": "map_segments"
+          },
+          {
+            "who": "player",
+            "kind": "card",
+            "text": "Segment: Accelerator chips",
+            "at": "2026-11-17T14:02:00.000Z",
+            "card": {
+              "op": "confirm",
+              "part": "segment"
+            }
+          },
+          {
+            "who": "partner",
+            "kind": "step",
+            "text": "Three listed companies have a sourced connection to accelerator chips: Nvidia, AMD and Broadcom. A packaging supplier came up too, but it is privately held, so it stays a lead. Each connection rests on one source, and none says how much of the company's revenue it is.",
+            "at": "2026-11-17T14:03:00.000Z",
+            "stepId": "5e5e5e5e-0000-4000-8000-000000000011",
+            "intent": "build",
+            "goal": "find_names"
+          },
+          {
+            "who": "player",
+            "kind": "card",
+            "text": "Names: NVDA",
+            "at": "2026-11-17T14:04:00.000Z",
+            "card": {
+              "op": "set",
+              "part": "names"
+            }
+          },
+          {
+            "who": "player",
+            "kind": "card",
+            "text": "Time frame: Swing · about 10 sessions",
+            "at": "2026-11-17T14:12:00.000Z",
+            "card": {
+              "op": "set",
+              "part": "timeFrame"
+            }
+          }
+        ],
+        "stepsUsed": 2,
+        "stepBudget": 10,
+        "lastStep": {
+          "stepId": "5e5e5e5e-0000-4000-8000-000000000011",
+          "intent": "build",
+          "status": "completed",
+          "startedAt": "2026-11-17T14:03:00.000Z",
+          "endedAt": "2026-11-17T14:03:00.000Z",
+          "error": null,
+          "query": "q",
+          "summaryWithheld": false
+        },
+        "researchWorkId": "sr_7a7a7a7a-0000-4000-8000-000000000001",
+        "adoption": null,
+        "createdAt": "2026-11-17T14:00:00.000Z",
+        "updatedAt": "2026-11-17T14:12:00.000Z",
+        "shape": "builder"
+      },
+      "thesis": {
+        "schemaVersion": 1,
+        "rev": 5,
+        "parts": {
+          "theme": {
+            "state": "set",
+            "value": "I want to play AI",
+            "by": "player_wrote",
+            "suggestion": null
+          },
+          "segment": {
+            "state": "set",
+            "value": "Accelerator chips",
+            "by": "partner_suggested_confirmed",
+            "skipped": false,
+            "findingIds": [
+              "f_0a0a0a01-0000-4000-8000-000000000005"
+            ],
+            "map": [
+              {
+                "label": "Accelerator chips",
+                "line": "The processors that train and run AI models, where most data-center AI spending goes.",
+                "findingIds": [
+                  "f_0a0a0a01-0000-4000-8000-000000000005"
+                ]
+              },
+              {
+                "label": "Chip networking",
+                "line": "The high-speed links that tie thousands of accelerators into one training cluster.",
+                "findingIds": [
+                  "f_0a0a0a04-0000-4000-8000-000000000008"
+                ]
+              },
+              {
+                "label": "Data-center power",
+                "line": "Utilities and grid supply meeting new data-center demand.",
+                "findingIds": [
+                  "f_0a0a0a03-0000-4000-8000-000000000007",
+                  "f_0a0a0a02-0000-4000-8000-000000000006"
+                ]
+              },
+              {
+                "label": "Cloud spenders",
+                "line": "The large cloud companies that raise AI data-center spending and buy the capacity.",
+                "findingIds": [
+                  "f_0a0a0a01-0000-4000-8000-000000000005"
+                ]
+              }
+            ]
+          },
+          "names": {
+            "state": "set",
+            "value": [
+              "NVDA"
+            ],
+            "by": "player_chose",
+            "blocked": null
+          },
+          "why": {
+            "state": "unset",
+            "by": null,
+            "shared": null,
+            "reasons": [],
+            "against": null,
+            "proposal": null
+          },
+          "wrongIf": {
+            "state": "unset",
+            "by": null,
+            "text": null,
+            "findingIds": [],
+            "options": [],
+            "priceLines": []
+          },
+          "timeFrame": {
+            "state": "set",
+            "by": "player_chose",
+            "value": "swing",
+            "label": "Swing · about 10 sessions",
+            "suggestion": null
+          }
+        },
+        "pick": null,
+        "filled": 4,
+        "saveIssue": null,
+        "ready": false,
+        "blockers": [
+          {
+            "part": "why",
+            "state": "unset"
+          },
+          {
+            "part": "wrongIf",
+            "state": "unset"
+          }
+        ],
+        "sentence": null,
+        "dependents": {
+          "segment": [
+            "names",
+            "why"
+          ],
+          "names": [
+            "why"
+          ]
+        },
+        "choices": {
+          "research": [
+            {
+              "goal": "build_why"
+            },
+            {
+              "goal": "strengthen",
+              "part": "theme"
+            },
+            {
+              "goal": "strengthen",
+              "part": "segment"
+            },
+            {
+              "goal": "strengthen",
+              "part": "names"
+            },
+            {
+              "goal": "strengthen",
+              "part": "timeFrame"
+            },
+            {
+              "goal": "direction"
+            }
+          ],
+          "free": [
+            {
+              "op": "set",
+              "part": "wrongIf",
+              "input": "text",
+              "max": 200
+            },
+            {
+              "op": "clear",
+              "part": "segment",
+              "clears": [
+                "names",
+                "why"
+              ]
+            },
+            {
+              "op": "clear",
+              "part": "names",
+              "clears": [
+                "why"
+              ]
+            },
+            {
+              "op": "clear",
+              "part": "timeFrame",
+              "clears": []
+            }
+          ]
+        }
+      },
+      "applied": true
+    }
+  },
+  "namesTimeFrame": {
+    "status": 200,
+    "body": {
+      "session": {
+        "sessionId": "7a7a7a7a-0000-4000-8000-000000000001",
+        "status": "open",
+        "entry": {
+          "kind": "observation",
+          "itemRef": null,
+          "observation": "I want to play AI",
+          "direction": null,
+          "topic": null,
+          "names": []
+        },
+        "frame": null,
+        "lastError": null,
+        "exchanges": [
+          {
+            "who": "player",
+            "kind": "observation",
+            "text": "I want to play AI",
+            "at": "2026-11-17T14:00:00.000Z"
+          },
+          {
+            "who": "partner",
+            "kind": "step",
+            "text": "Your observation is \"I want to play AI\"; the retrieved items point to four places the theme touches: accelerator chips, networking between chips, data-center power and the cloud companies that spend on it all. I would stand on accelerator chips, since the cloud spending report names them as where most of the money goes. No listed company has a sourced connection yet, so the next steps need to find who earns from this.",
+            "at": "2026-11-17T14:01:00.000Z",
+            "stepId": "5e5e5e5e-0000-4000-8000-000000000003",
+            "intent": "build",
+            "goal": "map_segments"
+          },
+          {
+            "who": "player",
+            "kind": "card",
+            "text": "Segment: Accelerator chips",
+            "at": "2026-11-17T14:02:00.000Z",
+            "card": {
+              "op": "confirm",
+              "part": "segment"
+            }
+          },
+          {
+            "who": "partner",
+            "kind": "step",
+            "text": "Three listed companies have a sourced connection to accelerator chips: Nvidia, AMD and Broadcom. A packaging supplier came up too, but it is privately held, so it stays a lead. Each connection rests on one source, and none says how much of the company's revenue it is.",
+            "at": "2026-11-17T14:03:00.000Z",
+            "stepId": "5e5e5e5e-0000-4000-8000-000000000011",
+            "intent": "build",
+            "goal": "find_names"
+          },
+          {
+            "who": "player",
+            "kind": "card",
+            "text": "Time frame: Swing · about 10 sessions",
+            "at": "2026-11-17T14:12:00.000Z",
+            "card": {
+              "op": "set",
+              "part": "timeFrame"
+            }
+          }
+        ],
+        "stepsUsed": 2,
+        "stepBudget": 10,
+        "lastStep": {
+          "stepId": "5e5e5e5e-0000-4000-8000-000000000011",
+          "intent": "build",
+          "status": "completed",
+          "startedAt": "2026-11-17T14:03:00.000Z",
+          "endedAt": "2026-11-17T14:03:00.000Z",
+          "error": null,
+          "query": "q",
+          "summaryWithheld": false
+        },
+        "researchWorkId": "sr_7a7a7a7a-0000-4000-8000-000000000001",
+        "adoption": null,
+        "createdAt": "2026-11-17T14:00:00.000Z",
+        "updatedAt": "2026-11-17T14:12:00.000Z",
+        "shape": "builder"
+      },
+      "thesis": {
+        "schemaVersion": 1,
+        "rev": 4,
+        "parts": {
+          "theme": {
+            "state": "set",
+            "value": "I want to play AI",
+            "by": "player_wrote",
+            "suggestion": null
+          },
+          "segment": {
+            "state": "set",
+            "value": "Accelerator chips",
+            "by": "partner_suggested_confirmed",
+            "skipped": false,
+            "findingIds": [
+              "f_0a0a0a01-0000-4000-8000-000000000005"
+            ],
+            "map": [
+              {
+                "label": "Accelerator chips",
+                "line": "The processors that train and run AI models, where most data-center AI spending goes.",
+                "findingIds": [
+                  "f_0a0a0a01-0000-4000-8000-000000000005"
+                ]
+              },
+              {
+                "label": "Chip networking",
+                "line": "The high-speed links that tie thousands of accelerators into one training cluster.",
+                "findingIds": [
+                  "f_0a0a0a04-0000-4000-8000-000000000008"
+                ]
+              },
+              {
+                "label": "Data-center power",
+                "line": "Utilities and grid supply meeting new data-center demand.",
+                "findingIds": [
+                  "f_0a0a0a03-0000-4000-8000-000000000007",
+                  "f_0a0a0a02-0000-4000-8000-000000000006"
+                ]
+              },
+              {
+                "label": "Cloud spenders",
+                "line": "The large cloud companies that raise AI data-center spending and buy the capacity.",
+                "findingIds": [
+                  "f_0a0a0a01-0000-4000-8000-000000000005"
+                ]
+              }
+            ]
+          },
+          "names": {
+            "state": "unset",
+            "value": [],
+            "by": null,
+            "blocked": null
+          },
+          "why": {
+            "state": "unset",
+            "by": null,
+            "shared": null,
+            "reasons": [],
+            "against": null,
+            "proposal": null
+          },
+          "wrongIf": {
+            "state": "unset",
+            "by": null,
+            "text": null,
+            "findingIds": [],
+            "options": [],
+            "priceLines": []
+          },
+          "timeFrame": {
+            "state": "set",
+            "by": "player_chose",
+            "value": "swing",
+            "label": "Swing · about 10 sessions",
+            "suggestion": null
+          }
+        },
+        "pick": {
+          "part": "names",
+          "value": [
+            "NVDA",
+            "AMD"
+          ],
+          "reason": "Both are sourced as makers of the accelerator chips themselves; Broadcom's are custom chips.",
+          "findingIds": [],
+          "asked": false,
+          "basis": "reasoning",
+          "reasons": []
+        },
+        "filled": 3,
+        "saveIssue": null,
+        "ready": false,
+        "blockers": [
+          {
+            "part": "names",
+            "state": "unset"
+          },
+          {
+            "part": "why",
+            "state": "unset"
+          },
+          {
+            "part": "wrongIf",
+            "state": "unset"
+          }
+        ],
+        "sentence": null,
+        "dependents": {
+          "segment": [
+            "names",
+            "why"
+          ],
+          "names": [
+            "why"
+          ]
+        },
+        "choices": {
+          "research": [
+            {
+              "goal": "find_names"
+            },
+            {
+              "goal": "strengthen",
+              "part": "theme"
+            },
+            {
+              "goal": "strengthen",
+              "part": "segment"
+            },
+            {
+              "goal": "strengthen",
+              "part": "timeFrame"
+            },
+            {
+              "goal": "pick",
+              "part": "names"
+            },
+            {
+              "goal": "direction"
+            }
+          ],
+          "free": [
+            {
+              "op": "set",
+              "part": "names",
+              "options": [
+                "NVDA",
+                "AMD",
+                "AVGO"
+              ],
+              "min": 1,
+              "max": 4
+            },
+            {
+              "op": "confirm",
+              "part": "names",
+              "value": [
+                "NVDA",
+                "AMD"
+              ]
+            },
+            {
+              "op": "set",
+              "part": "wrongIf",
+              "input": "text",
+              "max": 200
+            },
+            {
+              "op": "clear",
+              "part": "segment",
+              "clears": [
+                "names",
+                "why"
+              ]
+            },
+            {
+              "op": "clear",
+              "part": "timeFrame",
+              "clears": []
+            }
+          ]
+        }
+      },
+      "applied": true
+    }
+  },
+  "namesTimeFrameCleared": {
+    "status": 200,
+    "body": {
+      "session": {
+        "sessionId": "7a7a7a7a-0000-4000-8000-000000000001",
+        "status": "open",
+        "entry": {
+          "kind": "observation",
+          "itemRef": null,
+          "observation": "I want to play AI",
+          "direction": null,
+          "topic": null,
+          "names": []
+        },
+        "frame": null,
+        "lastError": null,
+        "exchanges": [
+          {
+            "who": "player",
+            "kind": "observation",
+            "text": "I want to play AI",
+            "at": "2026-11-17T14:00:00.000Z"
+          },
+          {
+            "who": "partner",
+            "kind": "step",
+            "text": "Your observation is \"I want to play AI\"; the retrieved items point to four places the theme touches: accelerator chips, networking between chips, data-center power and the cloud companies that spend on it all. I would stand on accelerator chips, since the cloud spending report names them as where most of the money goes. No listed company has a sourced connection yet, so the next steps need to find who earns from this.",
+            "at": "2026-11-17T14:01:00.000Z",
+            "stepId": "5e5e5e5e-0000-4000-8000-000000000003",
+            "intent": "build",
+            "goal": "map_segments"
+          },
+          {
+            "who": "player",
+            "kind": "card",
+            "text": "Segment: Accelerator chips",
+            "at": "2026-11-17T14:02:00.000Z",
+            "card": {
+              "op": "confirm",
+              "part": "segment"
+            }
+          },
+          {
+            "who": "partner",
+            "kind": "step",
+            "text": "Three listed companies have a sourced connection to accelerator chips: Nvidia, AMD and Broadcom. A packaging supplier came up too, but it is privately held, so it stays a lead. Each connection rests on one source, and none says how much of the company's revenue it is.",
+            "at": "2026-11-17T14:03:00.000Z",
+            "stepId": "5e5e5e5e-0000-4000-8000-000000000011",
+            "intent": "build",
+            "goal": "find_names"
+          },
+          {
+            "who": "player",
+            "kind": "card",
+            "text": "Time frame: Swing · about 10 sessions",
+            "at": "2026-11-17T14:12:00.000Z",
+            "card": {
+              "op": "set",
+              "part": "timeFrame"
+            }
+          },
+          {
+            "who": "player",
+            "kind": "card",
+            "text": "Changed time frame",
+            "at": "2026-11-17T14:13:00.000Z",
+            "card": {
+              "op": "clear",
+              "part": "timeFrame"
+            }
+          }
+        ],
+        "stepsUsed": 2,
+        "stepBudget": 10,
+        "lastStep": {
+          "stepId": "5e5e5e5e-0000-4000-8000-000000000011",
+          "intent": "build",
+          "status": "completed",
+          "startedAt": "2026-11-17T14:03:00.000Z",
+          "endedAt": "2026-11-17T14:03:00.000Z",
+          "error": null,
+          "query": "q",
+          "summaryWithheld": false
+        },
+        "researchWorkId": "sr_7a7a7a7a-0000-4000-8000-000000000001",
+        "adoption": null,
+        "createdAt": "2026-11-17T14:00:00.000Z",
+        "updatedAt": "2026-11-17T14:13:00.000Z",
+        "shape": "builder"
+      },
+      "thesis": {
+        "schemaVersion": 1,
+        "rev": 5,
+        "parts": {
+          "theme": {
+            "state": "set",
+            "value": "I want to play AI",
+            "by": "player_wrote",
+            "suggestion": null
+          },
+          "segment": {
+            "state": "set",
+            "value": "Accelerator chips",
+            "by": "partner_suggested_confirmed",
+            "skipped": false,
+            "findingIds": [
+              "f_0a0a0a01-0000-4000-8000-000000000005"
+            ],
+            "map": [
+              {
+                "label": "Accelerator chips",
+                "line": "The processors that train and run AI models, where most data-center AI spending goes.",
+                "findingIds": [
+                  "f_0a0a0a01-0000-4000-8000-000000000005"
+                ]
+              },
+              {
+                "label": "Chip networking",
+                "line": "The high-speed links that tie thousands of accelerators into one training cluster.",
+                "findingIds": [
+                  "f_0a0a0a04-0000-4000-8000-000000000008"
+                ]
+              },
+              {
+                "label": "Data-center power",
+                "line": "Utilities and grid supply meeting new data-center demand.",
+                "findingIds": [
+                  "f_0a0a0a03-0000-4000-8000-000000000007",
+                  "f_0a0a0a02-0000-4000-8000-000000000006"
+                ]
+              },
+              {
+                "label": "Cloud spenders",
+                "line": "The large cloud companies that raise AI data-center spending and buy the capacity.",
+                "findingIds": [
+                  "f_0a0a0a01-0000-4000-8000-000000000005"
+                ]
+              }
+            ]
+          },
+          "names": {
+            "state": "unset",
+            "value": [],
+            "by": null,
+            "blocked": null
+          },
+          "why": {
+            "state": "unset",
+            "by": null,
+            "shared": null,
+            "reasons": [],
+            "against": null,
+            "proposal": null
+          },
+          "wrongIf": {
+            "state": "unset",
+            "by": null,
+            "text": null,
+            "findingIds": [],
+            "options": [],
+            "priceLines": []
+          },
+          "timeFrame": {
+            "state": "unset",
+            "by": null,
+            "value": null,
+            "label": null,
+            "suggestion": null
+          }
+        },
+        "pick": {
+          "part": "names",
+          "value": [
+            "NVDA",
+            "AMD"
+          ],
+          "reason": "Both are sourced as makers of the accelerator chips themselves; Broadcom's are custom chips.",
+          "findingIds": [],
+          "asked": false,
+          "basis": "reasoning",
+          "reasons": []
+        },
+        "filled": 2,
+        "saveIssue": null,
+        "ready": false,
+        "blockers": [
+          {
+            "part": "names",
+            "state": "unset"
+          },
+          {
+            "part": "why",
+            "state": "unset"
+          },
+          {
+            "part": "wrongIf",
+            "state": "unset"
+          },
+          {
+            "part": "timeFrame",
+            "state": "unset"
+          }
+        ],
+        "sentence": null,
+        "dependents": {
+          "segment": [
+            "names",
+            "why"
+          ],
+          "names": [
+            "why"
+          ]
+        },
+        "choices": {
+          "research": [
+            {
+              "goal": "find_names"
+            },
+            {
+              "goal": "strengthen",
+              "part": "theme"
+            },
+            {
+              "goal": "strengthen",
+              "part": "segment"
+            },
+            {
+              "goal": "pick",
+              "part": "names"
+            },
+            {
+              "goal": "direction"
+            }
+          ],
+          "free": [
+            {
+              "op": "set",
+              "part": "names",
+              "options": [
+                "NVDA",
+                "AMD",
+                "AVGO"
+              ],
+              "min": 1,
+              "max": 4
+            },
+            {
+              "op": "confirm",
+              "part": "names",
+              "value": [
+                "NVDA",
+                "AMD"
+              ]
+            },
+            {
+              "op": "set",
+              "part": "wrongIf",
+              "input": "text",
+              "max": 200
+            },
+            {
+              "op": "set",
+              "part": "timeFrame",
+              "value": "swing"
+            },
+            {
+              "op": "set",
+              "part": "timeFrame",
+              "value": "positional"
+            },
+            {
+              "op": "set",
+              "part": "timeFrame",
+              "value": "longterm"
+            },
+            {
+              "op": "clear",
+              "part": "segment",
+              "clears": [
+                "names",
+                "why"
+              ]
+            }
+          ]
+        }
+      },
+      "applied": true
+    }
+  },
+  "getNamesTimeFrameCleared": {
+    "status": 200,
+    "body": {
+      "session": {
+        "sessionId": "7a7a7a7a-0000-4000-8000-000000000001",
+        "status": "open",
+        "entry": {
+          "kind": "observation",
+          "itemRef": null,
+          "observation": "I want to play AI",
+          "direction": null,
+          "topic": null,
+          "names": []
+        },
+        "frame": null,
+        "lastError": null,
+        "exchanges": [
+          {
+            "who": "player",
+            "kind": "observation",
+            "text": "I want to play AI",
+            "at": "2026-11-17T14:00:00.000Z"
+          },
+          {
+            "who": "partner",
+            "kind": "step",
+            "text": "Your observation is \"I want to play AI\"; the retrieved items point to four places the theme touches: accelerator chips, networking between chips, data-center power and the cloud companies that spend on it all. I would stand on accelerator chips, since the cloud spending report names them as where most of the money goes. No listed company has a sourced connection yet, so the next steps need to find who earns from this.",
+            "at": "2026-11-17T14:01:00.000Z",
+            "stepId": "5e5e5e5e-0000-4000-8000-000000000003",
+            "intent": "build",
+            "goal": "map_segments"
+          },
+          {
+            "who": "player",
+            "kind": "card",
+            "text": "Segment: Accelerator chips",
+            "at": "2026-11-17T14:02:00.000Z",
+            "card": {
+              "op": "confirm",
+              "part": "segment"
+            }
+          },
+          {
+            "who": "partner",
+            "kind": "step",
+            "text": "Three listed companies have a sourced connection to accelerator chips: Nvidia, AMD and Broadcom. A packaging supplier came up too, but it is privately held, so it stays a lead. Each connection rests on one source, and none says how much of the company's revenue it is.",
+            "at": "2026-11-17T14:03:00.000Z",
+            "stepId": "5e5e5e5e-0000-4000-8000-000000000011",
+            "intent": "build",
+            "goal": "find_names"
+          },
+          {
+            "who": "player",
+            "kind": "card",
+            "text": "Time frame: Swing · about 10 sessions",
+            "at": "2026-11-17T14:12:00.000Z",
+            "card": {
+              "op": "set",
+              "part": "timeFrame"
+            }
+          },
+          {
+            "who": "player",
+            "kind": "card",
+            "text": "Changed time frame",
+            "at": "2026-11-17T14:13:00.000Z",
+            "card": {
+              "op": "clear",
+              "part": "timeFrame"
+            }
+          }
+        ],
+        "stepsUsed": 2,
+        "stepBudget": 10,
+        "lastStep": {
+          "stepId": "5e5e5e5e-0000-4000-8000-000000000011",
+          "intent": "build",
+          "status": "completed",
+          "startedAt": "2026-11-17T14:03:00.000Z",
+          "endedAt": "2026-11-17T14:03:00.000Z",
+          "error": null,
+          "query": "q",
+          "summaryWithheld": false
+        },
+        "researchWorkId": "sr_7a7a7a7a-0000-4000-8000-000000000001",
+        "adoption": null,
+        "createdAt": "2026-11-17T14:00:00.000Z",
+        "updatedAt": "2026-11-17T14:13:00.000Z",
+        "shape": "builder"
+      },
+      "record": {
+        "researchWorkId": "sr_7a7a7a7a-0000-4000-8000-000000000001",
+        "question": "Build a thesis on: I want to play AI",
+        "state": "open",
+        "terminalReason": null,
+        "endedAt": null,
+        "createdAt": "2026-11-17T14:00:00.000Z",
+        "lastTurnAt": null,
+        "summary": null,
+        "answerStale": false,
+        "summaryRevisions": [],
+        "findings": [
+          {
+            "findingId": "f_0f0f0f0f-0000-4000-8000-000000000002",
+            "kind": "observation",
+            "symbol": null,
+            "fact": "I want to play AI",
+            "source": {
+              "recordKind": "exchange",
+              "recordId": null,
+              "label": "Your words"
+            },
+            "at": "2026-11-17T14:00:00.000Z",
+            "asOf": null,
+            "status": "unverified",
+            "statusReason": "player_words",
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0a0a0a01-0000-4000-8000-000000000005",
+            "kind": "coverage",
+            "symbol": null,
+            "fact": "The largest cloud companies said they would keep raising AI data-center spending next year, most of it on accelerator chips.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://news.example.com/ai-capex",
+              "label": "news.example.com · Cloud companies keep raising AI data-center spending",
+              "url": "https://news.example.com/ai-capex"
+            },
+            "at": "2026-11-10T00:00:00.000Z",
+            "asOf": "2026-11-10T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0a0a0a02-0000-4000-8000-000000000006",
+            "kind": "coverage",
+            "symbol": null,
+            "fact": "Executives named chip supply, power and networking as the limits on how fast new AI capacity comes online.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://news.example.com/ai-capex",
+              "label": "news.example.com · Cloud companies keep raising AI data-center spending",
+              "url": "https://news.example.com/ai-capex"
+            },
+            "at": "2026-11-10T00:00:00.000Z",
+            "asOf": "2026-11-10T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0a0a0a03-0000-4000-8000-000000000007",
+            "kind": "coverage",
+            "symbol": null,
+            "fact": "Utilities said data-center projects now make up a large share of requests for new grid connections.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://industry.example.org/dc-power",
+              "label": "industry.example.org · Utilities see data centers driving new demand",
+              "url": "https://industry.example.org/dc-power"
+            },
+            "at": "2026-11-04T00:00:00.000Z",
+            "asOf": "2026-11-04T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0a0a0a04-0000-4000-8000-000000000008",
+            "kind": "coverage",
+            "symbol": null,
+            "fact": "Training clusters need high-speed networking between thousands of accelerators, a market several chip and equipment makers serve.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://news.example.com/ai-networking",
+              "label": "news.example.com · The links between AI chips · undated",
+              "url": "https://news.example.com/ai-networking"
+            },
+            "at": "2026-11-16T15:00:00.000Z",
+            "asOf": null,
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0a0a0a01-0000-4000-8000-000000000013",
+            "kind": "relationship",
+            "symbol": "NVDA",
+            "fact": "Product owner · Nvidia designs the accelerator chips that most AI data centers buy.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://news.example.com/nvda-accel",
+              "label": "news.example.com · Nvidia accelerators lead AI data centers",
+              "url": "https://news.example.com/nvda-accel"
+            },
+            "at": "2026-11-09T00:00:00.000Z",
+            "asOf": "2026-11-09T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0a0a0a02-0000-4000-8000-000000000014",
+            "kind": "relationship",
+            "symbol": "AMD",
+            "fact": "Product owner · AMD said cloud companies ordered its accelerator chips for new AI data centers.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://news.example.com/amd-cloud",
+              "label": "news.example.com · AMD wins accelerator orders from cloud buyers",
+              "url": "https://news.example.com/amd-cloud"
+            },
+            "at": "2026-11-08T00:00:00.000Z",
+            "asOf": "2026-11-08T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0a0a0a03-0000-4000-8000-000000000015",
+            "kind": "relationship",
+            "symbol": "AVGO",
+            "fact": "Supplier · Broadcom designs custom AI chips for some of the largest cloud companies.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://industry.example.org/custom-ai-chips",
+              "label": "industry.example.org · Who builds the custom chips",
+              "url": "https://industry.example.org/custom-ai-chips"
+            },
+            "at": "2026-11-06T00:00:00.000Z",
+            "asOf": "2026-11-06T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0a0a0a04-0000-4000-8000-000000000016",
+            "kind": "relationship",
+            "symbol": null,
+            "fact": "Supplier · Orrin Compute: Orrin Compute packages accelerator chips for several chip designers.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://industry.example.org/ai-packaging",
+              "label": "industry.example.org · Who packages AI chips",
+              "url": "https://industry.example.org/ai-packaging"
+            },
+            "at": "2026-11-05T00:00:00.000Z",
+            "asOf": "2026-11-05T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          }
+        ],
+        "superseded": [],
+        "lines": {
+          "support": null,
+          "complication": null,
+          "missing": null
+        },
+        "nextAction": null,
+        "age": null
+      },
+      "companies": {
+        "supported": [
+          {
+            "symbol": "NVDA",
+            "name": "NVIDIA Corporation",
+            "role": "Product owner",
+            "relationship": "Nvidia designs the accelerator chips that most AI data centers buy.",
+            "relationshipFindingId": "f_0a0a0a01-0000-4000-8000-000000000013",
+            "evidence": [
+              "f_0a0a0a01-0000-4000-8000-000000000013"
+            ],
+            "openQuestion": null,
+            "claim": null,
+            "eligibility": "eligible"
+          },
+          {
+            "symbol": "AMD",
+            "name": "Advanced Micro Devices, Inc.",
+            "role": "Product owner",
+            "relationship": "AMD said cloud companies ordered its accelerator chips for new AI data centers.",
+            "relationshipFindingId": "f_0a0a0a02-0000-4000-8000-000000000014",
+            "evidence": [
+              "f_0a0a0a02-0000-4000-8000-000000000014"
+            ],
+            "openQuestion": null,
+            "claim": null,
+            "eligibility": "eligible"
+          },
+          {
+            "symbol": "AVGO",
+            "name": "Broadcom Inc.",
+            "role": "Supplier",
+            "relationship": "Broadcom designs custom AI chips for some of the largest cloud companies.",
+            "relationshipFindingId": "f_0a0a0a03-0000-4000-8000-000000000015",
+            "evidence": [
+              "f_0a0a0a03-0000-4000-8000-000000000015"
+            ],
+            "openQuestion": null,
+            "claim": null,
+            "eligibility": "eligible"
+          }
+        ],
+        "leads": [
+          {
+            "name": "Orrin Compute",
+            "symbol": null,
+            "findingIds": [
+              "f_0a0a0a04-0000-4000-8000-000000000016"
+            ],
+            "status": "verified",
+            "statusReason": null,
+            "unresolved": "identity_unresolved"
+          }
+        ]
+      },
+      "thesis": {
+        "schemaVersion": 1,
+        "rev": 5,
+        "parts": {
+          "theme": {
+            "state": "set",
+            "value": "I want to play AI",
+            "by": "player_wrote",
+            "suggestion": null
+          },
+          "segment": {
+            "state": "set",
+            "value": "Accelerator chips",
+            "by": "partner_suggested_confirmed",
+            "skipped": false,
+            "findingIds": [
+              "f_0a0a0a01-0000-4000-8000-000000000005"
+            ],
+            "map": [
+              {
+                "label": "Accelerator chips",
+                "line": "The processors that train and run AI models, where most data-center AI spending goes.",
+                "findingIds": [
+                  "f_0a0a0a01-0000-4000-8000-000000000005"
+                ]
+              },
+              {
+                "label": "Chip networking",
+                "line": "The high-speed links that tie thousands of accelerators into one training cluster.",
+                "findingIds": [
+                  "f_0a0a0a04-0000-4000-8000-000000000008"
+                ]
+              },
+              {
+                "label": "Data-center power",
+                "line": "Utilities and grid supply meeting new data-center demand.",
+                "findingIds": [
+                  "f_0a0a0a03-0000-4000-8000-000000000007",
+                  "f_0a0a0a02-0000-4000-8000-000000000006"
+                ]
+              },
+              {
+                "label": "Cloud spenders",
+                "line": "The large cloud companies that raise AI data-center spending and buy the capacity.",
+                "findingIds": [
+                  "f_0a0a0a01-0000-4000-8000-000000000005"
+                ]
+              }
+            ]
+          },
+          "names": {
+            "state": "unset",
+            "value": [],
+            "by": null,
+            "blocked": null
+          },
+          "why": {
+            "state": "unset",
+            "by": null,
+            "shared": null,
+            "reasons": [],
+            "against": null,
+            "proposal": null
+          },
+          "wrongIf": {
+            "state": "unset",
+            "by": null,
+            "text": null,
+            "findingIds": [],
+            "options": [],
+            "priceLines": []
+          },
+          "timeFrame": {
+            "state": "unset",
+            "by": null,
+            "value": null,
+            "label": null,
+            "suggestion": null
+          }
+        },
+        "pick": {
+          "part": "names",
+          "value": [
+            "NVDA",
+            "AMD"
+          ],
+          "reason": "Both are sourced as makers of the accelerator chips themselves; Broadcom's are custom chips.",
+          "findingIds": [],
+          "asked": false,
+          "basis": "reasoning",
+          "reasons": []
+        },
+        "filled": 2,
+        "saveIssue": null,
+        "ready": false,
+        "blockers": [
+          {
+            "part": "names",
+            "state": "unset"
+          },
+          {
+            "part": "why",
+            "state": "unset"
+          },
+          {
+            "part": "wrongIf",
+            "state": "unset"
+          },
+          {
+            "part": "timeFrame",
+            "state": "unset"
+          }
+        ],
+        "sentence": null,
+        "dependents": {
+          "segment": [
+            "names",
+            "why"
+          ],
+          "names": [
+            "why"
+          ]
+        },
+        "choices": {
+          "research": [
+            {
+              "goal": "find_names"
+            },
+            {
+              "goal": "strengthen",
+              "part": "theme"
+            },
+            {
+              "goal": "strengthen",
+              "part": "segment"
+            },
+            {
+              "goal": "pick",
+              "part": "names"
+            },
+            {
+              "goal": "direction"
+            }
+          ],
+          "free": [
+            {
+              "op": "set",
+              "part": "names",
+              "options": [
+                "NVDA",
+                "AMD",
+                "AVGO"
+              ],
+              "min": 1,
+              "max": 4
+            },
+            {
+              "op": "confirm",
+              "part": "names",
+              "value": [
+                "NVDA",
+                "AMD"
+              ]
+            },
+            {
+              "op": "set",
+              "part": "wrongIf",
+              "input": "text",
+              "max": 200
+            },
+            {
+              "op": "set",
+              "part": "timeFrame",
+              "value": "swing"
+            },
+            {
+              "op": "set",
+              "part": "timeFrame",
+              "value": "positional"
+            },
+            {
+              "op": "set",
+              "part": "timeFrame",
+              "value": "longterm"
+            },
+            {
+              "op": "clear",
+              "part": "segment",
+              "clears": [
+                "names",
+                "why"
+              ]
+            }
+          ]
+        }
+      },
+      "storedRows": [],
+      "previous": null,
+      "quota": {
+        "investigationsToday": 1,
+        "perDay": 3,
+        "framingsToday": 0,
+        "framingsPerDay": 10,
+        "stepsToday": 1,
+        "stepsPerDay": 30
+      }
+    }
   }
 }
