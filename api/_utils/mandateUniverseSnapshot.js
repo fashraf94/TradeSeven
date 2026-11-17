@@ -27,6 +27,7 @@
 // book brings its own) and alerts at a configured fraction of the ceiling.
 
 import { FieldValue } from 'firebase-admin/firestore';
+import { isDeepStrictEqual } from 'node:util';
 // The two market-fetch clients — imported HERE AND ONLY HERE on the book eval
 // path (§3.0 sole-importer invariant). Injectable below for tests.
 import { fetchBatchQuotes } from './tournamentPrices.js';
@@ -271,6 +272,113 @@ async function createOrAdopt(ref, doc, { force = false } = {}) {
   }
 }
 
+// ── The daily top-up's publication (Practice Field T1a-2b-2 §3; Astra T1A-06) ─────────────────────────────────
+// A day doc built for idea books alone (`candidateUniverseOmitted`) is rebuilt ONCE, in place, when a build needs the
+// candidate universe: every entry it holds is kept and only the symbols it lacks are fetched (ensureDailySnapshot).
+// Two such rebuilds can run at once: both read the omitted doc, both fetch the new symbols, and — with a blind set — the
+// slower erased whatever the faster fetched (a dividend for a newly added symbol, say). So the top-up is published in a
+// TRANSACTION, against the document as it stands at commit:
+//   • still the omitted doc (or gone): this rebuild's document is written, every entry the stored one holds kept
+//     exactly over this rebuild's copy of it;
+//   • another rebuild has already removed the mark: its result is ADOPTED, not replaced — and what this rebuild fetched
+//     is reconciled into it explicitly, below; it is written only when that adds something.
+// THE RECONCILIATION, per symbol (reconcileDailyEntry): an entry this rebuild did not fetch (one it carried from the
+// omitted doc) is the stored one, untouched. For a symbol this rebuild fetched:
+//   • absent from the stored document — this rebuild's entry;
+//   • present (another rebuild fetched it too) — the stored entry is KEPT, and this rebuild's is newer only in what the
+//     stored one lacks: a corporate action it does not list (by content), the classification when the stored one has
+//     none, and a successful corporate-action fetch over a failed one (`caFetchFailed` stays only when both failed).
+//   Two answers that DIFFER for one action id are both kept, so which one stands never depends on which rebuild
+//   committed first (review B2, its refuter). For an idea book the ledger's conflict rule then decides: one id with two
+//   payloads is applied to no ledger and alerted (ledger.js conflictingActionIds). The quarterly close
+//   (mandateClosePass.js closeBook) would apply every row of one id — as it already would for two rows of one id in a
+//   single fetch, before this build. It cannot meet such rows from a top-up today: a day doc carries the omission mark
+//   only when no quarterly book was active and no quarterly batch open at its first build, so a quarterly book present
+//   at the top-up was created that day, and a position it opens is dated that day (mandateExecution.js openedAt),
+//   never entitled to an action effective on or before it. The feed produces only date-entitled kinds (split,
+//   reverse_split, cash_dividend); a feed adding ticker_change or delisting must revisit this.
+// The document's counts (symbolCount, completeCount, missing, caFailedCount) are recomputed from the entries it holds.
+// The first build and a `force` build never reach this: they publish through createOrAdopt, unchanged.
+
+/** A stable key for one corporate-action row: its fields in sorted order (key order never makes two rows differ). */
+const actionKeyOf = (a) => JSON.stringify(Object.keys(a || {}).sort().map((k) => [k, a[k]]));
+
+/** One symbol's daily entry, reconciled: the stored one kept, given only what the newer fetch has that it lacks. */
+export function reconcileDailyEntry(stored, fetched) {
+  const keep = stored.complete === true || fetched.complete !== true;
+  const base = keep
+    ? { sector: stored.sector ?? null, industry: stored.industry ?? null, marketCap: stored.marketCap ?? null, source: stored.source ?? fetched.source ?? null, complete: stored.complete === true }
+    : { sector: fetched.sector ?? null, industry: fetched.industry ?? null, marketCap: fetched.marketCap ?? null, source: fetched.source ?? null, complete: true };
+  const actions = [...(stored.corporateActions || [])];
+  const seen = new Set(actions.map(actionKeyOf));
+  for (const a of fetched.corporateActions || []) {
+    const k = actionKeyOf(a);
+    if (!seen.has(k)) { seen.add(k); actions.push(a); }
+  }
+  const failed = stored.caFetchFailed === true && fetched.caFetchFailed === true;
+  return {
+    ...base,
+    ...(actions.length > 0 ? { corporateActions: actions } : {}),
+    ...(failed ? { caFetchFailed: true } : {}),
+  };
+}
+
+/** The day doc's counts, recomputed from the entries it holds. */
+function withDailyCounts(doc) {
+  const symbols = doc.symbols || {};
+  const keys = Object.keys(symbols);
+  return {
+    ...doc,
+    symbolCount: keys.length,
+    completeCount: keys.filter((s) => symbols[s]?.complete === true).length,
+    missing: keys.filter((s) => symbols[s]?.complete !== true),
+    caFailedCount: keys.filter((s) => symbols[s]?.caFetchFailed === true).length,
+  };
+}
+
+/**
+ * The document a top-up publishes over `stored` (null: none is stored — this rebuild's document, as built), or `stored`
+ * itself when it adds nothing. `ours` is this rebuild's document; `carried` the entries it read from the omitted doc and
+ * kept (not fetched). EVERY entry the stored document holds is kept — also one outside this rebuild's build set.
+ */
+export function reconcileTopUp(stored, ours, { carried }) {
+  if (stored === null) return ours;
+  const carriedSymbols = new Set(Object.keys(carried || {}));
+  const adopting = stored.candidateUniverseOmitted !== true;
+  const symbols = { ...(stored.symbols || {}) };
+  for (const [sym, entry] of Object.entries(ours.symbols || {})) {
+    if (!Object.hasOwn(symbols, sym)) { symbols[sym] = entry; continue; }
+    if (carriedSymbols.has(sym)) continue; // carried, not fetched: the stored entry stands
+    symbols[sym] = reconcileDailyEntry(symbols[sym], entry);
+  }
+  if (adopting) {
+    const unchanged = Object.keys(symbols).length === Object.keys(stored.symbols || {}).length
+      // By value, whatever the key order: Firestore need not hand a map back in the order it was written (review B4).
+      && Object.keys(symbols).every((s) => isDeepStrictEqual(symbols[s], stored.symbols[s]));
+    if (unchanged) return stored;
+    return withDailyCounts({ ...stored, heldCount: Math.max(stored.heldCount ?? 0, ours.heldCount ?? 0), symbols });
+  }
+  // Still the omitted doc: this rebuild publishes — its own document, over the stored entries.
+  const { candidateUniverseOmitted: _mark, ...rest } = ours;
+  return withDailyCounts({ ...rest, heldCount: Math.max(stored.heldCount ?? 0, ours.heldCount ?? 0), symbols });
+}
+
+/**
+ * Publish a top-up in a transaction (see above). The collection by its literal name, for the protected-store scan.
+ * @returns {Promise<{ won: true, stored: object } | { won: false, winner: object }>}
+ */
+async function publishTopUp(db, ref, doc, { carried }) {
+  const dayRef = db.collection('mandateUniverseDaily').doc(ref.id);
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(dayRef);
+    const stored = snap.exists ? snap.data() : null;
+    const next = reconcileTopUp(stored, doc, { carried });
+    if (next === stored) return { won: false, winner: stored };
+    tx.set(dayRef, next);
+    return { won: true, stored: next };
+  });
+}
+
 export async function bumpUpstreamCounter(db, dateStr, delta, {
   ceiling = MANDATE_UPSTREAM_DAILY_CEILING,
   alertFraction = MANDATE_UPSTREAM_ALERT_FRACTION,
@@ -497,11 +605,21 @@ export async function ensureDailySnapshot(db, {
     ...(omitsCandidates ? { candidateUniverseOmitted: true } : {}),
     symbols: entries,
   };
-  const settled = await createOrAdopt(ref, doc, { force: overwrite });
+  // Practice Field T1a-2b-2 §3 (Astra T1A-06): a TOP-UP publishes against the document as it stands at commit, never
+  // with a blind set — two rebuilds both read the omitted doc, and the slower one's set erased what the faster one
+  // fetched. Every other build — the first build and `force` — publishes exactly as before.
+  const settled = carried !== null
+    ? await publishTopUp(db, ref, doc, { carried })
+    : await createOrAdopt(ref, doc, { force: overwrite });
   if (upstreamCalls > 0) await bumpUpstreamCounter(db, date, upstreamCalls); // the fetches happened — count them even when the build lost the race
   if (!settled.won) {
     const w = settled.winner;
     return { ref, date, built: false, symbolCount: w.symbolCount ?? 0, completeCount: w.completeCount ?? 0, upstreamCalls, caFailedCount: w.caFailedCount ?? 0 };
+  }
+  if (settled.stored) {
+    // A top-up that published a reconciled document (T1a-2b-2 §3) answers with what it stored.
+    const s = settled.stored;
+    return { ref, date, built: true, symbolCount: s.symbolCount, completeCount: s.completeCount, upstreamCalls, caFailedCount: s.caFailedCount };
   }
   return { ref, date, built: true, symbolCount: symbols.length, completeCount, upstreamCalls, caFailedCount };
 }

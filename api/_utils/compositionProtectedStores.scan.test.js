@@ -875,6 +875,8 @@ describe('T1A-07 — the money store: paths, transaction ref arguments, query-de
         [`${PF}/__testsupport__/fixtures.js::enterAt::enterIdea`]: 1,
         [`${PF}/__testsupport__/fixtures.js::windowAt::runIdeaBookWindow`]: 1,
         [`${PF}/__testsupport__/fixtures.js::closeOn::closeIdeaBook`]: 1,
+        // T1a-2b-2 §1: a fixture window's catch-up, run before the fixtures' entries as the window runs it
+        [`${PF}/__testsupport__/fixtures.js::catchUpAt::catchUpIdeaBook`]: 1,
       });
       // where each is defined — close.js calls none of them (closeNextSession, which it does call, is a keyed helper)
       expect(definitions.map((d) => `${d.file}::${d.name}`).sort()).toEqual([

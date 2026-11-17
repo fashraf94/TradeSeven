@@ -17,8 +17,9 @@ import { createIdeaBook } from '../ideaBook.js';
 import { admitIdea } from '../admission.js';
 import { enterIdea, runIdeaBookEntryPass } from '../entry.js';
 import { runIdeaBookWindow } from '../sweep.js';
-import { closeIdeaBook } from '../close.js';
+import { closeIdeaBook, catchUpIdeaBook } from '../close.js';
 import { runFounderAction } from '../founderControls.js';
+import { admissionMarkSetCandidates } from '../admissionMarks.js';
 
 export { makeMandateFakeDb };
 
@@ -223,6 +224,44 @@ export function placeSnapshot(db, snap) {
 }
 
 /**
+ * Astra T2C-01: THE daily layer of a session (`mandateUniverseDaily/{date}`), with one entry per symbol in the daily
+ * builder's entry shape (mandateUniverseSnapshot.js ensureDailySnapshot) — as a corporate-action fetch that succeeded
+ * with nothing listed leaves it; `failed` names whose fetch failed (`caFetchFailed: true`). Merged into whatever the
+ * document already holds, straight into the fake's store (it works on a db a test wraps to fail its writes).
+ * Admission refuses a held name its session's daily layer does not cover (admissionMarks.js), and a sale reads it too
+ * (exits.js) — so the snapshot fixtures above never write it: a row that needs the day's coverage stores it. Returns it.
+ */
+export function storeDailyLayer(db, date, symbols, { failed = [] } = {}) {
+  const path = `mandateUniverseDaily/${date}`;
+  const cur = db._store.get(path);
+  const entries = { ...(cur?.data?.symbols || {}) };
+  for (const sym of [...symbols, ...failed]) {
+    entries[sym] = {
+      sector: null, industry: null, marketCap: null, source: 'eodhd_fundamentals', complete: false,
+      ...(failed.includes(sym) ? { caFetchFailed: true } : {}),
+    };
+  }
+  const doc = { ...(cur?.data || { schemaVersion: 1, date, builtAt: new Date(etIso(date, 9, 0)) }), symbols: entries };
+  db._store.set(path, { data: structuredClone(doc), version: (cur?.version || 0) + 1 });
+  return doc;
+}
+
+/**
+ * The daily layer an admission at `nowIso` reads (admissionMarks.js: the session its marks belong to), covering every
+ * name the book's open ideas hold — as the daily build's idea-book coverage does in production. For a row about
+ * something else that admits while the book holds a name. Returns the document.
+ */
+export function coverHeldNames(db, bookId, nowIso) {
+  const { session } = admissionMarkSetCandidates(nowIso);
+  if (session === null) throw new Error(`coverHeldNames: no session for ${nowIso}`);
+  const held = new Set();
+  for (const id of getBook(db, bookId)?.openIdeaIds || []) {
+    for (const sym of Object.keys(getIdea(db, bookId, id)?.ledger?.holdings || {})) held.add(sym);
+  }
+  return storeDailyLayer(db, session, [...held]);
+}
+
+/**
  * T1a-1's rows hand the slot's snapshot to the entry. Since T1a-2a the fill reads the STORED slot snapshot itself
  * (review FR-A7), so these two put the handed snapshot in the store, under its own key, and then call the real
  * function WITHOUT it. A snapshot whose key is not the tick's is therefore simply not the slot's stored document.
@@ -265,13 +304,49 @@ export async function windowAt(db, bookId, { date, slot = 'open30', quotes, now 
   return runIdeaBookWindow(db, { bookRef, tick: tickOf(date, slot), now: now ?? slotNowOf(date, slot) });
 }
 
-/** Admit and (optionally) enter an idea in its start session. Returns `{ ideaId, admission, entry }`. */
+/**
+ * The catch-up a window runs before it sells or enters (sweep.js runIdeaBookWindow; sessions.js: nothing moves past an
+ * unclosed session): every session before `date` the book has not closed is closed, or accounted for by the window
+ * ledger's own cursor (T2B-02), from stored snapshots only. An entry the fixtures make "at a window" runs it first, as
+ * the window does — so a book's creation day is accounted for before its first fill (T1a-2b-2 §1: admission refuses
+ * while a completed session is unclosed, C-2).
+ */
+export async function catchUpAt(db, bookId, { date, slot = 'open30', now } = {}) {
+  const bookRef = db.collection('mandates').doc(bookId);
+  return catchUpIdeaBook(db, bookRef, { before: date, now: now ?? slotNowOf(date, slot) });
+}
+
+/** Admit and (optionally) enter an idea in its start session — at a window, after its catch-up. Returns `{ ideaId, admission, entry }`. */
 export async function admitAndEnter(db, bookId, { contract, opId = 'idea-1', admitIso = ADMIT_ISO, quotes, date = DAYS.d1, slot = 'open30' }) {
   const admission = await admitIdea(db, { bookId, contract, opId, nowIso: admitIso });
   if (!admission.ok) throw new Error(`admitAndEnter: ${JSON.stringify(admission.refusals)}`);
   const snapshot = await storeTickSnapshot(db, date, slot, quotes);
+  await catchUpAt(db, bookId, { date, slot });
   const entry = await enterAt(db, bookId, admission.ideaId, { date, slot });
   return { ideaId: admission.ideaId, admission, entry, snapshot };
+}
+
+/**
+ * Admit SEVERAL ideas — each at its own instant, all before any of them enters — THEN enter each at its window, in the
+ * order given, after the window's catch-up. For a book holding two ideas entered in one session: admission measures a
+ * book at the marks of its moment (T1a-2b-2 §1), so an idea is admitted before, not after, a later fill. Each spec:
+ * `{ contract, opId, admitIso?, quotes, date?, slot? }`. Returns `[{ ideaId, admission, entry, snapshot }]`.
+ */
+export async function admitAllThenEnter(db, bookId, specs) {
+  const out = [];
+  for (const [i, s] of specs.entries()) {
+    const admission = await admitIdea(db, { bookId, contract: s.contract, opId: s.opId ?? `idea-${i + 1}`, nowIso: s.admitIso ?? ADMIT_ISO });
+    if (!admission.ok) throw new Error(`admitAllThenEnter: ${JSON.stringify(admission.refusals)}`);
+    out.push({ ideaId: admission.ideaId, admission });
+  }
+  for (const [i, s] of specs.entries()) {
+    const date = s.date ?? DAYS.d1;
+    const slot = s.slot ?? 'open30';
+    out[i].snapshot = await storeTickSnapshot(db, date, slot, s.quotes);
+    await catchUpAt(db, bookId, { date, slot });
+    out[i].entry = await enterAt(db, bookId, out[i].ideaId, { date, slot });
+  }
+  return out;
 }
 
 /**

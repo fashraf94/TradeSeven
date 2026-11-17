@@ -81,6 +81,41 @@ export function attemptOf(win, { nowIso }) {
   };
 }
 
+// ── THE WINDOW'S OWN RECEIPTS (Astra T2B-05; T1a-2b-2 §4.1) ───────────────────────────────────────────────────
+// A window's row is written AFTER its pass, in a transaction of its own (recordWindowAttempt). An entry, a sale, a
+// timeout or a caught-up session commits first, in ITS transaction; if the row's write then fails, the attempt and its
+// counts are lost, and the slot's next fire — finding nothing left to do — would serve the window with no record of the
+// fill. So each action also writes, in its OWN transaction, a PENDING-WINDOW RECEIPT on the window's row:
+// `windows/{date}_{slot}.actions.{key}` — a blind merge (no read), keyed by the action's own id, so a transaction that
+// is run again writes the same key once. The fold takes each count as the larger of what the attempts reported and
+// what the receipts record: equal when every attempt was recorded, and the receipts' when one was lost. A row that
+// holds receipts and no attempt yet is a window that was acted at and not (yet) recorded: `served` false, attempted.
+// (Chosen over reconstructing the counts from the committed records: a timeout and a caught-up session have no record
+// keyed by the window, and the row is the one document the fold already reads in its transaction.)
+
+/** The kinds of action a window's receipts record. */
+export const WINDOW_ACTION_KIND = Object.freeze({
+  ENTRY: 'entry', ENTRY_TIMEOUT: 'entry_timeout', SALE: 'sale', RESULTED: 'resulted', CAUGHT_UP: 'caught_up',
+});
+
+/** A receipt's key in the row's `actions` map: its kind and the action's own id ('.' spelled out — keys stay literal). */
+export const windowActionKey = (kind, id) => `${kind}:${String(id).replace(/%/g, '%25').replace(/\./g, '%2E')}`;
+
+/**
+ * Write the pending-window receipts of actions made at a window, in the CALLER's transaction — the action's own, after
+ * its reads: one blind merge into `windows/{date}_{slot}`. `receipts`: `[{ kind, id, detail, at }]`. Nothing for an empty
+ * list or a tick that names no window.
+ */
+export function writeWindowActionReceipts(tx, bookRef, tick, receipts) {
+  if (typeof tick?.date !== 'string' || typeof tick?.slot !== 'string' || !receipts?.length) return;
+  const actions = {};
+  for (const r of receipts) actions[windowActionKey(r.kind, r.id)] = { kind: r.kind, ...(r.detail || {}), at: r.at };
+  tx.set(windowsRefOf(bookRef).doc(windowRowId(tick.date, tick.slot)), { actions }, { merge: true });
+}
+
+/** How many receipts of a kind a row holds. */
+const receiptCount = (receipts, kind) => receipts.filter((r) => r?.kind === kind).length;
+
 /** Did code act at all (a fill, a timeout, a session caught up, an idea resulted)? */
 const codeActed = (code) => code.caughtUpSessions.length > 0 || code.sales.filled > 0 || code.entries.filled > 0
   || code.entries.cancelled > 0 || code.ideasResulted > 0;
@@ -92,19 +127,27 @@ const codeActed = (code) => code.caughtUpSessions.length > 0 || code.sales.fille
 export function foldWindowAttempt(prior, attempt, { bookId, tick }) {
   if (prior?.served === true) return prior;
   const before = prior?.code || null;
+  // The window's own receipts (T2B-05): what its actions committed, whether or not their attempt was recorded.
+  const receipts = Object.values(prior?.actions || {});
   const caughtUp = [...(before?.caughtUpSessions || [])];
   for (const c of attempt.caughtUp) if (!caughtUp.some((x) => x.date === c.date)) caughtUp.push(c);
+  for (const r of receipts) {
+    if (r?.kind === WINDOW_ACTION_KIND.CAUGHT_UP && !caughtUp.some((x) => x.date === r.session)) caughtUp.push({ date: r.session, observed: r.observed === true });
+  }
+  caughtUp.sort((a, b) => (a.date < b.date ? -1 : (a.date > b.date ? 1 : 0)));
+  const atLeast = (attempts, kind) => Math.max(attempts, receiptCount(receipts, kind));
   const code = {
     caughtUpSessions: caughtUp,
-    // Fills, timeouts and results are made once, so each attempt's are new and they add up. What waits is the last
+    // Fills, timeouts and results are made once, so each attempt's are new and they add up — and never fewer than the
+    // window's receipts record (T2B-05: an attempt whose row write failed is not lost). What waits is the last
     // attempt's: the window's state as it left it.
-    sales: { filled: (before?.sales?.filled || 0) + attempt.salesFilled, waiting: attempt.salesWaiting },
+    sales: { filled: atLeast((before?.sales?.filled || 0) + attempt.salesFilled, WINDOW_ACTION_KIND.SALE), waiting: attempt.salesWaiting },
     entries: {
-      filled: (before?.entries?.filled || 0) + attempt.entriesFilled,
+      filled: atLeast((before?.entries?.filled || 0) + attempt.entriesFilled, WINDOW_ACTION_KIND.ENTRY),
       waiting: attempt.entriesWaiting,
-      cancelled: (before?.entries?.cancelled || 0) + attempt.entriesCancelled,
+      cancelled: atLeast((before?.entries?.cancelled || 0) + attempt.entriesCancelled, WINDOW_ACTION_KIND.ENTRY_TIMEOUT),
     },
-    ideasResulted: (before?.ideasResulted || 0) + attempt.ideasResulted,
+    ideasResulted: atLeast((before?.ideasResulted || 0) + attempt.ideasResulted, WINDOW_ACTION_KIND.RESULTED),
   };
   const served = attempt.complete && attempt.errors === 0;
   return {
@@ -116,7 +159,9 @@ export function foldWindowAttempt(prior, attempt, { bookId, tick }) {
     tickKey: tick.tickKey,
     served,
     servedAt: served ? attempt.at : null,
-    firstAttemptAt: prior?.firstAttemptAt ?? attempt.at,
+    // The first attempt the window saw: the earliest of the recorded ones and of the receipts' (an attempt whose row
+    // write failed is known only by its receipts; review C4).
+    firstAttemptAt: [prior?.firstAttemptAt, ...receipts.map((r) => r?.at), attempt.at].filter((x) => typeof x === 'string').sort()[0],
     attempts: (prior?.attempts || 0) + 1,
     errors: (prior?.errors || 0) + attempt.errors,
     attemptLog: [...(prior?.attemptLog || []), attempt].slice(-WINDOW_ATTEMPTS_KEPT),
@@ -124,6 +169,8 @@ export function foldWindowAttempt(prior, attempt, { bookId, tick }) {
     modelCalled: false,
     triggers: [],
     outcome: codeActed(code) ? WINDOW_OUTCOME.CODE_ACTION : WINDOW_OUTCOME.NO_MODEL_ACTION,
+    // The receipts the window's actions wrote (T2B-05), kept on the row they were written to.
+    ...(prior?.actions ? { actions: prior.actions } : {}),
   };
 }
 

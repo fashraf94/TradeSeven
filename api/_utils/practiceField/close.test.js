@@ -14,7 +14,7 @@ import { roundUsd } from '../mandateRounding.js';
 import {
   seedBook, admitAndEnter, closeOn, contractOf, getBook, getIdea, getRow, closeSnapshot, tickSnapshot, tickOf, slotOpenIso, etIso, DAYS, ADMIT_ISO,
   countDocs, makeMandateFakeDb, takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, SALE_WORD_KEYS, storeCloseSnapshot, enterIdeaWith,
-  withoutWindowAlerts,
+  withoutWindowAlerts, catchUpAt,
 } from './__testsupport__/fixtures.js';
 
 const CAP = { AAPL: 3.4e12, MSFT: 3.1e12, NVDA: 3.5e12, LLY: 7.5e11, AMD: 2.6e11, AVGO: 8.2e11 };
@@ -125,6 +125,9 @@ describe('a valuation: every ledger marked from the one close snapshot', () => {
 
   it('an idea that has not entered gets no valuation row; its reserved cash is in the book\'s row', async () => {
     const { db, bookId } = await seedBook();
+    // D1's 10:00 window catches the book up (its creation day, the 13th, is accounted for — T1a-2b-2 §1 refuses an
+    // admission while a completed session is unclosed, C-2).
+    await catchUpAt(db, bookId, { date: DAYS.d1 });
     // Admitted during D1: its start session is D2, so D1's close leaves it accepted.
     const a = await admitIdea(db, { bookId, contract: contractOf(), opId: 'idea-1', nowIso: etIso(DAYS.d1, 11, 0) });
     const out = await closeOn(db, bookId, DAYS.d1, { SPY: 599.02 });
@@ -264,8 +267,9 @@ describe('corporate actions: once per ledger', () => {
 
   it('one action reaches every ledger that holds the symbol — SPY in two ideas\' ledgers is credited in each, once each', async () => {
     const { db, bookId } = await seedBook({ archetypeCodeId: 'degen' });
-    const a = await admitAndEnter(db, bookId, { contract: contractOf({ slot: 'short', names: ['AAPL'] }), opId: 'a', quotes: entryQuotes('AAPL', 'LLY', 'SPY') });
+    // b is admitted before a fills (T1a-2b-2 §1: admission measures the book at the marks of its moment).
     const bAdmit = await admitIdea(db, { bookId, contract: contractOf({ slot: 'medium', names: ['LLY'], capitalUsd: 25000 }), opId: 'b', nowIso: ADMIT_ISO });
+    const a = await admitAndEnter(db, bookId, { contract: contractOf({ slot: 'short', names: ['AAPL'] }), opId: 'a', quotes: entryQuotes('AAPL', 'LLY', 'SPY') });
     // (the medium idea enters in the same start session, at the next slot)
     await enterIdeaWith(db, { bookRef: db.collection('mandates').doc(bookId), ideaId: bAdmit.ideaId, tick: tickOf(DAYS.d1, 'midday'), snapshot: tickSnapshot(DAYS.d1, 'midday', entryQuotes('LLY', 'SPY')), nowIso: new Date(Date.parse(slotOpenIso(DAYS.d1, 'midday')) + 120000).toISOString() });
     await closeOn(db, bookId, DAYS.d1, { AAPL: 233.11, LLY: 805.2, SPY: 599.02 });

@@ -11,12 +11,13 @@ import {
   runFounderAction, isPracticeFieldFounder, founderAllowlist, planControl, FOUNDER_ACTIONS, founderRequestFingerprint,
 } from './founderControls.js';
 import { founderAllowlist as mandateFounderAllowlist } from '../../mandate/create.js';
-import { runIdeaBookEvalPass, readIdeaBookPresence, ideaCloseLeftUnclosed } from './sweep.js';
+import { runIdeaBookEvalPass, readIdeaBookPresence, ideaCloseLeftUnclosed, runDrainingIdeaBookCloses } from './sweep.js';
 import { assertReconciled } from './reconcile.js';
 import { roundUsd } from '../mandateRounding.js';
 import { COCKPIT_ALLOWLIST_ENV } from '../callRecords/allowlist.js';
 import {
-  makeMandateFakeDb, seedBook, contractOf, closeOn, storeTickSnapshot, storeCloseSnapshot, tickOf, slotNowOf, etIso, ADMIT_ISO, getBook, getIdea, dumpStore,
+  makeMandateFakeDb, seedBook, contractOf, closeOn, storeTickSnapshot, storeCloseSnapshot, tickOf, slotNowOf, etIso, ADMIT_ISO, getBook, getIdea, dumpStore, closeNowOf,
+  coverHeldNames,
 } from './__testsupport__/fixtures.js';
 
 const UID = 'founder-1';
@@ -315,9 +316,12 @@ describe('the lifecycles', () => {
     const db = makeMandateFakeDb(agents());
     const { body: { bookId } } = await act(db, 'create_book', 'create-1');
     const { body: { ideaId } } = await act(db, 'admit_fixture', 'a-1', { contract: contractOf({ names: ['AAPL', 'MSFT'] }) });
+    expect((await pass(db, bookId, S[0])).entered).toBe(1);
+    // Admitted at 11:00, after S[0]'s 10:00 window (which caught the book up and entered a-1): admission measures the
+    // book at that window's snapshot (T1a-2b-2 §1). It starts on S[1].
+    coverHeldNames(db, bookId, etIso(S[0], 11, 0)); // S[0]'s corporate-action coverage (Astra T2C-01)
     const pending = await act(db, 'admit_fixture', 'a-2', { contract: contractOf({ slot: 'medium', names: ['JPM'], capitalUsd: 25000 }) }, { nowIso: etIso(S[0], 11, 0) });
     expect(pending.body).toMatchObject({ startSession: S[1] });
-    expect((await pass(db, bookId, S[0])).entered).toBe(1);
     const level = getIdea(db, bookId, ideaId).lines.find((l) => l.symbol === 'MSFT').level;
     await close(db, bookId, S[0], { MSFT: roundUsd(level - 0.02) });
     // Wound down after S[0]'s close.
@@ -384,6 +388,40 @@ describe('the lifecycles', () => {
     expect(out).toMatchObject({ closed: false, skipped: 'book_closed', bookClosed: true, caughtUp: [{ date: S[1], observed: true }] });
     expect(ideaCloseLeftUnclosed(out)).toBe(false);
     expect(getBook(two.db, two.bookId)).toMatchObject({ status: 'closed', closedOn: S[1], execState: { lastCloseKey: S[1] } });
+  });
+
+  it('T1a-2b-2 §4.3 (Q7) — the DRAINING close sweep counts a catch-up that closed the book as CLOSED, not skipped (and not left unclosed)', async () => {
+    const three = await emptyBookClosedOnS0();
+    await act(three.db, 'wind_down', 'w-1', {}, { nowIso: etIso(S[1], 9, 0) }); // before S[1]'s close
+    await storeCloseSnapshot(three.db, S[1], quotes()); // S[1]'s close fire never ran
+    await storeCloseSnapshot(three.db, S[2], quotes());
+    const out = await runDrainingIdeaBookCloses(three.db, { date: S[2], now: closeNowOf(S[2]), ownerToken: 'owner-token' });
+    expect({ ...out, alerts: [] }).toEqual({ books: 1, closed: 1, skipped: 0, unclosed: 0, errors: 0, leaseSkips: 0, alerts: [] });
+    expect(getBook(three.db, three.bookId)).toMatchObject({ status: 'closed', closedOn: S[1] });
+    // The next fire finds no draining book: nothing to count.
+    expect(await runDrainingIdeaBookCloses(three.db, { date: S[2], now: closeNowOf(S[2]), ownerToken: 'owner-token' })).toMatchObject({ books: 0, closed: 0, skipped: 0 });
+  });
+
+  it('T1a-2b-2 review C2 — a window catch-up of TWO sessions whose second closes the book: that closing transaction writes no receipt; the first session\'s receipt stays on the window\'s row, with no attempt — and nothing serves or closes the book again', async () => {
+    const four = await emptyBookClosedOnS0();
+    await act(four.db, 'wind_down', 'w-1', {}, { nowIso: etIso(S[1], 18, 30) }); // after S[1]'s close pass: S[1] closes active
+    await storeCloseSnapshot(four.db, S[1], quotes());
+    await storeCloseSnapshot(four.db, S[2], quotes());
+    const original = console.error; console.error = () => {};
+    let p;
+    try { p = await windowPass(four.db, S[3]); } finally { console.error = original; }
+    expect(p).toMatchObject({ books: 1, served: 0, caughtUp: 2, errors: 0 });
+    expect(getBook(four.db, four.bookId)).toMatchObject({ status: 'closed', closedOn: S[2] });
+    expect(four.db._get(`mandates/${four.bookId}/windows/${S[3]}_open30`)).toEqual({
+      actions: { [`caught_up:${S[1]}`]: { kind: 'caught_up', session: S[1], observed: true, at: slotNowOf(S[3]).toISOString() } },
+    });
+    expect(four.db._get(`mandates/${four.bookId}/windows/${S[2]}_close`)).toMatchObject({ code: { bookClosed: true, caughtUpSession: true } });
+    expect(getBook(four.db, four.bookId).execState.lastIdeaTickKey ?? null).toBeNull();
+    // A later fire serves nobody and writes nothing.
+    const bookBefore = JSON.stringify(getBook(four.db, four.bookId));
+    expect(await windowPass(four.db, S[4])).toMatchObject({ books: 0, served: 0 });
+    expect(JSON.stringify(getBook(four.db, four.bookId))).toBe(bookBefore);
+    expect(four.db._get(`mandates/${four.bookId}/windows/${S[4]}_open30`)).toBeUndefined();
   });
 
   it('C2 — a caught-up session that ended BEFORE the wind-down was requested is closed as the active session it was: the wind-down completes at a later session, and no active session loses its rows', async () => {
@@ -478,5 +516,56 @@ describe('the lifecycles', () => {
     expect(idea).toMatchObject({ status: 'settled', result: { endpointSession: S[10], endpointKind: 'due_session' } });
     expect(await pass(db, bookId, S[11])).toMatchObject({ sold: 1, resulted: 1 });
     expect(getBook(db, bookId)).toMatchObject({ status: 'active', drafting: 'paused', openIdeaIds: [] });
+  });
+});
+
+describe('T1a-2b-2 §1 — admit_fixture returns admission\'s two new refusals unchanged', () => {
+  it('close_owed (a completed session unclosed) and admission_marks_unavailable (a held name with no mark in the set): 422, the refusals exactly as admission gave them', async () => {
+    const db = makeMandateFakeDb(agents());
+    const { body: { bookId } } = await act(db, 'create_book', 'create-1'); // Friday 13 Nov, 11:00
+    // Monday 11:00: Friday's close was never written.
+    const owed = await act(db, 'admit_fixture', 'f-owed', { contract: contractOf() }, { nowIso: etIso(S[0], 11, 0) });
+    expect(owed).toEqual({ status: 422, body: { ok: false, error: 'admission_refused', refusals: [{ code: 'close_owed', session: '2026-11-13', completedAt: etIso('2026-11-13', 16, 0) }], permittedMaxUsd: 20000, binding: [{ constraint: 'slot_cap', slot: 'short', limitUsd: 20000 }] } });
+    // A held book (the 10:00 window catches Friday up and enters a fixture), closed on Monday; Tuesday at 09:45 no
+    // window has built a snapshot yet.
+    const { body: held } = await act(db, 'admit_fixture', 'f-held', { contract: contractOf({ names: ['AAPL', 'MSFT'] }) });
+    await storeTickSnapshot(db, S[0], 'open30', quotes());
+    expect((await runIdeaBookEvalPass(db, { tick: tickOf(S[0]), now: slotNowOf(S[0]), ownerToken: 'owner-token' })).entered).toBe(1);
+    await closeOn(db, bookId, S[0], quotes());
+    const unmarked = await act(db, 'admit_fixture', 'f-unmarked', { contract: contractOf({ slot: 'medium', names: ['NVDA'], capitalUsd: 1000 }) }, { nowIso: etIso(S[1], 9, 45) });
+    expect(unmarked.status).toBe(422);
+    expect(unmarked.body.refusals).toEqual([{
+      code: 'admission_marks_unavailable', symbols: ['AAPL', 'MSFT'],
+      unavailable: [{ symbol: 'AAPL', ideaId: held.ideaId, reason: 'no_snapshot_yet' }, { symbol: 'MSFT', ideaId: held.ideaId, reason: 'no_snapshot_yet' }],
+      basis: 'session_snapshot', session: S[1], snapshotKey: null,
+    }]);
+    // Each refusal was stored with its request and replays unchanged.
+    expect((await act(db, 'admit_fixture', 'f-unmarked', { contract: contractOf({ slot: 'medium', names: ['NVDA'], capitalUsd: 1000 }) }, { nowIso: etIso(S[1], 9, 45) })).body.refusals).toEqual(unmarked.body.refusals);
+  });
+});
+
+describe('T1a-2b-2 §4.2 (Astra T2B-06) — a pending creation is answered with its own book', () => {
+  it('Astra\'s sequence: a create that committed book A but failed to store its response, replayed after A closed and B opened, answers A — not `open_book_exists` naming B; B is untouched', async () => {
+    const db = makeMandateFakeDb(agents());
+    const opPath = `practiceFieldBooks/${UID}/founderOps/create-1`;
+    db.failNextWrites(opPath, 1); // the request's `done` write fails after the book committed
+    await expect(act(db, 'create_book', 'create-1')).rejects.toThrow(/INJECTED/);
+    expect(db._get(opPath)).toMatchObject({ state: 'pending', action: 'create_book' });
+    const a = db._get(`practiceFieldBooks/${UID}`).bookId;
+    expect(getBook(db, a)).toMatchObject({ status: 'active', createOpId: 'create-1' });
+    // A winds down and the next close completes it (no open idea); B opens.
+    expect((await act(db, 'wind_down', 'w-1', {}, { nowIso: etIso(S[0], 9, 0) })).body).toMatchObject({ ok: true, outcome: 'draining' });
+    await closeOn(db, a, S[0], quotes());
+    expect(getBook(db, a)).toMatchObject({ status: 'closed', closedOn: S[0] });
+    const b = await act(db, 'create_book', 'create-2', {}, { nowIso: etIso(S[0], 17, 0) });
+    expect(b).toMatchObject({ status: 201, body: { ok: true } });
+    const bBefore = JSON.stringify(getBook(db, b.body.bookId));
+    const replay = await act(db, 'create_book', 'create-1', {}, { nowIso: etIso(S[1], 9, 0) });
+    expect(replay).toEqual({ status: 200, body: { ok: true, action: 'create_book', bookId: a, epochId: 'epoch-0001', attributionAgentId: `agent-${UID}`, archetypeCodeId: 'momentum_chaser', idempotentReplay: true } });
+    // Stored now, and replayed as stored.
+    expect(db._get(opPath)).toMatchObject({ state: 'done', response: { body: { bookId: a } } });
+    expect((await act(db, 'create_book', 'create-1')).body).toMatchObject({ ok: true, bookId: a, idempotentReplay: true });
+    expect(JSON.stringify(getBook(db, b.body.bookId))).toBe(bBefore);
+    expect(db._get(`practiceFieldBooks/${UID}`)).toMatchObject({ bookId: b.body.bookId, status: 'active' });
   });
 });

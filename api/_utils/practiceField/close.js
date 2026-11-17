@@ -82,10 +82,10 @@ import { assertReconciled } from './reconcile.js';
 import { readLines, buildEndpoint, foldCloseIntoTrack, pendingSaleOf, completedLiquidation, ENDPOINT_KIND } from './settlement.js';
 import { firstUnclosedSessionBefore } from './sessions.js';
 import { toCents, fromCents } from './money.js';
-import { buildResultPacket, evidenceRefOf, EVIDENCE_PACKET } from './evidence.js';
+import { buildResultEvidence, evidenceRefOf, EVIDENCE_PACKET } from './evidence.js';
 import {
   windowsRefOf, expectedIntradayWindows, buildCloseWindowRow, windowOnlySessionsBefore, readWindowOnlySessions, writeWindowOnlySessions,
-  WINDOW_ONLY_SESSIONS_PER_TX, WINDOWS_ACCOUNTED_FIELD,
+  WINDOW_ONLY_SESSIONS_PER_TX, WINDOWS_ACCOUNTED_FIELD, writeWindowActionReceipts, WINDOW_ACTION_KIND,
 } from './windowLedger.js';
 import { windowRowId, CLOSE_WINDOW, sessionClosePassEndMs, nextSessionDate } from './windows.js';
 
@@ -434,7 +434,7 @@ function closeFilledIdea(idea, { date, closeSnapshot, actionsBySymbol: feedActio
  * @returns {Promise<{ closed: boolean, skipped?: string, session?: string, catchUp?: boolean, observed?: boolean,
  *                     row?: object, ideaRows?: object, endpoints?: object, cancelled?: string[], resulted?: string[], alerts: string[] }>}
  */
-async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false }) {
+async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false, windowTick = null }) {
   const nowIso = now.toISOString();
   const coverageDocRef = coverageRefOf(db);
 
@@ -694,8 +694,8 @@ async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false })
       registry = registrySnap.exists ? registrySnap.data() : null;
     }
 
-    // 7. The result packets: every price each result relied on, copied (evidence.js).
-    const resultPackets = Object.keys(endpoints).map((ideaId) => [ideaId, buildResultPacket({
+    // 7. The result packets: every price each result relied on, copied (evidence.js) — with their numbered receipt parts.
+    const resultPackets = Object.keys(endpoints).map((ideaId) => [ideaId, buildResultEvidence({
       bookId: bookRef.id, idea: nextIdeas.get(ideaId), endpointRow: endpoints[ideaId], inception: inceptions[ideaId],
       closeRows: closeRowsOf[ideaId], nowIso,
     })]);
@@ -743,15 +743,26 @@ async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false })
     for (const [ideaId, endpointRow] of Object.entries(endpoints)) {
       tx.create(bookRef.collection('ideas').doc(ideaId).collection('rows').doc('endpoint'), endpointRow);
     }
-    // …and one result packet, created beside it (T1a-2b-1 §3): a second one aborts the whole close too.
-    for (const [ideaId, packet] of resultPackets) {
-      tx.create(evidenceRefOf(bookRef.collection('ideas').doc(ideaId), EVIDENCE_PACKET.RESULT), packet);
+    // …and one result packet, created beside it (T1a-2b-1 §3), with its corporate-action receipts in numbered parts
+    // (T1a-2b-2 §4.4): a second write of any of them aborts the whole close too.
+    for (const [ideaId, { packet, parts }] of resultPackets) {
+      const ideaRef = bookRef.collection('ideas').doc(ideaId);
+      tx.create(evidenceRefOf(ideaRef, EVIDENCE_PACKET.RESULT), packet);
+      for (const part of parts) tx.create(evidenceRefOf(ideaRef, part.id), part.doc);
     }
     tx.set(bookRef.collection('dailyRows').doc(session), row);
     // The sessions before this one that only the window cursor accounts for (T2B-02), then this close's own window row
     // (T1a-2b-1 §4): each create-once, as each session is accounted for once.
     writeWindowOnlySessions(tx, bookRef, windowsAccounted);
     tx.create(windowsRefOf(bookRef).doc(windowRowId(session, CLOSE_WINDOW)), closeWindow.row);
+    // T1a-2b-2 §4.1 (Astra T2B-05): a session caught up AT A WINDOW leaves that window's own receipt, in this transaction.
+    // The transaction that closes the book (its wind-down complete) writes none: the closed book owes that window
+    // nothing, and that session's own close row records the catch-up. Sessions the SAME catch-up closed before it have
+    // already written theirs, so the window's row then holds those receipts and no attempt — a true record of what code
+    // did at the window, which nothing reads again (a closed book is never served or closed again; review C2).
+    if (catchUpOnly && windowTick && !completesWindDown) {
+      writeWindowActionReceipts(tx, bookRef, windowTick, [{ kind: WINDOW_ACTION_KIND.CAUGHT_UP, id: session, detail: { session, observed }, at: nowIso }]);
+    }
     if (coverageWrite) tx.set(coverageDocRef, coverageData);
     const bookPatch = {
       portfolio: nextBook.portfolio,
@@ -814,14 +825,15 @@ async function closeNextSessionKeepingAlerts(db, bookRef, args, committedAlerts)
  * @returns {Promise<{ complete: boolean, skipped?: string, caughtUp: Array<{ date: string, observed: boolean }>,
  *                     cancelled: string[], resulted: string[], alerts: string[] }>}
  */
-export async function catchUpIdeaBook(db, bookRef, { before, now = new Date() } = {}) {
+export async function catchUpIdeaBook(db, bookRef, { before, now = new Date(), tick = null } = {}) {
   if (!db || !bookRef) throw new Error('catchUpIdeaBook: db and bookRef required');
   if (typeof before !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(before)) throw new Error('catchUpIdeaBook: before required');
   const out = { complete: false, caughtUp: [], windowsAccounted: [], cancelled: [], resulted: [], alerts: [] };
   // 'off': no Practice Field code path runs, whoever calls. Before any read.
   if (!practiceFieldLive()) return { ...out, skipped: 'practice_field_off' };
   for (;;) {
-    const res = await closeNextSessionKeepingAlerts(db, bookRef, { date: before, now, catchUpOnly: true }, out.alerts);
+    // `tick`: the window this catch-up runs at, which keeps a receipt of each session it closes (T2B-05).
+    const res = await closeNextSessionKeepingAlerts(db, bookRef, { date: before, now, catchUpOnly: true, windowTick: tick }, out.alerts);
     out.alerts.push(...(res.alerts || []));
     out.windowsAccounted.push(...(res.windowsAccounted || []));
     out.cancelled.push(...(res.cancelled || []));
