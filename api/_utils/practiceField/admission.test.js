@@ -442,6 +442,10 @@ describe('check 7 — capital, with the permitted maximum and every binding cons
       (e) => { const { cashFloorPct: _x, ...g } = e.gateConfig; return { ...e, gateConfig: g }; },
       (e) => { const { maxSinglePositionWeightPct: _x, ...g } = e.gateConfig; return { ...e, gateConfig: g }; },
       (e) => ({ ...e, rails: { ...e.rails, slotCapShare: { medium: 0.3, long: 0.4 } } }),
+      // …nor against a slot share that is a number but not a share: its limit is a whole number of cents, so only the
+      // epoch check itself refuses it (T1a-2b-2 mutant F2c).
+      (e) => ({ ...e, rails: { ...e.rails, slotCapShare: { ...e.rails.slotCapShare, short: 1.5 } } }),
+      (e) => ({ ...e, rails: { ...e.rails, slotCapShare: { ...e.rails.slotCapShare, short: -0.1 } } }),
       // …nor against a value that would read as ZERO (refuter RF1-1): null, false, an empty string, a string number.
       (e) => ({ ...e, gateConfig: { ...e.gateConfig, cashFloorPct: null } }),
       (e) => ({ ...e, gateConfig: { ...e.gateConfig, cashFloorPct: false } }),
