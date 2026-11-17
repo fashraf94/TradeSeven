@@ -186,6 +186,13 @@ describe('rule 4 — a wrong-if option names a business condition, never a price
     const v = validate(base({ why: WHY(), wrongIfOptions: [{ text, refs: [] }] }));
     expect(Boolean(v.proposals.wrongIfOptions)).toBe(kept);
   });
+  it.each([
+    ['The share price falls below where it was saved'], ['Shares close under their old high'], ['The stock trades below its level of last week'],
+  ])('a price condition with no figure and no forbidden word — "%s" — is dropped by rule 4 itself', (text) => {
+    const v = validate(base({ why: WHY(), wrongIfOptions: [{ text, refs: [] }] }));
+    expect(v.notes).toContain('dropped:wrongIf.option:0:names_a_price');
+    expect(v.proposals.wrongIfOptions).toBeNull();
+  });
   it('at most three; repeats dropped', () => {
     const v = validate(base({ why: WHY(), wrongIfOptions: ['a', 'b', 'B', 'c', 'd'].map((t) => ({ text: `buyers cut ${t}`, refs: [] })) }));
     expect(v.proposals.wrongIfOptions.map((o) => o.text)).toEqual(['buyers cut a', 'buyers cut b', 'buyers cut c']);
