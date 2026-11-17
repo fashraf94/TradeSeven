@@ -21,12 +21,158 @@
 import { REVIEW_HONEST_LINE } from '../../constants/hypothesisRecords';
 
 const plural = (n, one, many) => (n === 1 ? one : many);
+/** A line's first letter in capitals ("your agent" opening a line or a tag). */
+const cap = (s) => (typeof s === 'string' && s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
 /** REVIEW_HONEST_LINE with the agent's name, capitalized where it opens the sentence. */
 const honestOf = (name) => {
   const line = REVIEW_HONEST_LINE.replace('[AGENT]', name);
   return line.charAt(0).toUpperCase() + line.slice(1);
 };
+
+/**
+ * THE THESIS BUILDER'S WORDS (B4 build prompt K-5 to K-15; Amendment B §B1 W-1, W-2, §B7). Every label, line and tag
+ * the builder view writes itself. The agent's name is an argument (`agentName`, "your agent" when absent), never a
+ * literal. Nothing here says a thesis will be sold, held, watched, waited for or expired at a level or a date (K-13):
+ * the idea book does not read saved theses yet.
+ */
+const BUILDER = Object.freeze({
+  // ── the card (K-7; R3b C-B) ────────────────────────────────────────────────
+  thesis: 'Thesis',
+  thesisReady: 'Thesis ready',
+  filled: (n) => `${n} of 6`,
+  stepsLeft: (n) => `${n} ${plural(n, 'step', 'steps')} left`,
+  /** The words between the blanks of the card while it fills in (the finished sentence is the server's, drawn as received). */
+  frame: Object.freeze({ theme: 'My theme is', segment: ', through', names: ', built on', why: ', because', wrongIf: '. It’s wrong if', timeFrame: '. Time frame:', end: '.' }),
+  blank: Object.freeze({ theme: 'your theme', segment: 'segment · optional', names: 'the names', why: 'why', wrongIf: 'what would prove it wrong', timeFrame: 'time frame' }),
+  parts: Object.freeze({ theme: 'Theme', segment: 'Segment', names: 'Names', why: 'Why', wrongIf: 'Wrong if', timeFrame: 'Time frame' }),
+  priceLinesName: 'the price lines',
+  suggested: 'suggested',
+  stale: 'out of date',
+  skipped: 'skipped',
+  working: (name) => `${cap(name)} is working on this`,
+  strip: 'Nothing set yet',
+  stripOpen: 'Show the whole card',
+  // ── a tapped part (K-7) ──────────────────────────────────────────────────────
+  by: Object.freeze({
+    player_wrote: () => 'you wrote',
+    player_chose: () => 'you chose',
+    partner_suggested_confirmed: (name) => `${name} suggested · you confirmed`,
+  }),
+  sources: (n) => `${n} ${plural(n, 'source', 'sources')}`,
+  yourWords: 'Your words · no sources',
+  noSources: 'No sources',
+  change: 'Change',
+  themeFixed: 'A different theme is a new investigation.',
+  evidence: 'Evidence',
+  hideEvidence: 'Hide evidence',
+  staleLine: (part) => `${part} is out of date: a finding behind it changed. Change it, or check it again.`,
+  closePanel: 'Close',
+  allEvidence: 'All evidence',
+  backToThesis: '← Back to the thesis',
+  // ── the why (K-11; R3b WhyBlock2) ──────────────────────────────────────────────
+  why: 'Why',
+  against: 'The point against',
+  noAgainst: 'No point against found yet',
+  reasons: (n) => `${n} ${plural(n, 'reason', 'reasons')}`,
+  perName: 'one reason per name',
+  showReasons: 'Show the reasons',
+  hideReasons: 'Hide the reasons',
+  noReasonYet: 'no Source-backed reason yet',
+  proposal: (name) => `${cap(name)}’s proposal`,
+  revisedWaiting: 'A revised why is waiting',
+  onTheCard: 'On the card',
+  revised: 'Revised',
+  // ── the conversation (K-9) ─────────────────────────────────────────────────────
+  cardLine: (text) => `Card · ${text}`,
+  suggestionWaiting: 'Card · a suggestion is waiting · nothing is set until you confirm.',
+  yourWordsTag: 'Your words',
+  directionTag: 'Your direction',
+  stepUsed: '1 step used',
+  map: (name) => `${cap(name)}’s map`,
+  // ── the choices (K-5, K-10, K-10b) ──────────────────────────────────────────────
+  free: 'free',
+  oneStep: '1 step',
+  goals: Object.freeze({
+    verify_source: 'Check the story against its source',
+    map_segments: 'Map the segments',
+    find_names: 'Find the listed companies',
+    build_why: 'Find the reasons',
+    pick: 'You pick, and tell me why',
+    strengthen: 'Keep researching',
+    direction: 'Your direction',
+  }),
+  strengthenPart: (part) => `Keep researching · ${part}`,
+  pickTag: (name) => `${cap(name)}’s pick`,
+  suggestedTag: (name) => `${cap(name)} suggested`,
+  reasoningTag: (name) => `${cap(name)}’s reasoning`,
+  sourceCount: (n) => `${n} ${plural(n, 'source', 'sources')}`,
+  confirmValue: (value) => `Confirm ${value}`,
+  useTheme: (value) => `Use “${value}” as the theme`,
+  skipSegment: 'Skip the segment',
+  namesHelp: (min, max) => `Tick ${min} to ${max}. Only a company with a sourced connection can be picked.`,
+  namesBuild: (n) => (n === 1 ? 'Build it on one stock' : `Build it on ${n} names`),
+  namesPick: (value) => `Build it on ${value}`,
+  lead: 'Lead · can’t be picked',
+  confirmWhy: 'Confirm these reasons',
+  keepSome: 'Keep some of the reasons',
+  keepTicked: 'Keep the ticked reasons',
+  dropUnsourced: (names) => `Build it on ${names} only`,
+  useRevised: 'Use the revised why',
+  // ── the composer (K-6) ──────────────────────────────────────────────────────────
+  composerLabel: 'Your words',
+  placeholder: Object.freeze({
+    theme: 'Or name your theme in a few words',
+    wrongIf: 'Or write what would prove it wrong',
+  }),
+  directionPlaceholder: (name) => `Tell ${name} where to look`,
+  pointAgent: (name) => `Point ${name} somewhere`,
+  writeItMyself: 'Write it myself',
+  send: 'Send',
+  // ── Change asks first (K-8) ─────────────────────────────────────────────────────
+  clearsAlso: (part, others) => `Changing ${part} also clears ${others}.`,
+  changeIt: 'Change it',
+  keepIt: 'Keep it',
+  // ── the hard states (K-15) ──────────────────────────────────────────────────────
+  workingLine: (name) => `${cap(name)} is working on this step`,
+  tryAgainGoal: (label) => `Try again · ${label}`,
+  conclude: 'Conclude',
+  keepsResearch: 'keeps the research',
+  tryAnotherSegment: 'Try another segment',
+  outOfSteps: (n) => `This investigation has used all ${n} research steps. The parts that need no research can still be set, and a ready thesis can still be saved.`,
+  concludeWithWhatWeHave: 'Conclude with what we have',
+  // ── ready and Save (K-12, K-13) ─────────────────────────────────────────────────
+  edit: 'Edit the sentence · it’s yours',
+  editLabel: 'Your sentence',
+  backToComposed: 'Back to the composed sentence',
+  oneStock: 'one stock',
+  nNames: (n) => `${n} names`,
+  judged: 'How it will be judged',
+  inYourWords: 'in your words',
+  priceLine: 'Price line',
+  priceOptional: 'optional · add your own',
+  priceLevel: (symbol) => `${symbol} · a daily close below $`,
+  setPriceLines: 'Set the price lines',
+  priceSet: (symbol, level) => `${symbol} · a daily close below $${level}`,
+  save: 'Save thesis',
+  saving: 'Saving your thesis…',
+  keepResearching: 'Keep researching',
+  stillToSet: (parts) => `Still to set: ${parts}.`,
+  saveIssue: Object.freeze({
+    // the server's own lines (api/_utils/sharedResearch/copy.js), word for word: pinned equal by the copy guard
+    unsupported_assertion: 'The idea states a number none of its evidence holds. Edit it to match the evidence.',
+    names_not_supported: 'The idea must name exactly the companies you picked.',
+    too_many_evidence_refs: 'This thesis carries more evidence than one idea can hold.',
+  }),
+  // ── saved, today's state only (K-14; DR-7) ──────────────────────────────────────
+  saved: 'Thesis saved',
+  honestLine: (name) => honestOf(name),
+  ideaBook: (name) => `${cap(name)}’s idea book isn’t reading saved theses yet. Yours is saved to your lists.`,
+  done: 'Done',
+  optional: 'optional',
+  // ── Start (K-3) ─────────────────────────────────────────────────────────────────
+  start: 'Start my thesis',
+});
 
 export const SR_COPY = Object.freeze({
   agentFallback: 'your agent',
@@ -261,4 +407,7 @@ export const SR_COPY = Object.freeze({
   equipFailed: 'Saved, not equipped.',
   leaveSaved: 'Leave it saved',
   honest: (name) => `${honestOf(name)} A link between research and a game is shown only once the game records it.`,
+
+  // ── the thesis builder (B4) ─────────────────────────────────────────────────
+  builder: BUILDER,
 });

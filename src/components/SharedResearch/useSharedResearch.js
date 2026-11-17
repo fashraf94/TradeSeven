@@ -23,6 +23,20 @@
 //     step or frame) shows the server's line held in SR_COPY.server (ruling P-5).
 //   - A 429 shows its line and holds every action until Retry-After has passed.
 //   - 404 disabled → gated, whatever the hub passed (K-3).
+//
+// THE THESIS BUILDER (B4 build prompt K-3, K-12, K-15, K-16) adds four actions,
+// each through the same single `run` — a free tap included, never batched or
+// queued (W-7: free taps share the 10-a-minute limit):
+//   - openOwnWords: own words opened at once as a builder (DR-6), its requestId
+//     kept for a retry of the same words;
+//   - buildStep: `{ intent: 'build', goal, part?, direction? }`; Try again re-sends
+//     the same stepId, goal and part;
+//   - cardOp: one entry of `thesis.choices.free`, sent with the `rev` the player
+//     saw; a 409 card_stale puts the fresh card on screen and is NEVER re-sent;
+//   - adoptThesis: `{ sessionId, rev, statement? }`, with the uncertain save above.
+// A retried tap after a lost answer (no answer, or a 5xx) re-sends the same opId
+// or stepId with the same body. Every builder answer's `thesis` replaces the one
+// held; a ledger answer has none, so a ledger investigation holds `thesis: null`.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as service from '../../services/sharedResearchService';
@@ -50,7 +64,12 @@ const investigationOf = (body, prior) => ({
   adoptPreview: body.adoptPreview !== undefined ? body.adoptPreview : null,
   storedRows: body.storedRows ?? body.opening?.storedRows ?? prior?.storedRows ?? [],
   previous: body.previous !== undefined ? body.previous : prior?.previous ?? null,
+  // the thesis builder's card (B4): every builder answer carries it; a ledger answer never does
+  thesis: body.thesis !== undefined ? body.thesis : prior?.thesis ?? null,
 });
+
+/** A request that may have reached the server without its answer reaching us: none came, or a 5xx. */
+const lostAnswer = (answer) => Boolean(answer) && (answer.network === true || answer.status >= 500);
 
 export default function useSharedResearch({ gated: gatedProp = false } = {}) {
   const [serverGated, setServerGated] = useState(false);
@@ -79,6 +98,10 @@ export default function useSharedResearch({ gated: gatedProp = false } = {}) {
   // sessionId → the input of a save whose outcome is not known (K-8): it stays until "Check the record" answers, through
   // any navigation, so no Save can be sent for that investigation before the check.
   const uncertainRef = useRef(new Map());
+  // The thesis builder (B4): a tap whose answer was lost — its key and the exact body it sent, so tapping the same
+  // choice again re-sends the same opId or stepId (K-15); and the words the open being attempted was for.
+  const lostRef = useRef(null);
+  const ownWordsRef = useRef(null);
   useEffect(() => {
     live.current = true; // StrictMode replays effects in development: the replay must not leave the sheet deaf (review b8)
     return () => { live.current = false; if (timerRef.current) clearTimeout(timerRef.current); };
@@ -350,6 +373,120 @@ export default function useSharedResearch({ gated: gatedProp = false } = {}) {
     return answer;
   }, [inv, run]);
 
+  // ── the thesis builder (B4; Amendment B §B4) ─────────────────────────────────
+
+  /**
+   * Own words, opened at once as a thesis builder (DR-6; K-3): `{ entry: { kind: 'observation', observation }, requestId }`.
+   * The same words tried again re-send the same requestId (the server answers the session it made); new words, a new one.
+   * The answer is returned as received: a 400 invalid_entry (the mode rolled back, W-4) is the caller's to fall back on.
+   */
+  const openOwnWords = useCallback(async (observation) => {
+    if (ownWordsRef.current !== observation) openIdRef.current = null;
+    ownWordsRef.current = observation;
+    const requestId = requestIdForOpen();
+    return settleOpen(await run({ kind: 'open' }, () => service.openInvestigation({ entry: { kind: 'observation', observation }, requestId })));
+  }, [run, settleOpen]);
+
+  /**
+   * One research step (§B4.2): `{ sessionId, stepId, intent: 'build', goal, part?, direction? }` — a goal the server
+   * offered in `thesis.choices.research`, sent as offered. Try again passes the failed attempt's `stepId`; tapping the
+   * same choice after a lost answer re-sends the same one (K-15).
+   */
+  const buildStep = useCallback(async ({ goal, part = null, direction = null, stepId = null }) => {
+    const sessionId = inv?.session?.sessionId;
+    if (!sessionId) return null;
+    const key = JSON.stringify(['step', sessionId, goal, part, direction]);
+    const lost = lostRef.current;
+    const id = stepId ?? (lost?.key === key ? lost.id : service.newRequestId());
+    const body = { sessionId, stepId: id, intent: 'build', goal, ...(part ? { part } : {}), ...(direction ? { direction } : {}) };
+    const attempt = { builder: true, stepId: id, goal, part, direction };
+    const answer = await run({ kind: 'step', sessionId, stepId: id, intent: 'build', goal, part }, () => service.takeStep(body));
+    if (!answer) return null;
+    const b = answer.body ?? {};
+    if (answer.ok && b.session && !b.error) {
+      lostRef.current = null;
+      setInv((prior) => investigationOf(b, prior));
+      setStepOutcome({ stepId: id, summaryWithheld: false, cardChanged: b.changed?.card === true });
+    } else {
+      // a failed step answers the card as it stands (nothing landed); a refusal carries none
+      if (b.session) setInv((prior) => ({ ...prior, session: b.session, ...(b.thesis !== undefined ? { thesis: b.thesis } : {}) }));
+      lostRef.current = lostAnswer(answer) ? { key, id } : null;
+      setFailure({ ...failureOf(answer), action: 'step', attempt });
+    }
+    return answer;
+  }, [inv, run]);
+
+  /**
+   * One free tap (§B4.3): one entry of `thesis.choices.free`, sent back as offered — `{ op, part, value? }` — with the
+   * card's `rev` the player saw and a fresh opId; `value` is the player's own input where the choice asks for one (the
+   * ticked names, their words, the kept reasons, the price lines). A 409 card_stale draws the fresh card from the
+   * answer with the server's line and sends nothing more (K-15). After a lost answer, the same tap re-sends the very
+   * same body: its opId and its rev (the server answers an applied opId unchanged).
+   */
+  const cardOp = useCallback(async (choice, input) => {
+    const sessionId = inv?.session?.sessionId;
+    const rev = inv?.thesis?.rev;
+    if (!sessionId || !choice || !Number.isSafeInteger(rev)) return null;
+    const value = input !== undefined ? input : choice.value;
+    const key = JSON.stringify(['card', sessionId, choice.op, choice.part, value ?? null]);
+    const lost = lostRef.current;
+    const body = lost?.key === key ? lost.body : {
+      sessionId, opId: service.newRequestId(), rev, op: choice.op, part: choice.part, ...(value !== undefined && value !== null ? { value } : {}),
+    };
+    const answer = await run({ kind: 'card', sessionId, op: choice.op, part: choice.part }, () => service.applyCardOp(body));
+    if (!answer) return null;
+    const b = answer.body ?? {};
+    if (answer.ok && b.thesis) {
+      lostRef.current = null;
+      setInv((prior) => ({ ...prior, session: b.session ?? prior?.session ?? null, thesis: b.thesis }));
+      setStepOutcome(null);
+    } else if (b.error === 'card_stale' && b.thesis) {
+      lostRef.current = null;
+      setInv((prior) => ({ ...prior, thesis: b.thesis }));
+      setFailure({ ...failureOf(answer), action: 'card', stale: true });
+    } else {
+      lostRef.current = lostAnswer(answer) ? { key, body } : null;
+      setFailure({ ...failureOf(answer), action: 'card', attempt: { choice, input } });
+    }
+    return answer;
+  }, [inv, run]);
+
+  /**
+   * Save thesis (§B4.5): `{ sessionId, rev, statement? }` — the `rev` the player saw; `statement` only when the player
+   * edited the sentence. The save's honest states are the ledger's (K-12): saving · saved · failed (the server's line;
+   * `not_ready` with its blockers) · stale (the fresh card) · UNCERTAIN — then only "Check the record" (checkSave).
+   */
+  const adoptThesis = useCallback(async ({ statement = null } = {}) => {
+    const sessionId = inv?.session?.sessionId;
+    const rev = inv?.thesis?.rev;
+    if (!sessionId || !Number.isSafeInteger(rev)) return null;
+    if (uncertainRef.current.has(sessionId) || saveRef.current.status === 'uncertain' || saveRef.current.status === 'checking') return null;
+    const input = { statement, rev };
+    const body = { sessionId, rev, ...(typeof statement === 'string' ? { statement } : {}) };
+    setSave({ status: 'saving', input, sessionId });
+    const answer = await run({ kind: 'adopt', sessionId }, () => service.adoptIdea(body));
+    if (!answer) { setSave({ status: 'idle' }); return null; }
+    const b = answer.body ?? {};
+    if (answer.ok && typeof b.watchlistId === 'string') {
+      setSave({ status: 'saved', input, sessionId, outcome: { watchlistId: b.watchlistId, idempotent: b.idempotent === true } });
+      if (b.thesis) setInv((prior) => ({ ...prior, thesis: b.thesis }));
+      await reread(sessionId);
+      return answer;
+    }
+    if (lostAnswer(answer)) {
+      uncertainRef.current.set(sessionId, input);
+      setSave({ status: 'uncertain', input, sessionId });
+      return answer;
+    }
+    if (b.error === 'card_stale' && b.thesis) {
+      setInv((prior) => ({ ...prior, thesis: b.thesis }));
+      setSave({ status: 'stale', input, sessionId, message: failureOf(answer).message });
+      return answer;
+    }
+    setSave({ status: 'failed', input, sessionId, message: failureOf(answer).message, code: b.error ?? null, blockers: Array.isArray(b.blockers) ? b.blockers : null });
+    return answer;
+  }, [inv, run, reread]);
+
   // ── equip (K-9) ─────────────────────────────────────────────────────────────
 
   const declineEquip = useCallback(() => setEquip({ status: 'declined' }), []);
@@ -377,5 +514,6 @@ export default function useSharedResearch({ gated: gatedProp = false } = {}) {
     running: pending?.kind === 'step' && pending.sessionId === inv?.session?.sessionId,
     loadList, loadSession, frame, retryFrame, editWords, beginPreview, openItem, openDrop, openFramed, acceptExisting,
     step, canRetry, close, adopt, checkSave, resetSave, equipNow, declineEquip, clearFailure,
+    openOwnWords, buildStep, cardOp, adoptThesis,
   };
 }
