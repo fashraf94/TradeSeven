@@ -30,7 +30,7 @@ import {
 import {
   CardHead, CardLine, CHOICES, ClearConfirm, Composer, Count, Cover, EvidenceList, FOOT, FreeButton, KeepReasons, Mark, Mine, MoreActions, NamesPick, PartPanel,
   PriceLines, Rail, ResearchButton, Said, Sentence, Strip, WhyBlock, WhyProposal, WRAP, basisTagOf, freeLabelOf, researchLabelOf, usePanelInView,
-  scrollParentOf, useFootRoom, useFocusKept, useWideEnough,
+  scrollParentOf, STRIP_ROOM, useFootRoom, useFocusKept, useWideEnough,
 } from '../builderParts';
 import { Button, LinkButton, Notice, Running, Tag } from '../parts';
 import ThesisReady from './ThesisReady';
@@ -184,7 +184,7 @@ function BuilderWork({ sr, agentName, phone, wide, open, viewingEarlier, onBackT
     setTapped(null);
     setTimeout(() => cardRef.current?.querySelector(`[data-sr-slot="${part}"]`)?.focus({ preventScroll: true }), 0);
   };
-  useFootRoom(footRef, { top: wide ? 0 : 84, active: open, anchorRef: cardRef });
+  useFootRoom(footRef, { top: wide ? 0 : STRIP_ROOM, active: open, anchorRef: cardRef, present: hasComposer });
   const research = (g) => sr.buildStep({ goal: g.goal, part: g.part ?? null });
   const more = (where) => (open ? <MoreActions onDiscard={onDiscard} disabled={busy} where={where} /> : null);
 

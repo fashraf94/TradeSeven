@@ -1112,6 +1112,9 @@ describe('the refuter\'s round (fixes that regressed or fell short)', () => {
   });
 });
 
+/** Is the reply's More shown (its box is always drawn; hidden when there is nothing more to show)? */
+const moreShown = (said) => { const b = said.querySelector('[data-sr-said-more]'); return Boolean(b) && !b.closest('[hidden]'); };
+
 describe('the phone round (P-2 to P-7)', () => {
   const SLOT_STATES = ['walkGetOpen', 'walkGetMap', 'walkGetSegment', 'walkGetNames', 'walkGetOneStock', 'walkGetWhy', 'walkGetConfirmWhy', 'walkGetWrongIf', 'getDeadEnd', 'getStoryOpen'];
   it('P-2: the choices sit directly under the conversation and scroll with it; the pinned foot holds only the composer', async () => {
@@ -1193,7 +1196,8 @@ describe('the phone round (P-2 to P-7)', () => {
     const said = $$('[data-sr-said]');
     expect(said.length).toBeGreaterThan(1);
     expect(said.map((n) => n.dataset.srSaidFolded)).toEqual([...said.slice(0, -1).map(() => 'true'), 'false']);
-    expect(said.at(-1).querySelector('[data-sr-said-more]')).toBeNull();
+    expect(moreShown(said.at(-1))).toBe(false);
+    expect(moreShown(said[0])).toBe(true);
     const more = said[0].querySelector('[data-sr-said-more]');
     expect(more.getAttribute('aria-expanded')).toBe('false');
     expect(more.textContent).toBe(B.moreReply);
@@ -1249,6 +1253,45 @@ describe('lens (c) on the phone round: the fixes', () => {
     expect(again.closest('[data-sr-said]').dataset.srSaidFolded).toBe('true');
     kids.forEach((k, i) => expect(again.childNodes[i]).toBe(k));
   });
+  it('R-2 (refuter): a fold adds nothing to the log — the More box was already there; only its hidden attribute changes', async () => {
+    await openOn(TA.walkGetSegment, {}, { step: TA.walkNames });
+    const latest = $$('[data-sr-said]').at(-1);
+    const box = latest.querySelector('[data-sr-said-more-box]');
+    expect(box.hasAttribute('hidden')).toBe(true);
+    await tap('[data-sr-research="find_names"]');
+    expect($$('[data-sr-said]').at(-2).querySelector('[data-sr-said-more-box]')).toBe(box);
+    expect(box.hasAttribute('hidden')).toBe(false);
+  });
+  it('R-3 (refuter): the scroll padding follows the composer when it leaves and comes back', async () => {
+    const realRO = globalThis.ResizeObserver;
+    const off = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight');
+    const live = new Set();
+    globalThis.ResizeObserver = class { constructor(cb) { this.cb = cb; } observe() { live.add(this); } disconnect() { live.delete(this); } };
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', { configurable: true, get() { return this.hasAttribute?.('data-sr-foot') ? 61 : 0; } });
+    const fire = () => act(async () => { for (const ro of [...live]) ro.cb([]); });
+    try {
+      server.set('get', TA.getOutOfSteps);
+      server.set('card', [TA.oosWrongIfSet, TA.oosWrongIfCleared]);
+      const m = keep(mount(<div style={{ overflowY: 'auto' }} data-zz-scroller=""><Body mode="session" sessionId={TA.getOutOfSteps.body.session.sessionId} agentName="Atlas" agentId="agent-fixture-1" phone onClose={vi.fn()} /></div>));
+      await flush();
+      const box = m.host.querySelector('[data-zz-scroller]');
+      expect($('[data-sr-foot]')).not.toBeNull();
+      expect(box.style.scrollPaddingBottom).toBe('89px');
+      await tap('[data-sr-choices] [data-sr-free="set:wrongIf"]'); // the time frame comes to the front: no text box, no direction
+      await fire();
+      expect($('[data-sr-foot]')).toBeNull();
+      expect(box.style.scrollPaddingBottom).toBe('28px');
+      await tap('[data-sr-slot="wrongIf"]');
+      await tap('[data-sr-change="wrongIf"]');
+      if ($('[data-sr-clear-yes]')) await tap('[data-sr-clear-yes]');
+      await fire();
+      expect($('[data-sr-foot]')).not.toBeNull(); // the wrong-if's text box is back
+      expect(box.style.scrollPaddingBottom).toBe('89px');
+    } finally {
+      globalThis.ResizeObserver = realRO;
+      if (off) Object.defineProperty(HTMLElement.prototype, 'offsetHeight', off); else delete HTMLElement.prototype.offsetHeight;
+    }
+  });
   it('5C-1: a folded reply is measured again when its box resizes — More comes back when it stops fitting', async () => {
     const realRO = globalThis.ResizeObserver;
     const proto = HTMLElement.prototype;
@@ -1261,10 +1304,10 @@ describe('lens (c) on the phone round: the fixes', () => {
     Object.defineProperty(proto, 'scrollHeight', { configurable: true, get() { return this.hasAttribute?.('data-sr-said-text') ? 45 + spill : 0; } });
     try {
       await openOn(TA.walkGetConfirmWhy);
-      expect($('[data-sr-said] [data-sr-said-more]')).toBeNull(); // fits at this width: no More
+      expect(moreShown($('[data-sr-said]'))).toBe(false); // fits at this width: no More
       spill = 23;
       await act(async () => { for (const ro of observed) ro.cb([]); });
-      expect($('[data-sr-said] [data-sr-said-more]')).not.toBeNull();
+      expect(moreShown($('[data-sr-said]'))).toBe(true);
     } finally {
       globalThis.ResizeObserver = realRO;
       if (ch) Object.defineProperty(proto, 'clientHeight', ch); else delete proto.clientHeight;

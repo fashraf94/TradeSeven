@@ -41,6 +41,14 @@ export const CHOICES = Object.freeze({ display: 'grid', gridTemplateColumns: 'mi
 /** Text that wraps between words, breaking a word only when it alone is wider than its line (P-1: never 'anywhere'). */
 export const WRAP = Object.freeze({ overflowWrap: 'break-word', minWidth: 0 });
 
+/**
+ * The room the sheet keeps at its top for the strip (scroll padding), so a focused control is never left under it.
+ * The strip's OWN controls sit inside that room: they carry a negative scroll margin as deep, so focusing one does not
+ * scroll the sheet (which would reveal the card, fold the strip away and drop the control).
+ */
+export const STRIP_ROOM = 84;
+const IN_STRIP = Object.freeze({ scrollMarginTop: -STRIP_ROOM });
+
 /** The width the builder needs for its two-column frame (P-1): the sheet's real width, not the device. */
 export const TWO_COLUMNS_MIN = 880;
 /**
@@ -76,7 +84,7 @@ export function scrollParentOf(el) {
  * control that takes focus is never left under the foot or the strip (review 4C-3). The box's own padding is put back
  * when the view goes, or when there is no foot (the refuter's 7). The foot holds no cap any more (P-2).
  */
-export function useFootRoom(footRef, { top = 0, active = true, anchorRef = null } = {}) {
+export function useFootRoom(footRef, { top = 0, active = true, anchorRef = null, present = true } = {}) {
   useEffect(() => {
     if (!active) return undefined;
     // the foot finds the sheet's scroll box; with no foot (no composer on offer), the anchor does (5C-10)
@@ -91,7 +99,7 @@ export function useFootRoom(footRef, { top = 0, active = true, anchorRef = null 
     const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : null;
     if (footRef.current) ro?.observe(footRef.current);
     return () => { ro?.disconnect(); scroller.style.scrollPaddingBottom = before.bottom; scroller.style.scrollPaddingTop = before.top; };
-  }, [footRef, top, active, anchorRef]);
+  }, [footRef, top, active, anchorRef, present]); // `present`: a foot that leaves and comes back is a new node (refuter)
 }
 
 /**
@@ -279,12 +287,10 @@ export function Said({ name, text, folded = false, attrs = {} }) {
       <div ref={boxRef} id={id} data-sr-said-text="" style={{ fontSize: 15, color: T.ink, lineHeight: 1.5, ...WRAP, ...box }}>
         {paras.map((p, i) => <React.Fragment key={i}>{i > 0 ? ' ' : null}<span style={{ display: clamp ? 'inline' : 'block' }}>{p}</span></React.Fragment>)}
       </div>
-      {folded && !(clamp && fits) && (
-        <div>
+      <div hidden={!folded || (clamp && fits)} data-sr-said-more-box="">
           <button type="button" aria-expanded={open} aria-controls={id} aria-label={open ? B.lessReplyLabel(name) : B.moreReplyLabel(name)} onClick={() => setOpen((v) => !v)} data-sr-said-more=""
             style={{ ...linkStyle, minWidth: 44, minHeight: 44, justifyContent: 'flex-start' }}>{open ? B.lessReply : B.moreReply}</button>
-        </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -353,10 +359,11 @@ export function MoreActions({ onDiscard, disabled = false, where }) {
   return (
     <span ref={boxRef} onBlur={onBlur} style={{ position: 'relative', display: 'inline-flex', flexShrink: 0 }}>
       <button type="button" aria-label={B.moreActions} aria-expanded={open} aria-controls={id} onClick={() => setOpen((v) => !v)} data-sr-more={where}
-        style={{ ...linkStyle, color: T.ink2, textDecoration: 'none', width: 44, minWidth: 44, height: 44, justifyContent: 'center', margin: '-12px -10px -12px 0', fontSize: 18, letterSpacing: '0.05em' }}>⋯</button>
+        style={{ ...linkStyle, color: T.ink2, textDecoration: 'none', width: 44, minWidth: 44, height: 44, justifyContent: 'center', margin: '-12px -10px -12px 0', fontSize: 18, letterSpacing: '0.05em', ...(where === 'strip' ? IN_STRIP : {}) }}>⋯</button>
       {open && (
         <span id={id} style={{ position: 'absolute', right: 0, top: '100%', zIndex: 3, marginTop: 4, background: T.raised, border: `1px solid ${T.hair}`, borderRadius: 10, padding: '4px 12px', whiteSpace: 'nowrap' }}>
-          <LinkButton tone="copper" disabled={disabled} onClick={() => { setOpen(false); onDiscard(); }} attrs={{ 'data-sr-discard': where }}>{COPY.discard}</LinkButton>
+          <button type="button" disabled={disabled} onClick={disabled ? undefined : () => { setOpen(false); onDiscard(); }} data-sr-discard={where}
+            style={{ ...linkStyle, color: T.copper, minHeight: 44, ...(disabled ? { opacity: 0.5, cursor: 'not-allowed' } : {}), ...(where === 'strip' ? IN_STRIP : {}) }}>{COPY.discard}</button>
         </span>
       )}
     </span>
@@ -508,7 +515,7 @@ export function Strip({ thesis, stepsLeft, onOpen, more = null }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: T.surface, border: `1px solid ${T.hair}`, borderRadius: 12, padding: '0 14px 0 0' }}>
       <button type="button" onClick={onOpen} data-sr-strip=""
-        style={{ appearance: 'none', font: 'inherit', flex: 1, minWidth: 0, textAlign: 'left', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 4px 10px 14px', background: 'transparent', border: 'none', color: T.ink, boxSizing: 'border-box' }}>
+        style={{ appearance: 'none', font: 'inherit', flex: 1, minWidth: 0, textAlign: 'left', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 4px 10px 14px', background: 'transparent', border: 'none', color: T.ink, boxSizing: 'border-box', ...IN_STRIP }}>
         <Rail thesis={thesis} />
         <span style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, width: '100%' }}>
           <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{crumbs.length ? crumbs.join(' › ') : B.strip}</span>

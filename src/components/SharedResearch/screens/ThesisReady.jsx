@@ -21,7 +21,7 @@ import { findingsById, remainingOf, STATEMENT_MAX } from '../sharedResearchView'
 import { partFindingIdsOf, panelOf, revisedWhyChoiceOf } from '../thesisView';
 import {
   CardHead, ClearConfirm, Count, Cover, FOOT, FreeButton, PartPanel, PriceLines, Rail, ResearchButton, Sentence, WhyBlock, WhyProposal, freeLabelOf, researchLabelOf, usePanelInView,
-  useFootRoom, WRAP,
+  scrollParentOf, useFootRoom, WRAP,
 } from '../builderParts';
 import { Button, LinkButton, Notice, Running, Tag } from '../parts';
 import { SaveStates } from './Adopt';
@@ -48,8 +48,13 @@ export default function ThesisReady({ sr, agentName, phone, edit, setEdit, onKee
   const sentenceRef = useRef(null);
   const editRef = useRef(null);
   const readyRef = useRef(null);
-  // the ready card arrives at its own top, not where the work view was scrolled (the phone round, P-2: a new turn's top)
-  useEffect(() => { readyRef.current?.scrollIntoView?.({ block: 'start' }); }, []);
+  // the ready card arrives at its own top, not where the work view was scrolled (the phone round, P-2: a new turn's top) —
+  // only when its top is above the sheet's view: a sheet opened on a ready card keeps its header and Close in view
+  useEffect(() => {
+    const el = readyRef.current;
+    const box = scrollParentOf(el);
+    if (el?.scrollIntoView && box && el.getBoundingClientRect().top < box.getBoundingClientRect().top) el.scrollIntoView({ block: 'start' });
+  }, []);
   // the edit box takes focus when it opens (review 4C-1: the link that opened it is gone)
   useEffect(() => { if (editing) editRef.current?.focus({ preventScroll: true }); }, [editing]);
   usePanelInView(tapped, panelId, footRef);

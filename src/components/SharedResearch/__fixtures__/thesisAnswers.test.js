@@ -521,6 +521,12 @@ function build() {
   const unswung = tap(swung.inv, { op: 'clear', part: 'timeFrame', nowIso: at(13) });
   A.clearTimeFrameAgain = unswung.answer;
   A.swingAgain = tap(unswung.inv, { op: 'set', part: 'timeFrame', value: 'swing', nowIso: at(14) }).answer;
+  // the composer leaves and returns (the refuter, phone round): out of steps, so no direction; the wrong-if set brings the
+  // time frame (no text box) to the front; changing the wrong-if brings its text box back
+  const outOfSteps = { ...afterWhy, session: { ...afterWhy.session, stepsUsed: afterWhy.session.stepBudget } };
+  const oosSet = tap(outOfSteps, { op: 'set', part: 'wrongIf', value: { option: 0 }, nowIso: at(14) });
+  A.oosWrongIfSet = oosSet.answer;
+  A.oosWrongIfCleared = tap(oosSet.inv, { op: 'clear', part: 'wrongIf', nowIso: at(15) }).answer;
   // a later free tap after a step landed unheard (its read may fail; the next card answer reads again)
   A.oneStockTimeFrame = tap(afterOneStock, { op: 'set', part: 'timeFrame', value: 'swing', nowIso: at(12) }).answer;
   // the screen holds the segment; find_names landed but its answer was lost; the player sets swing (the answer shows the
@@ -549,7 +555,7 @@ const REASON = Object.freeze({
 const SHARED_ONE = Object.freeze({
   NVDA: 'Nvidia designs the accelerator chips most AI data centers buy',
   AMD: 'AMD sells accelerator chips to the cloud companies building AI data centers',
-  AVGO: 'Broadcom designs custom AI chips for the largest cloud companies',
+  AVGO: 'Broadcom designs custom AI chips for some of the largest cloud companies',
 });
 /** The why for a chosen set of names (authored; validateBuildTurn must pass it): one sourced reason per name. */
 const whyFor = (names, rel) => {
@@ -558,8 +564,8 @@ const whyFor = (names, rel) => {
   const g = groupWhy(rel);
   return {
     reply: one
-      ? `${SHORT[names[0]]} has a sourced connection to selling AI chips to the large cloud companies. The point against: those buyers also design their own chips.`
-      : `${names.length === 2 ? 'Both have' : 'Each of the three has'} a sourced connection to selling AI chips to the large cloud companies. The point against is the same for ${all}: those buyers also design their own chips.`,
+      ? `${SHORT[names[0]]} has a sourced connection to the AI chips data centers buy. The point against: the largest cloud buyers also design their own chips.`
+      : `${names.length === 2 ? 'Both have' : 'Each of the three has'} a sourced connection to the AI chips data centers buy. The point against is the same for ${all}: the largest cloud buyers also design their own chips.`,
     findings: g.findings,
     why: {
       shared: one ? SHARED_ONE[names[0]] : g.why.shared,

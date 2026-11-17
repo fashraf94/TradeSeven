@@ -443,6 +443,7 @@ describe.skipIf(!BASE)('lens (c) on the phone round, in a real browser', () => {
       await page.waitForTimeout(300);
       await page.focus('[data-sr-more="strip"]');
       await page.keyboard.press('Enter');
+      await page.waitForSelector('[data-sr-discard="strip"]');
       await page.keyboard.press('Tab');
       expect(await page.evaluate(() => document.activeElement?.getAttribute('data-sr-discard'))).toBe('strip');
       await scrollSheet(page, 0);
@@ -454,10 +455,46 @@ describe.skipIf(!BASE)('lens (c) on the phone round, in a real browser', () => {
       expect(await page.$('[role="dialog"]')).toBeNull();
     } finally { await ctx.close(); }
   }, ROW_TIMEOUT);
+  for (const [w, h] of [[393, 852], [1280, 800]]) {
+    it(`R-1 (refuter): ${w}×${h} — a sheet opened on a ready card keeps its header and Close in view (no arrival scroll)`, async () => {
+      const { ctx, page } = await pageAt(w, h, 'builder-ready');
+      try {
+        const m = await page.evaluate(() => {
+          const box = document.querySelector('[role="dialog"]');
+          const close = [...box.querySelectorAll('button')].find((x) => x.getAttribute('aria-label') === 'Close' || x.textContent.trim() === '×');
+          const r = close?.getBoundingClientRect();
+          return { scrollTop: box.scrollTop, closeTop: r ? r.top : null, boxTop: box.getBoundingClientRect().top };
+        });
+        expect(m.scrollTop, JSON.stringify(m)).toBe(0);
+        expect(m.closeTop, JSON.stringify(m)).toBeGreaterThanOrEqual(m.boxTop);
+      } finally { await ctx.close(); }
+    }, ROW_TIMEOUT);
+  }
+  it('the strip\'s own controls ("⋯", Discard, the unfold) never scroll the sheet when focused — Tab reaches Discard (found while fixing 5C-4)', async () => {
+    const { ctx, page } = await pageAt(393, 852, 'builder-midway');
+    try {
+      await scrollSheet(page, 900);
+      await page.waitForTimeout(300);
+      const top = () => page.evaluate(() => document.querySelector('[role="dialog"]').scrollTop);
+      const before = await top();
+      await page.focus('[data-sr-strip]');
+      await page.waitForTimeout(150);
+      expect(await top()).toBe(before);
+      await page.focus('[data-sr-more="strip"]');
+      await page.waitForTimeout(150);
+      expect(await top()).toBe(before);
+      await page.keyboard.press('Enter');
+      await page.waitForSelector('[data-sr-discard="strip"]');
+      await page.keyboard.press('Tab');
+      await page.waitForTimeout(150);
+      expect(await top()).toBe(before);
+      expect(await page.evaluate(() => document.activeElement?.getAttribute('data-sr-discard'))).toBe('strip');
+    } finally { await ctx.close(); }
+  }, ROW_TIMEOUT);
   it('5C-6: 393×852 — More is at least 44 × 44', async () => {
     const { ctx, page } = await pageAt(393, 852, 'builder-midway');
     try {
-      const r = await page.evaluate(() => { const b = document.querySelector('[data-sr-said-more]').getBoundingClientRect(); return { w: b.width, h: b.height }; });
+      const r = await page.evaluate(() => { const b = [...document.querySelectorAll('[data-sr-said-more]')].find((x) => !x.closest('[hidden]')).getBoundingClientRect(); return { w: b.width, h: b.height }; });
       expect(r.w, JSON.stringify(r)).toBeGreaterThanOrEqual(44);
       expect(r.h, JSON.stringify(r)).toBeGreaterThanOrEqual(44);
     } finally { await ctx.close(); }
