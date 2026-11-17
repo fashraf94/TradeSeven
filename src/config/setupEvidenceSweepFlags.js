@@ -18,14 +18,15 @@
  * open); about 230–275 daily-bar provider requests per trading day, a HARD STOP at 400
  * counted on setupEvidenceSweepState/{session}; no model call.
  *
- * DARK — default FALSE (built 2026-11-16, PR B). With it false the cron answers
+ * ON — TRUE since PR C (the switch; built dark in PR B, 2026-11-16). The cron runs the
+ * sweep at each scheduled time: three runs per trading session, about 230–275 provider
+ * requests a session, hard stop 400. With it false (a rollback) the cron answers
  * `{ skipped: true }` before the Firestore handle is taken: no read, no write, no
- * provider request. Flips in its own PR (PR C), never this build PR, which in ONE
- * commit (BUILD_RULES §2): sets this literal to true and rewrites this paragraph;
- * moves the first row of setupEvidenceSweepFlags.test.js to true and, in its
- * registration row, inverts the DARK_BY_DESIGN expect only (`.not.toMatch`; the
- * module-registration expect stays); and drops the DARK_BY_DESIGN entry in
- * flagPinGuard.test.js. Rollback: revert that commit.
+ * provider request. ROLLBACK: revert PR C's one commit, which in ONE commit
+ * (BUILD_RULES §2) sets this literal back to false with this paragraph, moves the first
+ * row of setupEvidenceSweepFlags.test.js back to false, turns the DARK_BY_DESIGN expect
+ * of its registration row back to `.toMatch`, and restores the DARK_BY_DESIGN entry in
+ * flagPinGuard.test.js.
  */
 // Pinned by: setupEvidenceSweepFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const SETUP_EVIDENCE_SWEEP_ENABLED = false;
+export const SETUP_EVIDENCE_SWEEP_ENABLED = true;
