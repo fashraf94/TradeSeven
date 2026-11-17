@@ -29,7 +29,7 @@ import { setPracticeFieldModeForTests } from './mode.js';
 import { roundUsd } from '../mandateRounding.js';
 import {
   seedBook, closeOn, windowAt, contractOf, getBook, getIdea, getRow, dumpStore, countDocs, etIso, ADMIT_ISO,
-  takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, countResults, withoutWindowAlerts,
+  takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, countResults, withoutWindowAlerts, storeDailyLayer,
 } from './__testsupport__/fixtures.js';
 import {
   verifyPacket, resultPacketMissingMarks, resultPacketProvenanceProblems, recomputeResultFromPacket, resultPacketPartProblems, resultPacketReceipts,
@@ -71,7 +71,13 @@ import {
 // 37 leaves REMOVED: the result packets' inline receipts (B's two, now in its part) and their per-ledger arrays. 6
 // leaves CHANGED: the six packets' `contentHash`, following the above.
 // The run also makes one admission while B holds XOM (review A10): refused at S[7]'s 10:00 snapshot, it writes nothing.
-const EXPECTED_DUMP = { sha256: '288b0c895bd86a06181d501fb862962d86e445b1c632c1921a7baab413d0069c', bytes: 389807 };
+// T2C-01 (17 Nov 2026, Astra): re-pinned from 288b0c89…, leaf-compared base (7687cfa5) against head. No document added
+// or removed; NO MONEY LEAF CHANGED. 9 leaves ADDED: on each of the three admission packets, `admissionMarks.caCoverage`
+// — the daily layer's key, `dailyPresent: false` (this run stores none) and no held name (every admission here is made
+// by a book holding nothing). 3 leaves CHANGED: those packets' `contentHash`. The A10 probe now first shows the
+// refusal of an uncovered XOM (`ca_daily_missing`), then, with S[7]'s daily layer placed for the probe and removed
+// after it, the measured refusal as before: both write nothing.
+const EXPECTED_DUMP = { sha256: 'f061fb0ebd9d57e49b6196b6f87e7503cb872bf67fd133952e0c23612fdc3cc7', bytes: 390122 };
 
 // Twenty-nine sessions from Monday 16 November 2026 (Thanksgiving and Christmas are not sessions).
 const SESSIONS = ['2026-11-16'];
@@ -191,16 +197,28 @@ describe('the end-to-end synthetic run', () => {
     // T1a-2b-2 §1, end to end (review A10): an admission at 11:00 on S[7], while B holds XOM, is measured at S[7]'s
     // 10:00 window snapshot — not at the equity the book recorded — and refused; a refusal writes nothing (the pin holds).
     {
+      const probeContract = contractOf({ slot: 'medium', names: ['LLY'], capitalUsd: 33000, comparison: { type: 'sector_fund', symbols: ['XLV'] } });
+      // Astra T2C-01: this run stores no daily layer, so S[7]'s corporate-action coverage of XOM is unknown — refused by
+      // name, no dollar limit measured, nothing written.
+      const unknown = dumpStore(db);
+      const uncovered = await admitIdea(db, { bookId, contract: probeContract, opId: 'probe-a10-uncovered', nowIso: etIso(SESSIONS[7], 11, 0) });
+      expect(uncovered).toMatchObject({ ok: false, permittedMaxUsd: null, refusals: [{ code: 'admission_marks_unavailable', symbols: ['XOM'], unavailable: [{ symbol: 'XOM', reason: 'ca_daily_missing' }] }] });
+      expect(dumpStore(db)).toBe(unknown);
+      // With S[7]'s daily layer covering XOM (its fetch succeeded, nothing listed) — placed for this probe only, and
+      // removed after it, so the run's documents are the ones it made.
+      storeDailyLayer(db, SESSIONS[7], ['XOM']);
       const before = dumpStore(db);
       const snap = db._get(`mandateUniverseSnapshots/${SESSIONS[7]}_open30`);
       const held = idea(b.ideaId);
       expect(Object.keys(held.ledger.holdings)).toEqual(['XOM']);
       const equityCents = cents(book().treasury.unreservedCash) + cents(held.ledger.cash) + cents(roundUsd(held.ledger.holdings.XOM.shares * snap.symbols.XOM.price));
-      const probe = await admitIdea(db, { bookId, contract: contractOf({ slot: 'medium', names: ['LLY'], capitalUsd: 33000, comparison: { type: 'sector_fund', symbols: ['XLV'] } }), opId: 'probe-a10', nowIso: etIso(SESSIONS[7], 11, 0) });
+      const probe = await admitIdea(db, { bookId, contract: probeContract, opId: 'probe-a10', nowIso: etIso(SESSIONS[7], 11, 0) });
       expect(probe).toMatchObject({ ok: false, permittedMaxUsd: Math.floor((equityCents * 300000) / 1e6) / 100 });
       expect(probe.refusals.map((r) => r.code)).toEqual(['capital_exceeds_slot_cap']);
       expect(cents(book().portfolio.totalValue)).not.toBe(equityCents); // the recorded figure is not what it measured
       expect(dumpStore(db)).toBe(before);
+      db._store.delete(`mandateUniverseDaily/${SESSIONS[7]}`);
+      expect(dumpStore(db)).toBe(unknown);
     }
     expect(idea(b.ideaId).status).toBe('holding'); // E14: back to holding with XOM
     const xomBeforeSplit = idea(b.ideaId).ledger.holdings.XOM.shares;

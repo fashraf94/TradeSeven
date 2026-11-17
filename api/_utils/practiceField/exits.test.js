@@ -26,7 +26,7 @@ import { roundUsd, roundShares } from '../mandateRounding.js';
 import {
   seedBook, admitAndEnter, closeOn, windowAt, storeTickSnapshot, storeCloseSnapshot, contractOf, getBook, getIdea, getRow, tickOf, tickSnapshot,
   slotNowOf, slotOpenIso, closeNowOf, etIso, ADMIT_ISO, takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, countResults, moneyStoreBytes,
-  withoutWindowAlerts, admitAllThenEnter,
+  withoutWindowAlerts, admitAllThenEnter, coverHeldNames,
 } from './__testsupport__/fixtures.js';
 
 // A short idea admitted on Friday 13 Nov 2026 starts on Monday the 16th (session 0) and is due ten sessions later.
@@ -280,6 +280,7 @@ describe('B-ORDER (E8) — within a window, sales come first, then entries', () 
     // A second idea is admitted during S[1]: its start session is S[2]. At 11:00 admission measures the book at S[1]'s
     // 10:00 window snapshot (T1a-2b-2 §1).
     await storeTickSnapshot(ctx.db, S[1], 'open30', quotes());
+    coverHeldNames(ctx.db, ctx.bookId, etIso(S[1], 11, 0)); // S[1]'s corporate-action coverage (Astra T2C-01)
     const second = await admitIdea(ctx.db, { bookId: ctx.bookId, contract: contractOf({ slot: 'medium', names: ['JPM'], capitalUsd: 25000 }), opId: 'idea-2', nowIso: etIso(S[1], 11, 0) });
     expect(second).toMatchObject({ ok: true, startSession: S[2] });
     await closeDay(ctx, S[1], { AAPL: below(lineOf(ctx, 'AAPL').level) });
@@ -883,6 +884,7 @@ describe('the review\'s sale rules — a sale\'s window, its session, its latene
     // The same for an ENTRY dated after the session.
     await ctx.bookRef.update({ 'execState.lastCloseKey': S[1] });
     await closeDay(ctx, S[2]);
+    coverHeldNames(ctx.db, ctx.bookId, etIso(S[2], 17, 0)); // S[2]'s corporate-action coverage (Astra T2C-01)
     const second = await admitIdea(ctx.db, { bookId: ctx.bookId, contract: contractOf({ slot: 'medium', names: ['LLY'], capitalUsd: 25000 }), opId: 'second', nowIso: etIso(S[2], 17, 0) });
     expect(second).toMatchObject({ ok: true, startSession: S[3] });
     expect((await win(ctx, S[3], 'open30')).entries).toMatchObject({ entered: 1 });

@@ -3,9 +3,10 @@
 // Practice Field T1a-2b-2 §1 — ADMISSION AT CURRENT MARKS, AND ONLY AFTER THE BOOK HAS CLOSED (Astra T1A-05; T1a-2a
 // C-2). One set of marks for the whole decision — the newest snapshot of the session in progress, else the last
 // completed session's close — every held name with a full-quality mark in it or the admission is refused by symbol; and
-// no admission while a completed session is unclosed.
+// no admission while a completed session is unclosed. T2C-01 (Astra, 17 Nov 2026): and every held name covered by that
+// session's daily layer, its corporate-action fetch succeeded.
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { admitIdea, evaluateAdmission } from './admission.js';
 import { normalizeIdeaContract } from './contract.js';
 import { setPracticeFieldModeForTests } from './mode.js';
@@ -13,9 +14,10 @@ import { verifyPacket } from './evidence.js';
 import {
   closeOwedSession, admissionMarkSetCandidates, lastCompletedSessionAt, sessionInProgressAt, ADMISSION_MARK_BASIS,
 } from './admissionMarks.js';
+import { ensureDailySnapshot, ensureUniverseSnapshot } from '../mandateUniverseSnapshot.js';
 import {
   seedBook, admitAndEnter, closeOn, contractOf, getBook, getIdea, etIso, DAYS, storeTickSnapshot, snapshotOf, tickSnapshot,
-  closeSnapshot, moneyStoreBytes, windowAt, placeSnapshot, slotOpenIso,
+  closeSnapshot, moneyStoreBytes, windowAt, placeSnapshot, slotOpenIso, storeDailyLayer, ADMIT_ISO,
 } from './__testsupport__/fixtures.js';
 
 const AAPL = 231.47;
@@ -30,7 +32,8 @@ afterEach(() => restore());
 
 /**
  * Astra's T1A-05 book: $100,000, a long one-name AAPL idea of $30,000 entered on D1 at $231.47 and closed there — the
- * book RECORDS $99,991.00 (the entry's $9 of friction). D2's 10:00 window snapshot prices AAPL at `d2Price`.
+ * book RECORDS $99,991.00 (the entry's $9 of friction). D2's 10:00 window snapshot prices AAPL at `d2Price`; D2's daily
+ * layer covers AAPL, its corporate-action fetch succeeded with nothing listed (Astra T2C-01).
  */
 async function t1a05Book(d2Price) {
   const { db, bookId, bookRef } = await seedBook({ archetypeCodeId: 'momentum_chaser' });
@@ -38,6 +41,7 @@ async function t1a05Book(d2Price) {
   expect(held.entry.outcome).toBe('entered');
   await closeOn(db, bookId, DAYS.d1, q({ AAPL, SPY: 597.31 }));
   expect(getBook(db, bookId).portfolio.totalValue).toBe(99991);
+  storeDailyLayer(db, DAYS.d2, ['AAPL']);
   await storeTickSnapshot(db, DAYS.d2, 'open30', q({ AAPL: d2Price, MSFT: 418.13, NVDA: 141.29, SPY: 597.31 }));
   return { db, bookId, bookRef, heldId: held.ideaId };
 }
@@ -64,6 +68,8 @@ describe('Astra T1A-05 — every limit, at the newest snapshot of the session', 
     expect(packet.measuredAgainst.admissionMarks).toEqual({
       basis: 'session_snapshot', session: DAYS.d2, snapshotKey: `${DAYS.d2}_open30`, snapshotBuiltAt: new Date(Date.parse(slotOpenIso(DAYS.d2)) + 60_000).toISOString(),
       considered: [`${DAYS.d2}_open30`], passedOver: [], at: AT_11,
+      // Astra T2C-01: the daily layer read, and the held name covered there with its fetch succeeded.
+      caCoverage: { dailyKey: DAYS.d2, dailyPresent: true, symbols: { AAPL: { covered: true, fetchSucceeded: true } } },
       marks: { AAPL: { price: 185.176, quality: 'vendor_time', vendorTimeIso: etIso(DAYS.d2, 9, 45), ageAtAdmissionMs: 75 * 60_000, snapshotKey: `${DAYS.d2}_open30` } },
       treasuryUsd: 70000, ideasCashUsd: 0, holdingsUsd: 23992.8, equityUsd: 93992.8,
     });
@@ -256,6 +262,7 @@ describe('C-2 — no admission while the book owes a close', () => {
     const { db, bookId } = await t1a05Book(185.176);
     const contract = contractOf({ slot: 'short', names: ['MSFT'], capitalUsd: 1000 });
     const d3quotes = q({ AAPL: 186.01, MSFT: 418.13, SPY: 597.31 });
+    storeDailyLayer(db, DAYS.d3, ['AAPL']);
     await storeTickSnapshot(db, DAYS.d3, 'open30', d3quotes);
     const refused = await admitIdea(db, { bookId, contract, opId: 'x', nowIso: etIso(DAYS.d3, 11, 0) });
     expect(refused.refusals).toEqual([{ code: 'close_owed', session: DAYS.d2, completedAt: etIso(DAYS.d2, 16, 0) }]);
@@ -308,6 +315,7 @@ describe('outside a session — the last completed session\'s close', () => {
     const { db, bookId } = await t1a05Book(185.176);
     for (const d of [DAYS.d2, DAYS.d3, DAYS.d4]) await closeOn(db, bookId, d, q({ AAPL: 200.02, SPY: 597.31 }));
     await closeOn(db, bookId, fri, q({ AAPL: 210.37, SPY: 597.31 }));
+    storeDailyLayer(db, fri, ['AAPL']);
     expect(admissionMarkSetCandidates(etIso('2026-11-21', 12, 0))).toEqual({ basis: ADMISSION_MARK_BASIS.LAST_CLOSE, session: fri, keys: [`${fri}_close`] });
     expect(admissionMarkSetCandidates(etIso('2026-11-23', 9, 0))).toEqual({ basis: ADMISSION_MARK_BASIS.LAST_CLOSE, session: fri, keys: [`${fri}_close`] });
     const sat = await admitIdea(db, { bookId, contract: contractOf({ slot: 'short', names: ['MSFT'], capitalUsd: 1000 }), opId: 'sat', nowIso: etIso('2026-11-21', 12, 0) });
@@ -330,7 +338,10 @@ describe('integer cents throughout', () => {
     const { contract } = normalizeIdeaContract(contractOf({ slot: 'short', names: ['MSFT'], capitalUsd: 1000 }));
     const book = getBook(db, bookId);
     const ideas = book.openIdeaIds.map((id) => getIdea(db, bookId, id));
-    const markSet = { basis: 'session_snapshot', session: DAYS.d2, snapshotKey: `${DAYS.d2}_open30`, snapshot: db._get(`mandateUniverseSnapshots/${DAYS.d2}_open30`), builtAtIso: null, considered: [] };
+    const markSet = {
+      basis: 'session_snapshot', session: DAYS.d2, snapshotKey: `${DAYS.d2}_open30`, snapshot: db._get(`mandateUniverseSnapshots/${DAYS.d2}_open30`), builtAtIso: null, considered: [],
+      daily: { key: DAYS.d2, present: true, symbols: db._get(`mandateUniverseDaily/${DAYS.d2}`).symbols },
+    };
     const epoch = db._get(`mandates/${bookId}/epochs/epoch-0001`);
     const v = evaluateAdmission({ book, epoch, ideas, coverageData: null, contract, ideaRefKey: `${bookId}/x`, nowIso: AT_11, admitsOwner: true, markSet });
     const shares = ideas[0].ledger.holdings.AAPL.shares;
@@ -351,5 +362,154 @@ describe('integer cents throughout', () => {
     placeSnapshot(db, { ...closeSnapshot(DAYS.d1, q({ AAPL, SPY: 597.31 })), tickKey: `${DAYS.d2}_open30` }); // D1's document stored under D2's 10:00 key
     const res = await admitIdea(db, { bookId, contract: contractOf({ slot: 'short', names: ['MSFT'], capitalUsd: 1000 }), opId: 'x', nowIso: AT_11 });
     expect(res.refusals).toEqual([expect.objectContaining({ code: 'admission_marks_unavailable', snapshotKey: null, unavailable: [expect.objectContaining({ reason: 'snapshot_invalid' })] })]);
+  });
+});
+
+describe('Astra T2C-01 — a held name is valued only when the day\'s corporate-action fetch for it SUCCEEDED (the daily layer, read in admission\'s transaction)', () => {
+  const T2C_Q = { AAPL: { price: 231.47, marketCap: 3.4e12 }, SPY: 597.31 };
+  // A 4-for-5 reverse split (the feed parser's `reverse_split`, ratio 0.8) on D2: AAPL prints at 231.47 / 0.8 — a 25% rise,
+  // under the gap screen's 40%, so no suspected-split hold catches it.
+  const D2_AAPL = 289.3375;
+  const REVERSE = { type: 'reverse_split', ticker: 'AAPL', effectiveDate: DAYS.d2, ratio: 0.8, source: 'eodhd_splits' };
+  const FETCH_OK = { actions: [], calls: 0, failed: false };
+  const shortJpm = (capitalUsd = 21000) => contractOf({ slot: 'short', names: ['JPM'], capitalUsd });
+
+  /**
+   * Astra's book: $30,000 of AAPL entered on D1 at $231.47 and closed there (equity $99,991.00, 129.567558 shares). D2's
+   * daily layer is built by the engine's OWN daily builder, AAPL's corporate actions answered by `aaplCa` (AAPL left out
+   * of its build set with `aaplInDaily: false`; no daily build at all with `daily: false`), and D2's 10:00 snapshot by its
+   * OWN fast builder, from that daily document: AAPL at $289.3375, vendor-timed 09:45. No upstream call is made.
+   */
+  async function t2c01Book({ aaplCa = FETCH_OK, aaplInDaily = true, daily = true } = {}) {
+    const { db, bookId } = await seedBook({ archetypeCodeId: 'momentum_chaser' });
+    const held = await admitAndEnter(db, bookId, { contract: contractOf({ slot: 'long', names: ['AAPL'], capitalUsd: 30000 }), opId: 'held', quotes: T2C_Q });
+    expect(held.entry.outcome).toBe('entered');
+    await closeOn(db, bookId, DAYS.d1, T2C_Q);
+    expect(getBook(db, bookId).portfolio.totalValue).toBe(99991);
+    const quiet = [vi.spyOn(console, 'error').mockImplementation(() => {}), vi.spyOn(console, 'log').mockImplementation(() => {})];
+    try {
+      if (daily) {
+        await ensureDailySnapshot(db, {
+          date: DAYS.d2, heldTickers: aaplInDaily ? ['AAPL', 'SPY'] : ['SPY'], candidateUniverse: [], now: new Date(etIso(DAYS.d2, 9, 0)),
+          getFundamentals: async () => ({ fundamentals: { sector: 'Technology', industry: 'Consumer Electronics', marketCap: 3.4e12 }, cacheStatus: { fundamentals: 'cache' } }),
+          fetchCorporateActions: async (sym) => (sym === 'AAPL' ? aaplCa : FETCH_OK),
+        });
+      }
+      await ensureUniverseSnapshot(db, {
+        tickKey: `${DAYS.d2}_open30`, sessionDate: DAYS.d2, heldTickers: ['AAPL', 'SPY'], candidateUniverse: [], minCandidateCapacity: 0,
+        now: new Date(etIso(DAYS.d2, 10, 1)), dailyDoc: db._get(`mandateUniverseDaily/${DAYS.d2}`) ?? null,
+        fetchQuotes: async (syms) => Object.fromEntries(syms.map((s) => [s, { close: s === 'AAPL' ? D2_AAPL : 597.31, timestamp: Date.parse(etIso(DAYS.d2, 9, 45)) / 1000 }])),
+      });
+    } finally { for (const s of quiet) s.mockRestore(); }
+    return { db, bookId, heldId: held.ideaId };
+  }
+  const refusedFor = (heldId, reason) => ({
+    ok: false, permittedMaxUsd: null, binding: [],
+    refusals: [{
+      code: 'admission_marks_unavailable', symbols: ['AAPL'], unavailable: [{ symbol: 'AAPL', ideaId: heldId, reason }],
+      basis: 'session_snapshot', session: DAYS.d2, snapshotKey: `${DAYS.d2}_open30`,
+    }],
+  });
+
+  it('Astra\'s regression: D2\'s fetch FAILED for AAPL and the reverse split prints $289.3375 — a $21,000 short JPM idea is refused `ca_fetch_failed` for AAPL, nothing is written; the true short cap was $19,998.20', async () => {
+    const { db, bookId, heldId } = await t2c01Book({ aaplCa: { actions: [], calls: 0, failed: true } });
+    // The builders as they are: the daily layer records the failure; the snapshot carries the adjusted price and no
+    // action — and nothing of the failure.
+    expect(db._get(`mandateUniverseDaily/${DAYS.d2}`).symbols.AAPL.caFetchFailed).toBe(true);
+    const aapl = db._get(`mandateUniverseSnapshots/${DAYS.d2}_open30`).symbols.AAPL;
+    expect(aapl).toMatchObject({ price: D2_AAPL, complete: true, priceAsOf: etIso(DAYS.d2, 9, 45) });
+    expect(aapl).not.toHaveProperty('corporateActions');
+    expect(aapl).not.toHaveProperty('caFetchFailed');
+    const before = moneyStoreBytes(db);
+    const res = await admitIdea(db, { bookId, contract: shortJpm(), opId: 'short-jpm', nowIso: AT_11 });
+    expect(res).toEqual(refusedFor(heldId, 'ca_fetch_failed'));
+    // A draft whose shape fails hears it too (the marks need no contract).
+    const broken = await admitIdea(db, { bookId, contract: contractOf({ slot: 'nope' }), opId: 'broken', nowIso: AT_11 });
+    expect(broken.refusals).toEqual([{ code: 'slot_invalid' }, refusedFor(heldId, 'ca_fetch_failed').refusals[0]]);
+    expect(moneyStoreBytes(db)).toBe(before);
+    // What admission would have measured against: presented with the split at the same price, the close values the book
+    // at $99,991.00 — its short cap $19,998.20, $1,001.80 under the $21,000 (Astra's diagnostic control, not a change).
+    await closeOn(db, bookId, DAYS.d2, { ...T2C_Q, AAPL: { ...T2C_Q.AAPL, price: D2_AAPL, corporateActions: [REVERSE] } });
+    const equityCents = Math.round(getBook(db, bookId).portfolio.totalValue * 100);
+    expect(equityCents).toBe(9999100);
+    expect(Math.floor(equityCents / 5)).toBe(1999820);
+  });
+
+  it('a daily document with NO ENTRY for the held name (built without the idea book\'s coverage): refused `ca_coverage_missing`, nothing written', async () => {
+    const { db, bookId, heldId } = await t2c01Book({ aaplInDaily: false });
+    expect(Object.keys(db._get(`mandateUniverseDaily/${DAYS.d2}`).symbols)).toEqual(['SPY']);
+    expect(db._get(`mandateUniverseSnapshots/${DAYS.d2}_open30`).symbols.AAPL).toMatchObject({ price: D2_AAPL, complete: true });
+    const before = moneyStoreBytes(db);
+    expect(await admitIdea(db, { bookId, contract: shortJpm(), opId: 'short-jpm', nowIso: AT_11 })).toEqual(refusedFor(heldId, 'ca_coverage_missing'));
+    expect(moneyStoreBytes(db)).toBe(before);
+  });
+
+  it('NO daily document for the session at all, with a held name: refused `ca_daily_missing` — stricter than a sale, on purpose; nothing written', async () => {
+    const { db, bookId, heldId } = await t2c01Book({ daily: false });
+    expect(db._get(`mandateUniverseDaily/${DAYS.d2}`)).toBeUndefined();
+    expect(db._get(`mandateUniverseSnapshots/${DAYS.d2}_open30`)).toMatchObject({ dailyRef: null, symbols: { AAPL: { price: D2_AAPL } } });
+    const before = moneyStoreBytes(db);
+    expect(await admitIdea(db, { bookId, contract: shortJpm(), opId: 'short-jpm', nowIso: AT_11 })).toEqual(refusedFor(heldId, 'ca_daily_missing'));
+    expect(moneyStoreBytes(db)).toBe(before);
+  });
+
+  it('control — the feed SUCCEEDED with nothing listed: the same 25% rise is a genuine one, and the $21,000 is admitted at the new equity ($107,488.75; short cap $21,497.75), the coverage recorded', async () => {
+    const { db, bookId } = await t2c01Book();
+    const res = await admitIdea(db, { bookId, contract: shortJpm(), opId: 'short-jpm', nowIso: AT_11 });
+    expect(res).toMatchObject({ ok: true, permittedMaxUsd: 21497.75 });
+    const packet = packetOf(db, bookId, res.ideaId);
+    expect(verifyPacket(packet)).toBe(true);
+    expect(packet.measuredAgainst).toMatchObject({ equityUsd: 107488.75, recordedEquityUsd: 99991 });
+    expect(packet.measuredAgainst.admissionMarks).toMatchObject({
+      snapshotKey: `${DAYS.d2}_open30`, marks: { AAPL: { price: D2_AAPL } },
+      caCoverage: { dailyKey: DAYS.d2, dailyPresent: true, symbols: { AAPL: { covered: true, fetchSucceeded: true } } },
+    });
+  });
+
+  it('control — the feed SUCCEEDED and LISTS the reverse split: the coverage passes, and the holding\'s basis is refused `corporate_action_pending`, as before', async () => {
+    const { db, bookId, heldId } = await t2c01Book({ aaplCa: { actions: [REVERSE], calls: 0, failed: false } });
+    expect(db._get(`mandateUniverseSnapshots/${DAYS.d2}_open30`).symbols.AAPL.corporateActions).toEqual([REVERSE]);
+    const before = moneyStoreBytes(db);
+    expect(await admitIdea(db, { bookId, contract: shortJpm(), opId: 'short-jpm', nowIso: AT_11 })).toEqual(refusedFor(heldId, 'corporate_action_pending'));
+    expect(moneyStoreBytes(db)).toBe(before);
+  });
+
+  it('control — a book holding NOTHING admits with no daily document anywhere; the packet records the key it would have read, absent', async () => {
+    const { db, bookId } = await seedBook();
+    expect([...db._store.keys()].some((p) => p.startsWith('mandateUniverseDaily/'))).toBe(false);
+    const res = await admitIdea(db, { bookId, contract: contractOf({ capitalUsd: 20000 }), opId: 'x', nowIso: ADMIT_ISO });
+    expect(res).toMatchObject({ ok: true, permittedMaxUsd: 20000 });
+    expect(packetOf(db, bookId, res.ideaId).measuredAgainst.admissionMarks.caCoverage).toEqual({ dailyKey: DAYS.admit, dailyPresent: false, symbols: {} });
+  });
+
+  it('control — outside a session the close basis reads the LAST COMPLETED session\'s daily layer: never the next session\'s, even one already built before its open', async () => {
+    const book = async () => {
+      const { db, bookId } = await seedBook({ archetypeCodeId: 'momentum_chaser' });
+      const held = await admitAndEnter(db, bookId, { contract: contractOf({ slot: 'long', names: ['AAPL'], capitalUsd: 30000 }), opId: 'held', quotes: T2C_Q });
+      await closeOn(db, bookId, DAYS.d1, T2C_Q);
+      return { db, bookId, heldId: held.ideaId };
+    };
+    // D1's fetch failed; D2's daily layer (built at 09:00 on D2) succeeded. At 17:00 on D1, and at 09:15 on D2 before its
+    // open, the basis is D1's close: refused for D1's failure.
+    const a = await book();
+    storeDailyLayer(a.db, DAYS.d1, [], { failed: ['AAPL'] });
+    storeDailyLayer(a.db, DAYS.d2, ['AAPL']);
+    for (const nowIso of [etIso(DAYS.d1, 17, 0), etIso(DAYS.d2, 9, 15)]) {
+      const res = await admitIdea(a.db, { bookId: a.bookId, contract: shortJpm(1000), opId: `x-${nowIso}`, nowIso });
+      expect(res.refusals, nowIso).toEqual([{
+        code: 'admission_marks_unavailable', symbols: ['AAPL'], unavailable: [{ symbol: 'AAPL', ideaId: a.heldId, reason: 'ca_fetch_failed' }],
+        basis: 'last_close', session: DAYS.d1, snapshotKey: `${DAYS.d1}_close`,
+      }]);
+    }
+    // The reverse — D1 covered, D2 failed: admitted at D1's close, and the packet names D1's daily layer.
+    const b = await book();
+    storeDailyLayer(b.db, DAYS.d1, ['AAPL']);
+    storeDailyLayer(b.db, DAYS.d2, [], { failed: ['AAPL'] });
+    const ok = await admitIdea(b.db, { bookId: b.bookId, contract: shortJpm(1000), opId: 'x', nowIso: etIso(DAYS.d2, 9, 15) });
+    expect(ok.ok).toBe(true);
+    expect(packetOf(b.db, b.bookId, ok.ideaId).measuredAgainst.admissionMarks).toMatchObject({
+      basis: 'last_close', session: DAYS.d1, snapshotKey: `${DAYS.d1}_close`,
+      caCoverage: { dailyKey: DAYS.d1, dailyPresent: true, symbols: { AAPL: { covered: true, fetchSucceeded: true } } },
+    });
   });
 });

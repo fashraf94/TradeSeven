@@ -22,6 +22,18 @@
 //   their holdings at the set's marks, rounded once per idea — the close's own valuation, ledger.js valueLedger), in
 //   whole cents.
 //
+//   THE DAY'S CORPORATE-ACTION COVERAGE (Astra T2C-01). "No action listed" in the snapshot means something only if the
+//   day's action fetch for the name SUCCEEDED, and only the daily layer (`mandateUniverseDaily/{session}`) records that:
+//   the snapshot builder copies its action rows, never its `caFetchFailed`. A failed fetch read as "no action" let a
+//   reverse split's adjusted price (under the gap screen's threshold) be taken against the old share count, and a cap
+//   pass by $1,001.80. So `readAdmissionMarkSet` also reads the daily document of the session the marks belong to,
+//   inside the same transaction, and before any held name is valued it must have an entry there whose fetch did not
+//   fail — the sales' own rule (exits.js planPendingSales, `corporate_action_data_missing`). Refused by symbol:
+//   `ca_daily_missing` (no daily document at all — stricter than a sale, on purpose: admission can wait, a sale has a
+//   reason to proceed), `ca_coverage_missing` (no entry for the name), `ca_fetch_failed`. A book holding nothing
+//   needs none of it. The packet records the document's key and, per held name, whether it was covered and its fetch
+//   succeeded (`admissionMarksRecord`).
+//
 //   NO ADMISSION WHILE A CLOSE IS OWED (C-2; `closeOwedSession`). A session counts as completed at its scheduled end
 //   (16:00 Eastern; 13:00 on an early close). If the book has not closed every session it was due that has completed
 //   by now — its window ledger's cursor (windowLedger.js firstUnaccountedWindowSession: the later of the valuation's
@@ -42,6 +54,25 @@ import { toCents, fromCents } from './money.js';
 
 /** Where admission's marks come from. */
 export const ADMISSION_MARK_BASIS = Object.freeze({ SESSION_SNAPSHOT: 'session_snapshot', LAST_CLOSE: 'last_close' });
+
+/** Why a held name's share basis cannot be trusted for want of the day's corporate-action coverage (Astra T2C-01). */
+export const CA_COVERAGE_REFUSAL = Object.freeze({
+  DAILY_MISSING: 'ca_daily_missing', COVERAGE_MISSING: 'ca_coverage_missing', FETCH_FAILED: 'ca_fetch_failed',
+});
+
+/**
+ * One held name's coverage in the session's daily layer (`markSet.daily`; absent: none was read — fail closed). Pure.
+ * @returns {{ covered: boolean, fetchSucceeded: boolean|null, refusal: string|null }}
+ */
+function caCoverageOf(daily, symbol) {
+  if (daily?.present !== true) return { covered: false, fetchSucceeded: null, refusal: CA_COVERAGE_REFUSAL.DAILY_MISSING };
+  const symbols = daily?.symbols;
+  // Its own entry only: never one inherited through the object's prototype.
+  const entry = symbols !== null && typeof symbols === 'object' && Object.hasOwn(symbols, symbol) ? symbols[symbol] : null;
+  if (entry == null) return { covered: false, fetchSucceeded: null, refusal: CA_COVERAGE_REFUSAL.COVERAGE_MISSING };
+  if (entry?.caFetchFailed === true) return { covered: true, fetchSucceeded: false, refusal: CA_COVERAGE_REFUSAL.FETCH_FAILED };
+  return { covered: true, fetchSucceeded: true, refusal: null };
+}
 
 const DAY_MS = 86_400_000;
 /** Calendar days a walk back to the last completed session may cover (a long weekend plus a holiday is five). */
@@ -134,15 +165,25 @@ export function admissionMarkSetCandidates(nowIso) {
  * `{ snapshot: null }` and every held name then lacks a mark. A stored document passed over is named with its reason
  * in `passedOver` (review A7): a document built after the decision is a race; one that is not its key's own is not.
  *
+ * Astra T2C-01: with it, READ ONLY, the daily layer of the same session (`daily`: its key, whether it exists, its
+ * per-symbol entries) — the one record of whether the day's corporate-action fetch succeeded for a name. None is read
+ * when the calendar names no session (`daily: null`).
+ *
  * @returns {Promise<{ basis: string, session: string|null, snapshotKey: string|null, snapshot: object|null,
  *                     builtAtIso: string|null, considered: string[], passedOver: Array<{ key: string, reason: string }>,
- *                     reason: string|null }>}
+ *                     reason: string|null, daily: { key: string, present: boolean, symbols: object|null }|null }>}
  */
 export async function readAdmissionMarkSet(tx, db, { nowIso }) {
   const { basis, session, keys } = admissionMarkSetCandidates(nowIso);
   const nowMs = Date.parse(nowIso);
   let reason = keys.length === 0 ? (session === null ? 'calendar_unsupported' : 'no_snapshot_yet') : 'no_snapshot';
   const passedOver = [];
+  // The collection by its literal name, as the sales read it (exits.js), for the protected-store scan.
+  let daily = null;
+  if (session !== null) {
+    const dailySnap = await tx.get(db.collection('mandateUniverseDaily').doc(session));
+    daily = { key: session, present: dailySnap.exists, symbols: dailySnap.exists ? (dailySnap.data()?.symbols ?? null) : null };
+  }
   for (const key of keys) {
     const snap = await tx.get(db.collection('mandateUniverseSnapshots').doc(key));
     if (!snap.exists) continue;
@@ -150,9 +191,9 @@ export async function readAdmissionMarkSet(tx, db, { nowIso }) {
     const builtMs = instantMs(doc?.builtAt);
     if (doc?.tickKey !== key || doc?.sessionDate !== session || !Number.isFinite(builtMs)) { reason = 'snapshot_invalid'; passedOver.push({ key, reason }); continue; }
     if (builtMs > nowMs) { reason = 'snapshot_after_decision'; passedOver.push({ key, reason }); continue; }
-    return { basis, session, snapshotKey: key, snapshot: doc, builtAtIso: new Date(builtMs).toISOString(), considered: keys, passedOver, reason: null };
+    return { basis, session, snapshotKey: key, snapshot: doc, builtAtIso: new Date(builtMs).toISOString(), considered: keys, passedOver, reason: null, daily };
   }
-  return { basis, session, snapshotKey: null, snapshot: null, builtAtIso: null, considered: keys, passedOver, reason };
+  return { basis, session, snapshotKey: null, snapshot: null, builtAtIso: null, considered: keys, passedOver, reason, daily };
 }
 
 /**
@@ -163,6 +204,7 @@ export async function readAdmissionMarkSet(tx, db, { nowIso }) {
  *   ok: boolean,
  *   unavailable: Array<{ symbol: string, ideaId: string|null, reason: string }>,
  *   marks: Object<string, { price: number, quality: string, vendorTimeIso: string, ageAtAdmissionMs: number, snapshotKey: string }>,
+ *   caCoverage: Object<string, { covered: boolean, fetchSucceeded: boolean|null }>,
  *   treasuryCents: number, ideasCashCents: number, holdingsCents: number, equityCents: number,
  * }}
  */
@@ -174,6 +216,7 @@ export function admissionMarksOf({ book, ideas, markSet, nowIso }) {
   const sinceDate = typeof book?.execState?.lastCloseKey === 'string' ? book.execState.lastCloseKey : null;
   const unavailable = [];
   const marks = {};
+  const caCoverage = {};
   const treasuryCents = centsOf(book?.treasury?.unreservedCash);
   let ideasCashCents = 0;
   let holdingsCents = 0;
@@ -189,6 +232,14 @@ export function admissionMarksOf({ book, ideas, markSet, nowIso }) {
     // A holding whose share count this price cannot be trusted against is valued at nothing here: it is refused.
     const heldBack = new Set();
     for (const symbol of held) {
+      // Astra T2C-01: first, the day's corporate-action coverage — without it "no action listed" says nothing.
+      const coverage = caCoverageOf(markSet?.daily, symbol);
+      caCoverage[symbol] = { covered: coverage.covered, fetchSucceeded: coverage.fetchSucceeded };
+      if (coverage.refusal !== null) {
+        heldBack.add(symbol);
+        unavailable.push({ symbol, ideaId: idea.ideaId ?? null, reason: coverage.refusal });
+        continue;
+      }
       const why = saleHeldBackBy(ledger, symbol, snapshot, {
         sinceDate, date: session, otherLedgers: [idea.comparisonLedger, idea.spyLedger],
       });
@@ -225,12 +276,14 @@ export function admissionMarksOf({ book, ideas, markSet, nowIso }) {
   }
   unavailable.sort((a, b) => (a.symbol === b.symbol ? 0 : (a.symbol < b.symbol ? -1 : 1)));
   const equityCents = treasuryCents + ideasCashCents + holdingsCents;
-  return { ok: unavailable.length === 0, unavailable, marks, treasuryCents, ideasCashCents, holdingsCents, equityCents };
+  return { ok: unavailable.length === 0, unavailable, marks, caCoverage, treasuryCents, ideasCashCents, holdingsCents, equityCents };
 }
 
 /**
  * What the admission packet records of the set (T1a-2b-2 §1): its basis, session and snapshot key, each mark with its
  * provenance and its age at admission, and the equity derived from them. Pure; JSON-pure numbers and strings.
+ * `caCoverage` (Astra T2C-01): the daily document read (its key — the session — and whether it existed) and, for each
+ * held name, whether it was covered there and its corporate-action fetch succeeded.
  */
 export function admissionMarksRecord({ markSet, measured, nowIso }) {
   return {
@@ -240,6 +293,11 @@ export function admissionMarksRecord({ markSet, measured, nowIso }) {
     snapshotBuiltAt: markSet?.builtAtIso ?? null,
     considered: markSet?.considered ?? [],
     passedOver: markSet?.passedOver ?? [],
+    caCoverage: {
+      dailyKey: markSet?.daily?.key ?? null,
+      dailyPresent: typeof markSet?.daily?.present === 'boolean' ? markSet.daily.present : null,
+      symbols: Object.fromEntries(Object.keys(measured?.caCoverage || {}).sort().map((s) => [s, { ...measured.caCoverage[s] }])),
+    },
     at: nowIso,
     marks: Object.fromEntries(Object.keys(measured?.marks || {}).sort().map((s) => [s, { ...measured.marks[s] }])),
     treasuryUsd: Number.isInteger(measured?.treasuryCents) ? fromCents(measured.treasuryCents) : null,

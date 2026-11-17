@@ -19,6 +19,7 @@ import { enterIdea, runIdeaBookEntryPass } from '../entry.js';
 import { runIdeaBookWindow } from '../sweep.js';
 import { closeIdeaBook, catchUpIdeaBook } from '../close.js';
 import { runFounderAction } from '../founderControls.js';
+import { admissionMarkSetCandidates } from '../admissionMarks.js';
 
 export { makeMandateFakeDb };
 
@@ -220,6 +221,44 @@ export function placeSnapshot(db, snap) {
   const cur = db._store.get(path);
   db._store.set(path, { data: structuredClone(snap), version: (cur?.version || 0) + 1 });
   return snap;
+}
+
+/**
+ * Astra T2C-01: THE daily layer of a session (`mandateUniverseDaily/{date}`), with one entry per symbol in the daily
+ * builder's entry shape (mandateUniverseSnapshot.js ensureDailySnapshot) — as a corporate-action fetch that succeeded
+ * with nothing listed leaves it; `failed` names whose fetch failed (`caFetchFailed: true`). Merged into whatever the
+ * document already holds, straight into the fake's store (it works on a db a test wraps to fail its writes).
+ * Admission refuses a held name its session's daily layer does not cover (admissionMarks.js), and a sale reads it too
+ * (exits.js) — so the snapshot fixtures above never write it: a row that needs the day's coverage stores it. Returns it.
+ */
+export function storeDailyLayer(db, date, symbols, { failed = [] } = {}) {
+  const path = `mandateUniverseDaily/${date}`;
+  const cur = db._store.get(path);
+  const entries = { ...(cur?.data?.symbols || {}) };
+  for (const sym of [...symbols, ...failed]) {
+    entries[sym] = {
+      sector: null, industry: null, marketCap: null, source: 'eodhd_fundamentals', complete: false,
+      ...(failed.includes(sym) ? { caFetchFailed: true } : {}),
+    };
+  }
+  const doc = { ...(cur?.data || { schemaVersion: 1, date, builtAt: new Date(etIso(date, 9, 0)) }), symbols: entries };
+  db._store.set(path, { data: structuredClone(doc), version: (cur?.version || 0) + 1 });
+  return doc;
+}
+
+/**
+ * The daily layer an admission at `nowIso` reads (admissionMarks.js: the session its marks belong to), covering every
+ * name the book's open ideas hold — as the daily build's idea-book coverage does in production. For a row about
+ * something else that admits while the book holds a name. Returns the document.
+ */
+export function coverHeldNames(db, bookId, nowIso) {
+  const { session } = admissionMarkSetCandidates(nowIso);
+  if (session === null) throw new Error(`coverHeldNames: no session for ${nowIso}`);
+  const held = new Set();
+  for (const id of getBook(db, bookId)?.openIdeaIds || []) {
+    for (const sym of Object.keys(getIdea(db, bookId, id)?.ledger?.holdings || {})) held.add(sym);
+  }
+  return storeDailyLayer(db, session, [...held]);
 }
 
 /**

@@ -17,7 +17,7 @@ import { SLOT_NAMES } from '../mandateSessionSlots.js';
 import {
   seedBook, admitAndEnter, contractOf, getBook, getIdea, tickOf, tickSnapshot, closeSnapshot, slotOpenIso, etIso, DAYS, ADMIT_ISO, countDocs,
   takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, closeOn, storeCloseSnapshot, enterIdeaWith, entryPassWith, placeSnapshot, moneyStoreBytes,
-  windDownBook, admitAllThenEnter,
+  windDownBook, admitAllThenEnter, coverHeldNames,
 } from './__testsupport__/fixtures.js';
 
 const CAP = { AAPL: 3.4e12, MSFT: 3.1e12, NVDA: 3.5e12, AMD: 2.6e11, LLY: 7.5e11, JPM: 6.8e11, XOM: 5.2e11, AVGO: 8.2e11 };
@@ -500,6 +500,7 @@ describe('B-RECON and B-OWNED — the reconciliation that guards every mutation'
     const { db, bookId } = await seedBook({ archetypeCodeId: 'degen' });
     await admitAndEnter(db, bookId, { contract: contractOf({ slot: 'short', names: ['AAPL', 'MSFT'] }), opId: 'a', quotes: q('AAPL', 'MSFT', 'SPY') });
     // 29,000, not 30,000: the first entry's costs took the book's equity a few dollars under 100,000, and with it the 30% cap.
+    coverHeldNames(db, bookId, etIso(DAYS.d1, 11, 0)); // D1's corporate-action coverage (Astra T2C-01)
     const second = await admitIdea(db, { bookId, contract: contractOf({ slot: 'medium', names: ['LLY'], capitalUsd: 29000 }), opId: 'b', nowIso: etIso(DAYS.d1, 11, 0) });
     expect(second.ok).toBe(true);
     const book = getBook(db, bookId);
@@ -716,6 +717,7 @@ describe('Astra T1A-02 — the reconciliation covers the marked book and all thr
     // Filled on D1; D1 is never closed. D1's 10:00 snapshot carries LLY too: the admissions below, dated on D1 after
     // the code-order events of D2 they follow, measure the book — LLY held by then — at it (T1a-2b-2 §1).
     await admitAndEnter(db, bookId, { contract: contractOf(), opId: 'a', quotes: { ...QUOTES, LLY: { price: 803.17, marketCap: 7.5e11 } } });
+    coverHeldNames(db, bookId, etIso(DAYS.d1, 11, 0)); // D1's corporate-action coverage (Astra T2C-01)
     const b = await admitIdea(db, { bookId, contract: contractOf({ slot: 'medium', names: ['LLY'], capitalUsd: 25000 }), opId: 'b', nowIso: etIso(DAYS.d1, 11, 0) });
     expect(b).toMatchObject({ ok: true, startSession: DAYS.d2 });
     const enterB = (date, slot) => enterIdeaWith(db, { bookRef, ideaId: b.ideaId, tick: tickOf(date, slot), snapshot: tickSnapshot(date, slot, { ...QUOTES, LLY: { price: 803.17, marketCap: 7.5e11 } }), nowIso: nowAt(date, slot) });
@@ -727,6 +729,7 @@ describe('Astra T1A-02 — the reconciliation covers the marked book and all thr
     await closeOn(db, bookId, DAYS.d1, QUOTES);
     expect((await enterB(DAYS.d2, 'open30')).outcome).toBe('entered');
     // …and once D2's own close is written, nothing more is dated in D2.
+    coverHeldNames(db, bookId, etIso(DAYS.d1, 12, 0)); // D1's daily layer now covers LLY too (Astra T2C-01)
     const c = await admitIdea(db, { bookId, contract: contractOf({ slot: 'long', names: ['JPM'], capitalUsd: 15000 }), opId: 'c', nowIso: etIso(DAYS.d1, 12, 0) });
     expect(c.ok).toBe(true);
     await storeCloseSnapshot(db, DAYS.d2, { ...QUOTES, LLY: 803.17 });

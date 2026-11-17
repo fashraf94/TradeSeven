@@ -17,6 +17,7 @@ import { roundUsd } from '../mandateRounding.js';
 import { COCKPIT_ALLOWLIST_ENV } from '../callRecords/allowlist.js';
 import {
   makeMandateFakeDb, seedBook, contractOf, closeOn, storeTickSnapshot, storeCloseSnapshot, tickOf, slotNowOf, etIso, ADMIT_ISO, getBook, getIdea, dumpStore, closeNowOf,
+  coverHeldNames,
 } from './__testsupport__/fixtures.js';
 
 const UID = 'founder-1';
@@ -318,6 +319,7 @@ describe('the lifecycles', () => {
     expect((await pass(db, bookId, S[0])).entered).toBe(1);
     // Admitted at 11:00, after S[0]'s 10:00 window (which caught the book up and entered a-1): admission measures the
     // book at that window's snapshot (T1a-2b-2 §1). It starts on S[1].
+    coverHeldNames(db, bookId, etIso(S[0], 11, 0)); // S[0]'s corporate-action coverage (Astra T2C-01)
     const pending = await act(db, 'admit_fixture', 'a-2', { contract: contractOf({ slot: 'medium', names: ['JPM'], capitalUsd: 25000 }) }, { nowIso: etIso(S[0], 11, 0) });
     expect(pending.body).toMatchObject({ startSession: S[1] });
     const level = getIdea(db, bookId, ideaId).lines.find((l) => l.symbol === 'MSFT').level;

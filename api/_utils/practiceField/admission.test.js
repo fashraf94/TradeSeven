@@ -15,6 +15,7 @@ import { assertReconciled } from './reconcile.js';
 import { runFounderAction } from './founderControls.js';
 import {
   seedBook, admitAndEnter, closeOn, contractOf, getBook, getIdea, etIso, DAYS, ADMIT_ISO, makeMandateFakeDb, storeTickSnapshot,
+  coverHeldNames,
 } from './__testsupport__/fixtures.js';
 
 const untouchable = new Proxy({}, { get() { throw new Error('the database was touched'); } });
@@ -285,6 +286,7 @@ describe('admitIdea — reserving capital and coverage', () => {
     const { db, bookId } = await seedBook();
     const a = await admitAndEnter(db, bookId, { contract: contractOf({ names: ['AAPL'] }), opId: 'idea-a', quotes: { AAPL: 231.47, SPY: 597.31 } });
     expect(a.entry.outcome).toBe('entered');
+    coverHeldNames(db, bookId, etIso(DAYS.d1, 11, 0)); // the day's corporate-action coverage of AAPL (Astra T2C-01)
     const res = await admit(db, bookId, contractOf({ slot: 'long', names: ['AAPL', 'NVDA'] }), 'idea-b', etIso(DAYS.d1, 11, 0));
     expect(res.refusals).toEqual([{ code: 'ticker_held_by_other_idea', symbol: 'AAPL', ideaId: a.ideaId }]);
   });
@@ -333,6 +335,7 @@ describe('check 7 — capital, with the permitted maximum and every binding cons
       const book = getBook(db, bookId);
       const equityCents = Math.round(book.portfolio.totalValue * 100);
       const heldCents = Object.values(book.portfolio.positions).reduce((s, p) => s + Math.round(p.shares * p.lastMark * 100), 0);
+      coverHeldNames(db, bookId, etIso(DAYS.d1, 11, 0)); // the day's corporate-action coverage (Astra T2C-01)
       const res = await admit(db, bookId, contractOf({ slot: 'long', names: ['NVDA', 'AMD'], capitalUsd: 40000 }), 'next', etIso(DAYS.d1, 11, 0));
       const slots = { diversifier: 2, momentum_chaser: 3, degen: 4 }[archetypeCodeId];
       const headroom = Math.floor((equityCents * slots) / 6) - heldCents;
@@ -566,6 +569,7 @@ describe('B-RESERVE — two admissions racing for the same cash', () => {
     // T1a-2b-2 §1: at 11:00 on D2 admission measures the book at D2's newest snapshot — its 10:00 window's, here at the
     // D1 close's prices, so its equity is the one recorded above.
     await storeTickSnapshot(db, DAYS.d2, 'open30', { JPM: 362.11, XOM: 177.83, SPY: 598.02 });
+    coverHeldNames(db, bookId, now); // D2's corporate-action coverage of JPM and XOM (Astra T2C-01)
     const short = contractOf({ slot: 'short', names: ['AAPL'], capitalUsd: shortCapital });
     const medium = contractOf({ slot: 'medium', names: ['LLY'], capitalUsd: mediumCapital });
     // The short admission reads the book; the medium one commits first; the short one is retried against it.
@@ -596,6 +600,7 @@ describe('B-RESERVE — two admissions racing for the same cash', () => {
     const quotes = { JPM: { price: 241.37, marketCap: 6.8e11 }, XOM: { price: 118.53, marketCap: 5.2e11 }, SPY: 597.31 };
     await admitAndEnter(db, bookId, { contract: contractOf({ slot: 'long', names: ['JPM', 'XOM'], capitalUsd: 40000 }), opId: 'held', quotes });
     const before = getBook(db, bookId);
+    coverHeldNames(db, bookId, etIso(DAYS.d1, 16, 26)); // D1's corporate-action coverage of JPM and XOM (Astra T2C-01)
     // The admission reads the book; the close commits (new marks, a new revision, a new equity); the admission must
     // be re-run against THAT book. Its capital is the short slot's cap AFTER the close's +50% — more than the cap
     // on the book it first read, so an admission decided on the stale book would have been refused.

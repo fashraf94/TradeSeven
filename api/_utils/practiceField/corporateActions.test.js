@@ -19,7 +19,7 @@ import { roundUsd } from '../mandateRounding.js';
 import {
   seedBook, admitAndEnter, closeOn, windowAt, contractOf, getBook, getIdea, getRow, closeNowOf, countDocs,
   takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, etIso as etIsoOf, tickSnapshot, closeSnapshot as closeSnapshotOf,
-  withoutWindowAlerts, admitAllThenEnter, storeTickSnapshot,
+  withoutWindowAlerts, admitAllThenEnter, storeTickSnapshot, coverHeldNames,
 } from './__testsupport__/fixtures.js';
 import { ledgerEndpoint } from './settlement.js';
 
@@ -645,6 +645,7 @@ describe('Astra T2A-01 — a ticker change waits while the holding\'s share basi
 
   it('while a rename waits, its TARGET is the waiting idea\'s at ADMISSION (review finding 1): another idea naming it is refused, as it would be had the rename applied', async () => {
     const { ctx } = await waitingOnAmd();
+    coverHeldNames(ctx.db, ctx.bookId, etIsoOf(S[1], 18, 0)); // S[1]'s corporate-action coverage (Astra T2C-01): the conflict is what refuses AAPL
     const late = await admitIdea(ctx.db, { bookId: ctx.bookId, opId: 'idea-late', contract: contractOf({ slot: 'medium', names: ['AMD'], capitalUsd: 15000 }), nowIso: etIsoOf(S[1], 18, 0) });
     expect(late.ok).toBe(false);
     // T1a-2b-2 §1: AAPL's share basis is unresolved (the split conflict), so S[1]'s close price is no mark admission can
@@ -660,6 +661,7 @@ describe('Astra T2A-01 — a ticker change waits while the holding\'s share basi
       // Admitted on S[1] before the close (it starts on S[2]): nothing reserved AMD then. At 11:00 admission measures the
       // book at S[1]'s 10:00 window snapshot (T1a-2b-2 §1).
       await storeTickSnapshot(c.db, S[1], 'open30', quotes());
+      coverHeldNames(c.db, c.bookId, etIsoOf(S[1], 11, 0)); // S[1]'s corporate-action coverage (Astra T2C-01)
       const r = await admitIdea(c.db, { bookId: c.bookId, opId: 'idea-early', contract: contractOf({ slot: 'medium', names: ['AMD'], capitalUsd: 15000 }), nowIso: etIsoOf(S[1], 11, 0) });
       expect(r).toMatchObject({ ok: true, startSession: S[2] });
       return r;
@@ -703,6 +705,7 @@ describe('Astra T2A-01 — a ticker change waits while the holding\'s share basi
     const out = await closeDay(ctx, S[2], { AAPL: { price, corporateActions: [basisRow('split', 1.5), basisRow('split', 1.6), rename('AAPL', 'NVDA')] } });
     expect(ideaOf(ctx).ledger.holdings.AAPL.deferredRename).toEqual({ from: 'AAPL', to: 'NVDA', actionId: `ticker_change_AAPL_${S[1]}`, effectiveDate: S[1], deferredOn: S[1] });
     expect(out.alerts.some((a) => a.includes('AAPL→NVDA'))).toBe(true);
+    coverHeldNames(ctx.db, ctx.bookId, etIsoOf(S[2], 18, 0)); // S[2]'s corporate-action coverage (Astra T2C-01): the basis is what refuses AAPL
     const nvda = await admitIdea(ctx.db, { bookId: ctx.bookId, opId: 'idea-nvda', contract: contractOf({ slot: 'medium', names: ['NVDA'], capitalUsd: 15000 }), nowIso: etIsoOf(S[2], 18, 0) });
     // (and, T1a-2b-2 §1, AAPL's unresolved share basis leaves it no mark to measure at)
     expect(nvda.refusals).toEqual([

@@ -27,7 +27,7 @@ import { runRetentionCleanup } from '../mandateClosePass.js';
 import { roundUsd } from '../mandateRounding.js';
 import {
   seedBook, admitAndEnter, contractOf, closeOn, windowAt, getBook, getIdea, dumpStore, closeNowOf, etIso, ADMIT_ISO, makeMandateFakeDb,
-  storeTickSnapshot,
+  storeTickSnapshot, coverHeldNames,
 } from './__testsupport__/fixtures.js';
 
 const S = ['2026-11-16', '2026-11-17', '2026-11-18', '2026-11-19', '2026-11-20', '2026-11-23', '2026-11-24', '2026-11-25', '2026-11-27', '2026-11-30', '2026-12-01', '2026-12-02'];
@@ -80,6 +80,7 @@ describe('the admission packet — in admission\'s own transaction, create-once'
     await storeTickSnapshot(ctx.db, S[1], 'open30', quotes({ MSFT: 420.11 }));
     const bookBefore = getBook(ctx.db, ctx.bookId);
     const contract = contractOf({ slot: 'medium', names: ['AAPL'], capitalUsd: 25000, origin: { kind: 'research', initiatedBy: 'agent' }, sources: [{ kind: 'research', ref: 'rw-0042' }] });
+    coverHeldNames(ctx.db, ctx.bookId, etIso(S[1], 11, 0)); // S[1]'s corporate-action coverage (Astra T2C-01)
     const res = await admitIdea(ctx.db, { bookId: ctx.bookId, contract, opId: 'second', nowIso: etIso(S[1], 11, 0) });
     expect(res.ok).toBe(true);
     const idea = getIdea(ctx.db, ctx.bookId, res.ideaId);
@@ -121,6 +122,7 @@ describe('the admission packet — in admission\'s own transaction, create-once'
     const a = await seedBook();
     const first = await admitAndEnter(a.db, a.bookId, { contract: contractOf({ names: ['MSFT'] }), opId: 'first', quotes: quotes(), date: S[0] });
     await windowAt(a.db, a.bookId, { date: S[0], slot: 'midday', quotes: quotes({ MSFT: 425.5 }) });
+    coverHeldNames(a.db, a.bookId, etIso(S[0], 13, 30)); // S[0]'s corporate-action coverage (Astra T2C-01)
     const ra = await admitIdea(a.db, { bookId: a.bookId, contract: contractOf({ slot: 'medium', names: ['AAPL'], capitalUsd: 25000 }), opId: 'second', nowIso: etIso(S[0], 13, 30) });
     const pa = a.db._get(`mandates/${a.bookId}/ideas/${ra.ideaId}/evidence/admission`);
     expect(pa.measuredAgainst.lastClose).toBeNull();
@@ -141,6 +143,7 @@ describe('the admission packet — in admission\'s own transaction, create-once'
     const original = console.error; console.error = () => {};
     try { await windowAt(b.db, b.bookId, { date: S[2], quotes: quotes() }); } finally { console.error = original; }
     expect(getBook(b.db, b.bookId).execState.lastCloseKey).toBe(S[1]);
+    coverHeldNames(b.db, b.bookId, etIso(S[2], 11, 0)); // S[2]'s corporate-action coverage (Astra T2C-01)
     const rb = await admitIdea(b.db, { bookId: b.bookId, contract: contractOf({ slot: 'medium', names: ['AAPL'], capitalUsd: 25000 }), opId: 'second', nowIso: etIso(S[2], 11, 0) });
     const pb = b.db._get(`mandates/${b.bookId}/ideas/${rb.ideaId}/evidence/admission`);
     expect(pb.measuredAgainst.lastClose).toEqual({ session: S[1], observed: false, closeSnapshotKey: null });
@@ -154,6 +157,7 @@ describe('the admission packet — in admission\'s own transaction, create-once'
     const fc = await admitAndEnter(c.db, c.bookId, { contract: contractOf({ names: ['MSFT'] }), opId: 'first', quotes: quotes(), date: S[0] });
     await closeDay({ ...c, ideaId: fc.ideaId }, S[0], { MSFT: { price: 431.17, at: null } });
     await storeTickSnapshot(c.db, S[1], 'open30', quotes()); // S[1]'s 10:00 window (T1a-2b-2 §1)
+    coverHeldNames(c.db, c.bookId, etIso(S[1], 11, 0)); // S[1]'s corporate-action coverage (Astra T2C-01)
     const rc = await admitIdea(c.db, { bookId: c.bookId, contract: contractOf({ slot: 'medium', names: ['AAPL'], capitalUsd: 25000 }), opId: 'second', nowIso: etIso(S[1], 11, 0) });
     const pc = c.db._get(`mandates/${c.bookId}/ideas/${rc.ideaId}/evidence/admission`);
     expect(pc.measuredAgainst.positions.MSFT).toMatchObject({
@@ -170,6 +174,7 @@ describe('the admission packet — in admission\'s own transaction, create-once'
     const quiet = console.error; console.error = () => {};
     try { await windowAt(d.db, d.bookId, { date: S[2], quotes: quotes() }); } finally { console.error = quiet; }
     expect(getBook(d.db, d.bookId).execState.lastCloseKey).toBe(S[1]);
+    coverHeldNames(d.db, d.bookId, etIso(S[2], 11, 0)); // S[2]'s corporate-action coverage (Astra T2C-01)
     const rd = await admitIdea(d.db, { bookId: d.bookId, contract: contractOf({ slot: 'medium', names: ['AAPL'], capitalUsd: 25000 }), opId: 'second', nowIso: etIso(S[2], 11, 0) });
     const pd = d.db._get(`mandates/${d.bookId}/ideas/${rd.ideaId}/evidence/admission`);
     expect(pd.measuredAgainst.positions.MSFT.markSource).toEqual({
