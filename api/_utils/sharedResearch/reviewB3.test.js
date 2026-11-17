@@ -60,6 +60,11 @@ describe('RA-1 / RB-6 — what a save states is checked, the composed sentence i
     expect(saveIssueOf(t, CTX)).toBeNull();
     expect(thesisViewOf(c, CTX).saveIssue).toEqual({ code: 'unsupported_assertion', detail: '5' });
   });
+  it('an edited sentence must still name every name (B1\'s company-name rule); the composed one names them by construction', () => {
+    const c = readyCard();
+    expect(saveIssueOf(c, CTX, 'Chips sell well because buyers keep spending.')).toEqual({ code: 'names_not_supported', detail: { missing: 'NVDA' } });
+    expect(saveIssueOf(c, CTX, sentenceOf(c))).toBeNull();
+  });
   it('the save issue: more carried findings than the idea builder takes (RA-7)', () => {
     const many = Array.from({ length: 30 }, (_, i) => F(`n${i}`, 'earnings_fact', 'NVDA', 'verified', `fact ${i}`));
     const c = readyCard();
