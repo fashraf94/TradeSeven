@@ -378,6 +378,14 @@ describe('the schema split\'s refuter pass (SPL-1, SPL-4)', () => {
     const why = validate(base({ why: WHY(), companies: [{ companyName: 'Nvidia', symbolCandidate: 'NVDA', role: 'Supplier', relationshipRef: id(1) }] }));
     expect(why.notes).toContain('ignored:companies');
   });
+  it('SPL-4: a company on a build_why turn is not read at all — it gives this turn\'s relationship finding no role (mutant SPL4-02)', () => {
+    const rel = { tempId: 'a1', kind: 'relationship', fact: 'AMD won an accelerator order from a cloud buyer.', symbolCandidate: 'AMD', companyName: 'AMD', support: { kind: 'retrieval', index: 0, from: [], reason: null }, at: null, supersedes: null };
+    const company = { companyName: 'AMD', symbolCandidate: 'AMD', role: 'Supplier', relationshipRef: 'a1' };
+    const asFindNames = validate(base({ findings: [rel], companies: [company] }), { goal: 'find_names', card: cardWithNames(null) });
+    const asWhy = validate(base({ findings: [rel], companies: [company], why: WHY() }));
+    expect(asFindNames.findings[0].fact).toMatch(/^Supplier · /); // read where the schema has companies
+    expect(asWhy.findings[0].fact).not.toMatch(/^Supplier · /); // never read where it has none
+  });
 });
 
 describe('the reply (K-4)', () => {
