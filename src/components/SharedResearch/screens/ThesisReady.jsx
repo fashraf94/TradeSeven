@@ -14,13 +14,13 @@
 // the fresh one on screen. An answer that never came is UNCERTAIN: only "Check the
 // record" (B2's K-8), never a retry before it.
 
-import React, { useId, useState } from 'react';
+import React, { useId, useRef, useState } from 'react';
 import { SR_COPY as COPY } from '../sharedResearchCopy';
 import { T, S } from '../sharedResearchStyle';
 import { findingsById, remainingOf, STATEMENT_MAX } from '../sharedResearchView';
 import { partFindingIdsOf, panelOf, revisedWhyChoiceOf } from '../thesisView';
 import {
-  CardHead, ClearConfirm, Count, FreeButton, PartPanel, PriceLines, Rail, ResearchButton, Sentence, WhyBlock, WhyProposal, freeLabelOf, researchLabelOf,
+  CardHead, ClearConfirm, Count, Cover, FOOT, FreeButton, PartPanel, PriceLines, Rail, ResearchButton, Sentence, WhyBlock, WhyProposal, freeLabelOf, researchLabelOf, usePanelInView,
 } from '../builderParts';
 import { Button, LinkButton, Notice, Running, Tag } from '../parts';
 import { SaveStates } from './Adopt';
@@ -44,6 +44,8 @@ export default function ThesisReady({ sr, agentName, phone, onKeepResearching, o
   const [priceOpen, setPriceOpen] = useState(false);
   const [clearAsk, setClearAsk] = useState(null);
   const panelId = `sr-ready-panel${useId()}`;
+  const footRef = useRef(null);
+  usePanelInView(tapped, panelId, footRef);
   const byId = findingsById(record);
   const stepsLeft = remainingOf(session);
   const status = sr.save.sessionId === session.sessionId ? sr.save.status : 'idle';
@@ -133,7 +135,8 @@ export default function ThesisReady({ sr, agentName, phone, onKeepResearching, o
       {status === 'notsaved' && <Notice role="status" tone="teal" attrs={{ 'data-sr-save': 'notsaved' }}>{COPY.notSaved}</Notice>}
       <SaveStates sr={sr} phone={phone} />
 
-      <div data-sr-foot="ready" style={{ position: 'sticky', bottom: 0, zIndex: 1, background: T.bg, borderTop: `1px solid ${T.hair}`, padding: '10px 0 4px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div ref={footRef} data-sr-foot="ready" style={FOOT}>
+        <Cover />
         {status === 'saving' && <Running>{B.saving}</Running>}
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 8 }}>
           {!uncertain && status !== 'saving' && status !== 'closed' && (

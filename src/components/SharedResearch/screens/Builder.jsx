@@ -26,8 +26,8 @@ import {
   frontPartOf, footOf, panelOf, conversationOf, hasSuggestedPart, partOfGoal, directionOffered, revisedWhyChoiceOf,
 } from '../thesisView';
 import {
-  CardHead, CardLine, ClearConfirm, Composer, Count, EvidenceList, FreeButton, KeepReasons, Mark, Mine, NamesPick, PartPanel,
-  PriceLines, Rail, ResearchButton, Said, Sentence, Strip, WhyBlock, WhyProposal, basisTagOf, freeLabelOf, researchLabelOf,
+  CardHead, CardLine, ClearConfirm, Composer, Count, Cover, EvidenceList, FOOT, FOOT_CHOICES, FreeButton, KeepReasons, Mark, Mine, NamesPick, PartPanel,
+  PriceLines, Rail, ResearchButton, Said, Sentence, Strip, WhyBlock, WhyProposal, basisTagOf, freeLabelOf, researchLabelOf, usePanelInView,
 } from '../builderParts';
 import { Button, LinkButton, Notice, Running, Tag } from '../parts';
 import ThesisReady from './ThesisReady';
@@ -95,6 +95,9 @@ function BuilderWork({ sr, agentName, phone, open, viewingEarlier, onBackToCurre
   const [clearAsk, setClearAsk] = useState(null);
   const [folded, setFolded] = useState(false);
   const cardRef = useRef(null);
+  const footRef = useRef(null);
+  const endRef = useRef(null);
+  const seenRows = useRef(null);
   const panelId = `sr-part-panel${useId()}`;
   const foot = footOf(thesis);
   const stepsLeft = remainingOf(session);
@@ -123,6 +126,17 @@ function BuilderWork({ sr, agentName, phone, open, viewingEarlier, onBackToCurre
     return () => scroller.removeEventListener('scroll', check);
   }, [phone]);
   const unfold = () => cardRef.current?.scrollIntoView?.({ block: 'start' });
+  usePanelInView(tapped, panelId, footRef);
+  // A new turn (a reply, a card line) comes into view just above the foot, as a conversation does (R3: the latest turn
+  // sits on the foot); not on the first draw, which shows the card.
+  useEffect(() => {
+    const before = seenRows.current;
+    seenRows.current = rows.length;
+    const end = endRef.current;
+    if (before === null || rows.length <= before || !end?.scrollIntoView) return;
+    end.style.scrollMarginBottom = `${(footRef.current?.offsetHeight ?? 0) + 12}px`;
+    end.scrollIntoView({ block: 'end' });
+  }, [rows.length]);
 
   // K-8: a Change that clears other parts (and a drop that clears the price lines) asks first; everything else is sent.
   const onFree = (choice, input) => {
@@ -216,6 +230,7 @@ function BuilderWork({ sr, agentName, phone, open, viewingEarlier, onBackToCurre
       )}
       {open && thesis.pick?.asked && <AskedPick pick={thesis.pick} agentName={agentName} />}
       {open && foot.part === 'why' && thesis.parts.why.state === 'suggested' && <WhyProposal proposal={thesis.parts.why.proposal} agentName={agentName} attrs={{ 'data-sr-why-proposal': '' }} />}
+      <div ref={endRef} aria-hidden="true" />
       {state === 'completed' && <Notice role="status" tone="teal">{`${COPY.concluded} · ${formatDay(record.endedAt) ?? ''}. ${COPY.concludedBody}`}</Notice>}
       {state === 'abandoned' && <Notice role="status" tone="copper">{`${COPY.discarded} · ${formatDay(record.endedAt) ?? ''}. ${COPY.discardedBody}`}</Notice>}
       {open && (
@@ -234,7 +249,9 @@ function BuilderWork({ sr, agentName, phone, open, viewingEarlier, onBackToCurre
   );
 
   const footer = open ? (
-    <div data-sr-foot={foot.part ?? 'none'} style={{ position: 'sticky', bottom: 0, zIndex: 1, background: T.bg, borderTop: `1px solid ${T.hair}`, padding: '10px 0 4px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+    <div ref={footRef} data-sr-foot={foot.part ?? 'none'} style={FOOT}>
+      <Cover />
+      <div data-sr-foot-choices="" style={{ ...FOOT_CHOICES, maxHeight: phone ? '42vh' : '46vh' }}>
       {running && <Running attrs={{ 'data-sr-working': '' }}>{B.workingLine(agentName)}</Running>}
       {!running && staleRunning && <Notice role="status" tone="gold" attrs={{ 'data-sr-was-running': '' }}>{COPY.wasRunning}</Notice>}
       {!running && stepFailure && (
@@ -268,6 +285,7 @@ function BuilderWork({ sr, agentName, phone, open, viewingEarlier, onBackToCurre
           {outOfSteps && <FreeButton label={B.concludeWithWhatWeHave} trail={B.keepsResearch} disabled={busy} onClick={() => sr.close('concluded')} attrs={{ 'data-sr-conclude': '' }} />}
         </>
       )}
+      </div>
       <Composer textChoice={deadEnd ? null : foot.text} directionOn={directionOffered(thesis)} agentName={agentName} disabled={busy}
         onFree={(c, words) => sr.cardOp(c, { text: words })} onDirection={(words) => sr.buildStep({ goal: 'direction', direction: words })} />
     </div>
@@ -275,7 +293,7 @@ function BuilderWork({ sr, agentName, phone, open, viewingEarlier, onBackToCurre
 
   const strip = phone ? (
     <div style={{ position: 'sticky', top: 0, height: 0, zIndex: 2 }} data-sr-strip-holder="">
-      {folded && <div style={{ position: 'absolute', left: 0, right: 0, top: 0 }}><Strip thesis={thesis} stepsLeft={stepsLeft} onOpen={unfold} /></div>}
+      {folded && <div style={{ position: 'absolute', left: 0, right: 0, top: 0, background: T.bg }}><Cover side="above" /><Strip thesis={thesis} stepsLeft={stepsLeft} onOpen={unfold} /></div>}
     </div>
   ) : null;
 

@@ -22,6 +22,34 @@ import { STATUS_LABELS, THESIS_PARTS } from '../../constants/sharedResearch';
 const B = COPY.builder;
 const SOURCE_BACKED = STATUS_LABELS.verified;
 
+/**
+ * The foot (K-4, K-17): pinned to the sheet's bottom while the card and the conversation scroll above it. Its choices
+ * scroll inside it past a cap, so a long list never covers the card; the composer stays under them. Its Cover paints
+ * the page colour over the sheet's own bottom padding, so nothing shows through beneath the pinned foot.
+ */
+export const FOOT = Object.freeze({
+  position: 'sticky', bottom: 0, zIndex: 1, background: T.bg, borderTop: `1px solid ${T.hair}`,
+  padding: '10px 0 4px', display: 'flex', flexDirection: 'column', gap: 8,
+});
+// a grid, not a flex column: under a height cap a flex column shrinks its buttons until their words overlap (B4 renders)
+/** A band of the page colour just past a pinned element's edge ('below' the foot, 'above' the strip). */
+export const Cover = ({ side = 'below' }) => <span aria-hidden="true" style={{ position: 'absolute', left: 0, right: 0, height: 40, background: T.bg, ...(side === 'below' ? { top: '100%' } : { bottom: '100%' }) }} />;
+export const FOOT_CHOICES = Object.freeze({ display: 'grid', gridAutoRows: 'max-content', gap: 8, overflowY: 'auto', overscrollBehavior: 'contain', minWidth: 0 });
+
+/**
+ * A tapped part's panel opens in view (K-7): scrolled clear of the pinned foot, so the panel is what lies under the
+ * player's next tap. `footRef` is the foot; jsdom has no scrolling, so there it does nothing.
+ */
+export function usePanelInView(tapped, panelId, footRef) {
+  useEffect(() => {
+    if (!tapped || typeof document === 'undefined') return;
+    const panel = document.getElementById(panelId);
+    if (!panel?.scrollIntoView) return;
+    panel.style.scrollMarginBottom = `${(footRef?.current?.offsetHeight ?? 0) + 20}px`;
+    panel.scrollIntoView({ block: 'nearest' });
+  }, [tapped, panelId, footRef]);
+}
+
 // ── small marks ───────────────────────────────────────────────────────────────
 
 /** A small uppercase mark ("1 step", "free", "Atlas's pick"). */
@@ -57,11 +85,11 @@ export function ResearchButton({ label, stepsLeft, onClick, disabled = false, at
     <button type="button" onClick={disabled ? undefined : onClick} disabled={disabled} {...attrs}
       style={{ ...buttonStyle('secondary', { full: true, disabled }), justifyContent: 'flex-start', minHeight: 50, padding: '8px 12px 8px 14px', background: wash('teal', 0.12), border: `1px solid ${wash('teal', 0.5)}` }}>
       <SearchGlyph />
-      <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
-        <span style={{ fontSize: 15, fontWeight: 600, color: T.ink, lineHeight: 1.3 }}>{label}</span>
-        <span style={{ fontSize: 12, color: T.ink2, lineHeight: 1.35 }}>{B.stepsLeft(stepsLeft)}</span>
+      <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 600, color: T.ink, lineHeight: 1.3 }}>{label}</span>
+      <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3, flexShrink: 0 }}>
+        <Mark tone="teal" solid attrs={{ 'data-sr-cost': 'step' }}>{B.oneStep}</Mark>
+        <span style={{ fontSize: 11, color: T.ink2, lineHeight: 1.2, whiteSpace: 'nowrap' }} data-sr-steps-left-choice="">{B.stepsLeft(stepsLeft)}</span>
       </span>
-      <Mark tone="teal" solid attrs={{ 'data-sr-cost': 'step' }}>{B.oneStep}</Mark>
     </button>
   );
 }
@@ -73,7 +101,7 @@ export function ResearchButton({ label, stepsLeft, onClick, disabled = false, at
 export function FreeButton({ label, sub = null, mark = null, reason = null, reasonTag = null, trail = B.free, strong = false, onClick, disabled = false, attrs = {} }) {
   return (
     <button type="button" onClick={disabled ? undefined : onClick} disabled={disabled} {...attrs}
-      style={{ ...buttonStyle('secondary', { full: true, disabled }), justifyContent: 'flex-start', minHeight: 46, padding: '7px 14px', background: 'transparent', border: `1px solid ${mark ? wash('teal', 0.5) : strong ? wash('ink', 0.4) : T.hair}` }}>
+      style={{ ...buttonStyle('secondary', { full: true, disabled }), justifyContent: 'flex-start', minHeight: 46, padding: '7px 14px', background: 'transparent', border: `1px solid ${mark ? wash('teal', 0.5) : strong ? wash('ink-2', 0.55) : T.hair}` }}>
       <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
         {mark && <Mark tone="teal" attrs={{ 'data-sr-mark': '' }}>{mark}</Mark>}
         <span style={{ fontSize: 14.5, fontWeight: 600, color: T.ink, lineHeight: 1.3, overflowWrap: 'anywhere' }}>{label}</span>
@@ -172,7 +200,8 @@ export function Rail({ thesis, working = null }) {
     <div aria-hidden="true" style={{ display: 'flex', gap: 4 }}>
       {THESIS_PARTS.map((p) => {
         const st = thesis?.parts?.[p]?.state;
-        const bg = st === 'set' ? T.teal : st === 'stale' ? T.copper : st === 'suggested' || working === p ? wash('teal', 0.45) : T.hair;
+        const blocked = p === 'names' && Boolean(thesis?.parts?.names?.blocked);
+        const bg = st === 'set' ? T.teal : st === 'stale' || blocked ? T.copper : st === 'suggested' || working === p ? wash('teal', 0.45) : T.hair;
         return <span key={p} data-sr-rail={p} data-sr-rail-state={st ?? 'unset'} style={{ flex: 1, height: 4, borderRadius: 2, background: bg }} />;
       })}
     </div>
@@ -189,10 +218,21 @@ export function CardHead({ thesis, stepsLeft, ready = false }) {
   );
 }
 
-const slotButton = {
-  appearance: 'none', font: 'inherit', background: 'none', border: 'none', margin: '-6px 0', padding: '6px 0', cursor: 'pointer', display: 'inline',
-  textAlign: 'left', lineHeight: 'inherit', color: 'inherit',
-};
+/**
+ * A part of the sentence the player can tap (K-7). A span with the button role, not a <button>: Chromium lays a button
+ * out as an inline block, which broke the sentence's lines at every part (seen in the B4 renders). Enter and Space open
+ * it as a button would; the padding widens the target without moving the line.
+ */
+function InlinePart({ part, state, open, panelId, onTap, children }) {
+  const toggle = () => onTap(open ? null : part);
+  return (
+    <span role="button" tabIndex={0} aria-expanded={open} aria-controls={panelId} data-sr-slot={part} data-sr-slot-state={state}
+      onClick={toggle} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } }}
+      style={{ cursor: 'pointer', padding: '6px 0', margin: '-6px 0', borderRadius: 4 }}>
+      {children}
+    </span>
+  );
+}
 
 /** One part's slot in the sentence while the card fills in: its value, its suggestion (never drawn as filled), its stale mark, or a blank. */
 function Slot({ thesis, part, working, tapped, onTap, panelId, agentName }) {
@@ -201,6 +241,9 @@ function Slot({ thesis, part, working, tapped, onTap, panelId, agentName }) {
   let inner;
   if (working === part) {
     inner = <span style={{ fontSize: '0.8em', fontWeight: 600, color: T.teal, borderBottom: `1.5px dashed ${wash('teal', 0.6)}` }}><span aria-hidden="true" style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: T.teal, marginRight: 6, verticalAlign: 'middle' }} />{B.working(agentName)}</span>;
+  } else if (part === 'names' && thesis?.parts?.names?.blocked && slot.state === 'unset') {
+    // the dead end (§B4.5), as the server says it: names.blocked — no listed company has a sourced connection
+    inner = <span style={{ color: T.copper, fontWeight: 600, borderBottom: `1.5px dashed ${wash('copper', 0.6)}` }} data-sr-blocked="">{B.blocked[thesis.parts.names.blocked] ?? B.blank.names}</span>;
   } else if (slot.state === 'set') {
     inner = <span style={{ color: T.ink, fontWeight: 700, borderBottom: `2px solid ${open ? T.teal : wash('teal', 0.5)}`, background: open ? wash('teal', 0.2) : 'transparent', borderRadius: open ? '4px 4px 0 0' : 0 }}>{slot.skipped ? B.skipped : slot.text}</span>;
   } else if (slot.state === 'stale') {
@@ -210,12 +253,7 @@ function Slot({ thesis, part, working, tapped, onTap, panelId, agentName }) {
   } else {
     inner = <span style={{ fontSize: '0.7em', letterSpacing: '0.03em', color: T.ink3, borderBottom: `1.5px dashed ${T.hair}`, padding: '0 6px 1px', whiteSpace: 'nowrap' }}>{B.blank[part]}</span>;
   }
-  return (
-    <button type="button" style={slotButton} aria-expanded={open} aria-controls={panelId} onClick={() => onTap(open ? null : part)}
-      data-sr-slot={part} data-sr-slot-state={slot.state}>
-      {inner}
-    </button>
-  );
+  return <InlinePart part={part} state={slot.state} open={open} panelId={panelId} onTap={onTap}>{inner}</InlinePart>;
 }
 
 /**
@@ -229,12 +267,12 @@ export function Sentence({ thesis, working = null, tapped, onTap, panelId, agent
     return (
       <p style={p} data-sr-sentence="server">
         {sentenceRunsOf(thesis.sentence, thesis).map((r, i) => (r.part
-          ? <button key={i} type="button" style={slotButton} aria-expanded={tapped === r.part} aria-controls={panelId} onClick={() => onTap(tapped === r.part ? null : r.part)} data-sr-slot={r.part} data-sr-slot-state={r.state}>
+          ? <InlinePart key={i} part={r.part} state={r.state} open={tapped === r.part} panelId={panelId} onTap={onTap}>
             {r.state === 'stale'
               ? <span style={{ color: T.ink2, fontWeight: 600, borderBottom: `1.5px dashed ${T.copper}` }}>{r.text}</span>
               : <span style={{ color: T.ink, fontWeight: 700, borderBottom: `2px solid ${tapped === r.part ? T.teal : wash('teal', 0.5)}`, background: tapped === r.part ? wash('teal', 0.2) : 'transparent' }}>{r.text}</span>}
             {r.state === 'stale' && <span style={{ fontSize: '0.6em', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: T.copper, marginLeft: 4 }} data-sr-stale-mark="">{B.stale}</span>}
-          </button>
+          </InlinePart>
           : <React.Fragment key={i}>{r.text}</React.Fragment>))}
       </p>
     );
@@ -398,7 +436,7 @@ export function NamesPick({ choice, pickConfirm, thesis, companies, agentName, o
         ))}
       </div>
       {pickConfirm && <FreeButton {...pickLabel} disabled={disabled} onClick={onConfirmPick} attrs={{ 'data-sr-free': 'confirm:names' }} />}
-      <FreeButton label={B.namesBuild(Math.max(ticked.length, 1))} strong disabled={disabled || !ok} onClick={() => onSend(ticked)} attrs={{ 'data-sr-free': 'set:names' }} />
+      <FreeButton label={B.namesBuild(ticked.length)} strong disabled={disabled || !ok} onClick={() => onSend(ticked)} attrs={{ 'data-sr-free': 'set:names' }} />
     </div>
   );
 }
