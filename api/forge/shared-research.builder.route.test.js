@@ -388,6 +388,20 @@ describe('to a ready card, and its save (§B4.5; §B10 S-B1, PF-1, PF-3)', () =>
     expect(again.body).toMatchObject({ watchlistId: r.body.watchlistId, idempotent: true });
     expect(env.writes.length).toBe(writes);
   });
+  it('PF-3: the provenance stamp on a builder save as on a ledger save — on the session at open, copied to the list, passed to the version builder', async () => {
+    const { id, rev } = await toReady();
+    const { adoptThesis, SHARED_RESEARCH_ADAPTER } = await import('../_utils/sharedResearch/store.js');
+    const { companiesOf } = await import('../_utils/sharedResearch/companies.js');
+    const { exchangeOf } = await import('../_utils/sharedResearch/session.js');
+    const { randomUUID } = await import('node:crypto');
+    let passed;
+    const adapter = { ...SHARED_RESEARCH_ADAPTER, buildVersion: (args) => { passed = args.attribution; return SHARED_RESEARCH_ADAPTER.buildVersion(args); } };
+    const saved = await adoptThesis(env.db, { uid: UID, sessionId: id, rev, companiesFor: (rec) => companiesOf(rec), adapter, mintId: randomUUID, exchangeOf, nowIso: new Date().toISOString() });
+    const s = sessionDoc(id);
+    expect(s.attribution).toMatchObject(STAMP);
+    expect(env.doc(`watchlists/${saved.watchlistId}`).attribution).toEqual(s.attribution);
+    expect(passed).toEqual(s.attribution);
+  });
   it('not ready → 409 not_ready with its blockers, nothing written', async () => {
     const o = await openOwn();
     const writes = env.writes.length;
