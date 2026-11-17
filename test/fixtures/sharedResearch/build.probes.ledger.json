@@ -170,6 +170,62 @@
       "costUsd": 0.017078,
       "elapsedMs": 6275,
       "attempts": 1
+    },
+    {
+      "at": "2026-11-17T16:23:38.808Z",
+      "key": "strengthen:segment",
+      "ok": true,
+      "reason": null,
+      "apiError": null,
+      "usage": {
+        "input": 5799,
+        "output": 476
+      },
+      "costUsd": 0.016358,
+      "elapsedMs": 5931,
+      "attempts": 1
+    },
+    {
+      "at": "2026-11-17T16:23:44.598Z",
+      "key": "strengthen:names",
+      "ok": true,
+      "reason": null,
+      "apiError": null,
+      "usage": {
+        "input": 5528,
+        "output": 700
+      },
+      "costUsd": 0.018056,
+      "elapsedMs": 5720,
+      "attempts": 1
+    },
+    {
+      "at": "2026-11-17T16:23:50.547Z",
+      "key": "strengthen:wrongIf",
+      "ok": true,
+      "reason": null,
+      "apiError": null,
+      "usage": {
+        "input": 5799,
+        "output": 463
+      },
+      "costUsd": 0.016228,
+      "elapsedMs": 5922,
+      "attempts": 1
+    },
+    {
+      "at": "2026-11-17T16:23:56.759Z",
+      "key": "strengthen:timeFrame",
+      "ok": true,
+      "reason": null,
+      "apiError": null,
+      "usage": {
+        "input": 5532,
+        "output": 707
+      },
+      "costUsd": 0.018134,
+      "elapsedMs": 6198,
+      "attempts": 1
     }
   ]
 }

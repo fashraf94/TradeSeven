@@ -8,7 +8,7 @@
 // facts and not a real search result. scripts/sharedResearch/probeBuilder.mjs
 // sends them; thesisSchema.recorded.test.js validates the recorded answers.
 
-import { emptyCard, cardContextOf, offeredGoalsOf } from '../thesis.js';
+import { emptyCard, cardContextOf, offeredGoalsOf, blockedNow } from '../thesis.js';
 import { schemaKeyOf, turnShapeOf } from '../thesisSchema.js';
 
 export const PROBE_B_READ_AT = '2026-11-16T15:00:00.000Z';
@@ -135,8 +135,9 @@ const POWER_ITEMS = [
 const probe = (p) => {
   const q = { part: null, direction: null, retrieval: 'items', entryKind: 'observation', ...p };
   const session = { status: 'open', entry: { kind: q.entryKind }, stepBudget: 8, stepsUsed: 1, exchanges: [] };
-  const offered = offeredGoalsOf(q.card, cardContextOf({ record: q.record, supported: q.supported, session }));
-  const shape = turnShapeOf({ goal: q.goal, part: q.part }, offered);
+  const ctx = cardContextOf({ record: q.record, supported: q.supported, session });
+  const offered = offeredGoalsOf(q.card, ctx);
+  const shape = turnShapeOf({ goal: q.goal, part: q.part }, offered, { deadEnd: blockedNow(q.card, ctx) });
   return { ...q, session, offered, shape, key: schemaKeyOf(shape) };
 };
 

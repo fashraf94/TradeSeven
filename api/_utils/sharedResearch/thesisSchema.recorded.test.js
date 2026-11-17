@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { resolve, dirname } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import { validateBuildTurn, BUILD_SCHEMAS, buildSchemaOf, acceptsOf } from './thesisSchema.js';
-import { applyProposals, cardContextOf } from './thesis.js';
+import { applyProposals, cardContextOf, reasonHolds } from './thesis.js';
 import { companiesOf } from './companies.js';
 import { costUsd, MODELS, MAX_OUTPUT_TOKENS } from './modelTurn.js';
 import { strayTickersOf } from './stepSchema.js';
@@ -107,11 +107,29 @@ describe('what the probes proposed', () => {
     for (const r of v.proposals.pick.reasons) for (const id of r.findingIds) expect(onRecord.has(id)).toBe(true);
     expect(v.findings).toEqual([]);
   });
-  it('build_why: a why for NVDA (incomplete when no reason rests only on NVDA facts), the point against, wrong-if options with no price', () => {
+  it('build_why: a why for NVDA, the point against, wrong-if options with no price', () => {
     const { v } = of('build_why');
     expect(v.proposals.why.forNames).toEqual(['NVDA']);
     expect(v.proposals.wrongIfOptions.length).toBeGreaterThan(0);
     for (const r of v.proposals.why.reasons) expect(r.symbol).toBe('NVDA');
+  });
+  it.each(['build_why', 'strengthen:why'])('%s, replayed under §B12 W-10: the NVDA reason (an NVDA fact and a general Source-backed fact) is kept and the why is complete', (key) => {
+    const { p, v } = of(key);
+    expect(v.notes.filter((x) => x.startsWith('dropped:why.reason') || x.startsWith('why_incomplete'))).toEqual([]);
+    expect(v.proposals.why.reasons.map((r) => r.symbol)).toEqual(['NVDA']);
+    const after = { ...p.record, findings: [...p.record.findings, ...v.findings] };
+    const ctx = cardContextOf({ record: after, supported: companiesOf(after).supported });
+    const nvda = v.proposals.why.reasons[0].findingIds.map((id) => ctx.current.get(id));
+    expect(nvda.every((f) => f.status === 'verified')).toBe(true);
+    expect(nvda.some((f) => f.symbol === 'NVDA') && nvda.some((f) => f.symbol !== 'NVDA')).toBe(true); // the case W-10 rules
+    expect(reasonHolds(ctx, v.proposals.why.reasons[0])).toBe(true);
+  });
+  it('strengthen:names and strengthen:timeFrame: the model\'s own reply stands (§B12 Q-1)', () => {
+    for (const key of ['strengthen:names', 'strengthen:timeFrame']) {
+      const { v } = of(key);
+      expect(v.notes.filter((x) => x.startsWith('reply_replaced')), key).toEqual([]);
+      expect(v.reply, key).toBe(recorded(key).output.reply);
+    }
   });
   it('direction with nothing else on offer: findings only, nothing proposed for the card', () => {
     const { v } = of('direction');

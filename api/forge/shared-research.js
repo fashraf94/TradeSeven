@@ -36,7 +36,7 @@ import { BUILD_INTENT, BUILD_GOALS, THESIS_PARTS, PICK_PARTS, CARD_OPS } from '.
 import { gateSharedResearchRoute, sendSharedResearchError } from '../_utils/sharedResearch/gate.js';
 import { sharedResearchBuilderMode } from '../_utils/sharedResearch/gate.js';
 import {
-  shapeOf, openingCardOf, builderQuestionOf, cardContextOf, thesisViewOf, isGoalOffered, offeredGoalsOf, applyProposals,
+  shapeOf, openingCardOf, builderQuestionOf, cardContextOf, thesisViewOf, isGoalOffered, offeredGoalsOf, applyProposals, blockedNow,
 } from '../_utils/sharedResearch/thesis.js';
 import {
   buildSchemaOf, schemaKeyOf, turnShapeOf, validateBuildTurn, buildCandidateNamesOf, builderFallbackReplyOf,
@@ -637,7 +637,7 @@ async function handleBuildStep(body, res, { db, uid }) {
       if (!s.thesis) throw refuse(400, 'invalid_intent', { reason: 'shape' });
       const ctx = cardCtxIn(s, rec);
       if (!isGoalOffered(s.thesis, ctx, { goal, part })) throw refuse(400, 'invalid_intent', { reason: 'goal_not_offered' });
-      turnShape = turnShapeOf({ goal, part }, offeredGoalsOf(s.thesis, ctx));
+      turnShape = turnShapeOf({ goal, part }, offeredGoalsOf(s.thesis, ctx), { deadEnd: blockedNow(s.thesis, ctx) }); // §B12 Q-2 (b)
     },
   });
   const day = await readQuota(db, { uid, nowIso });

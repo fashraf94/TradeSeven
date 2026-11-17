@@ -85,6 +85,15 @@ describe('the builder\'s user turn', () => {
     expect(u).toContain("The player's direction (their words): look at power");
     expect(u).toContain('it never changes the theme');
   });
+  it('a strengthen turn says the part is already set by the player and asks for evidence, never a pick (§B12 Q-1 (a))', () => {
+    for (const part of ['theme', 'segment', 'names', 'why', 'wrongIf', 'timeFrame']) {
+      const u = render({ goal: 'strengthen', part });
+      expect(u, part).toContain(`This step: the card's ${part} is already set by the player. Look for evidence for or against it; do not pick for it.`);
+      expect(u, part).not.toContain('(pick');
+    }
+    expect(render({ goal: 'strengthen', part: 'segment' })).toContain('Revise the segment map (segments) only if the evidence changes it.');
+    expect(render({ goal: 'strengthen', part: 'names' })).not.toContain('Revise');
+  });
   it('a direction turn is told the proposals its schema holds — and none when the goal it is asked as lands nothing (SPL-3)', () => {
     expect(render({ goal: 'direction', direction: 'x', shape: { goal: 'build_why', part: null } })).toContain("The proposals you may make are those of the card's next step (build why)");
     for (const shape of [{ goal: 'strengthen', part: 'theme' }, { goal: 'direction', part: null }, null]) {

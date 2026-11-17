@@ -347,6 +347,21 @@ describe('one schema per goal (the founder\'s S-1, Nov 17)', () => {
     expect(state.logs.at(-1).validationNotes).toContain('ignored:why');
     expect(state.logs.at(-1)).toMatchObject({ goal: 'direction', schema: 'map_segments' }); // SPL-5: the record names the schema asked in
   });
+  it('§B12 Q-2 (b): at the dead end a direction step is asked as find_names — a company it sources comes with its role and lifts the dead end', async () => {
+    const o = await openOwn();
+    const id = o.session.sessionId;
+    const m = await build(id, 1, 'map_segments', MAP());
+    await card(id, 1, 'set', 'segment', 'GPUs and accelerators', m.body.thesis.rev);
+    const dead = await build(id, 2, 'find_names', NO_NAMES());
+    expect(dead.body.thesis.parts.names.blocked).toBe('no_listed_company');
+    const r = await build(id, 3, 'direction', NAMES(), { direction: 'look at the chip makers' });
+    expect(r.statusCode, JSON.stringify(r.body)).toBe(200);
+    expect(state.turns[2].schema).toBe(BUILD_SCHEMAS.find_names);
+    expect(state.logs.at(-1)).toMatchObject({ goal: 'direction', schema: 'find_names' });
+    expect(r.body.thesis.parts.names).toMatchObject({ state: 'unset', blocked: null });
+    expect(r.body.companies.supported).toEqual([expect.objectContaining({ symbol: 'NVDA', role: 'Supplier' })]);
+    expect(r.body.thesis.pick).toMatchObject({ part: 'names', value: ['NVDA'], asked: false });
+  });
   it('with nothing else on offer, direction is asked with findings and companies only, and lands nothing on the card', async () => {
     const long = 'I want to play AI through the chips, the power and the networking that the largest data centers keep buying';
     const o = await openOwn(long, 'req-own-long');

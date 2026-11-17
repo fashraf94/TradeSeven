@@ -8,7 +8,7 @@ import { describe, it, expect } from 'vitest';
 import { NAMES_A_PRICE, BUILDER_FORECAST, builderPromiseOf, builderWordingOf, lineFailOf } from './thesisWords.js';
 import { validateBuildTurn, cutAtSentence, DEAD_END_LINE } from './thesisSchema.js';
 import {
-  emptyCard, cardContextOf, applyCardOp, freeChoicesOf, readinessOf, saveIssueOf, sharedIssueOf, sentenceOf, thesisViewOf, carriedIdsOf,
+  emptyCard, cardContextOf, applyCardOp, freeChoicesOf, readinessOf, saveIssueOf, sharedIssueOf, sentenceOf, thesisViewOf, carriedIdsOf, reasonHolds,
 } from './thesis.js';
 
 // ── a record and a card (the shapes thesis.test.js uses) ─────────────────────────
@@ -176,10 +176,17 @@ describe('RB-5 — the dead end is honest end to end', () => {
   });
   it('a reply stands only while something it proposed landed (RC-3: a strengthen whose only proposal is dropped)', () => {
     const c = cardNoNames();
-    c.timeFrame = { state: 'set', by: 'player_chose', value: 'swing', suggestion: null };
-    const v = validate({ reply: 'I would move it to positional.', timeFramePick: { horizon: 'positional', reason: 'r' } }, { goal: 'strengthen', part: 'timeFrame', card: c });
-    expect(v.notes).toEqual(expect.arrayContaining(['dropped:timeFramePick:time_frame_set', 'reply_replaced:proposals_dropped']));
+    c.wrongIf = { ...c.wrongIf, state: 'set', by: 'player_wrote', text: 'buyers cut spending' };
+    const v = validate({ reply: 'I found a sharper way it could be proved wrong.', wrongIfOptions: [{ text: 'The stock falls 20% in a month', refs: [] }] }, { goal: 'strengthen', part: 'wrongIf', card: c });
+    expect(v.notes).toEqual(expect.arrayContaining(['dropped:wrongIf.option:0:names_a_price', 'reply_replaced:proposals_dropped']));
     expect(v.reply).toBe('This step added 0 findings. The card did not change.');
+  });
+  it('§B12 Q-1 (a): a strengthen of a set time frame has no pick to make — a time-frame pick is ignored and the reply stands', () => {
+    const c = cardNoNames();
+    c.timeFrame = { state: 'set', by: 'player_chose', value: 'swing', suggestion: null };
+    const v = validate({ reply: 'The evidence fits swing; nothing here changes the card.', timeFramePick: { horizon: 'positional', reason: 'r' } }, { goal: 'strengthen', part: 'timeFrame', card: c });
+    expect(v.notes).toEqual(['ignored:timeFramePick']);
+    expect(v.reply).toBe('The evidence fits swing; nothing here changes the card.');
   });
 });
 
@@ -227,5 +234,40 @@ describe('§B11 — the founder\'s rulings on the B3 report (Nov 16)', () => {
     expect(saveIssueOf(c, CTX, `${composed} It could gain 30% over that time.`)).toMatchObject({ code: 'unsupported_assertion' });
     expect(saveIssueOf(c, CTX, composed.replace('for 2 quarters', 'for 2 quarters, 2 times over'))).toMatchObject({ code: 'unsupported_assertion' });
     expect(saveIssueOf(c, CTX, composed.replace('NVDA', 'NVDA (theme: AI)'))).toBeNull(); // an edit that keeps both texts verbatim
+  });
+});
+
+describe('§B12 — the founder\'s rulings on the §B11 round (Nov 17)', () => {
+  const MIXED = { symbol: 'NVDA', text: 'its sales rest on data centers, and buyers design their own chips', findingIds: ['eN2', 'c1'] };
+  it('W-10 on the card: a reason holds with every ref Source-backed and at least one about its name — the confirm, ready and the save read it alike', () => {
+    const ctx = ctxOf([...BASE, F('iN', 'inference', 'NVDA', 'unverified', 'Nvidia probably keeps its lead.')]);
+    expect(reasonHolds(ctx, MIXED)).toBe(true);
+    expect(reasonHolds(ctx, { ...MIXED, findingIds: ['c1'] })).toBe(false); // none about the name
+    expect(reasonHolds(ctx, { ...MIXED, findingIds: ['eN2', 'iN'] })).toBe(false); // one not Source-backed
+    const c = readyCard();
+    c.why = { ...emptyCard().why, proposal: { shared: 'they sell accelerators to data centers', forNames: ['NVDA'], against: null, reasons: [MIXED] } };
+    const confirmed = applyCardOp(c, { op: 'confirm', part: 'why' }, ctx);
+    expect(confirmed.ok).toBe(true);
+    expect(readinessOf(confirmed.card, ctx)).toEqual({ ready: true, blockers: [] });
+    expect(saveIssueOf(confirmed.card, ctx)).toBeNull();
+  });
+  it('W-13: a complete proposal waiting beside a set why is an offered revised confirm; it replaces the why and clears nothing else', () => {
+    const c = readyCard();
+    c.why = { ...c.why, proposal: { shared: 'they sell the accelerators data centers buy', forNames: ['NVDA'], against: null, reasons: [MIXED] } };
+    expect(freeChoicesOf(c, CTX)).toContainEqual({ op: 'confirm', part: 'why', revised: true });
+    expect(thesisViewOf(c, CTX).parts.why.proposal).toMatchObject({ shared: 'they sell the accelerators data centers buy', incomplete: [] }); // shown before the tap
+    const out = applyCardOp(c, { op: 'confirm', part: 'why' }, CTX);
+    expect(out.ok).toBe(true);
+    expect(out.card.why).toMatchObject({ state: 'set', by: 'partner_suggested_confirmed', shared: 'they sell the accelerators data centers buy', reasons: [MIXED], proposal: null });
+    for (const part of ['theme', 'segment', 'names', 'wrongIf', 'timeFrame']) expect(out.card[part], part).toEqual(c[part]);
+  });
+  it('W-13: not offered while the waiting proposal is incomplete, nor as "revised" while the why is unset', () => {
+    const c = readyCard();
+    c.why = { ...c.why, proposal: { shared: 'they sell chips', forNames: ['NVDA'], against: null, reasons: [{ ...MIXED, findingIds: ['c1'] }] } };
+    expect(freeChoicesOf(c, CTX).some((f) => f.op === 'confirm' && f.part === 'why')).toBe(false);
+    const u = readyCard();
+    u.why = { ...emptyCard().why, proposal: { shared: 'they sell chips', forNames: ['NVDA'], against: null, reasons: [MIXED] } };
+    expect(freeChoicesOf(u, CTX)).toContainEqual({ op: 'confirm', part: 'why' });
+    expect(freeChoicesOf(u, CTX).some((f) => f.revised)).toBe(false);
   });
 });

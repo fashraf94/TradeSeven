@@ -1,5 +1,5 @@
 {
-  "recordedAt": "2026-11-17T15:12:42.972Z",
+  "recordedAt": "2026-11-17T16:23:56.759Z",
   "key": "strengthen:timeFrame",
   "goal": "strengthen",
   "part": "timeFrame",
@@ -18,15 +18,15 @@
   "category": null,
   "apiError": null,
   "attempts": 1,
-  "elapsedMs": 5569,
+  "elapsedMs": 6198,
   "usage": {
-    "input": 5712,
-    "output": 582
+    "input": 5532,
+    "output": 707
   },
-  "costUsd": 0.017244,
+  "costUsd": 0.018134,
   "readAt": "2026-11-16T15:00:00.000Z",
   "output": {
-    "reply": "The evidence leans toward keeping positional. Cloud companies say running models is now a main reason they order accelerators, which is demand that recurs rather than a one-off training build, while a large cloud company moving more work to its own chips is a risk that plays out over quarters, not days. I would keep positional and not change the card.",
+    "reply": "The time frame is the player's own, so I am not picking it. Two new facts bear on it: cloud companies say running models is now a main reason they order accelerators, which suggests demand that outlasts one training cycle, while one large cloud company says it runs more of its work on its own chips, which sharpens the point against and the second wrong-if option.",
     "findings": [
       {
         "tempId": "t1",
@@ -61,7 +61,7 @@
       {
         "tempId": "t3",
         "kind": "inference",
-        "fact": "Ordering driven by running models is recurring demand, and a buyer shifting work to its own chips builds up over quarters; both fit a thesis measured in weeks to a few months rather than days.",
+        "fact": "Orders driven by running models may recur beyond a single training cycle, which fits a window of about 30 sessions; this is an inference, and a source on how long those orders last is still needed.",
         "symbolCandidate": "NVDA",
         "companyName": "NVIDIA Corporation",
         "support": {
@@ -69,18 +69,31 @@
           "index": null,
           "from": [
             "t1",
-            "t2",
             "f_7a000000-0000-4000-8000-000000000005"
           ],
           "reason": null
         },
         "at": null,
         "supersedes": null
+      },
+      {
+        "tempId": "t4",
+        "kind": "inference",
+        "fact": "A buyer shifting more of its work to chips it designs itself is the same risk the wrong-if option names, and it could build over a positional window; this is an inference from a single source, and how much work has moved is not disclosed.",
+        "symbolCandidate": "NVDA",
+        "companyName": "NVIDIA Corporation",
+        "support": {
+          "kind": "inference",
+          "index": null,
+          "from": [
+            "t2",
+            "f_7a000000-0000-4000-8000-000000000004"
+          ],
+          "reason": null
+        },
+        "at": null,
+        "supersedes": null
       }
-    ],
-    "timeFramePick": {
-      "horizon": "positional",
-      "reason": "Demand to run models recurs and own-chip shifts build over quarters, so about 30 sessions fits."
-    }
+    ]
   }
 }

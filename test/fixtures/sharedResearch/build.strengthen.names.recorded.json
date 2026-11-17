@@ -1,5 +1,5 @@
 {
-  "recordedAt": "2026-11-17T15:12:23.686Z",
+  "recordedAt": "2026-11-17T16:23:44.598Z",
   "key": "strengthen:names",
   "goal": "strengthen",
   "part": "names",
@@ -18,15 +18,15 @@
   "category": null,
   "apiError": null,
   "attempts": 1,
-  "elapsedMs": 5571,
+  "elapsedMs": 5720,
   "usage": {
-    "input": 5710,
-    "output": 534
+    "input": 5528,
+    "output": 700
   },
-  "costUsd": 0.01676,
+  "costUsd": 0.018056,
   "readAt": "2026-11-16T15:00:00.000Z",
   "output": {
-    "reply": "Two new facts bear on NVDA. Demand to run models, not only train them, now drives accelerator orders, which supports the name. One large cloud company said it runs more of its own AI work on its own chips, which sharpens the point against. The card's names and wrong-if stay as they are.",
+    "reply": "Two new sources bear on NVDA, one for and one against. Cloud companies say demand to run models, not only train them, is a main reason they order accelerators, and one large cloud company says it now runs more of its own work on chips it designs. The second source strengthens the point already on your card and bears on your wrong-if condition. How much of NVDA's revenue comes from that company is not disclosed.",
     "findings": [
       {
         "tempId": "t1",
@@ -61,22 +61,39 @@
       {
         "tempId": "t3",
         "kind": "inference",
-        "fact": "Nvidia's share of what these buyers spend on AI chips is not disclosed in the sources read, so how much of its sales this shift would touch is unresolved.",
+        "fact": "If running models keeps driving orders, accelerator demand may not depend only on training; this is inference from one news report, not a disclosed figure.",
         "symbolCandidate": "NVDA",
         "companyName": "NVIDIA Corporation",
         "support": {
-          "kind": "unresolved",
+          "kind": "inference",
           "index": null,
-          "from": [],
-          "reason": "not_disclosed"
+          "from": [
+            "t1",
+            "f_7a000000-0000-4000-8000-000000000002"
+          ],
+          "reason": null
+        },
+        "at": null,
+        "supersedes": null
+      },
+      {
+        "tempId": "t4",
+        "kind": "inference",
+        "fact": "A buyer shifting more work to its own chips is the condition your wrong-if option names; the size of that buyer's share of Nvidia revenue is not disclosed in these sources.",
+        "symbolCandidate": "NVDA",
+        "companyName": "NVIDIA Corporation",
+        "support": {
+          "kind": "inference",
+          "index": null,
+          "from": [
+            "t2",
+            "f_7a000000-0000-4000-8000-000000000004"
+          ],
+          "reason": null
         },
         "at": null,
         "supersedes": null
       }
-    ],
-    "pick": {
-      "value": "NVDA",
-      "reason": "Still the only listed company with a sourced connection; new evidence cuts both ways."
-    }
+    ]
   }
 }

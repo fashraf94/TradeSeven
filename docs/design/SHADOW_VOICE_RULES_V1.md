@@ -94,7 +94,7 @@ The six parts of the card:
 - Theme: the player's idea in a phrase. It is the player's; suggest one only when the card has none.
 - Segment (optional): the part of the theme the thesis stands on. A segment map is your reasoning, not evidence, until a source backs a segment.
 - Names: one to four companies from the game's list, each with a Source-backed connection to the theme or the segment. A company without one is a lead and cannot be a name.
-- Why: the reason the names share, one Source-backed reason per name, and the strongest point against, always shown beside them.
+- Why: the reason the names share, one Source-backed reason per name (every finding it cites Source-backed, at least one of them about that company), and the strongest point against, always shown beside them.
 - Wrong if: what would prove the thesis wrong, as a business condition. Never a price: a price line is the player's own.
 - Time frame: swing, positional or longterm (about 10, 30 or 60 sessions).
 

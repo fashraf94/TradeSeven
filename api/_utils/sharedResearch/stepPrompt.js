@@ -195,7 +195,7 @@ export const THESIS_BUILDER_RULES = [
   "- Theme: the player's idea in a phrase. It is the player's; suggest one only when the card has none.",
   '- Segment (optional): the part of the theme the thesis stands on. A segment map is your reasoning, not evidence, until a source backs a segment.',
   "- Names: one to four companies from the game's list, each with a Source-backed connection to the theme or the segment. A company without one is a lead and cannot be a name.",
-  '- Why: the reason the names share, one Source-backed reason per name, and the strongest point against, always shown beside them.',
+  '- Why: the reason the names share, one Source-backed reason per name (every finding it cites Source-backed, at least one of them about that company), and the strongest point against, always shown beside them.',
   "- Wrong if: what would prove the thesis wrong, as a business condition. Never a price: a price line is the player's own.",
   '- Time frame: swing, positional or longterm (about 10, 30 or 60 sessions).',
   '',
@@ -238,7 +238,7 @@ export function buildBuildSystemPrompt({ partnerName, method = null } = {}) {
     `- Unresolved reasons: ${UNRESOLVED_REASONS.join(', ')}.`,
     '- themeSuggestion: a theme in a short phrase (at most 80 characters), only when the card has no theme; else an empty string.',
     '- segments: two to five, each a label (at most 60 characters), one line (at most 120) and refs naming the findings that back it; refs empty when it is your own reasoning.',
-    '- why: shared is the reason the names share, written as a clause that follows "because" (at most 160 characters); reasons: one per name, each resting only on Source-backed findings about that company (refs); against is the strongest point against with the findings it rests on (an empty text when you found none).',
+    '- why: shared is the reason the names share, written as a clause that follows "because" (at most 160 characters); reasons: one per name, each citing only Source-backed findings, at least one of them about that company (refs); against is the strongest point against with the findings it rests on (an empty text when you found none).',
     "- wrongIfOptions: up to three, each a business condition written as a clause that follows \"It's wrong if\" (at most 160 characters), with the findings it rests on, if any. Never a price level or a share-price move.",
     '- timeFramePick: the time frame that fits the why, and why in one line (at most 140 characters).',
     "- pick: the one choice you would make for the part this step is about (its value exactly as the card writes it; names as symbols separated by commas) and your reason in one line (at most 140 characters). When the step's goal is pick, also give two or three reasons, each citing only findings already on the record (refs), or with refs empty when it is your own reasoning.",
@@ -246,6 +246,9 @@ export function buildBuildSystemPrompt({ partnerName, method = null } = {}) {
     '- reply: two or three plain sentences, at most 600 characters: what this step found and what it proposes for the card. Write no sentence about yourself or your own process.',
   ].join('\n');
 }
+
+/** What a strengthen step may revise, by part (§B12 Q-1 (a): the parts with a proposal of their own; never a pick). */
+const STRENGTHEN_REVISES = Object.freeze({ segment: 'the segment map (segments)', why: 'the why proposal (why)', wrongIf: 'the wrong-if options (wrongIfOptions)' });
 
 /** What each goal asks of the step (the user turn's goal line). */
 function goalLineOf({ goal, part, card }) {
@@ -256,7 +259,7 @@ function goalLineOf({ goal, part, card }) {
     case 'map_segments': return `This step: map the theme into two to five segments (segments), then mark the one you would stand on (pick) with a one-line reason.${card?.theme?.state === 'set' ? '' : ' The card has no theme yet: suggest one (themeSuggestion).'}`;
     case 'find_names': return `This step: find listed companies from the game universe with a sourced connection to ${line(where)} (relationship findings and companies). Mark the one company, or the group of up to four, you would build on (pick).`;
     case 'build_why': return `This step: build the why for ${names}: the reason they share (why.shared), one Source-backed reason per name (why.reasons) and the strongest point against (why.against). Offer up to three ways the thesis could be proved wrong (wrongIfOptions), mark the one you would pick (pick), and say which time frame fits (timeFramePick).`;
-    case 'strengthen': return `This step: strengthen the card's ${part}: look for evidence for or against it. Revise its proposal only if the evidence changes it.`;
+    case 'strengthen': return `This step: the card's ${part} is already set by the player. Look for evidence for or against it; do not pick for it.${STRENGTHEN_REVISES[part] ? ` Revise ${STRENGTHEN_REVISES[part]} only if the evidence changes it.` : ''}`;
     case 'pick': return `This step: no search. Pick for the player among the card's choices for ${part} and say why (pick, with two or three reasons). Cite only findings already on the record; a reason no finding backs is your own reasoning and has empty refs.`;
     default: return "This step: follow the player's direction below. It steers this step; it never changes the theme.";
   }

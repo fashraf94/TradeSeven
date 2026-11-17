@@ -21,7 +21,8 @@
 //      that breaks a rule is DROPPED with a note (`dropped:<what>:<rule>`) —
 //      never the step's findings (K-4, the B1 `summaryWithheld` precedent):
 //        rule 1  a reason counts only when every ref resolves to a current,
-//                Source-backed finding about that name; a name with no surviving
+//                Source-backed finding and at least one is about that name (§B12
+//                W-10); a name with no surviving
 //                reason makes the why proposal incomplete (stored, not
 //                confirmable; the reply names the company — SQ-3)
 //        rule 2  the point against needs a current finding, else none
@@ -133,8 +134,12 @@ const ACCEPTS = Object.freeze({
   pick: ['pick'],
   direction: [], // with nothing else on offer; otherwise it is asked, and lands, as the next research goal (turnShapeOf)
 });
+/**
+ * strengthen is offered only on a part the player has set, so it asks for evidence, never a pick (§B12 Q-1 (a)): a
+ * pick or a time-frame pick could never land there. It may revise a set part's proposal — the map, the why, the options.
+ */
 const STRENGTHEN_ACCEPTS = Object.freeze({
-  theme: [], segment: ['segments', 'pick'], names: ['pick'], why: ['why'], wrongIf: ['wrongIfOptions', 'pick'], timeFrame: ['timeFramePick'],
+  theme: [], segment: ['segments'], names: [], why: ['why'], wrongIf: ['wrongIfOptions'], timeFrame: [],
 });
 /** The proposals a goal lands (each turn works on the goal it was given and on nothing else — rulebook §6). */
 export const acceptsOf = (goal, part) => (goal === 'strengthen' ? (STRENGTHEN_ACCEPTS[part] ?? []) : (ACCEPTS[goal] ?? []));
@@ -150,10 +155,14 @@ const WITH_COMPANIES = Object.freeze(['verify_source', 'map_segments', 'find_nam
 /**
  * The goal and part a turn is asked in (S-1): its own; for `direction`, the research goal the card would offer next
  * (the first offered that is neither `direction` nor `pick`, which makes no search), or `direction` itself — findings
- * and companies only — when none is. `offered`: offeredGoalsOf(card, ctx), read at the step's admission.
+ * and companies only — when none is; at the dead end, `find_names` (§B12 Q-2). `offered`: offeredGoalsOf(card, ctx) and
+ * `deadEnd`: blockedNow(card, ctx), both read at the step's admission.
  */
-export function turnShapeOf({ goal, part = null }, offered = []) {
+export function turnShapeOf({ goal, part = null }, offered = [], { deadEnd = false } = {}) {
   if (goal !== 'direction') return { goal, part: goal === 'strengthen' || goal === 'pick' ? part : null };
+  // §B12 Q-2 (b): at the dead end (thesis.js blockedNow), a direction step is asked as find_names — the goal the dead end
+  // withholds — so a company it sources comes with its role and a names pick. Everywhere else S-1's letter stands.
+  if (deadEnd) return { goal: 'find_names', part: null };
   const next = (Array.isArray(offered) ? offered : []).find((g) => g.goal !== 'direction' && g.goal !== 'pick') ?? null;
   return next ? { goal: next.goal, part: next.part ?? null } : { goal: 'direction', part: null };
 }
@@ -332,7 +341,8 @@ export function validateBuildTurn(output, ctx) {
         if (companyName && !isSameCompany(companyName, { symbol, name: names[symbol] })) return drop(`why.reason:${i}`, 'identity_mismatch');
         const ids = resolveAll(r?.refs);
         if (ids === null) return drop(`why.reason:${i}`, 'invalid_source');
-        if (ids.length === 0 || !ids.every((id) => after.get(id).status === 'verified' && after.get(id).symbol === symbol)) return drop(`why.reason:${i}`, 'not_source_backed');
+        // rule 1 (§B12 W-10): at least one ref, every ref a current Source-backed finding, at least one about the name
+        if (ids.length === 0 || !ids.every((id) => after.get(id).status === 'verified') || !ids.some((id) => after.get(id).symbol === symbol)) return drop(`why.reason:${i}`, 'not_source_backed');
         const f = lineFail(text, verifiedOf(ids));
         if (f) return drop(`why.reason:${i}`, f);
         if (reasons.filter((x) => x.symbol === symbol).length >= L.reasonsPerName) return drop(`why.reason:${i}`, 'too_many');

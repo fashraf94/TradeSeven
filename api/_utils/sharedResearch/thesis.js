@@ -131,8 +131,12 @@ const isSourceBacked = (ctx, id, symbol = null) => {
   const f = ctx.current.get(id);
   return Boolean(f) && f.status === 'verified' && (symbol === null || f.symbol === symbol);
 };
-/** A reason counts (§B4.2 rule 1): at least one finding, every one current, Source-backed and about its name. */
-export const reasonHolds = (ctx, r) => isPlainObject(r) && idsOf(r.findingIds).length > 0 && r.findingIds.every((id) => isSourceBacked(ctx, id, r.symbol));
+/**
+ * A reason counts (§B4.2 rule 1, as §B12 W-10 reads it): at least one finding, every one current and Source-backed,
+ * and at least one of them about its name. The one reading for the confirm, ready, stale and the save.
+ */
+export const reasonHolds = (ctx, r) => isPlainObject(r) && idsOf(r.findingIds).length > 0
+  && r.findingIds.every((id) => isSourceBacked(ctx, id)) && r.findingIds.some((id) => isSourceBacked(ctx, id, r.symbol));
 
 /** The names a why (or a proposal) has no holding reason for. */
 export function namesWithoutReasonOf(ctx, reasons, names) {
@@ -297,6 +301,11 @@ export function freeChoicesOf(card, ctx) {
       const rest = card.names.value.filter((s) => !missing.includes(s));
       if (rest.length > 0) out.push({ op: 'set', part: 'names', value: rest, reason: 'drop_unsourced', clears: card.wrongIf.priceLines.length ? ['priceLines'] : [] });
     }
+  } else if (proposal && card.names.state === SET && card.why.state === SET) {
+    // §B12 W-13: a complete proposal waiting beside a set why (a strengthen:why step) is an offered choice — the confirm
+    // replaces the set why (partner_suggested_confirmed) and clears nothing else; the view carries the proposal before it.
+    const complete = namesWithoutReasonOf(ctx, proposal.reasons, card.names.value).length === 0;
+    if (complete && sharedIssueOf(ctx, proposal.shared, heldReasons(ctx, proposal, card.names.value), card.names.value) === null) out.push({ op: 'confirm', part: 'why', revised: true });
   }
   // wrong if
   if (card.wrongIf.state !== SET) {

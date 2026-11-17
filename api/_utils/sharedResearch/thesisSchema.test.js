@@ -85,11 +85,11 @@ const COMPILED = Object.freeze({
   build_why: { objects: 9, arrays: 7, properties: 33, unions: 9 },
   pick: { objects: 3, arrays: 2, properties: 7, unions: 1 },
   'strengthen:theme': { objects: 3, arrays: 2, properties: 14, unions: 6 },
-  'strengthen:segment': { objects: 5, arrays: 4, properties: 21, unions: 7 },
-  'strengthen:names': { objects: 4, arrays: 2, properties: 17, unions: 7 },
+  'strengthen:segment': { objects: 4, arrays: 4, properties: 18, unions: 6 },
+  'strengthen:names': { objects: 3, arrays: 2, properties: 14, unions: 6 },
   'strengthen:why': { objects: 6, arrays: 5, properties: 24, unions: 7 },
-  'strengthen:wrongIf': { objects: 5, arrays: 4, properties: 20, unions: 7 },
-  'strengthen:timeFrame': { objects: 4, arrays: 2, properties: 17, unions: 7 },
+  'strengthen:wrongIf': { objects: 4, arrays: 4, properties: 17, unions: 6 },
+  'strengthen:timeFrame': { objects: 3, arrays: 2, properties: 14, unions: 6 },
   direction: { objects: 4, arrays: 3, properties: 19, unions: 8 },
 });
 
@@ -102,11 +102,11 @@ describe('one schema per goal (the founder\'s S-1, S-2 and S-5, Nov 17)', () => 
     build_why: ['reply', 'findings', 'why', 'wrongIfOptions', 'timeFramePick', 'pick'],
     pick: ['reply', 'pick'],
     'strengthen:theme': ['reply', 'findings'],
-    'strengthen:segment': ['reply', 'findings', 'segments', 'pick'],
-    'strengthen:names': ['reply', 'findings', 'pick'],
+    'strengthen:segment': ['reply', 'findings', 'segments'], // §B12 Q-1 (a): no pick on a set part
+    'strengthen:names': ['reply', 'findings'],
     'strengthen:why': ['reply', 'findings', 'why'],
-    'strengthen:wrongIf': ['reply', 'findings', 'wrongIfOptions', 'pick'],
-    'strengthen:timeFrame': ['reply', 'findings', 'timeFramePick'],
+    'strengthen:wrongIf': ['reply', 'findings', 'wrongIfOptions'],
+    'strengthen:timeFrame': ['reply', 'findings'],
     direction: ['reply', 'findings', 'companies'],
   });
   it('each goal\'s schema holds reply plus only what that goal may land; findings and companies only where S-1 lists them', () => {
@@ -175,6 +175,17 @@ describe('rule 1 — a reason counts only on current Source-backed findings abou
   it('a reason citing another company\'s finding is dropped', () => {
     const v = validate(base({ why: WHY({ reasons: [{ companyName: 'Nvidia', symbolCandidate: 'NVDA', text: 'A rival sells chips.', refs: [id(5)] }] }) }));
     expect(v.notes).toContain('dropped:why.reason:0:not_source_backed');
+  });
+  it('§B12 W-10: a reason citing a fact about the name AND a general Source-backed fact is kept', () => {
+    const v = validate(base({ why: WHY({ reasons: [{ companyName: 'Nvidia', symbolCandidate: 'NVDA', text: 'Data centers buy its chips; buyers keep spending.', refs: [id(2), id(4)] }] }) }));
+    expect(v.notes.filter((n) => n.startsWith('dropped:why') || n.startsWith('why_incomplete'))).toEqual([]);
+    expect(v.proposals.why.reasons).toMatchObject([{ symbol: 'NVDA', findingIds: [id(2), id(4)] }]);
+  });
+  it('§B12 W-10: still dropped — a ref that is not Source-backed (an inference beside the name\'s fact), or no ref about the name', () => {
+    const withInference = validate(base({ why: WHY({ reasons: [{ companyName: 'Nvidia', symbolCandidate: 'NVDA', text: 'It sells chips and keeps its lead.', refs: [id(2), id(3)] }] }) }));
+    expect(withInference.notes).toContain('dropped:why.reason:0:not_source_backed');
+    const generalOnly = validate(base({ why: WHY({ reasons: [{ companyName: 'Nvidia', symbolCandidate: 'NVDA', text: 'Buyers design their own chips.', refs: [id(4)] }] }) }));
+    expect(generalOnly.notes).toContain('dropped:why.reason:0:not_source_backed');
   });
   it('a reason for a company that is not a name on the card is dropped', () => {
     const v = validate(base({ why: WHY({ reasons: [{ companyName: 'AMD', symbolCandidate: 'AMD', text: 'It sells chips.', refs: [id(5)] }] }) }));
@@ -315,6 +326,8 @@ describe('each goal lands only its own proposals', () => {
     expect(acceptsOf('pick', 'names')).toEqual(['pick']);
     expect(acceptsOf('strengthen', 'theme')).toEqual([]);
     expect(acceptsOf('strengthen', 'why')).toEqual(['why']);
+    for (const p of ['segment', 'names', 'wrongIf', 'timeFrame']) expect(acceptsOf('strengthen', p)).not.toEqual(expect.arrayContaining(['pick'])); // §B12 Q-1 (a)
+    expect([acceptsOf('strengthen', 'names'), acceptsOf('strengthen', 'timeFrame')]).toEqual([[], []]);
     expect(acceptsOf('direction')).toEqual([]);
   });
   it('direction is asked as the first research goal on offer — never pick, never itself — or with findings only when none is', () => {
@@ -322,6 +335,10 @@ describe('each goal lands only its own proposals', () => {
     expect(turnShapeOf({ goal: 'direction' }, [{ goal: 'pick', part: 'segment' }, { goal: 'strengthen', part: 'names' }, { goal: 'direction' }])).toEqual({ goal: 'strengthen', part: 'names' });
     expect(turnShapeOf({ goal: 'direction' }, [{ goal: 'pick', part: 'segment' }, { goal: 'direction' }])).toEqual({ goal: 'direction', part: null });
     expect(turnShapeOf({ goal: 'direction' }, [])).toEqual({ goal: 'direction', part: null });
+    // §B12 Q-2 (b): at the dead end, direction is asked as find_names; elsewhere S-1's letter (strengthen:theme once the why is set)
+    expect(turnShapeOf({ goal: 'direction' }, [{ goal: 'strengthen', part: 'theme' }, { goal: 'strengthen', part: 'segment' }, { goal: 'direction' }], { deadEnd: true })).toEqual({ goal: 'find_names', part: null });
+    expect(turnShapeOf({ goal: 'direction' }, [{ goal: 'strengthen', part: 'theme' }, { goal: 'direction' }], { deadEnd: false })).toEqual({ goal: 'strengthen', part: 'theme' });
+    expect(turnShapeOf({ goal: 'find_names' }, [], { deadEnd: true })).toEqual({ goal: 'find_names', part: null });
     expect(turnShapeOf({ goal: 'find_names', part: 'theme' })).toEqual({ goal: 'find_names', part: null });
     expect(turnShapeOf({ goal: 'strengthen', part: 'why' }, [{ goal: 'build_why' }])).toEqual({ goal: 'strengthen', part: 'why' });
   });
