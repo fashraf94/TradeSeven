@@ -1,9 +1,9 @@
 # Build report — Shared Research "Work an idea" B3, the thesis builder's server (dark)
 
-**Date:** Nov 16–17, 2026 · **Session:** local Claude Code (Opus 5.5), own worktree, no advisor · **Branch:** `claude/shared-research-b3` · **PR:** #1083 (draft) · **Pushed head:** this report's commit on top of the final tree `b6820ba0`. It is docs only, `src/index.css:9` keeps `docs/` out of Tailwind's sources, and `b6820ba0` adds only a test row to `48fbc986`, so the build at `48fbc986` is the pushed head's.
+**Date:** Nov 16–17, 2026 (the §B12 round, Nov 17) · **Session:** local Claude Code (Opus 5.5), own worktree, no advisor · **Branch:** `claude/shared-research-b3` · **PR:** #1083 (draft) · **Pushed head:** this report's commit on top of the final tree `25a194b2` (docs only; `src/index.css:9` keeps `docs/` out of Tailwind's sources, so the build at `25a194b2` is the pushed head's)
 
 **Spec of record:**
-- `docs/specs/20261116_SHARED_RESEARCH_SPEC_V1_2_AMENDMENT_B_THESIS_BUILDER.md`, §B2–§B6, plus two sections appended on this branch: §B10 (the founder's preamble rulings) and §B11 (the founder's rulings on this report, and on the builder turn's output shape);
+- `docs/specs/20261116_SHARED_RESEARCH_SPEC_V1_2_AMENDMENT_B_THESIS_BUILDER.md`, §B2–§B6, plus two sections appended on this branch: §B10 (the founder's preamble rulings) §B11 (the founder's rulings on this report, and on the builder turn's output shape) and §B12 (the rulings on the §B11 round);
 - `docs/design/shared-research/20261116_WORK_AN_IDEA_CONCEPT_V2_THESIS_BUILDER.md`;
 - the design rounds `SHARED_RESEARCH_THESIS_BUILDER_R3.html` and `…_R3B.html`;
 - the build prompt's K-1 to K-11 and SQ-1 to SQ-3.
@@ -16,9 +16,9 @@
 - Files changed on both sides merged without a conflict each time: `docs/README.md` (rows on both sides, all kept), `src/config/flagPinGuard.test.js` (a note on both sides) and `api/_utils/compositionProtectedStoresAllowlist.json` (keys on both sides). The merged allowlist parses, and its scan passes.
 - Main changed no Shared Research file between `88d34457` and `57f50409`.
 
-**Code head and final tree:** `b6820ba08bff1d1a2f62e47cfcfdc8b682651bc9`, the §B11 round on top of `57f50409`. It is `48fbc986` plus one test row, added when mutant SPL4-02 survived (§10).
-- On `b6820ba0`: the full suite and `lint:gate`.
-- On `48fbc986`, the same code: the build, the rules suite, the bundle, the ledger differential and the 84-mutant battery.
+**Code head and final tree:** `25a194b2a04958457c081db56c792665a03b7324`, the §B12 round (§15) on top of `57f50409`. Every check of the §B12 round ran on it: the suite, `lint:gate`, the rules suite, the build and bundle, the ledger differential and the 93-mutant battery.
+
+**Earlier:** the §B11 round's checks ran on `b6820ba0` and `48fbc986` (§7), and the build round's on `583e9dbb`.
 
 The report's own commit sits on top and is docs only.
 
@@ -30,14 +30,15 @@ The report's own commit sits on top and is docs only.
 | The ledger | Unchanged (§8). Every test file the branch did not add is untouched, apart from added rows in `sharedResearchFlags.test.js` and a comment in `flagPinGuard.test.js`. Lens D's ~60-request differential, re-run on the final tree against `main` `57f50409`, is byte-identical; a planted one-character ledger change fails all its rows. `STEP_SCHEMA` is untouched, and the B1 recorded probe still validates. |
 | What sets a part | Only the player's `card` action. Steps, picks and model output propose; the server derives the rest. |
 | The builder turn (§B11 S-1, S-2) | **One schema per goal**, twelve in all (§3.1). Each holds `reply` plus only what its goal may land. Builder companies have no `claim` or `openRef`. A research goal's pick is a value and one reason. `direction` is asked as the next research goal on offer. No answer, view or choice changed shape (S-3). |
-| The probes (§B11 P-1, S-4, S-5) | **Every schema compiled live, first time:** 12 calls, **$0.216928** (of 16 calls and $0.50). The largest output was 1,273 tokens (51% of the cap). Every answer passes the validator, sets no part and lands only its goal's fields. Each schema's size is pinned at what compiled (§6). |
+| The probes (§B11 P-1, S-4, S-5; §B12 Q-1) | **Every schema compiled live, first time:** 12 calls in §B11, plus the four changed `strengthen` schemas re-probed in §B12, for **16 calls, $0.285704** (cap: 16 calls, $0.50). The largest output was 1,273 tokens (51% of the cap). Every answer passes the validator, sets no part and lands only its goal's fields. Each schema's size is pinned at what compiled (§6, §15). |
 | §B11 W-1 · W-2a | Built, one row and mutant each: the save carries the segment's findings; the wrong-if and the label license their numbers only where they appear. |
-| Suite (WSL, `TZ=UTC`, 8 workers) | exit 0 — **1,555 files passed, 12 skipped (1,567); 35,092 tests passed, 135 skipped (35,227)** |
+| §B12 (§15) | Built, rows and mutants each: `strengthen` asks for evidence, not a pick (Q-1 (a)); `direction` at the dead end is asked as `find_names` (Q-2 (b)); rule 1 keeps a reason whose refs are all Source-backed with one about the name (W-10; the two recorded whys are now complete); a waiting complete why is an offered revised confirm (W-13). |
+| Suite (WSL, `TZ=UTC`, 8 workers) | exit 0 on `25a194b2` — **1,555 files passed, 12 skipped (1,567); 35,103 tests passed, 135 skipped (35,238)** |
 | `lint:gate` · `test:rules` · build | exit 0 · exit 0, **46 files, 839 tests** · exit 0 |
 | Bundle against `main` | Every shipped `.js`, `.css` and `.html` file is byte-identical, hashed names included. Only 15 source maps differ (§9). |
-| Mutations (K-9) | **84 of 84 killed** (§10): §B6's twelve (B-01..B-12, plus three `b` variants), the build's own 25, the review fixes' 22, the schema split's 13, W-1 and W-2a's 3, and the split refuter's 6. One survived first (SPL4-02); it was killed after a row was added (`b6820ba0`). Every mutated file was restored byte for byte (SHA-256). |
+| Mutations (K-9) | **93 of 93 killed** on `25a194b2` (§10): §B6's 15, the build's 25, the review fixes' 22, the split's 13, W-1 and W-2a's 3, the split refuter's 6 and §B12's 9. In the §B11 round SPL4-02 survived first and was killed after a row was added. In this one, W13-01's first cut only broke the file's syntax; it was re-cut and killed by its row. Every mutated file was restored byte for byte (SHA-256). |
 | Review (K-10) | **The build round:** four lenses and two refuters. Of 27 items, 20 were CONFIRMED, 6 PARTLY and 1 REFUTED; all in-scope findings are fixed. **The §B11 round:** one refuter over the schema split found 5 items (§11.2). SPL-1, SPL-4 and SPL-5 are fixed; SPL-3 is partly fixed; SPL-2 and the rest of SPL-3 are questions Q-1 and Q-2. |
-| Open for the founder | **Two questions, neither blocking:** Q-1 (`strengthen`'s dead proposal) and Q-2 (`direction` at the dead end), both in §12. Two readings are also flagged there: W-10 (rule 1 and general facts) and W-12 (one reason per name). |
+| Open for the founder | **Nothing.** Q-1, Q-2, W-10 and W-13 are ruled and built; W-12 and W-11 stand as ruled (§B12, §15). §12 holds the rest of the watch list. |
 
 ## 1. Base, preamble and the rulings
 
@@ -129,7 +130,7 @@ The report's own commit sits on top and is docs only.
 - SQ-2: a theme over 80 characters stays unset, and the first `map_segments` may suggest one.
 - SQ-3: an incomplete why proposal is stored with `incomplete: [SYM]` but cannot be confirmed. The reply names the company, and the free choices offer `drop_unsourced`, which lists what it clears.
 
-## 3. What was built (by layer, at `48fbc986`)
+## 3. What was built (by layer, at `48fbc986`; the §B12 round's changes are in §15)
 
 | Layer | Where | What |
 |---|---|---|
@@ -171,11 +172,11 @@ Sizes are as the API's grammar counts them; every one compiled live and is pinne
 | `build_why` | reply, findings, why, wrongIfOptions, timeFramePick, pick | 9 | 7 | 33 | 9 |
 | `pick` | reply, pick (with reasons) | 3 | 2 | 7 | 1 |
 | `strengthen:theme` | reply, findings | 3 | 2 | 14 | 6 |
-| `strengthen:segment` | reply, findings, segments, pick | 5 | 4 | 21 | 7 |
-| `strengthen:names` | reply, findings, pick | 4 | 2 | 17 | 7 |
+| `strengthen:segment` | reply, findings, segments (pick dropped, §B12 Q-1) | 4 | 4 | 18 | 6 |
+| `strengthen:names` | reply, findings (pick dropped, §B12 Q-1) | 3 | 2 | 14 | 6 |
 | `strengthen:why` | reply, findings, why | 6 | 5 | 24 | 7 |
-| `strengthen:wrongIf` | reply, findings, wrongIfOptions, pick | 5 | 4 | 20 | 7 |
-| `strengthen:timeFrame` | reply, findings, timeFramePick | 4 | 2 | 17 | 7 |
+| `strengthen:wrongIf` | reply, findings, wrongIfOptions (pick dropped, §B12 Q-1) | 4 | 4 | 17 | 6 |
+| `strengthen:timeFrame` | reply, findings (timeFramePick dropped, §B12 Q-1) | 3 | 2 | 14 | 6 |
 | `direction` (nothing else on offer) | reply, findings, companies | 4 | 3 | 19 | 8 |
 | *B1's `STEP_SCHEMA` (untouched), for comparison* | | 8 | 4 | 35 | 15 |
 | *the refused one-for-all schema* | | 13 | 13 | 54 | 13 |
@@ -240,7 +241,7 @@ Body: `{ action: 'card', sessionId, opId (uuid), rev (integer: the card's `rev` 
 | `theme` | `"phrase"` or `{ text }` (1–80) — only while unset | the theme suggestion | refused (`theme_fixed`) |
 | `segment` | a map label, or `'skip'` | Atlas's pick (`thesis.pick.part === 'segment'`) | clears names and why |
 | `names` | `["SYM", …]`, 1–4 distinct, each supported now | the names pick | clears why and the price lines |
-| `why` | `{ keep: [i, …] }` — indexes into `parts.why.proposal.reasons`, at least one holding reason per name; the shared reason is re-checked against the KEPT reasons (its numbers in their Source-backed findings, no company outside the names) | the whole proposal (needs a holding reason per name; the same re-check) | why only (its proposal stays) |
+| `why` | `{ keep: [i, …] }` — indexes into `parts.why.proposal.reasons`, at least one holding reason per name; the shared reason is re-checked against the KEPT reasons (its numbers in their Source-backed findings, no company outside the names) | the whole proposal (needs a holding reason per name; the same re-check). **Also while the why is set (§B12 W-13):** when a complete proposal waits beside it, it is offered as `{ op: 'confirm', part: 'why', revised: true }`, and the confirm replaces the set why (`partner_suggested_confirmed`), clearing nothing else | why only (its proposal stays) |
 | `wrongIf` | `{ option: i }` or `{ text }` (1–200, the player's words, stored as written), optionally with `priceLines: [{ symbol, level }]` (one per set name, `level` > 0); `{ priceLines }` alone re-sets the lines of a set wrong-if | Atlas's wrong-if pick (an option) | wrong if only |
 | `timeFrame` | `'swing' \| 'positional' \| 'longterm'` | the time-frame suggestion, or a time-frame pick | time frame only |
 
@@ -314,7 +315,7 @@ thesis: {
   dependents: { segment: ['names', 'why'], names: ['why'] },
   choices: {
     research: [{ goal, part? }],                         // each one step; [] when out of steps or not open
-    free: [{ op, part, value?, input?, options?, min?, max?, reason?, clears? }],
+    free: [{ op, part, value?, input?, options?, min?, max?, reason?, clears?, revised? }],   // revised: true — §B12 W-13
   },
 }
 ```
@@ -322,7 +323,9 @@ thesis: {
 - `by` ∈ `player_wrote · player_chose · partner_suggested_confirmed`.
 - `pick` without `asked` is Atlas's pick on a free choice (DR-2): it marks the choice; the part stays `unset`.
 - `pick.basis` / `reasons[].basis` (§B10 S-B3): `source` only when every finding is current and Source-backed; else `reasoning`.
-  - A research goal's pick (Atlas's pick) has no refs (§B11 S-2), so its `findingIds` is `[]` and its `basis` is `reasoning`.
+  - A research goal's pick (Atlas's pick) has no refs (§B11 S-2), so its `findingIds` is `[]` and its `basis` is `reasoning`. **For B4 (§B12 W-11, no change):** Atlas's pick always reads as the partner's reasoning, even a `find_names` pick resting on relationship facts. Its sources are the names' relationship facts the card already shows; draw the pick's tag as reasoning.
+  - **A waiting why proposal (§B12 W-13):** `parts.why.proposal` (with `incomplete`) is carried while the why is set too, so B4 can show a `strengthen:why` step's proposal before the revised confirm is tapped.
+  - **A reason holds (§B12 W-10)** when it has a finding, every finding is current and Source-backed, and at least one is about its name. `incomplete`, `stale`, `ready` and the save all read it this way.
   - The `pick` goal's `findingIds` are those its kept reasons cite.
   - Same keys as before (S-3); only these values follow the ruling.
 - A builder step writes no ledger claim (§B11 S-2), so a builder record holds no `idea` finding with `statusReason: 'proposed_claim'`.
@@ -355,7 +358,7 @@ Their threat model, stated on purpose, is a static reading of the tree as it sta
 
 Those four refused calls came before S-4's budget and spent nothing.
 
-**The budget (S-4).** 12 calls of the 16 allowed, **$0.216928** of the $0.50 allowed. Every call is in the committed ledger `test/fixtures/sharedResearch/build.probes.ledger.json`. The script checks the ledger before each call: fewer than 16 calls, and spent plus this call's worst case within $0.50.
+**The budget (S-4).** 12 calls of the 16 allowed, **$0.216928** of the $0.50 allowed. In the §B12 round, four more re-probed the four changed `strengthen` schemas (§15): the ledger closes at **16 calls, $0.285704**. Every call is in the committed ledger `test/fixtures/sharedResearch/build.probes.ledger.json`. The script checks the ledger before each call: fewer than 16 calls, and spent plus this call's worst case within $0.50.
 
 **How each call ran.** On `claude-sonnet-5-5` (`MODELS.step`), with the real builder system prompt (Atlas, the baseline method), the real user turn for the goal and that goal's schema. `CLAUDE_API_KEY` was loaded into the probe process only. Each answer is `test/fixtures/sharedResearch/build.<key>.recorded.json`. Each probe's card is in a state where its goal is really on offer: `offeredGoalsOf` is pinned in the recorded test. `direction`'s shape comes from the real offer.
 
@@ -379,7 +382,7 @@ Total: 12 calls, $0.216928
 **What the validator kept and dropped**, read from the table:
 - **Every answer passed B1's validator.** None set a part. Each landed only its own goal's fields, and the recorded test pins all three.
 - **The largest output was 1,273 tokens (51% of the cap, `build_why`).** That answers watch item W-6 for these fixtures; it stays on the list, because a longer record or more items would grow it.
-- **Rule 1 dropped the only reason in both why proposals** (`build_why`, `strengthen:why`). Each time, the reason cited a Nvidia fact together with a general fact about no one company (spending plans, buyers' own chips). §B4.2 rule 1 requires every ref to be a Source-backed fact about that name. So the why was stored *incomplete*: not confirmable, and the reply names the company (SQ-3). This is the rule's letter working, not a defect; it is a new watch item (§12, W-10).
+- **Rule 1 dropped the only reason in both why proposals** (`build_why`, `strengthen:why`). Each time, the reason cited a Nvidia fact together with a general fact about no one company (spending plans, buyers' own chips). §B4.2 rule 1 requires every ref to be a Source-backed fact about that name. So the why was stored *incomplete*: not confirmable, and the reply names the company (SQ-3). This was the rule's letter working, not a defect. **§B12 W-10 then changed the reading:** replayed with no call, both reasons are now kept and both whys are complete (§15).
 - **On `strengthen` of a set part, the part's own pick or time-frame pick cannot land** (`part_set`, `time_frame_set`). That is RC-3, already on the watch list; three of six probes show it. The reply was replaced by the plain line where nothing else landed.
 - **`direction` with nothing else on offer** returned findings only. Its schema has no proposal field.
 
@@ -389,7 +392,7 @@ Total: 12 calls, $0.216928
 - it lands only its goal's fields and sets no part;
 - the ledger is within 16 calls and $0.50.
 
-## 7. Tests and checks (on the final tree `b6820ba0`; the build, rules and bundle on `48fbc986`, the same code)
+## 7. Tests and checks: the §B11 round (`b6820ba0`; the build, rules and bundle on `48fbc986`, the same code). The §B12 round's are in §15.
 
 | Check | Result |
 |---|---|
@@ -435,7 +438,7 @@ Total: 12 calls, $0.216928
    - `api/forge/shared-research.js`: builder branches only, each behind the builder shape or the `'on'` switch.
 4. **The B1 recorded probe** (`stepSchema.recorded.test.js`) still validates: 5 of 5.
 
-## 9. The bundle diff (minified `vite build`, branch `48fbc986` against `main` `57f50409`)
+## 9. The bundle diff (minified `vite build`, branch `48fbc986` against `main` `57f50409`; on `25a194b2` the same, §15)
 
 | | |
 |---|---|
@@ -449,114 +452,129 @@ So the client ships exactly what `main` ships. Nothing in `src/components/` chan
 
 ## 10. The mutation table (K-9)
 
-**What it contains (84 mutants):**
+**What it contains (93 mutants):**
 - **B-01..B-12** are amendment §B6's twelve mutants, with three `b` variants where one line of §B6 has two homes (the card and the validator, or two parts): 15.
 - **X-01..X-25** are the build's own: 25.
 - **F-01..F-22** are the review fixes' (§11.1): 22.
 - **S-01..S-13** are the schema split's (§B11 S-1, S-2, S-5): 13.
 - **W1-01, W2a-01, W2a-02** are §B11 W-1 and W-2a's: 3.
 - **SPL1-01, SPL1-02, SPL3-01, SPL4-01, SPL4-02, SPL5-01** are the split refuter's fixes (§11.2): 6.
+- **W10-01..03, W13-01, Q2-01, Q2-02, Q1-01..03** are §B12's (§15): 9. B-04, B-04b and S-12 were re-cut onto §B12's new lines.
 
-**How it ran.** The battery ran on the final tree `48fbc986`, in this worktree, through `node mutate.mjs` (Windows, vitest 4.0.17, the JSON reporter).
-- Each mutant is one exact-anchor edit. An anchor that does not match exactly once is reported BROKEN and not run. Before the run, all 84 anchors were checked to match once; F-14 was re-cut for the split's B1 call.
+**How it ran.** The battery ran on the final tree `25a194b2` (the §B12 round), in this worktree, through `node mutate.mjs` (Windows, vitest 4.0.17, the JSON reporter).
+- Each mutant is one exact-anchor edit. An anchor that does not match exactly once is reported BROKEN and not run. Before the run, all 93 anchors were checked to match once.
 - Each mutant's test files ran with the report file deleted first.
-- The verdict reads the exit code and the failed rows together: KILLED means a non-zero exit with failed rows.
+- The verdict reads the exit code and the failed rows together: KILLED means a non-zero exit with failed rows. A row list that is only "suite failed to load" is read as a broken mutant, not a kill (see "This run" below).
 - The mutated file was restored to its original bytes, checked by SHA-256, and `git status` showed no code file changed after the run.
 
-**Earlier rounds:** 62 of 62 killed on `583e9dbb`. Before that, B-05 survived once and got rule-4-only rows (`1ecf712d`), and six anchors were re-cut after the review's fix round.
+**Earlier rounds:**
+- 84 of 84 on `b6820ba0`: there SPL4-02 survived first, and a row was added in `b6820ba0`.
+- 62 of 62 on `583e9dbb`.
+
+**This run:** W13-01's first cut left an `if` without a statement, so its "kills" were load failures. It was re-cut to `void 0;` and killed by the W-13 row. Neither earlier table has a load-failure kill.
+
+**Before those:** B-05 survived once and got rule-4-only rows (`1ecf712d`), and six anchors were re-cut after the review's fix round.
 
 The scripts and the JSON are kept in `C:/Users/fashr/Documents/FantasyTrades/SharedResearch/B3/review-evidence/`.
 
+
 | ID | The mutant | File | Verdict | Rows failed / run | One row that kills it |
 |---|---|---|---|---|---|
-| B-01 | a step sets a part without the player (the theme) | `thesis.js` | KILLED | 3 / 109 | shared-research.builder.route.test.js › the server decides what is on offer (§B4.2) a verify step suggests a theme; confirming it is free; then the m… |
-| B-01b | a step sets a part without the player (the segment, from its map) | `thesis.js` | KILLED | 5 / 109 | shared-research.builder.route.test.js › a step only proposes (V2-4) map_segments lands a map and Atlas's pick; no part is set; rev + 1; the call is l… |
-| B-02 | ready ignores a stale part | `thesis.js` | KILLED | 3 / 109 | thesis.test.js › ready and its blockers (V2-1; §B3) a why left behind by names that are gone is stale blocks ready |
-| B-03 | a name outside the supported set is accepted | `thesis.js` | KILLED | 1 / 109 | thesis.test.js › the transitions and dependencies (§B3, §B4.3; §B10 S-B4) refused: a name not supported |
-| B-04 | a reason backed by an inferred finding counts (the validator) | `thesisSchema.js` | KILLED | 1 / 89 | thesisSchema.test.js › rule 1 — a reason counts only on current Source-backed findings about that name a reason resting on an inference is dropped; t… |
-| B-04b | a reason backed by an inferred finding counts (the card) | `thesis.js` | KILLED | 5 / 109 | thesis.test.js › derived states: unset · suggested · set · stale (§B3) a why whose reason rests on an inference is stale (rule 1); so is one missing … |
-| B-05 | a wrong-if option with a price passes | `thesisSchema.js` | KILLED | 3 / 54 | thesisSchema.test.js › rule 4 — a wrong-if option names a business condition, never a price a price condition with no figure and no forbidden word — … |
-| B-06 | `card` counts a step | `store.js` | KILLED | 1 / 35 | shared-research.builder.route.test.js › the free action (§B4.3; K-5; §B10 R-21) makes no model call and counts no step and no step call |
-| B-06b | `card` calls the model | `shared-research.js` | KILLED | 18 / 35 | shared-research.builder.route.test.js › the other shape is refused (§B2): invalid_intent, before any call is counted a builder session refuses a ledg… |
-| B-07 | a pick cites a finding not on the record | `thesisSchema.js` | KILLED | 2 / 54 | thesisSchema.test.js › rule 6 — the pick goal cites only findings already on the record a pick reason citing this turn's own finding is dropped; one … |
-| B-08 | a ledger session accepts `build` | `shared-research.js` | KILLED | 3 / 35 | shared-research.builder.route.test.js › the shape stamp (§B2; §B10 S-B2; K-2) the stamp never changes: flipping the mode leaves open sessions on thei… |
-| B-09 | the flag at 'off' opens a builder session | `gate.js` | KILLED | 41 / 91 | shared-research.builder.route.test.js › the shape stamp (§B2; §B10 S-B2; K-2) builder mode 'off': a story opens as today's ledger — no shape, no card… |
-| B-10 | `adopt` saves a card that is not ready | `store.js` | KILLED | 1 / 35 | shared-research.builder.route.test.js › to a ready card, and its save (§B4.5; §B10 S-B1, PF-1, PF-3) not ready → 409 not_ready with its blockers, not… |
-| B-11 | changing the segment keeps the old names | `thesis.js` | KILLED | 1 / 109 | thesis.test.js › the transitions and dependencies (§B3, §B4.3; §B10 S-B4) changing the segment clears the names, the why and the price lines; the map… |
-| B-12 | the composed sentence drops the wrong-if | `thesis.js` | KILLED | 7 / 109 | shared-research.builder.route.test.js › to a ready card, and its save (§B4.5; §B10 S-B1, PF-1, PF-3) the path: ready, the sentence composed, four of … |
-| X-01 | `card` not idempotent on opId | `store.js` | KILLED | 1 / 35 | shared-research.builder.route.test.js › the free action (§B4.3; K-5; §B10 R-21) leaves one `card` exchange per applied op; a retried opId applies and… |
-| X-02 | `card` takes a stale rev | `store.js` | KILLED | 1 / 35 | shared-research.builder.route.test.js › the free action (§B4.3; K-5; §B10 R-21) a rev that is not current answers 409 card_stale with the fresh card;… |
+| B-01 | a step sets a part without the player (the theme) | `thesis.js` | KILLED | 3 / 110 | shared-research.builder.route.test.js › the server decides what is on offer (§B4.2) a verify step suggests a theme; confirming it is free; then the m… |
+| B-01b | a step sets a part without the player (the segment, from its map) | `thesis.js` | KILLED | 5 / 110 | shared-research.builder.route.test.js › a step only proposes (V2-4) map_segments lands a map and Atlas's pick; no part is set; rev + 1; the call is l… |
+| B-02 | ready ignores a stale part | `thesis.js` | KILLED | 3 / 110 | thesis.test.js › ready and its blockers (V2-1; §B3) a why left behind by names that are gone is stale blocks ready |
+| B-03 | a name outside the supported set is accepted | `thesis.js` | KILLED | 1 / 110 | thesis.test.js › the transitions and dependencies (§B3, §B4.3; §B10 S-B4) refused: a name not supported |
+| B-04 | a reason backed by an inferred finding counts (the validator) | `thesisSchema.js` | KILLED | 2 / 93 | thesisSchema.test.js › rule 1 — a reason counts only on current Source-backed findings about that name a reason resting on an inference is dropped; t… |
+| B-04b | a reason backed by an inferred finding counts (the card) | `thesis.js` | KILLED | 1 / 167 | reviewB3.test.js › §B12 — the founder's rulings on the §B11 round (Nov 17) W-10 on the card: a reason holds with every ref Source-backed and at least… |
+| B-05 | a wrong-if option with a price passes | `thesisSchema.js` | KILLED | 3 / 57 | thesisSchema.test.js › rule 4 — a wrong-if option names a business condition, never a price a price condition with no figure and no forbidden word — … |
+| B-06 | `card` counts a step | `store.js` | KILLED | 1 / 36 | shared-research.builder.route.test.js › the free action (§B4.3; K-5; §B10 R-21) makes no model call and counts no step and no step call |
+| B-06b | `card` calls the model | `shared-research.js` | KILLED | 19 / 36 | shared-research.builder.route.test.js › the other shape is refused (§B2): invalid_intent, before any call is counted a builder session refuses a ledg… |
+| B-07 | a pick cites a finding not on the record | `thesisSchema.js` | KILLED | 2 / 57 | thesisSchema.test.js › rule 6 — the pick goal cites only findings already on the record a pick reason citing this turn's own finding is dropped; one … |
+| B-08 | a ledger session accepts `build` | `shared-research.js` | KILLED | 3 / 36 | shared-research.builder.route.test.js › the shape stamp (§B2; §B10 S-B2; K-2) the stamp never changes: flipping the mode leaves open sessions on thei… |
+| B-09 | the flag at 'off' opens a builder session | `gate.js` | KILLED | 41 / 92 | shared-research.builder.route.test.js › the shape stamp (§B2; §B10 S-B2; K-2) builder mode 'off': a story opens as today's ledger — no shape, no card… |
+| B-10 | `adopt` saves a card that is not ready | `store.js` | KILLED | 1 / 36 | shared-research.builder.route.test.js › to a ready card, and its save (§B4.5; §B10 S-B1, PF-1, PF-3) not ready → 409 not_ready with its blockers, not… |
+| B-11 | changing the segment keeps the old names | `thesis.js` | KILLED | 1 / 110 | thesis.test.js › the transitions and dependencies (§B3, §B4.3; §B10 S-B4) changing the segment clears the names, the why and the price lines; the map… |
+| B-12 | the composed sentence drops the wrong-if | `thesis.js` | KILLED | 7 / 110 | shared-research.builder.route.test.js › to a ready card, and its save (§B4.5; §B10 S-B1, PF-1, PF-3) the path: ready, the sentence composed, four of … |
+| X-01 | `card` not idempotent on opId | `store.js` | KILLED | 1 / 36 | shared-research.builder.route.test.js › the free action (§B4.3; K-5; §B10 R-21) leaves one `card` exchange per applied op; a retried opId applies and… |
+| X-02 | `card` takes a stale rev | `store.js` | KILLED | 1 / 36 | shared-research.builder.route.test.js › the free action (§B4.3; K-5; §B10 R-21) a rev that is not current answers 409 card_stale with the fresh card;… |
 | X-03 | S-B4: dropping names loses the why proposal | `thesis.js` | KILLED | 1 / 74 | thesis.test.js › the transitions and dependencies (§B3, §B4.3; §B10 S-B4) S-B4: dropping names keeps the why proposal for the names that remain — con… |
-| X-04 | S-B2: a ledger session is stamped | `store.js` | KILLED | 1 / 35 | shared-research.builder.route.test.js › the shape stamp (§B2; §B10 S-B2; K-2) builder mode 'off': a story opens as today's ledger — no shape, no card… |
-| X-05 | S-B1: the card overwrites the list's own thesis field | `store.js` | KILLED | 4 / 42 | shared-research.builder.route.test.js › the review's route fixes (K-10; report §9) RA-1 with §B11 W-1: a segment's figure is held by its own Source-b… |
-| X-06 | the pick goal retrieves | `shared-research.js` | KILLED | 1 / 35 | shared-research.builder.route.test.js › a step only proposes (V2-4) the pick goal makes no retrieval and one model turn; its answer shows the part as… |
-| X-07 | a builder session accepts a ledger intent | `shared-research.js` | KILLED | 2 / 35 | shared-research.builder.route.test.js › the other shape is refused (§B2): invalid_intent, before any call is counted a builder session refuses a ledg… |
-| X-08 | a builder opening keeps the next action | `shared-research.js` | KILLED | 1 / 35 | shared-research.builder.route.test.js › the shape stamp (§B2; §B10 S-B2; K-2) builder mode 'on': a story opens stamped builder with an empty card and… |
-| X-09 | a story need not verify first | `thesis.js` | KILLED | 3 / 109 | shared-research.builder.route.test.js › the shape stamp (§B2; §B10 S-B2; K-2) builder mode 'on': a story opens stamped builder with an empty card and… |
+| X-04 | S-B2: a ledger session is stamped | `store.js` | KILLED | 1 / 36 | shared-research.builder.route.test.js › the shape stamp (§B2; §B10 S-B2; K-2) builder mode 'off': a story opens as today's ledger — no shape, no card… |
+| X-05 | S-B1: the card overwrites the list's own thesis field | `store.js` | KILLED | 4 / 43 | shared-research.builder.route.test.js › the review's route fixes (K-10; report §9) RA-1 with §B11 W-1: a segment's figure is held by its own Source-b… |
+| X-06 | the pick goal retrieves | `shared-research.js` | KILLED | 1 / 36 | shared-research.builder.route.test.js › a step only proposes (V2-4) the pick goal makes no retrieval and one model turn; its answer shows the part as… |
+| X-07 | a builder session accepts a ledger intent | `shared-research.js` | KILLED | 2 / 36 | shared-research.builder.route.test.js › the other shape is refused (§B2): invalid_intent, before any call is counted a builder session refuses a ledg… |
+| X-08 | a builder opening keeps the next action | `shared-research.js` | KILLED | 1 / 36 | shared-research.builder.route.test.js › the shape stamp (§B2; §B10 S-B2; K-2) builder mode 'on': a story opens stamped builder with an empty card and… |
+| X-09 | a story need not verify first | `thesis.js` | KILLED | 3 / 110 | shared-research.builder.route.test.js › the shape stamp (§B2; §B10 S-B2; K-2) builder mode 'on': a story opens stamped builder with an empty card and… |
 | X-10 | a segment never goes stale | `thesis.js` | KILLED | 1 / 74 | thesis.test.js › derived states: unset · suggested · set · stale (§B3) a set part whose findings are all current is set; one with a superseded findin… |
 | X-11 | a pick lands for a part the player set | `thesis.js` | KILLED | 1 / 74 | thesis.test.js › a step's proposals (§B4.2 — no step ever sets a part, V2-4) a pick for a part the player set meanwhile is dropped; every step replac… |
-| X-12 | an edited sentence need not name the card's names | `thesis.js` | KILLED | 2 / 216 | shared-research.builder.route.test.js › to a ready card, and its save (§B4.5; §B10 S-B1, PF-1, PF-3) an edited sentence: a number in the wrong-if or … |
-| X-13 | R-21: an applied op leaves no exchange | `store.js` | KILLED | 1 / 35 | shared-research.builder.route.test.js › the free action (§B4.3; K-5; §B10 R-21) leaves one `card` exchange per applied op; a retried opId applies and… |
-| X-14 | a proposal line may promise a service | `thesisWords.js` | KILLED | 1 / 54 | thesisSchema.test.js › rule 3 — every written line: forbidden patterns, the ticker scan, the number rule, no service promise a service promise → that… |
-| X-15 | the reply stands when the goal's own proposal is dropped | `thesisSchema.js` | KILLED | 2 / 54 | thesisSchema.test.js › rule 3 — every written line: forbidden patterns, the ticker scan, the number rule, no service promise fewer than two segments … |
-| X-16 | a theme suggestion lands over a set theme | `thesisSchema.js` | KILLED | 1 / 54 | thesisSchema.test.js › each goal lands only its own proposals a theme suggestion is not taken when the card has a theme |
-| X-17 | SI-3: a frame requestId answers a builder session | `store.js` | KILLED | 1 / 35 | shared-research.builder.route.test.js › own words open at once (§B4.1, DR-6) a retried requestId finds its session and writes nothing; a framing's re… |
-| X-18 | a ledger view gains a shape key | `session.js` | KILLED | 1 / 79 | shared-research.builder.route.test.js › the shape stamp (§B2; §B10 S-B2; K-2) builder mode 'off': a story opens as today's ledger — no shape, no card… |
+| X-12 | an edited sentence need not name the card's names | `thesis.js` | KILLED | 2 / 224 | shared-research.builder.route.test.js › to a ready card, and its save (§B4.5; §B10 S-B1, PF-1, PF-3) an edited sentence: a number in the wrong-if or … |
+| X-13 | R-21: an applied op leaves no exchange | `store.js` | KILLED | 1 / 36 | shared-research.builder.route.test.js › the free action (§B4.3; K-5; §B10 R-21) leaves one `card` exchange per applied op; a retried opId applies and… |
+| X-14 | a proposal line may promise a service | `thesisWords.js` | KILLED | 1 / 57 | thesisSchema.test.js › rule 3 — every written line: forbidden patterns, the ticker scan, the number rule, no service promise a service promise → that… |
+| X-15 | the reply stands when the goal's own proposal is dropped | `thesisSchema.js` | KILLED | 2 / 57 | thesisSchema.test.js › rule 3 — every written line: forbidden patterns, the ticker scan, the number rule, no service promise fewer than two segments … |
+| X-16 | a theme suggestion lands over a set theme | `thesisSchema.js` | KILLED | 1 / 57 | thesisSchema.test.js › each goal lands only its own proposals a theme suggestion is not taken when the card has a theme |
+| X-17 | SI-3: a frame requestId answers a builder session | `store.js` | KILLED | 1 / 36 | shared-research.builder.route.test.js › own words open at once (§B4.1, DR-6) a retried requestId finds its session and writes nothing; a framing's re… |
+| X-18 | a ledger view gains a shape key | `session.js` | KILLED | 1 / 80 | shared-research.builder.route.test.js › the shape stamp (§B2; §B10 S-B2; K-2) builder mode 'off': a story opens as today's ledger — no shape, no card… |
 | X-19 | PF-2: a module that names researchWork deletes | `store.js` | KILLED | 1 / 7 | thesisRecord.census.test.js › PF-2 — nothing deletes or prunes a research record or its findings no module that names the collection makes a delete, … |
 | X-20 | PF-1: a second module names thesisCard | `companies.js` | KILLED | 1 / 7 | thesisRecord.census.test.js › PF-1 — thesisCard has one writer, the save transaction the field's name is written in code in exactly one module: the c… |
-| X-21 | the schema goes over the union-type limit | `thesisSchema.js` | KILLED | 1 / 54 | thesisSchema.test.js › one schema per goal (the founder's S-1, S-2 and S-5, Nov 17) every schema stays at or under the size that compiled live (S-5),… |
+| X-21 | the schema goes over the union-type limit | `thesisSchema.js` | KILLED | 1 / 57 | thesisSchema.test.js › one schema per goal (the founder's S-1, S-2 and S-5, Nov 17) every schema stays at or under the size that compiled live (S-5),… |
 | X-22 | build_why is offered without names | `thesis.js` | KILLED | 3 / 74 | thesis.test.js › the goals on offer (§B4.2 — each goal's offer rule) own words, theme set: map the segments (and direction) |
-| X-23 | a point against with no finding is kept | `thesisSchema.js` | KILLED | 1 / 54 | thesisSchema.test.js › rule 2 — the point against needs a current finding a point against with no finding is dropped; the why stands with none ("No p… |
-| X-24 | find_names never blocks | `thesis.js` | KILLED | 2 / 109 | shared-research.builder.route.test.js › a step only proposes (V2-4) the dead end: find_names with no supported company blocks the names; the free cho… |
+| X-23 | a point against with no finding is kept | `thesisSchema.js` | KILLED | 1 / 57 | thesisSchema.test.js › rule 2 — the point against needs a current finding a point against with no finding is dropped; the why stands with none ("No p… |
+| X-24 | find_names never blocks | `thesis.js` | KILLED | 3 / 110 | shared-research.builder.route.test.js › a step only proposes (V2-4) the dead end: find_names with no supported company blocks the names; the free cho… |
 | X-25 | price lines survive a names change | `thesis.js` | KILLED | 2 / 74 | thesis.test.js › the transitions and dependencies (§B3, §B4.3; §B10 S-B4) changing the segment clears the names, the why and the price lines; the map… |
-| F-01 | RA-1: the shared reason's numbers are not re-checked at confirm | `thesis.js` | KILLED | 1 / 216 | reviewB3.test.js › RA-1 / RB-6 — what a save states is checked, the composed sentence included a confirm re-checks the shared reason against the KEPT… |
-| F-02 | RA-1: the shared reason may name a deselected company | `thesis.js` | KILLED | 1 / 216 | reviewB3.test.js › RA-1 / RB-6 — what a save states is checked, the composed sentence included a confirm refuses a shared reason that names a support… |
-| F-03 | RA-1: the saved statement is not checked | `store.js` | KILLED | 1 / 216 | shared-research.builder.route.test.js › to a ready card, and its save (§B4.5; §B10 S-B1, PF-1, PF-3) an edited sentence: a number in the wrong-if or … |
-| F-04 | RA-2: a replay is answered before the shape check | `store.js` | KILLED | 2 / 216 | shared-research.builder.route.test.js › the other shape is refused (§B2): invalid_intent, before any call is counted a builder session refuses a ledg… |
-| F-05 | RD-2: a saved answer before the shape check (builder save) | `store.js` | KILLED | 1 / 216 | shared-research.builder.route.test.js › the other shape is refused (§B2): invalid_intent, before any call is counted a builder session refuses a ledg… |
-| F-06 | RA-3: unset → set clears the dependents | `thesis.js` | KILLED | 1 / 216 | reviewB3.test.js › RA-3 — a free choice never silently clears a set part setting an unset segment (or skipping it) keeps the names, the why and the p… |
-| F-07 | RA-3: drop_unsourced offered over a set why | `thesis.js` | KILLED | 1 / 216 | reviewB3.test.js › RA-3 — a free choice never silently clears a set part drop_unsourced is offered only while the why is not set |
-| F-08 | RB-1: a figure-less price forecast passes | `thesisWords.js` | KILLED | 3 / 216 | reviewB3.test.js › RB-1 / RB-2 / RB-3 — the builder's own wording (builder lines only; B1's checks are untouched) a forecast, praise or odds: "its st… |
-| F-09 | RB-2: the builder's promises pass | `thesisWords.js` | KILLED | 5 / 216 | reviewB3.test.js › RB-1 / RB-2 / RB-3 — the builder's own wording (builder lines only; B1's checks are untouched) a promise: "Your thesis will be tra… |
-| F-10 | RB-3: "trades lower" passes as a wrong-if option | `thesisWords.js` | KILLED | 1 / 216 | reviewB3.test.js › RB-1 / RB-2 / RB-3 — the builder's own wording (builder lines only; B1's checks are untouched) a price condition: "NVDA trades low… |
-| F-11 | RB-4: a names pick is narrowed | `thesisSchema.js` | KILLED | 3 / 216 | reviewB3.test.js › RB-4 — a names pick is dropped, never narrowed "NVDA, AMD and Broadcom" → dropped |
-| F-12 | RB-5: the dead end ignores a company sourced since | `thesis.js` | KILLED | 1 / 216 | thesis.test.js › the goals on offer (§B4.2 — each goal's offer rule) find_names: theme set and segment set or skipped; not while the dead end stands … |
-| F-13 | RB-5: a dead-end reply naming a company stands | `thesisSchema.js` | KILLED | 2 / 216 | reviewB3.test.js › RB-5 — the dead end is honest end to end a find_names reply that names a company when none is supported is replaced, with the dead… |
-| F-14 | RB-7: the reply is checked before it is cut | `thesisSchema.js` | KILLED | 2 / 216 | reviewB3.test.js › RB-7 — the reply is cut at a sentence, before B1's number check, and stays within 600 with the server's line a held figure is neve… |
-| F-15 | RB-8: a free tap during a running step | `store.js` | KILLED | 1 / 216 | shared-research.builder.route.test.js › the review's route fixes (K-10; report §9) RB-8: a free tap waits for a running step (409 step_in_flight), no… |
-| F-16 | RA-6: no cap on card exchanges | `store.js` | KILLED | 1 / 216 | shared-research.builder.route.test.js › the review's route fixes (K-10; report §9) RA-6: a session keeps at most 300 card exchanges; past it the free… |
-| F-17 | RC-1: a validator throw escapes the step | `shared-research.js` | KILLED | 1 / 216 | shared-research.builder.route.test.js › the review's route fixes (K-10; report §9) RC-1: a validator that throws after a paid call fails the step, lo… |
-| F-18 | RC-1: a malformed field is read as given | `thesisSchema.js` | KILLED | 2 / 216 | reviewB3.test.js › RC-1 — a malformed proposal field is dropped, never thrown on {"segments":{"label":"x"}} |
-| F-19 | RC-3: a reply stands when everything it proposed was dropped | `thesisSchema.js` | KILLED | 1 / 216 | reviewB3.test.js › RB-5 — the dead end is honest end to end a reply stands only while something it proposed landed (RC-3: a strengthen whose only pro… |
-| F-20 | RA-1 E: a stale segment does not block the save | `thesis.js` | KILLED | 1 / 216 | reviewB3.test.js › RA-1 / RB-6 — what a save states is checked, the composed sentence included a stale segment blocks the save until it is changed: t… |
-| F-21 | RB-9/RA-5: the card always reads as changed | `thesisSchema.js` | KILLED | 4 / 216 | reviewB3.test.js › RB-5 — the dead end is honest end to end a reply stands only while something it proposed landed (RC-3: a strengthen whose only pro… |
-| F-22 | B1's service promise no longer replaces a builder reply | `thesisSchema.js` | KILLED | 1 / 216 | thesisSchema.test.js › the reply (K-4) a reply with a service promise is replaced by the plain line |
-| S-01 | S-1: build_why's schema carries companies | `thesisSchema.js` | KILLED | 4 / 185 | thesisSchema.recorded.test.js › the recorded build_why probe its usage and cost; its output fills exactly its schema, inside the 2,500-token cap |
-| S-02 | S-1: the pick goal's schema carries findings | `thesisSchema.js` | KILLED | 4 / 185 | thesisSchema.recorded.test.js › the recorded pick probe its usage and cost; its output fills exactly its schema, inside the 2,500-token cap |
-| S-03 | S-1: every goal's schema holds every proposal field | `thesisSchema.js` | KILLED | 14 / 185 | thesisSchema.recorded.test.js › the recorded build_why probe its usage and cost; its output fills exactly its schema, inside the 2,500-token cap |
-| S-04 | S-2: builder companies keep claim and openRef | `thesisSchema.js` | KILLED | 2 / 185 | thesisSchema.test.js › one schema per goal (the founder's S-1, S-2 and S-5, Nov 17) findings are B1's exactly; the builder's companies drop claim and… |
-| S-05 | S-2: the validator reads a company's claim (a ledger claim lands as an idea finding) | `thesisSchema.js` | KILLED | 1 / 185 | thesisSchema.test.js › each goal lands only its own proposals a company's claim is never read on a builder turn: no proposed claim lands as a finding… |
-| S-06 | S-2: a research goal's pick carries refs | `thesisSchema.js` | KILLED | 2 / 185 | thesisSchema.test.js › one schema per goal (the founder's S-1, S-2 and S-5, Nov 17) a research goal's pick is a value and one reason; the reasons wit… |
-| S-07 | S-2: a research goal's pick rests on the refs the model wrote | `thesisSchema.js` | KILLED | 1 / 185 | thesisSchema.test.js › each goal lands only its own proposals a research goal's pick rests on no finding and is labelled the partner's reasoning; a r… |
-| S-08 | the pick goal rests on a dropped reason's refs too | `thesisSchema.js` | KILLED | 2 / 185 | thesisSchema.test.js › rule 6 — the pick goal cites only findings already on the record a pick reason citing this turn's own finding is dropped; one … |
-| S-09 | the pick's part is the model's | `thesisSchema.js` | KILLED | 1 / 185 | thesisSchema.test.js › rule 6 — the pick goal cites only findings already on the record the pick's part is the server's — the one asked — never the m… |
-| S-10 | S-1: direction may be asked as the pick goal | `thesisSchema.js` | KILLED | 4 / 185 | shared-research.builder.route.test.js › one schema per goal (the founder's S-1, Nov 17) with nothing else on offer, direction is asked with findings … |
-| S-11 | S-1: direction lands every proposal field | `thesisSchema.js` | KILLED | 3 / 185 | shared-research.builder.route.test.js › one schema per goal (the founder's S-1, Nov 17) a direction step is asked as the research goal the card would… |
-| S-12 | S-1: the route asks direction without reading the offer | `shared-research.js` | KILLED | 1 / 185 | shared-research.builder.route.test.js › one schema per goal (the founder's S-1, Nov 17) a direction step is asked as the research goal the card would… |
-| S-13 | S-5: a schema grows past what compiled | `thesisSchema.js` | KILLED | 1 / 185 | thesisSchema.test.js › one schema per goal (the founder's S-1, S-2 and S-5, Nov 17) every schema stays at or under the size that compiled live (S-5),… |
-| W1-01 | W-1: the save does not carry the segment's findings | `thesis.js` | KILLED | 2 / 216 | shared-research.builder.route.test.js › the review's route fixes (K-10; report §9) RA-1 with §B11 W-1: a segment's figure is held by its own Source-b… |
-| W2a-01 | W-2a: the wrong-if and the label license their numbers anywhere | `thesis.js` | KILLED | 2 / 216 | shared-research.builder.route.test.js › to a ready card, and its save (§B4.5; §B10 S-B1, PF-1, PF-3) an edited sentence: a number in the wrong-if or … |
-| W2a-02 | W-2a: the placed texts are not removed before the number check | `adoptPreview.js` | KILLED | 2 / 216 | shared-research.builder.route.test.js › to a ready card, and its save (§B4.5; §B10 S-B1, PF-1, PF-3) an edited sentence: a number in the wrong-if or … |
-| SPL1-01 | SPL-1: a direction turn is never held to the asked goal's reply rule | `thesisSchema.js` | KILLED | 1 / 185 | thesisSchema.test.js › the schema split's refuter pass (SPL-1, SPL-4) SPL-1: a direction turn asked as map_segments whose map is dropped cannot keep … |
-| SPL1-02 | SPL-1: the dead-end reply rule skips a direction turn asked as find_names | `thesisSchema.js` | KILLED | 1 / 185 | thesisSchema.test.js › the schema split's refuter pass (SPL-1, SPL-4) SPL-1: a direction turn asked as find_names at a dead end cannot keep a reply t… |
-| SPL3-01 | SPL-3: a direction turn asked as a goal that lands nothing is told to propose | `stepPrompt.js` | KILLED | 1 / 46 | prompt.builder.test.js › the builder's user turn a direction turn is told the proposals its schema holds — and none when the goal it is asked as land… |
-| SPL4-01 | SPL-4: findings are read on a schema without them (pick) | `thesisSchema.js` | KILLED | 1 / 185 | thesisSchema.test.js › the schema split's refuter pass (SPL-1, SPL-4) SPL-4: what a schema lacks is not read — findings on a pick turn, companies on … |
-| SPL4-02 | SPL-4: companies are read on a schema without them (build_why) — survived on 48fbc986; KILLED after the row in the next commit | `thesisSchema.js` | KILLED | 1 / 186 | thesisSchema.test.js › the schema split's refuter pass (SPL-1, SPL-4) SPL-4: a company on a build_why turn is not read at all — it gives this turn's … |
-| SPL5-01 | SPL-5: a builder call record does not name its schema | `shared-research.js` | KILLED | 1 / 35 | shared-research.builder.route.test.js › one schema per goal (the founder's S-1, Nov 17) a direction step is asked as the research goal the card would… |
+| F-01 | RA-1: the shared reason's numbers are not re-checked at confirm | `thesis.js` | KILLED | 1 / 224 | reviewB3.test.js › RA-1 / RB-6 — what a save states is checked, the composed sentence included a confirm re-checks the shared reason against the KEPT… |
+| F-02 | RA-1: the shared reason may name a deselected company | `thesis.js` | KILLED | 1 / 224 | reviewB3.test.js › RA-1 / RB-6 — what a save states is checked, the composed sentence included a confirm refuses a shared reason that names a support… |
+| F-03 | RA-1: the saved statement is not checked | `store.js` | KILLED | 1 / 224 | shared-research.builder.route.test.js › to a ready card, and its save (§B4.5; §B10 S-B1, PF-1, PF-3) an edited sentence: a number in the wrong-if or … |
+| F-04 | RA-2: a replay is answered before the shape check | `store.js` | KILLED | 2 / 224 | shared-research.builder.route.test.js › the other shape is refused (§B2): invalid_intent, before any call is counted a builder session refuses a ledg… |
+| F-05 | RD-2: a saved answer before the shape check (builder save) | `store.js` | KILLED | 1 / 224 | shared-research.builder.route.test.js › the other shape is refused (§B2): invalid_intent, before any call is counted a builder session refuses a ledg… |
+| F-06 | RA-3: unset → set clears the dependents | `thesis.js` | KILLED | 1 / 224 | reviewB3.test.js › RA-3 — a free choice never silently clears a set part setting an unset segment (or skipping it) keeps the names, the why and the p… |
+| F-07 | RA-3: drop_unsourced offered over a set why | `thesis.js` | KILLED | 2 / 224 | reviewB3.test.js › RA-3 — a free choice never silently clears a set part drop_unsourced is offered only while the why is not set |
+| F-08 | RB-1: a figure-less price forecast passes | `thesisWords.js` | KILLED | 3 / 224 | reviewB3.test.js › RB-1 / RB-2 / RB-3 — the builder's own wording (builder lines only; B1's checks are untouched) a forecast, praise or odds: "its st… |
+| F-09 | RB-2: the builder's promises pass | `thesisWords.js` | KILLED | 5 / 224 | reviewB3.test.js › RB-1 / RB-2 / RB-3 — the builder's own wording (builder lines only; B1's checks are untouched) a promise: "Your thesis will be tra… |
+| F-10 | RB-3: "trades lower" passes as a wrong-if option | `thesisWords.js` | KILLED | 1 / 224 | reviewB3.test.js › RB-1 / RB-2 / RB-3 — the builder's own wording (builder lines only; B1's checks are untouched) a price condition: "NVDA trades low… |
+| F-11 | RB-4: a names pick is narrowed | `thesisSchema.js` | KILLED | 3 / 224 | reviewB3.test.js › RB-4 — a names pick is dropped, never narrowed "NVDA, AMD and Broadcom" → dropped |
+| F-12 | RB-5: the dead end ignores a company sourced since | `thesis.js` | KILLED | 2 / 224 | shared-research.builder.route.test.js › one schema per goal (the founder's S-1, Nov 17) §B12 Q-2 (b): at the dead end a direction step is asked as fi… |
+| F-13 | RB-5: a dead-end reply naming a company stands | `thesisSchema.js` | KILLED | 2 / 224 | reviewB3.test.js › RB-5 — the dead end is honest end to end a find_names reply that names a company when none is supported is replaced, with the dead… |
+| F-14 | RB-7: the reply is checked before it is cut | `thesisSchema.js` | KILLED | 2 / 224 | reviewB3.test.js › RB-7 — the reply is cut at a sentence, before B1's number check, and stays within 600 with the server's line a held figure is neve… |
+| F-15 | RB-8: a free tap during a running step | `store.js` | KILLED | 1 / 224 | shared-research.builder.route.test.js › the review's route fixes (K-10; report §9) RB-8: a free tap waits for a running step (409 step_in_flight), no… |
+| F-16 | RA-6: no cap on card exchanges | `store.js` | KILLED | 1 / 224 | shared-research.builder.route.test.js › the review's route fixes (K-10; report §9) RA-6: a session keeps at most 300 card exchanges; past it the free… |
+| F-17 | RC-1: a validator throw escapes the step | `shared-research.js` | KILLED | 1 / 224 | shared-research.builder.route.test.js › the review's route fixes (K-10; report §9) RC-1: a validator that throws after a paid call fails the step, lo… |
+| F-18 | RC-1: a malformed field is read as given | `thesisSchema.js` | KILLED | 2 / 224 | reviewB3.test.js › RC-1 — a malformed proposal field is dropped, never thrown on {"segments":{"label":"x"}} |
+| F-19 | RC-3: a reply stands when everything it proposed was dropped | `thesisSchema.js` | KILLED | 1 / 224 | reviewB3.test.js › RB-5 — the dead end is honest end to end a reply stands only while something it proposed landed (RC-3: a strengthen whose only pro… |
+| F-20 | RA-1 E: a stale segment does not block the save | `thesis.js` | KILLED | 1 / 224 | reviewB3.test.js › RA-1 / RB-6 — what a save states is checked, the composed sentence included a stale segment blocks the save until it is changed: t… |
+| F-21 | RB-9/RA-5: the card always reads as changed | `thesisSchema.js` | KILLED | 4 / 224 | reviewB3.test.js › RB-5 — the dead end is honest end to end a reply stands only while something it proposed landed (RC-3: a strengthen whose only pro… |
+| F-22 | B1's service promise no longer replaces a builder reply | `thesisSchema.js` | KILLED | 1 / 224 | thesisSchema.test.js › the reply (K-4) a reply with a service promise is replaced by the plain line |
+| S-01 | S-1: build_why's schema carries companies | `thesisSchema.js` | KILLED | 5 / 196 | thesisSchema.recorded.test.js › the recorded build_why probe its usage and cost; its output fills exactly its schema, inside the 2,500-token cap |
+| S-02 | S-1: the pick goal's schema carries findings | `thesisSchema.js` | KILLED | 4 / 196 | thesisSchema.recorded.test.js › the recorded pick probe its usage and cost; its output fills exactly its schema, inside the 2,500-token cap |
+| S-03 | S-1: every goal's schema holds every proposal field | `thesisSchema.js` | KILLED | 14 / 196 | thesisSchema.recorded.test.js › the recorded build_why probe its usage and cost; its output fills exactly its schema, inside the 2,500-token cap |
+| S-04 | S-2: builder companies keep claim and openRef | `thesisSchema.js` | KILLED | 2 / 196 | thesisSchema.test.js › one schema per goal (the founder's S-1, S-2 and S-5, Nov 17) findings are B1's exactly; the builder's companies drop claim and… |
+| S-05 | S-2: the validator reads a company's claim (a ledger claim lands as an idea finding) | `thesisSchema.js` | KILLED | 1 / 196 | thesisSchema.test.js › each goal lands only its own proposals a company's claim is never read on a builder turn: no proposed claim lands as a finding… |
+| S-06 | S-2: a research goal's pick carries refs | `thesisSchema.js` | KILLED | 2 / 196 | thesisSchema.test.js › one schema per goal (the founder's S-1, S-2 and S-5, Nov 17) a research goal's pick is a value and one reason; the reasons wit… |
+| S-07 | S-2: a research goal's pick rests on the refs the model wrote | `thesisSchema.js` | KILLED | 1 / 196 | thesisSchema.test.js › each goal lands only its own proposals a research goal's pick rests on no finding and is labelled the partner's reasoning; a r… |
+| S-08 | the pick goal rests on a dropped reason's refs too | `thesisSchema.js` | KILLED | 2 / 196 | thesisSchema.test.js › rule 6 — the pick goal cites only findings already on the record a pick reason citing this turn's own finding is dropped; one … |
+| S-09 | the pick's part is the model's | `thesisSchema.js` | KILLED | 1 / 196 | thesisSchema.test.js › rule 6 — the pick goal cites only findings already on the record the pick's part is the server's — the one asked — never the m… |
+| S-10 | S-1: direction may be asked as the pick goal | `thesisSchema.js` | KILLED | 4 / 196 | shared-research.builder.route.test.js › one schema per goal (the founder's S-1, Nov 17) with nothing else on offer, direction is asked with findings … |
+| S-11 | S-1: direction lands every proposal field | `thesisSchema.js` | KILLED | 3 / 196 | shared-research.builder.route.test.js › one schema per goal (the founder's S-1, Nov 17) a direction step is asked as the research goal the card would… |
+| S-12 | S-1: the route asks direction without reading the offer | `shared-research.js` | KILLED | 2 / 196 | shared-research.builder.route.test.js › one schema per goal (the founder's S-1, Nov 17) a direction step is asked as the research goal the card would… |
+| S-13 | S-5: a schema grows past what compiled | `thesisSchema.js` | KILLED | 1 / 196 | thesisSchema.test.js › one schema per goal (the founder's S-1, S-2 and S-5, Nov 17) every schema stays at or under the size that compiled live (S-5),… |
+| W1-01 | W-1: the save does not carry the segment's findings | `thesis.js` | KILLED | 2 / 224 | shared-research.builder.route.test.js › the review's route fixes (K-10; report §9) RA-1 with §B11 W-1: a segment's figure is held by its own Source-b… |
+| W2a-01 | W-2a: the wrong-if and the label license their numbers anywhere | `thesis.js` | KILLED | 2 / 224 | shared-research.builder.route.test.js › to a ready card, and its save (§B4.5; §B10 S-B1, PF-1, PF-3) an edited sentence: a number in the wrong-if or … |
+| W2a-02 | W-2a: the placed texts are not removed before the number check | `adoptPreview.js` | KILLED | 2 / 224 | shared-research.builder.route.test.js › to a ready card, and its save (§B4.5; §B10 S-B1, PF-1, PF-3) an edited sentence: a number in the wrong-if or … |
+| SPL1-01 | SPL-1: a direction turn is never held to the asked goal's reply rule | `thesisSchema.js` | KILLED | 1 / 196 | thesisSchema.test.js › the schema split's refuter pass (SPL-1, SPL-4) SPL-1: a direction turn asked as map_segments whose map is dropped cannot keep … |
+| SPL1-02 | SPL-1: the dead-end reply rule skips a direction turn asked as find_names | `thesisSchema.js` | KILLED | 1 / 196 | thesisSchema.test.js › the schema split's refuter pass (SPL-1, SPL-4) SPL-1: a direction turn asked as find_names at a dead end cannot keep a reply t… |
+| SPL3-01 | SPL-3: a direction turn asked as a goal that lands nothing is told to propose | `stepPrompt.js` | KILLED | 1 / 48 | prompt.builder.test.js › the builder's user turn a direction turn is told the proposals its schema holds — and none when the goal it is asked as land… |
+| SPL4-01 | SPL-4: findings are read on a schema without them (pick) | `thesisSchema.js` | KILLED | 1 / 196 | thesisSchema.test.js › the schema split's refuter pass (SPL-1, SPL-4) SPL-4: what a schema lacks is not read — findings on a pick turn, companies on … |
+| SPL4-02 | SPL-4: companies are read on a schema without them (build_why) | `thesisSchema.js` | KILLED | 1 / 196 | thesisSchema.test.js › the schema split's refuter pass (SPL-1, SPL-4) SPL-4: a company on a build_why turn is not read at all — it gives this turn's … |
+| SPL5-01 | SPL-5: a builder call record does not name its schema | `shared-research.js` | KILLED | 2 / 36 | shared-research.builder.route.test.js › one schema per goal (the founder's S-1, Nov 17) a direction step is asked as the research goal the card would… |
+| W10-01 | W-10 (the validator): every ref must be about the name again | `thesisSchema.js` | KILLED | 3 / 282 | thesisSchema.recorded.test.js › what the probes proposed build_why, replayed under §B12 W-10: the NVDA reason (an NVDA fact and a general Source-back… |
+| W10-02 | W-10 (the card: confirm, ready, the save): every ref must be about the name again | `thesis.js` | KILLED | 5 / 282 | reviewB3.test.js › §B12 — the founder's rulings on the §B11 round (Nov 17) W-10 on the card: a reason holds with every ref Source-backed and at least… |
+| W10-03 | W-10: the prompt's rulebook §6 line no longer matches the rule (or the doc) | `stepPrompt.js` | KILLED | 1 / 282 | prompt.builder.test.js › the rulebook §6 (K-6) "The thesis builder" equals THESIS_BUILDER_RULES byte for byte |
+| W13-01 | W-13: a complete proposal beside a set why is not offered — first cut was unparsable (a load failure, not a kill); re-cut and KILLED | `thesis.js` | KILLED | 1 / 282 | reviewB3.test.js › §B12 — the founder's rulings on the §B11 round (Nov 17) W-13: a complete proposal waiting beside a set why is an offered revised c… |
+| Q2-01 | Q-2 (b): at the dead end, direction is asked as S-1's letter (strengthen:theme) | `thesisSchema.js` | KILLED | 2 / 282 | shared-research.builder.route.test.js › one schema per goal (the founder's S-1, Nov 17) §B12 Q-2 (b): at the dead end a direction step is asked as fi… |
+| Q2-02 | Q-2 (b): the route does not tell the shape it is at the dead end | `shared-research.js` | KILLED | 1 / 282 | shared-research.builder.route.test.js › one schema per goal (the founder's S-1, Nov 17) §B12 Q-2 (b): at the dead end a direction step is asked as fi… |
+| Q1-01 | Q-1 (a): strengthen:names carries a pick again | `thesisSchema.js` | KILLED | 4 / 282 | thesisSchema.recorded.test.js › the recorded strengthen:names probe its usage and cost; its output fills exactly its schema, inside the 2,500-token c… |
+| Q1-02 | Q-1 (a): strengthen:timeFrame carries a time-frame pick again | `thesisSchema.js` | KILLED | 5 / 282 | reviewB3.test.js › RB-5 — the dead end is honest end to end §B12 Q-1 (a): a strengthen of a set time frame has no pick to make — a time-frame pick is… |
+| Q1-03 | Q-1 (a): the strengthen turn no longer says the part is the player's and not to pick | `stepPrompt.js` | KILLED | 1 / 282 | prompt.builder.test.js › the builder's user turn a strengthen turn says the part is already set by the player and asks for evidence, never a pick (§B… |
 
-Totals: KILLED 84 of 84 defined.
-
-**One survivor, then killed.** On `48fbc986`, SPL4-02 survived. The SPL-4 row checked the `ignored:companies` note, which is computed apart from the read, so a validator that still read the companies passed it. A row that observes the read itself was added in `b6820ba0`: on `find_names` the company's role prefixes this turn's relationship fact, and on `build_why` it does not. SPL4-02, re-run alone, was KILLED. Adding a row can only kill more, so the other 83 verdicts stand for `b6820ba0`.
+Totals: KILLED 93 of 93 defined.
 
 ## 11. The review (BUILD_RULES §2; K-10)
 
@@ -618,9 +636,9 @@ As §B11 asks, one refuter took the schema split only, for honesty and integrity
 - **S-2:** a company's claim and `openRef` write nothing; `STEP_SCHEMA`'s keys are pinned; the ledger route still sends it, and B1's recorded probe passes.
 - **S-3:** every route answer, the `thesis` view and the pick's keys match §4. The only content change is the research pick's `findingIds: []` / `basis: 'reasoning'`, by S-2's letter.
 
-## 12. Watch on the allowlist, and two questions for the founder
+## 12. Watch on the allowlist (the two questions are ruled: §B12, §15)
 
-**Two questions (from the split's refuter pass; neither blocks the merge):**
+**Two questions from the split's refuter pass, ruled on Nov 17 (§B12) and built (§15):** Q-1 → (a), Q-2 → (b) at the dead end only.
 
 **Q-1 · `strengthen`'s dead proposal (SPL-2).**
 - **What happens:** `strengthen` is offered only on set parts, so its schema's pick (segment, names, wrong if) or time-frame pick can never land. The model filled one in 4 of 6 recorded probes. When nothing else landed (`strengthen:names`, `strengthen:timeFrame`), the accurate reply ("I would keep positional and not change the card.") was replaced by "This step added 3 findings. The card did not change.": paid content lost, nothing false said.
@@ -637,17 +655,17 @@ As §B11 asks, one refuter took the schema split only, for honesty and integrity
 |---|---|---|---|
 | W-1 | ~~A segment label holding a figure is refused at save~~ | **Ruled and built** (§B11 W-1): the save carries the segment's findings. | — |
 | W-2 (RB-10) | (a) ~~The label's "30" licenses "30%"~~ — **ruled and built** (§B11 W-2a). (b) An edit may drop the wrong-if from the sentence; the card keeps it in words, and V2-5 saves it inside the sentence. (c) The time-frame suggestion's reason is number-checked against the whole record, because its schema has no refs. | (b) and (c) follow the letter of §B4.5 and routine 14. | If edited statements drift in the allowlist's saves. |
-| W-3 (RC-3) | `strengthen` is offered for every set part, where its own pick or time-frame pick can never land. | §B4.2's letter. Now measured: see Q-1. | Q-1. |
+| W-3 (RC-3) | ~~`strengthen`'s own pick or time-frame pick can never land~~ | **Ruled and built** (§B12 Q-1 (a)): `strengthen` asks for evidence, never a pick. | — |
 | W-4 (RA-8) | An own-words open retried after the mode rolls back to `'off'` answers `invalid_entry`, not the session it made. | A rollback is the founder's act. The session stays open and loads by its id. | Only during a rollback. |
 | W-5 (RC-W2) | Unguarded awaits sit between a counted call and `failStep` (`companiesBefore`). | B1 has the same class. A throw there leaves the step to the stale-running rule (about 35 s). | If Firestore reads fail mid-step. |
 | W-6 (RC-W3) | The step's 2,500-token output cap. | **Measured:** the 12 probes used 352–1,273 output tokens, 14–51% of the cap (`build_why` the largest). | A longer record, or more items, grows `build_why`; re-check if a cut (`output_cut_off`) appears in the shadow log. |
 | W-7 (RC-W4) | Free taps share the per-uid 10 POST a minute window with steps. | It is B1's gate unchanged. A burst of taps answers `429` briefly. | If the B4 client batches taps. |
 | W-8 (RC-W5) | A framed `open` that names a builder session's id replays the builder view. | The answer is honest about the shape, and the request is unusual. | Never, from a correct client. |
 | W-9 | `thesisCard` is a cross-chat contract. The Practice Field and framework chats read this name and the shape in §4.4. With W-1, its `findingIds` include the segment's. | §B10 S-B1, PF-1. | Before either reads it. |
-| W-10 | **Rule 1 dropped the only reason in both recorded why proposals.** Each reason cited a fact about the name together with a general fact about no one company, so the why was stored incomplete (SQ-3). | Rule 1's letter: every ref is a Source-backed fact about that name. | Likely common live. *A reading for the founder: keep a reason when at least one ref is about the name and every ref is Source-backed.* Or leave it, and B4 shows "No Source-backed reason… yet" more often. |
-| W-11 | A research goal's pick has no refs (S-2), so Atlas's pick always reads as the partner's reasoning, even a `find_names` pick resting on relationship facts. | S-2's letter. | When B4 draws the pick's tag. |
-| W-12 | "One reason per name" (S-1) is in the schema and the prompt; the validator's ceiling stays three per name (routine 41). | `THESIS_LIMITS` is client-readable, left as is (S-3). | If S-1 meant a server-side cap. |
-| W-13 | A hand-sent `confirm why` (never offered by `thesis.choices`) replaces a set why with a later proposal. | It is the player's op, so nothing is set by the model. Out of the split's scope (refuter). | If a client sends ops it was not offered. |
+| W-10 | **Rule 1 dropped the only reason in both recorded why proposals.** Each reason cited a fact about the name together with a general fact about no one company, so the why was stored incomplete (SQ-3). | Rule 1's letter: every ref is a Source-backed fact about that name. | **Ruled and built** (§B12 W-10): the reading is the rule, everywhere it is checked. The two recorded whys are now complete. |
+| W-11 | A research goal's pick has no refs (S-2), so Atlas's pick always reads as the partner's reasoning, even a `find_names` pick resting on relationship facts. | S-2's letter. | **Ruled: no change** (§B12); noted in §4.6 for B4. |
+| W-12 | "One reason per name" (S-1) is in the schema and the prompt; the validator's ceiling stays three per name (routine 41). | `THESIS_LIMITS` is client-readable, left as is (S-3). | **Ruled: leave** (§B12): S-1 meant the model's output. |
+| W-13 | A hand-sent `confirm why` (never offered by `thesis.choices`) replaces a set why with a later proposal. | It is the player's op, so nothing is set by the model. Out of the split's scope (refuter). | **Ruled and built** (§B12 W-13): an offered choice, `revised: true`. |
 
 ## 13. Cleanup
 
@@ -670,32 +688,38 @@ As §B11 asks, one refuter took the schema split only, for honesty and integrity
   - the probe-table and schema-count scripts.
 - **Also kept in that folder:** the refused probe records (`probe-refused-2/`) and the STOP note (`20261116_SHARED_RESEARCH_B3_PROBE_STOP.md`).
 
+- **The §B12 round:** see §15.
+
 ## 14. The PR description
 
 ### Shared Research "Work an idea": B3, the thesis builder's server (dark)
 
-This is the server half of Amendment B (§B2–§B6). It carries the founder's preamble rulings (§B10) and the report rulings with the builder turn's output shape (§B11), both appended to the amendment on this branch. It ships behind `SHARED_RESEARCH_BUILDER_MODE = 'off'` (`src/config/sharedResearchFlags.js:76`), so at `'off'` no request reaches a builder path. The ledger is byte-for-byte unchanged.
+This is the server half of Amendment B (§B2–§B6). It carries the founder's rulings §B10 (the preamble), §B11 (the report, and the builder turn's output shape) and §B12 (the §B11 round), all appended to the amendment on this branch. It ships behind `SHARED_RESEARCH_BUILDER_MODE = 'off'` (`src/config/sharedResearchFlags.js:76`), so at `'off'` no request reaches a builder path. The ledger is byte-for-byte unchanged.
 
-Full report: `docs/audits/20261116_BUILD_SHARED_RESEARCH_B3.md`.
+Full report: `docs/audits/20261116_BUILD_SHARED_RESEARCH_B3.md`. The §B12 round is its §15.
 
 #### What a builder session is
 - **Opening.** A session opens from the player's own words (new), or from a story or a drop while the switch is `'on'`. It is stamped `shape: 'builder'`. A ledger session gets no stamp; absence reads as ledger (§B10 S-B2).
 - **Research steps.** `step` with `intent: 'build'` and one of seven goals: verify_source, map_segments, find_names, build_why, strengthen, pick, direction. The server offers the goals. A step only *proposes*.
-  - **Each goal is asked in its own schema (§B11 S-1).** The schema holds `reply` plus only what that goal may land. Builder companies have no `claim` or `openRef`. A research goal's pick is a value and one reason. `direction` is asked as the next research goal on offer.
+  - **Each goal is asked in its own schema (§B11 S-1).** The schema holds `reply` plus only what that goal may land.
+  - `strengthen` asks for evidence on a part the player has already set, never a pick (§B12 Q-1).
+  - `direction` is asked as the next research goal on offer, or as `find_names` at the dead end (§B12 Q-2).
 - **The free action.** `card` (`confirm` / `set` / `clear`) is the only thing that sets a part of the thesis card. It makes no model call and counts no step, it is idempotent on `opId`, and each applied op leaves one `card` exchange (R-21).
+  - A complete why proposal waiting beside a set why is offered as `{ op: 'confirm', part: 'why', revised: true }` (§B12 W-13).
+- **Rule 1 (§B12 W-10).** A why reason holds when every finding it cites is current and Source-backed and at least one is about its name. The validator, the confirm, ready and the save all read it this way.
 - **Save.** `adopt { rev, statement? }` saves the composed sentence or the player's edit as idea version 1, through B1's save mechanics (now `commitAdoption`, moved unchanged). The list also carries the card as **`thesisCard`**; `thesis` stays `''` (§B10 S-B1).
   - The card is written once, in the save transaction (PF-1).
   - Its finding ids resolve on the research record, which nothing deletes or prunes (PF-2).
   - The save carries the chosen segment's findings (§B11 W-1).
   - The wrong-if text and the time frame's label license their numbers only where they appear (§B11 W-2a).
-- **The `thesis` view.** Every builder answer carries `thesis`: parts with derived states, Atlas's pick, ready and blockers, the sentence, `saveIssue`, and the choices. The contract is report §4; no key changed in the §B11 round (S-3).
+- **The `thesis` view.** Every builder answer carries `thesis`: parts with derived states, Atlas's pick, ready and blockers, the sentence, `saveIssue`, and the choices. The contract is report §4; no key changed after B3's first build (S-3), and the free choice gained only the optional `revised` flag.
 
 #### The probes
-All 12 builder schemas were probed live, one recorded call each on `claude-sonnet-5-5`: 12 calls, **$0.216928**. **Every one compiled first time.** The one-for-all schema had been refused: *"The compiled grammar is too large, which would cause performance issues."*
-- The largest output was 1,273 tokens (51% of the 2,500 cap).
-- Each answer is in `test/fixtures/sharedResearch/build.*.recorded.json`, with every call in `build.probes.ledger.json`.
-- Each answer is validated by `thesisSchema.recorded.test.js`.
-- Each schema's size is pinned at what compiled (S-5).
+Every builder schema was probed live on `claude-sonnet-5-5`, and every one compiled first time.
+- **12 calls in §B11, then the four changed `strengthen` schemas re-probed in §B12:** 16 calls and **$0.285704** in all, inside the 16-call / $0.50 cap.
+- The one-for-all schema had been refused: *"The compiled grammar is too large, which would cause performance issues."*
+- The answers are in `test/fixtures/sharedResearch/build.*.recorded.json`, every call is in `build.probes.ledger.json`, and `thesisSchema.recorded.test.js` validates them.
+- Each schema's size is pinned at what compiled.
 
 #### Changes
 - **New:**
@@ -713,34 +737,85 @@ All 12 builder schemas were probed live, one recorded call each on `claude-sonne
   - `compositionProtectedStoresAllowlist.json`.
 - **Not touched:** no fenced file, rule, index, KB loader, research record model or idea version builder; nothing under `src/components/`; `modelTurn.js` is not edited and no new model id appears.
 
-#### Checks (on `b6820ba0`, the branch merged with `origin/main` `57f50409`)
-- **Full suite** (WSL, `TZ=UTC`, 8 workers, under the suite lock), on `b6820ba0`: exit 0. 1,555 files passed, 12 skipped (1,567); 35,092 tests passed, 135 skipped (35,227).
-- **`lint:gate`** exit 0.
-- **On `48fbc986`, the same code** (`b6820ba0` adds one test row):
-  - `test:rules` exit 0 (46 files, 839 tests); minified build exit 0;
-  - bundle against `main` `57f50409`: every shipped `.js`, `.css` and `.html` file byte-identical. Only source maps differ, by build-tree paths and the embedded text of the two `src/` files.
+#### Checks (on `25a194b2`, the branch merged with `origin/main` `57f50409`)
+- **Full suite** (WSL, `TZ=UTC`, 8 workers, under the suite lock): exit 0. 1,555 files passed, 12 skipped (1,567); 35,103 tests passed, 135 skipped (35,238).
+- **`lint:gate`** exit 0. **`test:rules`** exit 0 (46 files, 839 tests). **Minified build** exit 0.
+- **Bundle against `main`:** every shipped `.js`, `.css` and `.html` file is byte-identical. Only source maps differ, by build-tree paths and the embedded text of the two `src/` files.
 - **Ledger unchanged:**
   - existing tests are untouched (two flag test files gained rows or a note only);
   - the ~60-request ledger differential against `main`'s modules is byte-identical, and a planted one-character change fails it;
   - `STEP_SCHEMA` is untouched, and B1's recorded probe validates.
-- **Mutations:** 84 of 84 killed: §B6's 15, the build's 25, the review fixes' 22, the split's 13, W-1/W-2a's 3, the split refuter's 6. SPL4-02 was killed after a row was added in `b6820ba0`.
-- **New rows:** 290 in 8 files.
+- **Mutations:** 93 of 93 killed, covering §B6's 15, the build's 25, the review fixes' 22, the split's 13, W-1/W-2a's 3, the split refuter's 6 and §B12's 9. One §B12 mutant's first cut only broke the file's syntax; it was re-cut and killed by its row.
+- **New rows:** 301 in 8 files.
 
 #### Review
-- **The build round:** four lenses and two refuters; of 27 items, 20 were confirmed, 6 partly and 1 refuted. Every in-scope finding is fixed (`21125b62`, `8f31d4f5`, `899abd14`).
-- **The §B11 round:** one refuter over the schema split (honesty and integrity): 5 items. SPL-1 (a `direction` turn skipped its asked-as goal's reply rule) is fixed, and so are SPL-4 and SPL-5. SPL-3 is partly fixed. SPL-2 and the rest of SPL-3 are questions for the founder (`48fbc986`, `b6820ba0`).
-
-The rest is on the report's watch list (§12).
+- **The build round:** four lenses and two refuters; of 27 items, 20 were confirmed, 6 partly and 1 refuted. Every in-scope finding is fixed.
+- **The §B11 round:** one refuter over the schema split found 5 items. SPL-1, SPL-4 and SPL-5 are fixed, SPL-3 is partly fixed, and SPL-2 and the rest of SPL-3 went to the founder as Q-1 and Q-2.
+- **§B12:** Q-1 and Q-2 were ruled and built.
 
 #### For the founder
-- **Q-1 · `strengthen`'s dead proposal.** `strengthen` is offered only on set parts, so its pick or time-frame pick can never land. In two probes an accurate reply was replaced by the plain line. **Recommend (a):** drop the dead fields from those schemas (4 re-probes, about $0.08). Or (b) don't let those drops replace the reply, or (c) leave it.
-- **Q-2 · `direction` at the dead end.** By S-1's letter it is asked as `strengthen:theme`: no companies, no proposal. Option (a) keeps that; option (b) asks it as `find_names`.
-- **Readings flagged:**
-  - W-10: rule 1 dropped the only reason in both recorded why proposals, because each also cited a general fact;
-  - W-12: "one reason per name" is in the schema and the prompt; the validator's ceiling stays three.
-- No STOP: every schema compiled; nothing the client reads changed.
+Nothing is open. Q-1 → (a), Q-2 → (b), W-10 and W-13 are built; W-12 and W-11 stand as ruled. The rest of the watch list is report §12.
 
 Dark. Never merged by the session. B4 (the client) is the next session.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 
+## 15. The §B12 round (Nov 17): the founder's rulings on the §B11 round
+
+The rulings are appended to the amendment as **§B12** (`2a9eee8d`) and built in `25a194b2` (code, rows, re-recorded probes), under the same fences: dark, the ledger byte-identical, `modelTurn.js` untouched, key handling unchanged.
+
+| Ruling | Built |
+|---|---|
+| **Q-1 → (a)** · `strengthen` asks for evidence, not a pick | `STRENGTHEN_ACCEPTS` (`thesisSchema.js`) drops `pick` from segment, names and wrong if, and `timeFramePick` from time frame. Its schemas lost those fields (sizes below). The user turn now reads "This step: the card's {part} is already set by the player. Look for evidence for or against it; do not pick for it." On segment, why and wrong if it adds "Revise {the map / the why proposal / the options} only if the evidence changes it." Re-probed live (below); on `strengthen:names` and `strengthen:timeFrame` the model's own reply stands, pinned in `thesisSchema.recorded.test.js`. |
+| **Q-2 → (b)**, at the dead end only | `turnShapeOf(…, { deadEnd })`: while `blockedNow` is true, `direction` is asked as `find_names`. The route reads `blockedNow` in the same admission transaction as the offer. No new call, since that schema already compiled. Elsewhere S-1's letter stands (a row pins `strengthen:theme` once the why is set). A company the step sources comes with its role, the dead end lifts, and Atlas may pick it. |
+| **W-10** · rule 1's reading | A reason is kept when it has a ref, every ref is a current Source-backed (verified) finding, and at least one is about the name. It is applied in the validator (rule 1) and in `reasonHolds` (`thesis.js`), the one reading for the confirm-time re-check, ready, the stale state and the save. The number rule is unchanged. Rulebook §6's Why line and the prompt's output line say so, and `prompt.builder.test.js` still pins §6 byte for byte. **Replayed, no call:** the recorded `build_why` and `strengthen:why` answers now keep the NVDA reason (an NVDA fact plus a general Source-backed fact) and the why is complete. |
+| **W-13** · the revised why confirm | While the why is set and a complete proposal waits beside it (a `strengthen:why` step's), `choices.free` offers `{ op: 'confirm', part: 'why', revised: true }`. The existing `confirm` op replaces the set why (`by: partner_suggested_confirmed`) and clears nothing else. The view already carried the waiting proposal (`parts.why.proposal`, with `incomplete`), so nothing was added there. Recorded in §4.3 and §4.6. |
+| **W-12** · leave | Unchanged: the model is asked for one reason per name; the validator's ceiling stays three. |
+| **W-11** · no change | Noted in §4.6 for B4. |
+
+**The four schemas after Q-1 (a), pinned at what compiled (S-5):**
+
+| Schema | Fields | Objects | Arrays | Properties | Unions |
+|---|---|---|---|---|---|
+| `strengthen:segment` | reply, findings, segments | 4 | 4 | 18 | 6 |
+| `strengthen:names` | reply, findings | 3 | 2 | 14 | 6 |
+| `strengthen:wrongIf` | reply, findings, wrongIfOptions | 4 | 4 | 17 | 6 |
+| `strengthen:timeFrame` | reply, findings | 3 | 2 | 14 | 6 |
+
+**The four re-probes** (Nov 17, `claude-sonnet-5-5`, the final prompt with §6's new Why line). All compiled; the ledger stands at **16 calls, $0.285704**, inside the 16-call / $0.50 cap. No refusal.
+
+| Schema | Model | Tokens in / out | Cost | Elapsed (first use) | Output vs 2,500 cap | Validator | Kept | Dropped / noted |
+|---|---|---|---|---|---|---|---|---|
+| `strengthen:segment` | claude-sonnet-5-5 | 5,799 / 476 | $0.0164 | 5.9 s | 19% | ok | 2 findings; map of 3 | — |
+| `strengthen:names` | claude-sonnet-5-5 | 5,528 / 700 | $0.0181 | 5.7 s | 28% | ok | 4 findings | — |
+| `strengthen:wrongIf` | claude-sonnet-5-5 | 5,799 / 463 | $0.0162 | 5.9 s | 19% | ok | 2 findings; 2 wrong-if options | — |
+| `strengthen:timeFrame` | claude-sonnet-5-5 | 5,532 / 707 | $0.0181 | 6.2 s | 28% | ok | 4 findings | — |
+
+The other eight recorded answers were recorded under the §B11 prompt. They are validated under the current code, which is what the recorded test checks, not the prompt that produced them. Their schemas are unchanged, so the compile result stands.
+
+**What did not change, on purpose:**
+- The schema's own description of a reason ("resting on Source-backed findings about that company") is left as it compiled. Changing a description would change a probed schema without a call (§B12 W-10: "No model call"). Rulebook §6 and the prompt carry the reading.
+- The `pick` goal, `build_why` and every ledger path are untouched.
+
+**Rows added in the §B12 round:**
+- `thesisSchema.test.js`: W-10 ×2 (validator), Q-1's accept table, Q-2's shapes, the S-1 table and size pins for the four schemas;
+- `thesisSchema.recorded.test.js`: W-10 replay ×2, Q-1's replies stand;
+- `reviewB3.test.js`: W-10 on the card, W-13 ×2, the Q-1 time-frame reply, and the RC-3 row moved to a wrong-if option;
+- `prompt.builder.test.js`: Q-1's strengthen turn;
+- the route test: Q-2 at the dead end.
+
+**Mutants added (9, plus three re-cut):** W10-01 (the validator's old reading), W10-02 (`reasonHolds`'s old reading), W10-03 (§6's line), W13-01 (the offer), Q2-01 and Q2-02 (the shape, the route), Q1-01 and Q1-02 (the dead fields), Q1-03 (the strengthen turn). B-04, B-04b and S-12 were re-cut onto the new lines.
+
+**Checks on the §B12 tree `25a194b2`** (`main` `57f50409` is still the latest and already merged):
+
+| Check | Result |
+|---|---|
+| Full suite: WSL, Node 20.20.2, `TZ=UTC`, `--maxWorkers=8`, under `flock /tmp/pd-suite.lock`, JSON report read | **exit 0**. `Test Files 1555 passed \| 12 skipped (1567)`; `Tests 35103 passed \| 135 skipped (35238)`; 324.9 s |
+| `npm run lint:gate` | **exit 0** |
+| `npm run test:rules` | **exit 0**, 46 files, 839 tests |
+| `vite build`, branch and `main` | exit 0 and exit 0. Every shipped `.js`, `.css` and `.html` file is byte-identical to `main` `57f50409`. The same 15 source maps differ as in §9 (14 by build-tree paths, 1 by the two `src/` files' embedded text); §B12 touched no `src/` file. |
+| The ledger differential (§8) | Re-run on `25a194b2` in a fresh `git archive` snapshot against `main`'s 13 modules and route: **4 of 4 byte-identical.** The planted one-character `STEP_SCHEMA` change fails all 4; the file was restored and checked with `cmp`. |
+| The builder's files in the suite | `thesis` 74, `thesisSchema` 57, `thesisSchema.recorded` 46, `reviewB3` 57, `shared-research.builder.route` 36, `gate.builder` 12, `prompt.builder` 12, `thesisRecord.census` 7: **301 rows**, all passed. B1's `stepSchema.recorded` 5/5. |
+| Mutations | **93 of 93 killed** on `25a194b2` (§10). One first cut, W13-01, emptied a line and left an `if` without a statement: its "kills" were load failures, not kills. It was re-cut to `void 0;`, which removes only the offer, and was killed by the W-13 row. The two earlier tables (62 and 84) were re-read for the same flaw: none. |
+
+**Cleanup:** the WSL trees `~/pd-ci-srb3`, `~/pd-ci-srb3m` and `~/pd-srb3-runs` were re-created at `25a194b2` and `57f50409` for this round, then removed under the suite lock: **1,160,480 KB (1.11 GiB) freed** by `df`. The differential snapshot (154 MB) was deleted after unlinking its junction; the real `node_modules` is intact.
