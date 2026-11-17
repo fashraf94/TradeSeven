@@ -89,7 +89,10 @@ import {
 // each open idea's `caCoveredThrough` (the last session its corporate-action data covered, per held symbol).
 // T1a-2b-3, step 3 (Amendment F-4): re-pinned from 9ec8efca…. NO MONEY LEAF CHANGED. 6 leaves ADDED: `result.spy.inDoubt: []`
 // on the three ideas and their result packets (SPY is never in doubt here); 3 leaves CHANGED: those packets' `contentHash`.
-const EXPECTED_DUMP = { sha256: '37333fe97fa5ffdf89454681e9e52e6861a51de39890d2187dc26557c1db1d90', bytes: 443407 };
+// T1a-2b-3, step 4 (Amendment F-7, F-8): re-pinned from 37333fe9…. NO MONEY LEAF CHANGED. 4 leaves ADDED: the XOM split's
+// receipt keeps `sharesBefore` / `sharesAfter` (the count a late dividend would read), on idea B and in its receipt part;
+// 3 leaves CHANGED: that part's `contentHash` (twice: the part and the packet's manifest) and the packet's.
+const EXPECTED_DUMP = { sha256: 'abcf842026a3d5c4ce4f2c3a858dbd5fcabad2a3388df6c73b3f944ce7c24ed9', bytes: 443533 };
 
 // Twenty-nine sessions from Monday 16 November 2026 (Thanksgiving and Christmas are not sessions).
 const SESSIONS = ['2026-11-16'];

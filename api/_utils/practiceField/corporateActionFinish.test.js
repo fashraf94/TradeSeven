@@ -330,7 +330,7 @@ describe('Amendment F-3 — the gap screen dates a gap from the mark\'s own sess
     // The window starts AFTER Nov 30: a dividend dated Nov 30 is before the move — paid on the current count; one dated
     // Dec 1 waits. (With `since` Nov 27 the Nov 30 dividend would wait too.)
     const ledger = ideaOf(ctx).ledger;
-    const out = applyLedgerActions(ledger, { AAPL: [dividend(0.5, S[9]), dividend(0.5, S[10])] }, { date: S[11] });
+    const out = applyLedgerActions(ledger, { AAPL: [dividend(0.5, S[9]), dividend(0.55, S[10])] }, { date: S[11] }); // (two amounts: one amount twice within five sessions is a possible re-date, F-7)
     expect(out.applied.map((a) => a.actionId)).toEqual([`cash_dividend_AAPL_${S[9]}`]);
     expect(out.held.map((r) => r.actionId)).toEqual([`cash_dividend_AAPL_${S[10]}`]);
   });
@@ -569,5 +569,128 @@ describe('Amendment F-4 — a doubt holds only what it touches; SPY in doubt is 
       heldDividends: [{ actionId: `cash_dividend_SPY_${S[10]}`, amount: 1.75, effectiveDate: S[10], heldOn: S[10] }],
     }]);
     expect(idea.spyLedger.dividendsUsd).toBe(0);
+  });
+});
+
+// ── F-7, F-8 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+describe('Amendment F-7 — re-dated and late actions; F-8 — the receipt link', () => {
+  const paid = (ledger) => ledger.corporateActionReceipts.filter((r) => r.type === 'cash_dividend' && r.applied === true);
+  const cents = (n) => Math.round(n * 100);
+
+  it('FR-A5: a dividend the vendor RE-DATES (one day later, same amount, a new id) is paid ONCE — the second row is recorded `possible_redate`, naming both ids, alerted, and not settled', async () => {
+    const ctx = await setup();
+    const shares = sharesOf(ctx);
+    const bookCash = bookOf(ctx).portfolio.cash;
+    await closeDay(ctx, S[1], { AAPL: { price: BASE.AAPL, corporateActions: [dividend(0.24, S[1])] } });
+    const out = await closeOn(ctx.db, ctx.bookId, S[2], quotes({ AAPL: { price: BASE.AAPL, corporateActions: [dividend(0.24, S[2])] } }));
+    recon(ctx);
+    for (const f of ['ledger', 'comparisonLedger']) {
+      const l = ideaOf(ctx)[f];
+      expect(paid(l).map((r) => r.actionId), f).toEqual([`cash_dividend_AAPL_${S[1]}`]);
+      expect(l.dividendsUsd, f).toBe(Math.round(shares * 0.24 * 100) / 100);
+      expect(l.corporateActionReceipts.filter((r) => r.reason === 'possible_redate'), f).toEqual([expect.objectContaining({
+        actionId: `cash_dividend_AAPL_${S[2]}`, redateOf: `cash_dividend_AAPL_${S[1]}`, amount: 0.24, applied: false, seenOn: S[2],
+      })]);
+      expect(l.appliedActionIds.concat(l.declinedActionIds), f).not.toContain(`cash_dividend_AAPL_${S[2]}`); // not settled
+    }
+    expect(cents(bookOf(ctx).portfolio.cash) - cents(bookCash)).toBe(cents(Math.round(shares * 0.24 * 100) / 100));
+    expect(withoutWindowAlerts(out.alerts).filter((a) => a.startsWith('PRACTICE_FIELD_CORPORATE_ACTION_REDATE'))).toHaveLength(2);
+    // A cash dividend's re-date puts no count in doubt: the mark is fresh, nothing waits.
+    expect(rowOf(ctx, S[2]).marks.AAPL.quality).toBe('vendor_time');
+    // Six sessions apart is not a re-date: a dividend of the same amount then is paid.
+    for (let i = 3; i <= 7; i += 1) await closeDay(ctx, S[i]);
+    await closeDay(ctx, S[8], { AAPL: { price: BASE.AAPL, corporateActions: [dividend(0.24, S[8])] } });
+    expect(paid(ideaOf(ctx).ledger).map((r) => r.actionId)).toEqual([`cash_dividend_AAPL_${S[1]}`, `cash_dividend_AAPL_${S[8]}`]);
+  });
+
+  it('a SHARE-BASIS row that may be a re-date is a doubt about the count: not applied, and a dividend after it waits — on every ledger of the idea', async () => {
+    const ctx = await setup();
+    const shares = sharesOf(ctx);
+    await closeDay(ctx, S[1], { AAPL: { price: 115.74, corporateActions: [split(2, S[1])] } });
+    await closeDay(ctx, S[2], { AAPL: { price: 115.74, corporateActions: [split(2, S[2]), dividend(0.24, S[2])] } });
+    for (const f of ['ledger', 'comparisonLedger']) {
+      const l = ideaOf(ctx)[f];
+      expect(l.holdings.AAPL.shares, f).toBe(r6(shares * 2)); // once
+      expect(l.corporateActionReceipts.filter((r) => r.reason === 'possible_redate').map((r) => r.actionId), f).toEqual([`split_AAPL_${S[2]}`]);
+      expect(l.holdings.AAPL.heldActions.map((r) => [r.actionId, r.heldBecause.map((c) => `${c.actionId}@${c.ledger}`)]), f).toEqual([[`cash_dividend_AAPL_${S[2]}`, [`split_AAPL_${S[2]}@comparison`, `split_AAPL_${S[2]}@idea`]]]); // each ledger names its own
+      expect(l.dividendsUsd, f).toBe(0);
+    }
+    expect(rowOf(ctx, S[2]).marks.AAPL.quality).toBe('carried_forward');
+    // The doubt survives the feed dropping the row (its receipt is durable).
+    await closeDay(ctx, S[3]);
+    expect(ideaOf(ctx).ledger.holdings.AAPL.heldActions.map((r) => r.actionId)).toEqual([`cash_dividend_AAPL_${S[2]}`]);
+  });
+
+  it('RF-A2: a CONFLICT the vendor settles under a MOVED date — a new id, one session later, whose payload is one of the conflict\'s — applies ONCE and records the old id as settled by it; the rows are full quality again', async () => {
+    const ctx = await setup();
+    const shares = sharesOf(ctx);
+    await closeDay(ctx, S[1], { AAPL: { price: BASE.AAPL, corporateActions: [dividend(0.24, S[1]), dividend(0.26, S[1])] } });
+    expect(rowOf(ctx, S[1]).fullQuality).toBe(false);
+    expect(ideaOf(ctx).ledger.corporateActionReceipts.filter((r) => r.reason === 'conflicting_action').map((r) => r.actionId)).toEqual([`cash_dividend_AAPL_${S[1]}`]);
+    await closeDay(ctx, S[2], { AAPL: { price: BASE.AAPL, corporateActions: [dividend(0.26, S[2])] } });
+    for (const f of ['ledger', 'comparisonLedger']) {
+      const l = ideaOf(ctx)[f];
+      expect(paid(l).map((r) => [r.actionId, r.amount]), f).toEqual([[`cash_dividend_AAPL_${S[2]}`, 0.26]]);
+      expect(l.dividendsUsd, f).toBe(Math.round(shares * 0.26 * 100) / 100);
+      expect(l.declinedActionIds, f).toContain(`cash_dividend_AAPL_${S[1]}`);
+      expect(l.corporateActionReceipts.find((r) => r.reason === 'settled_by_redate'), f).toMatchObject({ actionId: `cash_dividend_AAPL_${S[1]}`, settledBy: `cash_dividend_AAPL_${S[2]}` });
+    }
+    expect(rowOf(ctx, S[2]).fullQuality).toBe(true);
+    // Listed again later, nothing more is paid.
+    await closeDay(ctx, S[3], { AAPL: { price: BASE.AAPL, corporateActions: [dividend(0.24, S[1]), dividend(0.26, S[1]), dividend(0.26, S[2])] } });
+    expect(paid(ideaOf(ctx).ledger)).toHaveLength(1);
+  });
+
+  it('C-16: a dividend dated BEFORE a split already applied, first listed AFTER it, is paid on the count the holding had on its own ex-date — on the idea, its comparison and the book, once', async () => {
+    const ctx = await setup();
+    const shares = sharesOf(ctx);
+    await closeDay(ctx, S[1]);
+    await closeDay(ctx, S[2], { AAPL: { price: 115.74, corporateActions: [split(2, S[2])] } });
+    const bookBefore = bookOf(ctx).portfolio.cash;
+    for (const f of ['ledger', 'comparisonLedger']) {
+      const r = ideaOf(ctx)[f].corporateActionReceipts.find((x) => x.actionId === `split_AAPL_${S[2]}`);
+      expect(r, f).toMatchObject({ sharesBefore: shares, sharesAfter: r6(shares * 2) });
+    }
+    // S[3]: the vendor lists, for the first time, a $0.24 dividend dated S[1] — before the split.
+    await closeDay(ctx, S[3], { AAPL: { price: 115.74, corporateActions: [dividend(0.24, S[1])] } });
+    const owed = Math.round(shares * 0.24 * 100) / 100; // on the pre-split count — never r6(shares * 2) × 0.24
+    for (const f of ['ledger', 'comparisonLedger']) {
+      const l = ideaOf(ctx)[f];
+      expect(l.dividendsUsd, f).toBe(owed);
+      expect(paid(l), f).toEqual([expect.objectContaining({ actionId: `cash_dividend_AAPL_${S[1]}`, incomeUsd: owed, entitledShares: shares, entitledSharesFrom: `split_AAPL_${S[2]}` })]);
+      expect(l.holdings.AAPL.shares, f).toBe(r6(shares * 2)); // the holding's count is untouched
+    }
+    expect(cents(bookOf(ctx).portfolio.cash) - cents(bookBefore)).toBe(cents(owed));
+    expect(bookOf(ctx).portfolio.positions.AAPL.shares).toBe(r6(shares * 2));
+    // Listed again, paid nothing more.
+    await closeDay(ctx, S[4], { AAPL: { price: 115.74, corporateActions: [dividend(0.24, S[1])] } });
+    expect(ideaOf(ctx).ledger.dividendsUsd).toBe(owed);
+  });
+
+  it('C-16 (pure): with no ex-date count on record (a share-basis receipt without `sharesBefore`), nothing is estimated — the late dividend is held, refused `count_on_ex_date_unknown`', () => {
+    const ledger = {
+      kind: 'idea', reservedCapitalUsd: 1000, cash: 0, costsPaidUsd: 0, dividendsUsd: 0, realizedPnlUsd: 0, saleReceipts: [], declinedActionIds: [],
+      holdings: { AAPL: { shares: 20, costBasisTotal: 1000, avgCost: 50, lastMark: 50, openedAt: S[0] } },
+      appliedActionIds: [`split_AAPL_${S[2]}`],
+      corporateActionReceipts: [{ actionId: `split_AAPL_${S[2]}`, type: 'split', ticker: 'AAPL', effectiveDate: S[2], ratio: 2, applied: true, appliedOn: S[2] }],
+    };
+    const out = applyLedgerActions(ledger, { AAPL: [dividend(0.24, S[1])] }, { date: S[3] });
+    expect(out.ledger.cash).toBe(0);
+    expect(out.held).toEqual([expect.objectContaining({ actionId: `cash_dividend_AAPL_${S[1]}`, refused: 'count_on_ex_date_unknown' })]);
+  });
+
+  it('F-8: a share-basis row that explains a suspicion records the record it explained (by id), and the record — retired into the holding\'s history — names the row', async () => {
+    const ctx = await setup({ names: ['AAPL'] });
+    await closeDay(ctx, S[1], { AAPL: 115.74 }); // a halving, no row: a suspicion
+    const id = `suspected_split_AAPL_${S[1]}`;
+    expect(ideaOf(ctx).ledger.holdings.AAPL.basisSuspicion).toMatchObject({ suspectedOn: S[1] });
+    await closeDay(ctx, S[2], { AAPL: { price: 115.74, corporateActions: [split(2, S[1])] } });
+    for (const f of ['ledger', 'comparisonLedger']) {
+      const h = ideaOf(ctx)[f].holdings.AAPL;
+      expect(h.basisSuspicion, f).toBeUndefined();
+      expect(h.basisSuspicionHistory, f).toEqual([expect.objectContaining({ id, suspectedOn: S[1], closedOn: S[2], explainedBy: { actionId: `split_AAPL_${S[1]}`, type: 'split', ratio: 2, effectiveDate: S[1] } })]);
+      expect(ideaOf(ctx)[f].corporateActionReceipts.find((r) => r.actionId === `split_AAPL_${S[1]}`).explainedSuspicion, f).toMatchObject({ id, suspectedOn: S[1] });
+    }
   });
 });

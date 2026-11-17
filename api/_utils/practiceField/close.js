@@ -71,7 +71,7 @@ import {
 import { PracticeFieldError } from './errors.js';
 import { practiceFieldLive } from './mode.js';
 import {
-  applyLedgerActions, valueLedger, withCloseMarks, suspectedActionSymbols, markedEquityCents, unsettledConflicts, cloneLedger,
+  applyLedgerActions, valueLedger, withCloseMarks, suspectedActionSymbols, markedEquityCents, unsettledConflicts, cloneLedger, REDATE_WINDOW_SESSIONS,
   shareBasisHolds, heldActionRecords, withBasisSuspicions, basisSuspicionRecords, delistingWaitingSymbols,
   markProvenance, MARK_PROVENANCE_SOURCE,
 } from './ledger.js';
@@ -173,7 +173,7 @@ const marksOf = (valuation, ledger) => Object.fromEntries(Object.entries(valuati
 /** What applyLedgerActions answers when there is nothing to apply: the session has no stored snapshot, so no feed. */
 const noActions = (ledger) => ({
   ledger, applied: [], declined: [], unresolved: new Set(), conflicts: [], shareBasisChanges: [], renames: [], renamesDeferred: [], renamesBlocked: [],
-  held: [], closedByCash: [], delistedWaiting: [],
+  held: [], closedByCash: [], delistedWaiting: [], redates: [],
 });
 
 /** A valuation of a session nobody observed: every mark is the carried one, and says so (E12). */
@@ -291,6 +291,10 @@ function closeFilledIdea(idea, {
     for (const r of heldActionRecords(out.ledger)) {
       const on = (r.heldBecause || []).map((c) => `${c.actionId}@${c.ledger}`).join(', ');
       alerts.push(`PRACTICE_FIELD_CORPORATE_ACTION_HELD ${idea.ideaId} ${name} ${r.symbol} ${r.actionId} — the holding's share basis is unresolved (${on}); not applied, nothing credited or released (held since ${r.heldOn})`);
+    }
+    // F-7: a row this close did not apply because it may be one already applied or held, under a moved date.
+    for (const r of out.redates || []) {
+      alerts.push(`PRACTICE_FIELD_CORPORATE_ACTION_REDATE ${idea.ideaId} ${name} ${r.actionId} — the same ${r.type} as ${r.redateOf}, under a moved date (within ${REDATE_WINDOW_SESSIONS} sessions): not applied, and ${['split', 'reverse_split', 'stock_distribution'].includes(r.type) ? 'the share basis is in doubt until it is settled' : 'nothing else is held'} — the founder may apply it (resolve_hold, conflict)`);
     }
     for (const d of out.renamesDeferred) {
       alerts.push(`PRACTICE_FIELD_RENAME_DEFERRED ${idea.ideaId} ${name} ${d.from}→${d.to} ${d.actionId} — the holding's share basis is unresolved; the ticker change waits (since ${d.deferredOn}), the holding keeps its symbol and its sale stays held`);
@@ -690,9 +694,15 @@ async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false, w
       // ledger's deduplicated one (Astra T1A-01): one application per action id, never one per feed row. A delisting
       // is in it only with its cash amount (ledger.js): the engine's forced close at a mark is never reached.
       for (const action of out.ownApplied) {
-        const applied = applyCorporateAction({ positions, cash: bookCash }, action);
+        // F-7 (C-16): a LATE dividend was paid on the count the holding had on its ex-date (`entitledShares`): the mirror
+        // pays the same, on the same count, and leaves its position as it was.
+        const late = action.type === 'cash_dividend' && Number.isFinite(action.entitledShares);
+        const sym = String(action.ticker || '').trim().toUpperCase();
+        const applied = applyCorporateAction({
+          positions: late && positions[sym] ? { ...positions, [sym]: { ...positions[sym], shares: action.entitledShares } } : positions, cash: bookCash,
+        }, action);
         if (!applied.ok) throw new PracticeFieldError('book_action_not_applied', { ideaId: idea.ideaId, actionId: action.actionId, reason: applied.reason });
-        positions = applied.positions;
+        if (!late) positions = applied.positions;
         bookCash = applied.cash;
         bookActionDocs.push([bookRef.collection('corporateActions').doc(action.actionId), {
           ...buildCorporateAction({
