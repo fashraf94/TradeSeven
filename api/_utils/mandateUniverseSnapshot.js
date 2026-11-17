@@ -27,6 +27,7 @@
 // book brings its own) and alerts at a configured fraction of the ceiling.
 
 import { FieldValue } from 'firebase-admin/firestore';
+import { isDeepStrictEqual } from 'node:util';
 // The two market-fetch clients — imported HERE AND ONLY HERE on the book eval
 // path (§3.0 sole-importer invariant). Injectable below for tests.
 import { fetchBatchQuotes } from './tournamentPrices.js';
@@ -285,9 +286,17 @@ async function createOrAdopt(ref, doc, { force = false } = {}) {
 // omitted doc) is the stored one, untouched. For a symbol this rebuild fetched:
 //   • absent from the stored document — this rebuild's entry;
 //   • present (another rebuild fetched it too) — the stored entry is KEPT, and this rebuild's is newer only in what the
-//     stored one lacks: a corporate action it does not list (by content — so two answers that differ are both kept and
-//     the ledger's own conflict rule decides; ledger.js), the classification when the stored one has none, and a
-//     successful corporate-action fetch over a failed one (`caFetchFailed` stays only when both failed).
+//     stored one lacks: a corporate action it does not list (by content), the classification when the stored one has
+//     none, and a successful corporate-action fetch over a failed one (`caFetchFailed` stays only when both failed).
+//   Two answers that DIFFER for one action id are both kept, so which one stands never depends on which rebuild
+//   committed first (review B2, its refuter). For an idea book the ledger's conflict rule then decides: one id with two
+//   payloads is applied to no ledger and alerted (ledger.js conflictingActionIds). The quarterly close
+//   (mandateClosePass.js closeBook) would apply every row of one id — as it already would for two rows of one id in a
+//   single fetch, before this build. It cannot meet such rows from a top-up today: a day doc carries the omission mark
+//   only when no quarterly book was active and no quarterly batch open at its first build, so a quarterly book present
+//   at the top-up was created that day, and a position it opens is dated that day (mandateExecution.js openedAt),
+//   never entitled to an action effective on or before it. The feed produces only date-entitled kinds (split,
+//   reverse_split, cash_dividend); a feed adding ticker_change or delisting must revisit this.
 // The document's counts (symbolCount, completeCount, missing, caFailedCount) are recomputed from the entries it holds.
 // The first build and a `force` build never reach this: they publish through createOrAdopt, unchanged.
 
@@ -344,7 +353,8 @@ export function reconcileTopUp(stored, ours, { carried }) {
   }
   if (adopting) {
     const unchanged = Object.keys(symbols).length === Object.keys(stored.symbols || {}).length
-      && Object.keys(symbols).every((s) => JSON.stringify(symbols[s]) === JSON.stringify(stored.symbols[s]));
+      // By value, whatever the key order: Firestore need not hand a map back in the order it was written (review B4).
+      && Object.keys(symbols).every((s) => isDeepStrictEqual(symbols[s], stored.symbols[s]));
     if (unchanged) return stored;
     return withDailyCounts({ ...stored, heldCount: Math.max(stored.heldCount ?? 0, ours.heldCount ?? 0), symbols });
   }

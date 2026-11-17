@@ -87,6 +87,27 @@ describe('Astra T1A-06 — the race, in both commit orders', () => {
   }
 });
 
+describe('review B4 — "nothing to add" is judged by value, not by key order', () => {
+  it('when the store hands maps back with their keys sorted (Firestore need not keep the written order), a rebuild with nothing to add writes nothing and answers built:false', async () => {
+    const sortKeys = (v) => (v && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Date)
+      ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, sortKeys(v[k])])) : (Array.isArray(v) ? v.map(sortKeys) : v));
+    const db = seeded();
+    const run = db.runTransaction;
+    db.runTransaction = (fn, opts) => run((tx) => fn({
+      ...tx, get: async (ref) => { const s = await tx.get(ref); return { ...s, data: () => (s.exists ? sortKeys(s.data()) : undefined) }; },
+    }), opts);
+    const gates = [deferred(), deferred()];
+    const a = rebuild(db, { msft: ok([MSFT_DIV]), gate: gates[0] });
+    const b = rebuild(db, { msft: ok([]), gate: gates[1] });
+    await new Promise((r) => setTimeout(r, 0));
+    gates[0].resolve(); expect((await a).built).toBe(true);
+    const version = db._versionOf(PATH);
+    gates[1].resolve(); expect((await b).built).toBe(false);
+    expect(db._versionOf(PATH)).toBe(version);
+    expect(day(db).symbols.MSFT.corporateActions).toEqual([MSFT_DIV]);
+  });
+});
+
 describe('divergent, empty and failed new-symbol answers, in both orders', () => {
   const both = async (x, y) => [(await race(x, y)).doc, (await race(y, x)).doc];
 
