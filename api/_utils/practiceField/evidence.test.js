@@ -14,9 +14,13 @@ import { closeIdeaBook, catchUpIdeaBook } from './close.js';
 import { assertReconciled } from './reconcile.js';
 import {
   verifyPacket, resultPacketMissingMarks, resultPacketProvenanceProblems, recomputeResultFromPacket, jsonPure, EVIDENCE_HASH_ALGORITHM,
-  buildAdmissionPacket,
+  buildAdmissionPacket, RESULT_RECEIPT_PART_PREFIX, resultPacketPartProblems, resultPacketReceipts,
+  buildResultEvidence, firestoreValueBytes, RESULT_RECEIPT_BOUND, RESULT_RECEIPT_PART_MAX_BYTES,
 } from './evidence.js';
-import { nextSessionDate } from './windows.js';
+import { nextSessionDate, sessionAfter, slotSessions } from './windows.js';
+import { FROZEN_BASKET_SIZE } from './constants.js';
+import { parseSplitsPayload, parseDividendsPayload } from '../mandateCorporateActions.js';
+import { PRACTICE_FIELD_SLOTS } from '../../../src/data/practiceFieldSlots.js';
 import { valueLedger } from './ledger.js';
 import { canonicalContentHash } from '../canonicalHash.js';
 import { runRetentionCleanup } from '../mandateClosePass.js';
@@ -269,9 +273,12 @@ describe('the result packet — in the endpoint close\'s transaction, a copy of 
     expect(packet.salesBeforeEndpoint.idea).toEqual([expect.objectContaining({ kind: 'line_exit', symbol: 'MSFT', tickKey: `${S[2]}_open30`, executedPrice: idea.ledger.saleReceipts[0].executedPrice })]);
     expect(packet.salesBeforeEndpoint.comparison).toEqual([]);
     expect(packet.salesBeforeEndpoint.spy).toEqual([]);
-    // The corporate actions applied: AAPL's dividend on the idea's ledger only (the comparison holds XLK, SPY holds SPY).
-    expect(packet.corporateActions.idea.map((r) => r.actionId)).toEqual([`cash_dividend_AAPL_${S[4]}`]);
-    expect(packet.corporateActions.comparison).toEqual([]);
+    // The corporate actions applied: AAPL's dividend on the idea's ledger only (the comparison holds XLK, SPY holds SPY)
+    // — in the packet's one numbered part (T1a-2b-2 §4.4), whose hash the packet records.
+    const partDocs = { [`${RESULT_RECEIPT_PART_PREFIX}001`]: ctx.db._get(`mandates/${ctx.bookId}/ideas/${ctx.ideaId}/evidence/${RESULT_RECEIPT_PART_PREFIX}001`) };
+    expect(packet.corporateActions).toMatchObject({ receipts: 1, byLedger: { idea: 1, comparison: 0, spy: 0 }, parts: [{ id: `${RESULT_RECEIPT_PART_PREFIX}001`, receipts: 1 }] });
+    expect(resultPacketPartProblems(packet, partDocs)).toEqual([]);
+    expect(resultPacketReceipts(packet, partDocs).map((r) => `${r.ledger}:${r.actionId}`)).toEqual([`idea:cash_dividend_AAPL_${S[4]}`]);
     // Every endpoint mark of every ledger, with its vendor time and quality, and the endpoint snapshot's key.
     expect(packet.endpoint).toMatchObject({ session: DUE, kind: 'due_session', closeSnapshotKey: `${DUE}_close`, observed: true });
     expect(resultPacketMissingMarks(packet, endpointRow)).toEqual([]);
@@ -574,6 +581,80 @@ describe('the result packet — in the endpoint close\'s transaction, a copy of 
       const jsonBytes = Buffer.byteLength(JSON.stringify(packet), 'utf8');
       console.log(`PF_RESULT_PACKET_SIZE firestore=${size} json=${jsonBytes} observations=${packet.observations.length}`);
       expect(size).toBeLessThan(256 * 1024);
+
+      // ── T1a-2b-2 §4.4 — THE RECEIPT BOUND, derived here from the code and the calendar ──────────────────────────
+      // H: four names, an eight-name frozen basket, SPY.
+      expect(PRACTICE_FIELD_SLOTS.B3_NAMES_PER_IDEA.max + FROZEN_BASKET_SIZE.max + 1).toBe(RESULT_RECEIPT_BOUND.holdings);
+      // T: every kind the corporate-action feed's two parsers can produce (a forward and a reverse split, a dividend).
+      const kinds = new Set([
+        ...parseSplitsPayload('aapl', [{ date: '2026-11-20', split: '2/1' }, { date: '2026-11-20', split: '1/2' }, { date: '2026-11-20', split: '3.000000/2.000000' }]).actions,
+        ...parseDividendsPayload('aapl', [{ date: '2026-11-20', value: 0.26 }, { date: '2026-11-20', unadjustedValue: 0.25 }]).actions,
+      ].map((a) => a.type));
+      expect([...kinds].sort()).toEqual(['cash_dividend', 'reverse_split', 'split']);
+      expect(kinds.size).toBe(RESULT_RECEIPT_BOUND.kindsPerDate);
+      // D: the most calendar dates after a long slot's entry session and on or before its due session, over every start
+      // session of the maintained calendar.
+      let maxDates = 0;
+      for (let s = '2026-01-02'; s; s = nextSessionDate(s)) {
+        const due = sessionAfter(s, slotSessions('long'));
+        if (!due) break;
+        maxDates = Math.max(maxDates, (Date.parse(`${due}T12:00:00Z`) - Date.parse(`${s}T12:00:00Z`)) / 86_400_000);
+      }
+      expect(maxDates).toBe(RESULT_RECEIPT_BOUND.calendarDates);
+      expect(RESULT_RECEIPT_BOUND.receipts).toBe(3549);
+
+      // This shape's ideas carried to the bound: every holding of every ledger a receipt of each kind on every date —
+      // each receipt with every field the applier can write (ledger.js: an applied action's receipt, `held` from a
+      // record it waited on, `explainedSuspicion` from a suspicion it settled) at long but real values.
+      const ideaAtEnd = getIdea(db, bookId, r.ideaId);
+      const dates = [];
+      for (let d = new Date(`${S[0]}T12:00:00Z`).getTime() + 86_400_000; dates.length < RESULT_RECEIPT_BOUND.calendarDates; d += 86_400_000) dates.push(new Date(d).toISOString().slice(0, 10));
+      const receiptsFor = (ledger) => Object.keys(ledger.holdings).length > 0 ? Object.keys(ledger.holdings) : [];
+      const symbolsOf = { ledger: [...NAMES], comparisonLedger: [...BASKET], spyLedger: ['SPY'] };
+      const big = (sym, type, date) => ({
+        actionId: `${type}_${sym}_${date}`, type, ticker: sym, effectiveDate: date,
+        ratio: type === 'cash_dividend' ? null : 1.6, amount: type === 'cash_dividend' ? 1.234567 : null, incomeUsd: type === 'cash_dividend' ? 12345.67 : 0,
+        applied: true, appliedOn: date, source: type === 'cash_dividend' ? 'eodhd_dividends' : 'eodhd_splits',
+        note: type === 'cash_dividend' ? 'cash_dividend $1.234567/sh × 123456.789012 sh = $152415.79 (income, not trading P&L)' : `${type} ×1.6: shares 123456.789012→197530.862419, basis unchanged`,
+        held: true, heldOn: date, explainedSuspicion: { suspectedOn: date, ratio: 1.6, frozenMark: 1234.567891 },
+      });
+      const atBound = { ...ideaAtEnd };
+      let made = 0;
+      for (const field of ['ledger', 'comparisonLedger', 'spyLedger']) {
+        const list = [];
+        for (const sym of symbolsOf[field]) for (const date of dates) for (const type of ['cash_dividend', 'reverse_split', 'split']) list.push(big(sym, type, date));
+        made += list.length;
+        atBound[field] = { ...ideaAtEnd[field], corporateActionReceipts: list };
+      }
+      expect(receiptsFor(ideaAtEnd.spyLedger)).toEqual(['SPY']);
+      expect(made).toBe(RESULT_RECEIPT_BOUND.receipts);
+      const rowsRef = (id) => db._get(`mandates/${bookId}/ideas/${r.ideaId}/rows/${id}`);
+      const { packet: boundPacket, parts } = buildResultEvidence({
+        bookId, idea: atBound, endpointRow: rowsRef('endpoint'), inception: rowsRef('inception'), closeRows: sessions.map(rowsRef), nowIso: packet.writtenAt,
+      });
+      const docBytes = (id, doc) => firestoreDocumentBytes(`projects/p/databases/(default)/documents/mandates/${bookId}/ideas/${r.ideaId}/evidence/${id}`, doc);
+      const receiptBytes = parts.reduce((n, p) => n + firestoreValueBytes(p.doc.receipts), 0);
+      const partBytes = parts.map((p) => docBytes(p.id, p.doc));
+      const boundBytes = docBytes('result', boundPacket);
+      console.log(`PF_RESULT_RECEIPT_BOUND receipts=${made} receiptBytes=${receiptBytes} parts=${parts.length} partBytes=${partBytes.join(',')} packet=${boundBytes}`);
+      // At the bound the receipts alone pass 900 KiB — so one document could not hold them beside the closes …
+      expect(receiptBytes + size).toBeGreaterThan(900 * 1024);
+      // … and so they are in numbered parts, each well under it, and the packet stays the size it was without them.
+      expect(parts.map((p) => p.id)).toEqual(parts.map((_p, i) => `${RESULT_RECEIPT_PART_PREFIX}${String(i + 1).padStart(3, '0')}`));
+      for (const b of partBytes) expect(b).toBeLessThan(RESULT_RECEIPT_PART_MAX_BYTES + 1024);
+      for (const b of partBytes) expect(b).toBeLessThan(900 * 1024);
+      expect(boundBytes).toBeLessThan(256 * 1024);
+      expect(boundPacket.corporateActions).toMatchObject({ receipts: 3549, byLedger: { idea: 4 * 91 * 3, comparison: 8 * 91 * 3, spy: 91 * 3 } });
+      const partDocs = Object.fromEntries(parts.map((p) => [p.id, jsonPure(p.doc)]));
+      expect(resultPacketPartProblems(boundPacket, partDocs)).toEqual([]);
+      expect(resultPacketReceipts(boundPacket, partDocs).map((x) => `${x.ledger}:${x.actionId}`)).toEqual(
+        ['idea', 'comparison', 'spy'].flatMap((name, i) => atBound[['ledger', 'comparisonLedger', 'spyLedger'][i]].corporateActionReceipts.map((x) => `${name}:${x.actionId}`)),
+      );
+      // A part changed, missing, or out of order is named; the packet's own hash covers every part's.
+      const [first] = parts;
+      expect(resultPacketPartProblems(boundPacket, { ...partDocs, [first.id]: { ...partDocs[first.id], receipts: partDocs[first.id].receipts.slice(1) } })).toEqual([`part:${first.id}:hash`, `part:${first.id}:count`, 'parts:count']);
+      expect(resultPacketPartProblems(boundPacket, { ...partDocs, [first.id]: undefined })).toEqual([`part:${first.id}:missing`, 'parts:count']);
+      expect(verifyPacket({ ...boundPacket, corporateActions: { ...boundPacket.corporateActions, parts: boundPacket.corporateActions.parts.slice(1) } })).toBe(false);
     }, 60_000);
   });
 

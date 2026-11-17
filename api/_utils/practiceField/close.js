@@ -82,7 +82,7 @@ import { assertReconciled } from './reconcile.js';
 import { readLines, buildEndpoint, foldCloseIntoTrack, pendingSaleOf, completedLiquidation, ENDPOINT_KIND } from './settlement.js';
 import { firstUnclosedSessionBefore } from './sessions.js';
 import { toCents, fromCents } from './money.js';
-import { buildResultPacket, evidenceRefOf, EVIDENCE_PACKET } from './evidence.js';
+import { buildResultEvidence, evidenceRefOf, EVIDENCE_PACKET } from './evidence.js';
 import {
   windowsRefOf, expectedIntradayWindows, buildCloseWindowRow, windowOnlySessionsBefore, readWindowOnlySessions, writeWindowOnlySessions,
   WINDOW_ONLY_SESSIONS_PER_TX, WINDOWS_ACCOUNTED_FIELD, writeWindowActionReceipts, WINDOW_ACTION_KIND,
@@ -694,8 +694,8 @@ async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false, w
       registry = registrySnap.exists ? registrySnap.data() : null;
     }
 
-    // 7. The result packets: every price each result relied on, copied (evidence.js).
-    const resultPackets = Object.keys(endpoints).map((ideaId) => [ideaId, buildResultPacket({
+    // 7. The result packets: every price each result relied on, copied (evidence.js) — with their numbered receipt parts.
+    const resultPackets = Object.keys(endpoints).map((ideaId) => [ideaId, buildResultEvidence({
       bookId: bookRef.id, idea: nextIdeas.get(ideaId), endpointRow: endpoints[ideaId], inception: inceptions[ideaId],
       closeRows: closeRowsOf[ideaId], nowIso,
     })]);
@@ -743,9 +743,12 @@ async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false, w
     for (const [ideaId, endpointRow] of Object.entries(endpoints)) {
       tx.create(bookRef.collection('ideas').doc(ideaId).collection('rows').doc('endpoint'), endpointRow);
     }
-    // …and one result packet, created beside it (T1a-2b-1 §3): a second one aborts the whole close too.
-    for (const [ideaId, packet] of resultPackets) {
-      tx.create(evidenceRefOf(bookRef.collection('ideas').doc(ideaId), EVIDENCE_PACKET.RESULT), packet);
+    // …and one result packet, created beside it (T1a-2b-1 §3), with its corporate-action receipts in numbered parts
+    // (T1a-2b-2 §4.4): a second write of any of them aborts the whole close too.
+    for (const [ideaId, { packet, parts }] of resultPackets) {
+      const ideaRef = bookRef.collection('ideas').doc(ideaId);
+      tx.create(evidenceRefOf(ideaRef, EVIDENCE_PACKET.RESULT), packet);
+      for (const part of parts) tx.create(evidenceRefOf(ideaRef, part.id), part.doc);
     }
     tx.set(bookRef.collection('dailyRows').doc(session), row);
     // The sessions before this one that only the window cursor accounts for (T2B-02), then this close's own window row

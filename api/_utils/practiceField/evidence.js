@@ -274,6 +274,106 @@ const endpointCopy = (side, endpointSnapshotKey) => {
 // source's for a carried one (`carriedFrom`, T2B-01). With them the statistics are recomputed from the packet alone
 // (recomputeResultFromPacket), with no snapshot and no row.
 
+// ── THE RESULT'S CORPORATE-ACTION RECEIPTS, IN NUMBERED PARTS (T1a-2b-2 §4.4; Astra's T1a-2b-1 confirmation) ─────
+// THE BOUND — how many applied corporate-action receipts one idea can carry, across its three ledgers:
+//   H = 13 holdings at the largest shape: four names (B3), an eight-name frozen basket (FROZEN_BASKET_SIZE.max) and
+//       SPY. A sale takes a holding away; nothing adds one (the feed names no ticker change: see T).
+//   T = 3 receipts per holding per date: the only kinds the corporate-action feed produces — `split` and
+//       `reverse_split` (mandateCorporateActions.js parseSplitsPayload) and `cash_dividend` (parseDividendsPayload) —
+//       one id per (kind, ticker, date) (deriveActionId), applied once per ledger (appliedActionIds). The engine knows
+//       three more kinds (stock_distribution, ticker_change, delisting) that no code produces; a feed that adds one
+//       must revisit this bound.
+//   D = 91 dates: an action is applied only if dated AFTER the entry session (entitlement: openedAt < effectiveDate)
+//       and on or before the endpoint (the closes apply what is dated on or before them; the endpoint is at most the
+//       due session). The longest long slot (60 sessions) on the maintained calendar spans 91 calendar days, 17 Nov
+//       2026 → 16 Feb 2027; the feed's dates are calendar dates.
+// 13 × 91 × 3 = 3,549 receipts (RESULT_RECEIPT_BOUND; evidence.test.js derives each factor from the code and the
+// calendar). With every field the applier can write, at long but real values, they measure 1,328,873 bytes by the
+// storage rules — past 900 KiB on their own, and beside the largest packet without them (about 233 KiB of closes, T2B-03)
+// far past Firestore's 1 MiB. So the receipts are NOT in the result packet. They
+// are split, in order (idea, comparison, SPY; each ledger's own order), into NUMBERED, CREATE-ONCE documents beside it —
+// `evidence/result_actions_001`, `…_002`, … — each at most RESULT_RECEIPT_PART_MAX_BYTES by Firestore's storage-size
+// rules and each sealed with its own content hash; the result packet records every part's id, receipt count and hash,
+// so its own hash covers theirs. The split is by size, never by count, so it holds whatever the count; at the bound
+// it makes three parts (about 511 KiB, 511 KiB and 276 KiB), and the packet stays about 233 KiB. An idea with no applied
+// receipt has no part.
+
+/** The prefix of a result packet's receipt parts (`result_actions_001`, …). */
+export const RESULT_RECEIPT_PART_PREFIX = 'result_actions_';
+/** The most a receipt part may hold, in bytes by Firestore's storage-size rules (half the 1 MiB document limit). */
+export const RESULT_RECEIPT_PART_MAX_BYTES = 512 * 1024;
+/** The bound above, its factors and its product. */
+export const RESULT_RECEIPT_BOUND = Object.freeze({ holdings: 13, kindsPerDate: 3, calendarDates: 91, receipts: 13 * 91 * 3 });
+
+/**
+ * A value's size by Firestore's storage-size rules (firebase.google.com/docs/firestore/storage-size): a string is its
+ * UTF-8 bytes + 1; a number 8; a boolean or null 1; a map the sum of its keys (as strings) and values; an array the sum
+ * of its values. Pure.
+ */
+export function firestoreValueBytes(v) {
+  if (v === null || v === undefined || typeof v === 'boolean') return 1;
+  if (typeof v === 'number') return 8;
+  if (typeof v === 'string') return Buffer.byteLength(v, 'utf8') + 1;
+  if (Array.isArray(v)) return v.reduce((n, x) => n + firestoreValueBytes(x), 0);
+  return Object.entries(v).reduce((n, [k, x]) => n + Buffer.byteLength(k, 'utf8') + 1 + firestoreValueBytes(x), 0);
+}
+
+const partIdOf = (i) => `${RESULT_RECEIPT_PART_PREFIX}${String(i).padStart(3, '0')}`;
+
+/**
+ * Split an idea's applied receipts (`[{ ledger, …receipt }]`, in order) into numbered parts of at most
+ * RESULT_RECEIPT_PART_MAX_BYTES each, every one sealed. Pure.
+ * @returns {Array<{ id: string, doc: object }>}
+ */
+export function resultReceiptParts({ bookId, ideaId, receipts }) {
+  const groups = [];
+  let current = [];
+  let bytes = 0;
+  // Room for the part's own fields and its hash beside the receipts (measured: well under 1 KiB).
+  const budget = RESULT_RECEIPT_PART_MAX_BYTES - 1024;
+  for (const r of receipts) {
+    const size = firestoreValueBytes(jsonPure(r));
+    if (current.length > 0 && bytes + size > budget) { groups.push(current); current = []; bytes = 0; }
+    current.push(r);
+    bytes += size;
+  }
+  if (current.length > 0) groups.push(current);
+  return groups.map((g, i) => ({
+    id: partIdOf(i + 1),
+    doc: seal({
+      packetVersion: EVIDENCE_PACKET_VERSION, packetId: partIdOf(i + 1), bookId, ideaId, part: i + 1, of: groups.length, receipts: g,
+    }),
+  }));
+}
+
+/**
+ * What a reader checks of a result packet's receipt parts, `partDocs` its stored part documents by id. Every part the
+ * packet records is there, hashes to itself and to the hash the packet records, holds the count the packet records and
+ * says which part of how many it is; and the parts hold exactly the packet's receipt count. Returns the problems —
+ * empty for a whole set.
+ */
+export function resultPacketPartProblems(packet, partDocs) {
+  const problems = [];
+  const recorded = packet?.corporateActions?.parts;
+  if (!Array.isArray(recorded)) return ['parts:missing'];
+  let total = 0;
+  recorded.forEach((p, i) => {
+    const doc = partDocs?.[p?.id];
+    if (!isPlain(doc)) { problems.push(`part:${p?.id}:missing`); return; }
+    if (!verifyPacket(doc) || doc.contentHash !== p.contentHash) problems.push(`part:${p.id}:hash`);
+    if (!Array.isArray(doc.receipts) || doc.receipts.length !== p.receipts) problems.push(`part:${p.id}:count`);
+    if (doc.part !== i + 1 || doc.of !== recorded.length || p.id !== partIdOf(i + 1)) problems.push(`part:${p.id}:order`);
+    total += Array.isArray(doc.receipts) ? doc.receipts.length : 0;
+  });
+  if (total !== packet.corporateActions.receipts) problems.push('parts:count');
+  return problems;
+}
+
+/** The receipts a result packet's parts hold, in order (`partDocs` by id). */
+export function resultPacketReceipts(packet, partDocs) {
+  return (packet?.corporateActions?.parts || []).flatMap((p) => partDocs?.[p.id]?.receipts || []);
+}
+
 /** The three ledgers of a valuation row, by the row's own field names. */
 const ROW_LEDGERS = Object.freeze([
   ['idea', { value: 'markedValue', cash: 'cash', holdingsValue: 'markedHoldingsValue', quantities: 'quantities', marks: 'marks' }],
@@ -414,7 +514,15 @@ export function recomputeResultFromPacket(packet) {
  * inception row in its transaction; every close writes the row of every filled idea): the close refuses it rather than
  * write a packet without prices its result rests on.
  */
-export function buildResultPacket({ bookId, idea, endpointRow, inception, closeRows = [], nowIso }) {
+export function buildResultPacket(args) {
+  return buildResultEvidence(args).packet;
+}
+
+/**
+ * The result packet AND its receipt parts (T1a-2b-2 §4.4): `{ packet, parts: [{ id, doc }] }`. The close writes each
+ * part, create-once, beside the packet, in the same transaction.
+ */
+export function buildResultEvidence({ bookId, idea, endpointRow, inception, closeRows = [], nowIso }) {
   if (!isPlain(inception) || !isPlain(inception.legs)) throw new PracticeFieldError('inception_row_missing', { ideaId: idea?.ideaId ?? null });
   if (!isPlain(endpointRow) || !isPlain(idea?.result)) throw new PracticeFieldError('result_packet_without_result', { ideaId: idea?.ideaId ?? null });
   // Every close, once, in session order (review O-4: a walk that stopped early is a gap too).
@@ -426,17 +534,22 @@ export function buildResultPacket({ bookId, idea, endpointRow, inception, closeR
     throw new PracticeFieldError('observation_row_missing', { ideaId: idea?.ideaId ?? null, missing: gaps, first, last });
   }
   const entryFills = {};
-  const corporateActions = {};
+  const receipts = [];
+  const byLedger = {};
   const salesBeforeEndpoint = {};
   const endpoint = {};
   for (const [name, field] of LEDGERS) {
     entryFills[name] = (inception.legs[name] || []).map(fillCopy);
     const ledger = idea[field] || {};
-    corporateActions[name] = (ledger.corporateActionReceipts || []).filter((r) => r?.applied === true);
+    const applied = (ledger.corporateActionReceipts || []).filter((r) => r?.applied === true);
+    byLedger[name] = applied.length;
+    for (const r of applied) receipts.push({ ledger: name, ...r });
     salesBeforeEndpoint[name] = (ledger.saleReceipts || []).map(saleCopy);
     endpoint[name] = endpointCopy(endpointRow[name], endpointRow.closeSnapshotKey);
   }
-  return seal({
+  // T1a-2b-2 §4.4: the receipts go into numbered parts beside the packet; the packet records each part's hash.
+  const parts = resultReceiptParts({ bookId, ideaId: idea.ideaId, receipts });
+  const packet = seal({
     packetVersion: EVIDENCE_PACKET_VERSION,
     packetId: EVIDENCE_PACKET.RESULT,
     bookId,
@@ -458,8 +571,13 @@ export function buildResultPacket({ bookId, idea, endpointRow, inception, closeR
     })),
     // Every sale filled before the endpoint (the comparison and SPY never sell: always empty there).
     salesBeforeEndpoint,
-    // Every corporate action applied to each ledger up to and including the endpoint session.
-    corporateActions,
+    // Every corporate action applied to each ledger up to and including the endpoint session — the receipts themselves
+    // in the numbered parts beside this packet (resultReceiptParts), each recorded here with its count and its hash.
+    corporateActions: {
+      receipts: receipts.length,
+      byLedger,
+      parts: parts.map((p) => ({ id: p.id, receipts: p.doc.receipts.length, contentHash: p.doc.contentHash })),
+    },
     // The endpoint: its session and kind, THE stored close snapshot's key and build time, and every mark it used.
     endpoint: {
       session: endpointRow.endpointSession ?? null, kind: endpointRow.endpointKind ?? null, dueSession: endpointRow.dueSession ?? null,
@@ -477,6 +595,7 @@ export function buildResultPacket({ bookId, idea, endpointRow, inception, closeR
     // The result itself, as written on the idea.
     result: idea.result,
   });
+  return { packet, parts };
 }
 
 /**

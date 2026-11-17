@@ -31,7 +31,9 @@ import {
   seedBook, closeOn, windowAt, contractOf, getBook, getIdea, getRow, dumpStore, countDocs, etIso, ADMIT_ISO,
   takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, countResults, withoutWindowAlerts,
 } from './__testsupport__/fixtures.js';
-import { verifyPacket, resultPacketMissingMarks, resultPacketProvenanceProblems, recomputeResultFromPacket } from './evidence.js';
+import {
+  verifyPacket, resultPacketMissingMarks, resultPacketProvenanceProblems, recomputeResultFromPacket, resultPacketPartProblems, resultPacketReceipts,
+} from './evidence.js';
 
 // The pinned evidence. A change here is a change to what the idea book records: re-pin it only with a reviewed
 // change, and carry the new figures into the build report.
@@ -59,7 +61,16 @@ import { verifyPacket, resultPacketMissingMarks, resultPacketProvenanceProblems,
 //     endpoint, copied from the idea's rows), and those packets' `contentHash` changed with them. Nothing else.
 //   The round's review (W-1): f9c91e33…, 384,605 bytes, 155 documents. One leaf changed: 13 Nov's window-only close
 //     row says `code.caughtUpSession: null` (nothing was caught up for it), not `true`.
-const EXPECTED_DUMP = { sha256: 'f9c91e33f6bafa05b46ec4d7ce5d67d8ad1a8a80a4b92d42b4412fcbf76ad6ed', bytes: 384605 };
+// T1a-2b-2: re-pinned from f9c91e33…, leaf-compared base (main 57f50409) against head. NO MONEY LEAF CHANGED — every
+// admission here is made by a book holding nothing, so the equity measured at its marks (§1) is the recorded one. 8
+// documents ADDED: B's result packet's one receipt part (`evidence/result_actions_001`: its split and dividend, §4.4),
+// and 7 intraday window rows holding only the receipt of what code did there (an entry, a sale, a result — §4.1; the
+// run drives its windows directly, so no attempt is recorded on them). 60 leaves ADDED: each admission packet's
+// `admissionMarks` and `recordedEquityUsd` (§1); each result packet's receipt summary (`receipts`, `byLedger`,
+// `parts`); and on 7 close rows `session.notServedButAttempted` names that window (it was acted at and never recorded).
+// 37 leaves REMOVED: the result packets' inline receipts (B's two, now in its part) and their per-ledger arrays. 6
+// leaves CHANGED: the six packets' `contentHash`, following the above.
+const EXPECTED_DUMP = { sha256: '6630b251636e97bf217408cedd423d6139b350f8fdc115cf946b1063bc571e1b', bytes: 389741 };
 
 // Twenty-nine sessions from Monday 16 November 2026 (Thanksgiving and Christmas are not sessions).
 const SESSIONS = ['2026-11-16'];
@@ -248,10 +259,18 @@ describe('the end-to-end synthetic run', () => {
       expect(re.observations, id).toBe(result.result.dataQuality.rows);
       expect(re.largestDecline, id).toEqual(result.result.largestDecline);
       expect(re.investedExposure, id).toEqual(result.result.investedExposure);
+      // T1a-2b-2 §4.4: its corporate-action receipts, in their numbered parts, whole — every one the idea applied.
+      const partDocs = Object.fromEntries(result.corporateActions.parts.map((p) => [p.id, db._get(`mandates/${bookId}/ideas/${id}/evidence/${p.id}`)]));
+      expect(resultPacketPartProblems(result, partDocs), id).toEqual([]);
+      const applied = ['ledger', 'comparisonLedger', 'spyLedger'].flatMap((f) => (idea(id)[f].corporateActionReceipts || []).filter((r) => r.applied).map((r) => r.actionId));
+      expect(resultPacketReceipts(result, partDocs).map((r) => r.actionId), id).toEqual(applied);
     }
+    expect(idea(b.ideaId).ledger.corporateActionReceipts.filter((r) => r.applied)).toHaveLength(2);
     // …and (Astra T2B-02) the book's creation day, 13 Nov, before its first idea filled: accounted for by the window
     // ledger's own cursor, its windows missed, with no valuation row.
-    expect(countDocs(db, `mandates/${bookId}/windows/`)).toBe(29);
+    // (T1a-2b-2 §4.1: plus one intraday row for each window where code acted — an entry, a sale, a result — holding that
+    // action's own receipt: the run drives its windows directly, so no attempt is recorded on them.)
+    expect(countDocs(db, `mandates/${bookId}/windows/`)).toBe(36);
     expect(db._get(`mandates/${bookId}/windows/2026-11-13_close`)).toMatchObject({ valued: false, session: { missing: ['open30', 'midday', 'preClose'] } });
     expect(db._get(`mandates/${bookId}/dailyRows/2026-11-13`)).toBeUndefined();
 
