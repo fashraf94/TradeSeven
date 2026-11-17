@@ -682,6 +682,15 @@ describe('the review\'s fixes (4B: state and wiring)', () => {
     const [a, b] = server.sent('step').map((c) => c.body);
     expect(b).toEqual(a);
   });
+  it('4B-4: a 429 on the ready view holds its controls until the wait has passed', async () => {
+    await openOn(TA.walkGetReady, {}, { card: TA.rateLimited });
+    await tap('[data-sr-price-open]');
+    typeInto($('[data-sr-price-level="NVDA"]'), '120');
+    await tap('[data-sr-free="set:wrongIf:priceLines"]');
+    expect($('[data-sr-card-failed="rate_limited"]')).not.toBeNull();
+    expect($('[data-sr-free="set:wrongIf:priceLines"]').disabled).toBe(true);
+    expect($('[data-sr-edit]').disabled).toBe(true);
+  });
   it('4B-5: a Change confirm belongs to its investigation: opening the earlier one and coming back leaves none', async () => {
     const withPrevious = { status: 200, body: { ...TA.walkGetConfirmWhy.body, previous: { sessionId: TA.ids.pickSid, endedAt: '2026-11-16T15:00:00.000Z', terminalReason: 'concluded' } } };
     await openOn(withPrevious, {}, { get: [withPrevious, TA.getPickAsked, withPrevious] });

@@ -49,10 +49,8 @@ export default function ThesisReady({ sr, agentName, phone, edit, setEdit, onKee
   const stepsLeft = remainingOf(session);
   const status = sr.save.sessionId === session.sessionId ? sr.save.status : 'idle';
   const uncertain = status === 'uncertain' || status === 'checking';
+  // a 429's wait holds these controls too (review 4B-4); a step started here goes on in the work view (review 4A-2)
   const busy = sr.pending !== null || sr.waiting || status === 'saving' || status === 'checking';
-  // a step started from a tapped part here: its working line while in flight, its failure and Try again (review 4B-4)
-  const stepFailure = sr.failure?.action === 'step' && sr.failure.attempt?.builder ? sr.failure : null;
-  const stepRetry = stepFailure && ['step_failed', 'network', 'step_in_flight', 'server_error'].includes(stepFailure.code) && stepFailure.reason !== 'findings_full' ? stepFailure.attempt : null;
   const names = thesis.parts.names.value ?? [];
   const lines = thesis.parts.wrongIf.priceLines ?? [];
   const priceChoice = (thesis.choices?.free ?? []).find((c) => c.input === 'priceLines') ?? null;
@@ -131,13 +129,6 @@ export default function ThesisReady({ sr, agentName, phone, edit, setEdit, onKee
 
       {thesis.saveIssue && edit === null && <Notice role="status" tone="gold" attrs={{ 'data-sr-save-issue': thesis.saveIssue.code }}>{B.saveIssue[thesis.saveIssue.code] ?? COPY.server.step_failed}</Notice>}
       {cardFailure && <Notice role="alert" attrs={{ 'data-sr-card-failed': cardFailure.code }}>{cardFailure.message}</Notice>}
-      {sr.running && <Running attrs={{ 'data-sr-working': '' }}>{B.workingLine(agentName)}</Running>}
-      {!sr.running && stepFailure && (
-        <>
-          <Notice role="alert" attrs={{ 'data-sr-step-failed': stepFailure.code }}>{stepFailure.message}</Notice>
-          {stepRetry && <ResearchButton label={B.tryAgainGoal(B.goals[stepRetry.goal] ?? stepRetry.goal)} stepsLeft={stepsLeft} disabled={busy} onClick={() => sr.buildStep(stepRetry)} attrs={{ 'data-sr-retry-step': '' }} />}
-        </>
-      )}
       {status === 'failed' && <Notice role="alert" attrs={{ 'data-sr-save': 'failed' }}>{sr.save.message}</Notice>}
       {blockers && blockers.length > 0 && <p style={S.small} data-sr-blockers="">{B.stillToSet(blockers.map((b) => B.parts[b.part] ?? b.part).join(', '))}</p>}
       {status === 'stale' && <Notice role="alert" tone="gold" attrs={{ 'data-sr-save': 'stale' }}>{sr.save.message}</Notice>}
