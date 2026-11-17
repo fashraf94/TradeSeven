@@ -33,7 +33,7 @@
 import { getSessionForDate } from '../marketSchedule.js';
 import { resolveSessionSlots } from '../mandateSessionSlots.js';
 import { MARK_QUALITY } from './constants.js';
-import { closeMarkQuality, quotePastMaxAge, instantMs } from './marks.js';
+import { quotePastMaxAge, instantMs } from './marks.js';
 import { valueLedger, saleHeldBackBy } from './ledger.js';
 import { etDateOfMs, sessionCloseMs } from './windows.js';
 import { firstUnaccountedWindowSession } from './windowLedger.js';
