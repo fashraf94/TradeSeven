@@ -615,8 +615,9 @@ function pickStillValid(card, pick, ctx) {
 // ── the save (§B4.5) ──────────────────────────────────────────────────────────
 
 /**
- * The findings the save carries (§B4.5): each name's relationship fact (companiesOf), every reason's findings and
- * the point against's — current only, each once, in that order. The adopt refuses past 28 (the builder's own cap).
+ * The findings the save carries (§B4.5; §B11 W-1): each name's relationship fact (companiesOf), every reason's
+ * findings, the point against's, and the chosen segment's — current only, each once, in that order. The adopt
+ * refuses past 28 (the builder's own cap). A number in the segment label is held only by a carried Source-backed one.
  */
 export function carriedIdsOf(card, ctx) {
   const out = [];
@@ -624,6 +625,7 @@ export function carriedIdsOf(card, ctx) {
   for (const s of card.names.value) add(ctx.supported.find((c) => c.symbol === s)?.relationshipFindingId);
   for (const r of card.why.reasons) for (const id of idsOf(r.findingIds)) add(id);
   for (const id of idsOf(card.why.against?.findingIds)) add(id);
+  if (card.segment.state === SET && !card.segment.skipped) for (const id of idsOf(card.segment.findingIds)) add(id);
   return out;
 }
 
@@ -631,11 +633,16 @@ export function carriedIdsOf(card, ctx) {
 export const priceConditionsOf = (card) => card.wrongIf.priceLines.map((p) => ({ symbol: p.symbol, side: 'below', level: p.level, basis: 'daily_close' }));
 
 /**
- * The card's own texts a saved statement's numbers may sit in, beside the carried Source-backed facts (§B4.5): the
- * wrong-if in words and the time frame's label, and the player's own theme (review RA-1 B3: the theme is the player's
- * framing, never evidence — routine 22).
+ * The card's own text a saved statement's numbers may sit in anywhere, beside the carried Source-backed facts
+ * (§B4.5): the set theme (review RA-1 B3: the theme is the player's framing, never evidence). The wrong-if text and the
+ * time frame's label license theirs only where they appear (placedTextsOf; §B11 W-2a).
  */
-export const ownTextsOf = (card) => [card.theme.state === SET ? card.theme.value : null, card.wrongIf.text, timeFrameLabelOf(card.timeFrame.value)].filter(isText);
+export const ownTextsOf = (card) => [card.theme.state === SET ? card.theme.value : null].filter(isText);
+/**
+ * The card's own texts that license their numbers only where they appear verbatim (§B11 W-2a): the wrong-if as written
+ * and as the sentence writes it, and the time frame's label. The save removes each before its number check.
+ */
+export const placedTextsOf = (card) => [card.wrongIf.text, isText(card.wrongIf.text) ? bare(card.wrongIf.text) : null, timeFrameLabelOf(card.timeFrame.value)].filter(isText);
 
 /**
  * Why a ready card's save would be refused, before the player taps Save (review RA-1, RA-7): more carried findings than
@@ -653,7 +660,7 @@ export function saveIssueOf(card, ctx, statement = sentenceOf(card)) {
       record: { findings: [...ctx.current.values()] }, carried,
       selected: composed ? [] : card.names.value.map((s) => ctx.supported.find((c) => c.symbol === s)).filter(Boolean),
       deselected: ctx.supported.filter((c) => !card.names.value.includes(c.symbol)),
-      ownTexts: ownTextsOf(card),
+      ownTexts: ownTextsOf(card), placed: placedTextsOf(card),
     });
     return null;
   } catch (err) {

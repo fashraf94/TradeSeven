@@ -8,7 +8,7 @@ import { describe, it, expect } from 'vitest';
 import { NAMES_A_PRICE, BUILDER_FORECAST, builderPromiseOf, builderWordingOf, lineFailOf } from './thesisWords.js';
 import { validateBuildTurn, cutAtSentence, DEAD_END_LINE } from './thesisSchema.js';
 import {
-  emptyCard, cardContextOf, applyCardOp, freeChoicesOf, readinessOf, saveIssueOf, sharedIssueOf, sentenceOf, thesisViewOf,
+  emptyCard, cardContextOf, applyCardOp, freeChoicesOf, readinessOf, saveIssueOf, sharedIssueOf, sentenceOf, thesisViewOf, carriedIdsOf,
 } from './thesis.js';
 
 // ── a record and a card (the shapes thesis.test.js uses) ─────────────────────────
@@ -204,5 +204,28 @@ describe('RC-1 — a malformed proposal field is dropped, never thrown on', () =
     const v = validate(over, { goal: 'map_segments' });
     expect(v.ok).toBe(true);
     expect(v.notes).toContain(`dropped:${field}:malformed`);
+  });
+});
+
+describe('§B11 — the founder\'s rulings on the B3 report (Nov 16)', () => {
+  it('W-1: the save carries the chosen segment\'s findings (current, each once); a segment figure passes only when a carried Source-backed one holds it', () => {
+    const findings = [...BASE, F('s1', 'coverage', null, 'verified', 'Liquid cooling was 40% of new data-center spending.'), F('s2', 'inference', null, 'unverified', 'Cooling is 60% of the build.')];
+    const ctx = ctxOf(findings);
+    const c = readyCard();
+    c.segment = { ...c.segment, value: 'Liquid cooling, 40% of new spend', findingIds: ['s1', 'c1'] };
+    expect(carriedIdsOf(c, ctx)).toEqual(['rN', 'eN2', 'c1', 's1']);
+    expect(saveIssueOf(c, ctx)).toBeNull();
+    c.segment = { ...c.segment, value: 'Liquid cooling, 60% of the build', findingIds: ['s2'] }; // an inference holds no number
+    expect(saveIssueOf(c, ctx)).toMatchObject({ code: 'unsupported_assertion' });
+  });
+  it('W-2a: the wrong-if and the time frame\'s label license their numbers only where they appear — "30%" beside "about 30 sessions" is refused', () => {
+    const c = readyCard();
+    c.wrongIf = { ...c.wrongIf, text: 'big buyers cut spending for 2 quarters' };
+    const composed = sentenceOf(c);
+    expect(composed).toContain('about 30 sessions');
+    expect(saveIssueOf(c, CTX)).toBeNull(); // the composed sentence: the 2 and the 30 sit where they appear
+    expect(saveIssueOf(c, CTX, `${composed} It could gain 30% over that time.`)).toMatchObject({ code: 'unsupported_assertion' });
+    expect(saveIssueOf(c, CTX, composed.replace('for 2 quarters', 'for 2 quarters, 2 times over'))).toMatchObject({ code: 'unsupported_assertion' });
+    expect(saveIssueOf(c, CTX, composed.replace('NVDA', 'NVDA (theme: AI)'))).toBeNull(); // an edit that keeps both texts verbatim
   });
 });

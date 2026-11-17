@@ -455,7 +455,7 @@ describe('the review\'s route fixes (K-10; report §9)', () => {
     state.throwValidate = false;
     expect((await build(id, 2, 'map_segments', MAP())).statusCode).toBe(200);
   });
-  it('RA-1: a composed sentence whose segment states a figure no carried fact holds is refused, and the card said so first', async () => {
+  it('RA-1 with §B11 W-1: a segment\'s figure is held by its own Source-backed finding, which the save carries — the composed sentence saves', async () => {
     const MAP5 = () => out({
       reply: 'Here is how the theme splits.',
       findings: [{ tempId: 'm1', kind: 'coverage', fact: 'The top 5 chip makers sell most AI accelerators.', symbolCandidate: null, companyName: null, support: { kind: 'retrieval', index: 0, from: [], reason: null }, at: null, supersedes: null }],
@@ -474,11 +474,12 @@ describe('the review\'s route fixes (K-10; report §9)', () => {
     await tap(3, 'confirm', 'why');
     await tap(4, 'set', 'wrongIf', { option: 0 });
     const last = await tap(5, 'set', 'timeFrame', 'positional');
-    expect(last.body.thesis).toMatchObject({ ready: true, saveIssue: { code: 'unsupported_assertion', detail: '5' } });
+    expect(last.body.thesis).toMatchObject({ ready: true, saveIssue: null });
+    expect(last.body.thesis.sentence).toContain('through The top 5 chip makers');
+    const segmentFinding = last.body.thesis.parts.segment.findingIds[0];
     const r = await post({ action: 'adopt', sessionId: id, rev });
-    expect([r.statusCode, r.body.error, r.body.detail]).toEqual([400, 'unsupported_assertion', '5']);
-    const edited = last.body.thesis.sentence.replace('The top 5 chip makers', 'chip makers');
-    expect((await post({ action: 'adopt', sessionId: id, rev, statement: edited })).statusCode).toBe(200);
+    expect(r.statusCode, JSON.stringify(r.body)).toBe(200);
+    expect(env.doc(`watchlists/${r.body.watchlistId}`).thesisCard.findingIds).toContain(segmentFinding);
   });
 });
 
@@ -549,11 +550,13 @@ describe('to a ready card, and its save (§B4.5; §B10 S-B1, PF-1, PF-3)', () =>
     expect([st.statusCode, st.body.error, st.body.thesis.rev]).toEqual([409, 'card_stale', rev]);
     expect(env.writes.length).toBe(writes);
   });
-  it('an edited sentence: a number in the wrong-if or the label passes; a number held nowhere, or another company, is refused', async () => {
+  it('an edited sentence: a number in the wrong-if or the label passes where it appears verbatim (§B11 W-2a); a number held nowhere, or another company, is refused', async () => {
     const { id, rev } = await toReady();
-    const ok = "NVDA earns from GPUs and accelerators because it sells them to AI data centers. It's wrong if big buyers cut accelerator spending for two quarters. Positional, about 30 sessions.";
+    const ok = "NVDA earns from GPUs and accelerators because it sells them to AI data centers. It's wrong if big buyers cut accelerator spending for two quarters. Positional · about 30 sessions.";
     const bad = await post({ action: 'adopt', sessionId: id, rev, statement: 'NVDA will earn 40% more from AI.' });
     expect([bad.statusCode, bad.body.error]).toEqual([400, 'unsupported_assertion']);
+    const reworded = await post({ action: 'adopt', sessionId: id, rev, statement: ok.replace('Positional · about 30 sessions', 'Positional, about 30 sessions') });
+    expect([reworded.statusCode, reworded.body.error, reworded.body.detail]).toEqual([400, 'unsupported_assertion', '30']);
     const other = await post({ action: 'adopt', sessionId: id, rev, statement: 'AMD earns from GPUs.' });
     expect([other.statusCode, other.body.error]).toEqual([400, 'names_not_supported']);
     const r = await post({ action: 'adopt', sessionId: id, rev, statement: ok });
