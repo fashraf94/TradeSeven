@@ -849,7 +849,8 @@ function promiseReOf(partnerName) {
   if (n.length < 2) return PROMISE;
   return new RegExp(`(?:${PROMISE_SUBJECTS}|(?<![\\p{L}\\p{N}_])${escapeRe(n)}(?![\\p{L}\\p{N}_]))${PROMISE_REST}`, 'iu');
 }
-function promisesService(text, partnerName) {
+/** Exported for the thesis builder (thesisSchema.js), which drops a proposal line that makes such a promise (B3). */
+export function promisesService(text, partnerName) {
   const t = readable(text);
   if (SERVICE_NAMES.test(t)) return true;
   const re = promiseReOf(partnerName);
