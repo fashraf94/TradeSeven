@@ -427,3 +427,138 @@ On the smoke preview, iPhone, `?srFixture=walk` unless named:
 11. **Live app:** nothing has changed anywhere.
 
 *Note on item 1:* the server also offers "Skip the segment · free" at the open, so the screen shows it beside *Map the segments · 1 step* (watch item 4).
+
+## 15. The phone round
+
+**Smoke preview (new):** NEW_SMOKE_URL — `?srFixture=index`; **`?srFixture=walk`** plays the walk as a tree (below). PHONE_ACCESS_LINE
+
+**Date:** Nov 17, 2026 · **Prompt:** "Fix prompt — Shared Research B4: the phone round" (P-1 to P-8) · **Head:** HEAD_LINE · `origin/main` `abcdfcb7` merged first (Practice Field only; no file of this round).
+
+The founder's four screenshots were not in this session; this round worked from the prompt's description of them. Screenshot 1 was reproduced on the previous preview (`…4ycujqtnq…`): loaded at 1280, walked to the names step, narrowed to 393 — the builder still drew `desktop` two columns and broke "Corporatio·n", "accelerato·r". Before and after are in `phone-round/` (below).
+
+### 15.1 The rulings, as built
+
+| Ruling | Built | Rows | Mutants |
+|---|---|---|---|
+| **P-1** the sheet's real width; no word broken | `useWideEnough` (a ResizeObserver on the view's own wrapper — its width never depends on the column choice): two columns only at ≥ 880 px and never on the phone; unmeasured reads one column. The strip, its fold and the strip's scroll room follow one column, not `phone`. Every builder text style wraps with `WRAP` (`overflow-wrap: break-word` + `min-width: 0`); the shared `S.small/S.body/S.meta` (which carry `anywhere`) get `WRAP` spread after them in the builder's files only — `parts.jsx` and the style module untouched (ledger). Smoke only: the page reads `phone` from the current width on every resize. | jsdom "P-1: two columns (D1) only when the sheet itself measures at least 880 px…", "P-1: unmeasured…one column"; source scan "P-1 (the phone round): no builder file lets a word break" ×5; browser "P-1: 393/600/720/1280 a fresh load — one column, no word broken" ×4, "opened at 1280, then narrowed to 393 … (screenshot 1)", "320×568 … no button's text breaks inside a word" ×5 | PM1, PM2, PM2b |
+| **P-2** one scroll | The choices are `[data-sr-choices]`, directly after the conversation (outside its `role="log"`, so a new set of buttons is not read out as a turn); the pinned foot holds only the composer (ready view: the issue line, Save thesis, Keep researching). The foot's cap and the choices' scroll box are gone (`CHOICES` has no overflow, no max-height). A new turn scrolls in by the top of its first row; the ready card arrives at its top. A part's panel keeps its own choices; the conversation's stay put (the old "fold the foot while another panel is open" rule went with the foot). | jsdom "P-2: the choices sit directly under the conversation…", "P-2 (replaces 4C-4's folding foot)…"; browser "P-2: 393×852 / 320×568 — the walk to Thesis saved: at every point every choice reachable by the sheet's one scroll and under its own tap; nothing scrolls on its own" (also: the new reply's top in view; the ready card at its top), "P-2: … the pinned foot holds only the composer: at most a quarter of the sheet" ×5 | PM3, PM3b, BM1, BM2, BM3 |
+| **P-3** fewer controls in the way | "Continue later" is gone from the builder (the sheet's × is the same `onClose`: `CommandCenter/SharedResearchSheet.jsx:116` and `:131` hand the one function to both). Discard sits behind "⋯" (`MoreActions`: a 44×44 disclosure, `aria-expanded`, revealing one Discard item) in the card's head and in the strip; the strip is now an unfold button and the "⋯" side by side (a button never holds a button). It opens B2's discard confirm. The ledger view keeps B2's. | jsdom "P-3: no Continue later; Discard behind ⋯ … B2's discard confirm", "P-3: a closed builder keeps its closed actions and has no ⋯"; browser "P-3: the strip carries ⋯ beside its unfold…" | PM4, PM4b |
+| **P-4** the names step | The symbol and its tag on one line (the company name below); under the leads: *Use {agent}'s pick · NVDA and AMD* (free, no mark), its reason once under it, then *Build it on …* naming up to four symbols, disabled until a tick. Ticking exactly the pick (in any order) sends the pick's `confirm` (routine choice 7). | jsdom "P-4: the pick's button, its reason once, then the tick button…", "…names what it builds — one, two, three", "…the tag sits once per picked row, on the symbol's own line", "…ticking exactly the agent's pick sends the server's confirm"; browser "P-4: after a name is ticked, the build button is the element under its tap…" | PM5, PM5b |
+| **P-5** short conversation | The latest reply in full; each earlier one clamped to two lines with *More* (`aria-expanded`, `aria-controls`); the text is drawn as received — only its display folds. | jsdom "P-5: the latest reply in full; each earlier one folded…" | PM7 |
+| **P-6** the sentence | Blanks at the sentence's size, muted, dotted, unpadded (the "space before the comma" was the blank's `padding: 0 6px`, not text); filled and stale/suggested parts keep the sentence's weight; the ready sentence 16 px on a phone. The server's sentence is still drawn exactly as received. | jsdom "P-6 <state>: no space before a comma…" ×10 fixture states, "P-6: the ready sentence on the phone is 16 px…" | PM6, PM6b |
+| **P-7** the sentence's ending | "It's wrong if…" and "Time frame:" lead their choices (in the conversation's choices only; a panel already names its part). | jsdom "P-7: …leads the wrong-if options…" | PM7b |
+| **P-8** the walk answers what a person will try | `__fixtures__/thesisWalk.json`: the walk as a tree of 180 points and **66 leaves, every one saved** (`save()` throws unless the card is ready with no saveIssue), composed by `thesisAnswers.test.js` (`buildWalk`) with the server's own functions, and compared on every run. At the names point: the agent's pick (its `confirm`) and every other one to three of NVDA, AMD and AVGO (6 `set`s — ticking exactly the pick sends the confirm); at each wrong-if point: every option the screen draws (the client's own `valueChoicesOf`, so a marked confirm standing in for a `set` is covered) and the player's own words as one sample, "the large cloud buyers stop raising their AI data-center spending" (it names no company, so no single-name card is refused for `names_not_supported`; matched trimmed and case-insensitive); at each time-frame point: the three. Each subset's why is authored (one sourced reason per name, a shared line that reads right for one, two or three) and passes `validateBuildTurn`; NVDA alone keeps the recorded why. The route (`__fixtures__/walkRoute.js`) answers any other tap with a line naming the taps that point answers, in plain words. Size: 1.87 MB compact; the smoke page loads it only for `?srFixture=walk`. | fixture "thesisWalk.json equals…", "the names point answers the pick and every one to three…"; route "the founder's path: AMD and AVGO…", "the agent's pick…", "NVDA alone, a typed wrong-if (loosely typed)…", "a tap the walk does not cover answers a line naming the taps it does…", "own words other than the sample answer a line naming the sample, verbatim"; the scripted walks on the preview (below) | PM8 |
+
+**Rows retired or rewritten with the old foot** (each encoded a rule P-2 replaced): the T4/T5 "the foot's first choice is on screen without scrolling" rows (retired — the choices now scroll with the sheet; the P-2 reach rows replace them); 4C-5 "a wheel over the foot's choices scrolls the sheet" (retired — there is no inner box to wheel over; "nothing scrolls on its own" replaces it); the refuter's five "whole foot within half the sheet" rows (rewritten: "the pinned foot holds only the composer: at most a quarter"); 4C-4's "the foot folds its choices" (rewritten for P-2); 4C-2 and 4C-6 (re-pointed from the foot to `[data-sr-choices]`); "desktop (D1)" (rewritten for P-1). The B4 mutants BF2/BF2b tested the foot's cap, which is gone.
+
+### 15.2 Routine choices made here
+
+1. **"⋯" is a disclosure with one item**, not an ARIA menu: one button (`aria-expanded`) that reveals *Discard*, which opens B2's confirm; it closes on a tap elsewhere or when focus leaves (5C-9).
+2. **The choices sit outside the conversation's log**, so a new set of buttons is not read out as a new turn.
+3. **The ready card arrives at its top** — the sheet keeps the work view's scroll position otherwise, and the sentence opened mid-way (found in the renders).
+4. **More shows unless the folded reply is measured to fit**, and is measured again on every resize (5C-1).
+5. **A long agent name** shrinks the names row's tag with an ellipsis on the symbol's line (5C-3; P-4 forbids the tag wrapping onto its own line, and it must not run over the count).
+6. **The Discard confirm opened from a builder** reads "Closing the sheet instead keeps it open…" — B2's line names "Continue later", which the builder no longer has (5C-5). `Discard` takes an internal `builder` flag; a ledger session renders it exactly as before.
+7. **Own words in the walk** are one sample text; any other words answer a line naming it.
+
+### 15.3 The updated phone checklist
+
+This replaces §14 for the founder's phone walk (on the new smoke preview, iPhone, `?srFixture=walk` unless named):
+
+1. **Start:** type "I want to play AI" under *Bring your own starting point*; *Start my thesis*. The builder opens: the sentence card with the theme filled, *Map the segments · 1 step* (and *Skip the segment · free*, which this walk does not follow).
+2. **Segments:** the agent's pick is marked with its one-line reason; tap it. The card line says who set it.
+3. **Names:** *Find the listed companies · 1 step*. Then either *Use Atlas's pick · NVDA and AMD*, or tick any one to three of NVDA, AMD and AVGO and tap *Build it on …* (it names what you ticked). Ticking exactly NVDA and AMD is the pick. The lead (Orrin Compute) cannot be ticked.
+4. **Why:** *Find the reasons · 1 step*; the reasons with their sources and the point against; *Confirm these reasons · free*. Earlier replies fold to two lines with *More*.
+5. **Wrong if:** under "It's wrong if…", tap any option — or type exactly *the large cloud buyers stop raising their AI data-center spending* in the composer (it says "free") and Send.
+6. **Time frame:** under "Time frame:", tap Swing, Positional or Longterm.
+7. **Ready:** the card arrives at its top: the finished sentence (not bold), *Edit the sentence*, "How it will be judged" with "in your words" and "optional · add your own"; *Save thesis*.
+8. **Saved:** "Thesis saved", the names and time frame you chose, the honest line about the idea book, *Done* and *Use it in my next game*.
+9. **One scroll:** nothing in the sheet scrolls on its own; every choice sits under the latest turn and is reached by scrolling the sheet. "⋯" in the card's head (and in the strip) reveals *Discard*. A tap the walk does not cover says, in plain words, which taps it answers there.
+10. **The hard states** (from `?srFixture=index`): the dead end, out of steps, a failed step with *Try again*, a stale card, the revised why, the group.
+11. **Rotate the phone, or narrow a desktop window** with the sheet open: it stays one column; no word breaks inside itself.
+12. **An old investigation** (`?srFixture=index`, a ledger one): it looks exactly as it does today. **Live app:** nothing has changed anywhere.
+
+### 15.4 The review: lens (c) and a refuter
+
+Lens (c), accessibility and phone, read the round at `bc839d11` on a read-only snapshot, measuring in headless Edge at 320, 393, 720 and 1280 and through a 1280→393 resize. **Six should-fix and four nits, all fixed in `d515997e`**, each with its own row and mutant:
+
+| Id | Sev. | Finding | Fix · row · mutant |
+|---|---|---|---|
+| 5C-1 | should | A folded reply measured once: a reply that fit at one width lost its More for good at a narrower one | re-measured on every resize · jsdom "5C-1" · LC1 |
+| 5C-2 | should | Folding swapped the reply's text nodes, so the `role="log"` heard the reply again on every turn | the same nodes folded or not (style only) · jsdom "5C-2" ×2 · LC2 |
+| 5C-3 | should | A long agent name (20 characters, the creation flow's maximum) ran the names row's tag over the count at 320 | the tag shrinks with an ellipsis on the symbol's line (P-4 forbids it wrapping) · jsdom "P-4 … the tag", browser "5C-3" · LC3, BM7 |
+| 5C-4 | should | Focus fell to `<body>` when the strip went away under it ("⋯", Discard, the unfold) | the strip leaving with focus inside hands focus to the card · browser "5C-4" · BM5 |
+| 5C-5 | should | The Discard confirm, now reached from the builder's "⋯", still said "Continue later instead keeps it open" | a builder line ("Closing the sheet instead keeps it open…"); `Discard` takes an internal flag, a ledger session unchanged · jsdom "5C-5" · LC5 |
+| 5C-6 | should | More was 39×44 | 44×44 · jsdom "5C-6, 5C-8", browser "5C-6" · LC6, BM8 |
+| 5C-7 | nit | The pick's reason no longer in its button's name; the lead lines not tied to their choices | `aria-describedby`; `role="group"` + `aria-labelledby` · jsdom "5C-7" · LC7 |
+| 5C-8 | nit | Several buttons named "More" | "More of {agent}'s reply" (the visible word kept) · jsdom "5C-6, 5C-8" · LC8 |
+| 5C-9 | nit | "⋯" closed only by toggling | closes on a tap elsewhere or when focus leaves · jsdom "5C-9" · LC9 |
+| 5C-10 | nit | The top scroll padding dropped when there was no composer | kept while open, found through the card · by reading (the refuter then found its sharper form, R-3) |
+
+**The refuter** read the round and these fixes at `d515997e` against the server and the screen, with plain-node walks of the tree and Edge runs. **Held:** P-8 (all 96 requests the screen draws at the names, wrong-if and time-frame points answered, none ambiguous, none by the wrong branch; every accept in the tree one the screen draws), P-1 (no loop; first paint one column; the sheet never reaches 880), P-3 / 5C-9 / 5C-4 (touch and keyboard), P-4 (order-free; the asked pick; min/max enforced by the server), the ledger path. **Broken, and fixed in `068eafc8`:**
+
+| # | Finding | Fix · row · mutant |
+|---|---|---|
+| R-1 | The ready card's arrival scroll also ran when a sheet first opened on a ready card, scrolling the sheet's header and its focused Close off-screen | only when the card's top is above the view · browser "R-1" ×2 · BM4 |
+| R-2 | A fold still added the More box to an old row of the log | the box is always drawn and toggled with `hidden` · jsdom "R-2" · RM2 |
+| R-3 | The scroll padding went stale when the composer left and came back (out of steps, the wrong-if set, then changed) | the foot's presence in the effect's deps · jsdom "R-3" (server-made out-of-steps answers) · RM3 |
+| — | Two of the authored whys said a little more than their findings ("to the large cloud companies"; "the largest" for "some of the largest") | reworded; the walk tree regenerated |
+
+**Found while fixing 5C-4:** the strip's own controls sit inside the sheet's top scroll padding (the room kept for the strip), so focusing "⋯" or Discard scrolled the sheet (900 → 556 → 532), the card came back, the strip folded away and focus went to the card — Tab could not reach Discard. The strip's controls now carry a negative scroll margin as deep as that room. Browser "the strip's own controls … never scroll the sheet when focused" · BM6.
+
+**One row's own defect, found by a mutant:** the R-3 row's ResizeObserver stub fired every callback on demand, so a stale observer still measured the returning foot and the row passed without the fix (RM3 survived). The stub now fires as a browser does; RM3 is killed.
+
+**Not changed, on the watch list:** the research buttons drawn at the walk's points ("You pick, and tell me why", "Find the listed companies" again, a direction) answer the not-in-walk line by design; a new turn scrolls an open panel far above the view (as ruled); if `wide` ever flipped with the sheet open, the column swap would remount the composer, the names pick and the price lines (losing a draft) — unreachable while the hub's sheet is 720 px; the blanks' contrast is 4.58:1 (AA by 0.08).
+
+### 15.5 The mutation table
+
+| Id | Mutation | File | Verdict |
+|---|---|---|---|
+| PM1 | two columns at 393 with phone false (the width not measured) | `screens/Builder.jsx` | KILLED |
+| PM2 | overflowWrap: 'anywhere' restored (a choice's label) | `builderParts.jsx` | KILLED |
+| PM2b | WRAP restored to 'anywhere' | `builderParts.jsx` | KILLED |
+| PM3 | a choice inside an inner scroll box (the foot cap back) | `builderParts.jsx` | KILLED |
+| PM3b | the choices back in the pinned foot | `screens/Builder.jsx` | KILLED |
+| PM4 | "Continue later" restored in the builder | `screens/Builder.jsx` | KILLED |
+| PM4b | no "⋯" in the card's head | `screens/Builder.jsx` | KILLED |
+| PM5 | the build button moved away from the list (the buttons above it) | `builderParts.jsx` | KILLED |
+| PM5b | ticking exactly the pick sends a set, not the pick's confirm | `builderParts.jsx` | KILLED |
+| PM6 | a space before a comma (the blank padded again) | `builderParts.jsx` | KILLED |
+| PM6b | a filled part drawn bold again | `builderParts.jsx` | KILLED |
+| PM7 | the latest reply folded | `screens/Builder.jsx` | KILLED |
+| PM7b | no lead line on the wrong-if | `screens/Builder.jsx` | KILLED |
+| PM8 | a names subset unanswered on the walk (the three together) | `__fixtures__/thesisAnswers.test.js` | KILLED |
+| LC1 | 5C-1: a folded reply measured once (no ResizeObserver) | `builderParts.jsx` | KILLED |
+| LC2 | 5C-2: folding swaps the text nodes (the log hears the reply again) | `builderParts.jsx` | KILLED |
+| LC3 | 5C-3: the pick's tag cannot shrink (runs over the count) | `builderParts.jsx` | KILLED |
+| LC5 | 5C-5: the builder's Discard confirm still says "Continue later" | `SharedResearchSheetBody.jsx` | KILLED |
+| LC6 | 5C-6: More smaller than 44 px | `builderParts.jsx` | KILLED |
+| LC7 | 5C-7: the pick's reason does not describe its button | `builderParts.jsx` | KILLED |
+| LC8 | 5C-8: More not named for its reply | `builderParts.jsx` | KILLED |
+| LC9 | 5C-9: the "⋯" stays open after a tap elsewhere | `builderParts.jsx` | KILLED |
+| RM2 | R-2: the More box drawn only once a reply folds (an addition to the log) | `builderParts.jsx` | KILLED |
+| RM3 | R-3: the foot's presence not in the scroll padding's deps | `builderParts.jsx` | KILLED |
+| BF1 | the strip's unfold leaves focus on the strip (it unmounts: focus falls to <body>) (real browser) | `screens/Builder.jsx` | SURVIVED — equivalent now: 5C-4's hand-off moves focus to the card whenever the strip leaves with focus inside, which is what the unfold's own focus did; the pair BF1x (both gone) is killed |
+| BF1x | the strip's unfold leaves focus on the strip AND the strip's leaving hands no focus (the pair) (real browser) | `screens/Builder.jsx` | KILLED |
+| BM1 | P-2: the choices in a box that scrolls on its own (real browser) | `builderParts.jsx` | KILLED |
+| BM2 | P-2: a new turn scrolled in by its end, not its top (real browser) | `screens/Builder.jsx` | KILLED |
+| BM3 | P-2: the ready card left where the work view was scrolled (real browser) | `screens/ThesisReady.jsx` | KILLED |
+| BM4 | R-1: the ready card always scrolled to its top (a reopened sheet loses its header) (real browser) | `screens/ThesisReady.jsx` | KILLED |
+| BM5 | 5C-4: the strip leaves with focus inside it, focus not handed to the card (real browser) | `screens/Builder.jsx` | KILLED |
+| BM6 | the strip's controls without their scroll margin (focusing one scrolls the sheet) (real browser) | `builderParts.jsx` | KILLED |
+| BM7 | 5C-3: the pick's tag cannot shrink (a long agent name runs it over the count) (real browser) | `builderParts.jsx` | KILLED |
+| BM8 | 5C-6: More smaller than 44 px (real browser) | `builderParts.jsx` | KILLED |
+
+**The phone round: 24 of 24 jsdom mutants killed and 9 of 10 real-browser mutants killed** (BF1 equivalent, above). **B4's own 55 mutants, re-run on the final code: 55 of 55 killed** (M03 re-anchored for P-6). Each was judged by the row it names; every mutated file restored from its bytes and checked by SHA-256.
+
+### 15.6 The checks (on the final tree, merged with `origin/main` `abcdfcb7`)
+
+CHECKS_TABLE_15
+
+### 15.7 The phone without a Vercel login
+
+PHONE_ACCESS_15
+
+### 15.8 Renders
+
+At 393×852: every state of the three scripted walks (the founder's AMD-and-AVGO path; the agent's pick; NVDA alone with a typed wrong-if), each through to "Thesis saved", and screenshot 1's state before (the previous preview: desktop at 393) and after (this head: opened at 1280, narrowed to 393 — one column). Copied to `C:/Users/fashr/Documents/FantasyTrades/SharedResearch/B4/phone-round/`.
