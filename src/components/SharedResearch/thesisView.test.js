@@ -3,6 +3,9 @@
 // composed by B3's functions in thesisAnswers.test.js): no thesis is typed here.
 
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
 import A from './__fixtures__/thesisAnswers.json';
 import {
   frontPartOf, footOf, panelOf, valueChoicesOf, confirmMarkOf, slotOf, sentenceRunsOf, conversationOf, partFindingIdsOf,
@@ -273,5 +276,20 @@ describe('a why proposal\'s reason wears "Source-backed" only where the server\'
     expect(group.incomplete ?? []).toEqual([]);
     expect(new Set(group.reasons.map((r) => r.symbol)).size).toBe(group.reasons.length);
     expect(group.reasons.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe('P-1 (the phone round): no builder file lets a word break inside itself', () => {
+  const HERE = dirname(fileURLToPath(import.meta.url));
+  const FILES = ['builderParts.jsx', 'screens/Builder.jsx', 'screens/ThesisReady.jsx', 'screens/ThesisSaved.jsx'];
+  const src = (rel) => readFileSync(resolve(HERE, rel), 'utf8');
+  it.each(FILES)('%s: never overflow-wrap "anywhere"; every shared text style followed by WRAP', (rel) => {
+    const text = src(rel);
+    expect(text).not.toMatch(/overflowWrap:\s*'anywhere'/);
+    expect(text.match(/style=\{S\.(small|body|meta)\}/g) ?? []).toEqual([]);
+    expect(text.match(/\.\.\.S\.(small|body|meta)(?!, \.\.\.WRAP)[,\s}]/g) ?? []).toEqual([]);
+  });
+  it('WRAP breaks a word only when it alone is wider than its line', () => {
+    expect(src('builderParts.jsx')).toContain("export const WRAP = Object.freeze({ overflowWrap: 'break-word', minWidth: 0 });");
   });
 });

@@ -424,7 +424,7 @@ function AgainstLine({ against }) {
       <span style={{ ...S.eyebrow, color: T.copper }}>{B.against}</span>
       {against
         ? <div style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.45, overflowWrap: 'break-word' }}>{against.text} <span style={{ display: 'inline-flex', gap: 6, verticalAlign: 'middle' }}><Count n={against.findingIds?.length ?? 0} /></span></div>
-        : <span style={S.small}>{B.noAgainst}</span>}
+        : <span style={{ ...S.small, ...WRAP }}>{B.noAgainst}</span>}
     </div>
   );
 }
@@ -470,9 +470,9 @@ export function WhyProposal({ proposal, agentName, title = null, attrs = {} }) {
   return (
     <div {...attrs} style={{ ...S.card, gap: 8, border: `1px dashed ${wash('teal', 0.5)}` }}>
       <div style={S.row}><Mark tone="teal">{title ?? B.proposal(agentName)}</Mark><Mark>{B.suggested}</Mark></div>
-      {proposal.shared && <p style={{ ...S.body, fontWeight: 600 }} data-sr-proposal-shared="">{proposal.shared}</p>}
+      {proposal.shared && <p style={{ ...S.body, ...WRAP, fontWeight: 600 }} data-sr-proposal-shared="">{proposal.shared}</p>}
       {(proposal.reasons ?? []).map((r, i) => <ReasonLine key={`${r.symbol}:${i}`} lead={group ? r.symbol : String(i + 1)} text={r.text} findingIds={r.findingIds} basis={proposalReasonHolds(proposal, r) ? 'source' : null} agentName={agentName} attrs={{ 'data-sr-proposal-reason': r.symbol }} />)}
-      {incomplete.map((s) => <p key={s} style={{ ...S.small, color: T.copper }} data-sr-incomplete={s}>{`${s} · ${B.noReasonYet}`}</p>)}
+      {incomplete.map((s) => <p key={s} style={{ ...S.small, ...WRAP, color: T.copper }} data-sr-incomplete={s}>{`${s} · ${B.noReasonYet}`}</p>)}
       <AgainstLine against={proposal.against ?? null} />
     </div>
   );
@@ -509,7 +509,7 @@ export function ClearConfirm({ choice, onConfirm, onCancel, disabled = false }) 
   }, []);
   return (
     <div role="alertdialog" aria-label={B.change} data-sr-clear-confirm={choice.part} style={{ ...S.card, gap: 10, border: `1px solid ${wash('copper', 0.5)}`, background: wash('copper', 0.06) }}>
-      <p style={S.body}>{B.clearsAlso(choice.reason === 'drop_unsourced' ? B.parts.names : B.parts[choice.part], joinNames(others))}</p>
+      <p style={{ ...S.body, ...WRAP }}>{B.clearsAlso(choice.reason === 'drop_unsourced' ? B.parts.names : B.parts[choice.part], joinNames(others))}</p>
       <div style={S.actions}>
         <button type="button" disabled={disabled} onClick={disabled ? undefined : onConfirm} style={buttonStyle('danger', { disabled })} data-sr-clear-yes="">{B.changeIt}</button>
         <button ref={keepRef} type="button" onClick={onCancel} style={buttonStyle('ghost')} data-sr-clear-no="">{B.keepIt}</button>
@@ -541,7 +541,7 @@ export function NamesPick({ choice, pickConfirm, thesis, companies, agentName, o
   const build = () => (pickConfirm && sameNames(ticked, pickConfirm.value) ? onConfirmPick() : onSend(ticked));
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }} data-sr-names-pick="">
-      <p style={S.small}>{B.namesHelp(min, max)}</p>
+      <p style={{ ...S.small, ...WRAP }}>{B.namesHelp(min, max)}</p>
       <div role="group" aria-label={B.parts.names} style={{ display: 'flex', flexDirection: 'column' }}>
         {(choice.options ?? []).map((s) => {
           const c = supported.find((x) => x.symbol === s);
@@ -674,15 +674,15 @@ export function PartPanel({ id, part, thesis, companies, byId, agentName, onClos
         <span style={{ fontSize: 13.5, fontWeight: 700, color: T.ink, flex: 1, minWidth: 0, overflowWrap: 'break-word' }}>{slot.skipped ? B.skipped : slot.text ?? B.blank[part]}</span>
         <button type="button" onClick={onClose} aria-label={B.closePart(B.parts[part])} data-sr-panel-close={part} style={{ ...linkStyle, color: T.ink3, textDecoration: 'none', padding: 0, width: 44, minWidth: 44, height: 44, justifyContent: 'center', margin: '-12px -8px -12px 0', flexShrink: 0 }}>×</button>
       </div>
-      {slot.state === 'stale' && <p style={{ ...S.small, color: T.copper }} data-sr-stale-line="">{B.staleLine(B.parts[part])}</p>}
+      {slot.state === 'stale' && <p style={{ ...S.small, ...WRAP, color: T.copper }} data-sr-stale-line="">{B.staleLine(B.parts[part])}</p>}
       {isSet && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           {who && <span style={{ fontSize: 13, color: T.ink2 }} data-sr-who={p.by}>{who}</span>}
           {ids.length > 0
             ? <LinkButton expanded={evidence} controls={evId} onClick={() => setEvidence((v) => !v)} attrs={{ 'data-sr-part-evidence': part }}>{evidence ? B.hideEvidence : B.sources(ids.length)}</LinkButton>
-            : <span style={S.small} data-sr-no-sources="">{p.by === 'player_wrote' ? B.yourWords : B.noSources}</span>}
+            : <span style={{ ...S.small, ...WRAP }} data-sr-no-sources="">{p.by === 'player_wrote' ? B.yourWords : B.noSources}</span>}
           {part === 'theme'
-            ? <span style={S.small} data-sr-theme-fixed="">{B.themeFixed}</span>
+            ? <span style={{ ...S.small, ...WRAP }} data-sr-theme-fixed="">{B.themeFixed}</span>
             : (change && <span style={{ marginLeft: 'auto' }}><LinkButton onClick={onChange} attrs={{ 'data-sr-change': part }}>{B.change}</LinkButton></span>)}
         </div>
       )}
@@ -707,7 +707,7 @@ export function PriceLines({ choice, lines = [], onSend, disabled = false }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }} data-sr-price-lines="">
       {(choice.options ?? []).map((symbol) => (
-        <label key={symbol} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', ...S.meta }}>
+        <label key={symbol} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', ...S.meta, ...WRAP }}>
           <span style={{ whiteSpace: 'nowrap' }}>{B.priceLevel(symbol)}</span>
           <input inputMode="decimal" value={levels[symbol] ?? ''} disabled={disabled} aria-label={B.priceLevel(symbol)} data-sr-price-level={symbol}
             onChange={(e) => setLevels((v) => ({ ...v, [symbol]: e.target.value.replace(/[^0-9.]/g, '') }))}
@@ -721,7 +721,7 @@ export function PriceLines({ choice, lines = [], onSend, disabled = false }) {
 
 /** The evidence list, as the ledger draws it: every current finding but a next action ("All evidence"). */
 export function EvidenceList({ findings }) {
-  return <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }} data-sr-all-evidence="">{findings.map((f) => <Finding key={f.findingId} finding={f} />)}<p style={S.small}>{COPY.evidenceNote}</p></div>;
+  return <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }} data-sr-all-evidence="">{findings.map((f) => <Finding key={f.findingId} finding={f} />)}<p style={{ ...S.small, ...WRAP }}>{COPY.evidenceNote}</p></div>;
 }
 
 export { joinNames, horizonLabelOf };

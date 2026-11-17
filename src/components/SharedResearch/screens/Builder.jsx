@@ -68,7 +68,7 @@ function AskedPick({ pick, agentName }) {
   return (
     <div style={{ ...S.card, gap: 8, border: `1px dashed ${wash('teal', 0.5)}` }} data-sr-asked-pick={pick.part}>
       <div style={S.row}><Mark tone="teal">{B.pickTag(agentName)}</Mark><Mark>{B.suggested}</Mark></div>
-      <p style={{ ...S.body, fontWeight: 700 }}>{value}</p>
+      <p style={{ ...S.body, ...WRAP, fontWeight: 700 }}>{value}</p>
       {pick.reason && <p style={{ ...S.meta, ...WRAP }}>{pick.reason} <span style={{ display: 'inline-flex', verticalAlign: 'middle' }}><Tag tone={reasonTag.tone}>{reasonTag.text}</Tag></span></p>}
       {(pick.reasons ?? []).map((r, i) => {
         const tag = basisTagOf(r.basis, agentName);
@@ -93,7 +93,7 @@ export function SaveOutcome({ sr, sessionId, rev }) {
   return (
     <>
       <Notice role="alert" tone={sr.save.status === 'stale' ? 'gold' : 'copper'} attrs={{ 'data-sr-save': sr.save.status }}>{sr.save.message}</Notice>
-      {blockers && blockers.length > 0 && <p style={S.small} data-sr-blockers="">{B.stillToSet(blockers.map((b) => B.parts[b.part] ?? b.part).join(', '))}</p>}
+      {blockers && blockers.length > 0 && <p style={{ ...S.small, ...WRAP }} data-sr-blockers="">{B.stillToSet(blockers.map((b) => B.parts[b.part] ?? b.part).join(', '))}</p>}
     </>
   );
 }

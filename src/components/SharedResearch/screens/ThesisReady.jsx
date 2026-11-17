@@ -21,7 +21,7 @@ import { findingsById, remainingOf, STATEMENT_MAX } from '../sharedResearchView'
 import { partFindingIdsOf, panelOf, revisedWhyChoiceOf } from '../thesisView';
 import {
   CardHead, ClearConfirm, Count, Cover, FOOT, FreeButton, PartPanel, PriceLines, Rail, ResearchButton, Sentence, WhyBlock, WhyProposal, freeLabelOf, researchLabelOf, usePanelInView,
-  useFootRoom,
+  useFootRoom, WRAP,
 } from '../builderParts';
 import { Button, LinkButton, Notice, Running, Tag } from '../parts';
 import { SaveStates } from './Adopt';
@@ -101,7 +101,7 @@ export default function ThesisReady({ sr, agentName, phone, edit, setEdit, onKee
             <textarea id="sr-thesis-edit" ref={editRef} value={edit ?? thesis.sentence ?? ''} disabled={busy} rows={6} onChange={(e) => setEdit(e.target.value)}
               aria-describedby="sr-thesis-edit-count" style={{ ...S.input, minHeight: 150, resize: 'vertical' }} />
             <div style={S.row}>
-              <span id="sr-thesis-edit-count" style={{ ...S.small, color: over ? T.neg : T.ink3 }}>{COPY.count((edit ?? thesis.sentence ?? '').length)}{over ? COPY.over : ''}</span>
+              <span id="sr-thesis-edit-count" style={{ ...S.small, ...WRAP, color: over ? T.neg : T.ink3 }}>{COPY.count((edit ?? thesis.sentence ?? '').length)}{over ? COPY.over : ''}</span>
               {edit !== null && <LinkButton disabled={busy} onClick={() => { setEdit(null); setEditing(false); }} attrs={{ 'data-sr-edit-reset': '' }}>{B.backToComposed}</LinkButton>}
             </div>
           </div>
@@ -150,7 +150,7 @@ export default function ThesisReady({ sr, agentName, phone, edit, setEdit, onKee
 
       {cardFailure && <Notice role="alert" attrs={{ 'data-sr-card-failed': cardFailure.code }}>{cardFailure.message}</Notice>}
       {refusalHere && status === 'failed' && <Notice role="alert" attrs={{ 'data-sr-save': 'failed' }}>{sr.save.message}</Notice>}
-      {blockers && blockers.length > 0 && <p style={S.small} data-sr-blockers="">{B.stillToSet(blockers.map((b) => B.parts[b.part] ?? b.part).join(', '))}</p>}
+      {blockers && blockers.length > 0 && <p style={{ ...S.small, ...WRAP }} data-sr-blockers="">{B.stillToSet(blockers.map((b) => B.parts[b.part] ?? b.part).join(', '))}</p>}
       {refusalHere && status === 'stale' && <Notice role="alert" tone="gold" attrs={{ 'data-sr-save': 'stale' }}>{sr.save.message}</Notice>}
       {status === 'notsaved' && <Notice role="status" tone="teal" attrs={{ 'data-sr-save': 'notsaved' }}>{COPY.notSaved}</Notice>}
       <SaveStates sr={sr} phone={phone} />

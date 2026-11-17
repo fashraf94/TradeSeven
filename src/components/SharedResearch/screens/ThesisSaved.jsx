@@ -16,7 +16,7 @@ import React from 'react';
 import { SR_COPY as COPY } from '../sharedResearchCopy';
 import { T, S, wash } from '../sharedResearchStyle';
 import { formatWhen } from '../sharedResearchView';
-import { FreeButton } from '../builderParts';
+import { FreeButton, WRAP } from '../builderParts';
 import { Notice, Running } from '../parts';
 
 const B = COPY.builder;
@@ -41,25 +41,25 @@ export default function ThesisSaved({ sr, agentName, agentId, onClose }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <span aria-hidden="true" style={{ width: 28, height: 28, borderRadius: '50%', background: wash('pos', 0.16), border: `1.5px solid ${T.pos}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.pos, fontWeight: 700, flexShrink: 0 }}>✓</span>
         <h3 style={{ ...S.h3, fontSize: 20 }} data-sr-thesis-saved="">{B.saved}</h3>
-        {when && <span style={{ ...S.small, marginLeft: 'auto' }} data-sr-saved-at="">{when}</span>}
+        {when && <span style={{ ...S.small, ...WRAP, marginLeft: 'auto' }} data-sr-saved-at="">{when}</span>}
       </div>
       {mine && sr.save.status === 'recovered' && <Notice role="status" tone="teal" attrs={{ 'data-sr-recovered': '' }}>{COPY.recovered}</Notice>}
       {alreadySaved
-        ? <p style={S.body} data-sr-saved-already="">{COPY.savedAlready}</p>
-        : (statement && <p style={{ ...S.body, fontSize: 16.5, lineHeight: 1.6, fontWeight: 500 }} data-sr-saved-statement="">{statement}</p>)}
-      <p style={S.meta} data-sr-saved-line="">
+        ? <p style={{ ...S.body, ...WRAP }} data-sr-saved-already="">{COPY.savedAlready}</p>
+        : (statement && <p style={{ ...S.body, ...WRAP, fontSize: 16.5, lineHeight: 1.6, fontWeight: 500 }} data-sr-saved-statement="">{statement}</p>)}
+      <p style={{ ...S.meta, ...WRAP }} data-sr-saved-line="">
         <span style={{ fontWeight: 700, color: T.ink }}>{names.join(', ')}</span>
         {thesis?.parts?.timeFrame?.label ? ` · ${thesis.parts.timeFrame.label}` : ''}
       </p>
       <div style={{ paddingTop: 16, borderTop: `1px solid ${T.hair}`, display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <p style={{ ...S.body, color: T.ink2 }} data-sr-honest="">{B.honestLine(agentName)}</p>
-        <p style={{ ...S.body, color: T.ink2 }} data-sr-idea-book="">{B.ideaBook(agentName)}</p>
+        <p style={{ ...S.body, ...WRAP, color: T.ink2 }} data-sr-honest="">{B.honestLine(agentName)}</p>
+        <p style={{ ...S.body, ...WRAP, color: T.ink2 }} data-sr-idea-book="">{B.ideaBook(agentName)}</p>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <FreeButton label={B.done} trail="" strong onClick={onClose} attrs={{ 'data-sr-done': '' }} />
         {canEquip && eq.status === 'none' && <FreeButton label={COPY.useNext} trail={B.optional} disabled={busy} onClick={() => sr.equipNow({ agentId, watchlistId })} attrs={{ 'data-sr-equip': '' }} />}
         {canEquip && eq.status === 'running' && <Running>{COPY.equipping}</Running>}
-        {canEquip && eq.status === 'done' && <p style={S.body} data-sr-equipped="">{COPY.equipped}</p>}
+        {canEquip && eq.status === 'done' && <p style={{ ...S.body, ...WRAP }} data-sr-equipped="">{COPY.equipped}</p>}
         {canEquip && eq.status === 'failed' && (
           <>
             <Notice role="alert" attrs={{ 'data-sr-equip-failed': '' }}>{COPY.equipFailed}</Notice>
