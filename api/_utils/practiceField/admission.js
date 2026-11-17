@@ -390,7 +390,9 @@ export async function admitIdea(db, { bookId, contract: rawContract, opId, nowIs
       if (!admitsOwner) extra.push({ code: 'mode_not_admitted' });
       if (book.status !== 'active') extra.push({ code: 'book_not_active', status: book.status ?? null });
       if (book.drafting === 'paused' || book.windDown) extra.push({ code: 'drafting_paused' });
-      // T1a-2b-2 §1 (review A1): the owed close and the marks need no contract either.
+      // T1a-2b-2 §1 (review A1 and its refuter): the epoch's stamp, the owed close and the marks need no contract either.
+      const gate = epoch?.gateConfig || null;
+      if (!gate || !epoch?.rails || !isSectorCapCorrected(gate)) extra.push({ code: VINTAGE_UNCORRECTED });
       const owed = closeOwedSession(book, nowIso);
       if (owed !== null) extra.push({ code: 'close_owed', session: owed.session, completedAt: owed.completedAtIso });
       const measured = admissionMarksOf({ book, ideas, markSet, nowIso });

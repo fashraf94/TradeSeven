@@ -756,8 +756,10 @@ async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false, w
     writeWindowOnlySessions(tx, bookRef, windowsAccounted);
     tx.create(windowsRefOf(bookRef).doc(windowRowId(session, CLOSE_WINDOW)), closeWindow.row);
     // T1a-2b-2 §4.1 (Astra T2B-05): a session caught up AT A WINDOW leaves that window's own receipt, in this transaction.
-    // A catch-up that closes the book (its wind-down complete) leaves none: the closed book owes that window nothing,
-    // and its row is not written (the caught-up session's own close row records it).
+    // The transaction that closes the book (its wind-down complete) writes none: the closed book owes that window
+    // nothing, and that session's own close row records the catch-up. Sessions the SAME catch-up closed before it have
+    // already written theirs, so the window's row then holds those receipts and no attempt — a true record of what code
+    // did at the window, which nothing reads again (a closed book is never served or closed again; review C2).
     if (catchUpOnly && windowTick && !completesWindDown) {
       writeWindowActionReceipts(tx, bookRef, windowTick, [{ kind: WINDOW_ACTION_KIND.CAUGHT_UP, id: session, detail: { session, observed }, at: nowIso }]);
     }

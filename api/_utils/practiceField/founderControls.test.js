@@ -400,6 +400,28 @@ describe('the lifecycles', () => {
     expect(await runDrainingIdeaBookCloses(three.db, { date: S[2], now: closeNowOf(S[2]), ownerToken: 'owner-token' })).toMatchObject({ books: 0, closed: 0, skipped: 0 });
   });
 
+  it('T1a-2b-2 review C2 — a window catch-up of TWO sessions whose second closes the book: that closing transaction writes no receipt; the first session\'s receipt stays on the window\'s row, with no attempt — and nothing serves or closes the book again', async () => {
+    const four = await emptyBookClosedOnS0();
+    await act(four.db, 'wind_down', 'w-1', {}, { nowIso: etIso(S[1], 18, 30) }); // after S[1]'s close pass: S[1] closes active
+    await storeCloseSnapshot(four.db, S[1], quotes());
+    await storeCloseSnapshot(four.db, S[2], quotes());
+    const original = console.error; console.error = () => {};
+    let p;
+    try { p = await windowPass(four.db, S[3]); } finally { console.error = original; }
+    expect(p).toMatchObject({ books: 1, served: 0, caughtUp: 2, errors: 0 });
+    expect(getBook(four.db, four.bookId)).toMatchObject({ status: 'closed', closedOn: S[2] });
+    expect(four.db._get(`mandates/${four.bookId}/windows/${S[3]}_open30`)).toEqual({
+      actions: { [`caught_up:${S[1]}`]: { kind: 'caught_up', session: S[1], observed: true, at: slotNowOf(S[3]).toISOString() } },
+    });
+    expect(four.db._get(`mandates/${four.bookId}/windows/${S[2]}_close`)).toMatchObject({ code: { bookClosed: true, caughtUpSession: true } });
+    expect(getBook(four.db, four.bookId).execState.lastIdeaTickKey ?? null).toBeNull();
+    // A later fire serves nobody and writes nothing.
+    const bookBefore = JSON.stringify(getBook(four.db, four.bookId));
+    expect(await windowPass(four.db, S[4])).toMatchObject({ books: 0, served: 0 });
+    expect(JSON.stringify(getBook(four.db, four.bookId))).toBe(bookBefore);
+    expect(four.db._get(`mandates/${four.bookId}/windows/${S[4]}_open30`)).toBeUndefined();
+  });
+
   it('C2 — a caught-up session that ended BEFORE the wind-down was requested is closed as the active session it was: the wind-down completes at a later session, and no active session loses its rows', async () => {
     // Requested on S[2] at 09:00, with S[1]'s close missed: S[1] closes active; S[2]'s close completes the wind-down.
     const a = await emptyBookClosedOnS0();

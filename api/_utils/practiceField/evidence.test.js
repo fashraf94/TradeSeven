@@ -655,6 +655,21 @@ describe('the result packet — in the endpoint close\'s transaction, a copy of 
       expect(resultPacketPartProblems(boundPacket, { ...partDocs, [first.id]: { ...partDocs[first.id], receipts: partDocs[first.id].receipts.slice(1) } })).toEqual([`part:${first.id}:hash`, `part:${first.id}:count`, 'parts:count']);
       expect(resultPacketPartProblems(boundPacket, { ...partDocs, [first.id]: undefined })).toEqual([`part:${first.id}:missing`, 'parts:count']);
       expect(verifyPacket({ ...boundPacket, corporateActions: { ...boundPacket.corporateActions, parts: boundPacket.corporateActions.parts.slice(1) } })).toBe(false);
+
+      // Review C1 and its refuter: the BINDING document is now the IDEA, which keeps every receipt on its ledgers and is
+      // rewritten by every close. Measured at this shape: past 1 MiB at the bound, and the count it holds — the limit a
+      // real feed (tens of receipts) never nears. Taking the receipts off it is T1a-2b-3's (ledger.js).
+      const ideaPath = `projects/p/databases/(default)/documents/mandates/${bookId}/ideas/${r.ideaId}`;
+      const ideaDocBytes = firestoreDocumentBytes(ideaPath, jsonPure(atBound));
+      const baseIdeaBytes = firestoreDocumentBytes(ideaPath, jsonPure(ideaAtEnd));
+      const perReceipt = (ideaDocBytes - baseIdeaBytes) / made;
+      const fits = Math.floor((1024 * 1024 - baseIdeaBytes) / perReceipt);
+      console.log(`PF_IDEA_DOC_AT_BOUND bytes=${ideaDocBytes} withoutReceipts=${baseIdeaBytes} perReceipt=${perReceipt.toFixed(1)} fits=${fits}`);
+      expect(ideaDocBytes).toBeGreaterThan(1024 * 1024);
+      expect(fits).toBeGreaterThan(2000);
+      expect(fits).toBeLessThan(RESULT_RECEIPT_BOUND.receipts);
+      // Every holding paying monthly over the long slot is about 52 receipts: far inside.
+      expect(baseIdeaBytes + 52 * perReceipt).toBeLessThan(64 * 1024);
     }, 60_000);
   });
 

@@ -13,7 +13,7 @@ import { runIdeaBookEvalPass, runIdeaBookWindow } from './sweep.js';
 import { closeIdeaBook, catchUpIdeaBook } from './close.js';
 import { readFileSync } from 'node:fs';
 import { ideaBookWindowsOf, windowRowId, CLOSE_WINDOW, IDEA_BOOK_EVAL_FIRE_EVERY_MIN, nextSessionDate } from './windows.js';
-import { recordWindowAttempt, foldWindowAttempt, attemptOf, buildCloseWindowRow, WINDOW_OUTCOME, WINDOW_ONLY_SESSIONS_PER_TX, firstUnaccountedWindowSession } from './windowLedger.js';
+import { recordWindowAttempt, foldWindowAttempt, attemptOf, buildCloseWindowRow, WINDOW_OUTCOME, WINDOW_ONLY_SESSIONS_PER_TX, firstUnaccountedWindowSession, windowActionKey } from './windowLedger.js';
 import {
   seedBook, contractOf, closeOn, storeTickSnapshot, storeCloseSnapshot, tickSnapshot, tickOf, slotNowOf, closeNowOf, etIso, DAYS, ADMIT_ISO,
   getBook, getIdea, windDownBook, withoutWindowAlerts, enterAt,
@@ -487,6 +487,8 @@ describe('T1a-2b-2 §4.1 (Astra T2B-05) — a window\'s counts survive a failed 
     expect(second).toMatchObject({ entered: 0, errors: 0 });
     expect(rowOf(ctx.db, ctx.bookId, DAYS.d1, 'open30')).toMatchObject({
       served: true, attempts: 1, errors: 0, code: { entries: { filled: 1, waiting: 0, cancelled: 0 }, sales: { filled: 0 } }, outcome: 'code_action',
+      // review C4: the first attempt is the lost one, known by its receipt's time — not the recorded attempt's.
+      firstAttemptAt: slotNowOf(DAYS.d1).toISOString(), servedAt: nextFire(DAYS.d1).toISOString(),
     });
     // A served row is never written again: a third fire changes nothing.
     const bytes = JSON.stringify(rowOf(ctx.db, ctx.bookId, DAYS.d1, 'open30'));
@@ -548,6 +550,12 @@ describe('T1a-2b-2 §4.1 (Astra T2B-05) — a window\'s counts survive a failed 
     expect(getIdea(ctx.db, ctx.bookId, ctx.ideaId).status).toBe('cancelled');
     await pass(ctx.db, DAYS.d1, 'preClose', nextFire(DAYS.d1, 'preClose'));
     expect(rowOf(ctx.db, ctx.bookId, DAYS.d1, 'preClose')).toMatchObject({ served: true, code: { entries: { filled: 0, waiting: 0, cancelled: 1 } }, outcome: 'code_action' });
+  });
+
+  it('review C6 — a receipt\'s key keeps two ids apart even when one spells the other\'s escape', () => {
+    expect(windowActionKey('sale', 'i__line_exit__BRK.B')).toBe('sale:i__line_exit__BRK%2EB');
+    expect(windowActionKey('sale', 'i__line_exit__BRK%2EB')).toBe('sale:i__line_exit__BRK%252EB');
+    expect(windowActionKey('entry', 'idea_0123456789abcdef01234567')).toBe('entry:idea_0123456789abcdef01234567');
   });
 
   it('foldWindowAttempt: each count is the larger of the attempts\' and the receipts\' — equal when every attempt was recorded, never doubled', () => {

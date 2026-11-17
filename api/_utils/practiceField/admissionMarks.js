@@ -36,7 +36,7 @@ import { MARK_QUALITY } from './constants.js';
 import { quotePastMaxAge, instantMs } from './marks.js';
 import { valueLedger, saleHeldBackBy } from './ledger.js';
 import { etDateOfMs, sessionCloseMs } from './windows.js';
-import { firstUnaccountedWindowSession } from './windowLedger.js';
+import { firstUnaccountedWindowSession, WINDOWS_ACCOUNTED_FIELD } from './windowLedger.js';
 import { toCents, fromCents } from './money.js';
 
 /** Where admission's marks come from. */
@@ -88,7 +88,11 @@ export function lastCompletedSessionAt(nowMs) {
  */
 export function closeOwedSession(book, nowIso) {
   const nowMs = Date.parse(nowIso);
-  const first = firstUnaccountedWindowSession(book);
+  // A cursor that is a string but not a date is one that cannot be read: owed, typed (review A6) — never a throw.
+  const notADate = (v) => typeof v === 'string' && !/^\d{4}-\d{2}-\d{2}$/.test(v);
+  if (notADate(book?.execState?.lastCloseKey) || notADate(book?.execState?.[WINDOWS_ACCOUNTED_FIELD])) return { session: null, completedAtIso: null };
+  let first;
+  try { first = firstUnaccountedWindowSession(book); } catch { return { session: null, completedAtIso: null }; }
   if (first === null) return { session: null, completedAtIso: null };
   const endMs = sessionCloseMs(first);
   if (endMs === null) return { session: first, completedAtIso: null };
@@ -118,25 +122,28 @@ export function admissionMarkSetCandidates(nowIso) {
  * literal name, for the protected-store scan. A stored document is THE one only when its own key and session are the
  * ones asked for and it was built at or before `nowIso` (a snapshot built after the decision's instant — seen by a
  * transaction retried later — is not one it was made against). The first that qualifies, newest first; none is
- * `{ snapshot: null }` and every held name then lacks a mark.
+ * `{ snapshot: null }` and every held name then lacks a mark. A stored document passed over is named with its reason
+ * in `passedOver` (review A7): a document built after the decision is a race; one that is not its key's own is not.
  *
  * @returns {Promise<{ basis: string, session: string|null, snapshotKey: string|null, snapshot: object|null,
- *                     builtAtIso: string|null, considered: string[], reason: string|null }>}
+ *                     builtAtIso: string|null, considered: string[], passedOver: Array<{ key: string, reason: string }>,
+ *                     reason: string|null }>}
  */
 export async function readAdmissionMarkSet(tx, db, { nowIso }) {
   const { basis, session, keys } = admissionMarkSetCandidates(nowIso);
   const nowMs = Date.parse(nowIso);
   let reason = keys.length === 0 ? (session === null ? 'calendar_unsupported' : 'no_snapshot_yet') : 'no_snapshot';
+  const passedOver = [];
   for (const key of keys) {
     const snap = await tx.get(db.collection('mandateUniverseSnapshots').doc(key));
     if (!snap.exists) continue;
     const doc = snap.data();
     const builtMs = instantMs(doc?.builtAt);
-    if (doc?.tickKey !== key || doc?.sessionDate !== session || !Number.isFinite(builtMs)) { reason = 'snapshot_invalid'; continue; }
-    if (builtMs > nowMs) { reason = 'snapshot_after_decision'; continue; }
-    return { basis, session, snapshotKey: key, snapshot: doc, builtAtIso: new Date(builtMs).toISOString(), considered: keys, reason: null };
+    if (doc?.tickKey !== key || doc?.sessionDate !== session || !Number.isFinite(builtMs)) { reason = 'snapshot_invalid'; passedOver.push({ key, reason }); continue; }
+    if (builtMs > nowMs) { reason = 'snapshot_after_decision'; passedOver.push({ key, reason }); continue; }
+    return { basis, session, snapshotKey: key, snapshot: doc, builtAtIso: new Date(builtMs).toISOString(), considered: keys, passedOver, reason: null };
   }
-  return { basis, session, snapshotKey: null, snapshot: null, builtAtIso: null, considered: keys, reason };
+  return { basis, session, snapshotKey: null, snapshot: null, builtAtIso: null, considered: keys, passedOver, reason };
 }
 
 /**
@@ -223,6 +230,7 @@ export function admissionMarksRecord({ markSet, measured, nowIso }) {
     snapshotKey: markSet?.snapshotKey ?? null,
     snapshotBuiltAt: markSet?.builtAtIso ?? null,
     considered: markSet?.considered ?? [],
+    passedOver: markSet?.passedOver ?? [],
     at: nowIso,
     marks: Object.fromEntries(Object.keys(measured?.marks || {}).sort().map((s) => [s, { ...measured.marks[s] }])),
     treasuryUsd: Number.isInteger(measured?.treasuryCents) ? fromCents(measured.treasuryCents) : null,

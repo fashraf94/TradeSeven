@@ -65,12 +65,13 @@ import {
 // admission here is made by a book holding nothing, so the equity measured at its marks (§1) is the recorded one. 8
 // documents ADDED: B's result packet's one receipt part (`evidence/result_actions_001`: its split and dividend, §4.4),
 // and 7 intraday window rows holding only the receipt of what code did there (an entry, a sale, a result — §4.1; the
-// run drives its windows directly, so no attempt is recorded on them). 60 leaves ADDED: each admission packet's
-// `admissionMarks` and `recordedEquityUsd` (§1); each result packet's receipt summary (`receipts`, `byLedger`,
+// run drives its windows directly, so no attempt is recorded on them). 63 leaves ADDED: each admission packet's
+// `admissionMarks` (with `passedOver`, review A7) and `recordedEquityUsd` (§1); each result packet's receipt summary (`receipts`, `byLedger`,
 // `parts`); and on 7 close rows `session.notServedButAttempted` names that window (it was acted at and never recorded).
 // 37 leaves REMOVED: the result packets' inline receipts (B's two, now in its part) and their per-ledger arrays. 6
 // leaves CHANGED: the six packets' `contentHash`, following the above.
-const EXPECTED_DUMP = { sha256: '6630b251636e97bf217408cedd423d6139b350f8fdc115cf946b1063bc571e1b', bytes: 389741 };
+// The run also makes one admission while B holds XOM (review A10): refused at S[7]'s 10:00 snapshot, it writes nothing.
+const EXPECTED_DUMP = { sha256: '288b0c895bd86a06181d501fb862962d86e445b1c632c1921a7baab413d0069c', bytes: 389807 };
 
 // Twenty-nine sessions from Monday 16 November 2026 (Thanksgiving and Christmas are not sessions).
 const SESSIONS = ['2026-11-16'];
@@ -187,6 +188,20 @@ describe('the end-to-end synthetic run', () => {
     await close(6, { JPM: roundUsd(lineJpm - 1.07) }); // JPM's line is hit; XOM's is not
     expect(idea(b.ideaId).ledger.holdings.XOM.exitPending).toBeUndefined();
     expect((await win(7, { JPM: roundUsd(lineJpm - 2.3) })).sales).toMatchObject({ sold: 1 });
+    // T1a-2b-2 §1, end to end (review A10): an admission at 11:00 on S[7], while B holds XOM, is measured at S[7]'s
+    // 10:00 window snapshot — not at the equity the book recorded — and refused; a refusal writes nothing (the pin holds).
+    {
+      const before = dumpStore(db);
+      const snap = db._get(`mandateUniverseSnapshots/${SESSIONS[7]}_open30`);
+      const held = idea(b.ideaId);
+      expect(Object.keys(held.ledger.holdings)).toEqual(['XOM']);
+      const equityCents = cents(book().treasury.unreservedCash) + cents(held.ledger.cash) + cents(roundUsd(held.ledger.holdings.XOM.shares * snap.symbols.XOM.price));
+      const probe = await admitIdea(db, { bookId, contract: contractOf({ slot: 'medium', names: ['LLY'], capitalUsd: 33000, comparison: { type: 'sector_fund', symbols: ['XLV'] } }), opId: 'probe-a10', nowIso: etIso(SESSIONS[7], 11, 0) });
+      expect(probe).toMatchObject({ ok: false, permittedMaxUsd: Math.floor((equityCents * 300000) / 1e6) / 100 });
+      expect(probe.refusals.map((r) => r.code)).toEqual(['capital_exceeds_slot_cap']);
+      expect(cents(book().portfolio.totalValue)).not.toBe(equityCents); // the recorded figure is not what it measured
+      expect(dumpStore(db)).toBe(before);
+    }
     expect(idea(b.ideaId).status).toBe('holding'); // E14: back to holding with XOM
     const xomBeforeSplit = idea(b.ideaId).ledger.holdings.XOM.shares;
     const xomLineBeforeSplit = idea(b.ideaId).lines.find((l) => l.symbol === 'XOM').level;

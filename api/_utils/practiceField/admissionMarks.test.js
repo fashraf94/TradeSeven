@@ -63,7 +63,7 @@ describe('Astra T1A-05 — every limit, at the newest snapshot of the session', 
     expect(packet.measuredAgainst).toMatchObject({ equityUsd: 93992.8, recordedEquityUsd: 99991 });
     expect(packet.measuredAgainst.admissionMarks).toEqual({
       basis: 'session_snapshot', session: DAYS.d2, snapshotKey: `${DAYS.d2}_open30`, snapshotBuiltAt: new Date(Date.parse(slotOpenIso(DAYS.d2)) + 60_000).toISOString(),
-      considered: [`${DAYS.d2}_open30`], at: AT_11,
+      considered: [`${DAYS.d2}_open30`], passedOver: [], at: AT_11,
       marks: { AAPL: { price: 185.176, quality: 'vendor_time', vendorTimeIso: etIso(DAYS.d2, 9, 45), ageAtAdmissionMs: 75 * 60_000, snapshotKey: `${DAYS.d2}_open30` } },
       treasuryUsd: 70000, ideasCashUsd: 0, holdingsUsd: 23992.8, equityUsd: 93992.8,
     });
@@ -116,7 +116,18 @@ describe('Astra T1A-05 — every limit, at the newest snapshot of the session', 
     const c = await t1a05Book(185.176);
     placeSnapshot(c.db, snapshotOf({ tickKey: `${DAYS.d2}_midday`, sessionDate: DAYS.d2, builtAt: etIso(DAYS.d2, 12, 47), quoteAt: etIso(DAYS.d2, 12, 40), quotes: q({ AAPL: 250.01, MSFT: 418.13, SPY: 597.31 }) }));
     const early = await admitIdea(c.db, { bookId: c.bookId, contract: contractOf({ slot: 'short', names: ['MSFT'], capitalUsd: 1000 }), opId: 'e', nowIso: etIso(DAYS.d2, 12, 46) });
-    expect(packetOf(c.db, c.bookId, early.ideaId).measuredAgainst.admissionMarks).toMatchObject({ snapshotKey: `${DAYS.d2}_open30`, marks: { AAPL: { price: 185.176 } } });
+    expect(packetOf(c.db, c.bookId, early.ideaId).measuredAgainst.admissionMarks).toMatchObject({
+      snapshotKey: `${DAYS.d2}_open30`, marks: { AAPL: { price: 185.176 } },
+      // review A7: the newer document passed over is named, with why — a race, not a bad document.
+      passedOver: [{ key: `${DAYS.d2}_midday`, reason: 'snapshot_after_decision' }],
+    });
+    // …and a newer document that is not its key's own is named as such.
+    const d = await t1a05Book(185.176);
+    placeSnapshot(d.db, { ...tickSnapshot(DAYS.d2, 'midday', q({ AAPL: 250.01, MSFT: 418.13, SPY: 597.31 })), sessionDate: DAYS.d1 });
+    const bad = await admitIdea(d.db, { bookId: d.bookId, contract: contractOf({ slot: 'short', names: ['MSFT'], capitalUsd: 1000 }), opId: 'b', nowIso: etIso(DAYS.d2, 13, 0) });
+    expect(packetOf(d.db, d.bookId, bad.ideaId).measuredAgainst.admissionMarks).toMatchObject({
+      snapshotKey: `${DAYS.d2}_open30`, passedOver: [{ key: `${DAYS.d2}_midday`, reason: 'snapshot_invalid' }],
+    });
   });
 });
 
@@ -195,6 +206,14 @@ describe('fail closed — a held name with no full-quality mark in the set is re
     const later = await admitIdea(db, { bookId, contract: thesis, opId: 'y', nowIso: etIso(DAYS.d3, 11, 0) });
     expect(later.refusals.map((r) => r.code)).toEqual(['text_invalid', 'close_owed', 'admission_marks_unavailable']);
     expect(later.refusals[1]).toEqual({ code: 'close_owed', session: DAYS.d2, completedAt: etIso(DAYS.d2, 16, 0) });
+    // …and the epoch's stamp (its refuter): an uncorrected epoch is said beside a broken draft too.
+    const vb = await seedBook({ uid: 'owner-v' });
+    const epochRef = vb.bookRef.collection('epochs').doc('epoch-0001');
+    const epoch = (await epochRef.get()).data();
+    const { sectorCapConversionVersion: _stamp, ...unstamped } = epoch.gateConfig;
+    await epochRef.set({ ...epoch, gateConfig: { ...unstamped, sectorConcentrationCap: 2 } });
+    const v = await admitIdea(vb.db, { bookId: vb.bookId, contract: broken, opId: 'v', nowIso: etIso(DAYS.admit, 11, 0) });
+    expect(v.refusals.map((r) => r.code)).toEqual(['slot_invalid', 'vintage_uncorrected']);
   });
 
   it('a book that holds NOTHING needs no mark: it is measured at its cash with no snapshot at all', async () => {
@@ -258,6 +277,9 @@ describe('C-2 — no admission while the book owes a close', () => {
     expect(closeOwedSession(at(etIso(DAYS.d1, 18, 30)), etIso(DAYS.d2, 9, 0))).toBeNull(); // starts D2
     expect(closeOwedSession(at(etIso(DAYS.d1, 17, 0)), etIso(DAYS.d1, 17, 30))).toEqual({ session: DAYS.d1, completedAtIso: etIso(DAYS.d1, 16, 0) });
     expect(closeOwedSession({ execState: {} }, etIso(DAYS.d1, 11, 0))).toEqual({ session: null, completedAtIso: null });
+    // review A6: a cursor that is not a date is one that cannot be read — owed, typed, never a throw.
+    expect(closeOwedSession({ createdAt: new Date(etIso(DAYS.d1, 9, 0)), execState: { lastCloseKey: 'not-a-date' } }, etIso(DAYS.d1, 11, 0))).toEqual({ session: null, completedAtIso: null });
+    expect(closeOwedSession({ createdAt: new Date(etIso(DAYS.d1, 9, 0)), execState: { windowsAccountedThrough: '2026-13-45x' } }, etIso(DAYS.d1, 11, 0))).toEqual({ session: null, completedAtIso: null });
   });
 });
 

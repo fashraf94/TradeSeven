@@ -99,7 +99,7 @@ export const WINDOW_ACTION_KIND = Object.freeze({
 });
 
 /** A receipt's key in the row's `actions` map: its kind and the action's own id ('.' spelled out — keys stay literal). */
-export const windowActionKey = (kind, id) => `${kind}:${String(id).replace(/\./g, '%2E')}`;
+export const windowActionKey = (kind, id) => `${kind}:${String(id).replace(/%/g, '%25').replace(/\./g, '%2E')}`;
 
 /**
  * Write the pending-window receipts of actions made at a window, in the CALLER's transaction — the action's own, after
@@ -159,7 +159,9 @@ export function foldWindowAttempt(prior, attempt, { bookId, tick }) {
     tickKey: tick.tickKey,
     served,
     servedAt: served ? attempt.at : null,
-    firstAttemptAt: prior?.firstAttemptAt ?? attempt.at,
+    // The first attempt the window saw: the earliest of the recorded ones and of the receipts' (an attempt whose row
+    // write failed is known only by its receipts; review C4).
+    firstAttemptAt: [prior?.firstAttemptAt, ...receipts.map((r) => r?.at), attempt.at].filter((x) => typeof x === 'string').sort()[0],
     attempts: (prior?.attempts || 0) + 1,
     errors: (prior?.errors || 0) + attempt.errors,
     attemptLog: [...(prior?.attemptLog || []), attempt].slice(-WINDOW_ATTEMPTS_KEPT),

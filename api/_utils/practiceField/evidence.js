@@ -297,6 +297,13 @@ const endpointCopy = (side, endpointSnapshotKey) => {
 // so its own hash covers theirs. The split is by size, never by count, so it holds whatever the count; at the bound
 // it makes three parts (about 511 KiB, 511 KiB and 276 KiB), and the packet stays about 233 KiB. An idea with no applied
 // receipt has no part.
+// THE BINDING DOCUMENT IS THE IDEA (review C1 and its refuter). The idea document itself keeps every receipt on its three
+// ledgers (ledger.js corporateActionReceipts, appliedActionIds) — applied ones, and declines and conflicts too — and every
+// close rewrites it. At the receipt shape measured above it passes Firestore's 1 MiB at about 2,700 receipts (about
+// 3,500 at the applier's plainer shape), before this bound; a close that cannot write it would fail for good. A real
+// feed comes nowhere near: the universe's payers are quarterly (one monthly), splits are rare, so an idea carries tens
+// of receipts (about 52 if all 13 holdings paid monthly — about 26 KB). The packet no longer binds first; taking the
+// receipts off the idea document is the corporate-action build's (T1a-2b-3) — ledger.js is outside this build.
 
 /** The prefix of a result packet's receipt parts (`result_actions_001`, …). */
 export const RESULT_RECEIPT_PART_PREFIX = 'result_actions_';
