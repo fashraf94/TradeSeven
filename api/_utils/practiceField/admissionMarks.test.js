@@ -172,6 +172,31 @@ describe('fail closed — a held name with no full-quality mark in the set is re
     expect(u.unavailable).toEqual([{ symbol: 'AAPL', ideaId: expect.any(String), reason: 'corporate_action_pending' }]);
   });
 
+  it('review A2 — an unmarked holding hides nothing that needs no mark: a bad epoch number and the position count are still refused beside it, and no dollar limit or maximum is measured', async () => {
+    const { db, bookId, bookRef } = await t1a05Book(185.176);
+    const epochRef = bookRef.collection('epochs').doc('epoch-0001');
+    const epoch = (await epochRef.get()).data();
+    await epochRef.set({ ...epoch, gateConfig: { ...epoch.gateConfig, cashFloorPct: null, maxPositions: 1 } });
+    const res = await admitIdea(db, { bookId, contract: contractOf({ slot: 'short', names: ['MSFT'], capitalUsd: 1000 }), opId: 'x', nowIso: etIso(DAYS.d2, 9, 45) });
+    expect(codes(res)).toEqual(['admission_marks_unavailable', 'epoch_config_invalid', 'position_count_exceeded']);
+    expect(res.refusals.find((r) => r.code === 'epoch_config_invalid')).toEqual({ code: 'epoch_config_invalid', constraints: ['cash_floor'] });
+    expect(res.refusals.find((r) => r.code === 'position_count_exceeded')).toMatchObject({ positionsAfter: 2, maxPositions: 1 });
+    expect(res.permittedMaxUsd).toBeNull();
+    expect(res.binding).toEqual([]);
+  });
+
+  it('review A1 — a draft whose shape fails still hears the owed close and the missing marks, which need no contract', async () => {
+    const { db, bookId } = await t1a05Book(185.176);
+    // D2 at 09:45: no snapshot yet (AAPL unmarked); D1 closed, D2 not ended — and then D3 at 11:00, D2 never closed.
+    const broken = contractOf({ slot: 'nope' });
+    const morning = await admitIdea(db, { bookId, contract: broken, opId: 'x', nowIso: etIso(DAYS.d2, 9, 45) });
+    expect(morning.refusals.map((r) => r.code)).toEqual(['slot_invalid', 'admission_marks_unavailable']);
+    const thesis = contractOf({ thesis: { text: 'Breaks \uD83D here', author: 'founder_fixture' } });
+    const later = await admitIdea(db, { bookId, contract: thesis, opId: 'y', nowIso: etIso(DAYS.d3, 11, 0) });
+    expect(later.refusals.map((r) => r.code)).toEqual(['text_invalid', 'close_owed', 'admission_marks_unavailable']);
+    expect(later.refusals[1]).toEqual({ code: 'close_owed', session: DAYS.d2, completedAt: etIso(DAYS.d2, 16, 0) });
+  });
+
   it('a book that holds NOTHING needs no mark: it is measured at its cash with no snapshot at all', async () => {
     const { db, bookId } = await seedBook();
     const res = await admitIdea(db, { bookId, contract: contractOf({ capitalUsd: 20000 }), opId: 'x', nowIso: etIso(DAYS.admit, 9, 45) });

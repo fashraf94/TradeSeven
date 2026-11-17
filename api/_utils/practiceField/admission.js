@@ -94,6 +94,15 @@ function publicLimit(limit) {
   return out;
 }
 
+/** The refusal of a book that holds a name with no full-quality mark in admission's set (T1a-2b-2 §1). */
+function marksUnavailableRefusal(measured, markSet) {
+  return {
+    code: 'admission_marks_unavailable',
+    symbols: [...new Set(measured.unavailable.map((u) => u.symbol))], unavailable: measured.unavailable,
+    basis: markSet?.basis ?? null, session: markSet?.session ?? null, snapshotKey: markSet?.snapshotKey ?? null,
+  };
+}
+
 /** The names another idea of the book holds or has pending: symbol → ideaId. */
 function namesTakenBy(ideas) {
   const taken = new Map();
@@ -135,12 +144,7 @@ export function evaluateAdmission({ book, epoch, ideas, coverageData, contract, 
   // The ONE set of marks the whole decision is measured against (Astra T1A-05). FAIL CLOSED: a held name with no
   // full-quality mark in it is refused by symbol, and check 7 measures nothing — never `lastMark` or `totalValue`.
   const measured = admissionMarksOf({ book, ideas, markSet, nowIso });
-  if (!measured.ok) {
-    refuse('admission_marks_unavailable', {
-      symbols: [...new Set(measured.unavailable.map((u) => u.symbol))], unavailable: measured.unavailable,
-      basis: markSet?.basis ?? null, session: markSet?.session ?? null, snapshotKey: markSet?.snapshotKey ?? null,
-    });
-  }
+  if (!measured.ok) refusals.push(marksUnavailableRefusal(measured, markSet));
 
   // 2. The slot is open.
   const occupant = book.slots?.[contract.slot] ?? null;
@@ -160,12 +164,15 @@ export function evaluateAdmission({ book, epoch, ideas, coverageData, contract, 
   // 7. Capital.
   const limits = [];
   let permittedMaxCents = null;
-  if (gate && rails && isSectorCapCorrected(gate) && measured.ok) {
+  if (gate && rails && isSectorCapCorrected(gate)) {
     // The equity every share is taken of is the book's marked equity AT THE SET'S MARKS (admissionMarks.js; the R-19
     // basis: the treasury + each open idea's cash + its holdings at those marks, rounded once per idea), in whole
     // cents. The limits, the sector exposure and the headroom this answer returns come from the same marks, and the
     // admission packet records them (BUILD_RULES §9: one source for every figure of the decision).
-    const equityOk = Number.isInteger(measured.equityCents) && measured.equityCents >= 0;
+    // With a held name UNMARKED nothing in dollars is measured — no dollar limit, no permitted maximum — but what needs
+    // no mark is still checked and said (review A2): the epoch's own numbers and the position count.
+    const marksOk = measured.ok;
+    const equityOk = marksOk && Number.isInteger(measured.equityCents) && measured.equityCents >= 0;
     const equityCents = equityOk ? measured.equityCents : NaN;
     const unreservedCents = toCents(book.treasury?.unreservedCash);
     const capitalCents = toCents(contract.capitalUsd);
@@ -176,26 +183,28 @@ export function evaluateAdmission({ book, epoch, ideas, coverageData, contract, 
     const isShare = (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1;
     const isCount = (v) => Number.isInteger(v) && v > 0;
     const invalid = new Set();
-    if (!equityOk) invalid.add('book_equity');
+    if (marksOk && !equityOk) invalid.add('book_equity');
     if (!isShare(rails.slotCapShare?.[contract.slot])) invalid.add('slot_cap');
     if (!isShare(gate.cashFloorPct)) invalid.add('cash_floor');
     if (!isShare(gate.maxSinglePositionWeightPct)) invalid.add('single_position_cap');
     if (gate.sectorConcentrationCap !== null && !(isCount(gate.sectorCapSlots) && isCount(gate.sectorCapDenominator))) invalid.add('sector_cap');
     if (!isCount(gate.maxPositions)) invalid.add('position_count');
 
-    limits.push({ constraint: 'slot_cap', code: 'capital_exceeds_slot_cap', limitCents: shareLimitCents(equityCents, rails.slotCapShare?.[contract.slot]), slot: contract.slot });
-    limits.push({ constraint: 'cash_floor', code: 'cash_floor_breached', limitCents: unreservedCents - shareCeilCents(equityCents, gate.cashFloorPct) });
+    if (marksOk) {
+      limits.push({ constraint: 'slot_cap', code: 'capital_exceeds_slot_cap', limitCents: shareLimitCents(equityCents, rails.slotCapShare?.[contract.slot]), slot: contract.slot });
+      limits.push({ constraint: 'cash_floor', code: 'cash_floor_breached', limitCents: unreservedCents - shareCeilCents(equityCents, gate.cashFloorPct) });
 
-    // Single position: w × capital ≤ cap × equity for every name (no other idea holds the name — check 3).
-    const singleCapCents = shareLimitCents(equityCents, gate.maxSinglePositionWeightPct);
-    for (const name of contract.names) {
-      const w = weightOf(contract, name);
-      limits.push({ constraint: 'single_position_cap', code: 'single_position_cap_exceeded', limitCents: floorMulDiv(singleCapCents, w.den, w.num), symbol: name });
+      // Single position: w × capital ≤ cap × equity for every name (no other idea holds the name — check 3).
+      const singleCapCents = shareLimitCents(equityCents, gate.maxSinglePositionWeightPct);
+      for (const name of contract.names) {
+        const w = weightOf(contract, name);
+        limits.push({ constraint: 'single_position_cap', code: 'single_position_cap_exceeded', limitCents: floorMulDiv(singleCapCents, w.den, w.num), symbol: name });
+      }
     }
 
     // Sector: what the book already carries in the sector (held at the set's mark, plus other ideas' pending plans)
     // + this idea's planned dollars there ≤ cap × equity. All sectors through the one bridge.
-    if (gate.sectorConcentrationCap !== null) {
+    if (marksOk && gate.sectorConcentrationCap !== null) {
       const capCents = ratioLimitCents(equityCents, gate.sectorCapSlots, gate.sectorCapDenominator);
       const exposureCents = {};
       const addExposure = (sym, cents) => { const s = mandateSectorOf(sym) ?? '__unknown__'; exposureCents[s] = (exposureCents[s] || 0) + cents; };
@@ -240,7 +249,8 @@ export function evaluateAdmission({ book, epoch, ideas, coverageData, contract, 
       refuse('epoch_config_invalid', { constraints: [...invalid].sort() });
       for (const l of limits) if (invalid.has(l.constraint) || invalid.has('book_equity') || invalid.has('treasury')) l.limitCents = 0;
     }
-    permittedMaxCents = Math.max(0, Math.min(...limits.map((l) => l.limitCents)));
+    // Unmarked: no maximum is measured (null), and only the position count — which needs no mark — is a limit here.
+    if (marksOk) permittedMaxCents = Math.max(0, Math.min(...limits.map((l) => l.limitCents)));
     for (const l of limits) {
       if (capitalCents > l.limitCents) refuse(l.code, { ...publicLimit(l), requestedUsd: contract.capitalUsd });
     }
@@ -380,6 +390,11 @@ export async function admitIdea(db, { bookId, contract: rawContract, opId, nowIs
       if (!admitsOwner) extra.push({ code: 'mode_not_admitted' });
       if (book.status !== 'active') extra.push({ code: 'book_not_active', status: book.status ?? null });
       if (book.drafting === 'paused' || book.windDown) extra.push({ code: 'drafting_paused' });
+      // T1a-2b-2 §1 (review A1): the owed close and the marks need no contract either.
+      const owed = closeOwedSession(book, nowIso);
+      if (owed !== null) extra.push({ code: 'close_owed', session: owed.session, completedAt: owed.completedAtIso });
+      const measured = admissionMarksOf({ book, ideas, markSet, nowIso });
+      if (!measured.ok) extra.push(marksUnavailableRefusal(measured, markSet));
       return refused([...shape.refusals, ...extra]);
     }
     const contract = shape.contract;
