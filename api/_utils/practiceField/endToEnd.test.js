@@ -29,7 +29,7 @@ import { setPracticeFieldModeForTests } from './mode.js';
 import { roundUsd } from '../mandateRounding.js';
 import {
   seedBook, closeOn, windowAt, contractOf, getBook, getIdea, getRow, dumpStore, countDocs, etIso, ADMIT_ISO,
-  takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, countResults, withoutWindowAlerts, storeDailyLayer,
+  takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, countResults, withoutWindowAlerts,
 } from './__testsupport__/fixtures.js';
 import {
   verifyPacket, resultPacketMissingMarks, resultPacketProvenanceProblems, recomputeResultFromPacket, resultPacketPartProblems, resultPacketReceipts,
@@ -77,7 +77,14 @@ import {
 // by a book holding nothing). 3 leaves CHANGED: those packets' `contentHash`. The A10 probe now first shows the
 // refusal of an uncovered XOM (`ca_daily_missing`), then, with S[7]'s daily layer placed for the probe and removed
 // after it, the measured refusal as before: both write nothing.
-const EXPECTED_DUMP = { sha256: 'f061fb0ebd9d57e49b6196b6f87e7503cb872bf67fd133952e0c23612fdc3cc7', bytes: 390122 };
+// T1a-2b-3, step 1 (the fixtures' complete data, before any Amendment F code): re-pinned from f061fb0e…, leaf-compared
+// base (main abcdfcb7) against head. NO MONEY LEAF CHANGED. The fixtures now store, as the cron builds it, each
+// session's daily layer beside its snapshots and name it on them (`dailyRef`): 28 `mandateUniverseDaily/{date}`
+// documents ADDED, 38 `dailyRef` leaves ADDED (one per stored snapshot). 4 leaves CHANGED: on the two admission packets
+// made while their session's layer is stored, `admissionMarks.caCoverage.dailyPresent` false → true, and their
+// `contentHash`. The A10 probe's uncovered half now takes XOM's entry out of S[7]'s layer for the probe and puts the
+// layer back (`ca_coverage_missing`; it was `ca_daily_missing` while the run stored no layer).
+const EXPECTED_DUMP = { sha256: '7f631a47f6bf8353dfb757a510a38f43d11ae3380847fa0336974f24496ec4ae', bytes: 442942 };
 
 // Twenty-nine sessions from Monday 16 November 2026 (Thanksgiving and Christmas are not sessions).
 const SESSIONS = ['2026-11-16'];
@@ -198,16 +205,22 @@ describe('the end-to-end synthetic run', () => {
     // 10:00 window snapshot — not at the equity the book recorded — and refused; a refusal writes nothing (the pin holds).
     {
       const probeContract = contractOf({ slot: 'medium', names: ['LLY'], capitalUsd: 33000, comparison: { type: 'sector_fund', symbols: ['XLV'] } });
-      // Astra T2C-01: this run stores no daily layer, so S[7]'s corporate-action coverage of XOM is unknown — refused by
-      // name, no dollar limit measured, nothing written.
+      // Astra T2C-01: with S[7]'s daily layer NOT covering XOM — its entry taken out for this probe only, and the layer
+      // put back after it, so the run's documents are the ones it made — XOM's corporate-action coverage is unknown:
+      // refused by name, no dollar limit measured, nothing written. (T1a-2b-3: the run's fixtures store each session's
+      // daily layer, as the cron builds it, so the layer is there and complete otherwise.)
+      const dailyPath = `mandateUniverseDaily/${SESSIONS[7]}`;
+      const storedDaily = db._store.get(dailyPath);
+      const before = dumpStore(db);
+      const { XOM: _xom, ...withoutXom } = storedDaily.data.symbols;
+      db._store.set(dailyPath, { data: { ...storedDaily.data, symbols: withoutXom }, version: storedDaily.version + 1 });
       const unknown = dumpStore(db);
       const uncovered = await admitIdea(db, { bookId, contract: probeContract, opId: 'probe-a10-uncovered', nowIso: etIso(SESSIONS[7], 11, 0) });
-      expect(uncovered).toMatchObject({ ok: false, permittedMaxUsd: null, refusals: [{ code: 'admission_marks_unavailable', symbols: ['XOM'], unavailable: [{ symbol: 'XOM', reason: 'ca_daily_missing' }] }] });
+      expect(uncovered).toMatchObject({ ok: false, permittedMaxUsd: null, refusals: [{ code: 'admission_marks_unavailable', symbols: ['XOM'], unavailable: [{ symbol: 'XOM', reason: 'ca_coverage_missing' }] }] });
       expect(dumpStore(db)).toBe(unknown);
-      // With S[7]'s daily layer covering XOM (its fetch succeeded, nothing listed) — placed for this probe only, and
-      // removed after it, so the run's documents are the ones it made.
-      storeDailyLayer(db, SESSIONS[7], ['XOM']);
-      const before = dumpStore(db);
+      db._store.set(dailyPath, storedDaily);
+      expect(dumpStore(db)).toBe(before);
+      // With S[7]'s daily layer covering XOM (its fetch succeeded, nothing listed): the measured refusal.
       const snap = db._get(`mandateUniverseSnapshots/${SESSIONS[7]}_open30`);
       const held = idea(b.ideaId);
       expect(Object.keys(held.ledger.holdings)).toEqual(['XOM']);
@@ -217,8 +230,6 @@ describe('the end-to-end synthetic run', () => {
       expect(probe.refusals.map((r) => r.code)).toEqual(['capital_exceeds_slot_cap']);
       expect(cents(book().portfolio.totalValue)).not.toBe(equityCents); // the recorded figure is not what it measured
       expect(dumpStore(db)).toBe(before);
-      db._store.delete(`mandateUniverseDaily/${SESSIONS[7]}`);
-      expect(dumpStore(db)).toBe(unknown);
     }
     expect(idea(b.ideaId).status).toBe('holding'); // E14: back to holding with XOM
     const xomBeforeSplit = idea(b.ideaId).ledger.holdings.XOM.shares;
