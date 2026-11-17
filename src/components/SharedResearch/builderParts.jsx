@@ -286,12 +286,12 @@ export function Sentence({ thesis, working = null, tapped, onTap, panelId, agent
 }
 
 /** One reason line: the name (in a group), the text, its tag and its sources. */
-function ReasonLine({ lead, text, findingIds, basis = 'source', agentName, attrs = {} }) {
-  const tag = basisTagOf(basis, agentName);
+function ReasonLine({ lead, text, findingIds, basis = null, agentName, attrs = {} }) {
+  const tag = basis ? basisTagOf(basis, agentName) : null;
   return (
     <div {...attrs} style={{ display: 'grid', gridTemplateColumns: `${lead.length > 2 ? 46 : 16}px minmax(0,1fr)`, gap: 6, fontSize: 13.5, color: T.ink, lineHeight: 1.45 }}>
       <span style={{ fontSize: 12, fontWeight: 700, color: lead.length > 2 ? T.ink : T.ink3, paddingTop: 1 }}>{lead}</span>
-      <span style={{ overflowWrap: 'anywhere' }}>{text} <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', verticalAlign: 'middle', flexWrap: 'wrap' }}><Tag tone={tag.tone}>{tag.text}</Tag>{findingIds?.length > 0 && <Count n={findingIds.length} />}</span></span>
+      <span style={{ overflowWrap: 'anywhere' }}>{text} <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', verticalAlign: 'middle', flexWrap: 'wrap' }}>{tag && <Tag tone={tag.tone}>{tag.text}</Tag>}{findingIds?.length > 0 && <Count n={findingIds.length} />}</span></span>
     </div>
   );
 }
@@ -302,7 +302,7 @@ function AgainstLine({ against }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }} data-sr-against="">
       <span style={{ ...S.eyebrow, color: T.copper }}>{B.against}</span>
       {against
-        ? <div style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.45, overflowWrap: 'anywhere' }}>{against.text} <span style={{ display: 'inline-flex', gap: 6, verticalAlign: 'middle' }}><Tag tone="teal">{SOURCE_BACKED}</Tag><Count n={against.findingIds?.length ?? 0} /></span></div>
+        ? <div style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.45, overflowWrap: 'anywhere' }}>{against.text} <span style={{ display: 'inline-flex', gap: 6, verticalAlign: 'middle' }}><Count n={against.findingIds?.length ?? 0} /></span></div>
         : <span style={S.small}>{B.noAgainst}</span>}
     </div>
   );
@@ -330,7 +330,7 @@ export function WhyBlock({ thesis, agentName, folded = false }) {
       </div>
       {open && (
         <div id={id} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {reasons.map((r, i) => <ReasonLine key={`${r.symbol}:${i}`} lead={group ? r.symbol : String(i + 1)} text={r.text} findingIds={r.findingIds} agentName={agentName} attrs={{ 'data-sr-reason': r.symbol }} />)}
+          {reasons.map((r, i) => <ReasonLine key={`${r.symbol}:${i}`} lead={group ? r.symbol : String(i + 1)} text={r.text} findingIds={r.findingIds} basis={why.state === 'set' ? 'source' : null} agentName={agentName} attrs={{ 'data-sr-reason': r.symbol }} />)}
         </div>
       )}
       <AgainstLine against={why.against ?? null} />
@@ -350,7 +350,7 @@ export function WhyProposal({ proposal, agentName, title = null, attrs = {} }) {
     <div {...attrs} style={{ ...S.card, gap: 8, border: `1px dashed ${wash('teal', 0.5)}` }}>
       <div style={S.row}><Mark tone="teal">{title ?? B.proposal(agentName)}</Mark><Mark>{B.suggested}</Mark></div>
       {proposal.shared && <p style={{ ...S.body, fontWeight: 600 }} data-sr-proposal-shared="">{proposal.shared}</p>}
-      {(proposal.reasons ?? []).map((r, i) => <ReasonLine key={`${r.symbol}:${i}`} lead={group ? r.symbol : String(i + 1)} text={r.text} findingIds={r.findingIds} agentName={agentName} attrs={{ 'data-sr-proposal-reason': r.symbol }} />)}
+      {(proposal.reasons ?? []).map((r, i) => <ReasonLine key={`${r.symbol}:${i}`} lead={group ? r.symbol : String(i + 1)} text={r.text} findingIds={r.findingIds} basis={incomplete.includes(r.symbol) ? null : 'source'} agentName={agentName} attrs={{ 'data-sr-proposal-reason': r.symbol }} />)}
       {incomplete.map((s) => <p key={s} style={{ ...S.small, color: T.copper }} data-sr-incomplete={s}>{`${s} · ${B.noReasonYet}`}</p>)}
       <AgainstLine against={proposal.against ?? null} />
     </div>
@@ -452,7 +452,7 @@ export function KeepReasons({ choice, proposal, agentName, onSend, disabled = fa
       {(choice.options ?? []).map((i) => (
         <label key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', minHeight: 44, cursor: 'pointer' }}>
           <input type="checkbox" checked={keep.includes(i)} disabled={disabled} onChange={() => setKeep((k) => (k.includes(i) ? k.filter((x) => x !== i) : [...k, i].sort((a, b) => a - b)))} style={{ width: 18, height: 18, marginTop: 2 }} />
-          <ReasonLine lead={reasons[i]?.symbol ?? String(i + 1)} text={reasons[i]?.text ?? ''} findingIds={reasons[i]?.findingIds ?? []} agentName={agentName} />
+          <ReasonLine lead={reasons[i]?.symbol ?? String(i + 1)} text={reasons[i]?.text ?? ''} findingIds={reasons[i]?.findingIds ?? []} basis={(proposal?.incomplete ?? []).includes(reasons[i]?.symbol) ? null : 'source'} agentName={agentName} />
         </label>
       ))}
       <FreeButton label={B.keepTicked} strong disabled={disabled || keep.length === 0} onClick={() => onSend({ keep })} attrs={{ 'data-sr-free': 'set:why' }} />

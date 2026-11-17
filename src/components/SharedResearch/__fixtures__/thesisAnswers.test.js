@@ -362,6 +362,19 @@ function build() {
   }], at(10)), at(10));
   A.getStaleSegment = { status: 200, body: getAnswerOf({ ...ready, record: corrected }) };
 
+  // a correction supersedes the finding a reason rests on (review 4A-4): a set why goes stale; a waiting proposal's
+  // name loses its sourced reason (`incomplete`)
+  const supersede = (inv, findingId, minute) => {
+    const f = inv.record.findings.find((x) => x.findingId === findingId);
+    return append(inv.record, built([{
+      kind: f.kind, symbol: f.symbol, fact: `Correction: ${f.fact}`, source: { recordKind: 'exchange', recordId: mint(), label: 'Not yet checked' },
+      at: at(minute), asOf: null, status: 'unavailable', statusReason: 'single_source', supersedes: f.findingId,
+    }], at(minute)), at(minute));
+  };
+  A.getStaleWhy = { status: 200, body: getAnswerOf({ ...ready, record: supersede(ready, ready.session.thesis.why.reasons[0].findingIds[0], 11) }) };
+  const proposalRef = afterWhyStep.session.thesis.why.proposal.reasons[0].findingIds[0];
+  A.getProposalCorrected = { status: 200, body: getAnswerOf({ ...afterWhyStep, record: supersede(afterWhyStep, proposalRef, 11) }) };
+
   // the dead end (T9): the power segment, and a names step that finds no listed company
   const power = tap(afterMap, { op: 'set', part: 'segment', value: 'Data-center power', nowIso: at(2) });
   const dead = step(power.inv, { goal: 'find_names', output: FIND_NAMES_DEAD_END, items: POWER_ITEMS, nowIso: at(3) });
@@ -510,6 +523,8 @@ describe('the thesis builder\'s client fixtures are the server\'s answers (B4 Te
     expect(t('getStaleSegment').parts.segment.state).toBe('stale');
     expect(t('getStaleSegment').ready).toBe(false);
     expect(t('getStaleSegment').blockers[0]).toEqual({ part: 'segment', state: 'stale' });
+    expect(t('getStaleWhy').parts.why.state).toBe('stale');
+    expect(t('getProposalCorrected').parts.why.proposal.incomplete).toEqual(['NVDA']);
     expect(t('getDeadEnd').parts.names.blocked).toBe('no_listed_company');
     expect(t('getDeadEnd').choices.free).toContainEqual({ op: 'clear', part: 'segment', clears: ['names', 'why'] });
     expect(t('getDeadEnd').choices.research.map((g) => g.goal)).not.toContain('find_names');

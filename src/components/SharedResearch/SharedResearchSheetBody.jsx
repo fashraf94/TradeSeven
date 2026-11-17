@@ -190,7 +190,7 @@ export default function SharedResearchSheetBody({
       ? <ExistingContinue sr={sr} phone={phone} onClose={onClose} />
       : isBuilderSession(sr.inv.session)
         ? (
-          <Builder sr={sr} agentName={name} agentId={agentId} phone={phone} viewingEarlier={earlier !== null} onBackToCurrent={backToCurrent} onOpenEarlier={openEarlier}
+          <Builder key={sr.inv.session.sessionId} sr={sr} agentName={name} agentId={agentId} phone={phone} viewingEarlier={earlier !== null} onBackToCurrent={backToCurrent} onOpenEarlier={openEarlier}
             onDiscard={() => setView('discard')} onNewInvestigation={newInvestigation} onClose={onClose} />
         )
         : (

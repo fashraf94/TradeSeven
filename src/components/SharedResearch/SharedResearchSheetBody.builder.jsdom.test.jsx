@@ -158,7 +158,7 @@ describe('THE WALK: "I want to play AI" to a saved thesis, every request body ch
     expect($('[data-sr-equip]').textContent).toContain(COPY.useNext);
     // every request, in order: one at a time, nothing else
     expect(server.calls.map((c) => c.key)).toEqual(['list', 'open', 'step', 'card', 'step', 'card', 'step', 'card', 'card', 'card', 'adopt', 'get']);
-  });
+  }, 30_000); // eleven requests and their renders: past the default 5 s on a loaded 2-worker runner
 });
 
 describe('K-2: the SESSION chooses the view, never the flag', () => {
@@ -564,9 +564,163 @@ describe('K-12: ready and Save', () => {
   });
   it('a stale card on Save: the fresh card, the server\'s line, the edit kept, nothing re-sent', async () => {
     await openOn(TA.walkGetReady, {}, { adopt: TA.adoptStale });
+    await tap('[data-sr-edit]');
+    const mine = `${thesisOf('walkGetReady').sentence} Mine.`;
+    typeInto($('#sr-thesis-edit'), mine);
     await tap('[data-sr-save-thesis]');
     expect($('[data-sr-save="stale"]').textContent).toBe(SR_SERVER_COPY.card_stale);
+    expect($('#sr-thesis-edit').value).toBe(mine);
     expect(server.sent('adopt')).toHaveLength(1);
+  });
+});
+
+describe('the review\'s fixes (4A: display honesty)', () => {
+  it('4A-1: the point against carries its count, never a Source-backed tag (the view holds no basis for it)', async () => {
+    await openOn(TA.walkGetWhy);
+    const against = $('[data-sr-why-proposal] [data-sr-against]');
+    expect(against.textContent).toContain(thesisOf('walkGetWhy').parts.why.proposal.against.text);
+    expect(against.textContent).not.toContain('Source-backed');
+    expect(against.textContent).toContain(B.sources(thesisOf('walkGetWhy').parts.why.proposal.against.findingIds.length));
+  });
+  it('4A-3: a saved thesis reopened shows no sentence as the saved one (no answer carries the statement)', async () => {
+    await openOn(TA.walkGetSaved);
+    expect($('[data-sr-thesis-saved]')).not.toBeNull();
+    expect($('[data-sr-saved-statement]')).toBeNull();
+    expect($('[data-sr-saved-line]').textContent).toContain('NVDA');
+  });
+  it('4A-4: a reason the server no longer holds wears no Source-backed tag — a stale why, a proposal name without a sourced reason', async () => {
+    await openOn(TA.getStaleWhy);
+    expect($('[data-sr-slot="why"]').dataset.srSlotState).toBe('stale');
+    expect($('[data-sr-why-block] [data-sr-reason]').textContent).not.toContain('Source-backed');
+  });
+  it('4A-4: a waiting proposal whose reason a correction superseded: no tag on that name\'s reason', async () => {
+    await openOn(TA.getProposalCorrected);
+    expect($('[data-sr-incomplete="NVDA"]')).not.toBeNull();
+    expect($('[data-sr-proposal-reason="NVDA"]').textContent).not.toContain('Source-backed');
+  });
+  it('4A-4 control: a set, holding why tags its reasons Source-backed', async () => {
+    await openOn(TA.walkGetConfirmWhy);
+    await tap('[data-sr-why-block] button');
+    expect($('[data-sr-why-block] [data-sr-reason]').textContent).toContain('Source-backed');
+  });
+  it('4A-6: saveIssue holds Save for the composed sentence only; with the player\'s own edit, Save goes and the server judges it', async () => {
+    await openOn(TA.getSaveIssue);
+    expect($('[data-sr-save-thesis]').disabled).toBe(true);
+    await tap('[data-sr-edit]');
+    typeInto($('#sr-thesis-edit'), thesisOf('getSaveIssue').sentence.replace('AMD wins', 'a rival wins'));
+    expect($('[data-sr-save-issue]')).toBeNull();
+    expect($('[data-sr-save-thesis]').disabled).toBe(false);
+  });
+  it('4A-2: a step started from the ready view goes on in the work view, its working line there', async () => {
+    const held = deferred();
+    await openOn(TA.walkGetReady, {}, { step: () => held.promise });
+    await tap('[data-sr-slot="why"]');
+    click($('[data-sr-panel="why"] [data-sr-research="strengthen:why"]'));
+    await flush();
+    expect($('[data-sr-ready]')).toBeNull();
+    expect($('[data-sr-builder] [data-sr-working]')).not.toBeNull();
+    held.resolve(TA.revisedWhy);
+    await flush();
+  });
+});
+
+describe('the review\'s fixes (4B: state and wiring)', () => {
+  it('4B-1: a lost step keeps its stepId through another request\'s refusal; a lost tap keeps its opId through a step', async () => {
+    await openOn(TA.walkGetSegment, {}, { step: [NETWORK, NETWORK, TA.walkNames], card: [NETWORK, TA.stepInFlight] });
+    await tap('[data-sr-research="find_names"]'); // lost
+    await tap('[data-sr-slot="timeFrame"]');
+    await tap('[data-sr-panel="timeFrame"] [data-sr-free="set:timeFrame"]'); // lost too
+    await tap('[data-sr-research="find_names"]'); // lost again: the same stepId
+    await tap('[data-sr-panel="timeFrame"] [data-sr-free="set:timeFrame"]'); // answered 409 step_in_flight
+    await tap('[data-sr-research="find_names"]'); // answered
+    const steps = server.sent('step').map((c) => c.body.stepId);
+    expect(new Set(steps).size).toBe(1);
+    const cards = server.sent('card').map((c) => c.body.opId);
+    expect(cards[1]).toBe(cards[0]);
+  });
+  it('4B-2: a step answered 409 step_in_flight offers Try again, and the same tap keeps its stepId', async () => {
+    await openOn(TA.walkGetSegment, {}, { step: [NETWORK, TA.stepInFlight, TA.walkNames] });
+    await tap('[data-sr-research="find_names"]');
+    await tap('[data-sr-retry-step]');
+    expect($('[data-sr-step-failed="step_in_flight"]').textContent).toBe(SR_SERVER_COPY.step_in_flight);
+    expect($('[data-sr-retry-step]')).not.toBeNull();
+    await tap('[data-sr-research="find_names"]');
+    const ids = server.sent('step').map((c) => c.body.stepId);
+    expect(ids).toEqual([ids[0], ids[0], ids[0]]);
+  });
+  it('4B-3: a stale card on Save that is no longer ready: the line shows on the work view, and the edit comes back when the card is ready again', async () => {
+    const staleNotReady = { status: 409, body: { ...TA.adoptStale.body, thesis: TA.cardStale.body.thesis } };
+    await openOn(TA.walkGetReady, {}, { adopt: staleNotReady, card: TA.walkTimeFrame });
+    await tap('[data-sr-edit]');
+    const mine = `${thesisOf('walkGetReady').sentence} Mine.`;
+    typeInto($('#sr-thesis-edit'), mine);
+    await tap('[data-sr-save-thesis]');
+    expect($('[data-sr-ready]')).toBeNull();
+    expect($('[data-sr-builder] [data-sr-save="stale"]').textContent).toBe(SR_SERVER_COPY.card_stale);
+    // the card is made ready again (a free tap answered with the ready card): the player's sentence is still theirs
+    await tap('[data-sr-slot="timeFrame"]');
+    await tap('[data-sr-panel="timeFrame"] [data-sr-free="set:timeFrame"]');
+    expect($('[data-sr-ready]')).not.toBeNull();
+    expect($('#sr-thesis-edit').value).toBe(mine);
+  });
+  it('4B-3: not_ready carries no card: the investigation is read again', async () => {
+    await openOn(TA.walkGetReady, {}, { adopt: TA.notReady });
+    await tap('[data-sr-save-thesis]');
+    expect(server.sent('get')).toHaveLength(2);
+  });
+  it('4B-4: a step started from the ready view shows its working line, then its failure with Try again', async () => {
+    const held = deferred();
+    await openOn(TA.walkGetReady, {}, { step: [() => held.promise, TA.walkNames] });
+    await tap('[data-sr-slot="names"]');
+    click($('[data-sr-panel="names"] [data-sr-research="strengthen:names"]'));
+    await flush();
+    expect($('[data-sr-ready] ~ [data-sr-working], [data-sr-working]').textContent).toBe(B.workingLine('Atlas'));
+    held.resolve(TA.serverError);
+    await flush();
+    expect($('[data-sr-step-failed="server_error"]').textContent).toBe(SR_SERVER_COPY.server_error);
+    await tap('[data-sr-retry-step]');
+    const [a, b] = server.sent('step').map((c) => c.body);
+    expect(b).toEqual(a);
+  });
+  it('4B-5: a Change confirm belongs to its investigation: opening the earlier one and coming back leaves none', async () => {
+    const withPrevious = { status: 200, body: { ...TA.walkGetConfirmWhy.body, previous: { sessionId: TA.ids.pickSid, endedAt: '2026-11-16T15:00:00.000Z', terminalReason: 'concluded' } } };
+    await openOn(withPrevious, {}, { get: [withPrevious, TA.getPickAsked, withPrevious] });
+    await tap('[data-sr-slot="segment"]');
+    await tap('[data-sr-change="segment"]');
+    expect($('[data-sr-clear-confirm]')).not.toBeNull();
+    await tap(`[data-sr-previous="${TA.ids.pickSid}"] button`);
+    expect($('[data-sr-clear-confirm]')).toBeNull();
+    await tap('[data-sr-conversation] button');
+    expect($('[data-sr-clear-confirm]')).toBeNull();
+    expect(server.sent('card')).toHaveLength(0);
+  });
+  it('4B-6: own words keep their own requestId: a story opened between two tries does not take it', async () => {
+    flags.mode = 'on';
+    await start({ stories: [kit.storyOf()] }, { open: [NETWORK, NETWORK, TA.walkOpen] });
+    typeInto($('#sr-own'), 'I want to play AI');
+    await tap('[data-sr-start-thesis]');
+    await tap('[data-sr-story]');
+    await tap('[data-sr-investigate]');
+    await tap('[data-screen-label="Item preview"] button');
+    typeInto($('#sr-own'), 'I want to play AI');
+    await tap('[data-sr-start-thesis]');
+    const [own1, story, own2] = server.sent('open').map((c) => c.body.requestId);
+    expect(own2).toBe(own1);
+    expect(story).not.toBe(own1);
+  });
+  it('4B-7: a card answer that shows a step landed unheard reads the investigation again', async () => {
+    await openOn(TA.walkGetSegment, {}, { step: NETWORK, card: TA.walkOneStock, get: [TA.walkGetSegment, TA.walkGetOneStock] });
+    await tap('[data-sr-research="find_names"]');
+    await tap('[data-sr-slot="timeFrame"]');
+    await tap('[data-sr-panel="timeFrame"] [data-sr-free="set:timeFrame"]');
+    expect(server.sent('get')).toHaveLength(2);
+  });
+  it('a step left running on a reopened sheet: Check again reads it (its goal is not known, so nothing is re-sent)', async () => {
+    const running = { status: 200, body: { ...TA.walkGetSegment.body, session: { ...TA.walkGetSegment.body.session, lastStep: { stepId: '5e5e5e5e-0000-4000-8000-0000000000aa', intent: 'build', status: 'running', startedAt: '2026-11-17T14:03:00.000Z', endedAt: null, error: null } } } };
+    await openOn(running, {}, { get: [running, TA.walkGetNames] });
+    await tap('[data-sr-check-again]');
+    expect(server.sent('get')).toHaveLength(2);
+    expect(server.sent('step')).toHaveLength(0);
   });
 });
 

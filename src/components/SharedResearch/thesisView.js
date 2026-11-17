@@ -60,7 +60,7 @@ function setValueOf(choice, thesis) {
 export function confirmMarkOf(choice, thesis) {
   if (choice?.op !== 'confirm') return null;
   const pick = thesis?.pick;
-  if (pick && pick.part === choice.part) return pick.asked ? 'asked' : 'pick';
+  if (pick && pick.part === choice.part && sameValue(choice.value, pick.value)) return pick.asked ? 'asked' : 'pick';
   if (choice.part === 'theme' && isText(thesis?.parts?.theme?.suggestion)) return 'suggestion';
   if (choice.part === 'timeFrame' && thesis?.parts?.timeFrame?.suggestion) return 'suggestion';
   return null;

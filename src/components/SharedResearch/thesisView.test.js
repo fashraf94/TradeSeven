@@ -121,6 +121,15 @@ describe('K-4: the foot holds only what the server offered, ordered', () => {
     const v = footOf(T('storyVerified'));
     expect(v.values).toEqual([{ op: 'confirm', part: 'theme', value: 'Cloud AI data-center spending' }]);
   });
+  it('4A-5: a pick marks only the confirm whose value is the pick\'s; another confirm keeps its own mark', () => {
+    const t = T('walkWrongIf'); // the time frame in front; its confirm is the suggestion's (positional)
+    const confirm = t.choices.free.find((c) => c.op === 'confirm' && c.part === 'timeFrame');
+    expect(confirmMarkOf(confirm, t)).toBe('suggestion');
+    const asked = { ...t, pick: { part: 'timeFrame', value: 'swing', reason: 'r', findingIds: [], asked: true, basis: 'reasoning', reasons: [] } };
+    expect(confirmMarkOf(confirm, asked)).toBe('suggestion');
+    const same = { ...asked, pick: { ...asked.pick, value: 'positional' } };
+    expect(confirmMarkOf(confirm, same)).toBe('asked');
+  });
   it('the asked pick: its confirm stands first, the other segments beside it', () => {
     const t = T('pickAsked');
     const f = footOf(t);

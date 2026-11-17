@@ -23,7 +23,7 @@ import { SR_COPY as COPY } from '../sharedResearchCopy';
 import { T, S, wash } from '../sharedResearchStyle';
 import { directionOfStep, evidenceOf, findingsById, formatDay, remainingOf, stateOf } from '../sharedResearchView';
 import {
-  frontPartOf, footOf, panelOf, conversationOf, hasSuggestedPart, partOfGoal, directionOffered, revisedWhyChoiceOf,
+  frontPartOf, footOf, panelOf, conversationOf, hasSuggestedPart, partOfGoal, directionOffered, revisedWhyChoiceOf, horizonLabelOf,
 } from '../thesisView';
 import {
   CardHead, CardLine, ClearConfirm, Composer, Count, Cover, EvidenceList, FOOT, FOOT_CHOICES, FreeButton, KeepReasons, Mark, Mine, NamesPick, PartPanel,
@@ -34,7 +34,7 @@ import ThesisReady from './ThesisReady';
 import ThesisSaved from './ThesisSaved';
 
 const B = COPY.builder;
-const RETRYABLE = new Set(['step_failed', 'network', 'server_error']);
+const RETRYABLE = new Set(['step_failed', 'network', 'step_in_flight', 'server_error']);
 const paragraphs = (text) => String(text ?? '').split(/\n{2,}/).map((p, i) => <span key={i} style={{ display: 'block' }}>{p}</span>);
 
 /** The nearest scrolling ancestor (the sheet's own scroll box), else null — for the card's fold (K-7). */
@@ -60,7 +60,7 @@ export function FreeChoices({ choices, thesis, companies, agentName, onFree, dis
     }
     if (c === pickConfirm && choices.some((x) => x.op === 'set' && x.part === 'names' && Array.isArray(x.options))) return null; // drawn inside the names pick
     if (c.op === 'set' && c.part === 'why' && Array.isArray(c.options)) {
-      return <KeepReasons key={key} choice={c} proposal={thesis?.parts?.why?.proposal} agentName={agentName} disabled={disabled} onSend={(value) => onFree(c, value)} />;
+      return <KeepReasons key={`${key}:${thesis?.rev ?? 0}`} choice={c} proposal={thesis?.parts?.why?.proposal} agentName={agentName} disabled={disabled} onSend={(value) => onFree(c, value)} />;
     }
     const look = freeLabelOf(c, thesis, agentName);
     return <FreeButton key={key} {...look} disabled={disabled} onClick={() => onFree(c)} attrs={{ 'data-sr-free': `${c.op}:${c.part}`, 'data-sr-free-value': typeof c.value === 'string' ? c.value : JSON.stringify(c.value ?? null) }} />;
@@ -69,12 +69,13 @@ export function FreeChoices({ choices, thesis, companies, agentName, onFree, dis
 
 /** The asked pick (DR-2; K-10): the value and its reasons, each tagged from its own basis. Nothing is set by it. */
 function AskedPick({ pick, agentName }) {
-  const value = Array.isArray(pick.value) ? pick.value.join(', ') : pick.value;
+  const value = Array.isArray(pick.value) ? pick.value.join(', ') : pick.part === 'timeFrame' ? horizonLabelOf(pick.value) ?? pick.value : pick.value;
+  const reasonTag = basisTagOf(pick.basis, agentName);
   return (
     <div style={{ ...S.card, gap: 8, border: `1px dashed ${wash('teal', 0.5)}` }} data-sr-asked-pick={pick.part}>
       <div style={S.row}><Mark tone="teal">{B.pickTag(agentName)}</Mark><Mark>{B.suggested}</Mark></div>
       <p style={{ ...S.body, fontWeight: 700 }}>{value}</p>
-      {pick.reason && <p style={S.meta}>{pick.reason}</p>}
+      {pick.reason && <p style={S.meta}>{pick.reason} <span style={{ display: 'inline-flex', verticalAlign: 'middle' }}><Tag tone={reasonTag.tone}>{reasonTag.text}</Tag></span></p>}
       {(pick.reasons ?? []).map((r, i) => {
         const tag = basisTagOf(r.basis, agentName);
         return (
@@ -85,6 +86,21 @@ function AskedPick({ pick, agentName }) {
         );
       })}
     </div>
+  );
+}
+
+/**
+ * A thesis Save's refusal (K-12), wherever the builder stands: the server's line, and `not_ready`'s blockers. The ready
+ * view draws it beside Save; the work view draws it when the card the refusal brought is no longer ready (review 4B-3).
+ */
+export function SaveOutcome({ sr, sessionId }) {
+  if (sr.save.sessionId !== sessionId || !['failed', 'stale'].includes(sr.save.status)) return null;
+  const blockers = sr.save.status === 'failed' && Array.isArray(sr.save.blockers) ? sr.save.blockers : null;
+  return (
+    <>
+      <Notice role="alert" tone={sr.save.status === 'stale' ? 'gold' : 'copper'} attrs={{ 'data-sr-save': sr.save.status }}>{sr.save.message}</Notice>
+      {blockers && blockers.length > 0 && <p style={S.small} data-sr-blockers="">{B.stillToSet(blockers.map((b) => B.parts[b.part] ?? b.part).join(', '))}</p>}
+    </>
   );
 }
 
@@ -191,7 +207,7 @@ function BuilderWork({ sr, agentName, phone, open, viewingEarlier, onBackToCurre
           {open && panel.text && <Composer textChoice={panel.text} directionOn={false} agentName={agentName} disabled={busy} onFree={(c, words) => sr.cardOp(c, { text: words })} onDirection={() => null} />}
         </PartPanel>
       )}
-      {clearAsk && <ClearConfirm choice={clearAsk} disabled={busy} onConfirm={confirmClear} onCancel={() => setClearAsk(null)} />}
+      {open && clearAsk && <ClearConfirm choice={clearAsk} disabled={busy} onConfirm={confirmClear} onCancel={() => setClearAsk(null)} />}
       {['set', 'stale'].includes(thesis.parts?.why?.state) && <WhyBlock thesis={thesis} agentName={agentName} folded={foot.part !== null && foot.part !== 'why'} />}
       <div style={{ ...S.row, justifyContent: 'flex-end' }}>
         {open && revisedWhyChoiceOf(thesis) && tapped !== 'why' && <LinkButton onClick={() => setTapped('why')} attrs={{ 'data-sr-revised-waiting': '' }}>{B.revisedWaiting}</LinkButton>}
@@ -253,7 +269,11 @@ function BuilderWork({ sr, agentName, phone, open, viewingEarlier, onBackToCurre
       <Cover />
       <div data-sr-foot-choices="" style={{ ...FOOT_CHOICES, maxHeight: phone ? '42vh' : '46vh' }}>
       {running && <Running attrs={{ 'data-sr-working': '' }}>{B.workingLine(agentName)}</Running>}
-      {!running && staleRunning && <Notice role="status" tone="gold" attrs={{ 'data-sr-was-running': '' }}>{COPY.wasRunning}</Notice>}
+      {!running && staleRunning && (
+        <Notice role="status" tone="gold" attrs={{ 'data-sr-was-running': '' }}>
+          <span>{COPY.wasRunning}</span> <span aria-hidden="true">·</span> <LinkButton disabled={busy} onClick={() => sr.loadSession(session.sessionId)} attrs={{ 'data-sr-check-again': '' }}>{B.checkAgain}</LinkButton>
+        </Notice>
+      )}
       {!running && stepFailure && (
         <>
           <Notice role="alert" attrs={{ 'data-sr-step-failed': stepFailure.code }}>{stepFailure.message}</Notice>
@@ -267,6 +287,7 @@ function BuilderWork({ sr, agentName, phone, open, viewingEarlier, onBackToCurre
         </>
       )}
       {closeRefusal && <Notice role="alert" attrs={{ 'data-sr-refusal': closeRefusal.code }}>{closeRefusal.message}</Notice>}
+      <SaveOutcome sr={sr} sessionId={session.sessionId} />
       {!running && deadEnd && (
         <>
           <FreeButton label={B.conclude} trail={B.keepsResearch} strong disabled={busy} onClick={() => sr.close('concluded')} attrs={{ 'data-sr-conclude': '' }} />
@@ -333,6 +354,7 @@ export default function Builder({ sr, agentName, agentId, phone, viewingEarlier 
   const open = state === 'open' && !viewingEarlier;
   const [sub, setSub] = useState(null);
   const [keepResearching, setKeepResearching] = useState(false);
+  const [edit, setEdit] = useState(null); // the player's own sentence, kept through a refusal (K-12; review 4B-3)
   useEffect(() => { if (!thesis?.ready) setKeepResearching(false); }, [thesis?.ready]);
   const saveHere = sr.save.sessionId === session?.sessionId ? sr.save.status : 'idle';
 
@@ -349,7 +371,7 @@ export default function Builder({ sr, agentName, agentId, phone, viewingEarlier 
     return <ThesisSaved sr={sr} agentName={agentName} agentId={agentId} onClose={onClose} />;
   }
   if (open && thesis.ready && !keepResearching) {
-    return <ThesisReady sr={sr} agentName={agentName} phone={phone} onKeepResearching={() => setKeepResearching(true)} onAllEvidence={() => setSub('evidence')} />;
+    return <ThesisReady sr={sr} agentName={agentName} phone={phone} edit={edit} setEdit={setEdit} onKeepResearching={() => setKeepResearching(true)} onAllEvidence={() => setSub('evidence')} />;
   }
   return (
     <BuilderWork sr={sr} agentName={agentName} phone={phone} open={open} viewingEarlier={viewingEarlier} onBackToCurrent={onBackToCurrent} onOpenEarlier={onOpenEarlier}

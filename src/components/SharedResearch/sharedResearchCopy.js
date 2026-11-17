@@ -136,6 +136,7 @@ const BUILDER = Object.freeze({
   keepIt: 'Keep it',
   // ── the hard states (K-15) ──────────────────────────────────────────────────────
   workingLine: (name) => `${cap(name)} is working on this step`,
+  checkAgain: 'Check again',
   tryAgainGoal: (label) => `Try again · ${label}`,
   conclude: 'Conclude',
   keepsResearch: 'keeps the research',

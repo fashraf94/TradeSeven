@@ -36,11 +36,10 @@ function JudgedRow({ label, children }) {
   );
 }
 
-export default function ThesisReady({ sr, agentName, phone, onKeepResearching, onAllEvidence }) {
+export default function ThesisReady({ sr, agentName, phone, edit, setEdit, onKeepResearching, onAllEvidence }) {
   const { session, record, companies, thesis } = sr.inv;
   const [tapped, setTapped] = useState(null);
-  const [edit, setEdit] = useState(null); // the player's sentence, once they edit it
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(edit !== null);
   const [priceOpen, setPriceOpen] = useState(false);
   const [clearAsk, setClearAsk] = useState(null);
   const panelId = `sr-ready-panel${useId()}`;
@@ -50,13 +49,16 @@ export default function ThesisReady({ sr, agentName, phone, onKeepResearching, o
   const stepsLeft = remainingOf(session);
   const status = sr.save.sessionId === session.sessionId ? sr.save.status : 'idle';
   const uncertain = status === 'uncertain' || status === 'checking';
-  const busy = sr.pending !== null || status === 'saving' || status === 'checking';
+  const busy = sr.pending !== null || sr.waiting || status === 'saving' || status === 'checking';
+  // a step started from a tapped part here: its working line while in flight, its failure and Try again (review 4B-4)
+  const stepFailure = sr.failure?.action === 'step' && sr.failure.attempt?.builder ? sr.failure : null;
+  const stepRetry = stepFailure && ['step_failed', 'network', 'step_in_flight', 'server_error'].includes(stepFailure.code) && stepFailure.reason !== 'findings_full' ? stepFailure.attempt : null;
   const names = thesis.parts.names.value ?? [];
   const lines = thesis.parts.wrongIf.priceLines ?? [];
   const priceChoice = (thesis.choices?.free ?? []).find((c) => c.input === 'priceLines') ?? null;
   const over = edit !== null && edit.length > STATEMENT_MAX;
   const statement = edit !== null && edit.trim() && edit.trim() !== thesis.sentence ? edit.trim() : null;
-  const canSave = thesis.ready === true && !thesis.saveIssue && !busy && !uncertain && status !== 'closed' && !sr.waiting && !sr.gated
+  const canSave = thesis.ready === true && !(thesis.saveIssue && edit === null) && !busy && !uncertain && status !== 'closed' && !sr.waiting && !sr.gated
     && !(edit !== null && (!edit.trim() || over));
   const panel = tapped ? panelOf(thesis, tapped) : null;
   const onFree = (choice, input) => {
@@ -99,7 +101,7 @@ export default function ThesisReady({ sr, agentName, phone, onKeepResearching, o
                 <FreeButton {...freeLabelOf(panel.revised, thesis, agentName)} disabled={busy} onClick={() => onFree(panel.revised)} attrs={{ 'data-sr-free': 'confirm:why:revised' }} />
               </>
             )}
-            {panel.research.map((g) => <ResearchButton key={`${g.goal}:${g.part ?? ''}`} label={researchLabelOf(g)} stepsLeft={stepsLeft} disabled={busy} onClick={() => sr.buildStep({ goal: g.goal, part: g.part ?? null })} attrs={{ 'data-sr-research': `${g.goal}${g.part ? `:${g.part}` : ''}` }} />)}
+            {panel.research.map((g) => <ResearchButton key={`${g.goal}:${g.part ?? ''}`} label={researchLabelOf(g)} stepsLeft={stepsLeft} disabled={busy} onClick={() => { onKeepResearching(); sr.buildStep({ goal: g.goal, part: g.part ?? null }); }} attrs={{ 'data-sr-research': `${g.goal}${g.part ? `:${g.part}` : ''}` }} />)}
           </PartPanel>
         )}
         {clearAsk && <ClearConfirm choice={clearAsk} disabled={busy} onConfirm={confirmClear} onCancel={() => setClearAsk(null)} />}
@@ -127,8 +129,15 @@ export default function ThesisReady({ sr, agentName, phone, onKeepResearching, o
         {(thesis.filled ?? 0) > 1 && <div style={{ ...S.row, justifyContent: 'flex-end' }}><LinkButton onClick={onAllEvidence} attrs={{ 'data-sr-all-evidence-open': '' }}>{`${B.allEvidence} ›`}</LinkButton></div>}
       </section>
 
-      {thesis.saveIssue && <Notice role="status" tone="gold" attrs={{ 'data-sr-save-issue': thesis.saveIssue.code }}>{B.saveIssue[thesis.saveIssue.code] ?? COPY.server.step_failed}</Notice>}
+      {thesis.saveIssue && edit === null && <Notice role="status" tone="gold" attrs={{ 'data-sr-save-issue': thesis.saveIssue.code }}>{B.saveIssue[thesis.saveIssue.code] ?? COPY.server.step_failed}</Notice>}
       {cardFailure && <Notice role="alert" attrs={{ 'data-sr-card-failed': cardFailure.code }}>{cardFailure.message}</Notice>}
+      {sr.running && <Running attrs={{ 'data-sr-working': '' }}>{B.workingLine(agentName)}</Running>}
+      {!sr.running && stepFailure && (
+        <>
+          <Notice role="alert" attrs={{ 'data-sr-step-failed': stepFailure.code }}>{stepFailure.message}</Notice>
+          {stepRetry && <ResearchButton label={B.tryAgainGoal(B.goals[stepRetry.goal] ?? stepRetry.goal)} stepsLeft={stepsLeft} disabled={busy} onClick={() => sr.buildStep(stepRetry)} attrs={{ 'data-sr-retry-step': '' }} />}
+        </>
+      )}
       {status === 'failed' && <Notice role="alert" attrs={{ 'data-sr-save': 'failed' }}>{sr.save.message}</Notice>}
       {blockers && blockers.length > 0 && <p style={S.small} data-sr-blockers="">{B.stillToSet(blockers.map((b) => B.parts[b.part] ?? b.part).join(', '))}</p>}
       {status === 'stale' && <Notice role="alert" tone="gold" attrs={{ 'data-sr-save': 'stale' }}>{sr.save.message}</Notice>}
