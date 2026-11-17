@@ -224,3 +224,30 @@ The B3 session re-verified the amendment against `main` @ `88d34457` and stopped
 | **PF-1** | `thesisCard` is written once, in the save transaction, and never edited by any route. It carries its `schemaVersion`, the watchlist id and idea version (1) it was saved with, and the research session id. Pin with a census test: one writer. |
 | **PF-2** | Every finding id in `thesisCard` must resolve, from saved records alone, to its text, source name, link and published date for as long as the list exists. Check whether any code path can delete or prune a research record or its findings while its list exists. If none can, the ids suffice: pin that with a census test and say so in the report. If any can, carry a bounded copy of those four fields per carried finding in `thesisCard`. |
 | **PF-3** | The provenance stamp is on builder saves exactly as on ledger saves (session at open, the saved list, passed to the version builder). One test row. |
+
+---
+
+## §B11 · B3 report rulings (Nov 16), with the builder turn's output shape (Nov 17)
+
+The founder ruled on the B3 build report (`docs/audits/20261116_BUILD_SHARED_RESEARCH_B3.md`) on Nov 16, 2026. The probe re-run under P-1 was refused again on both calls, with the API's own words: *"The compiled grammar is too large, which would cause performance issues. Simplify your tool schemas or reduce the number of strict tools."* (`400 invalid_request_error`, no tokens). The session stopped (STOP note `20261116_SHARED_RESEARCH_B3_PROBE_STOP.md`), and the founder ruled the builder turn's output shape on Nov 17, 2026. B3 builds both from `4618e23e`. Where a ruling and an earlier section of this amendment disagree, the ruling wins.
+
+**On the B3 report (Nov 16):**
+
+| # | Ruling |
+|---|---|
+| **P-1** | Run the two probes. Have the probe script wrap the call so that, if the API refuses, it records the API's own error type and message in the probe record (never the key, never request headers). Do not edit `modelTurn.js`. If either call is refused again: STOP and report the exact message; do not guess a cause and do not change the schema again without it. |
+| **P-2** | On success: commit the two fixtures and `thesisSchema.recorded.test.js`, add each probe's line to the report (model, usage, cost, what the validator kept and dropped, the output size against the 2,500-token cap — watch W-6). |
+| **W-1** | Ruled now: the save carries the chosen segment's findings too (still at most 28; current ones, each once). A number in the segment label passes only when it sits in a carried Source-backed finding. One row, one mutant. |
+| **W-2a** | Ruled now: the card's own texts license their numbers only where they appear. Before the statement's number check, remove the wrong-if text and the time frame's label where each appears verbatim; a number elsewhere in the statement must sit in a carried Source-backed fact or the set theme. "30%" next to "about 30 sessions" is refused. One row, one mutant. |
+| — | The rest of the report's watch list stands as written. |
+
+**On the builder turn's output shape (Nov 17):**
+
+| # | Ruling |
+|---|---|
+| **S-1** | One schema per goal, not one for all. Each goal's schema holds `reply` plus only what that goal may land (the rule the validator already enforces): **verify_source** — findings, companies, themeSuggestion; **map_segments** — findings, companies, segments, a pick (value + one-line reason), themeSuggestion; **find_names** — findings, companies, a pick (value + one-line reason); **build_why** — findings, why (shared, one reason per name, the point against), wrongIfOptions, a wrong-if pick (option + one-line reason), timeFramePick — no companies block; **strengthen** — findings, plus that part's own proposal only; **pick** — reply and the pick with its reasons (≤3, each with refs) — no findings, no companies; **direction** — the schema of the research goal the card would offer next (findings and companies only when none is offered). |
+| **S-2** | In every builder schema, `companies` drops `claim` and `openRef` (the card's why replaces the ledger's claims). The reasons array with refs exists only in the `pick` goal's schema; Atlas's pick on a research goal is value + one reason. The ledger's `STEP_SCHEMA` is untouched. |
+| **S-3** | Nothing the client reads changes: the `thesis` view, the choices and every answer in the report's §4 stay as built. If any of them would have to change, STOP. |
+| **S-4** | Probe every distinct schema, live, one recorded call each (fixtures as P-2). Iterate without stopping, up to 16 calls and $0.50 in total. If a schema is refused, record the API's message and reduce in this order, re-probing after each: (1) remove union types (the empty-string-for-none rule); (2) flatten (a refs list as one string of ids the validator splits; fewer nested objects); (3) shorten enum and description text. If a goal still cannot compile without splitting it into two paid steps, STOP and report: that one is the founder's. |
+| **S-5** | Pin it: a test per schema that counts objects, arrays, properties and union types, and fails if any builder schema grows past the numbers that compiled. Report each probe's model, usage, cost, elapsed time (first use includes compilation), output size against the 2,500-token cap, and what the validator kept and dropped. |
+| — | Then, as ruled before: W-1, W-2a (each with its row and mutant), this §B11, the merge of `origin/main`, the full suite, rules, `lint:gate`, the ledger differential, the bundle comparison, the mutation battery on the final tree, the report update and the push. One refuter pass over the schema split only (honesty and integrity): each goal still lands only its own proposals; nothing is set by the model. |
