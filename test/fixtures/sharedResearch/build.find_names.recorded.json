@@ -1,0 +1,117 @@
+{
+  "recordedAt": "2026-11-17T15:12:01.480Z",
+  "key": "find_names",
+  "goal": "find_names",
+  "part": null,
+  "shape": {
+    "goal": "find_names",
+    "part": null
+  },
+  "model": "claude-sonnet-5-5",
+  "modelIds": {
+    "step": "claude-sonnet-5-5",
+    "frame": "claude-haiku-5-5"
+  },
+  "ok": true,
+  "reason": null,
+  "stopReason": "end_turn",
+  "category": null,
+  "apiError": null,
+  "attempts": 1,
+  "elapsedMs": 7604,
+  "usage": {
+    "input": 5681,
+    "output": 835
+  },
+  "costUsd": 0.019712,
+  "readAt": "2026-11-16T15:00:00.000Z",
+  "output": {
+    "reply": "Three listed companies have a sourced connection to GPUs and accelerators: Nvidia, AMD and Broadcom. Each relationship rests on a single source and no revenue exposure is disclosed, so I propose building on Nvidia and AMD, the two named as makers of accelerator chips.",
+    "findings": [
+      {
+        "tempId": "t1",
+        "kind": "relationship",
+        "fact": "Nvidia designs the accelerator chips that most AI data centers buy; the size of this business for the company is not disclosed in the item.",
+        "symbolCandidate": "NVDA",
+        "companyName": "Nvidia",
+        "support": {
+          "kind": "retrieval",
+          "index": 0,
+          "from": [],
+          "reason": null
+        },
+        "at": "2026-11-09",
+        "supersedes": null
+      },
+      {
+        "tempId": "t2",
+        "kind": "relationship",
+        "fact": "AMD said cloud companies ordered its accelerator chips for new AI data centers; order size and revenue share are not disclosed.",
+        "symbolCandidate": "AMD",
+        "companyName": "AMD",
+        "support": {
+          "kind": "retrieval",
+          "index": 1,
+          "from": [],
+          "reason": null
+        },
+        "at": "2026-11-08",
+        "supersedes": null
+      },
+      {
+        "tempId": "t3",
+        "kind": "relationship",
+        "fact": "Broadcom designs custom AI chips for some of the largest cloud companies; the size of this business for the company is not disclosed.",
+        "symbolCandidate": "AVGO",
+        "companyName": "Broadcom",
+        "support": {
+          "kind": "retrieval",
+          "index": 2,
+          "from": [],
+          "reason": null
+        },
+        "at": "2026-11-06",
+        "supersedes": null
+      },
+      {
+        "tempId": "t4",
+        "kind": "inference",
+        "fact": "Each of the three relationships rests on one source, and none states what share of the company's revenue it represents, so significance is unresolved.",
+        "symbolCandidate": null,
+        "companyName": null,
+        "support": {
+          "kind": "unresolved",
+          "index": null,
+          "from": [],
+          "reason": "single_source"
+        },
+        "at": null,
+        "supersedes": null
+      }
+    ],
+    "companies": [
+      {
+        "companyName": "Nvidia",
+        "symbolCandidate": "NVDA",
+        "role": "Product owner",
+        "relationshipRef": "t1"
+      },
+      {
+        "companyName": "AMD",
+        "symbolCandidate": "AMD",
+        "role": "Product owner",
+        "relationshipRef": "t2"
+      },
+      {
+        "companyName": "Broadcom",
+        "symbolCandidate": "AVGO",
+        "role": "Supplier",
+        "relationshipRef": "t3"
+      }
+    ],
+    "pick": {
+      "value": "NVDA, AMD",
+      "reason": "Both are sourced as makers of the accelerator chips themselves; Broadcom's are custom chips."
+    }
+  }
+}

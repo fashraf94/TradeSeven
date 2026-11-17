@@ -1,0 +1,80 @@
+{
+  "recordedAt": "2026-11-17T15:11:53.849Z",
+  "key": "verify_source",
+  "goal": "verify_source",
+  "part": null,
+  "shape": {
+    "goal": "verify_source",
+    "part": null
+  },
+  "model": "claude-sonnet-5-5",
+  "modelIds": {
+    "step": "claude-sonnet-5-5",
+    "frame": "claude-haiku-5-5"
+  },
+  "ok": true,
+  "reason": null,
+  "stopReason": "end_turn",
+  "category": null,
+  "apiError": null,
+  "attempts": 1,
+  "elapsedMs": 6554,
+  "usage": {
+    "input": 5404,
+    "output": 554
+  },
+  "costUsd": 0.016348,
+  "readAt": "2026-11-16T15:00:00.000Z",
+  "output": {
+    "reply": "The story's starting point is backed by a company's own third-quarter results release dated 2026-11-05, which says it expects to keep raising capital spending next year, mainly for AI data centers. The release does not name the company here and says nothing about who supplies that spending, so no listed company has a sourced connection yet. A theme to consider: cloud AI data-center spending.",
+    "findings": [
+      {
+        "tempId": "t1",
+        "kind": "release",
+        "fact": "A company's third-quarter results release says it expects to keep raising capital spending next year, mainly for AI data centers.",
+        "symbolCandidate": null,
+        "companyName": null,
+        "support": {
+          "kind": "retrieval",
+          "index": 0,
+          "from": [],
+          "reason": null
+        },
+        "at": "2026-11-05",
+        "supersedes": null
+      },
+      {
+        "tempId": "t2",
+        "kind": "coverage",
+        "fact": "A news report dated 2026-11-06 says analysts expect the largest cloud companies to raise AI data-center budgets again; it is secondary coverage, not a primary source.",
+        "symbolCandidate": null,
+        "companyName": null,
+        "support": {
+          "kind": "retrieval",
+          "index": 1,
+          "from": [],
+          "reason": null
+        },
+        "at": "2026-11-06",
+        "supersedes": null
+      },
+      {
+        "tempId": "t3",
+        "kind": "inference",
+        "fact": "The company that issued the release is not identified in the retrieved text, so which listed company it is, and how much of its spending goes to AI data centers, is not established.",
+        "symbolCandidate": null,
+        "companyName": null,
+        "support": {
+          "kind": "unresolved",
+          "index": null,
+          "from": [],
+          "reason": "identity_unresolved"
+        },
+        "at": null,
+        "supersedes": null
+      }
+    ],
+    "companies": [],
+    "themeSuggestion": "Cloud AI data-center spending"
+  }
+}

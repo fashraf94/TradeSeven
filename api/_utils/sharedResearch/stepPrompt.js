@@ -25,6 +25,7 @@ import { ALL_TICKERS, isRetiredStock } from '../rankingConfig.js';
 import { METHOD } from './method.js';
 import { ACRONYMS, INDEX_NAMES, maskStrayTickers } from './stepSchema.js';
 import { RELATIONSHIP_ROLES, UNRESOLVED_REASONS } from '../../../src/constants/sharedResearch.js';
+import { acceptsOf } from './thesisSchema.js';
 
 /** The rulebook's §4 lines, in order (pinned to the rulebook by prompt.honesty.test.js). */
 export const WRITTEN_OPENING_RULES = Object.freeze([
@@ -163,6 +164,171 @@ export function renderStepUser({
   if (findings.length === 0) out.push('  (none)');
   if (retrieval === 'none') {
     out.push('Retrieved items: none this step. Write no retrieval support; you may infer from the record findings and must say so.');
+  } else if (retrieval === 'failed') {
+    out.push('Retrieved items: the search could not be reached this step. Write no retrieval support; you may infer from the record findings and must say so.');
+  } else {
+    out.push('Retrieved items (item n | source | published | title, then its highlights):');
+    for (const it of items) {
+      out.push(`  item ${it.index} | ${it.host} | ${it.publishedDate ? it.publishedDate.slice(0, 10) : 'no date'} | ${line(it.title)}`);
+      for (const h of it.highlights ?? []) out.push(`    - ${line(h)}`);
+    }
+    if (items.length === 0) out.push('  (none returned; write no retrieval support)');
+  }
+  return out.join('\n');
+}
+
+// ── the thesis builder (Amendment B §B5) ───────────────────────────────────────
+//
+// The builder's system prompt = the partner's identity + rulebook §4 WITHOUT its
+// line (7) ("one next action, aimed at the weakest link") + rulebook §6 (the
+// frame, THESIS_BUILDER_RULES, byte for byte) + the method block as today
+// (Amendment A — the method still weighs the evidence) + the builder's output
+// contract. The user turn = the card as it stands, the goal for this step, the
+// current findings, the retrieval items and the direction when there is one.
+// The ledger's prompts above are unchanged.
+
+/** Rulebook §6 "The thesis builder", byte for byte (prompt.builder.test.js pins the two equal). */
+export const THESIS_BUILDER_RULES = [
+  "A thesis builder session works toward one thesis card, one goal per step. These lines take the place of §4's line 7 there; the rest of §4 still holds, and the method still decides how evidence is weighed. Where the method proposes its own next step, these lines win.",
+  '',
+  'The six parts of the card:',
+  "- Theme: the player's idea in a phrase. It is the player's; suggest one only when the card has none.",
+  '- Segment (optional): the part of the theme the thesis stands on. A segment map is your reasoning, not evidence, until a source backs a segment.',
+  "- Names: one to four companies from the game's list, each with a Source-backed connection to the theme or the segment. A company without one is a lead and cannot be a name.",
+  '- Why: the reason the names share, one Source-backed reason per name (every finding it cites Source-backed, at least one of them about that company), and the strongest point against, always shown beside them.',
+  "- Wrong if: what would prove the thesis wrong, as a business condition. Never a price: a price line is the player's own.",
+  '- Time frame: swing, positional or longterm (about 10, 30 or 60 sessions).',
+  '',
+  'How to work:',
+  '- You propose; the player decides. Never set a part yourself, and never fill one to finish the card.',
+  '- Each step works on the goal it was given and on nothing else.',
+  '- A reply is two or three sentences: what the step found and what it proposes for the card.',
+  '- A thesis says what a company earns from, is exposed to or depends on, and what would prove that wrong. Never call a stock a good purchase, a great play or a winner, and never say where its price is headed.',
+  '- When no listed company has a sourced connection, say so plainly: that is an honest ending, and no company is picked to finish the card.',
+  '- Never say the thesis will be watched, tracked, tested or held by you, the agent or any part of the app.',
+].join('\n');
+
+/** The index of §4's line (7) in WRITTEN_OPENING_RULES — the one line the builder's frame replaces (§B5). */
+export const WEAKEST_LINK_RULE_INDEX = 6;
+/** §4's lines without line (7), in order. */
+export const BUILDER_OPENING_RULES = Object.freeze(WRITTEN_OPENING_RULES.filter((_, i) => i !== WEAKEST_LINK_RULE_INDEX));
+
+/** The builder turn's system prompt. `method`: the turn's effective method (KB-1); the baseline when omitted. */
+export function buildBuildSystemPrompt({ partnerName, method = null } = {}) {
+  return [
+    `You are ${partnerOf(partnerName)}, the player's research partner on FantasyTrades. You help the player build one thesis, one step at a time; you never trade or instruct the agent.`,
+    '',
+    'Rules (every answer, every finding):',
+    ...BUILDER_OPENING_RULES.map((r, i) => `${i + 1}. ${r}`),
+    '',
+    'The thesis builder:',
+    THESIS_BUILDER_RULES,
+    '',
+    'Method:',
+    methodBlockOf(method),
+    '',
+    `Game universe (the only symbols you may write, in a fact or in symbolCandidate): ${UNIVERSE_LINE}`,
+    `Index names you may write: ${INDEX_NAMES.join(' ')}. Capital abbreviations you may write: ${ACRONYMS.join(' ')}. Write every other abbreviation and every other company in plain words ("Taiwan Semiconductor", "graphics processors").`,
+    '',
+    "Output (the schema you are given holds only this step's fields). Fill what this step's goal asks for; leave a proposal null or empty when you have none.",
+    '- findings: at most 12, each one fact in your own words. support.kind "retrieval" with the item number only when that item states the fact; "inference" with support.from naming the finding ids or tempIds it rests on; "unresolved" with a reason when a link could not be checked. Never cite an item number you were not given; with no items, write no retrieval support. Never write the word "item" or an item number in a fact or the reply: cite through support.',
+    "- at: the fact's own date, written as year-month-day digits (for example 2026-11-05), when the item states one; null otherwise. Never today's date for an old fact.",
+    '- A correction names the record finding it corrects in supersedes; correct one finding at most once. A Source-backed finding is corrected only by another retrieved fact, or by an unresolved finding when the evidence now conflicts; never by an inference.',
+    `- companies (when the schema has them): at most 6. role is one of ${RELATIONSHIP_ROLES.join(', ')}. relationshipRef names the relationship finding about that company. A company is supported, and can be a name on the card, only when a retrieved item verifies the relationship and its symbol is in the game universe.`,
+    `- Unresolved reasons: ${UNRESOLVED_REASONS.join(', ')}.`,
+    '- themeSuggestion: a theme in a short phrase (at most 80 characters), only when the card has no theme; else an empty string.',
+    '- segments: two to five, each a label (at most 60 characters), one line (at most 120) and refs naming the findings that back it; refs empty when it is your own reasoning.',
+    '- why: shared is the reason the names share, written as a clause that follows "because" (at most 160 characters); reasons: one per name, each citing only Source-backed findings, at least one of them about that company (refs); against is the strongest point against with the findings it rests on (an empty text when you found none).',
+    "- wrongIfOptions: up to three, each a business condition written as a clause that follows \"It's wrong if\" (at most 160 characters), with the findings it rests on, if any. Never a price level or a share-price move.",
+    '- timeFramePick: the time frame that fits the why, and why in one line (at most 140 characters).',
+    "- pick: the one choice you would make for the part this step is about (its value exactly as the card writes it; names as symbols separated by commas) and your reason in one line (at most 140 characters). When the step's goal is pick, also give two or three reasons, each citing only findings already on the record (refs), or with refs empty when it is your own reasoning.",
+    '- Every number in a line you write appears in a Source-backed finding that line cites.',
+    '- reply: two or three plain sentences, at most 600 characters: what this step found and what it proposes for the card. Write no sentence about yourself or your own process.',
+  ].join('\n');
+}
+
+/** What a strengthen step may revise, by part (§B12 Q-1 (a): the parts with a proposal of their own; never a pick). */
+const STRENGTHEN_REVISES = Object.freeze({ segment: 'the segment map (segments)', why: 'the why proposal (why)', wrongIf: 'the wrong-if options (wrongIfOptions)' });
+
+/** What each goal asks of the step (the user turn's goal line). */
+function goalLineOf({ goal, part, card }) {
+  const names = card?.names?.state === 'set' ? card.names.value.join(', ') : null;
+  const where = card?.segment?.state === 'set' && !card.segment.skipped ? card.segment.value : (card?.theme?.value ?? 'the theme');
+  switch (goal) {
+    case 'verify_source': return "This step: check the starting point against its primary source: find the filing, release or report it rests on, and that source's own date. Suggest a theme for the thesis in a short phrase (themeSuggestion).";
+    case 'map_segments': return `This step: map the theme into two to five segments (segments), then mark the one you would stand on (pick) with a one-line reason.${card?.theme?.state === 'set' ? '' : ' The card has no theme yet: suggest one (themeSuggestion).'}`;
+    case 'find_names': return `This step: find listed companies from the game universe with a sourced connection to ${line(where)} (relationship findings and companies). Mark the one company, or the group of up to four, you would build on (pick).`;
+    case 'build_why': return `This step: build the why for ${names}: the reason they share (why.shared), one Source-backed reason per name (why.reasons) and the strongest point against (why.against). Offer up to three ways the thesis could be proved wrong (wrongIfOptions), mark the one you would pick (pick), and say which time frame fits (timeFramePick).`;
+    case 'strengthen': return `This step: the card's ${part} is already set by the player. Look for evidence for or against it; do not pick for it.${STRENGTHEN_REVISES[part] ? ` Revise ${STRENGTHEN_REVISES[part]} only if the evidence changes it.` : ''}`;
+    case 'pick': return `This step: no search. Pick for the player among the card's choices for ${part} and say why (pick, with two or three reasons). Cite only findings already on the record; a reason no finding backs is your own reasoning and has empty refs.`;
+    default: return "This step: follow the player's direction below. It steers this step; it never changes the theme.";
+  }
+}
+
+/** The proposals a `direction` turn may make: those of the research goal it is asked as (thesisSchema.turnShapeOf). */
+function directionLineOf(shape) {
+  // nothing to propose when the goal it is asked as lands nothing (strengthening the theme; refuter SPL-3)
+  if (!shape || shape.goal === 'direction' || acceptsOf(shape.goal, shape.part).length === 0) return 'Propose nothing for the card this step: findings only.';
+  const of = shape.goal === 'strengthen' ? `strengthening the card's ${shape.part}` : shape.goal.replace('_', ' ');
+  return `The proposals you may make are those of the card's next step (${of}); make one only when what you find supports it.`;
+}
+
+const said = (v) => (v === null || v === undefined || v === '' ? null : line(v));
+const BY_WORDS = Object.freeze({ player_wrote: 'the player wrote it', player_chose: 'the player chose it', partner_suggested_confirmed: 'you suggested it; the player confirmed' });
+const byWords = (b) => BY_WORDS[b] ?? 'set';
+
+/** The card as the model sees it (every text through `seen`: a ticker the universe does not hold is masked). */
+function cardLinesOf(card, supported = []) {
+  if (!card) return ['  (no card)'];
+  const out = [];
+  const t = card.theme;
+  out.push(`  Theme: ${t.state === 'set' ? `${said(t.value)} (${byWords(t.by)})` : t.suggestion ? `not set; you suggested "${said(t.suggestion)}"` : 'not set'}`);
+  const s = card.segment;
+  out.push(`  Segment: ${s.state === 'set' ? (s.skipped ? 'skipped by the player' : `${said(s.value)} (${byWords(s.by)})`) : 'not set'}`);
+  for (const m of s.map ?? []) out.push(`    map: ${said(m.label)} — ${said(m.line)}${m.findingIds.length ? ` [${m.findingIds.join(', ')}]` : ' [your reasoning]'}`);
+  const n = card.names;
+  // the dead end as it stands now: a company sourced since lifts it (thesis.js blockedNow; review RB-5)
+  out.push(`  Names: ${n.state === 'set' ? `${n.value.join(', ')} (${byWords(n.by)})` : n.blocked && supported.length === 0 ? 'stopped: no listed company has a sourced connection' : 'not set'}`);
+  const w = card.why;
+  if (w.state === 'set') {
+    out.push(`  Why: because ${said(w.shared)} (${byWords(w.by)})`);
+    for (const r of w.reasons) out.push(`    reason (${r.symbol}): ${said(r.text)} [${r.findingIds.join(', ')}]`);
+    out.push(`    point against: ${w.against ? `${said(w.against.text)} [${w.against.findingIds.join(', ')}]` : 'none found yet'}`);
+  } else {
+    out.push(`  Why: not set${w.proposal ? '; your proposal awaits the player' : ''}`);
+  }
+  const wi = card.wrongIf;
+  out.push(`  Wrong if: ${wi.state === 'set' ? `${said(wi.text)} (${byWords(wi.by)})` : 'not set'}`);
+  for (const o of wi.options ?? []) out.push(`    option: ${said(o.text)}`);
+  const tf = card.timeFrame;
+  out.push(`  Time frame: ${tf.state === 'set' ? `${tf.value} (${byWords(tf.by)})` : 'not set'}`);
+  return out;
+}
+
+/**
+ * The builder turn's user message. `findings` and `items` are what the budget kept; `supported` the companies the
+ * record supports now ({ symbol, name, role, relationship }).
+ */
+export function renderBuildUser({
+  question, entryKind, goal, part = null, shape = null, direction = null, card, supported = [], stepsLeft, findings, items, retrieval, room = null,
+}) {
+  const out = [`Question (fixed; never change it): ${line(question)}`, `Started from: ${STARTED[entryKind] ?? 'the player'}`];
+  out.push('The thesis card as it stands:', ...cardLinesOf(card, supported));
+  out.push('Listed companies with a sourced connection (the only names a thesis may use):');
+  for (const c of supported) out.push(`  ${c.symbol} | ${line(c.name)} | ${line(c.role)} | ${line(c.relationship)}`);
+  if (supported.length === 0) out.push('  (none yet)');
+  out.push(goalLineOf({ goal, part, card }));
+  if (goal === 'direction') out.push(directionLineOf(shape));
+  if (direction) out.push(`The player's direction (their words): ${line(direction)}`);
+  out.push(`Steps left after this one: ${stepsLeft}`);
+  if (Number.isInteger(room)) out.push(`Room on the record: at most ${room} more findings this step.`);
+  out.push('Record findings (id | kind | symbol | status | fact):');
+  for (const f of findings) out.push(`  ${f.findingId} | ${f.kind} | ${f.symbol ?? '-'} | ${f.status}${f.statusReason ? `/${f.statusReason}` : ''} | ${line(f.fact)}`);
+  if (findings.length === 0) out.push('  (none)');
+  if (retrieval === 'none') {
+    out.push(goal === 'pick'
+      ? 'Retrieved items: none (a pick makes no search). Write no retrieval support; cite only findings already on the record.'
+      : 'Retrieved items: none this step. Write no retrieval support; you may infer from the record findings and must say so.');
   } else if (retrieval === 'failed') {
     out.push('Retrieved items: the search could not be reached this step. Write no retrieval support; you may infer from the record findings and must say so.');
   } else {

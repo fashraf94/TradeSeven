@@ -17,6 +17,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 import { SHARED_RESEARCH_MODE, SHARED_RESEARCH_MODES } from './sharedResearchFlags.js';
+import { SHARED_RESEARCH_BUILDER_MODE, SHARED_RESEARCH_BUILDER_MODES } from './sharedResearchFlags.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SRC = readFileSync(path.join(HERE, 'sharedResearchFlags.js'), 'utf8').replace(/\r\n/g, '\n');
@@ -66,5 +67,38 @@ describe('SHARED_RESEARCH_MODE — the pin (BUILD_RULES §2; spec §6.2, K-2)', 
   it('no boolean twin exists, and the flag is not a line in featureFlags.js (the entry-chunk reason in the module header)', () => {
     expect(SRC).not.toMatch(/^export const SHARED_RESEARCH_ENABLED\b/m);
     expect(FEATURE_FLAGS).not.toMatch(/SHARED_RESEARCH/);
+  });
+});
+
+// Amendment B §B2 (B3, K-2): the thesis builder's switch, in the same module, pinned the same way.
+const BUILDER_ROLLBACK = 'move the literal back to \'off\' with its pin: new investigations open as ledgers; open builder sessions keep working';
+
+describe('SHARED_RESEARCH_BUILDER_MODE — the pin (BUILD_RULES §2; Amendment B §B2, K-2)', () => {
+  it("is 'off' — move the literal back to 'off' with its pin: new investigations open as ledgers; open builder sessions keep working", () => {
+    // THE ROW THAT MOVES WITH THE FLIP ('off' → 'on'), in the founder's flip PR (§B9 step 3); a rollback moves it back.
+    expect(SHARED_RESEARCH_BUILDER_MODE).toBe('off');
+  });
+
+  it('the allowed values: exactly off · on, frozen, and the shipped value is one of them', () => {
+    expect(SHARED_RESEARCH_BUILDER_MODES).toEqual(['off', 'on']);
+    expect(Object.isFrozen(SHARED_RESEARCH_BUILDER_MODES)).toBe(true);
+    expect(SHARED_RESEARCH_BUILDER_MODES).toContain(SHARED_RESEARCH_BUILDER_MODE);
+  });
+
+  it('is a plain string literal with a Pinned-by pointer naming this file, and its runway and rollback are written beside it', () => {
+    expect(SRC).toMatch(/^export const SHARED_RESEARCH_BUILDER_MODE = '(off|on)';$/m);
+    const idx = SRC.indexOf('export const SHARED_RESEARCH_BUILDER_MODE = ');
+    expect(SRC.slice(0, idx).split('\n').slice(-2).join('\n')).toContain('Pinned by: sharedResearchFlags.test.js');
+    const doc = SRC.slice(SRC.lastIndexOf('/**', idx), idx);
+    expect(doc).toContain('RUNWAY:');
+    expect(doc).toContain('Never a build PR');
+    expect(doc).toContain('sharedResearchBuilderMode()');
+    expect(doc).toContain(BUILDER_ROLLBACK);
+    expect(SELF).toContain(`"is '${SHARED_RESEARCH_BUILDER_MODE}' — ${BUILDER_ROLLBACK}"`);
+  });
+
+  it('never a DARK_BY_DESIGN key, but noted by name in that block', () => {
+    expect(GUARD).not.toMatch(/^\s*SHARED_RESEARCH_BUILDER_MODE\s*:/m);
+    expect(GUARD).toContain('SHARED_RESEARCH_BUILDER_MODE intentionally ABSENT');
   });
 });

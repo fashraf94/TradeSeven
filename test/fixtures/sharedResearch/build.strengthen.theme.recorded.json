@@ -1,0 +1,63 @@
+{
+  "recordedAt": "2026-11-17T15:12:11.097Z",
+  "key": "strengthen:theme",
+  "goal": "strengthen",
+  "part": "theme",
+  "shape": {
+    "goal": "strengthen",
+    "part": "theme"
+  },
+  "model": "claude-sonnet-5-5",
+  "modelIds": {
+    "step": "claude-sonnet-5-5",
+    "frame": "claude-haiku-5-5"
+  },
+  "ok": true,
+  "reason": null,
+  "stopReason": "end_turn",
+  "category": null,
+  "apiError": null,
+  "attempts": 1,
+  "elapsedMs": 4923,
+  "usage": {
+    "input": 5510,
+    "output": 352
+  },
+  "costUsd": 0.01454,
+  "readAt": "2026-11-16T15:00:00.000Z",
+  "output": {
+    "reply": "The theme holds up on the evidence so far. A retrieved report says demand to run AI models, not only to train them, is now a main reason cloud companies order accelerators, which broadens the case. A second report says one large cloud company now runs more of its AI work on its own chips, which sharpens the point against; the card's theme needs no change.",
+    "findings": [
+      {
+        "tempId": "t1",
+        "kind": "coverage",
+        "fact": "Cloud companies said demand to run AI models, not only to train them, is now a main reason they order accelerators.",
+        "symbolCandidate": null,
+        "companyName": null,
+        "support": {
+          "kind": "retrieval",
+          "index": 0,
+          "from": [],
+          "reason": null
+        },
+        "at": "2026-11-13",
+        "supersedes": null
+      },
+      {
+        "tempId": "t2",
+        "kind": "coverage",
+        "fact": "One large cloud company said it now runs more of its own AI work on chips it designs itself.",
+        "symbolCandidate": null,
+        "companyName": null,
+        "support": {
+          "kind": "retrieval",
+          "index": 1,
+          "from": [],
+          "reason": null
+        },
+        "at": "2026-11-11",
+        "supersedes": null
+      }
+    ]
+  }
+}

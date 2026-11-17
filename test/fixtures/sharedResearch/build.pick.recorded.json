@@ -1,0 +1,53 @@
+{
+  "recordedAt": "2026-11-17T15:12:06.166Z",
+  "key": "pick",
+  "goal": "pick",
+  "part": "segment",
+  "shape": {
+    "goal": "pick",
+    "part": "segment"
+  },
+  "model": "claude-sonnet-5-5",
+  "modelIds": {
+    "step": "claude-sonnet-5-5",
+    "frame": "claude-haiku-5-5"
+  },
+  "ok": true,
+  "reason": null,
+  "stopReason": "end_turn",
+  "category": null,
+  "apiError": null,
+  "attempts": 1,
+  "elapsedMs": 4671,
+  "usage": {
+    "input": 4523,
+    "output": 366
+  },
+  "costUsd": 0.012706,
+  "readAt": "2026-11-16T15:00:00.000Z",
+  "output": {
+    "reply": "I would pick GPUs and accelerators for the segment. It is the only one of the three with a sourced connection on the record, to NVIDIA as a supplier, while data-center power and networking rest on my own reasoning so far. The strongest point against it is already on the record: several of the largest cloud companies design their own AI chips and use them alongside the accelerators they buy.",
+    "pick": {
+      "value": "GPUs and accelerators",
+      "reason": "The only segment with a sourced company connection on the record, to NVIDIA as a supplier.",
+      "reasons": [
+        {
+          "text": "A source backs this segment: NVIDIA is verified as a supplier of the accelerator chips most AI data centers buy.",
+          "refs": [
+            "f_7a000000-0000-4000-8000-000000000002"
+          ]
+        },
+        {
+          "text": "Data-center power and networking are my own mapping so far; no source on the record backs either yet.",
+          "refs": []
+        },
+        {
+          "text": "Counterpoint to carry forward: big cloud companies design their own AI chips and use them alongside bought accelerators.",
+          "refs": [
+            "f_7a000000-0000-4000-8000-000000000004"
+          ]
+        }
+      ]
+    }
+  }
+}

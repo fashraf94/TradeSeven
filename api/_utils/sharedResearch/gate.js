@@ -22,6 +22,7 @@
 // limiter it is in memory, per function instance.
 
 import { SHARED_RESEARCH_MODE, SHARED_RESEARCH_MODES } from '../../../src/config/sharedResearchFlags.js';
+import { SHARED_RESEARCH_BUILDER_MODE } from '../../../src/config/sharedResearchFlags.js';
 import { isCockpitOwnerAllowlisted } from '../callRecords/mode.js';
 import { hypothesisRecordsOnFor } from '../hypothesisRecords/gate.js';
 import { applySecurityMiddleware } from '../security.js';
@@ -70,6 +71,19 @@ export function sharedResearchMode() {
   try {
     const mode = SHARED_RESEARCH_MODE;
     return Array.isArray(SHARED_RESEARCH_MODES) && SHARED_RESEARCH_MODES.includes(mode) ? mode : OFF;
+  } catch {
+    return OFF;
+  }
+}
+
+/**
+ * The thesis builder's switch as the server reads it NOW (Amendment B §B2): 'on' only when the literal is 'on', else
+ * 'off' — an unknown value, a missing export or a read that throws included. Read at `open` only, to stamp a new
+ * session; every other builder branch keys on the session's own shape (K-2). Never throws.
+ */
+export function sharedResearchBuilderMode() {
+  try {
+    return SHARED_RESEARCH_BUILDER_MODE === 'on' ? 'on' : OFF;
   } catch {
     return OFF;
   }

@@ -1,0 +1,84 @@
+{
+  "recordedAt": "2026-11-17T16:23:38.808Z",
+  "key": "strengthen:segment",
+  "goal": "strengthen",
+  "part": "segment",
+  "shape": {
+    "goal": "strengthen",
+    "part": "segment"
+  },
+  "model": "claude-sonnet-5-5",
+  "modelIds": {
+    "step": "claude-sonnet-5-5",
+    "frame": "claude-haiku-5-5"
+  },
+  "ok": true,
+  "reason": null,
+  "stopReason": "end_turn",
+  "category": null,
+  "apiError": null,
+  "attempts": 1,
+  "elapsedMs": 5931,
+  "usage": {
+    "input": 5799,
+    "output": 476
+  },
+  "costUsd": 0.016358,
+  "readAt": "2026-11-16T15:00:00.000Z",
+  "output": {
+    "reply": "Evidence on the GPUs and accelerators segment cuts both ways: cloud companies say running models, not only training them, now drives accelerator orders, while one large cloud company reports shifting more work onto its own chips. The segment stays as the player set it; the new findings add to the point against and leave the map unchanged.",
+    "findings": [
+      {
+        "tempId": "t1",
+        "kind": "coverage",
+        "fact": "Cloud companies said demand to run AI models, not only to train them, is now a main reason they order accelerators.",
+        "symbolCandidate": null,
+        "companyName": null,
+        "support": {
+          "kind": "retrieval",
+          "index": 0,
+          "from": [],
+          "reason": null
+        },
+        "at": "2026-11-13",
+        "supersedes": null
+      },
+      {
+        "tempId": "t2",
+        "kind": "coverage",
+        "fact": "One large cloud company said it now runs more of its own AI work on chips it designs itself.",
+        "symbolCandidate": null,
+        "companyName": null,
+        "support": {
+          "kind": "retrieval",
+          "index": 1,
+          "from": [],
+          "reason": null
+        },
+        "at": "2026-11-11",
+        "supersedes": null
+      }
+    ],
+    "segments": [
+      {
+        "label": "GPUs and accelerators",
+        "line": "The chips that train and run models",
+        "refs": [
+          "t1",
+          "t2",
+          "f_7a000000-0000-4000-8000-000000000002"
+        ]
+      },
+      {
+        "label": "Data-center power",
+        "line": "Electricity and cooling for the buildings",
+        "refs": []
+      },
+      {
+        "label": "Networking",
+        "line": "The links between thousands of chips",
+        "refs": []
+      }
+    ]
+  }
+}

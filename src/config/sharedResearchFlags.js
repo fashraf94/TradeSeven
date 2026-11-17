@@ -48,3 +48,29 @@ export const SHARED_RESEARCH_MODES = Object.freeze(['off', 'allowlist', 'on']);
  */
 // Pinned by: sharedResearchFlags.test.js (the pin and this value move together — BUILD_RULES §2).
 export const SHARED_RESEARCH_MODE = 'allowlist';
+
+/** The walked states of SHARED_RESEARCH_BUILDER_MODE. */
+export const SHARED_RESEARCH_BUILDER_MODES = Object.freeze(['off', 'on']);
+
+/**
+ * SHARED_RESEARCH_BUILDER_MODE — the thesis builder (Amendment B,
+ * docs/specs/20261116_SHARED_RESEARCH_SPEC_V1_2_AMENDMENT_B_THESIS_BUILDER.md §B2).
+ * It decides only whether a NEW investigation opens as a thesis builder; who may
+ * use Shared Research at all is still SHARED_RESEARCH_MODE above.
+ *
+ * A STRING ('off' | 'on'), resolved at CALL time by sharedResearchBuilderMode()
+ * (api/_utils/sharedResearch/gate.js), which maps any other value — or a read
+ * that throws — to 'off'. Never read at module scope.
+ *
+ *   'off'  every investigation opens as today's ledger: no stamp, the same
+ *          intents, answers and work view (§B10 S-B2).
+ *   'on'   an investigation opened now is stamped `shape: 'builder'` and takes
+ *          only the builder's intents and actions (§B4). The stamp never changes.
+ *
+ * RUNWAY: 'off' ships with B3 (the server, dark) and stays 'off' through B4 (the
+ * client, dark); then one founder PR flips it to 'on' with its pin, after B4
+ * merges (§B9). Never a build PR.
+ * ROLLBACK: move the literal back to 'off' with its pin: new investigations open as ledgers; open builder sessions keep working.
+ */
+// Pinned by: sharedResearchFlags.test.js (the pin and this value move together — BUILD_RULES §2).
+export const SHARED_RESEARCH_BUILDER_MODE = 'off';
