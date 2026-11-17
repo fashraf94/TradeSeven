@@ -139,3 +139,27 @@ export function assertAssertionsSupported(statement, { record, carried, selected
   const extra = deselected.find((c) => namesCompany(statement, c));
   if (extra) throw new AssertionError('names_not_supported', { deselected: extra.symbol });
 }
+
+/**
+ * A thesis builder's statement (Amendment B §B4.5; §B11 W-2a): B1's rule, with the card's own texts. `ownTexts` (the
+ * set theme) hold their numbers as written, anywhere in the statement. `placed` texts (the wrong-if text and the time
+ * frame's label) license their numbers only where they appear: each is removed where it appears verbatim BEFORE the
+ * number check, so a number elsewhere — "30%" beside "about 30 sessions" — must sit in a carried Source-backed fact or
+ * an own text, else `unsupported_assertion`. Every selected company is named and no deselected supported company is
+ * (on the whole statement), else `names_not_supported`.
+ */
+export function assertThesisStatementSupported(statement, { record, carried, selected, deselected, ownTexts = [], placed = [] }) {
+  const byId = new Map((Array.isArray(record?.findings) ? record.findings : []).map((f) => [f.findingId, f]));
+  const held = [
+    ...carried.map((id) => byId.get(id)).filter((f) => f && f.kind !== 'idea' && f.status === 'verified'),
+    ...ownTexts.filter((t) => typeof t === 'string' && t).map((fact) => ({ fact })),
+  ];
+  const texts = [...new Set(placed.filter((t) => typeof t === 'string' && t))].sort((a, b) => b.length - a.length);
+  const rest = texts.reduce((s, t) => s.split(t).join(' '), String(statement ?? ''));
+  const stray = strayNumberOf(rest, held);
+  if (stray !== undefined) throw new AssertionError('unsupported_assertion', stray);
+  const unnamed = selected.find((c) => !namesCompany(statement, c));
+  if (unnamed) throw new AssertionError('names_not_supported', { missing: unnamed.symbol });
+  const extra = deselected.find((c) => namesCompany(statement, c));
+  if (extra) throw new AssertionError('names_not_supported', { deselected: extra.symbol });
+}

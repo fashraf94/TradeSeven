@@ -119,3 +119,34 @@ export function findingLabelOf({ kind, status, statusReason } = {}) {
   }
   return STATUS_LABELS.unverified;
 }
+
+// ── the thesis builder (Amendment B, docs/specs/20261116_SHARED_RESEARCH_SPEC_V1_2_AMENDMENT_B_THESIS_BUILDER.md) ──
+// One vocabulary for the server (api/_utils/sharedResearch/thesis.js, thesisSchema.js) and B4's work view.
+
+/** A session's shape (§B2): stamped `builder` at `open` when the builder mode is on; no stamp reads as `ledger` (§B10 S-B2). */
+export const SESSION_SHAPES = Object.freeze(['ledger', 'builder']);
+/** The builder's one step intent (§B4.2); the ledger's four stay STEP_INTENTS. */
+export const BUILD_INTENT = 'build';
+/** What a builder step works toward (§B4.2): the server offers them from the card; the model never invents one. */
+export const BUILD_GOALS = Object.freeze(['verify_source', 'map_segments', 'find_names', 'build_why', 'strengthen', 'pick', 'direction']);
+/** The card's six parts, in the sentence's order (§B3). */
+export const THESIS_PARTS = Object.freeze(['theme', 'segment', 'names', 'why', 'wrongIf', 'timeFrame']);
+/** A part's state as the card shows it (§B3). `suggested` and `stale` are derived on every read, as `ready` is. */
+export const PART_STATES = Object.freeze(['unset', 'suggested', 'set', 'stale']);
+/** Who set a part (§B3): the player's words, the player's choice, or the partner's suggestion the player confirmed. */
+export const SET_BY = Object.freeze(['player_wrote', 'player_chose', 'partner_suggested_confirmed']);
+/** The free action's operations (§B4.3). */
+export const CARD_OPS = Object.freeze(['confirm', 'set', 'clear']);
+/** The parts a pick may be for: Atlas's pick on a free choice, or the `pick` goal's answer (§B4.2, DR-2). */
+export const PICK_PARTS = Object.freeze(['segment', 'names', 'wrongIf', 'timeFrame']);
+/** What a change clears (§B3): changing the segment clears the names and the why; changing the names clears the why (and the price lines). */
+export const THESIS_DEPENDENTS = Object.freeze({ segment: Object.freeze(['names', 'why']), names: Object.freeze(['why']) });
+/** Why the names part stopped (§B4.5): no listed company has a sourced connection. */
+export const NAMES_BLOCKED = Object.freeze(['no_listed_company']);
+/** The card's limits (§B3, §B4.2; §B10 S-B3). */
+export const THEME_MAX = 80;
+export const THESIS_LIMITS = Object.freeze({
+  theme: THEME_MAX, segmentLabel: 60, segmentLine: 120, segmentsMin: 2, segmentsMax: 5, namesMin: 1, namesMax: 4,
+  shared: 160, reason: 200, reasonsPerName: 3, against: 240, wrongIf: 200, wrongIfOption: 160, wrongIfOptions: 3,
+  pickReason: 140, pickReasons: 3, reply: 600,
+});

@@ -1,0 +1,96 @@
+{
+  "recordedAt": "2026-11-17T15:12:49.252Z",
+  "key": "direction",
+  "goal": "direction",
+  "part": null,
+  "shape": {
+    "goal": "direction",
+    "part": null
+  },
+  "model": "claude-sonnet-5-5",
+  "modelIds": {
+    "step": "claude-sonnet-5-5",
+    "frame": "claude-haiku-5-5"
+  },
+  "ok": true,
+  "reason": null,
+  "stopReason": "end_turn",
+  "category": null,
+  "apiError": null,
+  "attempts": 1,
+  "elapsedMs": 6275,
+  "usage": {
+    "input": 5384,
+    "output": 631
+  },
+  "costUsd": 0.017078,
+  "readAt": "2026-11-16T15:00:00.000Z",
+  "output": {
+    "reply": "Power and cooling is one link in the chain, and one source reports that cooling and power equipment now set how fast operators can add AI capacity. It names no company, so no listed company has a sourced connection yet and the card stays as it is. Next, a source would have to tie a named company to this equipment and say how much of its revenue it is.",
+    "findings": [
+      {
+        "tempId": "t1",
+        "kind": "coverage",
+        "fact": "An industry publication reports that operators said cooling and power equipment now set how fast they can add AI data-center capacity.",
+        "symbolCandidate": null,
+        "companyName": null,
+        "support": {
+          "kind": "retrieval",
+          "index": 0,
+          "from": [],
+          "reason": null
+        },
+        "at": "2026-11-03",
+        "supersedes": null
+      },
+      {
+        "tempId": "t2",
+        "kind": "inference",
+        "fact": "If that report holds, buyers of data-center power and cooling equipment may be a place to look for companies that earn from AI capacity. No company has been identified yet.",
+        "symbolCandidate": null,
+        "companyName": null,
+        "support": {
+          "kind": "inference",
+          "index": null,
+          "from": [
+            "t1"
+          ],
+          "reason": null
+        },
+        "at": null,
+        "supersedes": null
+      },
+      {
+        "tempId": "t3",
+        "kind": "inference",
+        "fact": "The report names no company that makes or sells power or cooling equipment, so which listed company earns from it, and how much of its revenue it is, is not checked.",
+        "symbolCandidate": null,
+        "companyName": null,
+        "support": {
+          "kind": "unresolved",
+          "index": null,
+          "from": [],
+          "reason": "not_checked"
+        },
+        "at": null,
+        "supersedes": null
+      },
+      {
+        "tempId": "t4",
+        "kind": "inference",
+        "fact": "The report is a single source, so whether power and cooling really limit the pace of capacity growth is not yet confirmed by another source.",
+        "symbolCandidate": null,
+        "companyName": null,
+        "support": {
+          "kind": "unresolved",
+          "index": null,
+          "from": [],
+          "reason": "single_source"
+        },
+        "at": null,
+        "supersedes": null
+      }
+    ],
+    "companies": []
+  }
+}
