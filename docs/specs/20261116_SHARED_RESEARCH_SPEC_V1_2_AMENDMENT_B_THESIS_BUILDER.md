@@ -251,3 +251,19 @@ The founder ruled on the B3 build report (`docs/audits/20261116_BUILD_SHARED_RES
 | **S-4** | Probe every distinct schema, live, one recorded call each (fixtures as P-2). Iterate without stopping, up to 16 calls and $0.50 in total. If a schema is refused, record the API's message and reduce in this order, re-probing after each: (1) remove union types (the empty-string-for-none rule); (2) flatten (a refs list as one string of ids the validator splits; fewer nested objects); (3) shorten enum and description text. If a goal still cannot compile without splitting it into two paid steps, STOP and report: that one is the founder's. |
 | **S-5** | Pin it: a test per schema that counts objects, arrays, properties and union types, and fails if any builder schema grows past the numbers that compiled. Report each probe's model, usage, cost, elapsed time (first use includes compilation), output size against the 2,500-token cap, and what the validator kept and dropped. |
 | — | Then, as ruled before: W-1, W-2a (each with its row and mutant), this §B11, the merge of `origin/main`, the full suite, rules, `lint:gate`, the ledger differential, the bundle comparison, the mutation battery on the final tree, the report update and the push. One refuter pass over the schema split only (honesty and integrity): each goal still lands only its own proposals; nothing is set by the model. |
+
+---
+
+## §B12 · B3 §B11-round rulings (Nov 17)
+
+The founder ruled on the §B11 round's two questions and its watch list on Nov 17, 2026. B3 builds them from `e8cc184c` under the same fences as §B11: dark, the ledger byte-identical, `modelTurn.js` untouched, key handling unchanged, no merge, no CI watch. Where a ruling and an earlier section of this amendment disagree, the ruling wins.
+
+| # | Ruling |
+|---|---|
+| **Q-1 → (a)** | Drop `pick` from `strengthen:segment`, `strengthen:names` and `strengthen:wrongIf`, and `timeFramePick` from `strengthen:timeFrame`. The strengthen user turn says the part is already set by the player and asks for evidence for or against it, not a pick. Re-probe those four (4 calls, inside the 16-call / $0.50 cap; a refusal = stop and report). Recorded test: on `strengthen:names` and `strengthen:timeFrame` the model's own reply stands. |
+| **Q-2 → (b), at the dead end only** | While `blockedNow` is true, a `direction` step is asked as `find_names` (schema already compiled; no new call). Everywhere else S-1's letter stands, including `direction` asked as `strengthen:theme` once the why is set. |
+| **W-10** | Rule 1 changes. A name's reason is kept when (1) it has at least one ref, (2) every ref is a current Source-backed (verified) finding, and (3) at least one ref is about that name. The number rule is unchanged. Apply the same reading everywhere the rule is checked: the validator, the confirm-time re-check, ready, and the save. Update rulebook §6 and the prompt to match. No model call: replay the recorded `build_why` and `strengthen:why` answers and pin that the NVDA reason is kept and the why is complete. |
+| **W-13** | Make it an offered choice. When the why is set and a complete proposal is waiting, `choices.free` offers `{ op: 'confirm', part: 'why', revised: true }`. It replaces the set why (`by: partner_suggested_confirmed`) and clears nothing else. Confirm the thesis view carries the waiting proposal so B4 can show it before the tap; add it if not. Record both in the report's §4. |
+| **W-12** | Leave. S-1 meant the model's output; the validator's ceiling stays three. |
+| **W-11** | No change; note it in the report's §4 for B4. |
+| — | Then: a row and a mutant for each change, the ledger differential re-run, the full suite, and the report appended as the §B12 round. |
