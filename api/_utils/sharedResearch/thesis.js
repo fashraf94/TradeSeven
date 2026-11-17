@@ -31,6 +31,9 @@
 // `card` action — moves a part to `set`.
 
 import { currentFindingsOf } from '../researchRecords/model.js';
+import { strayNumberOf, sentencesOf } from './stepSchema.js';
+import { namesCompany } from './companies.js';
+import { assertThesisStatementSupported, AssertionError, KEPT_FINDINGS_MAX } from './adoptPreview.js';
 import {
   THESIS_PARTS, PICK_PARTS, CARD_OPS, ADOPTABLE_HORIZONS, HORIZON_LABELS, THESIS_LIMITS, THESIS_DEPENDENTS,
 } from '../../../src/constants/sharedResearch.js';
@@ -38,6 +41,8 @@ import {
 export const THESIS_SCHEMA_VERSION = 1;
 /** The applied opIds a card keeps: a retried opId within the last this-many answers the card and applies nothing. */
 export const OPS_KEPT = 20;
+/** The most `card` exchanges one session keeps (the free action refuses past it: a session document stays well under Firestore's 1 MiB — review RA-6). */
+export const CARD_OPS_MAX = 300;
 /** The field the saved list carries the card in (§B10 S-B1: never the list's own `thesis` text field). */
 export const THESIS_CARD_FIELD = 'thesisCard';
 export const SAVED_CARD_SCHEMA_VERSION = 1;
@@ -176,6 +181,8 @@ export const READY_PARTS = Object.freeze(['names', 'why', 'wrongIf', 'timeFrame'
 /** `{ ready, blockers: [{ part, state }] }` — ready is computed, never stored (§B3). */
 export function readinessOf(card, ctx, states = partStatesOf(card, ctx)) {
   const blockers = READY_PARTS.filter((p) => states[p] !== SET).map((p) => ({ part: p, state: states[p] }));
+  // the optional segment is in the sentence only while it holds: a stale one blocks the save until it is re-confirmed or changed (RA-1 E)
+  if (states.segment === STALE) blockers.unshift({ part: 'segment', state: STALE });
   return { ready: blockers.length === 0, blockers };
 }
 
@@ -210,6 +217,12 @@ export function sentenceOf(card) {
 
 // ── the offers ────────────────────────────────────────────────────────────────
 
+/**
+ * The dead end as it stands now (§B4.5; review RB-5): find_names left no supported company AND the record still
+ * supports none — a company sourced later (a direction step) lifts it.
+ */
+export const blockedNow = (card, ctx) => Boolean(card.names.blocked) && ctx.supported.length === 0;
+
 /** Is there a choice on the card for `part` that the partner could pick among (DR-2)? */
 export function pickableOf(card, part, ctx) {
   if (!PICK_PARTS.includes(part) || card[part].state === SET) return false;
@@ -234,7 +247,7 @@ export function offeredGoalsOf(card, ctx) {
     // SQ-2: own words longer than the theme's limit leave the theme unset; the first map suggests one.
     const themeReady = card.theme.state === SET || (ctx.entryKind === 'observation' && !isText(card.theme.suggestion));
     if (themeReady && card.segment.state !== SET && card.names.state !== SET) out.push({ goal: 'map_segments' });
-    if (card.theme.state === SET && card.segment.state === SET && card.names.state !== SET && !card.names.blocked) out.push({ goal: 'find_names' });
+    if (card.theme.state === SET && card.segment.state === SET && card.names.state !== SET && !blockedNow(card, ctx)) out.push({ goal: 'find_names' });
     if (card.names.state === SET && card.why.state !== SET) out.push({ goal: 'build_why' });
     for (const part of THESIS_PARTS) if (card[part].state === SET) out.push({ goal: 'strengthen', part });
     for (const part of PICK_PARTS) if (pickableOf(card, part, ctx)) out.push({ goal: 'pick', part });
@@ -273,15 +286,16 @@ export function freeChoicesOf(card, ctx) {
   }
   // why
   const proposal = card.why.proposal;
-  if (proposal && card.names.state === SET) {
+  if (proposal && card.names.state === SET && card.why.state !== SET) {
     const missing = namesWithoutReasonOf(ctx, proposal.reasons, card.names.value);
     if (missing.length === 0) {
-      out.push({ op: 'confirm', part: 'why' });
+      if (sharedIssueOf(ctx, proposal.shared, heldReasons(ctx, proposal, card.names.value), card.names.value) === null) out.push({ op: 'confirm', part: 'why' });
       if (proposal.reasons.length > card.names.value.length) out.push({ op: 'set', part: 'why', options: proposal.reasons.map((_, i) => i) });
     } else {
-      // SQ-3: a name with no sourced reason — the free choice drops it (S-B4 keeps the proposal for the rest).
+      // SQ-3: a name with no sourced reason — the free choice drops it (S-B4 keeps the proposal for the rest). Offered
+      // only while the why is not set: dropping a name never silently clears a confirmed why (RA-3).
       const rest = card.names.value.filter((s) => !missing.includes(s));
-      if (rest.length > 0) out.push({ op: 'set', part: 'names', value: rest, reason: 'drop_unsourced' });
+      if (rest.length > 0) out.push({ op: 'set', part: 'names', value: rest, reason: 'drop_unsourced', clears: card.wrongIf.priceLines.length ? ['priceLines'] : [] });
     }
   }
   // wrong if
@@ -342,7 +356,7 @@ function cleared(card, part, { keepProposalFor = null } = {}) {
 }
 
 /** Was `prev` → `value` a change of the segment (§B3: only a change clears its dependents)? */
-const segmentChanged = (seg, { skipped, value }) => seg.state !== SET || seg.skipped !== skipped || seg.value !== value;
+const segmentChanged = (seg, { skipped, value }) => seg.state === SET && (seg.skipped !== skipped || seg.value !== value); // unset → set changes nothing set (RA-3)
 const sameNames = (a, b) => a.length === b.length && a.every((x) => b.includes(x));
 
 /** Apply a names change (set or confirm), with §B3's dependencies and §B10 S-B4's narrowing. */
@@ -380,6 +394,18 @@ function heldReasons(ctx, proposal, names, keep = null) {
 /** The point against as it stands now: kept only while every finding behind it is current (§B4.2 rule 2). */
 const againstNow = (ctx, against) => (against && idsOf(against.findingIds).length > 0 && against.findingIds.every((id) => isCurrent(ctx, id))
   ? { text: against.text, findingIds: [...against.findingIds] } : null);
+
+/**
+ * The why's shared reason, checked against what a confirm keeps (§B4.3; review RA-1): every number in it sits in a
+ * current Source-backed finding of the KEPT reasons, and it names no supported company the card does not name. The
+ * rule's name when it fails, else null.
+ */
+export function sharedIssueOf(ctx, shared, reasons, names) {
+  const held = (Array.isArray(reasons) ? reasons : []).flatMap((r) => idsOf(r.findingIds)).map((id) => ctx.current.get(id)).filter((f) => f?.status === 'verified');
+  if (sentencesOf(String(shared ?? '')).some((s) => strayNumberOf(s, held) !== undefined)) return 'unsupported_number';
+  if (ctx.supported.some((c) => !names.includes(c.symbol) && namesCompany(shared, c))) return 'names_another_company';
+  return null;
+}
 
 /** One price line, validated: a set name, a positive level under PRICE_LEVEL_MAX. */
 function priceLinesOf(raw, names) {
@@ -485,6 +511,9 @@ export function applyCardOp(card, { op, part, value }, ctx) {
     }
     const reasons = heldReasons(ctx, proposal, card.names.value, keep);
     if (namesWithoutReasonOf(ctx, reasons, card.names.value).length > 0) return refusal(op === 'confirm' ? 'why_incomplete' : 'invalid_value');
+    // §B4.3: a confirm re-checks the suggestion against the fresh record — the shared reason's numbers must sit in the
+    // KEPT reasons' Source-backed findings, and it may name no supported company the card does not name (RA-1)
+    if (sharedIssueOf(ctx, proposal.shared, reasons, card.names.value) !== null) return refusal('shared_unsupported');
     next = structuredClone(card);
     next.why = {
       state: SET, by: op === 'confirm' ? 'partner_suggested_confirmed' : 'player_chose', shared: proposal.shared, reasons,
@@ -602,6 +631,38 @@ export function carriedIdsOf(card, ctx) {
 export const priceConditionsOf = (card) => card.wrongIf.priceLines.map((p) => ({ symbol: p.symbol, side: 'below', level: p.level, basis: 'daily_close' }));
 
 /**
+ * The card's own texts a saved statement's numbers may sit in, beside the carried Source-backed facts (§B4.5): the
+ * wrong-if in words and the time frame's label, and the player's own theme (review RA-1 B3: the theme is the player's
+ * framing, never evidence — routine 22).
+ */
+export const ownTextsOf = (card) => [card.theme.state === SET ? card.theme.value : null, card.wrongIf.text, timeFrameLabelOf(card.timeFrame.value)].filter(isText);
+
+/**
+ * Why a ready card's save would be refused, before the player taps Save (review RA-1, RA-7): more carried findings than
+ * the idea builder takes, or a composed sentence that states a number no carried fact or own text holds, or that names
+ * a supported company the card does not name. Null when the save would go through. The composed sentence names the
+ * card's names by construction, so only the deselected companies are checked for it.
+ */
+export function saveIssueOf(card, ctx, statement = sentenceOf(card)) {
+  const carried = carriedIdsOf(card, ctx);
+  if (carried.length > KEPT_FINDINGS_MAX) return { code: 'too_many_evidence_refs', detail: carried.length };
+  if (!statement) return null;
+  const composed = statement === sentenceOf(card);
+  try {
+    assertThesisStatementSupported(statement, {
+      record: { findings: [...ctx.current.values()] }, carried,
+      selected: composed ? [] : card.names.value.map((s) => ctx.supported.find((c) => c.symbol === s)).filter(Boolean),
+      deselected: ctx.supported.filter((c) => !card.names.value.includes(c.symbol)),
+      ownTexts: ownTextsOf(card),
+    });
+    return null;
+  } catch (err) {
+    if (err instanceof AssertionError) return { code: err.code, detail: err.detail };
+    throw err;
+  }
+}
+
+/**
  * The card the saved list keeps (§B4.5; §B10 S-B1, PF-1): written ONCE, in the save transaction, never edited. It
  * carries its schemaVersion, the list and idea version it was saved with, the research session and record, the
  * statement saved, every part with who set it, the wrong-if in words, the price lines and the carried finding ids
@@ -654,7 +715,7 @@ export function thesisViewOf(card, ctx) {
     parts: {
       theme: { state: states.theme, value: card.theme.value, by: card.theme.by, suggestion: card.theme.suggestion },
       segment: { state: states.segment, value: card.segment.value, by: card.segment.by, skipped: card.segment.skipped, findingIds: [...card.segment.findingIds], map: card.segment.map },
-      names: { state: states.names, value: [...card.names.value], by: card.names.by, blocked: card.names.blocked },
+      names: { state: states.names, value: [...card.names.value], by: card.names.by, blocked: blockedNow(card, ctx) ? card.names.blocked : null },
       why: {
         state: states.why, by: card.why.by, shared: card.why.shared, reasons: card.why.reasons, against: card.why.against,
         proposal: proposal ? { ...proposal, incomplete: namesWithoutReasonOf(ctx, proposal.reasons, card.names.state === SET ? card.names.value : proposal.forNames) } : null,
@@ -664,6 +725,7 @@ export function thesisViewOf(card, ctx) {
     },
     pick: pickViewOf(card.pick, ctx),
     filled: THESIS_PARTS.filter((p) => states[p] === SET).length,
+    saveIssue: ready ? saveIssueOf(card, ctx) : null,
     ready, blockers,
     sentence: sentenceOf(card),
     dependents: THESIS_DEPENDENTS,

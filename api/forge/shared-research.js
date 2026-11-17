@@ -363,8 +363,8 @@ async function handleStep(body, res, { db, uid }) {
   const directionExchange = direction ? exchangeOf({ who: 'player', kind: 'direction', text: direction, at: nowIso, stepId }) : null;
   const begun = await beginStep(db, {
     uid, sessionId, stepId, intent, directionExchange, nowIso, nowMs: t0,
-    // a thesis builder session takes only the builder's intent (Amendment B §B2) — refused before the call is counted
-    admit: (s) => { if (shapeOf(s) === 'builder') throw refuse(400, 'invalid_intent', { reason: 'shape' }); },
+    // a thesis builder session takes only the builder's intent (Amendment B §B2) — refused first, before a replay too
+    shape: 'ledger',
   });
   const day = await readQuota(db, { uid, nowIso });
   if (begun.replay) {
@@ -628,8 +628,9 @@ async function handleBuildStep(body, res, { db, uid }) {
   // inside the admission transaction, before the step's call is counted.
   const begun = await beginStep(db, {
     uid, sessionId, stepId, intent, directionExchange, nowIso, nowMs: t0,
+    shape: 'builder', // a ledger session is refused first, before a replay too (review RA-2/RD-1)
     admit: (s, rec) => {
-      if (shapeOf(s) !== 'builder' || !s.thesis) throw refuse(400, 'invalid_intent', { reason: 'shape' });
+      if (!s.thesis) throw refuse(400, 'invalid_intent', { reason: 'shape' });
       if (!isGoalOffered(s.thesis, cardCtxIn(s, rec), { goal, part })) throw refuse(400, 'invalid_intent', { reason: 'goal_not_offered' });
     },
   });
@@ -712,13 +713,20 @@ async function handleBuildStep(body, res, { db, uid }) {
   const names = await readNames(db, nameSymbols);
   const persistIso = new Date().toISOString();
   const partnerExchangeId = randomUUID();
-  const checked = validateBuildTurn(turn.output, {
-    record, items: fit.items, readAt: r && !r.error ? r.readAt : null, partnerExchangeId, partnerAt: persistIso, nowIso: persistIso,
-    mintFindingId: newFindingId, names, partnerName, method, card, goal, part,
-  });
+  let checked;
+  try {
+    checked = validateBuildTurn(turn.output, {
+      record, items: fit.items, readAt: r && !r.error ? r.readAt : null, partnerExchangeId, partnerAt: persistIso, nowIso: persistIso,
+      mintFindingId: newFindingId, names, partnerName, method, card, goal, part,
+    });
+  } catch (err) {
+    // a paid call is never left unrecorded (review RC-1): the step fails, logged, its call counted, the session released
+    console.error('[shared-research] build validation threw:', err?.message || err);
+    return failed(200, 'invalid_unparseable', { turn, retrievalTally });
+  }
   if (!checked.ok) return failed(200, `invalid_${checked.rule}`, { turn, retrievalTally });
   const partnerExchange = exchangeOf({
-    who: 'partner', kind: 'step', text: checked.reply || builderFallbackReplyOf(checked.findings.length, false), at: persistIso, stepId, intent, goal, part,
+    who: 'partner', kind: 'step', text: checked.reply || builderFallbackReplyOf(checked.findings.length, { cardChanged: checked.cardChanged }), at: persistIso, stepId, intent, goal, part,
     method: methodRefOf(method),
     methodChange: methodChangeOf(session.exchanges, method, effective.refusal),
     findingIds: checked.findings.map((f) => f.findingId),
@@ -747,13 +755,12 @@ async function handleBuildStep(body, res, { db, uid }) {
     await settle(pending, settleBy); // the completed call's record is never left unsettled (review C4)
     throw err;
   }
-  const p = checked.proposals;
   return answer(res, 200, {
     session: sessionViewOf(saved.session),
     record: projectionOf(saved.record, { lines: latestLinesOf(saved.session), nowIso: persistIso }),
     companies,
     thesis: thesisFor(saved.session, saved.record, companies),
-    changed: { findings: checked.findings.length, card: Boolean(p.themeSuggestion || p.map || p.why || p.wrongIfOptions || p.timeFrame || p.pick) || goal === 'find_names' },
+    changed: { findings: checked.findings.length, card: checked.cardChanged }, // what landed, not what was proposed (RA-5)
     quota: quotaViewOf(day),
   }, pending, settleBy);
 }
@@ -765,9 +772,12 @@ async function handleCard(body, res, { db, uid }) {
     throw refuse(400, 'invalid_request');
   }
   const nowIso = new Date().toISOString();
+  // the record's company names, read first: a confirm checks the shared reason against the deselected companies by name
+  const { record: before } = await readInvestigation(db, { uid, sessionId: body.sessionId });
+  const names = before ? await readNames(db, companySymbolsOf(before)) : {};
   const out = await applyCard(db, {
     uid, sessionId: body.sessionId, opId: body.opId, rev: body.rev, op: body.op, part: body.part, value: body.value,
-    exchangeId: randomUUID(), exchangeOf, nowIso,
+    exchangeId: randomUUID(), exchangeOf, nowIso, names,
   });
   const companies = await companiesFor(db, out.record);
   const thesis = thesisFor(out.session, out.record, companies);

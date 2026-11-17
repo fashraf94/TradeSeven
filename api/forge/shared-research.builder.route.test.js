@@ -16,7 +16,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { makeSrFirestore } from '../_utils/sharedResearch/__fixtures__/srFirestore.js';
 
 const state = vi.hoisted(() => ({
-  mode: 'on', builder: 'on', user: { uid: 'u1' }, db: null, turns: [], turnQueue: [], retrievals: [], retrievalQueue: [], logs: [],
+  mode: 'on', builder: 'on', user: { uid: 'u1' }, db: null, turns: [], turnQueue: [], retrievals: [], retrievalQueue: [], logs: [], throwValidate: false,
 }));
 vi.mock('../../src/config/sharedResearchFlags.js', () => ({
   SHARED_RESEARCH_MODES: Object.freeze(['off', 'allowlist', 'on']),
@@ -44,6 +44,10 @@ vi.mock('../_utils/sharedResearch/modelTurn.js', async (importOriginal) => {
       return typeof next === 'function' ? next(args) : next;
     },
   };
+});
+vi.mock('../_utils/sharedResearch/thesisSchema.js', async (importOriginal) => {
+  const real = await importOriginal();
+  return { ...real, validateBuildTurn: (o, c) => { if (state.throwValidate) throw new Error('test: the validator throws'); return real.validateBuildTurn(o, c); } };
 });
 vi.mock('../_utils/sharedResearch/retrieval.js', async (importOriginal) => {
   const real = await importOriginal();
@@ -90,7 +94,7 @@ const quotaDoc = () => env.doc(`sharedResearchQuota/${UID}`);
 
 beforeEach(() => {
   env = seed();
-  Object.assign(state, { mode: 'on', builder: 'on', user: { uid: UID }, db: env.db, turns: [], turnQueue: [], retrievals: [], retrievalQueue: [], logs: [] });
+  Object.assign(state, { mode: 'on', builder: 'on', user: { uid: UID }, db: env.db, turns: [], turnQueue: [], retrievals: [], retrievalQueue: [], logs: [], throwValidate: false });
 });
 
 // ── the model's answers along one path ─────────────────────────────────────────
@@ -346,6 +350,86 @@ describe('the free action (§B4.3; K-5; §B10 R-21)', () => {
     const o = await openOwn();
     const r = await post({ action: 'card', sessionId: o.session.sessionId, opId: opId(1), rev: o.thesis.rev, op: 'set', part: 'why', value: { shared: 'x', reasons: [{ symbol: 'NVDA', findingIds: ['f_x'] }] }, ready: true, thesis: { ready: true } });
     expect([r.statusCode, r.body.error]).toEqual([400, 'invalid_card']);
+  });
+});
+
+describe('the review\'s route fixes (K-10; report §9)', () => {
+  const ledgerStory = () => post({ action: 'open', requestId: 'req-l', entry: { kind: 'item', itemRef: { recordKind: 'fantasyTimesStories', recordId: 'story-1' }, question: 'Which companies earn from this?' } });
+  it('RA-2 / RD-1: a replayed stepId in the other shape is refused invalid_intent, both ways — nothing answered in the wrong shape', async () => {
+    state.builder = 'off';
+    const l = await ledgerStory();
+    const lid = l.body.session.sessionId;
+    state.retrievalQueue.push({ items: ITEMS, costDollars: 0, elapsedMs: 1, readAt: new Date().toISOString() });
+    state.turnQueue.push(turnOk({ reply: 'Nothing new.', findings: [], summary: null, lines: { support: null, complication: null, missing: null }, nextAction: { label: 'Look for a filing', purpose: 'Primary source.' }, companies: [] }));
+    expect((await post({ action: 'step', sessionId: lid, stepId: uuid(1), intent: 'next' })).statusCode).toBe(200);
+    const cross = await post({ action: 'step', sessionId: lid, stepId: uuid(1), intent: 'build', goal: 'verify_source' });
+    expect([cross.statusCode, cross.body.error, cross.body.reason]).toEqual([400, 'invalid_intent', 'shape']);
+    state.builder = 'on';
+    const o = await openOwn();
+    expect((await build(o.session.sessionId, 2, 'map_segments', MAP())).statusCode).toBe(200);
+    const back = await post({ action: 'step', sessionId: o.session.sessionId, stepId: uuid(2), intent: 'next' });
+    expect([back.statusCode, back.body.error, back.body.reason]).toEqual([400, 'invalid_intent', 'shape']);
+  });
+  it('RD-2: a save in the other shape on a SAVED session is refused, not answered as saved', async () => {
+    const { id, rev } = await toReady();
+    expect((await post({ action: 'adopt', sessionId: id, rev })).statusCode).toBe(200);
+    const ledgerBody = await post({ action: 'adopt', sessionId: id, previewRev: `pr1.${'a'.repeat(32)}`, statement: 'x', horizonEnum: 'swing', symbols: ['NVDA'] });
+    expect([ledgerBody.statusCode, ledgerBody.body.error]).toEqual([400, 'invalid_intent']);
+  });
+  it('RB-8: a free tap waits for a running step (409 step_in_flight), nothing written', async () => {
+    const o = await openOwn();
+    const id = o.session.sessionId;
+    const doc = sessionDoc(id);
+    env.store.set(`sharedResearchSessions/${id}`, { ...doc, lastStep: { stepId: uuid(9), intent: 'build', status: 'running', startedAt: new Date().toISOString(), endedAt: null, error: null } });
+    const writes = env.writes.length;
+    const r = await card(id, 1, 'set', 'timeFrame', 'swing', o.thesis.rev);
+    expect([r.statusCode, r.body.error]).toEqual([409, 'step_in_flight']);
+    expect(env.writes.length).toBe(writes);
+  });
+  it('RA-6: a session keeps at most 300 card exchanges; past it the free action is refused', async () => {
+    const o = await openOwn();
+    const id = o.session.sessionId;
+    const doc = sessionDoc(id);
+    const filler = Array.from({ length: 300 }, (_, i) => ({ exchangeId: `e${i}`, who: 'player', kind: 'card', text: 'Time frame: Swing', at: doc.createdAt, card: { op: 'set', part: 'timeFrame' } }));
+    env.store.set(`sharedResearchSessions/${id}`, { ...doc, exchanges: [...doc.exchanges, ...filler] });
+    const r = await card(id, 1, 'set', 'timeFrame', 'swing', o.thesis.rev);
+    expect([r.statusCode, r.body.error, r.body.reason]).toEqual([400, 'invalid_card', 'too_many_changes']);
+  });
+  it('RC-1: a validator that throws after a paid call fails the step, logged, the session released', async () => {
+    const o = await openOwn();
+    const id = o.session.sessionId;
+    state.throwValidate = true;
+    const r = await build(id, 1, 'map_segments', MAP());
+    expect([r.statusCode, r.body.error, r.body.reason]).toEqual([200, 'step_failed', 'invalid_unparseable']);
+    expect(state.logs.at(-1)).toMatchObject({ outcome: 'failure', failureReason: 'invalid_unparseable', goal: 'map_segments' });
+    expect(sessionDoc(id).lastStep).toMatchObject({ status: 'failed', error: 'invalid_unparseable' });
+    state.throwValidate = false;
+    expect((await build(id, 2, 'map_segments', MAP())).statusCode).toBe(200);
+  });
+  it('RA-1: a composed sentence whose segment states a figure no carried fact holds is refused, and the card said so first', async () => {
+    const MAP5 = () => out({
+      reply: 'Here is how the theme splits.',
+      findings: [{ tempId: 'm1', kind: 'coverage', fact: 'The top 5 chip makers sell most AI accelerators.', symbolCandidate: null, companyName: null, support: { kind: 'retrieval', index: 0, from: [], reason: null }, at: null, supersedes: null }],
+      segments: [{ label: 'The top 5 chip makers', line: 'The makers of the accelerators', refs: ['m1'] }, { label: 'Data-center power', line: 'Electricity for the buildings', refs: [] }],
+    });
+    const opened = await openOwn();
+    const id = opened.session.sessionId;
+    let rev = opened.thesis.rev;
+    const step = async (n, goal, a) => { const r = await build(id, n, goal, a); expect(r.statusCode, JSON.stringify(r.body)).toBe(200); rev = r.body.thesis.rev; return r; };
+    const tap = async (n, op, part, value) => { const r = await card(id, n, op, part, value, rev); expect(r.statusCode, JSON.stringify(r.body)).toBe(200); rev = r.body.thesis.rev; return r; };
+    await step(1, 'map_segments', MAP5());
+    await tap(1, 'set', 'segment', 'The top 5 chip makers');
+    await step(2, 'find_names', NAMES());
+    await tap(2, 'set', 'names', ['NVDA']);
+    await step(3, 'build_why', WHY());
+    await tap(3, 'confirm', 'why');
+    await tap(4, 'set', 'wrongIf', { option: 0 });
+    const last = await tap(5, 'set', 'timeFrame', 'positional');
+    expect(last.body.thesis).toMatchObject({ ready: true, saveIssue: { code: 'unsupported_assertion', detail: '5' } });
+    const r = await post({ action: 'adopt', sessionId: id, rev });
+    expect([r.statusCode, r.body.error, r.body.detail]).toEqual([400, 'unsupported_assertion', '5']);
+    const edited = last.body.thesis.sentence.replace('The top 5 chip makers', 'chip makers');
+    expect((await post({ action: 'adopt', sessionId: id, rev, statement: edited })).statusCode).toBe(200);
   });
 });
 

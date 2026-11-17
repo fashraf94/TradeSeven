@@ -266,7 +266,7 @@ const BY_WORDS = Object.freeze({ player_wrote: 'the player wrote it', player_cho
 const byWords = (b) => BY_WORDS[b] ?? 'set';
 
 /** The card as the model sees it (every text through `seen`: a ticker the universe does not hold is masked). */
-function cardLinesOf(card) {
+function cardLinesOf(card, supported = []) {
   if (!card) return ['  (no card)'];
   const out = [];
   const t = card.theme;
@@ -275,7 +275,8 @@ function cardLinesOf(card) {
   out.push(`  Segment: ${s.state === 'set' ? (s.skipped ? 'skipped by the player' : `${said(s.value)} (${byWords(s.by)})`) : 'not set'}`);
   for (const m of s.map ?? []) out.push(`    map: ${said(m.label)} — ${said(m.line)}${m.findingIds.length ? ` [${m.findingIds.join(', ')}]` : ' [your reasoning]'}`);
   const n = card.names;
-  out.push(`  Names: ${n.state === 'set' ? `${n.value.join(', ')} (${byWords(n.by)})` : n.blocked ? 'stopped: no listed company has a sourced connection' : 'not set'}`);
+  // the dead end as it stands now: a company sourced since lifts it (thesis.js blockedNow; review RB-5)
+  out.push(`  Names: ${n.state === 'set' ? `${n.value.join(', ')} (${byWords(n.by)})` : n.blocked && supported.length === 0 ? 'stopped: no listed company has a sourced connection' : 'not set'}`);
   const w = card.why;
   if (w.state === 'set') {
     out.push(`  Why: because ${said(w.shared)} (${byWords(w.by)})`);
@@ -300,7 +301,7 @@ export function renderBuildUser({
   question, entryKind, goal, part = null, direction = null, card, supported = [], stepsLeft, findings, items, retrieval, room = null,
 }) {
   const out = [`Question (fixed; never change it): ${line(question)}`, `Started from: ${STARTED[entryKind] ?? 'the player'}`];
-  out.push('The thesis card as it stands:', ...cardLinesOf(card));
+  out.push('The thesis card as it stands:', ...cardLinesOf(card, supported));
   out.push('Listed companies with a sourced connection (the only names a thesis may use):');
   for (const c of supported) out.push(`  ${c.symbol} | ${line(c.name)} | ${line(c.role)} | ${line(c.relationship)}`);
   if (supported.length === 0) out.push('  (none yet)');

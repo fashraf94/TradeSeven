@@ -163,13 +163,14 @@ describe('rule 3 — every written line: forbidden patterns, the ticker scan, th
     const v = validate(base({ reply: 'Here are four segments.', segments: [{ label: 'GPUs', line: 'x', refs: [] }] }), { goal: 'map_segments' });
     expect(v.proposals.map).toBeNull();
     expect(v.notes).toEqual(expect.arrayContaining(['dropped:segments:too_few', 'reply_replaced:goal_proposal_dropped']));
-    expect(v.reply).toBe('This step added 0 findings.');
+    expect(v.reply).toBe('This step added 0 findings. The card did not change.');
+    expect(v.cardChanged).toBe(false);
   });
   it('a shared reason that breaks a rule drops the whole why', () => {
     const v = validate(base({ why: WHY({ shared: 'it will rise to $900' }) }));
     expect(v.proposals.why).toBeNull();
     expect(v.notes.some((x) => x.startsWith('dropped:why:shared_'))).toBe(true);
-    expect(v.reply).toBe('This step added 0 findings.');
+    expect(v.reply).toBe('This step added 0 findings. The card did not change.');
   });
   it('a theme suggestion with a stray ticker is dropped', () => {
     const v = validate(base({ themeSuggestion: 'QZXW power' }), { goal: 'verify_source', card: emptyCard() });
@@ -222,7 +223,7 @@ describe('rule 6 — the pick goal cites only findings already on the record', (
   it('a pick for another part than the one asked is dropped', () => {
     const v = validate(base({ pick: { part: 'timeFrame', value: 'swing', reason: 'x', refs: [], reasons: [] } }), { goal: 'pick', part: 'segment', card: card() });
     expect(v.notes).toContain('dropped:pick:wrong_part');
-    expect(v.reply).toBe('This step added 0 findings.');
+    expect(v.reply).toBe('This step added 0 findings. The card did not change.');
   });
   it('a pick for a part the player already set is dropped', () => {
     const v = validate(base({ pick: { part: 'segment', value: 'GPUs', reason: 'x', refs: [], reasons: [] } }), { goal: 'map_segments' });
@@ -260,8 +261,9 @@ describe('the reply (K-4)', () => {
     expect(v.notes).toContain('reply_replaced:service_promise');
   });
   it('the plain line never claims what did not happen', () => {
-    expect(builderFallbackReplyOf(1, false)).toBe('This step added 1 finding.');
-    expect(builderFallbackReplyOf(3, true)).toBe('This step added 3 findings. The card shows what it proposes.');
+    expect(builderFallbackReplyOf(1, { landed: false, cardChanged: false })).toBe('This step added 1 finding. The card did not change.');
+    expect(builderFallbackReplyOf(2, { landed: false, cardChanged: true })).toBe('This step added 2 findings.');
+    expect(builderFallbackReplyOf(3, { landed: true, cardChanged: true })).toBe('This step added 3 findings. The card shows what it proposes.');
     expect(unsourcedLineOf(['NVDA', 'AMD'], NAMES)).toBe('No Source-backed reason was found for NVIDIA Corporation (NVDA) and Advanced Micro Devices, Inc. (AMD) yet, so the why cannot be confirmed with them.');
   });
 });

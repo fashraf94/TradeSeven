@@ -34,8 +34,12 @@
 
 import { currentFindingsOf } from '../researchRecords/model.js';
 import { ADOPTABLE_HORIZONS, PICK_PARTS, THESIS_LIMITS as L } from '../../../src/constants/sharedResearch.js';
-import { STEP_SCHEMA, validateStepTurn, forbiddenIn, strayTickersOf, strayNumberOf, sentencesOf, promisesService } from './stepSchema.js';
+import { STEP_SCHEMA, validateStepTurn, sentencesOf, promisesService, ACRONYMS, INDEX_NAMES } from './stepSchema.js';
 import { gameUniverse, companiesOf, resolveSymbol, isSameCompany } from './companies.js';
+import { NAMES_A_PRICE, lineFailOf, builderWordingOf } from './thesisWords.js';
+import { applyProposals, cardContextOf } from './thesis.js';
+
+export { NAMES_A_PRICE };
 
 // ── the schema (structured outputs: every object closed, every key required, nullable through anyOf) ──
 //
@@ -130,9 +134,32 @@ const MAIN = Object.freeze({ map_segments: 'map', build_why: 'why', pick: 'pick'
 
 // eslint-disable-next-line no-control-regex -- control characters never reach a record
 const clean = (v) => (typeof v === 'string' ? v.normalize('NFKC').replace(/\p{Cf}/gu, '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim() : '');
-/** A price, a price target or a share-price move: a wrong-if option names a business condition only (rule 4). */
-export const NAMES_A_PRICE = /\$\s?\d|\b\d[\d,.]*\s*(?:dollars?|usd)\b|\bprice\s+targets?\b|\btarget\s+price\b|\b(?:share|stock)\s+prices?\b|\b(?:stock|shares?)\s+(?:falls?|fell|drops?|dropped|declines?|declined|closes?|closed|trades?|traded|sinks?|sank|slides?|slid|rises?|rose)\b|\b(?:closes?|closing|trades?|trading)\s+(?:below|above|under|over)\b|\b52[-\s]week\b/i;
 const SYMBOL_SPLIT = /\s*(?:,|&|\/|\band\b)\s*|\s+/i;
+/** The shape each proposal field must have to be read at all (a field that is not is dropped, never thrown on — RC-1). */
+const FIELD_SHAPES = Object.freeze({
+  themeSuggestion: (v) => typeof v === 'string', segments: Array.isArray, wrongIfOptions: Array.isArray,
+  why: (v) => v !== null && typeof v === 'object' && !Array.isArray(v), timeFramePick: (v) => v !== null && typeof v === 'object' && !Array.isArray(v),
+  pick: (v) => v !== null && typeof v === 'object' && !Array.isArray(v),
+});
+
+/**
+ * A text cut to `max` characters at a sentence's end (never inside a word or a figure: B3 review RB-7) — the first
+ * sentence alone, when it is longer, at the last space before `max`.
+ */
+export function cutAtSentence(text, max) {
+  const t = String(text ?? '');
+  if (t.length <= max) return t;
+  let out = '';
+  for (const s of sentencesOf(t)) {
+    const next = out ? `${out} ${s}` : s;
+    if (next.length > max) break;
+    out = next;
+  }
+  if (out) return out;
+  const head = t.slice(0, max);
+  const space = head.lastIndexOf(' ');
+  return (space > 0 ? head.slice(0, space) : head).trimEnd();
+}
 
 /**
  * Validate one builder turn.
@@ -148,9 +175,10 @@ export function validateBuildTurn(output, ctx) {
   if (!output || typeof output !== 'object') return { ok: false, rule: 'unparseable', detail: null };
   const rawFindings = Array.isArray(output.findings) ? output.findings : [];
 
-  // 1. B1's validator on the reply, the findings and the companies — its rules alone can fail the step.
+  // 1. B1's validator on the reply, the findings and the companies — its rules alone can fail the step. The reply is cut
+  //    to its 600 characters at a sentence's end FIRST, so B1's number check reads the text that is kept (RB-7).
   const b1 = validateStepTurn({
-    reply: output.reply, findings: output.findings, companies: output.companies,
+    reply: cutAtSentence(clean(output.reply), L.reply), findings: output.findings, companies: output.companies,
     summary: null, lines: { support: null, complication: null, missing: null }, nextAction: null,
   }, ctx);
   if (!b1.ok) return b1;
@@ -180,26 +208,24 @@ export function validateBuildTurn(output, ctx) {
   };
   const verifiedOf = (ids) => ids.map((id) => after.get(id)).filter((f) => f?.status === 'verified');
   const recordVerified = [...after.values()].filter((f) => f.status === 'verified');
-  /** Rule 3 on one line: B1's forbidden patterns, the ticker scan, no service promise, every number held. */
-  const lineFail = (text, held) => {
-    if (forbiddenIn(text, { partnerName }).length) return 'forbidden';
-    if (strayTickersOf(text, universe).length) return 'stray_ticker';
-    if (promisesService(text, partnerName)) return 'service_promise';
-    if (sentencesOf(text).some((s) => strayNumberOf(s, held) !== undefined)) return 'unsupported_number';
-    return null;
-  };
+  /** Rule 3 on one line (thesisWords.js): B1's forbidden patterns, the ticker scan, B1's service promise, the builder's own wording, every number held. */
+  const lineFail = (text, held) => lineFailOf(text, held, { partnerName, universe });
   /** A bounded line: cleaned, 1..max characters (an over-long line is dropped, never cut into the card). */
   const lineOf = (raw, max) => { const t = clean(raw); return t && t.length <= max ? t : null; };
 
   const accepts = acceptsOf(goal, part);
-  const given = (field) => {
+  const present = (field) => {
     const v = output[field];
     return Array.isArray(v) ? v.length > 0 : typeof v === 'string' ? v.trim() !== '' : v !== null && v !== undefined;
   };
+  for (const field of PROPOSAL_FIELDS) if (present(field) && !FIELD_SHAPES[field](output[field])) drop(field, 'malformed');
+  const given = (field) => present(field) && FIELD_SHAPES[field](output[field]);
   for (const field of PROPOSAL_FIELDS) if (given(field) && !accepts.includes(field)) notes.push(`ignored:${field}`);
   const takes = (field) => given(field) && accepts.includes(field);
 
   const proposals = { goal, part, themeSuggestion: null, map: null, why: null, wrongIfOptions: null, timeFrame: null, pick: null };
+  const recordAfter = { ...record, findings: [...(record?.findings ?? []), ...b1.findings] };
+  const supportedAfterOf = () => companiesOf(recordAfter, { universe }).supported.map((c) => c.symbol);
 
   // the theme suggestion — only while the card has no theme
   if (takes('themeSuggestion')) {
@@ -308,7 +334,7 @@ export function validateBuildTurn(output, ctx) {
     const p = output.pick;
     const recordOnly = goal === 'pick';
     const allowed = pickPartOf(goal, part);
-    const supportedAfter = companiesOf({ ...record, findings: [...(record?.findings ?? []), ...b1.findings] }, { universe }).supported.map((c) => c.symbol);
+    const supportedAfter = supportedAfterOf();
     const reason = lineOf(p?.reason, L.pickReason);
     const ids = resolveAll(p?.refs, recordOnly);
     let value = null;
@@ -317,9 +343,11 @@ export function validateBuildTurn(output, ctx) {
     else if (card[p.part].state === 'set') fail = 'part_set';
     else if (p.part === 'segment') value = (proposals.map ?? card.segment.map ?? []).find((m) => m.label === clean(p.value))?.label ?? null;
     else if (p.part === 'names') {
-      const syms = clean(p.value).split(SYMBOL_SPLIT).map((s) => resolveSymbol(s, universe)).filter(Boolean);
-      const uniq = syms.filter((s, i) => syms.indexOf(s) === i);
-      value = uniq.length >= L.namesMin && uniq.length <= L.namesMax && uniq.every((s) => supportedAfter.includes(s)) ? uniq : null;
+      // every token must be a supported symbol: a pick that names anything else is dropped, never narrowed (RB-4)
+      const tokens = clean(p.value).split(SYMBOL_SPLIT).filter(Boolean);
+      const syms = tokens.map((s) => resolveSymbol(s, universe));
+      const uniq = syms.filter((s, i) => s && syms.indexOf(s) === i);
+      value = syms.every(Boolean) && uniq.length >= L.namesMin && uniq.length <= L.namesMax && uniq.every((s) => supportedAfter.includes(s)) ? uniq : null;
     } else if (p.part === 'wrongIf') value = (proposals.wrongIfOptions ?? card.wrongIf.options).find((o) => o.text.toLowerCase() === clean(p.value).toLowerCase())?.text ?? null;
     else value = ADOPTABLE_HORIZONS.includes(clean(p.value)) ? clean(p.value) : null;
     if (!fail && value === null) fail = p.part === 'names' ? 'not_supported' : 'not_a_choice';
@@ -344,24 +372,51 @@ export function validateBuildTurn(output, ctx) {
     }
   }
 
-  // The reply: B1's, at most 600 characters; replaced by the plain line when it cannot stand (K-4).
+  // What this step does to the card, exactly as recordStep will land it (a `card` op is refused while a step runs, so
+  // the card cannot move meanwhile — RB-8): `cardChanged` is the answer's `changed.card`, and the plain line reads it.
+  const preview = applyProposals(card, proposals, cardContextOf({ record: recordAfter, supported: companiesOf(recordAfter, { universe }).supported }));
+  const cardChanged = JSON.stringify({ ...preview, rev: 0 }) !== JSON.stringify({ ...card, rev: 0 });
   const landed = Boolean(proposals.themeSuggestion || proposals.map || proposals.why || proposals.wrongIfOptions || proposals.timeFrame || proposals.pick);
-  let reply = clean(b1.reply).slice(0, L.reply).trimEnd();
+
+  // The reply (K-4): B1's, already cut to 600 characters at a sentence's end, replaced by the plain line when it cannot
+  // stand — B1 replaced it, it breaks the builder's own wording, the goal's own proposal is missing, everything the step
+  // proposed was dropped, or a dead end's reply names a listed company (RB-5).
+  let reply = b1.reply;
   const main = MAIN[goal] ?? (goal === 'strengthen' && part === 'why' ? 'why' : null);
+  const offered = accepts.filter((f) => given(f));
+  const deadEnd = goal === 'find_names' && card.names.state !== 'set' && supportedAfterOf().length === 0;
   const replaceFor = notes.some((n) => n.startsWith('reply_replaced:')) ? 'unsupported_number'
     : reply && promisesService(reply, partnerName) ? 'service_promise'
-      : main && !proposals[main] ? 'goal_proposal_dropped' : null;
+      : reply && builderWordingOf(reply, partnerName) ? 'builder_wording'
+      : main && !proposals[main] ? 'goal_proposal_dropped'
+        : deadEnd && namesAListedCompany(reply, universe) ? 'dead_end'
+          : offered.length > 0 && !landed ? 'proposals_dropped' : null;
   if (replaceFor) {
     if (replaceFor !== 'unsupported_number') notes.push(`reply_replaced:${replaceFor}`);
-    reply = builderFallbackReplyOf(b1.findings.length, landed);
+    reply = builderFallbackReplyOf(b1.findings.length, { landed, cardChanged });
+    if (deadEnd) reply = `${reply} ${DEAD_END_LINE}`;
   }
-  if (incomplete.length) reply = `${reply}${reply ? ' ' : ''}${unsourcedLineOf(incomplete, names)}`;
-  return { ok: true, findings: b1.findings, reply, notes, proposals };
+  if (incomplete.length) {
+    const line = unsourcedLineOf(incomplete, names);
+    reply = `${reply ? `${cutAtSentence(reply, L.reply - line.length - 1)} ` : ''}${line}`;
+  }
+  return { ok: true, findings: b1.findings, reply, notes, proposals, cardChanged };
 }
 
-/** The plain reply in place of one that cannot stand (K-4): what landed, never a false sentence. */
-export function builderFallbackReplyOf(n, landed) {
-  return `This step added ${n} ${n === 1 ? 'finding' : 'findings'}.${landed ? ' The card shows what it proposes.' : ''}`;
+/** The server's line on a dead end (§B4.5): no company is picked to finish the card. */
+export const DEAD_END_LINE = 'No listed company has a sourced connection yet; nothing is picked to finish the card.';
+/** Does a text name a company in the game's universe by its symbol (the acronyms and index names never count)? */
+function namesAListedCompany(text, universe) {
+  return (String(text ?? '').match(/\b[A-Z]{1,5}(?:[.-][A-Z])?\b/g) || []).some((w) => !ACRONYMS.includes(w) && !INDEX_NAMES.includes(w) && resolveSymbol(w, universe) !== null);
+}
+
+/**
+ * The plain reply in place of one that cannot stand (K-4; routine 15): what landed, never a false sentence. "The card
+ * did not change." only when it did not; "The card shows what it proposes." when a proposal landed.
+ */
+export function builderFallbackReplyOf(n, { landed = false, cardChanged = true } = {}) {
+  const head = `This step added ${n} ${n === 1 ? 'finding' : 'findings'}.`;
+  return landed ? `${head} The card shows what it proposes.` : cardChanged ? head : `${head} The card did not change.`;
 }
 
 /** The server's line naming the names a why proposal has no Source-backed reason for (SQ-3: the reply names the company). */

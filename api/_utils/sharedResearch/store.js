@@ -39,11 +39,11 @@ import {
 import {
   SESSIONS_COLLECTION, QUOTA_COLLECTION, GLOBAL_QUOTA_ID, etDateOf, framingSessionOf, openSessionOf, isOwnedSession,
   stepAdmissionOf, playerDayOf, globalDayOf, itemKeyOf, refuse, latestLinesOf, isFramingInFlight,
-  liveSessionOf, previousSessionOf, previousViewOf, methodsUsedOf, CARD_EXCHANGE_KIND,
+  liveSessionOf, previousSessionOf, previousViewOf, methodsUsedOf, CARD_EXCHANGE_KIND, isStaleRunning,
 } from './session.js';
-import { previewRevOf, sameRev, carriedFor, adoptPreviewOf, assertAssertionsSupported, AssertionError, assertThesisStatementSupported } from './adoptPreview.js';
+import { previewRevOf, sameRev, carriedFor, adoptPreviewOf, assertAssertionsSupported, AssertionError } from './adoptPreview.js';
 import {
-  shapeOf, cardContextOf, readinessOf, sentenceOf, priceConditionsOf, carriedIdsOf, timeFrameLabelOf, savedCardOf, cardOpOf, THESIS_CARD_FIELD,
+  shapeOf, cardContextOf, readinessOf, sentenceOf, priceConditionsOf, carriedIdsOf, savedCardOf, cardOpOf, saveIssueOf, THESIS_CARD_FIELD, CARD_OPS_MAX,
 } from './thesis.js';
 import { companiesOf } from './companies.js';
 import { CLAIMS_READ_LIMIT } from './opening.js';
@@ -410,11 +410,12 @@ export async function openFromFraming(db, { uid, sessionId, question, direction,
  * steps are bounded too; the persisted `steps` count (the spec's letter) is
  * still added by recordStep. A `direction` step appends the player's exchange
  * here, once.
- * `admit(session, record)`: the shape's own admission (Amendment B §B2, §B4.2), run inside the transaction after the
- * session and record checks and before anything is counted or written — it throws the refusal (`invalid_intent`).
+ * `shape`: the shape the route serves (Amendment B §B2) — the other shape's session is refused `invalid_intent` FIRST,
+ * before a stepId replay is answered (review RA-2/RD-1). `admit(session, record)`: the shape's own admission (§B4.2: a
+ * goal on offer), run after the session and record checks and before anything is counted or written.
  * @returns {Promise<{ replay: boolean, session, record, prior }>}  prior: the lastStep before this one
  */
-export async function beginStep(db, { uid, sessionId, stepId, intent, directionExchange = null, nowIso, nowMs = Date.parse(nowIso), admit = null }) {
+export async function beginStep(db, { uid, sessionId, stepId, intent, directionExchange = null, nowIso, nowMs = Date.parse(nowIso), admit = null, shape = null }) {
   const ref = sessionRefOf(db, sessionId);
   const etDate = etDateOf(nowIso);
   return db.runTransaction(async (tx) => {
@@ -423,6 +424,7 @@ export async function beginStep(db, { uid, sessionId, stepId, intent, directionE
     const record = s.researchWorkId ? dataOf(await tx.get(researchWorkRefOf(db, s.researchWorkId))) : null;
     const globalSnap = await tx.get(quotaRefOf(db, GLOBAL_QUOTA_ID));
     const quotaSnap = await tx.get(quotaRefOf(db, uid));
+    if (shape && shapeOf(s) !== shape) throw refuse(400, 'invalid_intent', { reason: 'shape' });
     const adm = stepAdmissionOf(s, { stepId, nowMs });
     if (adm.replay) return { replay: true, session: s, record, prior: s.lastStep ?? null };
     if (adm.refuse) throw refuse(409, adm.refuse);
@@ -698,10 +700,11 @@ async function commitAdoption(db, { uid, sessionId, record, input, selected, ada
 export async function adoptIdea(db, { uid, sessionId, input, previewRev, companiesFor, adapter, mintId, exchangeOf, nowIso }) {
   // Before the transaction: the fresh record, the preview revision, the assertion check (spec §6.6).
   const { session, record } = await readInvestigation(db, { uid, sessionId });
+  // Amendment B §B2: the other shape's save is refused first — before the saved answer too (review RD-2)
+  if (shapeOf(session) === 'builder') throw refuse(400, 'invalid_intent', { reason: 'shape' });
   const saved = savedAs(record);
   if (saved) return saved;
   if (!record || record.state !== 'open') throw refuse(409, 'session_not_open');
-  if (shapeOf(session) === 'builder') throw refuse(400, 'invalid_intent', { reason: 'shape' }); // Amendment B §B2
   const lines = latestLinesOf(session);
   const companies = companiesFor(record);
   if (!sameRev(previewRevOf(record, { companies, lines }), previewRev)) throw refuse(409, 'preview_stale', { adoptPreview: adoptPreviewOf(record, { companies, lines }) });
@@ -753,18 +756,13 @@ export function thesisAdoptionOf({ session, record, companies, rev, statement = 
   const supported = companies.supported;
   const selected = input.symbols.map((s) => supported.find((c) => c.symbol === s));
   if (selected.some((c) => !c)) throw refuse(409, 'not_ready', { blockers: [{ part: 'names', state: 'stale' }] });
-  const deselected = supported.filter((c) => !input.symbols.includes(c.symbol));
   const carried = carriedIdsOf(card, ctx);
-  if (input.statement !== composed) {
-    try {
-      assertThesisStatementSupported(input.statement, {
-        record, carried, selected, deselected, ownTexts: [card.wrongIf.text, timeFrameLabelOf(card.timeFrame.value)],
-      });
-    } catch (err) {
-      if (err instanceof AssertionError) throw refuse(400, err.code, { detail: err.detail });
-      throw err;
-    }
-  }
+  // The statement saved — the composed sentence as well as the player's edit (review RA-1/RB-6) — states no number a
+  // carried Source-backed fact or the card's own texts do not hold, and names no deselected supported company; an
+  // edit names every name too. One check with the view's saveIssue (thesis.js saveIssueOf).
+  const issue = saveIssueOf(card, ctx, input.statement);
+  if (issue?.code === 'too_many_evidence_refs') throw refuse(400, 'invalid_adoption', { reason: issue.code });
+  if (issue) throw refuse(400, issue.code, { detail: issue.detail });
   return { input, selected, carried, composed };
 }
 
@@ -775,10 +773,10 @@ export function thesisAdoptionOf({ session, record, companies, rev, statement = 
  */
 export async function adoptThesis(db, { uid, sessionId, rev, statement = null, companiesFor, adapter, mintId, exchangeOf, nowIso }) {
   const { session, record } = await readInvestigation(db, { uid, sessionId });
+  if (shapeOf(session) !== 'builder' || !session.thesis) throw refuse(400, 'invalid_intent', { reason: 'shape' }); // before the saved answer (RD-2)
   const saved = savedAs(record);
   if (saved) return saved;
   if (!record || record.state !== 'open') throw refuse(409, 'session_not_open');
-  if (shapeOf(session) !== 'builder' || !session.thesis) throw refuse(400, 'invalid_intent', { reason: 'shape' });
   const plan = thesisAdoptionOf({ session, record, companies: companiesFor(record), rev, statement });
   return commitAdoption(db, {
     uid, sessionId, record, input: plan.input, selected: plan.selected, adapter, mintId, exchangeOf, nowIso, collisionCode: 'card_stale',
@@ -834,7 +832,7 @@ export async function openOwnWords(db, { uid, requestId, sessionId, entry, excha
  * the op is applied by thesis.js (refused 400 invalid_card with its reason), `rev + 1`, and ONE player exchange of
  * kind `card` appended (§B10 R-21): its op, part, a short label and the time, its id minted before the transaction.
  */
-export async function applyCard(db, { uid, sessionId, opId, rev, op, part, value, exchangeId, exchangeOf, nowIso }) {
+export async function applyCard(db, { uid, sessionId, opId, rev, op, part, value, exchangeId, exchangeOf, nowIso, names = {} }) {
   const ref = sessionRefOf(db, sessionId);
   return db.runTransaction(async (tx) => {
     const s = dataOf(await tx.get(ref));
@@ -843,8 +841,11 @@ export async function applyCard(db, { uid, sessionId, opId, rev, op, part, value
     if (shapeOf(s) !== 'builder' || !s.thesis) throw refuse(400, 'invalid_intent', { reason: 'shape' });
     if (Array.isArray(s.thesis.ops) && s.thesis.ops.includes(opId)) return { session: s, record, applied: false };
     if (s.status !== 'open' || !isOwnedRecord(record, uid) || record.state !== 'open') throw refuse(409, 'session_not_open');
+    // a free tap waits for a running step (review RB-8, RA-4, RA-5): the step's proposals land on the card it saw
+    if (isStaleRunning(s.lastStep, Date.parse(nowIso)) === false && s.lastStep?.status === 'running') throw refuse(409, 'step_in_flight');
     if (rev !== s.thesis.rev) return { session: s, record, applied: false, stale: true };
-    const ctx = cardContextOf({ record, supported: companiesOf(record).supported, session: s });
+    if ((s.exchanges ?? []).filter((e) => e?.kind === CARD_EXCHANGE_KIND).length >= CARD_OPS_MAX) throw refuse(400, 'invalid_card', { reason: 'too_many_changes' });
+    const ctx = cardContextOf({ record, supported: companiesOf(record, { names }).supported, session: s });
     const out = cardOpOf(s.thesis, { opId, op, part, value }, ctx);
     if (!out.ok) throw refuse(400, 'invalid_card', { reason: out.reason });
     const exchange = exchangeOf({ who: 'player', kind: CARD_EXCHANGE_KIND, text: out.label, at: nowIso, card: { op, part } }, { mintId: () => exchangeId });

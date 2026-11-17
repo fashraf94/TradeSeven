@@ -198,13 +198,16 @@ describe('the goals on offer (§B4.2 — each goal\'s offer rule)', () => {
       expect(verifiedOf({ exchanges: [{ who: 'partner', kind: 'step', goal: 'map_segments' }] })).toBe(false);
     }
   });
-  it('find_names: theme set and segment set or skipped; not while blocked', () => {
+  it('find_names: theme set and segment set or skipped; not while the dead end stands — a company sourced since lifts it (RB-5)', () => {
     const c = cardWith({});
     expect(goals(c)).toContain('find_names');
     c.segment = { ...c.segment, skipped: true, value: null };
     expect(goals(c)).toContain('find_names');
     c.names.blocked = 'no_listed_company';
-    expect(goals(c)).not.toContain('find_names');
+    expect(goals(c, ctxOf({ supported: [] }))).not.toContain('find_names');
+    expect(thesisViewOf(c, ctxOf({ supported: [] })).parts.names.blocked).toBe('no_listed_company');
+    expect(goals(c)).toContain('find_names'); // the record now supports NVDA and AMD
+    expect(thesisViewOf(c, CTX).parts.names.blocked).toBeNull();
   });
   it('build_why: names set and why not set; strengthen: every set part; pick: a part with choices on the card', () => {
     const c = cardWith({ names: ['NVDA'] });
@@ -235,7 +238,7 @@ describe('the free choices (§B4.3)', () => {
     c.why.proposal = proposalFor(['NVDA', 'AMD']);
     c.why.proposal.reasons[1].findingIds = ['iN']; // AMD's reason rests on an inference
     const free = freeChoicesOf(c, CTX);
-    expect(free).toContainEqual({ op: 'set', part: 'names', value: ['NVDA'], reason: 'drop_unsourced' });
+    expect(free).toContainEqual({ op: 'set', part: 'names', value: ['NVDA'], reason: 'drop_unsourced', clears: [] });
     expect(free.some((f) => f.op === 'confirm' && f.part === 'why')).toBe(false);
   });
   it('Change: every set part but the theme, with what it clears', () => {
@@ -434,7 +437,8 @@ describe('the save\'s evidence and the saved card (§B4.5; §B10 S-B1, PF-1, PF-
 describe('the view (§B4.4; §B10 S-B3)', () => {
   it('carries the derived states, rev, ready, blockers, sentence, filled, dependents and the choices', () => {
     const v = thesisViewOf(READY(), CTX);
-    expect(Object.keys(v)).toEqual(['schemaVersion', 'rev', 'parts', 'pick', 'filled', 'ready', 'blockers', 'sentence', 'dependents', 'choices']);
+    expect(Object.keys(v)).toEqual(['schemaVersion', 'rev', 'parts', 'pick', 'filled', 'saveIssue', 'ready', 'blockers', 'sentence', 'dependents', 'choices']);
+    expect(v.saveIssue).toBeNull();
     expect([v.ready, v.filled, v.parts.timeFrame.label]).toEqual([true, 6, 'Positional · about 30 sessions']);
     expect(Object.keys(v.choices)).toEqual(['research', 'free']);
   });
