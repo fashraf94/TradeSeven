@@ -9,24 +9,24 @@
 - **Session opening (BUILD_RULES §2, §3).** `git fetch origin` ran first. Branch `claude/phase0-archetype-anatomy`, HEAD `57f50409a57d5b931ab4679e570b09f811591bdf`, equal to `origin/main`; tree clean. The worktree had been opened on `claude/phase0-archetype-anatomy-63b3db` at the same commit; the named branch was cut from `origin/main` before any read.
 - **How the code was read.** Five readers each took part of the tree at HEAD (A2/A3/A4; A5/A6/A7; B; D/E; F) and returned each finding as a file, a line and the exact text of that line. The coordinator read the identity, scoring, config, menu and tick-capture modules and the eval system prompt in full, and re-checked every weight-bearing citation in this report with a quote checker (`checkcites.mjs`, kept outside the repository; result in the Method appendix).
 - **Markers.** A `path:line` citation is **VERIFIED**: the line was read at HEAD this session and holds what is said. **MEASURED** marks a production read made this session (the Method appendix lists each script). **INFERRED** marks a conclusion drawn from code without running it. **Not verified** is said where it applies.
-- **Production.** Project `tradeseven`, read on the morning of 17 Nov 2026 (ET) with `count()`, `select().get()`, `where().get()` and `doc().get()` only. Eleven scripts, each passed a write-verb grep before it ran. Credentials were parsed in place by `node --env-file` from the main checkout's `.env.local`, never printed or copied. No index was created.
+- **Production.** Project `tradeseven`, read on the morning of 17 Nov 2026 (ET) with `count()`, `select().get()`, `where().get()` and `doc().get()` only. Twelve scripts, each passed a write-verb grep before it ran. Credentials were parsed in place by `node --env-file` from the main checkout's `.env.local`, never printed or copied. No index was created.
 - **No model call and no spend.** Token counts are estimates (Part C says how). Nothing was replayed.
 - **Account ids.** None appears here or in any script output. Owners are labelled *founder* and *FT_QA* (resolved in-process from an archived dump of an earlier approved read) and *other-N* ordinals. No player-written text is quoted. The model's own stated reasons are quoted, one sentence at most.
-- **Not run.** No test, lint or build: the change is one Markdown file under `docs/`.
+- **Not run.** No test, lint or build: the change is one Markdown file under `docs/`, and the stylesheet scan excludes `docs/` (`src/index.css:9` — `@source not "../docs";`). The Vercel preview build is the check.
 
 ---
 
 ## An archetype today, in plain terms
 
-1. An archetype is made of three things that reach a live trade: **a paragraph of identity text** the model reads at every check (about 170–220 tokens, about 2% of the request); **three speed-and-caution numbers** that code applies without telling the model (how soon a quiet stock is forced out, how much better a replacement must be, how many swaps per hour); and **a ranking recipe used once, when the portfolio is built**.
+1. An archetype is made of four things that reach a live trade: **a paragraph of identity text** the model reads at every check (about 170–220 tokens); **a starter set of three "traits"** that equip 5–8 Forge rules, printed as rule text (another 220–410 tokens) — together 3–5% of each request; **three speed-and-caution numbers** that code applies without telling the model (how soon a quiet stock is forced out, how much better a replacement must be, how many swaps per hour); and **a ranking recipe used once, when the portfolio is built**.
 2. Everything else in the archetype tables either feeds that first portfolio build, is shown on a screen, or is read by nothing. Five per-archetype settings have no live reader at all, including the "favoured strategies" lists and the per-archetype conviction bars.
-3. **The archetypes do not know strategies.** One shared menu of five named strategies (S1 Volatility Squeeze Breakout, S2 Breakout Confirmation, S3 RS Momentum Pullback, S4 Mean Reversion, S5 News-Catalyst Momentum) is printed identically into every archetype's prompt. Code sorts each stock into one of four "regimes" and the prompt says which strategy fits which regime.
+3. **Strategies live in the text, not in code.** One shared menu of five named strategies (S1 Volatility Squeeze Breakout, S2 Breakout Confirmation, S3 RS Momentum Pullback, S4 Mean Reversion, S5 News-Catalyst Momentum) is printed identically into every archetype's prompt; code sorts each stock into one of four "regimes" and the prompt says which strategy fits which regime. On top of that, some archetypes' starter rules name setups of their own — the Speculator's are squeeze and narrow-range breakouts, the Contrarian's oversold and lower-band entries, the Trend Follower's trend, 52-week-high breakout and pullback hold. Those are sentences the model is asked to follow, nothing more.
 4. **No code detects any of those five strategies on a stock.** Code supplies the ingredients (squeeze percentile, a narrow-range flag, relative strength, volume ratio, RSI) and the model decides whether the setup is there. A few fixed alarms (a held stock entering a squeeze or a narrow-range day, a large gap from VWAP, a news story) wake the agent up, the same for all six.
 5. **The model never sees a price chart.** It sees one row of computed readings per stock: today's move, ATR, RSI, band position, scores and so on. It judges from those numbers.
-6. **Three of the six are mechanically identical at trade time.** Fundamental Investor, Contrarian and Diversifier carry exactly the same speed-and-caution numbers; only their identity paragraph differs once a battle is running. Speculator is the loosest, Trend Follower next, Capital Preserver the tightest.
+6. **Three of the six are mechanically identical at trade time.** Fundamental Investor, Contrarian and Diversifier carry exactly the same speed-and-caution numbers; once a battle is running, what separates them is text — the identity paragraph and the starter rules. Speculator is the loosest, Trend Follower next, Capital Preserver the tightest.
 7. **The archetype's own code trades more often than the model does.** Of the 151 swaps made since 15 Sep, 84 (56%) came from the archetype's "forced rotation" rule (a stock that sat still too long is swapped out by code), 55 from the model and 12 from the risk manager (MEASURED).
 8. **The swap-in menu mid-battle is the same for all six.** The archetype-aware version is built but switched off; the live list is sorted by one shared fit score.
-9. **The model already names a "strategy" on its notable decisions,** in a free-text field. Production holds 161 different spellings in 334 decisions, led by "Momentum Rotation". Code never reads it, and the 84 code-made swaps carry none.
+9. **The model already names a "strategy" on its notable decisions,** in a free-text field. Production holds 161 different spellings in 334 decisions, led by "Momentum Rotation". One screen displays it; nothing grades or acts on it, and the 84 code-made swaps carry none.
 10. **There is no plan with follow-through.** A swap records a thesis, a strategy label and a one-line "hypothesis", but no exit condition and no time limit. After the battle the model grades its own hypotheses (MEASURED: 205 grades, 105 "incorrect"); no code ever checks a decision against the strategy it named.
 11. **What the model says drives it is mostly the scoring cliff,** not a setup. In a hand-read sample of 60 recent reasons, 36 lead with distance to a penalty or bonus line, 10 with a named pattern (all ten name "NR7", the one pattern code does flag), 10 with indicator readings, 2 with the archetype itself and 1 with a Coach directive.
 12. **The Forge already holds strategy-shaped rules** that players equip (19 of 22 human agents carry some). Every equipped rule reaches the model only as a sentence it is told to follow, including the ones headed "must obey"; code never checks a rule. The stop and target values code does enforce arrive by a separate settings path, not by equipping the rule.
@@ -37,9 +37,9 @@
 
 | Part | Question | Answer in one sentence |
 |---|---|---|
-| **A** | What is an archetype made of? | Identity text (live), three tick-time knobs enforced by code but never told to the model (live), a deploy-time ranking recipe, temperature and shortlist constraint (deploy only), and seven settings that are dead or display-only; at trade time Fundamental Investor, Contrarian and Diversifier differ only in their identity text. |
+| **A** | What is an archetype made of? | Identity text and three starter traits printed as 5–8 rules (live, text), three tick-time knobs enforced by code but never told to the model (live), a deploy-time ranking recipe, temperature and shortlist constraint (deploy only), and seven settings that are dead or display-only; at trade time Fundamental Investor, Contrarian and Diversifier differ only in text. |
 | **B** | What strategy layer exists? | 143 rule templates and 18 offered collections; every equipped rule reaches the trader as prompt text only (0 enforced by code, 0 parameters read by code, 117 rendered as text, 26 season rules not offered); about thirty rules name a setup, and code computes some of their ingredients whether or not the rule is equipped; 19 of 22 human agents carry rules; attribution is per battle and per captured check, not per decision. |
-| **C** | What does a real decision look like? | 11 requests read (no Capital Preserver swap exists: 0 of its 22 answered checks proposed one); about 2% of each request is archetype-specific, 51–61% is shared rules and the tool schema, 17–29% is per-stock facts; between two archetypes in the same session only the identity paragraph and the opening line differ in the system prompt; stated reasons lead with the penalty/bonus line 36 times in 60. |
+| **C** | What does a real decision look like? | 11 requests read (no Capital Preserver swap exists: 0 of its 22 answered checks proposed one); 3.2–5.1% of each request is archetype-specific (the identity text plus the starter trait rules), 51–61% is shared rules and the tool schema, 17–29% is per-stock facts; between two archetypes in the same session only the identity paragraph and the opening line differ in the system prompt; stated reasons lead with the penalty/bonus line 36 times in 60. |
 | **D** | What is the model given to recognise a pattern? | One row of computed readings per stock and no price history; held and bench stocks get different readings, so the prompt's own strategies ask for readings the model lacks on one side; NR7, squeeze percentile and support levels are the only detector outputs that reach it; the setup evaluator and the intraday facts do not; the volume tier is neutralised to about NORMAL during the session; both intraday flags are off. |
 | **E** | Plans and follow-through? | A swap records a motive (four values), a free-text strategy (161 spellings in production) and a one-line hypothesis that the model grades itself after the battle (205 graded, 105 "incorrect"); a swap has no exit condition and no time limit (only called shots do); the Film Room tape groups by archetype, exit mechanism and tier, never by strategy; the July evidence layer exists only in its design document. |
 | **F** | What crosses into a battle? | No knowledge-base method reaches the trading call (`KB_APP_USE` is empty); sixteen routes were checked, ten render text into the trading prompt, and the player's own words reach it directly only through rules they write in the Forge (7 such rules are equipped) and indirectly through the deploy brief, which reads their watchlist's name and thesis. |
@@ -48,7 +48,7 @@
 
 ## 2. Part A — what an archetype is made of
 
-**In plain terms.** Most of what makes an archetype different happens before the battle starts, when its portfolio is picked. Once trading starts, the model gets one paragraph that describes the archetype's personality, and code quietly applies three numbers that set how fast the agent rotates and how picky it is. Several settings that look important in the tables (favoured strategies, conviction bars, trade frequency) are not read by anything.
+**In plain terms.** Much of what makes an archetype different happens before the battle starts, when its portfolio is picked. Once trading starts, the model gets one paragraph that describes the archetype's personality plus the five to eight rules its three starter traits equip, and code quietly applies three numbers that set how fast the agent rotates and how picky it is. Several settings that look important in the tables (favoured strategies, conviction bars, trade frequency) are not read by anything.
 
 **Path note.** The prompt places the trading call in `decide.js`. At HEAD `api/agent/decide.js` is the **deploy** call (portfolio build); the 15-minute trading call is `api/cron/agent-evaluate.js:3342` — `response = await anthropic.messages.create({`, with the system prompt built at `api/cron/agent-evaluate.js:3279` — `const systemPrompt = buildEvalSystemPrompt(agentName, archetype, battle.gameMode, ctx.archetype, { measuredStockReward: correctedStockGame });`. Every path the prompt named resolves at HEAD; `SETUP_MENU_LABELS_ENABLED` lives in `src/config/setupMenuLabelsFlags.js:31`, not `featureFlags.js`.
 
@@ -159,7 +159,18 @@ A reader noted that the hurdle and swap-cap calls appear in `agent-evaluate.js` 
 
 ### A7. Anything else that branches on the archetype
 
-- **Born-with traits** (rules with provenance `archetype_default`, `src/data/traitEquip.js:73`): three traits per archetype (`src/data/traitLibrary.js:519`–`526`), compiled into equipped rules at deploy (`api/agent/decide.js:271` — `resolveForDeploy(projected, ruleDocs, agent.equippedTraits, {`). MEASURED: 5 of 40 non-League battles since 15 Sep carry them (Contrarian 3, Speculator 1, Capital Preserver 1), 8 rules each. They reach the model as rule text (Part B).
+- **Born-with ("starter") traits** (rules with provenance `archetype_default`, `src/data/traitEquip.js:73`): three traits per archetype (`src/data/traitLibrary.js:519`–`526`), seeded at the agent's birth (`api/_utils/archetypeSeeding.js:164`) and resolved into the equipped rules at deploy (`api/agent/decide.js:271` — `resolveForDeploy(projected, ruleDocs, agent.equippedTraits, {`). They reach the model as rule text only (Part B2). MEASURED (`b4_traits.mjs`, each battle's rule ids joined to the agent's rule documents): **all 40 non-League battles since 15 Sep carry them, 5–8 rules each.** What each archetype carries in production:
+
+| Archetype | Starter rules carried (template — headline) | Strategy-shaped? |
+|---|---|---|
+| Trend Follower | tech-moving-average-trend — Follow the trend; tv-01 — RSI Momentum Zone; tv-11 — 52-Week High Breakout Preference; tv-02 — MACD Histogram Acceleration; t-11 — Follow institutional accumulation; tv-08 — Low Volume Pullback Hold; mb-08 — Let winners run; th-01 — Hold near the bonus line | **Yes** — trend, 52-week-high breakout, pullback hold |
+| Speculator | t-12 — Catch the volatility squeeze; tv-05 — Squeeze Direction Filter; t-15 — Catch the narrowest range breakout; tv-11; tv-02; t-11; mb-03 — Replace dead money; ts-04 — Star goes to the hottest stock | **Yes** — squeeze, narrow-range breakout, 52-week-high breakout |
+| Contrarian | tech-rsi-oversold — Buy oversold stocks; tv-06 — Bollinger Lower Band Entry; fund-value-pe — Hunt for undervalued stocks; mb-09 — Pull the emergency brake; mb-04 — Demand proof before swapping; mb-07 — Stop the churn; ts-07 — Demote before the penalty hits; ts-01 — Keep wild stocks out of Star | **Yes** — oversold / lower-band reversion, value |
+| Fundamental Investor | tv-10 — Earnings + Technical Confluence; tv-12 — Multi-Factor Tier Assignment; tv-03 — MACD Zero-Line Bounce; mb-01 — Give your pick time to work; mb-08; mb-09; mb-04; mb-07 | Partly — earnings-plus-technical confluence, MACD zero-line bounce |
+| Diversifier | tv-14 — Sector Leader Selection; a-08 — Ride the sentiment tailwinds; alloc-even-spread — Keep it balanced; a-09 — Build a versatile bench; r-07 — Avoid hidden correlation traps; i-05 — Active Fund Overlap Guard (3 of 8 battles) | No — allocation and risk |
+| Capital Preserver | risk-sector-diversification — Spread your bets; alloc-sector-cap — Cap your sector exposure; alloc-even-spread; mb-09; mb-04; mb-07; ts-07; ts-01 | No — risk and allocation, printed under "must obey" and not enforced |
+
+The carried sets are what each agent was seeded with; some differ from today's library (for example Bargain Hunter now lists tv-07 where live Contrarian agents carry fund-value-pe).
 - **Huddle plans** carry per-archetype dissent rows (`api/_utils/huddle/dissentTable.js:21`) and file into the directive slot (`api/_utils/huddle/applyPlan.js:104`).
 - **Trend Follower only:** setup labels (dark, record-only) and the activation-evidence observer (`api/_utils/activationEvidence/scope.js:30`), record-only.
 - **Records only:** swap receipts name the archetype when the archetype's rotation made the swap (`api/_utils/agentRiskManager.js:575` — `archetype: source === 'archetype' ? (archetype || null) : null,`).
@@ -177,7 +188,7 @@ A reader noted that the hurdle and swap-cap calls appear in `agent-evaluate.js` 
 | Ranking weights | technical-led | inverse-composite-led | sector-rarity-led | ATR-led | fundamental-led | sector + fundamental | deploy only (score shown to the deploy model) |
 | Temperature | 0.3 | 0.6/0.7 | 0.4/0.5 | 0.8/0.9 | 0.2 | 0.2/0.3 | deploy only; trading call 0.4 for all |
 | Shortlist constraint | top sectors | bottom sectors | ≥7 sectors | ATR > 0.80 | fund. > 70 | fund. > 60, low ATR | deploy only, stated in text |
-| Born-with traits | 3 | 3 | 3 | 3 | 3 | 3 | stated in text (when present) |
+| Starter traits (5–8 rules) | trend, 52w breakout, pullback | oversold, lower band, value | sector leader, allocation | squeeze, NR7 breakout | confluence, MACD bounce | risk, allocation | **stated in text** (every check; A7) |
 | Adjustment allowlist | own list | own list | own list | own list | own list | own list | enforced at chat/equip; canonical sentence stated in text |
 | Sector cap | 3 | 3 | 2 | 4 | 3 | 2 | Diversifier in League only, observe: **display/record only** |
 | Conviction mods | — | rs −0.5 | — | 0.85 | 1.15 | 1.2 | **dead** |
@@ -242,7 +253,7 @@ No template carries a binding, enforcement or kind field.
 
 **Caps.** Bundles: at most 5 equipped, 10/15/20 rules per bundle by level (`src/constants/agentProgression.js:54` — `rookie:  { maxBundles: 5, maxRulesPerBundle: 10 },`), enforced at `api/agent/equip-bundle.js:164` — `if (currentEquipped.length >= limits.maxBundles) {`. Leans: 2 (`api/_utils/leanRevalidation.js:31` — `export const STANDING_LEANS_CAP = 2;`), enforced at `api/agent/equip-lean.js:206`.
 
-**DNA traits still exist.** 17 traits in `src/data/traitLibrary.js`, each naming 2–3 rule templates; every archetype is born with three (`src/data/traitLibrary.js:518` — `export const ARCHETYPE_DEFAULT_TRAITS = {`; seeded rule ids `api/_utils/archetypeSeeding.js:164`). The trait slot is hidden in the UI (`src/config/featureFlags.js:118` — `export const TRAIT_SLOT_ENABLED = false;`), but seeded traits still compile: equipping one writes rule documents keyed by `traitId`, which are projected into the agent's equipped rules (`api/_utils/projectActiveRules.js:97`) and from there into the prompt as text. They compile to **nothing but rule text**.
+**DNA traits still exist.** 17 traits in `src/data/traitLibrary.js`, each naming 2–3 rule templates; every archetype is born with three (`src/data/traitLibrary.js:518` — `export const ARCHETYPE_DEFAULT_TRAITS = {`; seeded rule ids `api/_utils/archetypeSeeding.js:164`). The trait slot is hidden in the UI (`src/config/featureFlags.js:118` — `export const TRAIT_SLOT_ENABLED = false;`), but seeded traits still compile: equipping one writes rule documents keyed by `traitId`, which are projected into the agent's equipped rules (`api/_utils/projectActiveRules.js:97`) and from there into the prompt as text. They compile to **nothing but rule text**. MEASURED: every non-League battle since 15 Sep carries 5–8 of them (A7 lists them by archetype); 138 of the 425 rules equipped on human agents are trait rules.
 
 ### B2. How a rule reaches a decision
 
@@ -294,7 +305,7 @@ Institutional rules (10) additionally switch on a data block (`api/_utils/agentE
 
 ## 4. Part C — one real decision per archetype
 
-**In plain terms.** We pulled the actual messages sent to the model for each archetype's most recent swap and hold. About 2% of each message is about the archetype. More than half is shared rules and the answer form, about a quarter is the facts about each stock. When two different archetypes trade on the same day, their system instructions are identical except the identity paragraph. When the model explains itself, it mostly talks about how close a stock is to the scoring penalty line.
+**In plain terms.** We pulled the actual messages sent to the model for each archetype's most recent swap and hold. About 3–5% of each message is about the archetype: its identity paragraph and its starter rules. More than half is shared rules and the answer form, about a quarter is the facts about each stock. When two different archetypes trade on the same day, their system instructions are identical except the identity paragraph. When the model explains itself, it mostly talks about how close a stock is to the scoring penalty line.
 
 **Source.** `agentBattles/{battleId}/ticks/{tickId}` (permanent) and `…/tickBodies/{tickId}` (the full request and response, kept 120 days), written in one batch (`api/_utils/tickCapture/captureWriter.js:657`–`658`; subcollection names `api/_utils/tickCapture/captureConfig.js:118`–`119`). "Proposed" means the model's own answer, `decision.original` (`api/_utils/tickCapture/captureWriter.js:300`), not what code finally did. MEASURED (`c0_census.mjs`, `c2_requests.mjs`): 184 agent battles created since 15 Sep (144 League); 4,259 captured checks; 1,093 with a model answer.
 
@@ -327,7 +338,18 @@ Institutional rules (10) additionally switch on a data block (`api/_utils/agentE
 | Fund. Inv. · HOLD → HOLD (League) | 22 Oct | 15,167 | 8,914 | 385 | 1,237 | 143 | 3,679 | 722 | 0 | 88 | 2.5% |
 | Cap. Pres. · HOLD → HOLD | 13 Nov | 17,800 | 9,524 | 357 | 1,118 | 408 | 4,611 | 1,523 | 0 | 258 | 2.0% |
 
-**The archetype-specific share is 1.9–2.5%** (identity section plus the one "Archetype:" line). The tool schema alone is about 4,235–4,483 tokens (24–29%) by this allocation. Rules are 6–9%; every request carried 13–15 equipped rules, and the Contrarian, Speculator and Capital Preserver requests carried 8 born-with trait rules among them. Two of the five proposed swaps were blocked by code and became holds.
+The identity column (identity section plus the "ABOUT YOU" block) is 1.9–2.5%. Every request also carried the archetype's starter trait rules (6–8 of its 13–15 equipped rules), which sit inside the Rules column. Their printed lines were matched one by one to the agent's trait rule documents (`b4_traits.mjs`, all matched):
+
+| Request | Starter-rule tokens | Identity + starter share |
+|---|---|---|
+| Trend F. · SWAP / HOLD | 408 / 410 | 4.5% / 4.5% |
+| Contrarian · SWAP / HOLD | 309 / 305 | 4.0% / 4.1% |
+| Diversifier · SWAP / HOLD | 234 / 221 | 3.2% / 3.8% |
+| Speculator · SWAP / HOLD | 374 / 372 | 4.0% / 4.1% |
+| Fund. Inv. · SWAP / HOLD | 391 / 395 | 4.5% / 5.1% |
+| Cap. Pres. · HOLD | 268 | 3.5% |
+
+**The archetype-specific share is 3.2–5.1%.** The tool schema alone is about 4,235–4,483 tokens (24–29%) by this allocation. Two of the five proposed swaps were blocked by code and became holds.
 
 ### C2. What differs between archetypes
 
@@ -433,7 +455,7 @@ The trading tool (`api/_utils/agentEvalToolSchema.js`):
 
 **Does any field name a strategy or setup, an exit condition or a time limit?** A strategy: yes, free text, optional. A setup: no field. An exit condition and a time limit: only on a called shot, never on a swap.
 
-MEASURED (`b4_census.mjs`, `b5_trades.mjs`): `trade_reasoning.strategy` is present on 334 of 1,282 stored decisions since 15 Sep, in **161 distinct spellings**, led by "Momentum Rotation" (45), "Risk Management / Defensive Cut" (16), "Risk Management + Momentum Rotation" (9) and "Volatility Squeeze Breakout" (8); none of the top 30 is one of the five snake_case names the schema offers for `cited_rules`. It is on 54 of the 55 swaps the model made, and on none of the 96 swaps made by the archetype's rotation (84) or the risk manager (12).
+MEASURED (`b4_census.mjs`, `b5_trades.mjs`): `trade_reasoning.strategy` is present on 334 of 1,282 stored decisions since 15 Sep, in **161 distinct spellings**, led by "Momentum Rotation" (45), "Risk Management / Defensive Cut" (16), "Risk Management + Momentum Rotation" (9) and "Volatility Squeeze Breakout" (8); none of the top 30 is one of the five snake_case names the schema offers for `cited_rules`. It is on 54 of the 55 swaps the model made, and on none of the 96 swaps made by the archetype's rotation (84) or the risk manager (12). The only reader is a display (`src/components/Agent/GameTapeView.jsx:208`; mount not verified); nothing grades or acts on it. The `archetype` swap source is set only on the stagnation path (`api/cron/agent-evaluate.js:2329` — `const swapSource = riskResult.reason === 'stagnation' ? 'archetype' : 'risk_manager';`).
 
 ### E2. Where a strategy name could ride
 
@@ -546,8 +568,8 @@ Fenced files are those listed in `docs/BUILD_RULES.md` §1. E2's three lines, fi
 Things that contradict what the prompt assumed, or that a reader would not expect. Items marked **(bug candidate)** are reported for separate tasking, not fixed (BUILD_RULES §3).
 
 1. **The trading call is not in `decide.js`.** `decide.js` builds the portfolio at deploy; the 15-minute trading call is `api/cron/agent-evaluate.js`. The guards the prompt looked for in `decide.js` are enforced in the cron and the risk manager.
-2. **The archetypes' "favoured strategies" are dead config.** The only strategies the trader sees are the shared S1–S5, identical for all six (`api/_utils/agentEvalPromptAssembly.js:421`–`441`). The Capital Preserver's dead "avoid squeeze" entry sits beside a shared instruction not to swap out NR7 stocks, and all ten sampled Capital Preserver holds lean on squeezes.
-3. **Three archetypes are identical at trade time.** Fundamental Investor, Contrarian and Diversifier share every tick-time number (`api/_utils/agentArchetypeConfig.js:80`–`90`, `:109`–`119`, `:136`–`146`).
+2. **The archetypes' "favoured strategies" are dead config.** The strategy text the trader sees is the shared S1–S5, identical for all six (`api/_utils/agentEvalPromptAssembly.js:421`–`441`), plus rule text — each archetype's starter rules and the player's own. The starter rules are the closest thing an archetype has to its own strategies, and they are invisible in the archetype tables. The Capital Preserver's dead "avoid squeeze" entry sits beside a shared instruction not to swap out NR7 stocks, and all ten sampled Capital Preserver holds lean on squeezes.
+3. **Three archetypes are identical in code at trade time.** Their difference once a battle runs is text only (identity paragraph, starter rules): Fundamental Investor, Contrarian and Diversifier share every tick-time number (`api/_utils/agentArchetypeConfig.js:80`–`90`, `:109`–`119`, `:136`–`146`).
 4. **Code makes most of the swaps.** 84 of 151 executed swaps since 15 Sep came from the archetype's forced rotation, 55 from the model (MEASURED). The archetype's strongest mechanical voice is a rule the model is never told about.
 5. **Per-archetype temperatures do not reach the trading call** (0.4 for all, `api/cron/agent-evaluate.js:3345`); they act only at deploy.
 6. **The Capital Preserver never proposes a swap.** 0 of 22 answered checks since 15 Sep; no executed swap in a non-League battle (MEASURED).
@@ -557,7 +579,7 @@ Things that contradict what the prompt assumed, or that a reader would not expec
 10. **The model is given two names for itself** ("Degen" in the opening line, "Speculator" in the identity block) — A1.
 11. **The volume problem is not "partial day versus full-day average".** The partial-day volume is replaced by the trailing average, so the tier reads about NORMAL by construction (D3).
 12. **"Must obey" rules are not enforced.** Risk and allocation rules print under `== CONSTRAINTS (must obey) ==` and nothing checks them; the compiler that would is off (`src/config/featureFlags.js:1459`).
-13. **The model already labels a strategy** — 161 spellings in 334 decisions; nothing reads the field.
+13. **The model already labels a strategy** — 161 spellings in 334 decisions; one screen displays it (`src/components/Agent/GameTapeView.jsx:208`, mount not verified) and nothing grades or acts on it.
 14. **Hypotheses are graded, by the model, after the battle** — 105 of 205 "incorrect" (MEASURED). The grade is not linked to the strategy named or the setup present.
 15. **(bug candidate)** The profit-target special render keys on the template id `sx-04` (`api/_utils/agentEvalPromptAssembly.js:197`), but projected rules carry the rule-document id (`api/_utils/projectActiveRules.js:43` — `ruleId: r.id,`); MEASURED, the 16 battles that carry the target rule carry it as `dim-sx-04`. INFERRED: the special render never fires for them; whether any other document id equals `sx-04` was not checked.
 16. **(bug candidate, not verified)** The hurdle floor and swap cap are called on the stagnation and model-swap paths of `agent-evaluate.js`; the proposal, gameplan-meeting and deterministic paths were not seen to call them in that file. Another module may gate them.
@@ -567,7 +589,7 @@ Things that contradict what the prompt assumed, or that a reader would not expec
 
 ## 11. Founder questions
 
-1. **Who owns a strategy?** (a) One shared menu (today's S1–S5, cleaned up), with each archetype allowed a subset; (b) strategies written per archetype; (c) strategies as Forge rules or collections the player equips; (d) a shared menu plus the player's equipped preference on top.
+1. **Who owns a strategy?** (a) One shared menu (today's S1–S5, cleaned up), with each archetype allowed a subset; (b) strategies written per archetype — today's starter traits are the nearest existing carrier; (c) strategies as Forge rules or collections the player equips; (d) a shared menu plus the player's equipped preference on top.
 2. **Should code detect the setup, or the model?** (a) Code detectors per strategy (as the Trend Follower setup evaluator already does for breakout and pullback-and-resume), shown to the model as a fact; (b) the model keeps judging from readings, but must name one strategy from a closed list; (c) both — code detects, the model chooses and names.
 3. **Should every swap carry a named strategy from a closed list** (E2's three lines), so the Film Room can grade outcomes by strategy? (a) Yes, closed list including "risk management" and the code-made rotation; (b) closed list plus free text; (c) keep free text.
 4. **Should a swap carry its own exit condition and time limit**, as called shots already do? (a) Yes, required on every swap; (b) only on strategy swaps; (c) no.
@@ -593,7 +615,8 @@ Things that contradict what the prompt assumed, or that a reader would not expec
 | `c2b_sameday.mjs` | same, by ET day | the two same-session diffs and their cohort facts |
 | `b5_probe.mjs` | 19 recent non-League battles (key names only) | where archetype, versions, rules and regime live |
 | `b4_census.mjs` | `agents` (key names), battles since 15 Sep | B5 coverage; rules on battles; `trade_reasoning.strategy` values |
-| `b4_agents.mjs`, `b4_rules.mjs`, `b4_bornwith.mjs` | `agents`, `agents/{id}/rules`, `agents/{id}/bundles` | B4 (template ids via `sourceRef`; bundle names compared only against code-authored collection titles, never printed) |
+| `b4_agents.mjs`, `b4_rules.mjs` | `agents`, `agents/{id}/rules`, `agents/{id}/bundles` | B4 (template ids via `sourceRef`; bundle names compared only against code-authored collection titles, never printed) |
+| `b4_traits.mjs` | battles since 15 Sep joined to `agents/{id}/rules`; the 11 Part C requests | starter rules per battle and per request (supersedes `b4_bornwith.mjs`, whose id-prefix count missed trait rules stored under ordinary document ids) |
 | `b5_trades.mjs` | `trades[]` on battles since 15 Sep | swaps by source |
 | `e_grades.mjs` | `agents.memory[]` | hypothesis self-grades |
 
