@@ -228,6 +228,10 @@ const DARK_BY_DESIGN = {
     'DR-10 stage-1 shadow corpus — dark since 2026-09-12: its only consumer (the offline scripts/paired-eval-harness.js) ran once for the DR-13 flip, the manifest-read migration it was built to gate has no build, and the capture cost three unbounded awaits before the battle write. The historical corpus stays queryable. A re-flip needs a fresh-corpus brief that also bounds the capture, in its own founder flip PR',
   EVAL_DEFERRED_BEAT_ENABLED:
     'Eval-cron instrumentation D3 (docs/audits/20260923_BUILD_EVAL_DEFERRED_BEAT.md) — the `check_deferred` status-feed beat for each battle the evaluation loop did not reach (cap 25 per run, ≥ 5 s of the hard ceiling left) and its tape line. Built dark; flips in the founder\'s own flip PR, never a build PR, and only after the flip prerequisites its docstring and the build report §13 list (a copy ruling, a ruling on repeated beats, the other status-feed readers). The flip moves the pin in evalDeferredBeatFlags.test.js to true AND turns that file\'s registration row around to assert this entry is gone. Crons do not run on preview: the first beat is seen only in production. The run document agentEvalRuns/{runId} is NOT behind this flag — it is always on',
+  EODHD_FETCH_GUARD_ENABLED:
+    'Capacity Build 1 Part 2 (docs/audits/20261115_BUILD_EVAL_CAPACITY_1.md) — the EODHD fetch guard in marketDataCache.js: a 10 s timeout per request and a process-wide limit of 32 in flight. Built dark; flip 1 of the capacity lane, in its own PR, after at least one session\'s baseline from the run record\'s new `eodhd` block. The flip moves the pin in evalCapacityFlags.test.js to true and drops this entry in the same commit. The request COUNTS are not behind this flag — they are live from merge',
+  EVAL_MARKET_DATA_CUTS_ENABLED:
+    'Capacity Build 1 Part 3 (docs/audits/20261115_BUILD_EVAL_CAPACITY_1.md) — the evaluator\'s market-data cuts: daily bars once per ET session (evalSessionDaily) and SPY/QQQ/BTC-USD.CC once per run. Built dark; flip 1 of the capacity lane, with EODHD_FETCH_GUARD_ENABLED, in its own PR, measured with scripts/eval-capacity-read.mjs. The flip moves the pin in evalCapacityFlags.test.js to true and drops this entry in the same commit',
   // FILM_TAPE_WRITE_ENABLED intentionally ABSENT: the Film Room A1 tape writer
   // flipped true 2026-10-01 (founder-cited, Flash) — the deliberate flip drops
   // it here in the same commit, per the guard's own "if DELIBERATE"
@@ -597,5 +601,85 @@ describe('flag-pin guard — no test pins a flag against its live value (BUILD_R
       }
     }
     expect(bad, `flag docstrings missing/stale "Pinned by:" pointers:\n  ${bad.join('\n  ')}`).toEqual([]);
+  });
+});
+
+// ── Numeric settings (capacity Build 1, docs/audits/20261115_BUILD_EVAL_CAPACITY_1.md) ──
+// The boolean walk above sees only `*_ENABLED = true|false`. A NAMED list of
+// numeric settings gets the same two guarantees — a flip that leaves a pin
+// behind fails here with the file:line, and each setting's docstring names its
+// pinning suite(s). Deliberately a named list, not a pattern: a numeric
+// constant is a setting only when someone says so here.
+const NUMERIC_SETTINGS = ['EVAL_POOL_K', 'EVAL_POOL_START_CUTOFF_MS'];
+const numericLiteral = (s) => Number(String(s).replace(/_/g, ''));
+
+function buildNumericMap() {
+  const map = {};
+  for (const rel of FLAG_SOURCE_MODULES) {
+    read(rel).split('\n').forEach((text, i) => {
+      const m = /^export const ([A-Z][A-Z0-9_]*)\s*=\s*([0-9][0-9_]*)\s*;/.exec(text);
+      if (m && NUMERIC_SETTINGS.includes(m[1])) map[m[1]] = { value: numericLiteral(m[2]), module: rel, line: i + 1 };
+    });
+  }
+  return map;
+}
+const NUMERIC_MAP = buildNumericMap();
+const NUMERIC_PIN_RE = /expect\(\s*(?:[A-Za-z_$][\w$]*\.)?([A-Z][A-Z0-9_]*)\s*\)\s*\.toBe\(\s*([0-9][0-9_]*)\s*\)/;
+
+function findNumericPins() {
+  const pins = [];
+  for (const rel of TEST_FILES) {
+    if (base(rel) === 'flagPinGuard.test.js') continue;
+    read(rel).split('\n').forEach((text, i) => {
+      const m = NUMERIC_PIN_RE.exec(text);
+      if (m && NUMERIC_SETTINGS.includes(m[1])) pins.push({ flag: m[1], file: rel, line: i + 1, literal: numericLiteral(m[2]) });
+    });
+  }
+  return pins;
+}
+const NUMERIC_PINS = findNumericPins();
+
+function numericContradictions(pins) {
+  return pins
+    .filter((p) => p.literal !== NUMERIC_MAP[p.flag].value)
+    .map((p) => `${p.file}:${p.line} — ${p.flag} is live ${NUMERIC_MAP[p.flag].value} (${NUMERIC_MAP[p.flag].module}:${NUMERIC_MAP[p.flag].line}) but this assertion pins ${p.literal}. `
+      + 'Update THIS assertion in the same commit as the change (BUILD_RULES §2).');
+}
+
+describe('flag-pin guard — named numeric settings (capacity Build 1)', () => {
+  it('every named setting resolves to a numeric literal in a registered module, and each is pinned somewhere', () => {
+    for (const name of NUMERIC_SETTINGS) {
+      expect(NUMERIC_MAP[name], `${name}: no \`export const ${name} = <number>;\` in a registered flag module`).toBeTruthy();
+      expect(NUMERIC_PINS.some((p) => p.flag === name), `${name}: no expect(${name}).toBe(<number>) pin found`).toBe(true);
+    }
+  });
+
+  it('every numeric pin matches its live value; a contradiction names the fix', () => {
+    const bad = numericContradictions(NUMERIC_PINS);
+    expect(bad, `numeric setting pins contradict live values:\n  ${bad.join('\n  ')}`).toEqual([]);
+  });
+
+  it('each pinned numeric setting\'s docstring names its pinning suite(s) after "Pinned by:"', () => {
+    const files = {};
+    for (const p of NUMERIC_PINS) (files[p.flag] ||= new Set()).add(base(p.file));
+    const bad = [];
+    for (const [name, set] of Object.entries(files)) {
+      const def = NUMERIC_MAP[name];
+      const window = docstringWindow(def.module, def.line);
+      const missing = [...set].filter((f) => !window.includes(f));
+      if (!window.includes('Pinned by:') || missing.length) bad.push(`${def.module}:${def.line} ${name} — missing: ${missing.join(', ') || '"Pinned by:"'}`);
+    }
+    expect(bad, `numeric setting docstrings missing/stale "Pinned by:" pointers:\n  ${bad.join('\n  ')}`).toEqual([]);
+  });
+
+  it('is not vacuous: the pin regex matches a planted pin, and a planted contradiction is reported', () => {
+    const planted = NUMERIC_PIN_RE.exec('    expect(EVAL_POOL_K).toBe(3);');
+    expect(planted?.[1]).toBe('EVAL_POOL_K');
+    expect(numericLiteral(planted?.[2])).toBe(3);
+    expect(numericLiteral('200_000')).toBe(200000);
+    const wrong = { flag: 'EVAL_POOL_K', file: 'planted.test.js', line: 7, literal: NUMERIC_MAP.EVAL_POOL_K.value + 2 };
+    const right = { flag: 'EVAL_POOL_K', file: 'planted.test.js', line: 8, literal: NUMERIC_MAP.EVAL_POOL_K.value };
+    expect(numericContradictions([wrong, right])).toHaveLength(1);
+    expect(numericContradictions([wrong])[0]).toContain('planted.test.js:7 — EVAL_POOL_K');
   });
 });
