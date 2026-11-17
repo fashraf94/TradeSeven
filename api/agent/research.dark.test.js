@@ -136,9 +136,9 @@ describe('the grounded prompt does not move', () => {
 });
 
 describe('§6 — the cost and the cron budget', () => {
-  it('adds NO cron entry: vercel.json carries 45 entries (39 at this arc\'s landing + the two Intraday Data Build 1 crons — contract G10 — + the Film Room tape close and candle passes, spec FILM_ROOM_BUILD_A_TAPE_SPEC_V1_2 §5–§6 + the BaggerBomb evening settlement, ruling F1 + the Huddle S1 worker, spec V1.1 §5.3 / Amendment A §A10, BUILD_RULES §6)', () => {
+  it('adds NO cron entry: vercel.json carries 46 entries (39 at this arc\'s landing + the two Intraday Data Build 1 crons — contract G10 — + the Film Room tape close and candle passes, spec FILM_ROOM_BUILD_A_TAPE_SPEC_V1_2 §5–§6 + the BaggerBomb evening settlement, ruling F1 + the Huddle S1 worker, spec V1.1 §5.3 / Amendment A §A10 + the chart evidence sweep, spec CHART_EVIDENCE_SPEC_V1 SW-1, BUILD_RULES §6)', () => {
     const vercel = JSON.parse(read('vercel.json'));
-    expect(vercel.crons).toHaveLength(45);
+    expect(vercel.crons).toHaveLength(46);
     expect(vercel.crons.some((c) => /research/i.test(c.path))).toBe(false);
   });
 

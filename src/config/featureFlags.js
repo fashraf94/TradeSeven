@@ -2839,6 +2839,80 @@ export const EVAL_DEFERRED_BEAT_ENABLED = false;
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
+ * EVALUATOR CAPACITY, BUILD 1 (build report
+ * docs/audits/20261115_BUILD_EVAL_CAPACITY_1.md; discovery
+ * docs/audits/20261115_PHASE0_EVAL_FANOUT.md, shape (d) "the pool").
+ * Founder rulings R1–R6 of 15 Nov 2026. Four settings, each dark at merge:
+ * with these values every battle runs exactly as before this build.
+ *
+ * EVAL_POOL_K — how many battles one evaluation run checks AT ONCE
+ * (api/_utils/evalPool.js, driven by the handler in api/cron/agent-evaluate.js).
+ * Read through clampPoolK: an integer 1–8 is used as is, anything else reads
+ * as 1. At 1 the dispatcher is today's sequential loop exactly: a battle starts
+ * only while elapsed ≤ TIME_BUDGET_MS (290 s). Above 1 a battle starts only
+ * while elapsed ≤ EVAL_POOL_START_CUTOFF_MS, at most K run at once, and two
+ * battles of one League group (the same string `groupId`) never run at once.
+ * Ruling R4: K is not raised above 2 until the market-data plan for 25 players
+ * lands. FLIP MAP: the flip PR moves the pin in evalCapacityFlags.test.js in
+ * the same commit (BUILD_RULES §2), and reconciles the rows that pin the K = 1
+ * loop's timing — agent-evaluate.evalRun.test.js TEST 1–4 and its deferred-beat
+ * rows (measured: 11 rows red at K = 2; build review TI-15).
+ */
+// Pinned by: evalCapacityFlags.test.js (flagPinGuard's numeric-settings check: this value and the pin move together — BUILD_RULES §2).
+export const EVAL_POOL_K = 1;
+
+/**
+ * EVAL_POOL_START_CUTOFF_MS — at K > 1, the last elapsed instant at which the
+ * dispatcher STARTS a battle (in-flight battles always run to their end). Not
+ * read at K = 1, where the cutoff is TIME_BUDGET_MS as before. Why 200 s: the
+ * model-call admission closes at 222 s at `on` (10 + 42 + 12 + 4 s must remain
+ * of 290), and the measured agent-mode pre-call phase (lock → admission) is at
+ * most 22.1 s (median 13.5 s; discovery §B2). A battle started at 200 s whose
+ * pre-call runs to the measured max reaches admission at 222.1 s and takes a
+ * clean budget skip (no model call, its own final write well inside the 300 s
+ * ceiling); a typical one is admitted. The cutoff guarantees a clean finish,
+ * not a model call. FLIP MAP: as EVAL_POOL_K.
+ */
+// Pinned by: evalCapacityFlags.test.js (flagPinGuard's numeric-settings check: this value and the pin move together — BUILD_RULES §2).
+export const EVAL_POOL_START_CUTOFF_MS = 200_000;
+
+/**
+ * EODHD_FETCH_GUARD_ENABLED — every EODHD request in
+ * api/_utils/marketDataCache.js goes through api/_utils/eodhdFetchGuard.js.
+ * Flag off, the guard calls `fetch(url)` exactly as before (same URL, one
+ * argument, no signal, no wait) and only COUNTS the request — the counts are
+ * live from merge, in the run record's `eodhd` block. Flag on: a 10 s timeout
+ * per request (from dispatch, covering the body read) and a process-wide limit
+ * of 32 requests in flight shared by every caller in the process. A timeout
+ * throws, so it reaches the same path a network error reaches today.
+ * Registered DARK_BY_DESIGN in flagPinGuard.test.js. FLIP MAP: the flip PR
+ * moves the pin in evalCapacityFlags.test.js to true and drops the
+ * DARK_BY_DESIGN entry, in the same commit; turns the run record's
+ * `eodhd.timeouts` expectation from null to 0 (agent-evaluate.evalRun.test.js
+ * TEST 1, agent-evaluate.limitsOnRecord.test.js); and moves the 38 rows in 9
+ * files whose fetch doubles are plain objects onto real Responses (measured by
+ * a full-suite sweep with this flag on: docs/audits/20261115_BUILD_EVAL_CAPACITY_1_REVIEW.md §6).
+ */
+// Pinned by: evalCapacityFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const EODHD_FETCH_GUARD_ENABLED = false;
+
+/**
+ * EVAL_MARKET_DATA_CUTS_ENABLED — the evaluator's two EODHD cuts
+ * (api/_utils/evalMarketData.js). (a) The price fan-out still fetches every
+ * quote fresh each check, but the daily bars come from one series per symbol
+ * per ET session (`evalSessionDaily/{eodSymbol}_{etDate}`), stored only when
+ * its prior-session bar is the expected one, and reused by every later check;
+ * any doubt falls back to the fetch as it was. (b) SPY, QQQ and BTC-USD.CC are
+ * fetched once per run and handed to each battle that does not hold, bench or
+ * score them itself. Registered DARK_BY_DESIGN in flagPinGuard.test.js. FLIP
+ * MAP: the flip PR moves the pin in evalCapacityFlags.test.js to true and drops
+ * the DARK_BY_DESIGN entry, in the same commit.
+ */
+// Pinned by: evalCapacityFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const EVAL_MARKET_DATA_CUTS_ENABLED = false;
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
  * THE COCKPIT — CALL RECORDS (spec docs/design/COCKPIT_SPEC_V1_3.md §2–§3;
  * contract docs/CALL_RECORD_FIELD_CONTRACT_V1_3.md; Build 0 report
  * docs/audits/20260924_BUILD0_CALL_RECORDS.md).

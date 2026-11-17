@@ -486,3 +486,13 @@ Eight items; the three questions this section first put were **ruled on 2026-11-
 - **F-1** — a failed control read is still an empty cohort when both attempts fail: every cohort battle in that evaluator run is an `off` check, and a `next_check` command answered in that slot is not heard. Allowlisted owners never lose a check this way. **Ruled (§9.1 Q1): fail closed as built, with the one retry; revisit only if a stage read ever shows a failed control read.**
 - **F-2** — with Huddle on, the evaluator is not one read per run (Huddle is dark). **F-3** — the client hook re-asks only on a status change, so a wrong `on: false` hides the cockpit until the player re-enters the battle (a `src/` change outside this build). **Timing ruled (§9.1): before the first share above 0; it rides with the first-time intro build.** **F-4** — no run-record field for a failed read (a log line and the stage/rollback status lines instead). **F-5** — the stage read's stated limits (a `replace` after a `go`, the raw overdue-queue count, ordinals per read, independent maxima, holidays, a platform-killed run). **F-6** — two stale "allowlisted" labels in the rollback check. **F-7** — no behavioural row at Huddle's seam. **F-8** — two unreachable code nits.
 - **Q2** — casual clones are in the cohort (confirmed by trace); **ruled (§9.1): they stay in and count toward "at most 5 real concurrent battles", no new condition.** **Q3** — C5 item 3 (the League slot label): **ruled (§9.1): "can follow" for this release, the first item of the League cockpit arc.**
+
+## 11. Founder ruling (2026-11-15) — the general release is held
+
+The founder held the general release on 2026-11-15. The BaggerBomb trader-game direction (proposed 13 Nov 2026; its cockpit ruling BB-20 adopted here) changes the cockpit's tasks from swap-and-replace to trade-desk decisions (the ticket, the open trade, the match, the close), and the cockpit opens to everyone with that task set, not today's.
+
+- The release switch (§10, PR #1039) stays merged and dark: no `cockpitConfig/release` document exists, and none is created before the rework's own release.
+- The allowlisted pilot (founder, FT_QA) is unchanged and keeps today's cockpit.
+- Amendment H (the `on` tool text's over-claim, §C4 b; Build 2a item 19) is not written on its own: it folds into the rework's contract amendment, which rewrites the same text. Until then the over-claim reaches only the two pilot accounts.
+- F-3 (the status hook's re-ask) moves with it: before the rework's first share above 0.
+- The evaluator's capacity (§A2: about 6–7 model-calling battles per run, whatever the mode) is a platform task for every version of the game. Its discovery is `docs/audits/20261115_PHASE0_EVAL_FANOUT.md`.

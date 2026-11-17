@@ -120,10 +120,15 @@ const FROZEN_MS = Date.parse(FROZEN_NOW);
 const iso = (offsetMs) => new Date(FROZEN_MS + offsetMs).toISOString();
 const advance = (ms) => { vi.setSystemTime(new Date(Date.now() + ms)); };
 
-/** The 14 run-document keys: the build prompt's 13, in its order, plus C6's `dormant` after `lockSkipped`. */
+/**
+ * The 17 run-document keys: the build prompt's 13, in its order, plus C6's `dormant` after `lockSkipped`,
+ * plus capacity Build 1's three blocks at the end — `pool`, `anthropic`, `eodhd`
+ * (docs/audits/20261115_BUILD_EVAL_CAPACITY_1.md Part 4; the one sanctioned edit of this file).
+ */
 const RUN_KEYS = [
   'startedAt', 'endedAt', 'wallMs', 'budgetMs', 'battlesTotal', 'evaluated', 'lockSkipped', 'dormant',
   'deferred', 'deferredBattleIds', 'deferredTruncated', 'triggered', 'modelCalls', 'budgetSkipped',
+  'pool', 'anthropic', 'eodhd',
 ];
 const TICK_MS = 97_000; // three ticks = 291 s > TIME_BUDGET_MS (290 s): the loop breaks before the fourth
 
@@ -330,6 +335,16 @@ describe('D2 — agentEvalRuns/{runId}: one record per evaluation run, always on
       triggered: 0,
       modelCalls: 0,
       budgetSkipped: 0,
+      // Capacity Build 1 (Part 4): K = 1, the cutoff in force is TIME_BUDGET_MS, three battles
+      // started one at a time; no model call carried headers; the market-data layer is doubled here,
+      // so no EODHD request reached the guard's counters.
+      pool: { k: 1, startCutoffMs: 290_000, maxInFlight: 1, dispatched: 3 },
+      anthropic: {
+        requestsLimit: null, inputTokensLimit: null, outputTokensLimit: null,
+        minRequestsRemaining: null, minInputTokensRemaining: null, minOutputTokensRemaining: null, responses429: 0,
+      },
+      // `timeouts` is null — not measured — while the EODHD guard is off (review OB-1).
+      eodhd: { requests: { eod: 0, realTime: 0, intraday: 0, other: 0 }, timeouts: null, non2xx: { 429: 0, '5xx': 0, other: 0 } },
     });
     // …and the unreached battles got nothing else: no lock, no tick, no write.
     expect(db.__writes.filter((w) => ['c4', 'c5', 'c6'].includes(w.id))).toEqual([]);
