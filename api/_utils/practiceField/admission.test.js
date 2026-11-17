@@ -6,7 +6,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { admitIdea, releaseIdea, ideaIdFor, admissionFingerprint, evaluateAdmission } from './admission.js';
-import { normalizeIdeaContract, planLegCents } from './contract.js';
+import { normalizeIdeaContract, planLegCents, CONTRACT_FREE_TEXT_FIELDS } from './contract.js';
 import { setPracticeFieldModeForTests } from './mode.js';
 import { COCKPIT_ALLOWLIST_ENV } from '../callRecords/allowlist.js';
 import { CANDIDATE_UNIVERSE } from '../mandateCandidateUniverse.js';
@@ -48,6 +48,50 @@ describe('the contract\'s shape (checks 0, 0b, 3–5)', () => {
     expect(normalizeIdeaContract(contractOf({ thesis: { text: 'x', author: 'player' } })).refusals).toEqual([{ code: 'thesis_author_invalid' }]);
     expect(normalizeIdeaContract(contractOf({ thesis: { text: '𝒳'.repeat(400), author: 'agent' } })).refusals).toEqual([]);
     expect(normalizeIdeaContract(contractOf({ thesis: { text: '𝒳'.repeat(401), author: 'agent' } })).refusals).toEqual([{ code: 'thesis_too_long', codePoints: 401, max: 400 }]);
+  });
+
+  it('T1a-2b-2 §2 — a broken character (an unpaired UTF-16 surrogate) in any free-text field is refused `text_invalid`, naming the field; a whole emoji is accepted', () => {
+    expect(CONTRACT_FREE_TEXT_FIELDS).toEqual(['thesis.text', 'sources[].ref']);
+    const HIGH = '\uD83D'; // the first half of 😀, alone
+    const LOW = '\uDE00'; // the second half, alone
+    const EMOJI = '😀'; // 😀, whole
+    const withThesis = (text) => normalizeIdeaContract(contractOf({ thesis: { text, author: 'agent' } })).refusals;
+    const withRefs = (refs) => normalizeIdeaContract(contractOf({
+      origin: { kind: 'research', initiatedBy: 'agent' }, sources: refs.map((ref) => ({ kind: 'research', ref })),
+    })).refusals;
+    for (const lone of [HIGH, LOW, `${LOW}${HIGH}`]) {
+      for (const text of [`${lone}A thesis.`, `A ${lone} thesis.`, `A thesis.${lone}`]) {
+        expect(withThesis(text), JSON.stringify(text)).toEqual([{ code: 'text_invalid', field: 'thesis.text' }]);
+        expect(withRefs([text]), JSON.stringify(text)).toEqual([{ code: 'text_invalid', field: 'sources[0].ref' }]);
+        expect(withRefs(['rw-0001', text]), JSON.stringify(text)).toEqual([{ code: 'text_invalid', field: 'sources[1].ref' }]);
+      }
+    }
+    // Both fields broken: both named, together.
+    expect(normalizeIdeaContract(contractOf({ thesis: { text: `x${HIGH}`, author: 'agent' }, origin: { kind: 'research', initiatedBy: 'agent' }, sources: [{ kind: 'research', ref: `${LOW}y` }] })).refusals)
+      .toEqual([{ code: 'text_invalid', field: 'thesis.text' }, { code: 'text_invalid', field: 'sources[0].ref' }]);
+    // A paired surrogate is a whole character: accepted, kept exactly, counted once.
+    const ok = normalizeIdeaContract(contractOf({ thesis: { text: `Up ${EMOJI}`, author: 'agent' }, origin: { kind: 'research', initiatedBy: 'agent' }, sources: [{ kind: 'research', ref: `rw-${EMOJI}` }] }));
+    expect(ok.refusals).toEqual([]);
+    expect(ok.contract.thesis.text).toBe(`Up ${EMOJI}`);
+    expect(ok.contract.sources[0].ref).toBe(`rw-${EMOJI}`);
+    expect(withThesis(EMOJI.repeat(400))).toEqual([]);
+  });
+
+  it('T1a-2b-2 §2 — through admission and the founder\'s endpoint: a broken thesis is refused and nothing is written', async () => {
+    const { db, bookId } = await seedBook();
+    const before = JSON.stringify([...db._store.entries()]);
+    const res = await admit(db, bookId, contractOf({ thesis: { text: 'Breaks here: \uD83D', author: 'founder_fixture' } }));
+    expect(res).toMatchObject({ ok: false, refusals: [{ code: 'text_invalid', field: 'thesis.text' }] });
+    expect(JSON.stringify([...db._store.entries()])).toBe(before);
+    const prev = process.env.MANDATE_FOUNDER_UIDS;
+    process.env.MANDATE_FOUNDER_UIDS = 'owner-1';
+    try {
+      const out = await runFounderAction(db, { uid: 'owner-1', body: { action: 'admit_fixture', requestKey: 'k-1', contract: contractOf({ thesis: { text: '\uDE00 low first', author: 'founder_fixture' } }) }, nowIso: ADMIT_ISO });
+      expect(out).toMatchObject({ status: 422, body: { error: 'admission_refused', refusals: [{ code: 'text_invalid', field: 'thesis.text' }] } });
+      expect(getBook(db, bookId).openIdeaIds).toEqual([]);
+    } finally {
+      if (prev === undefined) delete process.env.MANDATE_FOUNDER_UIDS; else process.env.MANDATE_FOUNDER_UIDS = prev;
+    }
   });
 
   it('B-ORIGIN — an idea without a valid origin, or whose origin matches none of its sources, is refused; founder_fixture alone may have no source', () => {
