@@ -35,6 +35,11 @@ export const SR_SERVER_COPY = Object.freeze({
   step_failed: 'That step did not complete, and nothing was added. Try again.',
   frame_failed: 'That question could not be framed. Try again, or edit your words.',
   server_error: 'Something went wrong with the research. Try again.',
+  // the thesis builder (Amendment B §B4)
+  invalid_intent: 'That choice is not open for this investigation right now.',
+  card_stale: 'The thesis changed since you last saw it. Check the card and choose again.',
+  not_ready: 'The thesis is not ready to save yet. Set the names, the why, what would prove it wrong and the time frame.',
+  invalid_card: 'That change could not be made to the thesis. Nothing was changed.',
 });
 
 /** The line for a code; the generic line for one not listed. */

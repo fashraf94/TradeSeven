@@ -336,6 +336,15 @@ const DARK_BY_DESIGN = {
   //   idea-record admission. Each step is its own one-line founder PR, never a
   //   build PR, and moves the pin row in sharedResearchFlags.test.js in the same
   //   commit (BUILD_RULES §2). Rollback: one step back with its pin row.
+  // SHARED_RESEARCH_BUILDER_MODE intentionally ABSENT, and it must stay absent:
+  // the thesis builder's switch (Amendment B, docs/specs/
+  // 20261116_SHARED_RESEARCH_SPEC_V1_2_AMENDMENT_B_THESIS_BUILDER.md §B2) is a
+  // STRING ('off' | 'on') in the same module, src/config/sharedResearchFlags.js,
+  // so buildFlagMap never sees it. It decides only the shape a NEW investigation
+  // is stamped with at `open`. Runway: 'off' with B3 (the server, dark) and B4
+  // (the client, dark); then one founder PR to 'on' after B4 merges, moving the
+  // pin row in sharedResearchFlags.test.js in the same commit (BUILD_RULES §2).
+  // Rollback: back to 'off' with its pin row; open builder sessions keep working.
   // PRACTICE_FIELD_MODE intentionally ABSENT, and it must stay absent: the
   // Practice Field's idea book (build T1a-1 + T1c, report
   // docs/audits/20261113_BUILD_T1A1_T1C_IDEA_BOOK_ACCOUNTING.md) is a STRING
