@@ -15,7 +15,8 @@
 //      E17) — are all on the maintained calendar (`calendar_unsupported`);
 //   7  capital, on the book's marked equity AT ADMISSION'S ONE SET OF MARKS (T1a-2b-2 §1, Astra T1A-05;
 //      admissionMarks.js — the newest snapshot of the session in progress, else the last completed session's close;
-//      a held name with no full-quality mark there is `admission_marks_unavailable`, and nothing is measured): the
+//      a held name with no full-quality mark there is `admission_marks_unavailable`, and no dollar limit is measured —
+//      only what needs no mark, the epoch's own numbers and the position count, review A2): the
 //      slot cap (B1), the cash floor (B2) on what the treasury keeps unreserved, and — for each name's planned dollars
 //      — the single-position cap, the sector cap (the archetype's, translated; sectors through the one bridge; what is
 //      held at THOSE marks, and other ideas' PENDING plans beside it) and the position count (positions + pending names
@@ -94,6 +95,25 @@ function publicLimit(limit) {
   return out;
 }
 
+const isShare = (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1;
+const isCount = (v) => Number.isInteger(v) && v > 0;
+
+/**
+ * FAIL CLOSED on the epoch's own numbers (review L1-7, refuter RF1-1): each must be a real number of its own kind. A
+ * missing one would compare as not-a-number and bind nothing; a `null`, `false` or `''` would read as ZERO and bind
+ * nothing either. `slot` null (a draft whose slot is not known): the slot's own cap is not judged.
+ * @returns {Set<string>} the constraints whose numbers are not real
+ */
+function invalidEpochNumbers(gate, rails, slot) {
+  const invalid = new Set();
+  if (slot !== null && !isShare(rails.slotCapShare?.[slot])) invalid.add('slot_cap');
+  if (!isShare(gate.cashFloorPct)) invalid.add('cash_floor');
+  if (!isShare(gate.maxSinglePositionWeightPct)) invalid.add('single_position_cap');
+  if (gate.sectorConcentrationCap !== null && !(isCount(gate.sectorCapSlots) && isCount(gate.sectorCapDenominator))) invalid.add('sector_cap');
+  if (!isCount(gate.maxPositions)) invalid.add('position_count');
+  return invalid;
+}
+
 /** The refusal of a book that holds a name with no full-quality mark in admission's set (T1a-2b-2 §1). */
 function marksUnavailableRefusal(measured, markSet) {
   return {
@@ -142,7 +162,8 @@ export function evaluateAdmission({ book, epoch, ideas, coverageData, contract, 
   if (owed !== null) refuse('close_owed', { session: owed.session, completedAt: owed.completedAtIso });
 
   // The ONE set of marks the whole decision is measured against (Astra T1A-05). FAIL CLOSED: a held name with no
-  // full-quality mark in it is refused by symbol, and check 7 measures nothing — never `lastMark` or `totalValue`.
+  // full-quality mark in it is refused by symbol, and check 7 measures no dollar limit — never one from `lastMark` or
+  // `totalValue` (it still checks what needs no mark: the epoch's own numbers and the position count, review A2).
   const measured = admissionMarksOf({ book, ideas, markSet, nowIso });
   if (!measured.ok) refusals.push(marksUnavailableRefusal(measured, markSet));
 
@@ -177,18 +198,9 @@ export function evaluateAdmission({ book, epoch, ideas, coverageData, contract, 
     const unreservedCents = toCents(book.treasury?.unreservedCash);
     const capitalCents = toCents(contract.capitalUsd);
 
-    // FAIL CLOSED on the epoch's own numbers (review L1-7, refuter RF1-1): each must be a real number of its own
-    // kind. A missing one would compare as not-a-number and bind nothing; a `null`, `false` or `''` would read as
-    // ZERO and bind nothing either.
-    const isShare = (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1;
-    const isCount = (v) => Number.isInteger(v) && v > 0;
-    const invalid = new Set();
+    // FAIL CLOSED on the epoch's own numbers (invalidEpochNumbers), and on the measured equity.
+    const invalid = invalidEpochNumbers(gate, rails, contract.slot);
     if (marksOk && !equityOk) invalid.add('book_equity');
-    if (!isShare(rails.slotCapShare?.[contract.slot])) invalid.add('slot_cap');
-    if (!isShare(gate.cashFloorPct)) invalid.add('cash_floor');
-    if (!isShare(gate.maxSinglePositionWeightPct)) invalid.add('single_position_cap');
-    if (gate.sectorConcentrationCap !== null && !(isCount(gate.sectorCapSlots) && isCount(gate.sectorCapDenominator))) invalid.add('sector_cap');
-    if (!isCount(gate.maxPositions)) invalid.add('position_count');
 
     if (marksOk) {
       limits.push({ constraint: 'slot_cap', code: 'capital_exceeds_slot_cap', limitCents: shareLimitCents(equityCents, rails.slotCapShare?.[contract.slot]), slot: contract.slot });
@@ -392,11 +404,18 @@ export async function admitIdea(db, { bookId, contract: rawContract, opId, nowIs
       if (book.drafting === 'paused' || book.windDown) extra.push({ code: 'drafting_paused' });
       // T1a-2b-2 §1 (review A1 and its refuter): the epoch's stamp, the owed close and the marks need no contract either.
       const gate = epoch?.gateConfig || null;
-      if (!gate || !epoch?.rails || !isSectorCapCorrected(gate)) extra.push({ code: VINTAGE_UNCORRECTED });
+      const epochOk = Boolean(gate && epoch?.rails && isSectorCapCorrected(gate));
+      if (!epochOk) extra.push({ code: VINTAGE_UNCORRECTED });
       const owed = closeOwedSession(book, nowIso);
       if (owed !== null) extra.push({ code: 'close_owed', session: owed.session, completedAt: owed.completedAtIso });
       const measured = admissionMarksOf({ book, ideas, markSet, nowIso });
       if (!measured.ok) extra.push(marksUnavailableRefusal(measured, markSet));
+      // …and the epoch's own numbers (fix-round refuter F2) — all but the slot's cap, which needs the draft's slot.
+      if (epochOk) {
+        const invalid = invalidEpochNumbers(gate, epoch.rails, null);
+        if (!Number.isInteger(toCents(book.treasury?.unreservedCash))) invalid.add('treasury');
+        if (invalid.size > 0) extra.push({ code: 'epoch_config_invalid', constraints: [...invalid].sort() });
+      }
       return refused([...shape.refusals, ...extra]);
     }
     const contract = shape.contract;

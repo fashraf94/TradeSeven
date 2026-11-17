@@ -26,7 +26,8 @@
 //   (16:00 Eastern; 13:00 on an early close). If the book has not closed every session it was due that has completed
 //   by now — its window ledger's cursor (windowLedger.js firstUnaccountedWindowSession: the later of the valuation's
 //   last close and the window ledger's own, else the book's creation session) — admission is refused `close_owed`. So
-//   a later admission never appears on a caught-up past row. A cursor that cannot be read is owed (fail closed).
+//   a later admission never appears on a caught-up past row. A cursor that cannot be read is owed (fail closed); a
+//   closed book owes nothing (it is never closed again, and admission refuses it as not active).
 //
 // Pure, except `readAdmissionMarkSet`, which reads (only) inside the caller's transaction.
 
@@ -88,9 +89,17 @@ export function lastCompletedSessionAt(nowMs) {
  */
 export function closeOwedSession(book, nowIso) {
   const nowMs = Date.parse(nowIso);
-  // A cursor that is a string but not a date is one that cannot be read: owed, typed (review A6) — never a throw.
-  const notADate = (v) => typeof v === 'string' && !/^\d{4}-\d{2}-\d{2}$/.test(v);
-  if (notADate(book?.execState?.lastCloseKey) || notADate(book?.execState?.[WINDOWS_ACCOUNTED_FIELD])) return { session: null, completedAtIso: null };
+  // A closed book is never closed again: it owes nothing (fix-round refuter N2; `book_not_active` says why it admits nothing).
+  if (book?.status === 'closed') return null;
+  // A cursor that is present but not a real calendar date — not a string, not YYYY-MM-DD, or a day that does not exist
+  // (2026-11-99, 2026-02-30) — cannot be read: owed, typed (review A6; fix-round refuter F1, N4) — never a throw.
+  const isDate = (v) => {
+    if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+    const ms = Date.parse(`${v}T12:00:00Z`);
+    return Number.isFinite(ms) && new Date(ms).toISOString().slice(0, 10) === v;
+  };
+  const unreadable = (v) => v !== undefined && v !== null && !isDate(v);
+  if (unreadable(book?.execState?.lastCloseKey) || unreadable(book?.execState?.[WINDOWS_ACCOUNTED_FIELD])) return { session: null, completedAtIso: null };
   let first;
   try { first = firstUnaccountedWindowSession(book); } catch { return { session: null, completedAtIso: null }; }
   if (first === null) return { session: null, completedAtIso: null };

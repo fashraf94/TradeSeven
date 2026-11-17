@@ -214,6 +214,15 @@ describe('fail closed — a held name with no full-quality mark in the set is re
     await epochRef.set({ ...epoch, gateConfig: { ...unstamped, sectorConcentrationCap: 2 } });
     const v = await admitIdea(vb.db, { bookId: vb.bookId, contract: broken, opId: 'v', nowIso: etIso(DAYS.admit, 11, 0) });
     expect(v.refusals.map((r) => r.code)).toEqual(['slot_invalid', 'vintage_uncorrected']);
+    // …and the epoch's own numbers, all but the slot's cap (fix-round refuter F2): the same as a whole draft says.
+    const eb = await seedBook({ uid: 'owner-e' });
+    const eRef = eb.bookRef.collection('epochs').doc('epoch-0001');
+    const eDoc = (await eRef.get()).data();
+    await eRef.set({ ...eDoc, gateConfig: { ...eDoc.gateConfig, cashFloorPct: null, maxSinglePositionWeightPct: 'x' } });
+    const e = await admitIdea(eb.db, { bookId: eb.bookId, contract: broken, opId: 'e', nowIso: etIso(DAYS.admit, 11, 0) });
+    expect(e.refusals).toEqual([{ code: 'slot_invalid' }, { code: 'epoch_config_invalid', constraints: ['cash_floor', 'single_position_cap'] }]);
+    const whole = await admitIdea(eb.db, { bookId: eb.bookId, contract: contractOf(), opId: 'w', nowIso: etIso(DAYS.admit, 11, 0) });
+    expect(whole.refusals.find((r) => r.code === 'epoch_config_invalid')).toEqual({ code: 'epoch_config_invalid', constraints: ['cash_floor', 'single_position_cap'] });
   });
 
   it('a book that holds NOTHING needs no mark: it is measured at its cash with no snapshot at all', async () => {
@@ -280,6 +289,16 @@ describe('C-2 — no admission while the book owes a close', () => {
     // review A6: a cursor that is not a date is one that cannot be read — owed, typed, never a throw.
     expect(closeOwedSession({ createdAt: new Date(etIso(DAYS.d1, 9, 0)), execState: { lastCloseKey: 'not-a-date' } }, etIso(DAYS.d1, 11, 0))).toEqual({ session: null, completedAtIso: null });
     expect(closeOwedSession({ createdAt: new Date(etIso(DAYS.d1, 9, 0)), execState: { windowsAccountedThrough: '2026-13-45x' } }, etIso(DAYS.d1, 11, 0))).toEqual({ session: null, completedAtIso: null });
+    // …and a date-shaped string naming no real day, or a cursor that is not a string at all (fix-round refuter F1, N4).
+    const created = new Date(etIso(DAYS.d1, 9, 0));
+    for (const bad of ['2026-11-99', '2026-13-45', '2026-02-30', 20261113, { d: 1 }, true]) {
+      expect(closeOwedSession({ createdAt: created, execState: { lastCloseKey: bad } }, etIso(DAYS.d1, 11, 0)), String(bad)).toEqual({ session: null, completedAtIso: null });
+      expect(closeOwedSession({ createdAt: created, execState: { lastCloseKey: DAYS.admit, windowsAccountedThrough: bad } }, etIso(DAYS.d3, 11, 0)), String(bad)).toEqual({ session: null, completedAtIso: null });
+    }
+    // The control: a real cursor names the real session.
+    expect(closeOwedSession({ createdAt: created, execState: { lastCloseKey: DAYS.d1, windowsAccountedThrough: DAYS.d1 } }, etIso(DAYS.d3, 11, 0))).toEqual({ session: DAYS.d2, completedAtIso: etIso(DAYS.d2, 16, 0) });
+    // A closed book owes nothing — it is refused as not active (fix-round refuter N2).
+    expect(closeOwedSession({ createdAt: created, status: 'closed', execState: { lastCloseKey: DAYS.d1, windowsAccountedThrough: DAYS.d1 } }, etIso(DAYS.d3, 11, 0))).toBeNull();
   });
 });
 

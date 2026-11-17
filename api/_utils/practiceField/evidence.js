@@ -299,7 +299,7 @@ const endpointCopy = (side, endpointSnapshotKey) => {
 // receipt has no part.
 // THE BINDING DOCUMENT IS THE IDEA (review C1 and its refuter). The idea document itself keeps every receipt on its three
 // ledgers (ledger.js corporateActionReceipts, appliedActionIds) — applied ones, and declines and conflicts too — and every
-// close rewrites it. At the receipt shape measured above it passes Firestore's 1 MiB at about 2,700 receipts (about
+// close rewrites it. At the receipt shape measured above it passes Firestore's 1 MiB at about 2,900 receipts (about
 // 3,500 at the applier's plainer shape), before this bound; a close that cannot write it would fail for good. A real
 // feed comes nowhere near: the universe's payers are quarterly (one monthly), splits are rare, so an idea carries tens
 // of receipts (about 52 if all 13 holdings paid monthly — about 26 KB). The packet no longer binds first; taking the
