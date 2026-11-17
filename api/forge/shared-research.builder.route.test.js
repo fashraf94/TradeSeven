@@ -345,6 +345,7 @@ describe('one schema per goal (the founder\'s S-1, Nov 17)', () => {
     expect(state.turns[0].user).toContain("The proposals you may make are those of the card's next step (map segments)");
     expect(r.body.thesis.parts.segment.map.map((m) => m.label)).toEqual(['GPUs and accelerators', 'Data-center power']);
     expect(state.logs.at(-1).validationNotes).toContain('ignored:why');
+    expect(state.logs.at(-1)).toMatchObject({ goal: 'direction', schema: 'map_segments' }); // SPL-5: the record names the schema asked in
   });
   it('with nothing else on offer, direction is asked with findings and companies only, and lands nothing on the card', async () => {
     const long = 'I want to play AI through the chips, the power and the networking that the largest data centers keep buying';

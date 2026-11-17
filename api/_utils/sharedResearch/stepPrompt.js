@@ -25,6 +25,7 @@ import { ALL_TICKERS, isRetiredStock } from '../rankingConfig.js';
 import { METHOD } from './method.js';
 import { ACRONYMS, INDEX_NAMES, maskStrayTickers } from './stepSchema.js';
 import { RELATIONSHIP_ROLES, UNRESOLVED_REASONS } from '../../../src/constants/sharedResearch.js';
+import { acceptsOf } from './thesisSchema.js';
 
 /** The rulebook's §4 lines, in order (pinned to the rulebook by prompt.honesty.test.js). */
 export const WRITTEN_OPENING_RULES = Object.freeze([
@@ -263,7 +264,8 @@ function goalLineOf({ goal, part, card }) {
 
 /** The proposals a `direction` turn may make: those of the research goal it is asked as (thesisSchema.turnShapeOf). */
 function directionLineOf(shape) {
-  if (!shape || shape.goal === 'direction') return 'Propose nothing for the card this step: findings only.';
+  // nothing to propose when the goal it is asked as lands nothing (strengthening the theme; refuter SPL-3)
+  if (!shape || shape.goal === 'direction' || acceptsOf(shape.goal, shape.part).length === 0) return 'Propose nothing for the card this step: findings only.';
   const of = shape.goal === 'strengthen' ? `strengthening the card's ${shape.part}` : shape.goal.replace('_', ' ');
   return `The proposals you may make are those of the card's next step (${of}); make one only when what you find supports it.`;
 }

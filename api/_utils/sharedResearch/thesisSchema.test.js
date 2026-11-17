@@ -9,6 +9,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   validateBuildTurn, BUILD_SCHEMAS, BUILD_SHAPES, buildSchemaOf, schemaKeyOf, turnShapeOf, NAMES_A_PRICE, builderFallbackReplyOf, unsourcedLineOf, acceptsOf,
+  DEAD_END_LINE,
 } from './thesisSchema.js';
 import { STEP_SCHEMA } from './stepSchema.js';
 import { emptyCard } from './thesis.js';
@@ -349,6 +350,33 @@ describe('each goal lands only its own proposals', () => {
   it('a theme suggestion is not taken when the card has a theme', () => {
     const v = validate(base({ themeSuggestion: 'Power' }), { goal: 'map_segments', card: cardWithNames(null) });
     expect(v.notes).toContain('dropped:themeSuggestion:theme_set');
+  });
+});
+
+describe('the schema split\'s refuter pass (SPL-1, SPL-4)', () => {
+  const unsegmented = () => { const c = cardWithNames(null); c.segment = { ...c.segment, state: 'unset', value: null, by: null }; return c; };
+  const SEG2 = [{ label: 'Cooling', line: 'chillers', refs: [] }];
+  it('SPL-1: a direction turn asked as map_segments whose map is dropped cannot keep a reply that describes it', () => {
+    const reply = 'I mapped the theme into cooling and grid links, two new segments.';
+    const asMap = validate(base({ reply, segments: SEG2, pick: { value: 'GPUs', reason: 'It ties to sales.' } }), { goal: 'direction', card: unsegmented(), shape: { goal: 'map_segments', part: null } });
+    expect(asMap.notes).toEqual(expect.arrayContaining(['dropped:segments:too_few', 'reply_replaced:goal_proposal_dropped']));
+    expect(asMap.reply).toBe('This step added 0 findings. The card shows what it proposes.');
+    const quiet = validate(base({ reply: 'Power is a link in the chain; nothing here changes the map.' }), { goal: 'direction', card: unsegmented(), shape: { goal: 'map_segments', part: null } });
+    expect(quiet.reply).toBe('Power is a link in the chain; nothing here changes the map.');
+  });
+  it('SPL-1: a direction turn asked as find_names at a dead end cannot keep a reply that names a listed company', () => {
+    const noneSupported = { ...RECORD, findings: RECORD.findings.filter((f) => f.kind !== 'relationship') };
+    const v = validate(base({ reply: 'NVDA and AMD both sell accelerators.' }), { goal: 'direction', card: cardWithNames(null), record: noneSupported, shape: { goal: 'find_names', part: null } });
+    expect(v.notes).toContain('reply_replaced:dead_end');
+    expect(v.reply).toContain(DEAD_END_LINE);
+  });
+  it('SPL-4: what a schema lacks is not read — findings on a pick turn, companies on a build_why turn', () => {
+    const f = { tempId: 'p1', kind: 'inference', fact: 'GPUs lead.', symbolCandidate: null, companyName: null, support: { kind: 'inference', from: [id(4)], index: null, reason: null }, at: null, supersedes: null };
+    const pick = validate(base({ findings: [f], pick: { value: 'GPUs', reason: 'x', reasons: [] } }), { goal: 'pick', part: 'segment', card: unsegmented() });
+    expect(pick.findings).toEqual([]);
+    expect(pick.notes).toContain('ignored:findings');
+    const why = validate(base({ why: WHY(), companies: [{ companyName: 'Nvidia', symbolCandidate: 'NVDA', role: 'Supplier', relationshipRef: id(1) }] }));
+    expect(why.notes).toContain('ignored:companies');
   });
 });
 

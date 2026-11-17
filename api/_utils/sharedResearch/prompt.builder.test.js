@@ -85,4 +85,12 @@ describe('the builder\'s user turn', () => {
     expect(u).toContain("The player's direction (their words): look at power");
     expect(u).toContain('it never changes the theme');
   });
+  it('a direction turn is told the proposals its schema holds — and none when the goal it is asked as lands nothing (SPL-3)', () => {
+    expect(render({ goal: 'direction', direction: 'x', shape: { goal: 'build_why', part: null } })).toContain("The proposals you may make are those of the card's next step (build why)");
+    for (const shape of [{ goal: 'strengthen', part: 'theme' }, { goal: 'direction', part: null }, null]) {
+      const u = render({ goal: 'direction', direction: 'x', shape });
+      expect(u, JSON.stringify(shape)).toContain('Propose nothing for the card this step: findings only.');
+      expect(u).not.toContain('The proposals you may make');
+    }
+  });
 });

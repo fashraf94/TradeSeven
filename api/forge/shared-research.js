@@ -39,7 +39,7 @@ import {
   shapeOf, openingCardOf, builderQuestionOf, cardContextOf, thesisViewOf, isGoalOffered, offeredGoalsOf, applyProposals,
 } from '../_utils/sharedResearch/thesis.js';
 import {
-  buildSchemaOf, turnShapeOf, validateBuildTurn, buildCandidateNamesOf, builderFallbackReplyOf,
+  buildSchemaOf, schemaKeyOf, turnShapeOf, validateBuildTurn, buildCandidateNamesOf, builderFallbackReplyOf,
 } from '../_utils/sharedResearch/thesisSchema.js';
 import {
   refuse, cleanPlayerText, exchangeOf, sessionViewOf, quotaViewOf, latestLinesOf, OBSERVATION_MAX, DIRECTION_MAX,
@@ -108,7 +108,7 @@ async function settle(pending, deadlineAt = null) {
  * The shadow record for one model call (§6.9's fields, inside the record logConversation already takes). `method`:
  * the turn's effective method (KB-1) — its id, version, hash and source, on every record, failures included.
  */
-function modelCallRecord({ uid, session, stepId = null, intent, turn, retrieval = null, outcome, failureReason = null, notes = [], method = BASELINE, goal = null, part = null }) {
+function modelCallRecord({ uid, session, stepId = null, intent, turn, retrieval = null, outcome, failureReason = null, notes = [], method = BASELINE, goal = null, part = null, schema = null }) {
   return {
     userId: uid, agentId: session?.attribution?.agentId ?? null, battleId: null, archetype: null,
     gameMode: 'shared_research', sessionId: session?.sessionId ?? null, researchWorkId: session?.researchWorkId ?? null,
@@ -118,7 +118,7 @@ function modelCallRecord({ uid, session, stepId = null, intent, turn, retrieval 
     methodId: method.id, methodVersion: method.version, methodSha256: method.sha256, methodSource: method.source === 'kb' ? 'kb' : 'baseline',
     outcome, failureReason,
     validationNotes: Array.isArray(notes) ? notes.slice(0, 40) : [], // e.g. a withheld summary (spec §16 FQ-5; §11.4 measures)
-    ...(goal ? { goal, part } : {}), // a thesis builder step's goal (Amendment B §B6 measures); never on a ledger record
+    ...(goal ? { goal, part, ...(schema ? { schema } : {}) } : {}), // a thesis builder step's goal and the schema it was asked in (Amendment B §B6 measures; refuter SPL-5); never on a ledger record
   };
 }
 
@@ -659,7 +659,7 @@ async function handleBuildStep(body, res, { db, uid }) {
     if (turn) {
       await recordTurnOutcome(db, { researchWorkId: session.researchWorkId, uid, kind: cancellation ? 'cancellation' : 'failure', elapsedMs: turn.elapsedMs, usage: turn.usage, atIso, label: 'shared-research' });
     }
-    const pending = turn || retrievalTally?.calls ? captureLog(modelCallRecord({ uid, session, stepId, intent, turn, retrieval: retrievalTally, outcome: cancellation ? 'cancellation' : 'failure', failureReason: reason, method, goal, part })) : null;
+    const pending = turn || retrievalTally?.calls ? captureLog(modelCallRecord({ uid, session, stepId, intent, turn, retrieval: retrievalTally, outcome: cancellation ? 'cancellation' : 'failure', failureReason: reason, method, goal, part, schema: schemaKeyOf(turnShape) })) : null;
     const after = await readInvestigation(db, { uid, sessionId }).catch(() => ({ session, record }));
     const companies = await companiesFor(db, after.record).catch(() => ({ supported: [], leads: [] }));
     return answer(res, status, { error: 'step_failed', reason, session: sessionViewOf(after.session), thesis: thesisFor(after.session, after.record, companies), quota: quotaViewOf(day) }, pending, settleBy);
@@ -692,7 +692,7 @@ async function handleBuildStep(body, res, { db, uid }) {
   });
   if (!fit.ok) {
     await failStep(db, { uid, sessionId, stepId, reason: 'prompt_too_large', nowIso: new Date().toISOString(), refundCall: true });
-    if (retrievalTally.calls) await settle(captureLog(modelCallRecord({ uid, session, stepId, intent, turn: null, retrieval: retrievalTally, outcome: 'failure', failureReason: 'prompt_too_large', method, goal, part })), settleBy);
+    if (retrievalTally.calls) await settle(captureLog(modelCallRecord({ uid, session, stepId, intent, turn: null, retrieval: retrievalTally, outcome: 'failure', failureReason: 'prompt_too_large', method, goal, part, schema: schemaKeyOf(turnShape) })), settleBy);
     throw refuse(400, 'prompt_too_large');
   }
 
@@ -753,7 +753,7 @@ async function handleBuildStep(body, res, { db, uid }) {
     if (cancellation || err?.researchRecord) return failed(409, code, { turn, retrievalTally, cancellation });
     return failed(500, 'persist_failed', { turn, retrievalTally });
   }
-  const pending = captureLog(modelCallRecord({ uid, session, stepId, intent, turn, retrieval: retrievalTally, outcome: 'completion', notes: checked.notes, method, goal, part }));
+  const pending = captureLog(modelCallRecord({ uid, session, stepId, intent, turn, retrieval: retrievalTally, outcome: 'completion', notes: checked.notes, method, goal, part, schema: schemaKeyOf(turnShape) }));
   let companies;
   try {
     companies = await companiesFor(db, saved.record);

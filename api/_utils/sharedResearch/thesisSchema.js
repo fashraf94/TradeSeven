@@ -142,6 +142,8 @@ export const acceptsOf = (goal, part) => (goal === 'strengthen' ? (STRENGTHEN_AC
 const pickPartOf = (goal, part) => ({ map_segments: 'segment', find_names: 'names', build_why: 'wrongIf' }[goal] ?? (goal === 'pick' || goal === 'strengthen' ? part : null));
 /** The proposal a goal is FOR: when it is dropped whole, the reply cannot stand (K-4). */
 const MAIN = Object.freeze({ map_segments: 'map', build_why: 'why', pick: 'pick' });
+/** The output field each main proposal comes from. */
+const MAIN_FIELD = Object.freeze({ map: 'segments', why: 'why', pick: 'pick' });
 /** The goals whose schema carries the builder's companies (S-1). */
 const WITH_COMPANIES = Object.freeze(['verify_source', 'map_segments', 'find_names', 'direction']);
 
@@ -220,9 +222,14 @@ export function validateBuildTurn(output, ctx) {
   const { record, card, goal, part = null, partnerName = null, universe = gameUniverse, names = {} } = ctx;
   const shape = ctx.shape ?? turnShapeOf({ goal, part });
   if (!output || typeof output !== 'object') return { ok: false, rule: 'unparseable', detail: null };
-  const rawFindings = Array.isArray(output.findings) ? output.findings : [];
+  // What the turn's schema holds is all the validator reads (S-1; refuter SPL-4): findings on a `pick` turn, or companies
+  // on a turn whose schema has none, are ignored with a note — the grammar never lets them through, and nor does this.
+  const schema = buildSchemaOf(shape);
+  const holds = (field) => !schema || Object.hasOwn(schema.properties, field);
+  const preNotes = ['findings', 'companies'].filter((f) => !holds(f) && Array.isArray(output[f]) && output[f].length > 0).map((f) => `ignored:${f}`);
+  const rawFindings = holds('findings') && Array.isArray(output.findings) ? output.findings : [];
   // The builder writes no ledger claim and no open question (S-2): whatever a company carries, B1 reads none.
-  const companies = (Array.isArray(output.companies) ? output.companies : []).map((c) => (c && typeof c === 'object' && !Array.isArray(c) ? { ...c, openRef: null, claim: null } : c));
+  const companies = (holds('companies') && Array.isArray(output.companies) ? output.companies : []).map((c) => (c && typeof c === 'object' && !Array.isArray(c) ? { ...c, openRef: null, claim: null } : c));
 
   // 1. B1's validator on the reply, the findings and the companies — its rules alone can fail the step. The reply is cut
   //    to its 600 characters at a sentence's end FIRST, so B1's number check reads the text that is kept (RB-7).
@@ -231,7 +238,7 @@ export function validateBuildTurn(output, ctx) {
     summary: null, lines: { support: null, complication: null, missing: null }, nextAction: null,
   }, ctx);
   if (!b1.ok) return b1;
-  const notes = [...b1.notes];
+  const notes = [...preNotes, ...b1.notes];
   const drop = (what, rule) => { notes.push(`dropped:${what}:${rule}`); };
 
   // This turn's tempIds → their minted ids: B1 builds one finding per raw finding, in order, before anything else.
@@ -437,9 +444,13 @@ export function validateBuildTurn(output, ctx) {
   // stand — B1 replaced it, it breaks the builder's own wording, the goal's own proposal is missing, everything the step
   // proposed was dropped, or a dead end's reply names a listed company (RB-5).
   let reply = b1.reply;
-  const main = MAIN[goal] ?? (goal === 'strengthen' && part === 'why' ? 'why' : null);
+  const mainOf = (g, p) => MAIN[g] ?? (g === 'strengthen' && p === 'why' ? 'why' : null);
+  // A `direction` turn is held to the reply rule of the goal it was asked as (refuter SPL-1) — only when it offered that
+  // goal's own proposal: it is told to make one only when what it finds supports it, so a reply with none can stand.
+  const asked = goal === 'direction' ? mainOf(shape.goal, shape.part) : null;
+  const main = goal === 'direction' ? (asked && given(MAIN_FIELD[asked]) ? asked : null) : mainOf(goal, part);
   const offered = accepts.filter((f) => given(f));
-  const deadEnd = goal === 'find_names' && card.names.state !== 'set' && supportedAfterOf().length === 0;
+  const deadEnd = (goal === 'find_names' || (goal === 'direction' && shape.goal === 'find_names')) && card.names.state !== 'set' && supportedAfterOf().length === 0;
   const replaceFor = notes.some((n) => n.startsWith('reply_replaced:')) ? 'unsupported_number'
     : reply && promisesService(reply, partnerName) ? 'service_promise'
       : reply && builderWordingOf(reply, partnerName) ? 'builder_wording'
