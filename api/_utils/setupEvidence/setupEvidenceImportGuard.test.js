@@ -1,9 +1,8 @@
 // api/_utils/setupEvidence/setupEvidenceImportGuard.test.js
 //
-// ID-1 Build 1 — NOTHING CALLS THE STORE. A framework library with no cron, no
-// endpoint, no flag and no consumer: slice 2, the ID-1 observer and the Practice
-// Field will call it later, each behind its own gate, and each is meant to arrive
-// here as a deliberate change to this one list.
+// ID-1 Build 1 — WHO CALLS THE STORE. Built as a framework library with no caller; each caller since
+// (the ID-1 observer, Slice 2, the chart evidence read route and sweep) arrived here as a deliberate change
+// to this one list, each behind its own gate.
 //
 // One scan over every source file in the code trees and at the repo root, on real
 // text with the comments left in, because a mention in a comment is cheap to allow
@@ -62,6 +61,22 @@ const ALLOWED_OUTSIDE = new Set([
   // the module holds the one frozen list and nothing else.
   'api/_utils/researchRecords/findingRecordKinds.js', // FINDING_RECORD_KINDS (a finding's source.recordKind / an evidenceItem ref's recordKind)
   'api/_utils/researchRecords/extension.test.js', // pins that closed list by value against the schema version, and the module's data-only shape
+  // The chart's evidence, PR A — the read route (docs/specs/CHART_EVIDENCE_SPEC_V1.md RR-1, RR-9), behind
+  // CHART_READ_MODE: readSnapshot and lastCompletedSessionAt only, never getOrAcquireSnapshot or the claims. Its
+  // projection helper (api/_utils/setupRead/projection.js) names no collection and is not a caller. Each by exact filename.
+  'api/research/setup-read.js', // the route: readSnapshot for the last completed session, then the one before; nothing else of the store
+  'api/research/setup-read.test.js', // the route's rows: the REAL readSnapshot over an in-memory db that fails on any claims touch or write
+  'api/_utils/setupRead/__fixtures__/readRecords.js', // test fixture: real records through acquire.js (acquireOnce + snapshotDocOf)
+  'api/_utils/setupRead/projection.test.js', // pins the projection's schema version to acquire.js SNAPSHOT_SCHEMA_VERSION
+  // The chart's evidence, PR B — the daily sweep (docs/specs/CHART_EVIDENCE_SPEC_V1.md SW-1 – SW-9), behind
+  // SETUP_EVIDENCE_SWEEP_ENABLED. The cron (api/cron/setup-evidence-sweep.js), the gate, the constants and the state
+  // module name neither the library nor its collections and are not callers; the files below do. Each by exact filename.
+  'api/_utils/setupEvidenceSweep/sweep.js', // the sweep: readSnapshot, then getOrAcquireSnapshot with a counting fetchPayload
+  'api/_utils/setupEvidenceSweep/sweep.test.js', // the sweep's rows, the REAL store over an in-memory db
+  'api/_utils/setupEvidenceSweep/constants.test.js', // pins the restated store constants to acquire.js and store.js
+  'scripts/census-setup-evidence-sweep.mjs', // the read-only day-after census: key.js, sessionAt.js, field-masked reads of the records
+  'scripts/census-setup-evidence-sweep.test.js', // the census's import pin and its rows
+  'test/rules/setupEvidenceSweep.rules.mjs', // the sweep against the emulator, with the real store underneath
 ]);
 const isListed = (file) => ALLOWED_OUTSIDE.has(file);
 
@@ -110,8 +125,14 @@ describe('nothing calls the store', () => {
   it.each(callers.map((file) => [file]))('%s is on the list', (file) => {
     expect(isListed(file)).toBe(true);
   });
-  it('no cron schedule names it', () => {
-    expect(readFileSync(join(REPO, 'vercel.json'), 'utf8')).not.toMatch(/setupEvidence/i);
+  it('no cron schedule names it — camel, kebab, snake or dotted — but the chart evidence sweep by its exact path', () => {
+    // The chart's evidence, PR B (docs/specs/CHART_EVIDENCE_SPEC_V1.md SW-1): one cron reaches the store, through
+    // api/_utils/setupEvidenceSweep/sweep.js. Matched in camel and kebab case, so a second entry cannot pass on its spelling
+    // (review L3-2).
+    const text = readFileSync(join(REPO, 'vercel.json'), 'utf8');
+    expect(text).not.toMatch(/setupEvidence/i);
+    const named = JSON.parse(text).crons.filter((c) => /setup[-_.]?evidence/i.test(JSON.stringify(c)));
+    expect(named).toEqual([{ path: '/api/cron/setup-evidence-sweep', schedule: '30 12,22,23 * * 1-5' }]);
   });
   it('the library is its six modules, and reaches no flag and no handler: nothing from api/cron, api/agent or the flag module', () => {
     const modules = libraryModules(REPO);

@@ -21,10 +21,12 @@
 // catch marks the context `tick_error` and the `finally` SKIPS capture, so the
 // context must survive the throw for the OUTER handler to finalize after it
 // writes its fault receipt. The context is therefore registered by battle id at
-// creation and claimed — once — by whoever finalizes it. Battles are processed
-// serially inside one invocation, so at most one context is live at a time;
-// re-creating a context for the same battle drops any stale predecessor, so the
-// map cannot grow.
+// creation and claimed — once — by whoever finalizes it. Under the evaluator's
+// pool (capacity Build 1, EVAL_POOL_K) up to K battles are in flight at once,
+// each in its own scope, so up to K contexts are live — one per battle, never
+// two for one battle (the pool dispatches each battle once); re-creating a
+// context for the same battle drops any stale predecessor, so the map cannot
+// grow.
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { STAGES } from './captureConfig.js';
