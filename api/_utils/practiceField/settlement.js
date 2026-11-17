@@ -248,6 +248,32 @@ export function ledgerEndpoint(ledger, valuation, { coverageGaps = null } = {}) 
   };
 }
 
+/**
+ * WHAT A LEDGER HOLDS IN DOUBT at the endpoint, by symbol (Amendment F-4): every reason its value is in doubt — a
+ * conflicting action, a held or refused action, a split-shaped move the feed never explained, a coverage gap — and
+ * every cash dividend it is owed and holds, unpaid. The result names SPY's: SPY in doubt leaves the result measurable
+ * (SPY is context and carries no label, E10), and says so instead of saying nothing. Pure.
+ * @returns {Array<{ symbol: string, reasons: Array<object>, heldDividends: Array<object> }>}
+ */
+export function ledgerDoubts(ledger, { coverageGaps = null } = {}) {
+  const upper = (s) => String(s || '').trim().toUpperCase();
+  const held = heldActionRecords(ledger);
+  const out = [];
+  for (const sym of Object.keys(ledger?.holdings || {}).sort()) {
+    const reasons = [
+      ...unsettledConflicts(ledger).filter((r) => upper(r.ticker) === sym).map((r) => ({ kind: 'conflicting_action', actionId: r.actionId, type: r.type ?? null })),
+      ...held.filter((r) => r.symbol === sym).map((r) => ({ kind: r.refused ? 'refused_action' : 'held_action', actionId: r.actionId, type: r.type, ...(r.refused ? { refused: r.refused } : {}) })),
+      ...basisSuspicionRecords(ledger).filter((s) => s.symbol === sym).map((s) => ({ kind: 'suspected_split', actionId: s.actionId, suspectedOn: s.suspectedOn ?? null })),
+      ...(coverageGaps?.[sym] ? [{ kind: 'ca_coverage_gap', actionId: coverageGapIdOf(sym, coverageGaps[sym].since), since: coverageGaps[sym].since ?? null }] : []),
+    ];
+    if (reasons.length === 0) continue;
+    const heldDividends = held.filter((r) => r.symbol === sym && r.type === 'cash_dividend')
+      .map((r) => ({ actionId: r.actionId, amount: r.amount ?? null, effectiveDate: r.effectiveDate ?? null, heldOn: r.heldOn ?? null }));
+    out.push({ symbol: sym, reasons, heldDividends });
+  }
+  return out;
+}
+
 // ── The running record ───────────────────────────────────────────────────────────────────────────────────────
 
 const newSeries = () => ({ peakCents: null, peakOn: null, declineCents: 0, declinePeakCents: null, declinePeakOn: null, declineTroughOn: null });
@@ -434,7 +460,11 @@ export function buildEndpoint({ idea, valuations, date, kind, observed, caughtUp
     closingNote: null,
     oneObservationLabel: true,
     // Beside them (contract §4.4).
-    spy: { valueUsd: spy.valueUsd, gapUsd: fromCents(spyGapCents), gapPctOfReserved: (spyGapCents * 100) / reservedCents, fullQuality: spy.fullQuality },
+    // …and SPY's doubt, by name (Amendment F-4): the symbol, the reasons, and any dividend held and not paid.
+    spy: {
+      valueUsd: spy.valueUsd, gapUsd: fromCents(spyGapCents), gapPctOfReserved: (spyGapCents * 100) / reservedCents, fullQuality: spy.fullQuality,
+      inDoubt: ledgerDoubts(idea.spyLedger, gaps),
+    },
     largestDecline: stats.largestDecline,
     trades: {
       entry: { count: idea.entry?.legCount ?? null, costsUsd: idea.entry?.costsPaidUsd ?? null },

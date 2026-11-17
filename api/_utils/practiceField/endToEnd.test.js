@@ -87,7 +87,9 @@ import {
 // T1a-2b-3, step 2 (Amendment F-6, F-2, F-1, F-3: the coverage rule, the rows' union, the backfill): re-pinned from
 // 7f631a47…, leaf-compared. NO MONEY LEAF CHANGED — every session's data covers every held symbol here. 11 leaves ADDED:
 // each open idea's `caCoveredThrough` (the last session its corporate-action data covered, per held symbol).
-const EXPECTED_DUMP = { sha256: '9ec8efca9d2d3ecdccc3c26aa8f72f893efedd60c722992fcac81a45eafff7e1', bytes: 443293 };
+// T1a-2b-3, step 3 (Amendment F-4): re-pinned from 9ec8efca…. NO MONEY LEAF CHANGED. 6 leaves ADDED: `result.spy.inDoubt: []`
+// on the three ideas and their result packets (SPY is never in doubt here); 3 leaves CHANGED: those packets' `contentHash`.
+const EXPECTED_DUMP = { sha256: '37333fe97fa5ffdf89454681e9e52e6861a51de39890d2187dc26557c1db1d90', bytes: 443407 };
 
 // Twenty-nine sessions from Monday 16 November 2026 (Thanksgiving and Christmas are not sessions).
 const SESSIONS = ['2026-11-16'];

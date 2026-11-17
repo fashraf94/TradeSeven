@@ -12,7 +12,7 @@ import { setPracticeFieldModeForTests } from './mode.js';
 import { assertReconciled } from './reconcile.js';
 import { admitIdea } from './admission.js';
 import { closeIdeaBook } from './close.js';
-import { withBasisSuspicions, applyLedgerActions } from './ledger.js';
+import { withBasisSuspicions, applyLedgerActions, ledgerOwnDoubtIds, ideaWideDoubtSymbols } from './ledger.js';
 import { dailyDocOf, dailyCoverageOf, sessionCoverage, unionActionsBySymbol, snapshotNamesDaily, DAILY_COVERAGE_REFUSAL } from './dailyCoverage.js';
 import { backfillNeeds, ensureCoverageBackfills } from './caBackfill.js';
 import {
@@ -518,5 +518,56 @@ describe('Amendment F-1 — a session with no corporate-action data is a session
     expect(sessionCoverage({ symbol: 'AAPL', session: S[1], coveredThrough: S[0], daily: daily(S[1]), dailyRefOk: false })).toMatchObject({ covered: false, reason: 'snapshot_daily_mismatch' });
     // A layer that claims a wider window than the builder fetches is not taken on trust.
     expect(sessionCoverage({ symbol: 'AAPL', session: S[7], coveredThrough: S[0], daily: { ...daily(S[7]), caWindow: { from: '2026-10-01' } }, dailyRefOk: true })).toMatchObject({ covered: false, reason: 'gap_beyond_window' });
+  });
+});
+
+// ── F-4 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+describe('Amendment F-4 — a doubt holds only what it touches; SPY in doubt is named on a measurable result', () => {
+  const holding = (extra = {}) => ({ shares: 10, costBasisTotal: 1000, avgCost: 100, lastMark: 100, openedAt: S[0], ...extra });
+  const ledgerOf = (kind, holdings) => ({ kind, reservedCapitalUsd: 1000, cash: 0, holdings, costsPaidUsd: 0, dividendsUsd: 0, realizedPnlUsd: 0, appliedActionIds: [], declinedActionIds: [], corporateActionReceipts: [], saleReceipts: [] });
+  const rec = (actionId, extra = {}) => ({ actionId, type: 'reverse_split', ticker: 'AAPL', effectiveDate: S[1], ratio: 0.5, amount: null, cashPerShare: null, source: 'eodhd_splits', heldOn: S[1], heldBecause: [], ...extra });
+
+  it('(pure) the classification: a refusal of the ledger\'s OWN count (rounds to nothing, no entitlement data) and what waits behind only it is own; a refused ratio, a conflict, or a hold behind anything else is about the symbol', () => {
+    const own = ledgerOf('comparison', { AAPL: holding({ heldActions: [
+      rec('reverse_split_AAPL_a', { refused: 'rounds_to_nothing' }),
+      rec('split_AAPL_b', { type: 'split', effectiveDate: S[2], heldBecause: [{ actionId: 'reverse_split_AAPL_a', type: 'reverse_split', effectiveDate: S[1], ledger: 'comparison' }] }),
+    ] }) });
+    expect([...ledgerOwnDoubtIds(own, {}, { date: S[3] })].sort()).toEqual(['reverse_split_AAPL_a', 'split_AAPL_b']);
+    expect([...ideaWideDoubtSymbols(own, {}, { date: S[3] })]).toEqual([]);
+    // The same records on the IDEA's ledger: a doubt in the idea's own count still holds the whole idea.
+    expect([...ideaWideDoubtSymbols({ ...own, kind: 'idea' }, {}, { date: S[3] })]).toEqual(['AAPL']);
+    // A ratio the applier refuses is the row's fault, not the holding's: the symbol is in doubt.
+    const bad = ledgerOf('comparison', { AAPL: holding({ heldActions: [rec('reverse_split_AAPL_a', { refused: 'bad_ratio' })] }) });
+    expect([...ideaWideDoubtSymbols(bad, {}, { date: S[3] })]).toEqual(['AAPL']);
+    // Held behind something that is NOT the ledger's own (another ledger's item) — about the symbol.
+    const behindOther = ledgerOf('spy', { AAPL: holding({ heldActions: [rec('split_AAPL_b', { type: 'split', heldBecause: [{ actionId: 'split_AAPL_x', type: 'split', effectiveDate: S[1], ledger: 'idea' }] })] }) });
+    expect([...ideaWideDoubtSymbols(behindOther, {}, { date: S[3] })]).toEqual(['AAPL']);
+    // A due row the holding has no entitlement data for (no `openedAt`): own.
+    const noData = ledgerOf('spy', { AAPL: holding({ openedAt: undefined }) });
+    expect([...ledgerOwnDoubtIds(noData, { AAPL: [split(2, S[2])] }, { date: S[3] })]).toEqual([`split_AAPL_${S[2]}`]);
+    expect([...ideaWideDoubtSymbols(noData, { AAPL: [split(2, S[2])] }, { date: S[3] })]).toEqual([]);
+    // A conflict is always about the symbol.
+    const conflict = { ...ledgerOf('comparison', { AAPL: holding() }), corporateActionReceipts: [{ actionId: `split_AAPL_${S[1]}`, type: 'split', ticker: 'AAPL', effectiveDate: S[1], applied: false, reason: 'conflicting_action', entitled: true, rows: [], seenOn: S[1] }] };
+    expect([...ideaWideDoubtSymbols(conflict, {}, { date: S[3] })]).toEqual(['AAPL']);
+  });
+
+  it('SPY in doubt (a conflicting split, a dividend held behind it) leaves the result MEASURABLE and names it: the symbol, the reasons, and the dividend held and not paid', async () => {
+    const ctx = await setup({ names: ['AAPL'] });
+    for (let i = 1; i <= 8; i += 1) await closeDay(ctx, S[i]);
+    const conflict = [split(2, S[9], 'SPY'), split(3, S[9], 'SPY')];
+    await closeDay(ctx, S[9], { SPY: { price: BASE.SPY, corporateActions: conflict } });
+    await closeDay(ctx, S[10], { SPY: { price: BASE.SPY, corporateActions: [...conflict, dividend(1.75, S[10], 'SPY')] } }); // the due session
+    const idea = ideaOf(ctx);
+    expect(idea.endpoint.session).toBe(S[10]);
+    expect(idea.result.economicResult).not.toBe('unmeasurable');
+    expect(idea.result.economic.unmeasurableBecause).toEqual([]);
+    expect(idea.result.spy.fullQuality).toBe(false);
+    expect(idea.result.spy.inDoubt).toEqual([{
+      symbol: 'SPY',
+      reasons: [{ kind: 'conflicting_action', actionId: `split_SPY_${S[9]}`, type: 'split' }, { kind: 'held_action', actionId: `cash_dividend_SPY_${S[10]}`, type: 'cash_dividend' }],
+      heldDividends: [{ actionId: `cash_dividend_SPY_${S[10]}`, amount: 1.75, effectiveDate: S[10], heldOn: S[10] }],
+    }]);
+    expect(idea.spyLedger.dividendsUsd).toBe(0);
   });
 });

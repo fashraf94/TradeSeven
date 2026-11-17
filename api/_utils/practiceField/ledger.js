@@ -426,12 +426,61 @@ export function unsettledShareBasisSymbols(ledger, actionsBySymbol, { date }) {
   return new Set(unresolvedShareBasis(ledger, actionsBySymbol, { date }).keys());
 }
 
+// ── A DOUBT HOLDS ONLY WHAT IT TOUCHES (Amendment F-4; T1a-2a Q-O, Q-M) ──────────────────────────────────────────────
+// A doubt ABOUT A SYMBOL — a feed conflict, an action unapplied or held because the data is in doubt, a split-shaped
+// price move, a coverage gap — holds that symbol on every ledger of the idea, as before. A doubt IN ONE PAPER LEDGER'S
+// OWN COUNT — the comparison's or the SPY line's — holds only that ledger: the data is clear, only that ledger's
+// holding cannot take it. Its own count is in doubt when a share-basis action is refused for a reason of the ledger's
+// own (`LEDGER_OWN_REFUSALS`: it would round the holding to nothing — refuter 2's frozen-basket holding under a correct
+// reverse split — or the holding has no entitlement data), and so is any action it holds behind only such doubts of its
+// own. The idea's own cash and sale go on. A doubt in the IDEA'S own count still holds the whole idea (its same-stock
+// comparison has the same count, and the same doubt).
+
+/** The refusals of a share-basis action that are about a ledger's OWN holding, not about the symbol's data. */
+export const LEDGER_OWN_REFUSALS = new Set(['rounds_to_nothing', 'no_entitlement_data']);
+const isPaperLedger = (ledger) => ledger?.kind === LEDGER_KIND.COMPARISON || ledger?.kind === LEDGER_KIND.SPY;
+
+/**
+ * The ids of a ledger's unresolved share-basis items that are doubts in its OWN count (see above): its records refused
+ * for a reason of its own, the due rows it has no entitlement data for, and — to a fixpoint — every record held behind
+ * nothing but such doubts on this same ledger. Pure.
+ */
+export function ledgerOwnDoubtIds(ledger, actionsBySymbol, { date }) {
+  const kind = ledger?.kind ?? null;
+  const own = new Set();
+  const records = heldActionRecords(ledger);
+  for (const r of records) if (typeof r.refused === 'string' && LEDGER_OWN_REFUSALS.has(r.refused)) own.add(r.actionId);
+  const due = pendingActionsFor(ledger?.holdings || {}, actionsBySymbol || {}, { onOrBefore: date, appliedIds: settledIdsOf(ledger) });
+  for (const a of due.noEntitlementData) if (SHARE_BASIS_TYPES.has(a.type)) own.add(a.actionId);
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const r of records) {
+      if (own.has(r.actionId) || r.refused) continue;
+      const causes = r.heldBecause || [];
+      if (causes.length > 0 && causes.every((c) => c.ledger === kind && own.has(c.actionId))) { own.add(r.actionId); grew = true; }
+    }
+  }
+  return own;
+}
+
+/**
+ * The SYMBOLS a ledger has in doubt in the sense that holds the whole idea: its unresolved share-basis items, less — on
+ * a paper ledger — the doubts in its own count (F-4). The idea's sale reads the other ledgers through this.
+ */
+export function ideaWideDoubtSymbols(ledger, actionsBySymbol, { date }) {
+  const own = isPaperLedger(ledger) ? ledgerOwnDoubtIds(ledger, actionsBySymbol, { date }) : null;
+  const out = new Set();
+  for (const [sym, items] of unresolvedShareBasis(ledger, actionsBySymbol, { date })) if (items.some((i) => !own?.has(i.actionId))) out.add(sym);
+  return out;
+}
+
 /**
  * THE IDEA'S HOLD SET at this close (Astra T2A-01, T2A-C01): every share-basis action unresolved on ANY of its ledgers
  * once this close's share-basis actions are applied (to a copy, with cash actions and renames withheld — a cash
  * delisting applied here would drop the holding and hide a due row on it). Every ledger is handed the same set, so a
  * same-stock comparison makes the same choice as its idea: an action that depends on the count waits on all of them,
- * or on none. Pure.
+ * or on none. A doubt in a PAPER ledger's own count is not in it (Amendment F-4): it holds that ledger alone, through
+ * the ledger's own unresolved items. Pure.
  * @returns {Map<string, Array<{ actionId, type, effectiveDate, ledger }>>}  symbol → what it waits on
  */
 export function shareBasisHolds(ledgers, actionsBySymbol, { date }) {
@@ -439,7 +488,10 @@ export function shareBasisHolds(ledgers, actionsBySymbol, { date }) {
   for (const ledger of ledgers || []) {
     if (!ledger) continue;
     const after = applyActions(ledger, actionsBySymbol, { date, phase: 'share_basis' }).ledger;
-    for (const [sym, items] of unresolvedShareBasis(after, actionsBySymbol, { date })) for (const i of items) addItem(out, sym, i);
+    const own = isPaperLedger(ledger) ? ledgerOwnDoubtIds(after, actionsBySymbol, { date }) : null;
+    for (const [sym, items] of unresolvedShareBasis(after, actionsBySymbol, { date })) {
+      for (const i of items) if (!own?.has(i.actionId)) addItem(out, sym, i);
+    }
   }
   for (const list of out.values()) list.sort(byItem);
   return out;
@@ -990,8 +1042,10 @@ export function saleHeldBackBy(ledger, symbol, snapshot, { sinceDate, date, othe
     .filter((a) => !(a.type === 'delisting' && delistingCashOf(a) === null));
   if (waitingFor.length > 0) return 'corporate_action_pending';
   if (conflicts.some((r) => r.type !== 'cash_dividend')) return 'corporate_action_unsettled';
+  // Another ledger's doubt holds the idea's sale only when it is a doubt about the symbol, not one in that paper
+  // ledger's own count (Amendment F-4).
   for (const other of otherLedgers || []) {
-    if (other && unsettledShareBasisSymbols(other, actionsBySymbol, { date }).has(symbol)) return 'corporate_action_unsettled';
+    if (other && ideaWideDoubtSymbols(other, actionsBySymbol, { date }).has(symbol)) return 'corporate_action_unsettled';
   }
   const delistedWaiting = holding.exitPending?.reason === 'delisting' || holding.settlementPending?.replacedExit?.reason === 'delisting';
   if (delistedWaiting) return null;

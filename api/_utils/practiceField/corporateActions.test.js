@@ -807,7 +807,7 @@ describe('Astra T2A-01 — a ticker change waits while the holding\'s share basi
     expect(free.renames).toEqual([{ from: 'AAPL', to: 'AMD', actionId: record.actionId, deferred: true, deferredOn: S[1] }]);
   });
 
-  it('the choice is the IDEA\'s, through the close (review finding 2): when only the comparison cannot apply a share-basis action, the idea\'s own ledger waits too — the idea, its line and the book are not renamed', async () => {
+  it('the choice is the IDEA\'s, through the close (review finding 2) — narrowed by Amendment F-4 (Q-O): when only the comparison cannot apply a share-basis action for a reason of ITS OWN count, the idea renames (its line and the book too) and only the comparison waits', async () => {
     // A frozen-basket comparison that holds the idea's name, with a different quantity: a reverse split so extreme it
     // rounds the comparison's smaller holding to nothing (not applied, so unresolved there) but not the idea's.
     const { db, bookId, bookRef } = await seedBook({ archetypeCodeId: 'degen' });
@@ -818,14 +818,16 @@ describe('Astra T2A-01 — a ticker change waits while the holding\'s share basi
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
     await closeDay(ctx, S[1], { AAPL: { price: roundUsd(BASE.AAPL / r), corporateActions: [basisRow('reverse_split', r), rename('AAPL', 'AAPLX')] }, AAPLX: roundUsd(BASE.AAPL / r) });
     const idea = ideaOf(ctx);
-    expect(idea.ledger.appliedActionIds).toEqual([`reverse_split_AAPL_${S[1]}`]); // the idea's own ledger applied it…
-    expect(idea.comparisonLedger.appliedActionIds).toEqual([]); // …the comparison's could not
-    for (const ledger of [idea.ledger, idea.comparisonLedger]) {
-      expect(ledger.holdings.AAPL?.deferredRename, ledger.kind).toMatchObject({ from: 'AAPL', to: 'AAPLX' });
-      expect(ledger.holdings).not.toHaveProperty('AAPLX');
-    }
-    expect(idea.lines.map((l) => l.symbol)).toEqual(['AAPL']);
-    expect(Object.keys(bookOf(ctx).portfolio.positions)).toEqual(['AAPL']);
+    expect(idea.ledger.appliedActionIds).toEqual([`reverse_split_AAPL_${S[1]}`, `ticker_change_AAPL_${S[1]}`]); // the idea's own ledger applied both…
+    expect(idea.comparisonLedger.appliedActionIds).toEqual([]); // …the comparison's could apply neither
+    // F-4: the comparison's doubt is in its own count (the reverse split rounds its smaller holding to nothing): it holds
+    // the comparison alone. The idea's holding, its line and the book's position move to AAPLX.
+    expect(idea.ledger.holdings).toHaveProperty('AAPLX');
+    expect(idea.ledger.holdings).not.toHaveProperty('AAPL');
+    expect(idea.comparisonLedger.holdings.AAPL?.deferredRename).toMatchObject({ from: 'AAPL', to: 'AAPLX' });
+    expect(idea.comparisonLedger.holdings.AAPL.heldActions).toEqual([expect.objectContaining({ actionId: `reverse_split_AAPL_${S[1]}`, refused: 'rounds_to_nothing' })]);
+    expect(idea.lines.map((l) => l.symbol)).toEqual(['AAPLX']);
+    expect(Object.keys(bookOf(ctx).portfolio.positions)).toEqual(['AAPLX']);
     errors.mockRestore();
   });
 });
@@ -1150,7 +1152,7 @@ describe('Fix round 2 — Astra T2A-C01 and the share-basis class: a count-depen
     expect(bookOf(ctx).portfolio.positions.AAPL.lastMark).toBe(before.lastMark);
   });
 
-  it('COMPARISON-ONLY, through the close and the window: a frozen-basket comparison that cannot apply a reverse split holds the IDEA\'s cash delisting and the IDEA\'s sale, and the idea is valued at its carried mark', async () => {
+  it('COMPARISON-ONLY, through the close and the window — Amendment F-4 (refuter 2\'s case, Q-O ruled): a frozen-basket comparison whose holding a CORRECT reverse split rounds to nothing holds only the comparison: the idea\'s mark is fresh, its sale fills, it resolves; the comparison waits, its cash delisting is held, and the result is unmeasurable', async () => {
     const { db, bookId, bookRef } = await seedBook({ archetypeCodeId: 'degen' });
     const a = await admitAndEnter(db, bookId, { contract: contractOf({ names: ['AAPL'], comparison: { type: 'frozen_basket', symbols: ['AAPL', 'MSFT'] } }), quotes: quotes(), date: S[0] });
     const ctx = { db, bookId, bookRef, ideaId: a.ideaId };
@@ -1163,24 +1165,27 @@ describe('Fix round 2 — Astra T2A-C01 and the share-basis class: a count-depen
     await closeDay(ctx, S[1], { AAPL: { price: roundUsd(down / r), corporateActions: [split] } });
     expect(ideaOf(ctx).ledger.appliedActionIds).toEqual([`reverse_split_AAPL_${S[1]}`]); // the idea's own ledger applied it…
     expect(ideaOf(ctx).comparisonLedger.appliedActionIds).toEqual([]); // …its comparison could not
-    // Nothing is held yet, and still the idea's own holding is at its carried mark: the idea's share basis is in doubt.
-    expect(rowOf(ctx, S[1]).marks.AAPL.quality).toBe('carried_forward');
-    // The window: the feed still lists the reverse split. The idea's own count is settled; its comparison's is not.
+    // F-4: the comparison's doubt is in its own count; the idea's count is settled and its mark is fresh.
+    expect(rowOf(ctx, S[1]).marks.AAPL).toMatchObject({ quality: 'vendor_time', mark: roundUsd(down / r) });
+    expect(rowOf(ctx, S[1]).comparisonMarks.AAPL.quality).toBe('carried_forward');
+    expect(ideaOf(ctx).comparisonLedger.holdings.AAPL.heldActions).toEqual([expect.objectContaining({ actionId: `reverse_split_AAPL_${S[1]}`, refused: 'rounds_to_nothing' })]);
+    // The window: the feed still lists the reverse split. The idea's own count is settled: its sale FILLS.
     await daily(ctx, S[2], ['AAPL', 'MSFT', 'SPY']);
     const w = await win(ctx, S[2], 'open30', { AAPL: { price: roundUsd(down / r), corporateActions: [split] } });
-    expect(w.sales).toMatchObject({ sold: 0 });
-    expect(ideaOf(ctx).ledger.holdings.AAPL.exitPending.waiting.lastRefusal).toBe('corporate_action_unsettled');
-    // The close: a cash delisting. Held on the idea's ledger too — the idea decides for all three.
-    const cashBefore = ideaOf(ctx).ledger.cash;
+    expect(w.sales).toMatchObject({ sold: 1 });
+    expect(ideaOf(ctx).ledger.saleReceipts).toEqual([expect.objectContaining({ symbol: 'AAPL', kind: 'line_exit', queuedBy: expect.objectContaining({ reason: 'line' }) })]);
+    // The close: a cash delisting. The idea holds nothing; the comparison's is held behind its own refused split.
+    const cmpCashBefore = ideaOf(ctx).comparisonLedger.cash;
     await closeDay(ctx, S[2], { AAPL: { price: roundUsd(down / r), corporateActions: [split, cashDelisting()] } });
     const idea = ideaOf(ctx);
-    expect(idea.ledger.cash).toBe(cashBefore);
-    expect(delistReceipts(idea.ledger)).toEqual([]);
-    expect(idea.ledger.holdings.AAPL.heldActions).toEqual([expect.objectContaining({
-      actionId: DELIST_ID, heldBecause: [{ actionId: `reverse_split_AAPL_${S[1]}`, type: 'reverse_split', effectiveDate: S[1], ledger: 'comparison' }],
-    })]);
-    expect(idea.status).toBe('line_hit_exit_pending');
-    expect(rowOf(ctx, S[2]).marks.AAPL.quality).toBe('carried_forward');
+    expect(idea.status).toBe('resulted'); // E2: nothing left to sell — the idea resolves; its own money never waited
+    expect(idea.comparisonLedger.cash).toBe(cmpCashBefore);
+    expect(delistReceipts(idea.comparisonLedger)).toEqual([]);
+    expect(idea.comparisonLedger.holdings.AAPL.heldActions.map((h) => h.actionId)).toEqual([`reverse_split_AAPL_${S[1]}`, DELIST_ID]);
+    // A comparison still in doubt makes the result unmeasurable, as before (F-4).
+    expect(idea.result.economicResult).toBe('unmeasurable');
+    expect(idea.result.economic.unmeasurableBecause).toContain('comparison_unsettled_corporate_action');
+    expect(idea.result.economic.unmeasurableBecause).not.toContain('idea_unsettled_corporate_action');
     errors.mockRestore();
   });
 

@@ -259,7 +259,8 @@ describe('E10 — an economic label needs full-quality endpoint marks', () => {
     expect(result.economicResult).toBe('ahead');
     expect(result.economic.unmeasurableBecause).toEqual([]);
     expect(result.spy.fullQuality).toBe(false);
-    expect(Object.keys(result.spy).sort()).toEqual(['fullQuality', 'gapPctOfReserved', 'gapUsd', 'valueUsd']); // no label of its own
+    expect(Object.keys(result.spy).sort()).toEqual(['fullQuality', 'gapPctOfReserved', 'gapUsd', 'inDoubt', 'valueUsd']); // no label of its own
+    expect(result.spy.inDoubt).toEqual([]); // (Amendment F-4: SPY's doubt is named here; a stale mark is not one)
   });
 });
 
