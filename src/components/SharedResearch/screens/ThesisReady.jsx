@@ -32,7 +32,7 @@ function JudgedRow({ label, children }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '92px minmax(0,1fr)', gap: 10 }}>
       <span style={{ ...S.eyebrow, paddingTop: 2 }}>{label}</span>
-      <span style={{ fontSize: 13.5, color: T.ink2, lineHeight: 1.45, overflowWrap: 'anywhere' }}>{children}</span>
+      <span style={{ fontSize: 13.5, color: T.ink2, lineHeight: 1.45, overflowWrap: 'break-word', minWidth: 0 }}>{children}</span>
     </div>
   );
 }
@@ -47,6 +47,9 @@ export default function ThesisReady({ sr, agentName, phone, edit, setEdit, onKee
   const footRef = useRef(null);
   const sentenceRef = useRef(null);
   const editRef = useRef(null);
+  const readyRef = useRef(null);
+  // the ready card arrives at its own top, not where the work view was scrolled (the phone round, P-2: a new turn's top)
+  useEffect(() => { readyRef.current?.scrollIntoView?.({ block: 'start' }); }, []);
   // the edit box takes focus when it opens (review 4C-1: the link that opened it is gone)
   useEffect(() => { if (editing) editRef.current?.focus({ preventScroll: true }); }, [editing]);
   usePanelInView(tapped, panelId, footRef);
@@ -87,7 +90,7 @@ export default function ThesisReady({ sr, agentName, phone, edit, setEdit, onKee
 
   return (
     <div data-screen-label={`Thesis ready · ${status}`} style={S.col}>
-      <section aria-label={B.thesisReady} data-sr-ready="" style={{ ...S.box, gap: 12 }}>
+      <section ref={readyRef} aria-label={B.thesisReady} data-sr-ready="" style={{ ...S.box, gap: 12, scrollMarginTop: 8 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <CardHead thesis={thesis} stepsLeft={stepsLeft} ready />
           <Rail thesis={thesis} />
@@ -104,7 +107,7 @@ export default function ThesisReady({ sr, agentName, phone, edit, setEdit, onKee
           </div>
         ) : (
           <div ref={sentenceRef} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <Sentence thesis={thesis} tapped={tapped} onTap={setTapped} panelId={panelId} agentName={agentName} />
+            <Sentence thesis={thesis} tapped={tapped} onTap={setTapped} panelId={panelId} agentName={agentName} size={phone ? 16 : 16.5} />
             <div><LinkButton disabled={busy} onClick={() => setEditing(true)} attrs={{ 'data-sr-edit': '' }}>{B.edit}</LinkButton></div>
           </div>
         )}

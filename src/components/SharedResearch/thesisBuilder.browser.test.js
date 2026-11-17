@@ -3,8 +3,10 @@
 // Edge on the smoke page (the smoke branch's `?srFixture=` loader: the body inside a
 // real HubSheet under HubOverlayProvider, every request answered by the committed
 // fixtures, the builder mode on for its builder scenarios only):
-//   - the fold: at 390×844 the foot's first choice is on screen and is the element under
-//     a tap at its centre, on T4 (mid-way) and T5 (ready), with no scrolling;
+//   - the phone round (P-1 to P-4): one column unless the sheet itself is 880 px wide,
+//     following a resize; no word broken inside itself; one scroll — every choice reachable
+//     by the sheet's scroll and under its own tap, no element with a scroll of its own;
+//     the names step's build button under its tap right after the list;
 //   - the card folds to its strip when the sheet scrolls, and comes back at the top;
 //   - focus stays inside the sheet through a step, a free tap, a Change confirm and a save;
 //   - a tapped part's panel is in view and its Change is the element under its own tap,
@@ -63,20 +65,6 @@ describe.skipIf(!BASE)('the thesis builder in a real browser (B4)', () => {
   }, ROW_TIMEOUT);
   afterAll(async () => { await browser?.close(); browser = null; }, ROW_TIMEOUT);
 
-  for (const [scenario, label, first] of [
-    ['builder-midway', 'T4 (mid-way)', '[data-sr-foot] [data-sr-free]'],
-    ['builder-ready', 'T5 (ready)', '[data-sr-save-thesis]'],
-  ]) {
-    it(`390×844 ${label}: the foot's first choice is on screen and under its own tap, without scrolling`, async () => {
-      const { ctx, page } = await pageAt(390, 844, scenario);
-      try {
-        expect(await page.evaluate(() => document.querySelector('[role="dialog"]').scrollTop)).toBe(0);
-        const hit = await hitOf(page, first);
-        expect(hit, JSON.stringify(hit)).toMatchObject({ found: true, inViewport: true, tapped: true });
-      } finally { await ctx.close(); }
-    }, ROW_TIMEOUT);
-  }
-
   it('390×844: the card folds to its strip as the sheet scrolls, and comes back at the top', async () => {
     const { ctx, page } = await pageAt(390, 844, 'builder-midway');
     try {
@@ -99,7 +87,7 @@ describe.skipIf(!BASE)('the thesis builder in a real browser (B4)', () => {
       await page.click('[data-sr-research="pick:wrongIf"]');
       await page.waitForTimeout(1200);
       expect(await focusIn(page)).toMatchObject({ inSheet: true });
-      await page.click('[data-sr-foot] [data-sr-free]');
+      await page.click('[data-sr-choices] [data-sr-free]');
       await page.waitForTimeout(1200);
       expect(await focusIn(page)).toMatchObject({ inSheet: true });
       await page.keyboard.press('Escape');
@@ -177,11 +165,11 @@ describe.skipIf(!BASE)('the review\'s fixes in a real browser (4C)', () => {
       expect(await escapeCloses(page)).toBe(true);
     } finally { await ctx.close(); }
   }, ROW_TIMEOUT);
-  it('4C-2: 390×844 — the foot\'s Change on a stale part: its confirm is on screen, under its own tap, and holds focus', async () => {
+  it('4C-2: 390×844 — the choices\' Change on a stale part: its confirm is on screen, under its own tap, and holds focus', async () => {
     const { ctx, page } = await pageAt(390, 844, 'builder-stale-part');
     try {
       await scrollSheet(page, 99999);
-      await page.click('[data-sr-foot] [data-sr-free="clear:segment"]');
+      await page.click('[data-sr-choices] [data-sr-free="clear:segment"]');
       await page.waitForTimeout(300);
       const keep = await hitOf(page, '[data-sr-clear-no]');
       expect(keep, JSON.stringify(keep)).toMatchObject({ found: true, inViewport: true, tapped: true });
@@ -214,28 +202,17 @@ describe.skipIf(!BASE)('the review\'s fixes in a real browser (4C)', () => {
       }
     } finally { await ctx.close(); }
   }, ROW_TIMEOUT);
-  it('4C-5: 390×844 — a wheel over the foot\'s choices (not overflowing) scrolls the sheet', async () => {
-    const { ctx, page } = await pageAt(390, 844, 'builder-why');
-    try {
-      expect(await page.evaluate(() => { const c = document.querySelector('[data-sr-foot-choices]'); return c.scrollHeight <= c.clientHeight; })).toBe(true);
-      const box = await page.evaluate(() => { const r = document.querySelector('[data-sr-foot] [data-sr-free]').getBoundingClientRect(); return { x: r.left + 20, y: r.top + 10 }; });
-      await page.mouse.move(box.x, box.y);
-      await page.mouse.wheel(0, 300);
-      await page.waitForTimeout(300);
-      expect(await page.evaluate(() => document.querySelector('[role="dialog"]').scrollTop)).toBeGreaterThan(0);
-    } finally { await ctx.close(); }
-  }, ROW_TIMEOUT);
   it('4C-6: 320×700 — a long unbroken token in a choice wraps; the cost marks stay on screen', async () => {
     const { ctx, page } = await pageAt(320, 700, 'builder-map');
     try {
       await page.evaluate(() => {
-        const span = document.querySelector('[data-sr-foot] [data-sr-free] span span:nth-of-type(2)') ?? document.querySelector('[data-sr-foot] [data-sr-free] span');
+        const span = document.querySelector('[data-sr-choices] [data-sr-free] span span:nth-of-type(2)') ?? document.querySelector('[data-sr-choices] [data-sr-free] span');
         span.textContent = `https://example.com/${'a'.repeat(120)}`;
       });
       await page.waitForTimeout(200);
       const m = await page.evaluate(() => {
-        const choices = document.querySelector('[data-sr-foot-choices]');
-        const marks = [...document.querySelectorAll('[data-sr-foot] [data-sr-cost]')].map((x) => x.getBoundingClientRect().right);
+        const choices = document.querySelector('[data-sr-choices]');
+        const marks = [...document.querySelectorAll('[data-sr-choices] [data-sr-cost]')].map((x) => x.getBoundingClientRect().right);
         return { scroll: choices.scrollWidth, client: choices.clientWidth, maxRight: Math.max(...marks), vw: innerWidth };
       });
       expect(m.scroll, JSON.stringify(m)).toBeLessThanOrEqual(m.client);
@@ -258,7 +235,7 @@ describe.skipIf(!BASE)('the review\'s fixes in a real browser (4C)', () => {
     } finally { await ctx.close(); }
   }, ROW_TIMEOUT);
   for (const [w, h, scenario] of [[320, 568, 'builder-midway'], [320, 568, 'builder-names'], [390, 844, 'builder-midway'], [390, 844, 'builder-names'], [390, 844, 'builder-why']]) {
-    it(`refuter: ${w}×${h} ${scenario} — the whole foot (its choices, the composer, its lines) keeps within about half the sheet`, async () => {
+    it(`P-2: ${w}×${h} ${scenario} — the pinned foot holds only the composer: at most a quarter of the sheet`, async () => {
       const { ctx, page } = await pageAt(w, h, scenario);
       try {
         const m = await page.evaluate(() => {
@@ -266,8 +243,171 @@ describe.skipIf(!BASE)('the review\'s fixes in a real browser (4C)', () => {
           const foot = document.querySelector('[data-sr-foot]');
           return { foot: foot.getBoundingClientRect().height, sheet: sheet.clientHeight };
         });
-        expect(m.foot / m.sheet, JSON.stringify(m)).toBeLessThanOrEqual(0.5);
+        expect(m.foot / m.sheet, JSON.stringify(m)).toBeLessThanOrEqual(0.25);
       } finally { await ctx.close(); }
     }, ROW_TIMEOUT);
   }
+});
+
+// ── the phone round (P-1 to P-4) ─────────────────────────────────────────────────────────────────────────────────
+/** Words inside the body's buttons that break across lines (a word with rects on two lines). */
+const brokenWords = (page) => page.evaluate(() => {
+  const out = [];
+  for (const btn of document.querySelectorAll('[data-shared-research-body] button, [data-shared-research-body] [role="button"]')) {
+    if (btn.getBoundingClientRect().width === 0) continue;
+    const walker = document.createTreeWalker(btn, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const re = /[^\s\-–—]+/g; // a hyphen or a dash is a wrap point of its own: a word is what lies between
+      for (let m = re.exec(n.data); m; m = re.exec(n.data)) {
+        const r = document.createRange();
+        r.setStart(n, m.index);
+        r.setEnd(n, m.index + m[0].length);
+        const tops = new Set([...r.getClientRects()].filter((x) => x.width > 0).map((x) => Math.round(x.top)));
+        if (tops.size > 1) out.push(m[0]);
+      }
+    }
+  }
+  return out;
+});
+/** Elements inside the body with a scroll of their own (text fields aside). */
+const innerScrollers = (page) => page.evaluate(() => [...document.querySelectorAll('[data-shared-research-body] *')].filter((el) => {
+  if (['TEXTAREA', 'INPUT'].includes(el.tagName)) return false;
+  const cs = getComputedStyle(el);
+  return (['auto', 'scroll'].includes(cs.overflowY) && el.scrollHeight > el.clientHeight + 1) || (['auto', 'scroll'].includes(cs.overflowX) && el.scrollWidth > el.clientWidth + 1);
+}).map((el) => `${el.tagName.toLowerCase()}${[...el.attributes].filter((a) => a.name.startsWith('data-sr')).map((a) => `[${a.name}]`).join('')}`));
+/** Every choice under the conversation: brought into view by the sheet's own scroll, then the element under its own tap. */
+const unreachable = (page) => page.evaluate(() => {
+  const out = [];
+  for (const el of document.querySelectorAll('[data-sr-choices] button, [data-sr-choices] [data-sr-name-row]')) {
+    el.scrollIntoView({ block: 'center' });
+    const r = el.getBoundingClientRect();
+    if (r.width === 0) continue;
+    const top = document.elementFromPoint(r.left + r.width / 2, r.top + Math.min(r.height / 2, 20));
+    if (!(top && (top === el || el.contains(top)))) out.push(`${el.getAttribute('data-sr-free') ?? el.getAttribute('data-sr-research') ?? el.getAttribute('data-sr-name-row') ?? el.textContent.slice(0, 30)} under ${top?.tagName.toLowerCase()}${top?.closest('[data-sr-foot]') ? ' in the foot' : ''}`);
+  }
+  return out;
+});
+/** Is the element's top in the sheet's view (below the strip's room, above the lower half)? */
+const topInView = (page, sel) => page.evaluate((q) => {
+  const els = document.querySelectorAll(q);
+  const el = els[els.length - 1];
+  const box = document.querySelector('[role="dialog"]').getBoundingClientRect();
+  const top = el.getBoundingClientRect().top;
+  return { ok: top >= box.top - 1 && top <= box.top + box.height * 0.5, top: Math.round(top), sheetTop: Math.round(box.top), sheetHeight: Math.round(box.height) };
+}, sel);
+const layoutOf = (page) => page.evaluate(() => document.querySelector('[data-sr-builder]')?.getAttribute('data-sr-builder') ?? null);
+
+describe.skipIf(!BASE)('the phone round in a real browser (P-1 to P-4)', () => {
+  beforeAll(async () => {
+    if (browser) return;
+    const { chromium } = await import('playwright-core');
+    browser = await chromium.launch({ headless: true, ...(CHANNEL ? { channel: CHANNEL } : {}) });
+  }, ROW_TIMEOUT);
+  afterAll(async () => { await browser?.close(); browser = null; }, ROW_TIMEOUT);
+
+  for (const [w, h] of [[393, 852], [600, 900], [720, 900], [1280, 800]]) {
+    it(`P-1: ${w}×${h}, a fresh load — one column (the hub's sheet is at most 720 px wide), no word broken inside itself`, async () => {
+      const { ctx, page } = await pageAt(w, h, 'builder-midway');
+      try {
+        expect(await layoutOf(page)).toBe('one-column');
+        expect(await brokenWords(page)).toEqual([]);
+      } finally { await ctx.close(); }
+    }, ROW_TIMEOUT);
+  }
+  it('P-1: opened at 1280, then narrowed to 393 with the sheet open — one column, the phone sheet, no word broken (screenshot 1)', async () => {
+    const { ctx, page } = await pageAt(1280, 800, 'builder-names');
+    try {
+      await page.setViewportSize({ width: 393, height: 852 });
+      await page.waitForTimeout(600);
+      expect(await layoutOf(page)).toBe('one-column');
+      const sheet = await page.evaluate(() => document.querySelector('[role="dialog"]').getBoundingClientRect().width);
+      expect(sheet).toBeGreaterThan(380);
+      expect(await brokenWords(page)).toEqual([]);
+    } finally { await ctx.close(); }
+  }, ROW_TIMEOUT);
+  for (const scenario of ['builder-names', 'builder-map', 'builder-midway', 'builder-why', 'builder-ready']) {
+    it(`P-1: 320×568 ${scenario} — no button's text breaks inside a word`, async () => {
+      const { ctx, page } = await pageAt(320, 568, scenario);
+      try {
+        expect(await brokenWords(page)).toEqual([]);
+      } finally { await ctx.close(); }
+    }, ROW_TIMEOUT);
+  }
+  for (const [w, h] of [[393, 852], [320, 568]]) {
+    it(`P-2: ${w}×${h} — the walk to "Thesis saved" (AMD and AVGO): at every point every choice is reachable by the sheet's one scroll and under its own tap; nothing scrolls on its own`, async () => {
+      const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, reducedMotion: 'reduce' });
+      const page = await ctx.newPage();
+      const check = async (label) => {
+        expect(await innerScrollers(page), label).toEqual([]);
+        expect(await unreachable(page), label).toEqual([]);
+        expect(await brokenWords(page), label).toEqual([]);
+      };
+      try {
+        await page.goto(`${BASE.replace(/\/$/, '')}/?srFixture=walk&delay=0`, { waitUntil: 'domcontentloaded', timeout: ROW_TIMEOUT });
+        await page.waitForSelector('#sr-own', { timeout: ROW_TIMEOUT });
+        await page.fill('#sr-own', 'I want to play AI');
+        await page.click('[data-sr-start-thesis]');
+        await page.waitForSelector('[data-sr-research="map_segments"]');
+        await check('start');
+        await page.click('[data-sr-research="map_segments"]');
+        await page.waitForSelector('[data-sr-free="confirm:segment"]');
+        await page.waitForTimeout(300);
+        const said = await topInView(page, '[data-sr-said]');
+        expect(said, `the new reply's top is in view: ${JSON.stringify(said)}`).toMatchObject({ ok: true });
+        await check('segments');
+        await page.click('[data-sr-free="confirm:segment"]');
+        await page.waitForSelector('[data-sr-research="find_names"]');
+        await page.click('[data-sr-research="find_names"]');
+        await page.waitForSelector('[data-sr-names-pick]');
+        await check('names');
+        await page.click('[data-sr-name-row="AMD"] input');
+        await page.click('[data-sr-name-row="AVGO"] input');
+        await page.click('[data-sr-free="set:names"]');
+        await page.waitForSelector('[data-sr-research="build_why"]');
+        await check('names set');
+        await page.click('[data-sr-research="build_why"]');
+        await page.waitForSelector('[data-sr-free="confirm:why"]');
+        await check('why');
+        await page.click('[data-sr-free="confirm:why"]');
+        await page.waitForSelector('[data-sr-lead="wrongIf"]');
+        await check('wrong if');
+        await page.click('[data-sr-choices] [data-sr-free="set:wrongIf"]');
+        await page.waitForSelector('[data-sr-lead="timeFrame"]');
+        await check('time frame');
+        await page.click('[data-sr-choices] [data-sr-free="set:timeFrame"][data-sr-free-value="longterm"]');
+        await page.waitForSelector('[data-sr-save-thesis]');
+        await page.waitForTimeout(300);
+        const ready = await topInView(page, '[data-sr-ready]');
+        expect(ready, `the ready card arrives at its top: ${JSON.stringify(ready)}`).toMatchObject({ ok: true });
+        expect(await innerScrollers(page), 'ready').toEqual([]);
+        expect(await brokenWords(page), 'ready').toEqual([]);
+        await page.click('[data-sr-save-thesis]');
+        await page.waitForSelector('[data-sr-thesis-saved]', { timeout: ROW_TIMEOUT });
+        expect(await page.textContent('[data-sr-saved-line]')).toContain('AMD, AVGO');
+      } finally { await ctx.close(); }
+    }, ROW_TIMEOUT);
+  }
+  it('P-4: 393×852 — after a name is ticked, the build button is the element under its tap, right after the list, with no inner scroll', async () => {
+    const { ctx, page } = await pageAt(393, 852, 'builder-names');
+    try {
+      await page.click('[data-sr-name-row="AMD"] input');
+      await page.evaluate(() => document.querySelector('[data-sr-free="set:names"]').scrollIntoView({ block: 'center' }));
+      const hit = await hitOf(page, '[data-sr-free="set:names"]');
+      expect(hit, JSON.stringify(hit)).toMatchObject({ found: true, inViewport: true, tapped: true });
+      expect(await page.textContent('[data-sr-free="set:names"]')).toContain('Build it on AMD');
+      expect(await innerScrollers(page)).toEqual([]);
+    } finally { await ctx.close(); }
+  }, ROW_TIMEOUT);
+  it('P-3: 393×852 — the strip carries "⋯" beside its unfold; it reveals Discard, under its own tap', async () => {
+    const { ctx, page } = await pageAt(393, 852, 'builder-midway');
+    try {
+      await scrollSheet(page, 900);
+      await page.waitForTimeout(300);
+      const more = await hitOf(page, '[data-sr-more="strip"]');
+      expect(more, JSON.stringify(more)).toMatchObject({ found: true, inViewport: true, tapped: true });
+      await page.click('[data-sr-more="strip"]');
+      const discard = await hitOf(page, '[data-sr-discard="strip"]');
+      expect(discard, JSON.stringify(discard)).toMatchObject({ found: true, inViewport: true, tapped: true });
+    } finally { await ctx.close(); }
+  }, ROW_TIMEOUT);
 });

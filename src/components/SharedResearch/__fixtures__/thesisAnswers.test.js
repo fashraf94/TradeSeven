@@ -33,10 +33,13 @@ import {
 } from '../../../../api/_utils/sharedResearch/thesis.js';
 import { validateBuildTurn, turnShapeOf, builderFallbackReplyOf } from '../../../../api/_utils/sharedResearch/thesisSchema.js';
 import { baseRecord } from '../../../../api/_utils/sharedResearch/__fixtures__/records.js';
+import { frontPartOf, valueChoicesOf, textChoiceOf, horizonLabelOf, joinNames } from '../thesisView.js';
+import { walkRouteOf } from './walkRoute.js';
 import { builderProbes, PROBE_B_READ_AT } from '../../../../api/_utils/sharedResearch/__fixtures__/probeBuilder.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT = resolve(HERE, 'thesisAnswers.json');
+const WALK_OUT = resolve(HERE, 'thesisWalk.json');
 const RECORDED = (key) => JSON.parse(readFileSync(resolve(HERE, `../../../../test/fixtures/sharedResearch/build.${key}.recorded.json`), 'utf8')).output;
 const PROBES = builderProbes();
 const probeOf = (key) => PROBES.find((p) => p.key === key);
@@ -239,6 +242,8 @@ const incompleteWhy = (rel) => ({
 });
 
 // ── the scenarios ─────────────────────────────────────────────────────────────
+
+let STASH = null; // build()'s investigations the walk tree continues from (never serialised)
 
 function build() {
   n = 0;
@@ -499,6 +504,7 @@ function build() {
   many = tap(many, { op: 'set', part: 'wrongIf', value: { text: 'the large cloud buyers stop ordering Nvidia accelerators' }, nowIso: at(8) }).inv;
   many = tap(many, { op: 'set', part: 'timeFrame', value: 'positional', nowIso: at(9) }).inv;
   A.getTooManyRefs = { status: 200, body: getAnswerOf(many) };
+  STASH = { afterNames, walkGetMap: A.walkGetMap };
 
   // ── the refuters' second round: each sequence as a server would answer it ──
   // not_ready on the ready card the screen holds: a correction made its why stale with no card op (the rev unchanged)
@@ -526,6 +532,207 @@ function build() {
   A.getNamesTimeFrameCleared = { status: 200, body: getAnswerOf(namesUnswung.inv) };
   return A;
 }
+
+// ── THE WALK AS A TREE (the phone round, P-8): the taps a person will try at each point ──────────────────────────
+// The smoke page's ?srFixture=walk answers from this tree: at the names point the agent's pick and any one to three of
+// NVDA, AMD and AVGO; at the wrong-if point each option drawn and the player's own words (one sample text, which names
+// no company); at the time-frame point each of the three. Each tap's answer is composed here, as every answer above,
+// and every leaf is SAVED (save() throws unless the card is ready with no saveIssue). What each point answers is what
+// the screen draws there: the client's own valueChoicesOf / textChoiceOf over the server's card.
+const SAMPLE_WRONG_IF = 'the large cloud buyers stop raising their AI data-center spending';
+const SHORT = Object.freeze({ NVDA: 'Nvidia', AMD: 'AMD', AVGO: 'Broadcom' });
+const REASON = Object.freeze({
+  NVDA: 'It designs the accelerator chips most AI data centers buy.',
+  AMD: 'Cloud companies ordered its accelerator chips for new AI data centers.',
+  AVGO: 'It designs custom AI chips for some of the largest cloud companies.',
+});
+const SHARED_ONE = Object.freeze({
+  NVDA: 'Nvidia designs the accelerator chips most AI data centers buy',
+  AMD: 'AMD sells accelerator chips to the cloud companies building AI data centers',
+  AVGO: 'Broadcom designs custom AI chips for the largest cloud companies',
+});
+/** The why for a chosen set of names (authored; validateBuildTurn must pass it): one sourced reason per name. */
+const whyFor = (names, rel) => {
+  const one = names.length === 1;
+  const all = names.length === 2 ? 'both' : 'all three';
+  const g = groupWhy(rel);
+  return {
+    reply: one
+      ? `${SHORT[names[0]]} has a sourced connection to selling AI chips to the large cloud companies. The point against: those buyers also design their own chips.`
+      : `${names.length === 2 ? 'Both have' : 'Each of the three has'} a sourced connection to selling AI chips to the large cloud companies. The point against is the same for ${all}: those buyers also design their own chips.`,
+    findings: g.findings,
+    why: {
+      shared: one ? SHARED_ONE[names[0]] : g.why.shared,
+      reasons: names.map((s) => ({ companyName: NAMES[s], symbolCandidate: s, text: REASON[s], refs: [rel[s]] })),
+      against: { text: one ? 'The largest cloud buyers design their own AI chips too, which could limit what it sells them.' : `The same few cloud buyers design their own AI chips, which could limit what ${all} sell them.`, refs: ['t1'] },
+    },
+    wrongIfOptions: g.wrongIfOptions,
+    timeFramePick: g.timeFramePick,
+    pick: { value: '', reason: '' },
+  };
+};
+const subsetsOf = (xs) => Array.from({ length: (1 << xs.length) - 1 }, (_, m) => xs.filter((_, i) => ((m + 1) >> i) & 1));
+const sameSet = (a, b) => a.length === b.length && a.every((x) => b.includes(x));
+/** A card request as the client sends it for a choice (value only when there is one). */
+const cardMatch = (c, value = c.value) => ({ action: 'card', op: c.op, part: c.part, ...(value !== undefined && value !== null ? { value } : {}) });
+
+function buildWalk() {
+  const A = build();
+  const { afterNames, walkGetMap } = STASH;
+  const rel = Object.fromEntries(['NVDA', 'AMD', 'AVGO'].map((sym) => [sym, afterNames.record.findings.find((x) => x.kind === 'relationship' && x.symbol === sym).findingId]));
+  const nodes = {};
+  let k = 0;
+  const node = (accepts, extra = {}) => { const id = `w${k++}`; nodes[id] = { accepts, ...extra }; return id; };
+  const front = (inv, part) => { if (frontPartOf(thesisOf(inv)) !== part) throw new Error(`walk: ${part} is not in front: ${frontPartOf(thesisOf(inv))}`); };
+  let leaves = 0;
+
+  const readyNode = (inv) => {
+    const saved = save(inv, { nowIso: at(30) });
+    leaves += 1;
+    const end = node([], { get: { status: 200, body: getAnswerOf(saved.inv) } });
+    return node([{ match: { action: 'adopt' }, say: 'Save thesis', answer: saved.answer, next: end }]);
+  };
+  const timeNode = (inv) => {
+    front(inv, 'timeFrame');
+    const t = thesisOf(inv);
+    return node(valueChoicesOf(t, 'timeFrame').map((c) => {
+      const r = tap(inv, { op: c.op, part: 'timeFrame', value: c.value, nowIso: at(29) });
+      return { match: cardMatch(c), say: horizonLabelOf(c.value), answer: r.answer, next: readyNode(r.inv) };
+    }));
+  };
+  const wrongIfNode = (inv) => {
+    front(inv, 'wrongIf');
+    const t = thesisOf(inv);
+    const accepts = valueChoicesOf(t, 'wrongIf').map((c) => {
+      const r = tap(inv, { op: c.op, part: 'wrongIf', value: c.value, nowIso: at(28) });
+      const text = c.op === 'confirm' ? c.value : t.parts.wrongIf.options[c.value.option].text;
+      return { match: cardMatch(c), say: `“${text}”`, answer: r.answer, next: timeNode(r.inv) };
+    });
+    const typed = textChoiceOf(t, 'wrongIf');
+    if (!typed) throw new Error('walk: no own words on the wrong-if');
+    const r = tap(inv, { op: typed.op, part: 'wrongIf', value: { text: SAMPLE_WRONG_IF }, nowIso: at(28) });
+    accepts.push({ match: cardMatch(typed, { text: { $text: SAMPLE_WRONG_IF } }), say: `your own words, typed as: “${SAMPLE_WRONG_IF}”`, answer: r.answer, next: timeNode(r.inv) });
+    return node(accepts);
+  };
+  const whyNode = (inv, output) => {
+    const stepped = step(inv, { goal: 'build_why', output, items: WHY_ITEMS, nowIso: at(25) });
+    const confirmed = tap(stepped.inv, { op: 'confirm', part: 'why', nowIso: at(26) });
+    const confirmNode = node([{ match: { action: 'card', op: 'confirm', part: 'why' }, say: 'Confirm these reasons', answer: confirmed.answer, next: wrongIfNode(confirmed.inv) }]);
+    return node([{ match: { action: 'step', goal: 'build_why' }, say: 'Find the reasons', answer: stepped.answer, next: confirmNode }]);
+  };
+
+  // the names point: the agent's pick (a confirm), and every other one to three of the options (a set)
+  const t3 = thesisOf(afterNames);
+  const setNames = t3.choices.free.find((c) => c.op === 'set' && c.part === 'names');
+  const pick = t3.choices.free.find((c) => c.op === 'confirm' && c.part === 'names');
+  const picked = tap(afterNames, { op: 'confirm', part: 'names', value: pick.value, nowIso: at(24) });
+  const namesAccepts = [{ match: cardMatch(pick), say: `your agent's pick (${joinNames(pick.value)})`, answer: picked.answer, next: whyNode(picked.inv, whyFor(pick.value, rel)) }];
+  for (const sub of subsetsOf(setNames.options)) {
+    if (sameSet(sub, pick.value)) continue; // ticking exactly the pick sends the pick's confirm (P-4)
+    const r = tap(afterNames, { op: 'set', part: 'names', value: sub, nowIso: at(24) });
+    const recorded = sub.length === 1 && sub[0] === 'NVDA'; // the founder's walk keeps its recorded why
+    namesAccepts.push({ match: { action: 'card', op: 'set', part: 'names', value: sub }, say: `Build it on ${joinNames(sub)}`, answer: r.answer, next: whyNode(r.inv, recorded ? RECORDED('build_why') : whyFor(sub, rel)) });
+  }
+  const namesNode = node(namesAccepts);
+  const findNode = node([{ match: { action: 'step', goal: 'find_names' }, say: 'Find the listed companies', answer: A.walkNames, next: namesNode }]);
+  const segPick = walkGetMap.body.thesis.choices.free.find((c) => c.op === 'confirm' && c.part === 'segment');
+  const segNode = node([{ match: cardMatch(segPick), say: `your agent's pick (${segPick.value})`, answer: A.walkSegment, next: findNode }]);
+  const mapNode = node([{ match: { action: 'step', goal: 'map_segments' }, say: 'Map the segments', answer: A.walkMap, next: segNode }]);
+  const start = node([{ match: { action: 'open', entry: { kind: 'observation', observation: { $text: 'I want to play AI' } } }, say: '“I want to play AI”, then Start my thesis', answer: A.walkOpen, next: mapNode }]);
+  return { start, sample: SAMPLE_WRONG_IF, leaves, nodes };
+}
+
+describe('the walk as a tree (the phone round, P-8): every tap a person will try is answered, every leaf saved', () => {
+  it('thesisWalk.json equals what the server\'s functions compose today', () => {
+    const fresh = JSON.parse(JSON.stringify(buildWalk()));
+    if (process.env.GENERATE_SR_THESIS_FIXTURES === '1') writeFileSync(WALK_OUT, `${JSON.stringify(fresh)}\n`);
+    expect(JSON.parse(readFileSync(WALK_OUT, 'utf8'))).toEqual(fresh);
+  });
+  it('the names point answers the pick and every one to three of the options; every path ends saved', () => {
+    const W = buildWalk();
+    const walkFrom = (id, depth = 0) => {
+      const nd = W.nodes[id];
+      if (nd.accepts.length === 0) { expect(nd.get.body.session.adoption).toBeTruthy(); return 1; }
+      return nd.accepts.reduce((sum, a) => sum + walkFrom(a.next, depth + 1), 0);
+    };
+    expect(walkFrom(W.start)).toBe(W.leaves);
+    const names = Object.values(W.nodes).find((nd) => nd.accepts.some((a) => a.match.part === 'names'));
+    expect(names.accepts.map((a) => (a.match.op === 'confirm' ? 'pick' : a.match.value.join('+')))).toEqual(['pick', 'NVDA', 'AMD', 'AVGO', 'NVDA+AVGO', 'AMD+AVGO', 'NVDA+AMD+AVGO']);
+    const wrongIfPoints = Object.values(W.nodes).filter((nd) => nd.accepts.some((a) => a.match.part === 'wrongIf'));
+    expect(wrongIfPoints).toHaveLength(7);
+    for (const nd of wrongIfPoints) expect(nd.accepts.at(-1).match.value).toEqual({ text: { $text: SAMPLE_WRONG_IF } });
+    const timePoints = Object.values(W.nodes).filter((nd) => nd.accepts.some((a) => a.match.part === 'timeFrame'));
+    expect(timePoints.length).toBeGreaterThan(7);
+    for (const nd of timePoints) expect(nd.accepts.map((a) => a.say).sort()).toEqual(['swing', 'positional', 'longterm'].map(horizonLabelOf).sort());
+  });
+});
+
+describe('the walk\'s route (P-8): the founder\'s paths, as the client sends them, end saved; any other tap is named', () => {
+  const W = buildWalk();
+  const SID = '7a7a7a7a-0000-4000-8000-000000000001';
+  /** Drive the route as the client would: each body built from the last answer's card, as the screen draws it. */
+  const drive = (picks) => {
+    const route = walkRouteOf(W);
+    let thesis = null;
+    const send = (key, body) => {
+      const a = route({ key, body: key === 'get' ? null : { action: key, ...body } });
+      if (a.status !== 200) throw new Error(`not answered: ${key} ${JSON.stringify(body)} → ${a.body.message}`);
+      if (a.body.thesis) thesis = a.body.thesis;
+      return a;
+    };
+    const card = (c, value = c.value) => send('card', { sessionId: SID, opId: 'x', rev: thesis.rev, op: c.op, part: c.part, ...(value !== undefined && value !== null ? { value } : {}) });
+    send('open', { entry: { kind: 'observation', observation: 'I want to play AI' }, requestId: 'r' });
+    send('step', { sessionId: SID, stepId: 's1', intent: 'build', goal: 'map_segments' });
+    card(valueChoicesOf(thesis, 'segment').find((c) => c.op === 'confirm'));
+    send('step', { sessionId: SID, stepId: 's2', intent: 'build', goal: 'find_names' });
+    if (picks.names === 'pick') card(thesis.choices.free.find((c) => c.op === 'confirm' && c.part === 'names'));
+    else card(thesis.choices.free.find((c) => c.op === 'set' && c.part === 'names'), picks.names);
+    send('step', { sessionId: SID, stepId: 's3', intent: 'build', goal: 'build_why' });
+    card(thesis.choices.free.find((c) => c.op === 'confirm' && c.part === 'why'));
+    if (picks.wrongIf === 'typed') card(textChoiceOf(thesis, 'wrongIf'), { text: picks.typed });
+    else card(valueChoicesOf(thesis, 'wrongIf')[picks.wrongIf]);
+    card(valueChoicesOf(thesis, 'timeFrame').find((c) => c.value === picks.timeFrame));
+    send('adopt', { sessionId: SID, rev: thesis.rev });
+    return send('get', null).body;
+  };
+  it.each([
+    ['the founder\'s path: AMD and AVGO, the first wrong-if, Longterm', { names: ['AMD', 'AVGO'], wrongIf: 0, timeFrame: 'longterm' }, ['AMD', 'AVGO']],
+    ['the agent\'s pick, the second wrong-if, Swing', { names: 'pick', wrongIf: 1, timeFrame: 'swing' }, ['NVDA', 'AMD']],
+    ['NVDA alone, a typed wrong-if (loosely typed), Positional', { names: ['NVDA'], wrongIf: 'typed', typed: '  The large cloud buyers STOP raising their AI data-center spending ', timeFrame: 'positional' }, ['NVDA']],
+  ])('%s', (_label, picks, names) => {
+    const saved = drive(picks);
+    expect(saved.session.adoption).toBeTruthy();
+    expect(saved.thesis.parts.names.value).toEqual(names);
+    expect(saved.thesis.parts.timeFrame.value).toBe(picks.timeFrame);
+  });
+  it('a tap the walk does not cover answers a line naming the taps it does — at the names point, NVDA and AMD by set (the client sends the pick\'s confirm)', () => {
+    const route = walkRouteOf(W);
+    route({ key: 'open', body: { action: 'open', entry: { kind: 'observation', observation: 'I want to play AI' } } });
+    route({ key: 'step', body: { action: 'step', goal: 'map_segments' } });
+    route({ key: 'card', body: { action: 'card', op: 'confirm', part: 'segment', value: 'Accelerator chips' } });
+    route({ key: 'step', body: { action: 'step', goal: 'find_names' } });
+    const a = route({ key: 'card', body: { action: 'card', op: 'set', part: 'names', value: ['NVDA', 'AMD'] } });
+    expect(a.status).toBe(400);
+    expect(a.body.message).toContain("your agent's pick (NVDA and AMD)");
+    expect(a.body.message).toContain('Build it on AMD and AVGO');
+    // and the walk did not move: the pick is still answered
+    expect(route({ key: 'card', body: { action: 'card', op: 'confirm', part: 'names', value: ['NVDA', 'AMD'] } }).status).toBe(200);
+  });
+  it('own words other than the sample answer a line naming the sample, verbatim', () => {
+    const route = walkRouteOf(W);
+    const at = (body) => route({ key: body.action, body });
+    at({ action: 'open', entry: { kind: 'observation', observation: 'I want to play AI' } });
+    at({ action: 'step', goal: 'map_segments' });
+    at({ action: 'card', op: 'confirm', part: 'segment', value: 'Accelerator chips' });
+    at({ action: 'step', goal: 'find_names' });
+    at({ action: 'card', op: 'set', part: 'names', value: ['AMD'] });
+    at({ action: 'step', goal: 'build_why' });
+    at({ action: 'card', op: 'confirm', part: 'why' });
+    const a = at({ action: 'card', op: 'set', part: 'wrongIf', value: { text: 'AMD loses the big orders' } });
+    expect(a.status).toBe(400);
+    expect(a.body.message).toContain(`“${SAMPLE_WRONG_IF}”`);
+  });
+});
 
 describe('the thesis builder\'s client fixtures are the server\'s answers (B4 Tests)', () => {
   it('thesisAnswers.json equals what B3\'s own functions compose today', () => {

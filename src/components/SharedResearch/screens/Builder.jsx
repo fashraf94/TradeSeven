@@ -5,9 +5,11 @@
 // The body draws it for a session whose view carries `shape: 'builder'` — the
 // SESSION decides, never the flag (K-2). Every other session keeps today's Work.
 //
-//   the work view — the sentence card (folding to its strip as the conversation
-//     scrolls), the conversation (session.exchanges as stored), and the foot: the
-//     part in front's choices, research and free drawn apart, and the composer;
+//   the work view — the sentence card (folding to its strip as the sheet scrolls),
+//     the conversation (session.exchanges as stored), the part in front's choices
+//     directly under it (research and free drawn apart), and the pinned composer.
+//     One column unless the sheet itself is at least 880 px wide (the phone round,
+//     P-1); one scroll, the sheet's (P-2);
 //   the ready view (ThesisReady) — the server's sentence, "How it will be judged",
 //     Save thesis with the uncertain save;
 //   the saved view (ThesisSaved) — today's state only (DR-7).
@@ -26,9 +28,9 @@ import {
   footOf, panelOf, conversationOf, hasSuggestedPart, partOfGoal, directionOffered, revisedWhyChoiceOf, horizonLabelOf,
 } from '../thesisView';
 import {
-  CardHead, CardLine, ClearConfirm, Composer, Count, Cover, EvidenceList, FOOT, FOOT_CHOICES, FreeButton, KeepReasons, Mark, Mine, NamesPick, PartPanel,
-  PriceLines, Rail, ResearchButton, Said, Sentence, Strip, WhyBlock, WhyProposal, basisTagOf, freeLabelOf, researchLabelOf, usePanelInView,
-  scrollParentOf, useFootRoom, useFocusKept,
+  CardHead, CardLine, CHOICES, ClearConfirm, Composer, Count, Cover, EvidenceList, FOOT, FreeButton, KeepReasons, Mark, Mine, MoreActions, NamesPick, PartPanel,
+  PriceLines, Rail, ResearchButton, Said, Sentence, Strip, WhyBlock, WhyProposal, WRAP, basisTagOf, freeLabelOf, researchLabelOf, usePanelInView,
+  scrollParentOf, useFootRoom, useFocusKept, useWideEnough,
 } from '../builderParts';
 import { Button, LinkButton, Notice, Running, Tag } from '../parts';
 import ThesisReady from './ThesisReady';
@@ -36,7 +38,6 @@ import ThesisSaved from './ThesisSaved';
 
 const B = COPY.builder;
 const RETRYABLE = new Set(['step_failed', 'network', 'step_in_flight', 'server_error']);
-const paragraphs = (text) => String(text ?? '').split(/\n{2,}/).map((p, i) => <span key={i} style={{ display: 'block' }}>{p}</span>);
 
 
 /**
@@ -68,7 +69,7 @@ function AskedPick({ pick, agentName }) {
     <div style={{ ...S.card, gap: 8, border: `1px dashed ${wash('teal', 0.5)}` }} data-sr-asked-pick={pick.part}>
       <div style={S.row}><Mark tone="teal">{B.pickTag(agentName)}</Mark><Mark>{B.suggested}</Mark></div>
       <p style={{ ...S.body, fontWeight: 700 }}>{value}</p>
-      {pick.reason && <p style={{ ...S.meta, overflowWrap: 'anywhere' }}>{pick.reason} <span style={{ display: 'inline-flex', verticalAlign: 'middle' }}><Tag tone={reasonTag.tone}>{reasonTag.text}</Tag></span></p>}
+      {pick.reason && <p style={{ ...S.meta, ...WRAP }}>{pick.reason} <span style={{ display: 'inline-flex', verticalAlign: 'middle' }}><Tag tone={reasonTag.tone}>{reasonTag.text}</Tag></span></p>}
       {(pick.reasons ?? []).map((r, i) => {
         const tag = basisTagOf(r.basis, agentName);
         return (
@@ -97,7 +98,7 @@ export function SaveOutcome({ sr, sessionId, rev }) {
   );
 }
 
-function BuilderWork({ sr, agentName, phone, open, viewingEarlier, onBackToCurrent, onOpenEarlier, onDiscard, onNewInvestigation, onClose, onAllEvidence, onBackToThesis }) {
+function BuilderWork({ sr, agentName, phone, wide, open, viewingEarlier, onBackToCurrent, onOpenEarlier, onDiscard, onNewInvestigation, onClose, onAllEvidence, onBackToThesis }) {
   const { session, record, companies, thesis, previous } = sr.inv;
   const state = stateOf(session, record);
   const [tapped, setTapped] = useState(null);
@@ -105,8 +106,7 @@ function BuilderWork({ sr, agentName, phone, open, viewingEarlier, onBackToCurre
   const [folded, setFolded] = useState(false);
   const cardRef = useRef(null);
   const footRef = useRef(null);
-  const choicesRef = useRef(null);
-  const endRef = useRef(null);
+  const logRef = useRef(null);
   const seenRows = useRef(null);
   const panelId = `sr-part-panel${useId()}`;
   const foot = footOf(thesis);
@@ -118,11 +118,14 @@ function BuilderWork({ sr, agentName, phone, open, viewingEarlier, onBackToCurre
   const deadEnd = open && Boolean(thesis.parts?.names?.blocked);
   const outOfSteps = open && (thesis.choices?.research ?? []).length === 0;
   const rows = conversationOf(session);
+  const lastSaid = rows.reduce((at, r, i) => (r.kind === 'said' ? i : at), -1);
   const last = session.lastStep ?? null;
+  const textChoice = deadEnd ? null : foot.text;
+  const hasComposer = open && Boolean(textChoice || directionOffered(thesis));
 
-  // K-7: the card folds to its strip once the conversation has scrolled it away (the phone's single column).
+  // K-7: in one column the card folds to its strip once the sheet has scrolled it away (P-1: the sheet's real width).
   useEffect(() => {
-    if (!phone) return undefined;
+    if (wide) { setFolded(false); return undefined; }
     const card = cardRef.current;
     const scroller = scrollParentOf(card);
     if (!card || !scroller) return undefined;
@@ -134,25 +137,26 @@ function BuilderWork({ sr, agentName, phone, open, viewingEarlier, onBackToCurre
     scroller.addEventListener('scroll', check, { passive: true });
     check();
     return () => scroller.removeEventListener('scroll', check);
-  }, [phone]);
+  }, [wide]);
   const unfold = () => {
     cardRef.current?.scrollIntoView?.({ block: 'start' });
     cardRef.current?.focus?.({ preventScroll: true });
   };
   usePanelInView(tapped, panelId, footRef);
-  // A new turn (a reply, a card line) comes into view just above the foot, as a conversation does (R3: the latest turn
-  // sits on the foot); not on the first draw, which shows the card.
+  // A new turn (a reply, a card line) scrolls in by its TOP, its choices under it (the phone round, P-2); not on the
+  // first draw, which shows the card. The sheet's scroll padding keeps it clear of the strip.
   useEffect(() => {
     const before = seenRows.current;
     seenRows.current = rows.length;
-    const end = endRef.current;
-    if (before === null || rows.length <= before || !end?.scrollIntoView) return;
-    end.style.scrollMarginBottom = `${(footRef.current?.offsetHeight ?? 0) + 12}px`;
-    end.scrollIntoView({ block: 'end' });
+    if (before === null || rows.length <= before) return;
+    const first = logRef.current?.querySelector(`[data-sr-row="${before}"]`);
+    if (!first?.scrollIntoView) return;
+    first.style.scrollMarginTop = '8px';
+    first.scrollIntoView({ block: 'start' });
   }, [rows.length]);
 
   // K-8: a Change that clears other parts (and a drop that clears the price lines) asks first; everything else is sent.
-  // The confirm opens beside the control that asked (review 4C-2): in the foot for the foot's, in the card for a panel's.
+  // The confirm opens beside the control that asked (review 4C-2): in the choices for theirs, in the card for a panel's.
   const onFree = (choice, input, where = 'card') => {
     if (Array.isArray(choice.clears) && choice.clears.length > 0 && (choice.op === 'clear' || choice.reason === 'drop_unsourced')) {
       setClearAsk({ choice, where });
@@ -160,7 +164,7 @@ function BuilderWork({ sr, agentName, phone, open, viewingEarlier, onBackToCurre
     }
     return sr.cardOp(choice, input);
   };
-  const onFreeInFoot = (choice, input) => onFree(choice, input, 'foot');
+  const onFreeInChoices = (choice, input) => onFree(choice, input, 'choices');
   const confirmClear = async () => {
     const choice = clearAsk?.choice ?? null;
     setClearAsk(null);
@@ -175,8 +179,9 @@ function BuilderWork({ sr, agentName, phone, open, viewingEarlier, onBackToCurre
     setTapped(null);
     setTimeout(() => cardRef.current?.querySelector(`[data-sr-slot="${part}"]`)?.focus({ preventScroll: true }), 0);
   };
-  const footCap = useFootRoom(footRef, { choicesRef, top: phone ? 84 : 0, active: open });
+  useFootRoom(footRef, { top: wide ? 0 : 84, active: hasComposer });
   const research = (g) => sr.buildStep({ goal: g.goal, part: g.part ?? null });
+  const more = (where) => (open ? <MoreActions onDiscard={onDiscard} disabled={busy} where={where} /> : null);
 
   // the failures (K-15): the one this page saw, or the session's (a reopened sheet)
   const seen = sr.failure?.action === 'step' && sr.failure.attempt?.builder ? sr.failure : null;
@@ -191,12 +196,14 @@ function BuilderWork({ sr, agentName, phone, open, viewingEarlier, onBackToCurre
   const closeRefusal = sr.failure?.action === 'close' ? sr.failure : null;
   const readFailure = sr.failure?.action === 'read' ? sr.failure : null;
   const suggestionWaiting = sr.stepOutcome?.cardChanged === true && sr.stepOutcome.stepId === last?.stepId && hasSuggestedPart(thesis);
+  // the choices that end the sentence read as its ending (the phone round, P-7)
+  const lead = foot.values.length > 0 ? (foot.part === 'wrongIf' ? B.leadWrongIf : foot.part === 'timeFrame' ? B.leadTimeFrame : null) : null;
 
   const panel = tapped ? panelOf(thesis, tapped) : null;
   const card = (
     <section ref={cardRef} tabIndex={-1} aria-label={B.thesis} data-sr-card="" style={{ ...S.box, gap: 12, outline: 'none' }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <CardHead thesis={thesis} stepsLeft={stepsLeft} />
+        <CardHead thesis={thesis} stepsLeft={stepsLeft} more={more('card')} />
         <Rail thesis={thesis} working={working} />
       </div>
       <Sentence thesis={thesis} working={working} tapped={tapped} onTap={setTapped} panelId={panelId} agentName={agentName} />
@@ -226,7 +233,7 @@ function BuilderWork({ sr, agentName, phone, open, viewingEarlier, onBackToCurre
   );
 
   const conversation = (
-    <section role="log" aria-label={COPY.exchanges} data-sr-conversation="" style={{ display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0, padding: '4px 0' }}>
+    <section ref={logRef} role="log" aria-label={COPY.exchanges} data-sr-conversation="" style={{ display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0, padding: '4px 0' }}>
       {viewingEarlier && (
         <>
           <div><LinkButton disabled={busy} onClick={onBackToCurrent}>{COPY.backToCurrent}</LinkButton></div>
@@ -237,17 +244,19 @@ function BuilderWork({ sr, agentName, phone, open, viewingEarlier, onBackToCurre
       {readFailure && <Notice role="alert" attrs={{ 'data-sr-read-failed': readFailure.code }}>{readFailure.code === 'network' ? COPY.loadFailed : readFailure.message}</Notice>}
       {!viewingEarlier && previous && (
         <div style={S.row} data-sr-previous={previous.sessionId}>
-          <span style={S.meta}>{COPY.previous(formatDay(previous.endedAt) ?? '')}</span>
+          <span style={{ ...S.meta, ...WRAP }}>{COPY.previous(formatDay(previous.endedAt) ?? '')}</span>
           <LinkButton disabled={busy} onClick={() => onOpenEarlier(previous.sessionId)}>{COPY.openEarlier}</LinkButton>
         </div>
       )}
-      {rows.map((row) => {
-        if (row.kind === 'said') return <Said key={row.key} name={agentName} attrs={{ 'data-sr-said': '' }}>{paragraphs(row.text)}</Said>;
-        if (row.kind === 'card') return <CardLine key={row.key} attrs={{ 'data-sr-card-line': '' }}>{B.cardLine(row.text)}</CardLine>;
-        if (row.kind === 'tap') return <Mine key={row.key} tag={B.stepUsed} attrs={{ 'data-sr-tap': row.goal }}>{researchLabelOf({ goal: row.goal, part: row.part })}</Mine>;
-        if (row.kind === 'words') return <Mine key={row.key} tag={B.yourWordsTag} attrs={{ 'data-sr-words': '' }}>{row.text}</Mine>;
-        if (row.kind === 'direction') return <Mine key={row.key} tag={B.directionTag} attrs={{ 'data-sr-direction': '' }}>{row.text}</Mine>;
-        return <Mine key={row.key}>{row.text}</Mine>;
+      {rows.map((row, i) => {
+        const at = { 'data-sr-row': i };
+        // the agent's latest reply in full; each earlier one folds to two lines with More (P-5)
+        if (row.kind === 'said') return <Said key={row.key} name={agentName} text={row.text} folded={i !== lastSaid} attrs={{ ...at, 'data-sr-said': '' }} />;
+        if (row.kind === 'card') return <CardLine key={row.key} attrs={{ ...at, 'data-sr-card-line': '' }}>{B.cardLine(row.text)}</CardLine>;
+        if (row.kind === 'tap') return <Mine key={row.key} tag={B.stepUsed} attrs={{ ...at, 'data-sr-tap': row.goal }}>{researchLabelOf({ goal: row.goal, part: row.part })}</Mine>;
+        if (row.kind === 'words') return <Mine key={row.key} tag={B.yourWordsTag} attrs={{ ...at, 'data-sr-words': '' }}>{row.text}</Mine>;
+        if (row.kind === 'direction') return <Mine key={row.key} tag={B.directionTag} attrs={{ ...at, 'data-sr-direction': '' }}>{row.text}</Mine>;
+        return <Mine key={row.key} attrs={at}>{row.text}</Mine>;
       })}
       {suggestionWaiting && <CardLine attrs={{ 'data-sr-suggestion-waiting': '' }}>{B.suggestionWaiting}</CardLine>}
       {open && foot.part === 'segment' && (thesis.parts.segment.map?.length ?? 0) > 0 && (
@@ -255,15 +264,8 @@ function BuilderWork({ sr, agentName, phone, open, viewingEarlier, onBackToCurre
       )}
       {open && thesis.pick?.asked && <AskedPick pick={thesis.pick} agentName={agentName} />}
       {open && foot.part === 'why' && thesis.parts.why.state === 'suggested' && <WhyProposal proposal={thesis.parts.why.proposal} agentName={agentName} attrs={{ 'data-sr-why-proposal': '' }} />}
-      <div ref={endRef} aria-hidden="true" />
       {state === 'completed' && <Notice role="status" tone="teal">{`${COPY.concluded} · ${formatDay(record.endedAt) ?? ''}. ${COPY.concludedBody}`}</Notice>}
       {state === 'abandoned' && <Notice role="status" tone="copper">{`${COPY.discarded} · ${formatDay(record.endedAt) ?? ''}. ${COPY.discardedBody}`}</Notice>}
-      {open && (
-        <div style={{ ...S.actions, paddingTop: 4 }}>
-          <Button kind="ghost" onClick={onClose}>{COPY.later}</Button>
-          <LinkButton tone="copper" disabled={busy} onClick={onDiscard}>{COPY.discard}</LinkButton>
-        </div>
-      )}
       {!open && !viewingEarlier && (
         <div style={{ ...S.actions, paddingTop: 6, borderTop: `1px solid ${T.hair}` }}>
           <Button kind="primary" full={phone} onClick={onClose}>{COPY.returnCC}</Button>
@@ -273,10 +275,10 @@ function BuilderWork({ sr, agentName, phone, open, viewingEarlier, onBackToCurre
     </section>
   );
 
-  const footer = open ? (
-    <div ref={footRef} data-sr-foot={foot.part ?? 'none'} style={FOOT}>
-      <Cover />
-      <div ref={choicesRef} data-sr-foot-choices="" style={{ ...FOOT_CHOICES, maxHeight: footCap ?? (phone ? '30vh' : '36vh') }}>
+  // The choices (P-2): directly under the agent's latest turn, scrolling with the sheet. Outside the log, so a new set of
+  // buttons is not read out as a new turn.
+  const choices = open ? (
+    <div data-sr-choices={foot.part ?? 'none'} style={CHOICES}>
       {running && <Running attrs={{ 'data-sr-working': '' }}>{B.workingLine(agentName)}</Running>}
       {!running && staleRunning && (
         <Notice role="status" tone="gold" attrs={{ 'data-sr-was-running': '' }}>
@@ -297,50 +299,59 @@ function BuilderWork({ sr, agentName, phone, open, viewingEarlier, onBackToCurre
       )}
       {closeRefusal && <Notice role="alert" attrs={{ 'data-sr-refusal': closeRefusal.code }}>{closeRefusal.message}</Notice>}
       <SaveOutcome sr={sr} sessionId={session.sessionId} rev={thesis.rev} />
-      {askFor('foot')}
-      {!running && deadEnd && !(tapped && tapped !== foot.part) && (
+      {askFor('choices')}
+      {!running && deadEnd && (
         <>
           <FreeButton label={B.conclude} trail={B.keepsResearch} strong disabled={busy} onClick={() => sr.close('concluded')} attrs={{ 'data-sr-conclude': '' }} />
           {foot.values.length === 0 && (thesis.choices?.free ?? []).filter((c) => c.op === 'clear' && c.part === 'segment').map((c) => (
-            <FreeButton key="another" label={B.tryAnotherSegment} disabled={busy} onClick={() => onFreeInFoot(c)} attrs={{ 'data-sr-free': 'clear:segment' }} />
+            <FreeButton key="another" label={B.tryAnotherSegment} disabled={busy} onClick={() => onFreeInChoices(c)} attrs={{ 'data-sr-free': 'clear:segment' }} />
           ))}
         </>
       )}
-      {!running && !deadEnd && !(tapped && tapped !== foot.part) && (
+      {!running && !deadEnd && (
         <>
           {outOfSteps && <Notice role="status" tone="gold" attrs={{ 'data-sr-out-of-steps': '' }}>{B.outOfSteps(session.stepBudget ?? 0)}</Notice>}
-          {foot.change && <FreeButton label={B.change} sub={B.staleLine(B.parts[foot.part])} disabled={busy} onClick={() => onFreeInFoot(foot.change)} attrs={{ 'data-sr-free': `clear:${foot.part}` }} />}
-          <FreeChoices choices={foot.values} thesis={thesis} companies={companies} agentName={agentName} onFree={onFreeInFoot} disabled={busy} />
+          {foot.change && <FreeButton label={B.change} sub={B.staleLine(B.parts[foot.part])} disabled={busy} onClick={() => onFreeInChoices(foot.change)} attrs={{ 'data-sr-free': `clear:${foot.part}` }} />}
+          {lead && <p style={{ ...S.meta, ...WRAP, fontWeight: 600, color: T.ink }} data-sr-lead={foot.part}>{lead}</p>}
+          <FreeChoices choices={foot.values} thesis={thesis} companies={companies} agentName={agentName} onFree={onFreeInChoices} disabled={busy} />
           {foot.research.map((g) => <ResearchButton key={`${g.goal}:${g.part ?? ''}`} label={researchLabelOf(g)} stepsLeft={stepsLeft} disabled={busy} onClick={() => research(g)} attrs={{ 'data-sr-research': `${g.goal}${g.part ? `:${g.part}` : ''}` }} />)}
           {foot.skip && <FreeButton label={B.skipSegment} disabled={busy} onClick={() => onFree(foot.skip)} attrs={{ 'data-sr-free': 'set:segment:skip' }} />}
           {outOfSteps && <FreeButton label={B.concludeWithWhatWeHave} trail={B.keepsResearch} disabled={busy} onClick={() => sr.close('concluded')} attrs={{ 'data-sr-conclude': '' }} />}
         </>
       )}
-      </div>
-      <Composer textChoice={deadEnd ? null : foot.text} directionOn={directionOffered(thesis)} agentName={agentName} disabled={busy}
+    </div>
+  ) : null;
+
+  // The pinned foot holds only the composer (P-2).
+  const footer = hasComposer ? (
+    <div ref={footRef} data-sr-foot={foot.part ?? 'none'} style={FOOT}>
+      <Cover />
+      <Composer textChoice={textChoice} directionOn={directionOffered(thesis)} agentName={agentName} disabled={busy}
         onFree={(c, words) => sr.cardOp(c, { text: words })} onDirection={(words) => sr.buildStep({ goal: 'direction', direction: words })} />
     </div>
   ) : null;
 
-  const strip = phone ? (
+  const strip = !wide ? (
     <div style={{ position: 'sticky', top: 0, height: 0, zIndex: 2 }} data-sr-strip-holder="">
-      {folded && <div style={{ position: 'absolute', left: 0, right: 0, top: 0, background: T.bg }}><Cover side="above" /><Strip thesis={thesis} stepsLeft={stepsLeft} onOpen={unfold} /></div>}
+      {folded && <div style={{ position: 'absolute', left: 0, right: 0, top: 0, background: T.bg }}><Cover side="above" /><Strip thesis={thesis} stepsLeft={stepsLeft} onOpen={unfold} more={more('strip')} /></div>}
     </div>
   ) : null;
 
-  if (!phone) {
+  const label = `Builder · ${running ? 'running' : foot.part ?? 'all set'}`;
+  if (wide) {
     return (
-      <div data-screen-label={`Builder · ${running ? 'running' : foot.part ?? 'all set'}`} data-sr-builder="desktop" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 5fr) minmax(0, 6fr)', gap: 20, alignItems: 'start' }}>
+      <div data-screen-label={label} data-sr-builder="two-column" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 5fr) minmax(0, 6fr)', gap: 20, alignItems: 'start' }}>
         <div style={{ position: 'sticky', top: 0 }}>{card}</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>{conversation}{footer}</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>{conversation}{choices}{footer}</div>
       </div>
     );
   }
   return (
-    <div data-screen-label={`Builder · ${running ? 'running' : foot.part ?? 'all set'}`} data-sr-builder="phone" style={{ display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }}>
+    <div data-screen-label={label} data-sr-builder="one-column" style={{ display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }}>
       {strip}
       {card}
       {conversation}
+      {choices}
       {footer}
     </div>
   );
@@ -369,6 +380,9 @@ export default function Builder({ sr, agentName, agentId, phone, viewingEarlier 
   const saveHere = sr.save.sessionId === session?.sessionId ? sr.save.status : 'idle';
   const keptRef = useRef(null);
   useFocusKept(keptRef);
+  // two columns only when the sheet itself is wide enough, and never on the phone (the phone round, P-1)
+  const measuredWide = useWideEnough(keptRef);
+  const wide = !phone && measuredWide;
   const kept = (view) => <div ref={keptRef} style={{ minWidth: 0 }} data-sr-builder-view="">{view}</div>;
 
   if (!thesis) {
@@ -387,7 +401,7 @@ export default function Builder({ sr, agentName, agentId, phone, viewingEarlier 
     return kept(<ThesisReady sr={sr} agentName={agentName} phone={phone} edit={edit} setEdit={setEdit} onKeepResearching={() => setKeepResearching(true)} onAllEvidence={() => setSub('evidence')} />);
   }
   return kept(
-    <BuilderWork sr={sr} agentName={agentName} phone={phone} open={open} viewingEarlier={viewingEarlier} onBackToCurrent={onBackToCurrent} onOpenEarlier={onOpenEarlier}
+    <BuilderWork sr={sr} agentName={agentName} phone={phone} wide={wide} open={open} viewingEarlier={viewingEarlier} onBackToCurrent={onBackToCurrent} onOpenEarlier={onOpenEarlier}
       onDiscard={onDiscard} onNewInvestigation={onNewInvestigation} onClose={onClose} onAllEvidence={() => setSub('evidence')}
       onBackToThesis={open && thesis.ready && keepResearching ? () => setKeepResearching(false) : null} />
   );

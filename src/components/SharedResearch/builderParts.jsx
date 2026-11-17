@@ -16,7 +16,7 @@ import { SR_COPY as COPY } from './sharedResearchCopy';
 import { T, S, wash, buttonStyle, linkStyle } from './sharedResearchStyle';
 import { Finding, LinkButton, Tag } from './parts';
 import { withoutRole } from './sharedResearchView';
-import { joinNames, horizonLabelOf, slotOf, sentenceRunsOf, confirmMarkOf, partFindingIdsOf, proposalReasonHolds, THESIS_PARTS } from './thesisView';
+import { joinNames, horizonLabelOf, slotOf, sentenceRunsOf, confirmMarkOf, partFindingIdsOf, proposalReasonHolds, sameNames, THESIS_PARTS } from './thesisView';
 import { findingLabelOf } from '../../constants/sharedResearch';
 
 const B = COPY.builder;
@@ -24,21 +24,43 @@ const B = COPY.builder;
 const SOURCE_BACKED = findingLabelOf({ status: 'verified' });
 
 /**
- * The foot (K-4, K-17): pinned to the sheet's bottom while the card and the conversation scroll above it. Its choices
- * scroll inside it past a cap, so a long list never covers the card; the composer stays under them. Its Cover paints
- * the page colour over the sheet's own bottom padding, so nothing shows through beneath the pinned foot.
+ * The foot (K-17; the phone round, P-2): pinned to the sheet's bottom while everything else scrolls with the sheet —
+ * it holds only the composer (and, on the ready view, Save thesis and Keep researching). Its Cover paints the page
+ * colour over the sheet's own bottom padding, so nothing shows through beneath it.
  */
 export const FOOT = Object.freeze({
   position: 'sticky', bottom: 0, zIndex: 1, background: T.bg, borderTop: `1px solid ${T.hair}`,
   padding: '10px 0 4px', display: 'flex', flexDirection: 'column', gap: 8,
 });
-// a grid, not a flex column: under a height cap a flex column shrinks its buttons until their words overlap (B4 renders)
 /** A band of the page colour just past a pinned element's edge ('below' the foot, 'above' the strip). */
 export const Cover = ({ side = 'below' }) => <span aria-hidden="true" style={{ position: 'absolute', left: 0, right: 0, height: 40, background: T.bg, ...(side === 'below' ? { top: '100%' } : { bottom: '100%' }) }} />;
-// a grid, not a flex column: under a height cap a flex column shrinks its buttons until their words overlap (B4 renders).
-// One minmax(0,1fr) column, so a long unbroken token in model text wraps instead of widening every choice (review 4C-6);
-// no overscroll containment, so a wheel or a swipe over the choices still scrolls the sheet (review 4C-5).
-export const FOOT_CHOICES = Object.freeze({ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gridAutoRows: 'max-content', gap: 8, overflowY: 'auto', minWidth: 0 });
+// The choices (P-2): the last item under the conversation, scrolling with the sheet — no box of their own, no cap,
+// nothing inside the builder scrolls on its own. One minmax(0,1fr) column, so a long unbroken token wraps instead of
+// widening every choice (review 4C-6).
+export const CHOICES = Object.freeze({ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 8, minWidth: 0 });
+/** Text that wraps between words, breaking a word only when it alone is wider than its line (P-1: never 'anywhere'). */
+export const WRAP = Object.freeze({ overflowWrap: 'break-word', minWidth: 0 });
+
+/** The width the builder needs for its two-column frame (P-1): the sheet's real width, not the device. */
+export const TWO_COLUMNS_MIN = 880;
+/**
+ * Is the element at least `min` px wide? Measured on the element (a ResizeObserver), so it follows the sheet's real
+ * width as it changes, with no reload (the phone round, P-1). Unmeasured — before the first measure, or where nothing
+ * lays out (jsdom) — reads false: one column.
+ */
+export function useWideEnough(ref, min = TWO_COLUMNS_MIN) {
+  const [wide, setWide] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver !== 'function') return undefined;
+    const measure = () => setWide(el.getBoundingClientRect().width >= min);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ref, min]);
+  return wide;
+}
 
 /** The sheet's scroll box (the nearest scrolling ancestor), or null. */
 export function scrollParentOf(el) {
@@ -50,33 +72,25 @@ export function scrollParentOf(el) {
 }
 
 /**
- * The pinned foot's room, measured from the sheet's own scroll box (review 4C-4: a vh share ignores the sheet's header
- * and a phone's toolbars): the whole foot keeps within `share` of the box's height, its choices scrolling inside. And scroll padding on that box — the
- * foot's height below, `top` px above (the strip) — so a control that takes focus is never left under the foot or the
- * strip (review 4C-3). The box's own padding is put back when the view goes.
+ * Scroll padding on the sheet's own scroll box — the pinned foot's height below, `top` px above (the strip) — so a
+ * control that takes focus is never left under the foot or the strip (review 4C-3). The box's own padding is put back
+ * when the view goes, or when there is no foot (the refuter's 7). The foot holds no cap any more (P-2).
  */
-export function useFootRoom(footRef, { choicesRef = null, share = 0.48, top = 0, active = true } = {}) {
-  const [cap, setCap] = useState(null);
+export function useFootRoom(footRef, { top = 0, active = true } = {}) {
   useEffect(() => {
-    if (!active) return undefined; // no foot (a closed investigation): the box's padding stays its own (the refuter's 7)
+    if (!active) return undefined;
     const scroller = scrollParentOf(footRef.current);
     if (!scroller) return undefined;
     const before = { bottom: scroller.style.scrollPaddingBottom, top: scroller.style.scrollPaddingTop };
     const measure = () => {
-      // the choices get what is left of `share` once the foot's other rows (the composer, its switch, the lines) are counted
-      const foot = footRef.current;
-      const others = foot && choicesRef?.current ? foot.offsetHeight - choicesRef.current.offsetHeight : 0;
-      if (scroller.clientHeight > 0) setCap(Math.max(120, Math.round(scroller.clientHeight * share) - others));
       scroller.style.scrollPaddingBottom = `${(footRef.current?.offsetHeight ?? 0) + 28}px`;
       scroller.style.scrollPaddingTop = top ? `${top}px` : before.top;
     };
     measure();
     const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : null;
-    ro?.observe(scroller);
     if (footRef.current) ro?.observe(footRef.current);
     return () => { ro?.disconnect(); scroller.style.scrollPaddingBottom = before.bottom; scroller.style.scrollPaddingTop = before.top; };
-  }, [footRef, choicesRef, share, top, active]);
-  return cap;
+  }, [footRef, top, active]);
 }
 
 /**
@@ -149,7 +163,7 @@ export function ResearchButton({ label, stepsLeft, onClick, disabled = false, at
     <button type="button" onClick={disabled ? undefined : onClick} disabled={disabled} {...attrs}
       style={{ ...buttonStyle('secondary', { full: true, disabled }), justifyContent: 'flex-start', minHeight: 50, padding: '8px 12px 8px 14px', background: wash('teal', 0.12), border: `1px solid ${wash('teal', 0.5)}` }}>
       <SearchGlyph />
-      <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 600, color: T.ink, lineHeight: 1.3, overflowWrap: 'anywhere' }}>{label}</span>
+      <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 600, color: T.ink, lineHeight: 1.3, overflowWrap: 'break-word' }}>{label}</span>
       <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3, flexShrink: 0 }}>
         <Mark tone="teal" solid attrs={{ 'data-sr-cost': 'step' }}>{B.oneStep}</Mark>
         <span style={{ fontSize: 11, color: T.ink2, lineHeight: 1.2, whiteSpace: 'nowrap' }} data-sr-steps-left-choice="">{B.stepsLeft(stepsLeft)}</span>
@@ -168,10 +182,10 @@ export function FreeButton({ label, sub = null, mark = null, reason = null, reas
       style={{ ...buttonStyle('secondary', { full: true, disabled }), justifyContent: 'flex-start', minHeight: 46, padding: '7px 14px', background: 'transparent', border: `1px solid ${mark ? wash('teal', 0.5) : strong ? wash('ink-2', 0.55) : T.hair}` }}>
       <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
         {mark && <Mark tone="teal" attrs={{ 'data-sr-mark': '' }}>{mark}</Mark>}
-        <span style={{ fontSize: 14.5, fontWeight: 600, color: T.ink, lineHeight: 1.3, overflowWrap: 'anywhere' }}>{label}</span>
-        {sub && <span style={{ fontSize: 12.5, color: T.ink2, lineHeight: 1.35, overflowWrap: 'anywhere' }}>{sub}</span>}
+        <span style={{ fontSize: 14.5, fontWeight: 600, color: T.ink, lineHeight: 1.3, overflowWrap: 'break-word' }}>{label}</span>
+        {sub && <span style={{ fontSize: 12.5, color: T.ink2, lineHeight: 1.35, overflowWrap: 'break-word' }}>{sub}</span>}
         {reason && (
-          <span style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.4, overflowWrap: 'anywhere' }} data-sr-pick-reason="">
+          <span style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.4, overflowWrap: 'break-word' }} data-sr-pick-reason="">
             {reason} {reasonTag && <span style={{ display: 'inline-flex', verticalAlign: 'middle' }}><Tag tone={reasonTag.tone}>{reasonTag.text}</Tag></span>}
           </span>
         )}
@@ -202,7 +216,7 @@ export function freeLabelOf(choice, thesis, agentName) {
   }
   if (part === 'names') {
     if (choice.reason === 'drop_unsourced') return { label: B.dropUnsourced(joinNames(value)) };
-    if (op === 'confirm') return mark === 'asked' ? { label: B.confirmValue(joinNames(value)), strong: true } : { label: B.namesPick(joinNames(value)), mark: B.pickTag(agentName), reason: pick?.reason ?? null, reasonTag: reasoning };
+    if (op === 'confirm') return mark === 'asked' ? { label: B.confirmValue(joinNames(value)), strong: true } : { label: B.pickButton(agentName, joinNames(value)) };
   }
   if (part === 'why') return op === 'confirm' ? { label: choice.revised ? B.useRevised : B.confirmWhy, strong: true } : { label: B.keepSome };
   if (part === 'wrongIf') {
@@ -229,11 +243,33 @@ export const researchLabelOf = (g) => (g.goal === 'strengthen' ? B.strengthenPar
 
 // ── the conversation's lines (K-9; R3 Said / Mine / Changed) ──────────────────────
 
-export function Said({ name, children, attrs = {} }) {
+/**
+ * The agent's reply, drawn as stored. `text` is the reply; an EARLIER reply (`folded`) shows its first two lines with
+ * More (the phone round, P-5) — only its display folds, never the text. More shows unless the folded text is measured
+ * to fit (where nothing lays out, it shows).
+ */
+export function Said({ name, text, folded = false, attrs = {} }) {
+  const [open, setOpen] = useState(false);
+  const [fits, setFits] = useState(false);
+  const boxRef = useRef(null);
+  const id = `sr-said${useId()}`;
+  const clamp = folded && !open;
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!clamp || !el) return;
+    const spill = el.scrollHeight - el.clientHeight;
+    setFits(Boolean(el.clientHeight) && spill <= 1);
+  }, [clamp, text]);
+  const paras = String(text ?? '').split(/\n{2,}/);
   return (
-    <div {...attrs} style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 }}>
+    <div {...attrs} data-sr-said-folded={clamp ? 'true' : 'false'} style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 }}>
       <span style={{ ...S.eyebrow, color: T.teal }}>{name}</span>
-      <div style={{ fontSize: 15, color: T.ink, lineHeight: 1.5, display: 'flex', flexDirection: 'column', gap: 8, overflowWrap: 'anywhere' }}>{children}</div>
+      {clamp
+        ? <div ref={boxRef} id={id} data-sr-said-text="" style={{ fontSize: 15, color: T.ink, lineHeight: 1.5, ...WRAP, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{paras.join(' ')}</div>
+        : <div id={id} data-sr-said-text="" style={{ fontSize: 15, color: T.ink, lineHeight: 1.5, display: 'flex', flexDirection: 'column', gap: 8, ...WRAP }}>{paras.map((p, i) => <span key={i} style={{ display: 'block' }}>{p}</span>)}</div>}
+      {folded && !(clamp && fits) && (
+        <div><LinkButton expanded={open} controls={id} onClick={() => setOpen((v) => !v)} attrs={{ 'data-sr-said-more': '' }}>{open ? B.lessReply : B.moreReply}</LinkButton></div>
+      )}
     </div>
   );
 }
@@ -241,7 +277,7 @@ export function Said({ name, children, attrs = {} }) {
 export function Mine({ children, tag = null, attrs = {} }) {
   return (
     <div {...attrs} style={{ alignSelf: 'flex-end', maxWidth: '82%', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, minWidth: 0 }}>
-      <div style={{ padding: '8px 12px', borderRadius: '14px 14px 4px 14px', background: T.raised, fontSize: 14.5, color: T.ink, lineHeight: 1.4, overflowWrap: 'anywhere' }}>{children}</div>
+      <div style={{ padding: '8px 12px', borderRadius: '14px 14px 4px 14px', background: T.raised, fontSize: 14.5, color: T.ink, lineHeight: 1.4, overflowWrap: 'break-word' }}>{children}</div>
       {tag && <Mark>{tag}</Mark>}
     </div>
   );
@@ -251,7 +287,7 @@ export function CardLine({ children, tone = 'teal', attrs = {} }) {
   return (
     <div {...attrs} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, letterSpacing: '0.02em', color: T.ink2, lineHeight: 1.4 }}>
       <span aria-hidden="true" style={{ width: 14, height: 1.5, background: T[tone], flexShrink: 0 }} />
-      <span style={{ overflowWrap: 'anywhere' }}>{children}</span>
+      <span style={{ overflowWrap: 'break-word' }}>{children}</span>
     </div>
   );
 }
@@ -272,13 +308,34 @@ export function Rail({ thesis, working = null }) {
   );
 }
 
-export function CardHead({ thesis, stepsLeft, ready = false }) {
+export function CardHead({ thesis, stepsLeft, ready = false, more = null }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
       <span style={{ ...S.eyebrow, color: T.teal }}>{ready ? B.thesisReady : B.thesis}</span>
       <span style={{ fontSize: 13, fontWeight: 700, color: T.ink, whiteSpace: 'nowrap' }} data-sr-filled={thesis?.filled ?? 0}>{B.filled(thesis?.filled ?? 0)}</span>
       <span style={{ fontSize: 12, color: T.ink2, marginLeft: 'auto', whiteSpace: 'nowrap' }} data-sr-steps-left={stepsLeft}>{B.stepsLeft(stepsLeft)}</span>
+      {more}
     </div>
+  );
+}
+
+/**
+ * "⋯" (the phone round, P-3): a small disclosure in the card's head and the strip that reveals one item, Discard, which
+ * opens B2's discard confirm. `where` names it for the rows.
+ */
+export function MoreActions({ onDiscard, disabled = false, where }) {
+  const [open, setOpen] = useState(false);
+  const id = `sr-more${useId()}`;
+  return (
+    <span style={{ position: 'relative', display: 'inline-flex', flexShrink: 0 }}>
+      <button type="button" aria-label={B.moreActions} aria-expanded={open} aria-controls={id} onClick={() => setOpen((v) => !v)} data-sr-more={where}
+        style={{ ...linkStyle, color: T.ink2, textDecoration: 'none', width: 44, minWidth: 44, height: 44, justifyContent: 'center', margin: '-12px -10px -12px 0', fontSize: 18, letterSpacing: '0.05em' }}>⋯</button>
+      {open && (
+        <span id={id} style={{ position: 'absolute', right: 0, top: '100%', zIndex: 3, marginTop: 4, background: T.raised, border: `1px solid ${T.hair}`, borderRadius: 10, padding: '4px 12px', whiteSpace: 'nowrap' }}>
+          <LinkButton tone="copper" disabled={disabled} onClick={() => { setOpen(false); onDiscard(); }} attrs={{ 'data-sr-discard': where }}>{COPY.discard}</LinkButton>
+        </span>
+      )}
+    </span>
   );
 }
 
@@ -307,15 +364,15 @@ function Slot({ thesis, part, working, tapped, onTap, panelId, agentName }) {
     inner = <span style={{ fontSize: '0.8em', fontWeight: 600, color: T.teal, borderBottom: `1.5px dashed ${wash('teal', 0.6)}` }}><span aria-hidden="true" style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: T.teal, marginRight: 6, verticalAlign: 'middle' }} />{B.working(agentName)}</span>;
   } else if (part === 'names' && thesis?.parts?.names?.blocked && slot.state === 'unset') {
     // the dead end (§B4.5), as the server says it: names.blocked — no listed company has a sourced connection
-    inner = <span style={{ color: T.copper, fontWeight: 600, borderBottom: `1.5px dashed ${wash('copper', 0.6)}` }} data-sr-blocked="">{B.blocked[thesis.parts.names.blocked] ?? B.blank.names}</span>;
+    inner = <span style={{ color: T.copper, borderBottom: `1.5px dashed ${wash('copper', 0.6)}` }} data-sr-blocked="">{B.blocked[thesis.parts.names.blocked] ?? B.blank.names}</span>;
   } else if (slot.state === 'set') {
-    inner = <span style={{ color: T.ink, fontWeight: 700, borderBottom: `2px solid ${open ? T.teal : wash('teal', 0.5)}`, background: open ? wash('teal', 0.2) : 'transparent', borderRadius: open ? '4px 4px 0 0' : 0 }}>{slot.skipped ? B.skipped : slot.text}</span>;
+    inner = <span style={{ color: T.ink, borderBottom: `2px solid ${open ? T.teal : wash('teal', 0.5)}`, background: open ? wash('teal', 0.2) : 'transparent', borderRadius: open ? '4px 4px 0 0' : 0 }}>{slot.skipped ? B.skipped : slot.text}</span>;
   } else if (slot.state === 'stale') {
-    inner = <span style={{ color: T.ink2, fontWeight: 600, borderBottom: `1.5px dashed ${T.copper}` }}>{slot.skipped ? B.skipped : slot.text} <span style={{ fontSize: '0.6em', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: T.copper }} data-sr-stale-mark="">{B.stale}</span></span>;
+    inner = <span style={{ color: T.ink2, borderBottom: `1.5px dashed ${T.copper}` }}>{slot.skipped ? B.skipped : slot.text} <span style={{ fontSize: '0.6em', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: T.copper }} data-sr-stale-mark="">{B.stale}</span></span>;
   } else if (slot.state === 'suggested' && slot.text) {
-    inner = <span style={{ color: T.ink2, fontWeight: 600, borderBottom: `1.5px dashed ${wash('teal', 0.7)}` }}>{slot.text} <span style={{ fontSize: '0.6em', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: T.teal }} data-sr-suggested-mark="">{B.suggested}</span></span>;
+    inner = <span style={{ color: T.ink2, borderBottom: `1.5px dashed ${wash('teal', 0.7)}` }}>{slot.text} <span style={{ fontSize: '0.6em', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: T.teal }} data-sr-suggested-mark="">{B.suggested}</span></span>;
   } else {
-    inner = <span style={{ fontSize: '0.7em', letterSpacing: '0.03em', color: T.ink3, borderBottom: `1.5px dashed ${T.hair}`, padding: '0 6px 1px', whiteSpace: 'nowrap' }}>{B.blank[part]}</span>;
+    inner = <span style={{ color: T.ink3, borderBottom: `1.5px dotted ${T.ink3}`, whiteSpace: 'nowrap' }} data-sr-blank={part}>{B.blank[part]}</span>;
   }
   return <InlinePart part={part} state={slot.state} open={open} panelId={panelId} onTap={onTap} label={slot.skipped ? B.skipped : slot.text ?? B.blank[part]}>{inner}</InlinePart>;
 }
@@ -326,15 +383,15 @@ function Slot({ thesis, part, working, tapped, onTap, panelId, agentName }) {
  * made tappable where they stand (sentenceRunsOf) — never composed here.
  */
 export function Sentence({ thesis, working = null, tapped, onTap, panelId, agentName, size = 16.5 }) {
-  const p = { margin: 0, fontSize: size, lineHeight: 1.6, fontWeight: 500, color: T.ink2, overflowWrap: 'anywhere' };
+  const p = { margin: 0, fontSize: size, lineHeight: 1.6, fontWeight: 500, color: T.ink2, overflowWrap: 'break-word' };
   if (typeof thesis?.sentence === 'string' && thesis.sentence && !working) {
     return (
       <p style={p} data-sr-sentence="server">
         {sentenceRunsOf(thesis.sentence, thesis).map((r, i) => (r.part
           ? <InlinePart key={i} part={r.part} state={r.state} open={tapped === r.part} panelId={panelId} onTap={onTap} label={r.text}>
             {r.state === 'stale'
-              ? <span style={{ color: T.ink2, fontWeight: 600, borderBottom: `1.5px dashed ${T.copper}` }}>{r.text}</span>
-              : <span style={{ color: T.ink, fontWeight: 700, borderBottom: `2px solid ${tapped === r.part ? T.teal : wash('teal', 0.5)}`, background: tapped === r.part ? wash('teal', 0.2) : 'transparent' }}>{r.text}</span>}
+              ? <span style={{ color: T.ink2, borderBottom: `1.5px dashed ${T.copper}` }}>{r.text}</span>
+              : <span style={{ color: T.ink, borderBottom: `2px solid ${tapped === r.part ? T.teal : wash('teal', 0.5)}`, background: tapped === r.part ? wash('teal', 0.2) : 'transparent' }}>{r.text}</span>}
             {r.state === 'stale' && <span style={{ fontSize: '0.6em', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: T.copper, marginLeft: 4 }} data-sr-stale-mark="">{B.stale}</span>}
           </InlinePart>
           : <React.Fragment key={i}>{r.text}</React.Fragment>))}
@@ -355,7 +412,7 @@ function ReasonLine({ lead, text, findingIds, basis = null, agentName, attrs = {
   return (
     <div {...attrs} style={{ display: 'grid', gridTemplateColumns: `${lead.length > 2 ? 46 : 16}px minmax(0,1fr)`, gap: 6, fontSize: 13.5, color: T.ink, lineHeight: 1.45 }}>
       <span style={{ fontSize: 12, fontWeight: 700, color: lead.length > 2 ? T.ink : T.ink3, paddingTop: 1 }}>{lead}</span>
-      <span style={{ overflowWrap: 'anywhere' }}>{text} <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', verticalAlign: 'middle', flexWrap: 'wrap' }}>{tag && <Tag tone={tag.tone}>{tag.text}</Tag>}{findingIds?.length > 0 && <Count n={findingIds.length} />}</span></span>
+      <span style={{ overflowWrap: 'break-word' }}>{text} <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', verticalAlign: 'middle', flexWrap: 'wrap' }}>{tag && <Tag tone={tag.tone}>{tag.text}</Tag>}{findingIds?.length > 0 && <Count n={findingIds.length} />}</span></span>
     </div>
   );
 }
@@ -366,7 +423,7 @@ function AgainstLine({ against }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }} data-sr-against="">
       <span style={{ ...S.eyebrow, color: T.copper }}>{B.against}</span>
       {against
-        ? <div style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.45, overflowWrap: 'anywhere' }}>{against.text} <span style={{ display: 'inline-flex', gap: 6, verticalAlign: 'middle' }}><Count n={against.findingIds?.length ?? 0} /></span></div>
+        ? <div style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.45, overflowWrap: 'break-word' }}>{against.text} <span style={{ display: 'inline-flex', gap: 6, verticalAlign: 'middle' }}><Count n={against.findingIds?.length ?? 0} /></span></div>
         : <span style={S.small}>{B.noAgainst}</span>}
     </div>
   );
@@ -422,18 +479,21 @@ export function WhyProposal({ proposal, agentName, title = null, attrs = {} }) {
 }
 
 /** The strip the card folds to while the conversation scrolls (R3 StripB): the rail, what is set, the counts. */
-export function Strip({ thesis, stepsLeft, onOpen }) {
+export function Strip({ thesis, stepsLeft, onOpen, more = null }) {
   const crumbs = ['theme', 'segment', 'names'].map((p) => slotOf(thesis, p)).filter((s) => s.state === 'set' && (s.text || s.skipped)).map((s) => (s.skipped ? B.skipped : s.text));
   return (
-    <button type="button" onClick={onOpen} data-sr-strip=""
-      style={{ appearance: 'none', font: 'inherit', width: '100%', textAlign: 'left', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 14px', background: T.surface, border: `1px solid ${T.hair}`, borderRadius: 12, color: T.ink, boxSizing: 'border-box' }}>
-      <Rail thesis={thesis} />
-      <span style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-        <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{crumbs.length ? crumbs.join(' › ') : B.strip}</span>
-        <span style={{ fontSize: 11.5, color: T.ink2, whiteSpace: 'nowrap' }}>{`${B.filled(thesis?.filled ?? 0)} · ${B.stepsLeft(stepsLeft)}`}</span>
-        <span aria-hidden="true" style={{ color: T.ink3 }}>▾</span>
-      </span>
-    </button>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: T.surface, border: `1px solid ${T.hair}`, borderRadius: 12, padding: '0 14px 0 0' }}>
+      <button type="button" onClick={onOpen} data-sr-strip=""
+        style={{ appearance: 'none', font: 'inherit', flex: 1, minWidth: 0, textAlign: 'left', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 4px 10px 14px', background: 'transparent', border: 'none', color: T.ink, boxSizing: 'border-box' }}>
+        <Rail thesis={thesis} />
+        <span style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, width: '100%' }}>
+          <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{crumbs.length ? crumbs.join(' › ') : B.strip}</span>
+          <span style={{ fontSize: 11.5, color: T.ink2, whiteSpace: 'nowrap' }}>{`${B.filled(thesis?.filled ?? 0)} · ${B.stepsLeft(stepsLeft)}`}</span>
+          <span aria-hidden="true" style={{ color: T.ink3 }}>▾</span>
+        </span>
+      </button>
+      {more}
+    </div>
   );
 }
 
@@ -475,6 +535,10 @@ export function NamesPick({ choice, pickConfirm, thesis, companies, agentName, o
   const ok = ticked.length >= min && ticked.length <= max;
   const toggle = (s) => setTicked((t) => (t.includes(s) ? t.filter((x) => x !== s) : (choice.options ?? []).filter((x) => x === s || t.includes(x))));
   const pickLabel = pickConfirm ? freeLabelOf(pickConfirm, thesis, agentName) : null;
+  const pickReason = pickConfirm && !thesis?.pick?.asked ? thesis?.pick?.reason ?? null : null;
+  const reasonTag = thesis?.pick ? basisTagOf(thesis.pick.basis, agentName) : null;
+  // ticking exactly the agent's pick sends the server's confirm (routine choice 7: one button per value)
+  const build = () => (pickConfirm && sameNames(ticked, pickConfirm.value) ? onConfirmPick() : onSend(ticked));
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }} data-sr-names-pick="">
       <p style={S.small}>{B.namesHelp(min, max)}</p>
@@ -486,12 +550,12 @@ export function NamesPick({ choice, pickConfirm, thesis, companies, agentName, o
             <label key={s} data-sr-name-row={s} style={{ display: 'grid', gridTemplateColumns: '20px minmax(0,1fr) auto', gap: 10, alignItems: 'start', padding: '9px 0', borderTop: `1px solid ${T.hair}`, cursor: disabled ? 'not-allowed' : 'pointer', minHeight: 44 }}>
               <input type="checkbox" checked={on} disabled={disabled} onChange={() => toggle(s)} style={{ width: 18, height: 18, marginTop: 2 }} />
               <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
-                <span style={S.row}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 10, whiteSpace: 'nowrap' }}>
                   <span style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>{s}</span>
-                  {c?.name && <span style={{ fontSize: 12.5, color: T.ink2, overflowWrap: 'anywhere' }}>{c.name}</span>}
                   {picked.includes(s) && <Mark tone="teal" attrs={{ 'data-sr-name-pick': s }}>{B.pickTag(agentName)}</Mark>}
                 </span>
-                {c?.relationship && <span style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.4, overflowWrap: 'anywhere' }}>{withoutRole(c.relationship)}</span>}
+                {c?.name && <span style={{ fontSize: 12.5, color: T.ink2, ...WRAP }} data-sr-name-company="">{c.name}</span>}
+                {c?.relationship && <span style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.4, overflowWrap: 'break-word' }}>{withoutRole(c.relationship)}</span>}
               </span>
               <Count n={c?.evidence?.length ?? 0} />
             </label>
@@ -499,13 +563,18 @@ export function NamesPick({ choice, pickConfirm, thesis, companies, agentName, o
         })}
         {leads.map((l) => (
           <div key={`${l.symbol ?? ''}:${l.name}`} data-sr-name-lead={l.name} style={{ padding: '9px 0 0 30px', borderTop: `1px dashed ${T.hair}`, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 13.5, fontWeight: 600, color: T.ink2, overflowWrap: 'anywhere' }}>{l.name}</span>
+            <span style={{ fontSize: 13.5, fontWeight: 600, color: T.ink2, overflowWrap: 'break-word' }}>{l.name}</span>
             <Tag dim>{B.lead}</Tag>
           </div>
         ))}
       </div>
-      {pickConfirm && <FreeButton {...pickLabel} disabled={disabled} onClick={onConfirmPick} attrs={{ 'data-sr-free': 'confirm:names' }} />}
-      <FreeButton label={B.namesBuild(ticked.length)} strong disabled={disabled || !ok} onClick={() => onSend(ticked)} attrs={{ 'data-sr-free': 'set:names' }} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 4 }} data-sr-names-buttons="">
+        {pickConfirm && <FreeButton label={pickLabel.label} strong={pickLabel.strong} disabled={disabled} onClick={onConfirmPick} attrs={{ 'data-sr-free': 'confirm:names' }} />}
+        {pickReason && (
+          <p style={{ ...S.meta, ...WRAP, color: T.ink }} data-sr-pick-reason="">{pickReason} {reasonTag && <span style={{ display: 'inline-flex', verticalAlign: 'middle' }}><Tag tone={reasonTag.tone}>{reasonTag.text}</Tag></span>}</p>
+        )}
+        <FreeButton label={B.namesBuild(joinNames(ticked))} strong disabled={disabled || !ok} onClick={build} attrs={{ 'data-sr-free': 'set:names' }} />
+      </div>
     </div>
   );
 }
@@ -602,7 +671,7 @@ export function PartPanel({ id, part, thesis, companies, byId, agentName, onClos
     <div id={id} role="region" aria-label={B.parts[part]} data-sr-panel={part} style={{ marginTop: 8, background: T.raised, border: `1px solid ${T.hair}`, borderRadius: 12, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
         <span style={{ ...S.eyebrow, color: T.teal }}>{B.parts[part]}</span>
-        <span style={{ fontSize: 13.5, fontWeight: 700, color: T.ink, flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{slot.skipped ? B.skipped : slot.text ?? B.blank[part]}</span>
+        <span style={{ fontSize: 13.5, fontWeight: 700, color: T.ink, flex: 1, minWidth: 0, overflowWrap: 'break-word' }}>{slot.skipped ? B.skipped : slot.text ?? B.blank[part]}</span>
         <button type="button" onClick={onClose} aria-label={B.closePart(B.parts[part])} data-sr-panel-close={part} style={{ ...linkStyle, color: T.ink3, textDecoration: 'none', padding: 0, width: 44, minWidth: 44, height: 44, justifyContent: 'center', margin: '-12px -8px -12px 0', flexShrink: 0 }}>×</button>
       </div>
       {slot.state === 'stale' && <p style={{ ...S.small, color: T.copper }} data-sr-stale-line="">{B.staleLine(B.parts[part])}</p>}

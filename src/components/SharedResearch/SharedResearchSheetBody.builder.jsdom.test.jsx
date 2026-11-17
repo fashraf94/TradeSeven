@@ -100,7 +100,7 @@ describe('THE WALK: "I want to play AI" to a saved thesis, every request body ch
     expect(open).toMatchObject({ action: 'open', entry: { kind: 'observation', observation: 'I want to play AI' } });
     expect(open.requestId).toMatch(UUID);
     expect(server.sent('frame')).toHaveLength(0);
-    expect($('[data-sr-builder="phone"]')).not.toBeNull();
+    expect($('[data-sr-builder="one-column"]')).not.toBeNull();
     expect($('[data-sr-filled]').textContent).toBe('1 of 6');
     expect($('[data-sr-slot="theme"]').textContent).toBe('I want to play AI');
 
@@ -177,7 +177,7 @@ describe('K-2: the SESSION chooses the view, never the flag', () => {
   it('a builder investigation renders the builder with the mode off (a rollback keeps open builders working)', async () => {
     flags.mode = 'off';
     await openOn(TA.walkGetMap);
-    expect($('[data-sr-builder="phone"]')).not.toBeNull();
+    expect($('[data-sr-builder="one-column"]')).not.toBeNull();
     expect($('[data-screen-label^="Work ·"]')).toBeNull();
   });
 });
@@ -256,8 +256,8 @@ describe('every state, from the server\'s answers', () => {
     expect($('[data-sr-slot="segment"]').dataset.srSlotState).toBe('stale');
     expect($('[data-sr-stale-mark]').textContent).toBe(B.stale);
     expect($('[data-sr-ready]')).toBeNull();
-    expect($('[data-sr-foot="segment"] [data-sr-free="clear:segment"]').textContent).toContain(B.change);
-    expect($('[data-sr-foot="segment"] [data-sr-research="strengthen:segment"]').textContent).toContain(B.strengthenPart('Segment'));
+    expect($('[data-sr-choices="segment"] [data-sr-free="clear:segment"]').textContent).toContain(B.change);
+    expect($('[data-sr-choices="segment"] [data-sr-research="strengthen:segment"]').textContent).toContain(B.strengthenPart('Segment'));
   });
   it('the story start (T8a): nothing set, the first choice checks the story against its source', async () => {
     await openOn(TA.getStoryOpen);
@@ -272,16 +272,40 @@ describe('every state, from the server\'s answers', () => {
     expect(c.textContent).toContain(B.themeConfirm('Cloud AI data-center spending'));
     expect(c.textContent).toContain(B.suggestedTag('Atlas'));
   });
-  it('desktop (D1): the card left, the conversation and its choices right', async () => {
+  it('P-1: two columns (D1) only when the sheet itself measures at least 880 px, and never on the phone', async () => {
+    const realRO = globalThis.ResizeObserver;
+    const realRect = Element.prototype.getBoundingClientRect;
+    let width = 900;
+    globalThis.ResizeObserver = class { observe() {} disconnect() {} };
+    Element.prototype.getBoundingClientRect = function rect() {
+      return this.hasAttribute?.('data-sr-builder-view') ? { width, height: 0, top: 0, left: 0, right: width, bottom: 0, x: 0, y: 0 } : realRect.call(this);
+    };
+    try {
+      const m = await openOn(TA.walkGetConfirmWhy, { phone: false });
+      expect($('[data-sr-builder="two-column"] [data-sr-card]')).not.toBeNull();
+      expect($('[data-sr-builder="two-column"] [data-sr-choices]')).not.toBeNull();
+      m.unmount(); mounted = mounted.filter((x) => x !== m);
+      width = 879;
+      const narrow = await openOn(TA.walkGetConfirmWhy, { phone: false });
+      expect($('[data-sr-builder="one-column"]')).not.toBeNull();
+      narrow.unmount(); mounted = mounted.filter((x) => x !== narrow);
+      width = 1200;
+      await openOn(TA.walkGetConfirmWhy, { phone: true });
+      expect($('[data-sr-builder="one-column"]')).not.toBeNull();
+    } finally {
+      globalThis.ResizeObserver = realRO;
+      Element.prototype.getBoundingClientRect = realRect;
+    }
+  });
+  it('P-1: unmeasured (nothing lays out), it is one column — the hub\'s 720 px sheet is one column too', async () => {
     await openOn(TA.walkGetConfirmWhy, { phone: false });
-    expect($('[data-sr-builder="desktop"]')).not.toBeNull();
-    expect($('[data-sr-builder="desktop"] [data-sr-card]')).not.toBeNull();
-    expect($('[data-sr-builder="desktop"] [data-sr-foot]')).not.toBeNull();
+    expect($('[data-sr-builder="one-column"]')).not.toBeNull();
+    expect($('[data-sr-builder="two-column"]')).toBeNull();
   });
   it('the conversation: the player\'s words and taps, the agent\'s replies as stored, the card lines', async () => {
     await openOn(TA.walkGetConfirmWhy);
-    const said = $$('[data-sr-said]').map((n) => n.textContent);
-    const stored = TA.walkGetConfirmWhy.body.session.exchanges.filter((e) => e.who === 'partner').map((e) => `Atlas${e.text}`);
+    const said = $$('[data-sr-said] [data-sr-said-text]').map((n) => n.textContent);
+    const stored = TA.walkGetConfirmWhy.body.session.exchanges.filter((e) => e.who === 'partner').map((e) => e.text);
     expect(said).toEqual(stored);
     expect($$('[data-sr-tap]').map((n) => n.dataset.srTap)).toEqual(['map_segments', 'find_names', 'build_why']);
     expect($$('[data-sr-card-line]').map((n) => n.textContent)).toEqual(['Card · Segment: Accelerator chips', 'Card · Names: NVDA', 'Card · Why: confirmed']);
@@ -453,11 +477,11 @@ describe('K-10b: the names', () => {
     expect(lead.textContent).toContain(B.lead);
     expect(lead.querySelector('input')).toBeNull();
     expect($('[data-sr-free="set:names"]').disabled).toBe(true);
-    click($('[data-sr-name-row="AMD"] input'));
+    click($('[data-sr-name-row="AVGO"] input'));
     click($('[data-sr-name-row="NVDA"] input'));
-    expect($('[data-sr-free="set:names"]').textContent).toContain(B.namesBuild(2));
+    expect($('[data-sr-free="set:names"]').textContent).toContain(B.namesBuild('NVDA and AVGO'));
     await tap('[data-sr-free="set:names"]');
-    expect(last('card')).toMatchObject({ op: 'set', part: 'names', value: ['NVDA', 'AMD'] });
+    expect(last('card')).toMatchObject({ op: 'set', part: 'names', value: ['NVDA', 'AVGO'] });
   });
   it('the agent\'s names pick has its own confirm', async () => {
     await openOn(TA.walkGetNames, {}, { card: TA.walkConfirmNames });
@@ -796,7 +820,7 @@ describe('K-15: the hard states', () => {
     await openOn(TA.getOutOfSteps);
     expect($('[data-sr-out-of-steps]').textContent).toBe(B.outOfSteps(10));
     expect($$('[data-sr-research]')).toHaveLength(0);
-    expect($$('[data-sr-foot] [data-sr-free="set:wrongIf"]').length).toBeGreaterThan(0);
+    expect($$('[data-sr-choices] [data-sr-free="set:wrongIf"]').length).toBeGreaterThan(0);
     expect($('[data-sr-composer]').dataset.srComposer).toBe('free');
     expect($('[data-sr-composer-switch]')).toBeNull();
     expect(textOf()).toContain(B.concludeWithWhatWeHave);
@@ -857,7 +881,7 @@ describe('K-16: one request at a time, taps included', () => {
     await openOn(TA.walkGetMap, {}, { step: () => held.promise });
     click($('[data-sr-research="map_segments"]'));
     await flush();
-    for (const b of $$('[data-sr-foot] button[data-sr-free]')) expect(b.disabled).toBe(true);
+    for (const b of $$('[data-sr-choices] button[data-sr-free]')) expect(b.disabled).toBe(true);
     held.resolve(TA.walkMap);
     await flush();
   });
@@ -865,10 +889,10 @@ describe('K-16: one request at a time, taps included', () => {
 
 describe('the review\'s fixes (4C: accessibility and phone)', () => {
   const settle = () => new Promise((r) => { setTimeout(r, 10); });
-  it('4C-2: the foot\'s Change asks in the foot, beside the control, and its safe answer takes focus', async () => {
+  it('4C-2: the choices\' Change asks in the choices, beside the control, and its safe answer takes focus', async () => {
     await openOn(TA.getStaleSegment);
-    await tap('[data-sr-foot] [data-sr-free="clear:segment"]');
-    expect($('[data-sr-foot] [data-sr-clear-confirm="segment"]')).not.toBeNull();
+    await tap('[data-sr-choices] [data-sr-free="clear:segment"]');
+    expect($('[data-sr-choices] [data-sr-clear-confirm="segment"]')).not.toBeNull();
     expect($('[data-sr-card] [data-sr-clear-confirm]')).toBeNull();
     expect(document.activeElement).toBe($('[data-sr-clear-no]'));
   });
@@ -879,14 +903,13 @@ describe('the review\'s fixes (4C: accessibility and phone)', () => {
     await act(async () => { await settle(); });
     expect(document.activeElement).toBe($('[data-sr-slot="segment"]'));
   });
-  it('4C-4: while another part\'s panel is open, the foot folds its choices; they return when it closes', async () => {
+  it('P-2 (replaces 4C-4\'s folding foot): another part\'s panel holds its own choices; the conversation\'s stay where they are', async () => {
     await openOn(TA.walkGetOneStock);
-    expect($('[data-sr-foot] [data-sr-research="build_why"]')).not.toBeNull();
+    expect($('[data-sr-choices] [data-sr-research="build_why"]')).not.toBeNull();
     await tap('[data-sr-slot="timeFrame"]');
-    expect($('[data-sr-foot] [data-sr-research="build_why"]')).toBeNull();
     expect($('[data-sr-panel="timeFrame"] [data-sr-free="set:timeFrame"]')).not.toBeNull();
-    await tap('[data-sr-panel-close="timeFrame"]');
-    expect($('[data-sr-foot] [data-sr-research="build_why"]')).not.toBeNull();
+    expect($('[data-sr-choices] [data-sr-research="build_why"]')).not.toBeNull();
+    expect($('[data-sr-choices] [data-sr-free="set:timeFrame"]')).toBeNull();
   });
   it('4C-7: the save issue\'s line sits beside Save and describes it', async () => {
     await openOn(TA.getSaveIssue);
@@ -1086,5 +1109,120 @@ describe('the refuter\'s round (fixes that regressed or fell short)', () => {
     typeInto($('#sr-thesis-edit'), `${mine}${' '.repeat(STATEMENT_MAX - mine.length + 5)}`);
     await flush();
     expect($('[data-sr-save-thesis]').disabled).toBe(false);
+  });
+});
+
+describe('the phone round (P-2 to P-7)', () => {
+  const SLOT_STATES = ['walkGetOpen', 'walkGetMap', 'walkGetSegment', 'walkGetNames', 'walkGetOneStock', 'walkGetWhy', 'walkGetConfirmWhy', 'walkGetWrongIf', 'getDeadEnd', 'getStoryOpen'];
+  it('P-2: the choices sit directly under the conversation and scroll with it; the pinned foot holds only the composer', async () => {
+    await openOn(TA.walkGetConfirmWhy);
+    const choices = $('[data-sr-choices]');
+    expect($('[data-sr-conversation]').nextElementSibling).toBe(choices);
+    expect(choices.querySelectorAll('[data-sr-free="set:wrongIf"]').length).toBeGreaterThan(0);
+    expect($$('[data-sr-foot] button[data-sr-free], [data-sr-foot] button[data-sr-research]')).toHaveLength(0);
+    expect($('[data-sr-foot] [data-sr-composer-input]')).not.toBeNull();
+    for (const el of [choices, ...choices.querySelectorAll('*')]) {
+      expect(['auto', 'scroll']).not.toContain(el.style.overflowY);
+      expect(['auto', 'scroll']).not.toContain(el.style.overflow);
+      expect(el.style.maxHeight).toBe('');
+    }
+  });
+  it('P-3: no "Continue later" in the builder; Discard sits behind "⋯" in the card\'s head and opens B2\'s discard confirm', async () => {
+    await openOn(TA.walkGetConfirmWhy);
+    expect(textOf()).not.toContain(COPY.later);
+    const more = $('[data-sr-card] [data-sr-more="card"]');
+    expect(more.getAttribute('aria-label')).toBe(B.moreActions);
+    expect(more.getAttribute('aria-expanded')).toBe('false');
+    expect($('[data-sr-discard]')).toBeNull();
+    await tap('[data-sr-more="card"]');
+    expect(more.getAttribute('aria-expanded')).toBe('true');
+    await tap('[data-sr-discard="card"]');
+    expect(textOf()).toContain(COPY.discardTitle);
+    expect(server.sent('close')).toHaveLength(0);
+  });
+  it('P-3: a closed builder keeps its closed actions and has no "⋯"', async () => {
+    await openOn(TA.getDeadEnd, {}, { close: TA.closeDeadEnd });
+    await tap('[data-sr-conclude]');
+    expect($('[data-sr-more]')).toBeNull();
+    expect(textOf()).toContain(COPY.returnCC);
+  });
+  it('P-4: the pick\'s button, its reason once, then the tick button — right under the list, in that order', async () => {
+    await openOn(TA.walkGetNames);
+    const pickBox = $('[data-sr-names-pick]');
+    const kids = [...pickBox.querySelector('[data-sr-names-buttons]').children];
+    expect(kids.map((k) => k.dataset.srFree ?? (k.hasAttribute('data-sr-pick-reason') ? 'reason' : '?'))).toEqual(['confirm:names', 'reason', 'set:names']);
+    expect(pickBox.lastElementChild).toBe(pickBox.querySelector('[data-sr-names-buttons]'));
+    expect($('[data-sr-free="confirm:names"]').textContent).toContain(B.pickButton('Atlas', 'NVDA and AMD'));
+    expect($('[data-sr-free="confirm:names"] [data-sr-mark]')).toBeNull();
+    expect($$('[data-sr-pick-reason]')).toHaveLength(1);
+    expect($('[data-sr-pick-reason]').textContent).toContain(thesisOf('walkGetNames').pick.reason);
+    expect($('[data-sr-free="set:names"]').textContent).toContain(B.namesBuild(''));
+    expect($('[data-sr-free="set:names"]').disabled).toBe(true);
+  });
+  it('P-4: the tick button names what it builds — one, two, three', async () => {
+    await openOn(TA.walkGetNames);
+    click($('[data-sr-name-row="AMD"] input'));
+    expect($('[data-sr-free="set:names"]').textContent).toContain(B.namesBuild('AMD'));
+    click($('[data-sr-name-row="AVGO"] input'));
+    expect($('[data-sr-free="set:names"]').textContent).toContain(B.namesBuild('AMD and AVGO'));
+    click($('[data-sr-name-row="NVDA"] input'));
+    expect($('[data-sr-free="set:names"]').textContent).toContain(B.namesBuild('NVDA, AMD and AVGO'));
+  });
+  it('P-4: the pick\'s tag sits once per picked row, on the symbol\'s own line', async () => {
+    await openOn(TA.walkGetNames);
+    for (const sym of ['NVDA', 'AMD']) {
+      const tags = $$(`[data-sr-name-row="${sym}"] [data-sr-name-pick]`);
+      expect(tags).toHaveLength(1);
+      const line = tags[0].parentElement;
+      expect(line.textContent.startsWith(sym)).toBe(true);
+      expect(line.style.whiteSpace).toBe('nowrap');
+    }
+    expect($$('[data-sr-name-row="AVGO"] [data-sr-name-pick]')).toHaveLength(0);
+  });
+  it('P-4: ticking exactly the agent\'s pick sends the server\'s confirm (routine choice 7)', async () => {
+    await openOn(TA.walkGetNames, {}, { card: TA.walkConfirmNames });
+    click($('[data-sr-name-row="AMD"] input'));
+    click($('[data-sr-name-row="NVDA"] input'));
+    await tap('[data-sr-free="set:names"]');
+    expect(last('card')).toMatchObject({ op: 'confirm', part: 'names', value: ['NVDA', 'AMD'] });
+  });
+  it('P-5: the latest reply in full; each earlier one folded to two lines with More (aria-expanded)', async () => {
+    await openOn(TA.walkGetConfirmWhy);
+    const said = $$('[data-sr-said]');
+    expect(said.length).toBeGreaterThan(1);
+    expect(said.map((n) => n.dataset.srSaidFolded)).toEqual([...said.slice(0, -1).map(() => 'true'), 'false']);
+    expect(said.at(-1).querySelector('[data-sr-said-more]')).toBeNull();
+    const more = said[0].querySelector('[data-sr-said-more]');
+    expect(more.getAttribute('aria-expanded')).toBe('false');
+    expect(more.textContent).toBe(B.moreReply);
+    await tap('[data-sr-said] [data-sr-said-more]');
+    expect($$('[data-sr-said]')[0].dataset.srSaidFolded).toBe('false');
+    expect($$('[data-sr-said]')[0].querySelector('[data-sr-said-more]').textContent).toBe(B.lessReply);
+    // the text is drawn as received; only its display folds
+    expect($$('[data-sr-said] [data-sr-said-text]').map((n) => n.textContent)).toEqual(TA.walkGetConfirmWhy.body.session.exchanges.filter((e) => e.who === 'partner').map((e) => e.text));
+  });
+  it.each(SLOT_STATES)('P-6 %s: no space before a comma or a full stop; a blank at the sentence\'s size, muted, dotted, unpadded; filled parts not bold', async (key) => {
+    await openOn(TA[key]);
+    const sentence = $('[data-sr-sentence]');
+    expect(sentence.textContent).not.toMatch(/\s[,.]/);
+    for (const blank of sentence.querySelectorAll('[data-sr-blank]')) {
+      expect(blank.style.padding + blank.style.paddingRight + blank.style.marginRight + blank.style.fontSize).toBe('');
+      expect(blank.style.borderBottom).toContain('dotted');
+    }
+    for (const part of sentence.querySelectorAll('[data-sr-slot] > span')) expect(['700', '600', 'bold']).not.toContain(part.style.fontWeight);
+  });
+  it('P-6: the ready sentence on the phone is 16 px, its parts not bold', async () => {
+    await openOn(TA.walkGetReady);
+    expect($('[data-sr-sentence]').style.fontSize).toBe('16px');
+    for (const part of $$('[data-sr-sentence] [data-sr-slot] > span')) expect(['700', '600', 'bold']).not.toContain(part.style.fontWeight);
+  });
+  it('P-7: "It’s wrong if…" leads the wrong-if options; "Time frame:" leads the time frames', async () => {
+    await openOn(TA.walkGetConfirmWhy);
+    const lead = $('[data-sr-choices] [data-sr-lead="wrongIf"]');
+    expect(lead.textContent).toBe(B.leadWrongIf);
+    expect(lead.compareDocumentPosition($('[data-sr-choices] [data-sr-free^="set:wrongIf"], [data-sr-choices] [data-sr-free="confirm:wrongIf"]')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    mounted.forEach((m) => m.unmount()); mounted = [];
+    await openOn(TA.walkGetWrongIf);
+    expect($('[data-sr-choices] [data-sr-lead="timeFrame"]').textContent).toBe(B.leadTimeFrame);
   });
 });

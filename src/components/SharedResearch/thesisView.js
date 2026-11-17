@@ -154,6 +154,8 @@ export function panelOf(thesis, part) {
 
 // ── the card ──────────────────────────────────────────────────────────────────
 
+/** The same names, in any order (ticking exactly the agent's pick sends its confirm; the phone round, P-4). */
+export const sameNames = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x) => b.includes(x));
 /** "A", "A and B", "A, B and C" — how a list of names is said. */
 export const joinNames = (xs) => {
   const list = Array.isArray(xs) ? xs : [];

@@ -112,14 +112,22 @@ const BUILDER = Object.freeze({
   themeConfirm: (value) => `Use “${value}” as the theme`,
   skipSegment: 'Skip the segment',
   namesHelp: (min, max) => `Tick ${min} to ${max}. Only a company with a sourced connection can be picked.`,
-  namesBuild: (n) => (n === 0 ? 'Build it on the names you tick' : n === 1 ? 'Build it on one stock' : `Build it on ${n} names`),
-  namesPick: (value) => `Build it on ${value}`,
+  // the names step (the phone round, P-4): the tick button names what it builds; the pick has its own button
+  namesBuild: (names) => (names ? `Build it on ${names}` : 'Build it on the names you tick'),
+  pickButton: (name, names) => `Use ${name}’s pick · ${names}`,
   lead: 'Lead · can’t be picked',
   confirmWhy: 'Confirm these reasons',
   keepSome: 'Keep some of the reasons',
   keepTicked: 'Keep the ticked reasons',
   dropUnsourced: (names) => `Build it on ${names} only`,
   useRevised: 'Use the revised why',
+  // choices that end the sentence read as its ending (the phone round, P-7)
+  leadWrongIf: 'It’s wrong if…',
+  leadTimeFrame: 'Time frame:',
+  // an earlier reply folds to two lines (P-5); Discard sits behind "⋯" (P-3)
+  moreReply: 'More',
+  lessReply: 'Less',
+  moreActions: 'More actions',
   // ── the composer (K-6) ──────────────────────────────────────────────────────────
   composerLabel: 'Your words',
   placeholder: Object.freeze({
