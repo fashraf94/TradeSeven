@@ -140,20 +140,31 @@ describe('divergent, empty and failed new-symbol answers, in both orders', () =>
 });
 
 describe('the transaction is the precondition: a top-up that commits between another\'s read and its write is not overwritten', () => {
-  it('A reads the omitted doc in its transaction; B\'s whole top-up commits; A is run again against B\'s result and adds its dividend to it', async () => {
+  /** A's publish reads the doc in its transaction; then — before A commits — B runs from start to finish. */
+  const interleaved = async (aMsft, bMsft) => {
     const db = seeded();
-    // A's publish reads the doc, then — before A commits — B runs from start to finish (it read the omitted doc too).
-    const bRead = deferred();
     let bRun = null;
-    db.setBarrier(async () => { bRun = rebuild(db, { msft: ok([]) }); await bRun; bRead.resolve(); });
-    const ra = await rebuild(db, { msft: ok([MSFT_DIV]) });
-    await bRead.promise;
-    expect((await bRun).built).toBe(true);
+    db.setBarrier(async () => { bRun = rebuild(db, { msft: bMsft }); await bRun; });
+    const ra = await rebuild(db, { msft: aMsft });
+    return { db, ra, rb: await bRun };
+  };
+
+  it('A (the dividend) reads the omitted doc; B\'s whole top-up commits; A is run again against B\'s result and adds its dividend to it', async () => {
+    const { db, ra, rb } = await interleaved(ok([MSFT_DIV]), ok([]));
+    expect(rb.built).toBe(true);
     expect(ra.built).toBe(true);
     const doc = day(db);
     expect(doc.symbols.MSFT.corporateActions).toEqual([MSFT_DIV]);
     expect(doc.symbols.AAPL).toEqual(OMITTED.symbols.AAPL);
     expect(doc).not.toHaveProperty('candidateUniverseOmitted');
+  });
+
+  it('A (no dividend) reads the omitted doc; B (the dividend) commits; A, run again, adopts B\'s result — a write against what A first read would have erased it', async () => {
+    const { db, ra, rb } = await interleaved(ok([]), ok([MSFT_DIV]));
+    expect(rb.built).toBe(true);
+    expect(ra.built).toBe(false); // nothing to add: adopted
+    expect(day(db).symbols.MSFT.corporateActions).toEqual([MSFT_DIV]);
+    expect(day(db).symbols.AAPL).toEqual(OMITTED.symbols.AAPL);
   });
 });
 
