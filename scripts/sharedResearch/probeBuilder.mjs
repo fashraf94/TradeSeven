@@ -13,10 +13,18 @@
 //   node --env-file=<parent checkout>/.env.local scripts/sharedResearch/probeBuilder.mjs
 // It is never printed, logged or written. Two calls: the script refuses to run
 // when either fixture already exists (pass --force to replace them on purpose).
+//
+// A refusal's own words (the founder's P-1, Nov 16): the call goes through
+// runTurn's `create` seam to the same SDK request modelTurn.js makes (the same
+// body, `maxRetries: 0`). When the API refuses, the probe record keeps the API's
+// error status, type and message (`apiError`) — never the key, never a header —
+// and the error is rethrown so runTurn answers exactly as in the app.
+// modelTurn.js is not edited.
 
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import Anthropic from '@anthropic-ai/sdk';
 import { runTurn, MODELS } from '../../api/_utils/sharedResearch/modelTurn.js';
 import { buildBuildSystemPrompt, renderBuildUser } from '../../api/_utils/sharedResearch/stepPrompt.js';
 import { BUILD_SCHEMA, validateBuildTurn } from '../../api/_utils/sharedResearch/thesisSchema.js';
@@ -37,6 +45,19 @@ if (!process.env.CLAUDE_API_KEY) {
   process.exit(2);
 }
 
+/** The key, if it ever appears in an error's text, is replaced — it is never written. */
+const redact = (s) => (typeof s === 'string' ? s.split(process.env.CLAUDE_API_KEY).join('[redacted]') : null);
+/** The API's own words on a refusal: its status, error type and message — never a header, never the request. */
+function apiErrorOf(err) {
+  const body = err?.error?.error ?? null; // the SDK's APIError: `error` is the response body { type: 'error', error: { type, message } }
+  return {
+    status: Number.isInteger(err?.status) ? err.status : null,
+    type: typeof body?.type === 'string' ? body.type : null,
+    message: redact(typeof body?.message === 'string' ? body.message : (typeof err?.message === 'string' ? err.message : null)),
+  };
+}
+const client = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY, maxRetries: 0 }); // as modelTurn.js builds it
+
 const system = buildBuildSystemPrompt({ partnerName: 'Atlas', method: BASELINE });
 const summary = [];
 for (const p of PROBES) {
@@ -44,14 +65,24 @@ for (const p of PROBES) {
     question: p.record.question, entryKind: p.entryKind, goal: p.goal, part: p.part, card: p.card, supported: p.supported,
     stepsLeft: 7, findings: currentFindingsOf(p.record), items: p.items, retrieval: 'items', room: 90,
   });
+  let apiError = null;
+  const create = async (body, opts) => {
+    try {
+      return await client.messages.create(body, opts);
+    } catch (err) {
+      apiError = apiErrorOf(err);
+      throw err;
+    }
+  };
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 60_000);
-  const turn = await runTurn({ kind: 'step', system, user, schema: BUILD_SCHEMA, signal: controller.signal });
+  const turn = await runTurn({ kind: 'step', system, user, schema: BUILD_SCHEMA, signal: controller.signal, create });
   clearTimeout(timer);
   const recorded = {
     recordedAt: new Date().toISOString(), goal: p.goal,
     model: turn.model, modelIds: MODELS,
     ok: turn.ok, reason: turn.reason ?? null, stopReason: turn.stopReason, category: turn.category ?? null,
+    apiError: turn.ok ? null : apiError,
     attempts: turn.attempts, elapsedMs: turn.elapsedMs, usage: turn.usage, costUsd: turn.costUsd,
     readAt: PROBE_B_READ_AT,
     output: turn.output ?? null,
@@ -68,6 +99,6 @@ for (const p of PROBES) {
     });
     validation = v.ok ? { ok: true, findings: v.findings.length, notes: v.notes, landed: Object.entries(v.proposals).filter(([k, x]) => !['goal', 'part'].includes(k) && x).map(([k]) => k) } : { ok: false, rule: v.rule, detail: v.detail };
   }
-  summary.push({ goal: p.goal, model: recorded.model, ok: recorded.ok, reason: recorded.reason, stopReason: recorded.stopReason, attempts: recorded.attempts, elapsedMs: recorded.elapsedMs, usage: recorded.usage, costUsd: recorded.costUsd, validation });
+  summary.push({ goal: p.goal, model: recorded.model, ok: recorded.ok, reason: recorded.reason, apiError: recorded.apiError, stopReason: recorded.stopReason, attempts: recorded.attempts, elapsedMs: recorded.elapsedMs, usage: recorded.usage, costUsd: recorded.costUsd, validation });
 }
 console.log(JSON.stringify(summary, null, 2));
