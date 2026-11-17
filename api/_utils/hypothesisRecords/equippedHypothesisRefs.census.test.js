@@ -55,14 +55,17 @@ const NAMERS = {
   'api/_utils/agentBattleService.js': 'FENCED: the battle writer copies the sibling verbatim (allowed: evidenceRefs, origin)',
   'api/_utils/callRecords/candidate.js': 'resolveProvenance: watchlistId, hypothesisVersion, contentHash only',
   'api/_utils/compositionGenerationFence.js': 'carriedSiblingOf(battleDoc) as a presence test before the creation transaction',
+  'api/_utils/filmRoom/__fixtures__/excerptFixtures.js': 'Film Room C2 fix round (Amendment D CD-8, CD-12) test fixture: writes a sibling built by carriage.js siblingOf (no read)',
   'api/_utils/hypothesisRecords/carriage.js': 'resolves and freezes the sibling; re-hashes it at creation (allowed: whole, value-blind)',
   'api/_utils/hypothesisRecords/review.js': 'carryingBattleOf: watchlistId, hypothesisVersion, contentHash only',
-  'api/_utils/tournamentBattleView.js': 'deletes the sibling from the league view',
+  'api/_utils/tournamentBattleView.js': 'a comment: the league view\'s non-owner allowlist never carries the sibling (security pack R-F, 15 Nov 2026)',
   'api/agent/decide.js': 'FENCED: puts the carriage\'s resolved sibling into the agent context (P1b), whole',
-  'api/tournament/battle-view.js': 'a comment: the league view route (tournamentBattleView deletes the sibling for it)',
+  'api/tournament/battle-view.js': 'a comment: the league view route (the non-owner allowlist never carries the sibling)',
   'src/components/Research/Sheet/__fixtures__/sheetBattles.js': 'Research Modal Build C test fixture: writes a sibling with the eleven keys (no read)',
   'src/components/Research/Sheet/packs.js': 'Research Modal Build C (BC-9): ideaOf — statement, activation, invalidation, watchlistId, hypothesisVersion only (never evidenceRefs or origin)',
   'src/config/featureFlags.js': 'flag documentation only',
+  'src/screens/filmRoomV2/__fixtures__/filmRoomHarness.jsx': 'Film Room C2 fix round (Amendment E CE-5) test harness: the sweep\'s own declared class for the sibling\'s hypothesisVersion path (no read)',
+  'src/utils/filmRoomSubject.js': 'Film Room C2 fix round (Amendment D CD-8, founder-approved): carriedIdeaOf — watchlistId, hypothesisVersion, contentHash only, for the moment excerpt and the subject line (never evidenceRefs, origin or the frozen statement)',
 };
 /** The only allowed reads. */
 const ALLOWED_READS = {

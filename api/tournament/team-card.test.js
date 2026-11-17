@@ -15,8 +15,10 @@
 //   · THE FIRST-WEEK CARD IS THE PRIMARY CASE — no rank doc → `known: null`,
 //     `lastWeek: null`, `derived: null`; the card says so rather than filling.
 //   · LAST WEEK'S TAPE comes from REAL completed battles and the group's own
-//     records (the draft stream, the roster's legs, the approved claims); the
-//     rationale is the agent's recorded words; an active battle and a non-
+//     records (the draft stream, the roster's legs, the approved claims); a
+//     swap's rationale is null — the card projects battles as a NON-owner,
+//     and since founder ruling R-F (15 Nov 2026) a non-owner never receives a
+//     swap's recorded words, at any status; an active battle and a non-
 //     tournament battle in the same group are ignored.
 //   · THE DERIVED LINE is computed from those facts through deriveWeekLine.
 //
@@ -331,7 +333,7 @@ describe('the veteran card — the team leads, from real completed data', () => 
     ]);
   });
 
-  it('last week — the agent\'s six from the frozen Monday portfolio, the one recorded swap, the agent\'s own recorded why', () => {
+  it('last week — the agent\'s six from the frozen Monday portfolio, the one recorded swap, and NO why (R-F: a non-owner never receives it)', () => {
     const ag = body.lastWeek.agent;
     expect(ag.agentName).toBe('Kestrel');
     expect(ag.swaps).toBe(1);
@@ -339,7 +341,9 @@ describe('the veteran card — the team leads, from real completed data', () => 
     expect(ag.picks.find((p) => p.symbol === 'ANET')).toEqual({ symbol: 'ANET', sector: 'technology', drafted: true, heldAtClose: false, swappedOut: { day: 'THU', forSymbol: 'SMCI' } });
     expect(ag.picks.find((p) => p.symbol === 'SMCI')).toEqual({ symbol: 'SMCI', sector: null, drafted: false, heldAtClose: true, addedIn: { day: 'THU', forSymbol: 'ANET' } });
     expect(ag.picks.find((p) => p.symbol === 'NVDA')).toEqual({ symbol: 'NVDA', sector: 'technology', drafted: true, heldAtClose: true, swappedOut: null });
-    expect(ag.trades).toEqual([{ day: 'THU', symbolOut: 'ANET', symbolIn: 'SMCI', rationale: 'Broke its Monday low. Rule is rule.' }]);
+    expect(ag.trades).toEqual([{ day: 'THU', symbolOut: 'ANET', symbolIn: 'SMCI', rationale: null }]);
+    expect(JSON.stringify(body)).not.toContain('Broke its Monday low');
+    expect(JSON.stringify(body)).not.toContain('SMCI confirms the chip read');
   });
 
   it('RAWID-2: last week\'s agent name passes the label\'s belt — a battle record whose agent name is id-shaped carries none', async () => {

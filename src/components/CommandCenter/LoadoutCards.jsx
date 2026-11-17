@@ -22,6 +22,7 @@ import { LOADOUT_COPY } from '../../constants/loadoutCopy';
 import { C, HAIR, LOADOUT_CARD_MIN, MONO, tint } from './hub/hubStyle';
 import { Card, Eyebrow, HubLink, Icon, LoadingLine, Tag } from './HubParts';
 import { PerGameLoadoutContext, cardsOf } from './hub/perGameLoadoutContext';
+import { LEAGUE_HIDE_ENABLED } from '../../config/featureFlags';
 
 /** The book's glyph: a list, dashed and dim when there is no book. */
 function BookGlyph({ size, none }) {
@@ -173,7 +174,9 @@ export default function LoadoutCards({ onOpenArchetype, onOpenBook, adjustmentsC
   return (
     <>
       <div data-loadout-cards="" style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fit, minmax(${LOADOUT_CARD_MIN}px, 1fr))`, gap: 10 }}>
-        {[cards.baggerbomb, cards.league].map((card) => (
+        {/* League hide (BB-1; ruling Q3): while the league is hidden the BaggerBomb card is the one loadout. A literal ternary on the
+            flag, so flag-off this is today's array. */}
+        {(LEAGUE_HIDE_ENABLED ? [cards.baggerbomb] : [cards.baggerbomb, cards.league]).map((card) => (
           <LoadoutCard
             key={card.kind}
             card={card}

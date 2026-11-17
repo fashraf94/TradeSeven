@@ -110,7 +110,8 @@ export const CARD_ROUTE_COPY = Object.freeze({
   version_conflict: 'The card changed since you loaded it. Reload and try again.',
   // Amendment A CA-23: after CA-1, CA-2 and CA-5 a full set may hold nothing the player can retire — the words say what
   // stops a card counting, never "Retire a card first"
-  cap_reached: 'The open-card cap for this agent is reached. A card stops counting once it is retired, parked, equipped or not taken.',
+  // Film Room C2 (Amendment C CC-8): the stored stage stays `installed`; the player reads it as adopted
+  cap_reached: 'The open-card cap for this agent is reached. A card stops counting once it is retired, parked, adopted or not taken.',
   shelved: 'This card is shelved: it was made under another archetype and cannot move until the agent returns to it.',
   illegal_transition: 'That change is not allowed from the card\'s current stage.',
   invalid_transition: 'That transition or its payload is not one the ledger takes.',
@@ -513,6 +514,8 @@ function retireRefusalOf(entry) {
 
 /** The source reference of a nomination record, field by field — the five the record names its card by. */
 const sameSource = (a, b) => isPlainObject(a) && isPlainObject(b) && ['kind', 'entryId', 'situationId', 'questionId', 'questionVersion'].every((k) => a[k] === b[k]);
+/** Does the record name THIS entry — a Film Room card's source (`kind: film_room_card`) with this `entryId`? */
+const recordNamesEntry = (record, entryId) => isPlainObject(record?.source) && record.source.kind === NOMINATION_SOURCE_KIND && record.source.entryId === entryId;
 
 /**
  * CA-2 — the record's withdrawal, by the Practice Field's builder (the seam's buildWithdrawal), checked before any write:
@@ -523,11 +526,11 @@ function withdrawalOf(record, entryId, nowIso) {
   // C1 fix round §2 review (A1, A5/C2): the record must be THIS entry's — a Film Room card's record naming this entry —
   // before anything is built from it; and its source reference is copied BEFORE the builder runs, so a builder that
   // edits its input in place cannot pass the check it is held to (F2's association, at the withdrawal)
-  const src = isPlainObject(record.source) ? record.source : null;
-  if (!src || src.kind !== NOMINATION_SOURCE_KIND || src.entryId !== entryId) {
+  if (!recordNamesEntry(record, entryId)) {
     console.error('[film-room/cards] the nomination record names another card; nothing was written');
     throw unavailableNomination();
   }
+  const src = record.source;
   const own = Object.fromEntries(['kind', 'entryId', 'situationId', 'questionId', 'questionVersion'].map((k) => [k, src[k]]));
   let out;
   try {
@@ -558,9 +561,12 @@ function withdrawalOf(record, entryId, nowIso) {
  *   accepted                         409 illegal_transition `{ stage: 'nominated', nominationState: 'accepted' }`; nothing written;
  *   queued · considered · deferred   the record moves to `withdrawn` (the seam's buildWithdrawal, checked) and the entry
  *                                    retires, its copy's state `withdrawn` — both in this one transaction;
- *   declined · expired · withdrawn   the entry retires, its copy's state the record's; nothing written to the book;
+ *   declined · expired · withdrawn   the entry retires, its copy's state the record's; nothing written to the book —
+ *                                    only when the record names THIS entry (a `film_room_card` source with this
+ *                                    `entryId`; Astra BG-1, Film Room C2 Amendment C CC-9 item 2), as a withdrawn one must;
  *   no document                      the entry retires; nothing written to the book.
- * It fails closed: a record read that fails, a record whose state is not one of NOMINATION_STATES, a builder that throws
+ * It fails closed: a record read that fails, a record whose state is not one of NOMINATION_STATES, a terminal or a
+ * withdrawable record naming another entry (or none), a builder that throws
  * or returns anything but a plain `withdrawn` record with the record's own source → 503 nomination_unavailable, nothing
  * written, the card not retired. A contention abort (gRPC ABORTED) is rethrown as it came, so the SDK retries. The book's
  * status is not read: a withdrawal is the player's answer, whatever state the book is in (CA-12). A v1 entry with no
@@ -608,6 +614,13 @@ export async function retireCard(db, { uid, agentId, entryId, opId, expectedVers
       if (recordSnap?.exists) {
         const record = typeof recordSnap.data === 'function' ? recordSnap.data() : recordSnap.data;
         if (!isObj(record) || !NOMINATION_STATES.includes(record.state)) throw unavailableNomination();
+        // Astra BG-1 (Film Room C2, Amendment C CC-9 item 2; the §2 review's L3-4: before ANY state dispatch, as BG-1
+        // suggests): the record decides nothing until it names THIS entry — a terminal one, an accepted one, a
+        // withdrawable one alike; otherwise 503 nomination_unavailable, nothing written, the card not retired
+        if (!recordNamesEntry(record, entryId)) {
+          console.error('[film-room/cards] the nomination record names another card; nothing was written');
+          throw unavailableNomination();
+        }
         if (record.state === 'accepted') throw fail(409, 'illegal_transition', { stage: 'nominated', nominationState: 'accepted' });
         if (WITHDRAWABLE_STATES.includes(record.state)) {
           withdrawal = withdrawalOf(record, entryId, nowIso);

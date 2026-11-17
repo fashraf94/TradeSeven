@@ -143,6 +143,10 @@ describe('the open-card cap (S9) — only cards that are neither shelved nor ret
     expect(r.message).toBe(CARD_ROUTE_COPY.cap_reached);
     expect(t.store.has(playPath('op_6'))).toBe(false);
   });
+  it('Film Room C2 (Amendment C CC-8): the server\'s words read `installed` as adopted — the cap\'s sentence, and no word of the store\'s copy says "equip"', () => {
+    expect(CARD_ROUTE_COPY.cap_reached).toBe('The open-card cap for this agent is reached. A card stops counting once it is retired, parked, adopted or not taken.');
+    expect(Object.entries(CARD_ROUTE_COPY).filter(([, text]) => /equip/i.test(text)).map(([k]) => k)).toEqual([]);
+  });
 
   it('a RETIRED card does not count: retire one of five, and the sixth files', async () => {
     const t = fresh();

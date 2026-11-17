@@ -136,6 +136,7 @@ import LeagueBattleViewRender from '../../screens/leagueBattleViewRender';
 import LeagueTrainingBattleView from '../../screens/LeagueTrainingBattleView';
 import LeagueParticipantView from '../../screens/LeagueParticipantView';
 import TournamentDevScreen from '../../screens/TournamentDevScreen';
+import { WHY_PRIVATE_NOTE, FEED_PRIVATE_NOTE } from './Flat6BattleView';
 
 const UID = 'league-owner-1';
 
@@ -410,15 +411,19 @@ describe('the live feed — a beat whose outcome could not be confirmed (table G
     for (let i = 0; i < 8; i += 1) expect(text).toContain(`Move ${i} on the book.`);
   });
 
-  it('a spectator’s copy (the real public projection, which carries the marker) reads the same — words and all', () => {
+  // Founder ruling R-F (15 Nov 2026): a spectator's copy carries NO feed — its free-text lines hold guardrail
+  // levels and the agent's own words. The card must say the feed is not shared, never "No moves yet today."
+  it('a spectator’s copy (the real public projection) carries no feed since R-F: the card says so, and no line of the owner’s renders', () => {
     const MARKED_HOLD = { timestamp: '2026-09-09T15:31:00.000Z', message: 'Rotating GILD into MOS.', action: 'hold', source: 'haiku', executionOutcome: 'unknown' };
     const projected = projectTournamentBattle({ ...battleWith([]), ownerId: 'someone-else', statusFeed: [beat(1), UNKNOWN, MARKED_HOLD] }, { isOwner: false });
-    expect(projected.statusFeed.map((e) => e.executionOutcome ?? null)).toEqual([null, 'unknown', 'unknown']);
-    mountWith(projected.statusFeed);
+    expect(projected.statusFeed).toEqual([]);
+    globalThis.__FLAT6_TEST_BATTLE__ = projected;
+    mount(<LeagueBattleViewRender group={GROUP} battle={projected} mode="ranked" uid={UID} compositeContext={null} isDesktop={false} />);
     const text = feedText();
-    expect(text).not.toContain('risk_swap_failed');
+    expect(text).toContain(FEED_PRIVATE_NOTE);
+    expect(text).not.toContain('No moves yet today.');
+    expect(text).not.toContain('Move 1 on the book.');
     expect(text).not.toContain('Rotating GILD into MOS.');
-    expect(text).toContain('Move 1 on the book.');
   });
 
   it('a real failure keeps its line; a marked beat with words is dropped too (review ER4-3 — its words were written before the swap ran)', () => {
@@ -432,5 +437,37 @@ describe('the live feed — a beat whose outcome could not be confirmed (table G
     expect(text).toContain('Risk exit of GILD failed: quote unavailable');
     expect(text).not.toContain('Rotating GILD into MOS.');
     expect(text).not.toContain('Forcing exit');
+  });
+});
+
+// Security pack, founder ruling R-F (15 Nov 2026): a spectator never receives a
+// rival's reasoning, live or after completion — the completed battle arrives
+// as the allowlist projection, `_whyConcealed`. The card must say so truthfully:
+// never that the reasoning "opens to everyone at completion".
+describe('R-F — a spectator opening a rival\'s COMPLETED battle reads the private note, never the words', () => {
+  const STRATEGY = 'PLANTED-STRATEGY: ride the breakout';
+  const completedWithWhy = battleWith([{ evalId: 'e9', rationale: AGENT_RATIONALE, hypothesis: AGENT_HYPOTHESIS }], {
+    status: 'completed', ownerId: UID,
+    agentContext: { agentName: 'Aurora', archetype: 'momentum', innerMonologue: { strategy: STRATEGY } },
+  });
+
+  it('a non-owner: the private note, no strategy, no recorded check, no promise of an unlock', () => {
+    globalThis.__FLAT6_TEST_BATTLE__ = projectTournamentBattle(completedWithWhy, { isOwner: false });
+    mount(<SpectatorView group={GROUP} uid="spectator-2" onBack={() => {}} />);
+    clickButton(/Open battle view/);
+    const text = recordCardText();
+    expect(text).toContain(WHY_PRIVATE_NOTE);
+    expect(text).not.toMatch(/opens to everyone|at completion|Film Room/i);
+    expect(text).not.toContain(STRATEGY);
+    expect(text).not.toContain(AGENT_RATIONALE);
+  });
+
+  it('the owner: their own completed battle still shows its words, and no private note', () => {
+    globalThis.__FLAT6_TEST_BATTLE__ = projectTournamentBattle(completedWithWhy, { isOwner: true });
+    mount(<SpectatorView group={GROUP} uid={UID} onBack={() => {}} />);
+    clickButton(/Open battle view/);
+    const text = recordCardText();
+    expect(text).toContain(STRATEGY);
+    expect(text).not.toContain(WHY_PRIVATE_NOTE);
   });
 });

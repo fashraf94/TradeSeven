@@ -473,14 +473,21 @@ export function axisDefects(container, docs) {
  */
 const isTypedText = (node) => node?.parentElement?.tagName === 'TEXTAREA' && node.parentElement.hasAttribute('data-note');
 
+/**
+ * Film Room C2 fix round (Build C Amendment E, CE-5): the BATTLE document's one number the screen marks — the version its
+ * frozen carriage names — and its class as the ruling gives it: recorded (the server wrote it at deploy). The battle
+ * holds no number declaration of its own; this oracle is the harness's, not the screen's.
+ */
+export const SPEC_BATTLE_NUMBER_CLASSES = Object.freeze({ 'agentContext.equippedHypothesis.hypothesisVersion': 'recorded' });
 export function sweepNumbers(container, docs) {
   const bad = [];
   for (const el of container.querySelectorAll('[data-num]')) {
-    const doc = docs[el.getAttribute('data-num-doc')];
+    const label = el.getAttribute('data-num-doc');
+    const doc = docs[label];
     const where = el.getAttribute('data-num');
     if (!doc) { bad.push(`unknown document for ${where}`); continue; }
     const path = parsePath(where);
-    const want = classOfNumber(doc.numberClasses, path);
+    const want = classOfNumber(doc.numberClasses ?? (label === 'battle' ? SPEC_BATTLE_NUMBER_CLASSES : undefined), path);
     const got = el.getAttribute('data-num-class');
     const mark = el.querySelector('[data-kind-mark]')?.getAttribute('data-kind-mark');
     if (!want) bad.push(`${where}: no declared class`);
@@ -527,6 +534,8 @@ export function sweepNumbers(container, docs) {
     if (boundStoredNoteOf(host, docs)) continue;
     // R13: the agent’s name, bound to its stored field, is a stored display name — not a number the screen states.
     if (boundAgentNameOf(host, docs)) continue;
+    // C2 (CC-7): the subject line's statement, bound to the version document as read — the player's own words
+    if (boundSubjectStatementOf(host, docs)) continue;
     // A2F1-7: a fixed-digit copy entry, bound by its key — the WHOLE text node is one of them, or nothing is exempt
     if (isFixedDigitCopy(node.textContent)) continue;
     if (host.closest('[data-time]')) for (const re of TIME_PATTERNS) text = text.replace(re, ' ');
@@ -631,6 +640,27 @@ export function boundQuotationOf(node, docs = {}) {
   return [...q.parentElement.children].some((c) => c.hasAttribute('data-quote-attribution')) ? q : null;
 }
 
+/**
+ * Film Room C2 (Build C Amendment C CC-7) — the subject line's statement, PINNED HERE from the amendment (never read
+ * from the screen): the idea's statement — carried only within 280 code points (CC-2) — cut to its first 60 code
+ * points. An element `[data-subject-statement]` inside a `[data-subject-line]` is BOUND when the suite's version
+ * document (`docs.idea`, PINNED here — never a document the screen names; §2 review L3-7) holds a statement within 280
+ * code points whose first 60 code points are, byte for byte, its text, and no heading sits around it or inside it: the
+ * player's own words, which the sweeps leave to the record as they leave a bound quotation's (R7). No attribution sits
+ * beside it: CC-7's own format names the speaker ("under your idea"). A forged, longer, other or unbound text stays swept.
+ */
+export const SPEC_SUBJECT_STATEMENT = Object.freeze({ max: 280, cut: 60 });
+export function boundSubjectStatementOf(node, docs = {}) {
+  const el = node?.nodeType === 1 ? node : node?.parentElement;
+  const s = el?.closest('[data-subject-statement]');
+  if (!s || !s.parentElement?.closest('[data-subject-line]')) return null;
+  const doc = docs.idea;
+  const stmt = doc && typeof doc.statement === 'string' && doc.statement ? doc.statement : null;
+  if (!stmt || [...stmt].length > SPEC_SUBJECT_STATEMENT.max) return null;
+  if (s.textContent !== [...stmt].slice(0, SPEC_SUBJECT_STATEMENT.cut).join('')) return null;
+  return headingAt(s) ? null : s;
+}
+
 const ET_DAY_KEY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' });
 const MONTH_DAY = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric' });
 /** The record's time as its attribution must read it: the ET clock, with the date when it is not the tape's day. */
@@ -681,7 +711,8 @@ export function quoteDefects(container, docs = {}) {
 export function renderedText(container, docs = {}) {
   const parts = [];
   const walker = container.ownerDocument.createTreeWalker(container, NodeFilter.SHOW_TEXT);
-  for (let node = walker.nextNode(); node; node = walker.nextNode()) if (!boundQuotationOf(node, docs) && !boundAgentNameOf(node, docs) && !isTypedText(node)) parts.push(node.textContent);
+  // C2 (CC-7): a bound subject-line statement is the player's own words, as a bound quotation's are
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) if (!boundQuotationOf(node, docs) && !boundAgentNameOf(node, docs) && !boundSubjectStatementOf(node, docs) && !isTypedText(node)) parts.push(node.textContent);
   for (const el of container.querySelectorAll(TEXT_ATTRIBUTE_SELECTOR)) for (const attr of TEXT_ATTRIBUTES) parts.push(el.getAttribute(attr) || '');
   return parts.join(' \n ');
 }
@@ -705,6 +736,7 @@ function numberWordHits(container, docs) {
     if (isDirectoryName(host)) continue;
     if (boundStoredNoteOf(node, docs)) continue;
     if (boundAgentNameOf(node, docs)) continue;   // R13
+    if (boundSubjectStatementOf(node, docs)) continue;   // C2 (CC-7): the player's own words on the subject line
     const m = text.match(NUMBER_WORD);
     if (m) hits.push(`number word “${m[0]}”: ${node.textContent.trim().slice(0, 80)}`);
   }

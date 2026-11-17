@@ -1421,3 +1421,57 @@ describe('Astra §4 — CA-12: the book changed between the transaction\'s re-re
     }
   }
 });
+
+// ── Film Room C2 item 7 (Build C Amendment C CC-9 item 2; Astra's C1 confirmation, backlog BG-1) ─────────────────────
+describe('Astra BG-1 — a terminal record (declined, expired, withdrawn) must name the retiring entry, as a withdrawn one must', () => {
+  const RECORD_PATH = `mandates/${BOOK}/nominations/nom_c1`;
+  /** The book's record for the planted nomination, the default builder's shape (naming `c1`), at `state`, with `over`. */
+  const withRecord = (t, state, over = {}) => {
+    const rec = seam.PRACTICE_FIELD_SEAM_DEFAULTS.buildNominationDoc({ entryId: 'c1', situationId: 'stalled', questionId: 'stalled.want', questionVersion: 1, nowIso: NOW, expiresAfterSessions: 10 });
+    t.store.set(RECORD_PATH, { ...rec, state, ...over });
+    return t.store.get(RECORD_PATH);
+  };
+  const retire = (t, at) => retireCard(t.db, { uid: UID, agentId: AGENT, entryId: 'c1', opId: 'r1', expectedVersion: at.version, nowIso: LATEST });
+  const ANOTHER = [
+    { source: { kind: 'film_room_card', entryId: 'different-entry', situationId: 'stalled', questionId: 'stalled.want', questionVersion: 1 } },
+    { source: {} },
+    { source: { kind: 'signal_drop', entryId: 'c1' } },
+    { source: null },
+  ];
+  for (const state of ['declined', 'expired', 'withdrawn']) {
+    it(`${state}: naming this entry, the card retires and its copy takes the state, the record untouched; naming another entry, none, another kind or no source — 503 nomination_unavailable, nothing written, the card not retired (the mutant: another entry's terminal record retires the card)`, async () => {
+      const ok = fresh();
+      const at0 = await nominated(ok);
+      const before = withRecord(ok, state);
+      const r = await retire(ok, at0);
+      expect(r.card).toMatchObject({ stage: 'retired', nomination: { state }, version: at0.version + 1 });
+      expect(ok.store.get(RECORD_PATH)).toEqual(before);
+      for (const over of ANOTHER) {
+        const t = fresh();
+        const at = await nominated(t);
+        const planted = withRecord(t, state, over);
+        const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const writes = t.writeLog.length;
+        expect(await code(retire(t, at)), JSON.stringify(over)).toEqual({ status: 503, code: 'nomination_unavailable', extra: {} });
+        expect(t.writeLog.length, JSON.stringify(over)).toBe(writes);
+        expect(t.store.get(playPath('c1')), JSON.stringify(over)).toMatchObject({ stage: 'nominated', version: at.version, nomination: { state: 'queued' } });
+        expect(t.store.get(RECORD_PATH)).toEqual(planted);
+        errors.mockRestore();
+      }
+    });
+  }
+  it('the check comes BEFORE any state dispatch (§2 review L3-4): an accepted record naming another entry is 503 too, never "already moved"; one naming this entry keeps its 409', async () => {
+    for (const over of ANOTHER) {
+      const t = fresh();
+      const at = await nominated(t);
+      withRecord(t, 'accepted', over);
+      const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+      expect(await code(retire(t, at)), JSON.stringify(over)).toEqual({ status: 503, code: 'nomination_unavailable', extra: {} });
+      errors.mockRestore();
+    }
+    const own = fresh();
+    const at = await nominated(own);
+    withRecord(own, 'accepted');
+    expect(await code(retire(own, at))).toEqual({ status: 409, code: 'illegal_transition', extra: { stage: 'nominated', nominationState: 'accepted' } });
+  });
+});

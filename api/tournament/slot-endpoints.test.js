@@ -20,6 +20,7 @@ vi.mock('../../src/config/featureFlags.js', () => ({
   get LEAGUE_LIVE_DRAFT() { return h.flag; },
   LEAGUE_CANONICAL_OPEN_CAPTURE: false,
   LEAGUE_LOBBY_ENABLED: true, // lobbyEndpoint.js (parseBody/resolveDisplayName reuse) imports it
+  LEAGUE_HIDE_ENABLED: false, // leagueHidden.js: runSlotEndpoint asks it for slot-claim (league hide, BB-1); off, as shipped
   // Backing Amendment D R3 (safety fix 1): claimSlotSeat reads it at call time
   // to decide whether to run the back-then-join check — off, as in production.
   BACKING_BETA_ENABLED: false,

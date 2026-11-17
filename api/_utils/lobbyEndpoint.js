@@ -26,6 +26,7 @@
 import { getFirebaseAdmin } from './firebaseAdmin.js';
 import { requireAuth } from './authMiddleware.js';
 import { LEAGUE_LOBBY_ENABLED } from '../../src/config/featureFlags.js';
+import { refuseWhenLeagueHidden } from './leagueHidden.js';
 
 const LOG_PREFIX = '[TournamentLobby:api]';
 
@@ -84,6 +85,9 @@ export async function runLobbyEndpoint(req, res, fn) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'method_not_allowed', message: 'Method not allowed. Use POST.' });
   }
+  // League hide (BB-1; founder rulings Q1, Q4): every lobby route is an entry door, so all six answer the one typed
+  // refusal while LEAGUE_HIDE_ENABLED is on — after the method guard, before the lobby's own flag and before auth.
+  if (refuseWhenLeagueHidden(res)) return;
   if (!LEAGUE_LOBBY_ENABLED) {
     // Built dark: the front door is gated on the same const, so this path is
     // only reachable by a direct call while the feature is off.

@@ -25,6 +25,7 @@ import { parseBody, resolveDisplayName } from './lobbyEndpoint.js';
 import { SLOT_SENTINEL_PREFIX } from './liveDraftFormation.js';
 import { LIVE_DRAFT_SENTINEL_PREFIX } from './liveDraftLifecycle.js';
 import { LEAGUE_LIVE_DRAFT } from '../../src/config/featureFlags.js';
+import { refuseWhenLeagueHidden } from './leagueHidden.js';
 
 const LOG_PREFIX = '[LiveDraftSlot:api]';
 
@@ -77,11 +78,17 @@ export function mapSlotServiceError(err, res) {
  * own logic, with a single catch that maps service errors to HTTP. The route
  * receives { req, res, user, db, body } and sends its own success (and any
  * route-specific 4xx, e.g. a bad id).
+ *
+ * `leagueEntry` (league hide, BB-1; founder ruling Q1): true for the one slot route that is an ENTRY door (slot-claim).
+ * While LEAGUE_HIDE_ENABLED is on it answers the one typed refusal (api/_utils/leagueHidden.js), after the method guard
+ * and before the flag gate and auth. slot-release, live-draft-pick and slot-schedule never set it: they serve a group
+ * already in flight, so they keep answering.
  */
-export async function runSlotEndpoint(req, res, { allow = ['POST'] } = {}, fn) {
+export async function runSlotEndpoint(req, res, { allow = ['POST'], leagueEntry = false } = {}, fn) {
   if (!allow.includes(req.method)) {
     return res.status(405).json({ error: 'method_not_allowed', message: `Method not allowed. Use ${allow.join('/')}.` });
   }
+  if (leagueEntry === true && refuseWhenLeagueHidden(res)) return;
   if (!LEAGUE_LIVE_DRAFT) {
     // Built dark: the picker gates on the same const, so this path is only
     // reachable by a direct call while the feature is off.

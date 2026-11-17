@@ -905,6 +905,47 @@ export function pickCurrentTournamentBattle(battles) {
 }
 
 /**
+ * Security pack, founder ruling R-F (15 Nov 2026): the league view
+ * (GET /api/tournament/battle-view) carries no account id, so its battles are
+ * keyed by SEAT — the owner's index in the group document's `players` array,
+ * as a string ('0'..'3'). Every writer of `players` during a battle rewrites
+ * it with map() or a deep copy, so the order is the seat order the client's
+ * own subscription to the same group document reads. ONE home for the seat
+ * rule: the server keys with seatIndexByOwner, the client joins back with
+ * battlesByOwnerFromSeats, so the two can never disagree on a seat. Pure.
+ *
+ * @param {Array} players  the group document's `players`
+ * @returns {Map<string, string>} owner id -> seat key; an owner with no seat is absent
+ */
+export function seatIndexByOwner(players) {
+  const out = new Map();
+  (Array.isArray(players) ? players : []).forEach((p, i) => {
+    if (p && typeof p.odUserId === 'string' && p.odUserId && !out.has(p.odUserId)) out.set(p.odUserId, String(i));
+  });
+  return out;
+}
+
+/**
+ * The client half of the seat rule: the league view's seat-keyed battles,
+ * joined back to the seats of the group document the client already holds.
+ * Returns the owner-keyed map the league surfaces read. A seat with no battle,
+ * and a battle with no seat, are left out. Pure.
+ *
+ * @param {Object} battlesBySeat  the endpoint's `battles` ({ '0': battle, ... })
+ * @param {Array} players         the group document's `players`
+ * @returns {Object} owner id -> battle
+ */
+export function battlesByOwnerFromSeats(battlesBySeat, players) {
+  const out = {};
+  if (!battlesBySeat || typeof battlesBySeat !== 'object') return out;
+  for (const [ownerId, seat] of seatIndexByOwner(players)) {
+    const battle = battlesBySeat[seat];
+    if (battle) out[ownerId] = battle;
+  }
+  return out;
+}
+
+/**
  * THE one home for k (Spec §0.10): composite = agentScore + k × userScore.
  * Every composite in the system — banking snapshots, advancement locks,
  * leaderboard rows, rank inputs — comes through here.

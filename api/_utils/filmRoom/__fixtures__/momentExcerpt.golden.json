@@ -1,0 +1,262 @@
+{
+  "moment": {
+    "excerpt": {
+      "excerptVersion": 1,
+      "battle": "b1",
+      "symbol": {
+        "value": "ETN",
+        "class": "recorded"
+      },
+      "situationId": {
+        "value": "stalled",
+        "class": "recorded"
+      },
+      "situationVersion": {
+        "value": 2,
+        "class": "recorded"
+      },
+      "from": {
+        "value": "2026-09-23T17:45:20.000Z",
+        "class": "recorded"
+      },
+      "to": {
+        "value": "2026-09-23T18:45:20.000Z",
+        "class": "recorded"
+      },
+      "checks": {
+        "value": 5,
+        "class": "derived"
+      },
+      "sector": {
+        "value": "Industrials",
+        "class": "recorded"
+      },
+      "idea": {
+        "label": "i1",
+        "version": {
+          "value": 3,
+          "class": "recorded"
+        },
+        "statement": {
+          "text": "Industrials and chips lead while the wider market drifts; rotate out of names that stop moving.",
+          "by": "player",
+          "at": "2026-09-20T15:00:00.000Z",
+          "class": "quoted"
+        }
+      },
+      "rationale": {
+        "hypothesis": {
+          "text": "A hold above 159 at 2:00 is the trigger: DE out, PLTR in.",
+          "by": "agent",
+          "at": "2026-09-23T17:45:15.000Z",
+          "class": "quoted"
+        },
+        "rationale": {
+          "text": "PLTR is pressing 159 with volume building into the hour, and DE has still not moved.",
+          "by": "agent",
+          "at": "2026-09-23T17:45:15.000Z",
+          "class": "quoted"
+        }
+      },
+      "directive": {
+        "playerText": {
+          "text": "Protect the lead into the close.",
+          "by": "player",
+          "at": "2026-09-23T17:40:00.000Z",
+          "class": "quoted"
+        },
+        "canonicalText": {
+          "text": "Tighten the downside stop.",
+          "by": "platform",
+          "at": "2026-09-23T17:40:00.000Z",
+          "class": "quoted"
+        }
+      },
+      "exit": {
+        "mechanism": {
+          "value": "archetype_rotation",
+          "class": "recorded"
+        },
+        "exitReason": {
+          "value": "stagnation",
+          "class": "recorded"
+        },
+        "sold": {
+          "value": "ETN",
+          "class": "recorded"
+        },
+        "bought": {
+          "value": "PANW",
+          "class": "recorded"
+        },
+        "exitPrice": {
+          "value": 385.77,
+          "class": "recorded"
+        }
+      },
+      "afterExit": {
+        "close": {
+          "value": 385.7,
+          "class": "market"
+        },
+        "barStart": {
+          "value": "2026-09-23T19:50:00.000Z",
+          "class": "market"
+        },
+        "barsAfter": {
+          "value": 5,
+          "class": "derived"
+        }
+      },
+      "count": {
+        "value": 7,
+        "class": "derived"
+      }
+    },
+    "refs": {
+      "b1": "b-sep23-excerpt",
+      "i1": "wl-sep23-idea"
+    }
+  },
+  "card": {
+    "excerpt": {
+      "excerptVersion": 1,
+      "battle": "b1",
+      "symbol": {
+        "value": "ETN",
+        "class": "recorded"
+      },
+      "situationId": {
+        "value": "stalled",
+        "class": "recorded"
+      },
+      "situationVersion": {
+        "value": 2,
+        "class": "recorded"
+      },
+      "from": {
+        "value": "2026-09-23T17:45:20.000Z",
+        "class": "recorded"
+      },
+      "to": {
+        "value": "2026-09-23T18:45:20.000Z",
+        "class": "recorded"
+      },
+      "checks": {
+        "value": 5,
+        "class": "derived"
+      },
+      "sector": {
+        "value": "Industrials",
+        "class": "recorded"
+      },
+      "idea": {
+        "label": "i1",
+        "version": {
+          "value": 3,
+          "class": "recorded"
+        },
+        "statement": {
+          "text": "Industrials and chips lead while the wider market drifts; rotate out of names that stop moving.",
+          "by": "player",
+          "at": "2026-09-20T15:00:00.000Z",
+          "class": "quoted"
+        }
+      },
+      "rationale": {
+        "hypothesis": {
+          "text": "A hold above 159 at 2:00 is the trigger: DE out, PLTR in.",
+          "by": "agent",
+          "at": "2026-09-23T17:45:15.000Z",
+          "class": "quoted"
+        },
+        "rationale": {
+          "text": "PLTR is pressing 159 with volume building into the hour, and DE has still not moved.",
+          "by": "agent",
+          "at": "2026-09-23T17:45:15.000Z",
+          "class": "quoted"
+        }
+      },
+      "directive": {
+        "playerText": {
+          "text": "Protect the lead into the close.",
+          "by": "player",
+          "at": "2026-09-23T17:40:00.000Z",
+          "class": "quoted"
+        },
+        "canonicalText": {
+          "text": "Tighten the downside stop.",
+          "by": "platform",
+          "at": "2026-09-23T17:40:00.000Z",
+          "class": "quoted"
+        }
+      },
+      "exit": {
+        "mechanism": {
+          "value": "archetype_rotation",
+          "class": "recorded"
+        },
+        "exitReason": {
+          "value": "stagnation",
+          "class": "recorded"
+        },
+        "sold": {
+          "value": "ETN",
+          "class": "recorded"
+        },
+        "bought": {
+          "value": "PANW",
+          "class": "recorded"
+        },
+        "exitPrice": {
+          "value": 385.77,
+          "class": "recorded"
+        }
+      },
+      "afterExit": {
+        "close": {
+          "value": 385.7,
+          "class": "market"
+        },
+        "barStart": {
+          "value": "2026-09-23T19:50:00.000Z",
+          "class": "market"
+        },
+        "barsAfter": {
+          "value": 5,
+          "class": "derived"
+        }
+      },
+      "count": {
+        "value": 7,
+        "class": "derived"
+      },
+      "inputQuote": {
+        "text": "ETN sat flat for an hour before the rule moved it. I want the agent to rotate sooner.",
+        "by": "player",
+        "at": "2026-09-24T14:00:00.000Z",
+        "class": "quoted"
+      },
+      "card": {
+        "label": "c1",
+        "question": {
+          "value": "What do you want to happen when a holding stops moving like this?",
+          "class": "recorded"
+        },
+        "route": {
+          "value": "watch",
+          "class": "recorded"
+        },
+        "filed": {
+          "value": "2026-09-24T14:00:00.000Z",
+          "class": "recorded"
+        }
+      }
+    },
+    "refs": {
+      "b1": "b-sep23-excerpt",
+      "i1": "wl-sep23-idea",
+      "c1": "op-excerpt-card-1"
+    }
+  }
+}

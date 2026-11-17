@@ -427,11 +427,14 @@ describe('decisionRecord — table G (V1.4): an outcome that could not be confir
     expect(feedBeatUnconfirmed({ ...stripped, message: '   ' })).toBe(true);
     expect(feedBeatUnconfirmed({ ...stripped, message: 'Risk exit of KO failed: x' })).toBe(false);
     for (const v of [null, undefined, 'x', 3]) expect(feedBeatUnconfirmed(v)).toBe(false);
-    // The spectator's copy (the real projection) keeps the marker since enforce readiness (review ER4-3).
-    const projected = projectTournamentBattle({ status: 'active', ownerId: 'owner', statusFeed: [riskUnknown, riskFailed, modelHold, guardrailBeat] }, { isOwner: false });
-    expect(projected.statusFeed.map((e) => e.executionOutcome ?? null)).toEqual(['unknown', null, 'unknown', 'unknown']);
-    expect(projected.statusFeed.map(feedBeatUnconfirmed)).toEqual([true, false, true, true]);
-    expect(projected.statusFeed[2]).not.toHaveProperty('source');
+    // The owner's copy keeps the marker (enforce readiness, review ER4-3). Since the security pack's ruling R-F
+    // (15 Nov 2026) a spectator's copy carries no feed at all — the free-text lines hold guardrail levels and the
+    // agent's own words — so there is no spectator beat left to mark.
+    const battle = { status: 'active', ownerId: 'owner', statusFeed: [riskUnknown, riskFailed, modelHold, guardrailBeat] };
+    const own = projectTournamentBattle(battle, { isOwner: true });
+    expect(own.statusFeed.map((e) => e.executionOutcome ?? null)).toEqual(['unknown', null, 'unknown', 'unknown']);
+    expect(own.statusFeed.map(feedBeatUnconfirmed)).toEqual([true, false, true, true]);
+    expect(projectTournamentBattle(battle, { isOwner: false }).statusFeed).toEqual([]);
   });
 
   it('TRIPWIRE — the cron writes a message-less `risk_swap_failed` beat ONLY for the marker (both writers), and stamps the marker on the model route’s own status beat (read from its source)', () => {

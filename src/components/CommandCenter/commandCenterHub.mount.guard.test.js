@@ -355,7 +355,10 @@ describe('S5 mount sites — the hub\'s props, the Forge bridge and the chrome c
   it('hubProps is built OUTSIDE the dashboard block, from values App already holds, and handed to both gates', () => {
     expect(flat).toContain(HUB_PROPS);
     expect(BLOCK).not.toContain('hubProps =');
-    expect(count(/\bhubProps\b/)).toBe(3);
+    // League hide (BB-1, Nov 15, 2026; a deliberate change): the definition, the two gates, and the BaggerBomb page's route
+    // (`<BaggerBombPage … hub={hubProps} />`, rendered only while LEAGUE_HIDE_ENABLED is on). That fourth use sits OUTSIDE the
+    // dashboard block, so the block still holds exactly the two gates.
+    expect(count(/\bhubProps\b/)).toBe(4);
     expect(BLOCK.match(/hub=\{hubProps\}/g)).toHaveLength(2);
     expect(flat.indexOf('const hubProps')).toBeGreaterThan(-1);
     expect(flat.indexOf('const hubProps')).toBeLessThan(GET_SCREEN_CONTENT);
@@ -1096,7 +1099,8 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond the
     // load: no src/ file outside the directory may import one, statically or at
     // load time (`import()`, `require()`, `import.meta.glob()`), relative or
     // through the @/ alias, nor name a path into it in a string literal — App
-    // included, whose only two such literals are its two static imports.
+    // included, whose only such literals are its static imports (the gate, the picker, the chrome predicates) and, since league
+    // hide (BB-1), the BaggerBomb page's one lazy one.
     const outside = sourceFiles().filter((rel) => !rel.startsWith(`${HUB_DIR}/`));
     expect(outside.length, 'the src walk found nothing, so this row would be vacuous').toBeGreaterThan(100);
     // Each file is read and stripped once and both scans share it: 2.7 s alone with the
@@ -1114,7 +1118,11 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond the
     // chunk (which loads only while AGENT_FORM_BATTLE_ENABLED is on), into the pure selector. Flag-off, neither end
     // ships with the battle view (the build report's dist diff: every chunk byte-identical).
     const BATTLE_FORM = 'src/screens/battleView/BattleAgentForm.jsx';
+    // League hide (BB-1, Nov 15, 2026; a deliberate change): App loads the BaggerBomb page, which lives in this directory
+    // because it reads the hub's readers, sections and History sheet, through ONE lazy import — so it is its own chunk and
+    // never in the main one. The page stays dark behind LEAGUE_HIDE_ENABLED (src/App.jsx, the 'league' route).
     expect(edges.sort()).toEqual([
+      `src/App.jsx -> lazy ${HUB_FILE('BaggerBombPage.jsx')}`,
       `${BATTLE_FORM} -> lazy ${HUB_FILE('hub/selectors/gameOutcome.js')}`,
       `${PROVIDER} -> ${HUB_FILE('hub/hubDate.js')}`,
       `${PROVIDER} -> ${HUB_FILE('hub/overlayStack.js')}`,
@@ -1137,6 +1145,7 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond the
       `${PROVIDER}: ../components/CommandCenter/hub/selectors/readerInputs`,
       'src/App.jsx: ./components/CommandCenter/CommandCenterHubGate',
       'src/App.jsx: ./components/CommandCenter/hubChrome',
+      'src/App.jsx: ./components/CommandCenter/BaggerBombPage',
       'src/App.jsx: ./components/CommandCenter/pickDashboardShell',
     ].sort());
   }, 30000);
@@ -1397,7 +1406,9 @@ describe('S5 — the exports the hub takes from the shipped services, hooks and 
     '/utils/equipSlots': ['getEquipSlots'],
     '/utils/traitSlotSummary': ['getTraitSlotSummary'],
     '/constants/agentProgression': ['getLevelConfig', 'getNextLevelInfo'],
-    '/config/featureFlags': ['CASUAL_CLONE_CONCURRENCY_ENABLED', 'RELEASE3_CHARACTER_TAB_ENABLED', 'SCOUTING_BOARD_ENABLED', 'isCommandCenterHubOn', 'isHypothesisRecordsOn'],
+    // League hide (BB-1, Nov 15, 2026; a deliberate change): LEAGUE_HIDE_ENABLED, read by LoadoutCards.jsx (the League card) and
+    // PerGameLoadoutScope.jsx (its lock read), each as a literal ternary on the imported constant.
+    '/config/featureFlags': ['CASUAL_CLONE_CONCURRENCY_ENABLED', 'LEAGUE_HIDE_ENABLED', 'RELEASE3_CHARACTER_TAB_ENABLED', 'SCOUTING_BOARD_ENABLED', 'isCommandCenterHubOn', 'isHypothesisRecordsOn'],
     '/data/archetypeDisplay': ['getArchetypeDisplayName'],
     '/data/archetypeIdentity': ['default', 'getArchetypeIdentity'],
     // S2b (rulings R-S2b-1 … R-S2b-7): the deploy provider's context and its progress store, the shipped Scouting

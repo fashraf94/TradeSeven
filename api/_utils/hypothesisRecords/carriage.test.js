@@ -623,11 +623,12 @@ describe('the census — who names agentContext.equippedHypothesis', () => {
       'api/_utils/compositionGenerationFence.js', // a comment; the creation transaction calls carriage.js
       'api/_utils/hypothesisRecords/carriage.js', // the resolver, the fresh read, the frozen-list read
       'api/_utils/hypothesisRecords/review.js', // Pilot P1c: the review card's check that a battle carried THIS version (watchlistId, hypothesisVersion only)
-      'api/_utils/tournamentBattleView.js', // the privacy strip
+      'api/_utils/tournamentBattleView.js', // a comment: the non-owner allowlist never carries it (R-F)
       'api/agent/decide.js', // the fenced call site (passes the resolver's sibling through)
       'api/tournament/battle-view.js', // a comment
       'src/components/Research/Sheet/packs.js', // Research Modal Build C (BC-9): the sheet's idea stance and Idea pill — statement, activation, invalidation, watchlistId, hypothesisVersion only; a client reader of the screen's subscribed document, no prompt module, no cron, no capture
       'src/config/featureFlags.js', // the flag's docstring
+      'src/utils/filmRoomSubject.js', // Film Room C2 fix round (Build C Amendment D CD-8, Amendment E CE-5 — founder-approved): the moment excerpt's and the subject line's ONE reading of the idea a battle carried — watchlistId, hypothesisVersion, contentHash only (the version document checked against them); the frozen statement and every other key stay unread; no evaluation cron, no capture writer
     ]);
   });
   it('and the evaluation prompt\'s identity block is byte-identical with and without a sibling', async () => {

@@ -91,6 +91,8 @@ import {
   // P7 — the shared "current battle for an owner" selection (one home for the
   // participant hook + the spectator endpoint).
   pickCurrentTournamentBattle,
+  seatIndexByOwner,
+  battlesByOwnerFromSeats,
   // P10 — self-serve lobby + the relocated isoWeekString.
   TOURNAMENT_LOBBY_COLLECTION,
   LOBBY_STATUS,
@@ -1715,5 +1717,41 @@ describe('L-B Guard 2 — live derivation is UNCLAMPED (the crux non-regression)
     // recoverable; permitting is not — the F-1 rationale, completed).
     const only7 = { dailyScores: { day7: { closeScores: {}, recordedDate: 'x', agentScoresCarried: true } } };
     expect(isWeekBanked(only7)).toBe(false);
+  });
+});
+
+// Security pack, founder ruling R-F (15 Nov 2026): the league view keys its
+// battles by SEAT; the server keys with seatIndexByOwner and the client joins
+// back with battlesByOwnerFromSeats — one rule, so the two cannot disagree.
+describe('seatIndexByOwner / battlesByOwnerFromSeats (R-F — the league view seat key)', () => {
+  const players = [{ odUserId: 'p-a', picks: [] }, { odUserId: 'cpu-2', isCpu: true }, null, { odUserId: 'p-c' }];
+
+  it('the seat is the index in `players`, as a string; a hole or an id-less entry seats nobody', () => {
+    expect([...seatIndexByOwner(players)]).toEqual([['p-a', '0'], ['cpu-2', '1'], ['p-c', '3']]);
+    expect([...seatIndexByOwner([{ picks: [] }, { odUserId: '' }])]).toEqual([]);
+    expect([...seatIndexByOwner(undefined)]).toEqual([]);
+  });
+
+  it('a repeated owner keeps its FIRST seat', () => {
+    expect(seatIndexByOwner([{ odUserId: 'p-a' }, { odUserId: 'p-a' }]).get('p-a')).toBe('0');
+  });
+
+  it('round trip: the seat keys the server writes join back to the same owners on the client', () => {
+    const byOwner = { 'p-a': { id: 'b-a' }, 'cpu-2': { id: 'b-cpu' }, 'p-c': { id: 'b-c' } };
+    const seats = seatIndexByOwner(players);
+    const bySeat = Object.fromEntries(Object.entries(byOwner).map(([o, b]) => [seats.get(o), b]));
+    expect(Object.keys(bySeat).sort()).toEqual(['0', '1', '3']);
+    expect(battlesByOwnerFromSeats(bySeat, players)).toEqual(byOwner);
+  });
+
+  it('a seat with no battle, a battle with no seat, and a malformed reply are left out', () => {
+    expect(battlesByOwnerFromSeats({ 0: { id: 'b-a' }, 9: { id: 'b-stray' } }, players)).toEqual({ 'p-a': { id: 'b-a' } });
+    expect(battlesByOwnerFromSeats(null, players)).toEqual({});
+    expect(battlesByOwnerFromSeats('junk', players)).toEqual({});
+    expect(battlesByOwnerFromSeats({ 0: { id: 'b-a' } }, undefined)).toEqual({});
+  });
+
+  it('an owner-keyed reply (the pre-R-F shape) joins to nothing — a seat is never read by account id', () => {
+    expect(battlesByOwnerFromSeats({ 'p-a': { id: 'b-a' } }, players)).toEqual({});
   });
 });

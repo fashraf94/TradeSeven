@@ -122,12 +122,34 @@ export const TRAIT_SLOT_ENABLED = false;
  * nav slot (Closeout Spec V1.1 §6).
  *
  * When false, the slot is hidden entirely (4-item bottom nav, 6-item desktop
- * sidebar) and the 'league' route is gated away — the screen id is unreachable
- * since the nav items are its only setters. When true, a provisional "League"
+ * sidebar) and the 'league' route is gated away. (This used to claim the screen id was then unreachable "since the nav items
+ * are its only setters"; the "back" button after a training battle, App.jsx, is a third.) When true, a provisional "League"
  * tab (Trophy icon) renders the placeholder LeagueScreen. Flip when the League
  * Tournament surface is real.
  */
 export const TOURNAMENT_TAB_ENABLED = true;
+
+/**
+ * League — hide the league layer for the beta, and hand its nav slot, its route and its launcher to the BaggerBomb
+ * page (direction note BB-1; rulings Q1–Q6 of Nov 15, 2026; docs/audits/20261115_BUILD_LEAGUE_HIDE_BAGGERBOMB_PAGE.md).
+ *
+ * When true:
+ *   - client: the nav slot reads "BaggerBomb" (bomb icon) and opens the BaggerBomb page, which the 'league' route renders in
+ *     place of LeagueScreen; the three web-address doors (?trainingDraft, ?trainingBattle, ?tournamentDev) are ignored; the
+ *     hub's League loadout card and its lock read are not rendered; the Season banner is not rendered;
+ *   - server: the entry endpoints (slot-claim and the six lobby-* routes) refuse with one typed 404, `league_hidden`.
+ * Read by those doors ONLY. No job, cron, rule or scoring file reads it, so a group in flight would still settle; the
+ * in-week, read-only and operator endpoints are unchanged. Ranked rows in the hub's games list stay, as history (Q2).
+ * It is not TOURNAMENT_TAB_ENABLED (which removes the slot and leaves five doors open), LEAGUE_LIVE_DRAFT or
+ * LEAGUE_NEXT_ARC_ENABLED (both also gate work a group in flight needs), and it must not be mistaken for
+ * LEAGUE_BATTLEVIEW_ROUTING_ENABLED (the cockpit wall, which stays on).
+ *
+ * Ships false (dark). Its flip is its own PR (the flag, its pin, and the League-card rows of
+ * CommandCenterHub.loadouts.jsdom.test.jsx, which hold the card's own behaviour at the flag-off state), merged only while no
+ * league group is in flight.
+ * Pinned by: leagueHideFlag.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+ */
+export const LEAGUE_HIDE_ENABLED = false;
 
 /**
  * League — the self-serve lobby (P10): registration · join/create · FIFO

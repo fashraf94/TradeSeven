@@ -327,10 +327,12 @@ describe('the climb (the Training tab\'s preview, and the fuse-off fallback)', (
   });
 });
 
-describe('the live arena hands the forms its battle, its group and the rank it prints', () => {
+describe('the live arena hands the forms its battle, its group, the seat order of its players and the rank it prints', () => {
   const BATTLE = { id: 'b1', cronState: {} };
+  // R-F (15 Nov 2026): the after-bell read joins the league view's seat-keyed reply back through the group's players.
+  const PLAYERS = [{ odUserId: 'me' }, { odUserId: 'rae' }];
   it.each(['mobile', 'desktop'])('%s', (viewport) => {
-    render(<LeagueBattleArenaLive group={{ id: 'g1', status: 'battle' }} battle={BATTLE} mode="ranked" uid="me" viewport={viewport} />);
-    expect(seen.arena.at(-1)).toEqual({ battle: BATTLE, groupId: 'g1', youRank: 3, youArchetype: null });
+    render(<LeagueBattleArenaLive group={{ id: 'g1', status: 'battle', players: PLAYERS }} battle={BATTLE} mode="ranked" uid="me" viewport={viewport} />);
+    expect(seen.arena.at(-1)).toEqual({ battle: BATTLE, groupId: 'g1', players: PLAYERS, youRank: 3, youArchetype: null });
   });
 });

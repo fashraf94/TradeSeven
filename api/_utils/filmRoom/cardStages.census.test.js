@@ -98,10 +98,10 @@ describe('C-VOCAB — every reader reads the stages from the one export', () => 
     expect(store.isOpenStage).toBe(isOpenStage);
   });
 
-  it('the screen\'s stage words cover exactly the vocabulary\'s stages (installed reads "equipped")', async () => {
+  it('the screen\'s stage words cover exactly the vocabulary\'s stages (installed reads "adopted as your instruction" — Film Room C2, CC-8)', async () => {
     const { FILM_ROOM_COPY } = await import('../../../src/screens/filmRoomV2/filmRoomCopy.js');
     expect(Object.keys(FILM_ROOM_COPY.cards.stageWords)).toEqual([...CARD_STAGES]);
-    expect(FILM_ROOM_COPY.cards.stageWords.installed).toBe('equipped');
+    expect(FILM_ROOM_COPY.cards.stageWords.installed).toBe('adopted as your instruction');
   });
 });
 
