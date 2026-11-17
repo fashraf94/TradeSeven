@@ -139,3 +139,23 @@ export function assertAssertionsSupported(statement, { record, carried, selected
   const extra = deselected.find((c) => namesCompany(statement, c));
   if (extra) throw new AssertionError('names_not_supported', { deselected: extra.symbol });
 }
+
+/**
+ * A thesis builder's edited statement (Amendment B §B4.5): B1's rule, with two more places a number may sit — the
+ * card's own wrong-if text and its time frame's label (`ownTexts`, held as written). Every number in the statement
+ * sits in a carried Source-backed fact or in one of those, else `unsupported_assertion`; every selected company is
+ * named and no deselected supported company is, else `names_not_supported`.
+ */
+export function assertThesisStatementSupported(statement, { record, carried, selected, deselected, ownTexts = [] }) {
+  const byId = new Map((Array.isArray(record?.findings) ? record.findings : []).map((f) => [f.findingId, f]));
+  const held = [
+    ...carried.map((id) => byId.get(id)).filter((f) => f && f.kind !== 'idea' && f.status === 'verified'),
+    ...ownTexts.filter((t) => typeof t === 'string' && t).map((fact) => ({ fact })),
+  ];
+  const stray = strayNumberOf(statement, held);
+  if (stray !== undefined) throw new AssertionError('unsupported_assertion', stray);
+  const unnamed = selected.find((c) => !namesCompany(statement, c));
+  if (unnamed) throw new AssertionError('names_not_supported', { missing: unnamed.symbol });
+  const extra = deselected.find((c) => namesCompany(statement, c));
+  if (extra) throw new AssertionError('names_not_supported', { deselected: extra.symbol });
+}

@@ -32,7 +32,13 @@ import { isValidForgeId } from '../_utils/idValidation.js';
 import { buildFinding, FINDING_ID_PREFIX, FINDINGS_MAX, isHostId, isUuid, currentFindingsOf, normalizeQuestion } from '../_utils/researchRecords/model.js';
 import { recordTurnOutcome } from '../_utils/researchRecords/store.js';
 import { ENTRY_ITEM_RECORD_KINDS, STEP_INTENTS, CLOSE_REASONS } from '../../src/constants/sharedResearch.js';
+import { BUILD_INTENT, BUILD_GOALS, THESIS_PARTS, PICK_PARTS, CARD_OPS } from '../../src/constants/sharedResearch.js';
 import { gateSharedResearchRoute, sendSharedResearchError } from '../_utils/sharedResearch/gate.js';
+import { sharedResearchBuilderMode } from '../_utils/sharedResearch/gate.js';
+import {
+  shapeOf, openingCardOf, builderQuestionOf, cardContextOf, thesisViewOf, isGoalOffered, applyProposals,
+} from '../_utils/sharedResearch/thesis.js';
+import { BUILD_SCHEMA, validateBuildTurn, buildCandidateNamesOf, builderFallbackReplyOf } from '../_utils/sharedResearch/thesisSchema.js';
 import {
   refuse, cleanPlayerText, exchangeOf, sessionViewOf, quotaViewOf, latestLinesOf, OBSERVATION_MAX, DIRECTION_MAX,
   methodChangeOf, retainedRetrievalOf,
@@ -41,11 +47,13 @@ import {
   readRankedAgent, partnerNameOf, beginFraming, recordFrame, noteFrameFailure, readOwnedSession, readInvestigation,
   readStory, readDrop, readStoredFacts, readRankingRows, readNames, openFromItem, openFromFraming, beginStep, recordStep,
   failStep, closeInvestigation, normalizeAdoption, adoptIdea, readQuota, listOpen, readPrevious, AGENTS_COLLECTION, SHARED_RESEARCH_ADAPTER,
+  openOwnWords, applyCard, adoptThesis,
 } from '../_utils/sharedResearch/store.js';
 import { namesInScopeOf, openingFindingsOf, dropTextOf, dropTopicOf, storedRowsOf } from '../_utils/sharedResearch/opening.js';
 import { companiesOf, projectionOf, resolveSymbol, splitRole, answerStaleOf } from '../_utils/sharedResearch/companies.js';
 import { adoptPreviewOf, isPreviewRev } from '../_utils/sharedResearch/adoptPreview.js';
 import { buildFrameSystemPrompt, renderFrameUser, buildStepSystemPrompt, renderStepUser, targetBlockOf } from '../_utils/sharedResearch/stepPrompt.js';
+import { buildBuildSystemPrompt, renderBuildUser } from '../_utils/sharedResearch/stepPrompt.js';
 import { STEP_SCHEMA, FRAME_SCHEMA, validateFrame, validateStepTurn } from '../_utils/sharedResearch/stepSchema.js';
 import { fitPrompt } from '../_utils/sharedResearch/promptBudget.js';
 import { runTurn } from '../_utils/sharedResearch/modelTurn.js';
@@ -98,7 +106,7 @@ async function settle(pending, deadlineAt = null) {
  * The shadow record for one model call (§6.9's fields, inside the record logConversation already takes). `method`:
  * the turn's effective method (KB-1) — its id, version, hash and source, on every record, failures included.
  */
-function modelCallRecord({ uid, session, stepId = null, intent, turn, retrieval = null, outcome, failureReason = null, notes = [], method = BASELINE }) {
+function modelCallRecord({ uid, session, stepId = null, intent, turn, retrieval = null, outcome, failureReason = null, notes = [], method = BASELINE, goal = null, part = null }) {
   return {
     userId: uid, agentId: session?.attribution?.agentId ?? null, battleId: null, archetype: null,
     gameMode: 'shared_research', sessionId: session?.sessionId ?? null, researchWorkId: session?.researchWorkId ?? null,
@@ -108,6 +116,7 @@ function modelCallRecord({ uid, session, stepId = null, intent, turn, retrieval 
     methodId: method.id, methodVersion: method.version, methodSha256: method.sha256, methodSource: method.source === 'kb' ? 'kb' : 'baseline',
     outcome, failureReason,
     validationNotes: Array.isArray(notes) ? notes.slice(0, 40) : [], // e.g. a withheld summary (spec §16 FQ-5; §11.4 measures)
+    ...(goal ? { goal, part } : {}), // a thesis builder step's goal (Amendment B §B6 measures); never on a ledger record
   };
 }
 
@@ -148,6 +157,18 @@ async function handleGet(req, res, { db, uid }) {
   const { session, record } = await readInvestigation(db, { uid, sessionId });
   const lines = latestLinesOf(session);
   const companies = await companiesFor(db, record);
+  if (shapeOf(session) === 'builder') {
+    // Amendment B §B4.4: the card and its choices; no adoptPreview — the card is the preview.
+    return res.status(200).json({
+      session: sessionViewOf(session),
+      record: projectionOf(record, { lines, nowIso }),
+      companies,
+      thesis: thesisFor(session, record, companies),
+      storedRows: await storedRowsFor(db, session),
+      previous: await readPrevious(db, { uid, session }),
+      quota: quotaViewOf(day),
+    });
+  }
   return res.status(200).json({
     session: sessionViewOf(session),
     record: projectionOf(record, { lines, nowIso }),
@@ -235,10 +256,12 @@ function directionOf(raw) {
 
 async function openAnswer(res, db, uid, opened, nowIso) {
   const lines = latestLinesOf(opened.session);
+  const companies = await companiesFor(db, opened.record);
   return res.status(200).json({
     session: sessionViewOf(opened.session),
     record: projectionOf(opened.record, { lines, nowIso }),
-    companies: await companiesFor(db, opened.record),
+    companies,
+    ...(shapeOf(opened.session) === 'builder' ? { thesis: thesisFor(opened.session, opened.record, companies) } : {}),
     opening: { storedRows: await storedRowsFor(db, opened.session) },
     quota: quotaViewOf(opened.day),
     ...(opened.existing ? { existing: true } : {}),
@@ -268,6 +291,9 @@ async function handleOpen(body, res, { db, uid }) {
     const opened = await openFromFraming(db, { uid, sessionId: body.sessionId, question, direction, findings, nowIso });
     return openAnswer(res, db, uid, opened, nowIso);
   }
+  // Amendment B §B4.1 (DR-6): own words open at once as a thesis builder — only while the builder mode is on. With
+  // it off this entry kind is refused below exactly as before (invalid_entry).
+  if (isPlainObject(body.entry) && body.entry.kind === 'observation' && sharedResearchBuilderMode() === 'on') return openBuilderOwnWords(body, res, { db, uid }, nowIso);
   // An item or a drop entry: the session is created here, with its record.
   const entry = body.entry;
   if (!isPlainObject(entry) || !['item', 'signaldrop'].includes(entry.kind) || !isPlainObject(entry.itemRef)) throw refuse(400, 'invalid_entry');
@@ -287,9 +313,12 @@ async function handleOpen(body, res, { db, uid }) {
   const partnerName = drop ? partnerNameOf(await readRankedAgent(db, uid)) : null;
   // The method, selected once: a story or a drop is on the baseline by rule (R-KB-1).
   const selected = selectMethod({ entryKind: entry.kind, uid, nowIso });
-  const findings = built(openingFindingsOf({
+  // Amendment B §B2: the builder mode, read once, stamps a NEW session; its opening has no next action (routine 4).
+  const builderOn = sharedResearchBuilderMode() === 'on';
+  const opening = openingFindingsOf({
     entryKind: entry.kind, story, drop, playerExchange: dropExchange, names, stored, nowIso, partnerName, sourceRef: selected.method.sourceRef,
-  }), nowIso);
+  });
+  const findings = built(builderOn ? opening.filter((f) => f.kind !== 'next_action') : opening, nowIso);
   const opened = await openFromItem(db, {
     uid, requestId: body.requestId, sessionId: randomUUID(),
     entry: {
@@ -299,6 +328,7 @@ async function handleOpen(body, res, { db, uid }) {
     },
     exchanges: dropExchange ? [dropExchange] : [],
     findings, nowIso, method: selected.stamp,
+    builder: builderOn ? { thesis: openingCardOf({ entryKind: entry.kind }) } : null,
   });
   return openAnswer(res, db, uid, opened, nowIso);
 }
@@ -321,6 +351,7 @@ function targetOf(raw, record) {
 }
 
 async function handleStep(body, res, { db, uid }) {
+  if (body.intent === BUILD_INTENT) return handleBuildStep(body, res, { db, uid }); // Amendment B §B4.2
   const t0 = Date.now();
   const settleBy = t0 + SETTLE_DEADLINE_MS;
   if (!isHostId(body.sessionId) || !isUuid(body.stepId) || !STEP_INTENTS.includes(body.intent)) throw refuse(400, 'invalid_request');
@@ -330,7 +361,11 @@ async function handleStep(body, res, { db, uid }) {
   if (intent === 'examine' && !isPlainObject(body.target)) throw refuse(400, 'invalid_target');
   const nowIso = new Date(t0).toISOString();
   const directionExchange = direction ? exchangeOf({ who: 'player', kind: 'direction', text: direction, at: nowIso, stepId }) : null;
-  const begun = await beginStep(db, { uid, sessionId, stepId, intent, directionExchange, nowIso, nowMs: t0 });
+  const begun = await beginStep(db, {
+    uid, sessionId, stepId, intent, directionExchange, nowIso, nowMs: t0,
+    // a thesis builder session takes only the builder's intent (Amendment B §B2) — refused before the call is counted
+    admit: (s) => { if (shapeOf(s) === 'builder') throw refuse(400, 'invalid_intent', { reason: 'shape' }); },
+  });
   const day = await readQuota(db, { uid, nowIso });
   if (begun.replay) {
     const lines = latestLinesOf(begun.session);
@@ -487,13 +522,17 @@ async function handleClose(body, res, { db, uid }) {
   const nowIso = new Date().toISOString();
   const closeExchange = exchangeOf({ who: 'player', kind: 'close', text: body.reason === 'concluded' ? 'This answered my question.' : 'Closed without an idea.', at: nowIso });
   const out = await closeInvestigation(db, { uid, sessionId: body.sessionId, reason: body.reason, closeExchange, nowIso });
-  return res.status(200).json({ session: sessionViewOf(out.session), record: projectionOf(out.record, { lines: latestLinesOf(out.session), nowIso }) });
+  const view = { session: sessionViewOf(out.session), record: projectionOf(out.record, { lines: latestLinesOf(out.session), nowIso }) };
+  if (shapeOf(out.session) !== 'builder') return res.status(200).json(view);
+  return res.status(200).json({ ...view, thesis: thesisFor(out.session, out.record, await companiesFor(db, out.record)) }); // §B4.4
 }
 
 // ── adopt (spec §4.6, §6.6) ──────────────────────────────────────────────────
 
 async function handleAdopt(body, res, { db, uid }) {
   if (!isHostId(body.sessionId)) throw refuse(400, 'invalid_request');
+  // Amendment B §B4.5: a builder save sends `{ sessionId, rev, statement? }` (the ledger's sends a previewRev).
+  if (body.previewRev === undefined && Number.isSafeInteger(body.rev)) return handleAdoptThesis(body, res, { db, uid });
   const rev = body.previewRev; // the preview's opaque token, echoed (spec §16 FQ-7)
   if (!isPreviewRev(rev)) throw refuse(400, 'invalid_request');
   const input = normalizeAdoption({
@@ -510,9 +549,261 @@ async function handleAdopt(body, res, { db, uid }) {
   return res.status(200).json(out);
 }
 
+// ── the thesis builder (Amendment B §B4; B3) ─────────────────────────────────
+//
+// Every builder branch keys on the SESSION's shape, never on the flag (K-2); the
+// flag is read once, at `open`, to stamp a new session. A builder session takes
+// only `step` with the `build` intent, `card`, `adopt` with `{ rev, statement? }`,
+// `close` and the read; the other shape's intents and actions answer 400
+// invalid_intent. Every builder answer carries `thesis` (§B4.4).
+
+/** The card as the answers carry it, for a builder session; null for a ledger. */
+function thesisFor(session, record, companies) {
+  if (shapeOf(session) !== 'builder' || !session.thesis) return null;
+  return thesisViewOf(session.thesis, cardContextOf({ record, supported: companies?.supported ?? [], session }));
+}
+/** The card's context inside a transaction, from the record alone (support needs no company names). */
+const cardCtxIn = (session, record) => cardContextOf({ record, supported: companiesOf(record).supported, session });
+
+/** Own words, opened at once as a thesis builder (§B4.1, DR-6): no framing turn, no framing count. */
+async function openBuilderOwnWords(body, res, { db, uid }, nowIso) {
+  const observation = cleanPlayerText(body.entry.observation, OBSERVATION_MAX);
+  if (!observation) throw refuse(400, 'invalid_observation');
+  if (!isValidForgeId(body.requestId)) throw refuse(400, 'invalid_request');
+  const question = normalizeQuestion(builderQuestionOf(observation));
+  const playerExchange = exchangeOf({ who: 'player', kind: 'observation', text: observation, at: nowIso });
+  // The method, selected here for own words (Amendment A's selectMethod, as `frame` does for a ledger).
+  const selected = selectMethod({ entryKind: 'observation', uid, nowIso });
+  // The opening as today, without its next action: a builder step writes none (routine choice 4).
+  const findings = built(openingFindingsOf({
+    entryKind: 'observation', playerExchange, frame: null, names: [], stored: {}, nowIso, sourceRef: selected.method.sourceRef,
+  }).filter((f) => f.kind !== 'next_action'), nowIso);
+  const opened = await openOwnWords(db, {
+    uid, requestId: body.requestId, sessionId: randomUUID(),
+    entry: { kind: 'observation', itemRef: null, question, direction: null, observation, topic: null, names: [] },
+    exchanges: [playerExchange], findings, nowIso, method: selected.stamp,
+    thesis: openingCardOf({ entryKind: 'observation', observation }),
+  });
+  return openAnswer(res, db, uid, opened, nowIso);
+}
+
+/** The search text a builder step's retrieval runs on, by goal (routine: the card's own words, the names in play). */
+function buildFocusOf({ goal, part, card, record }) {
+  const theme = card.theme.value ?? card.theme.suggestion ?? null;
+  const seg = card.segment.state === 'set' && !card.segment.skipped ? card.segment.value : null;
+  const names = card.names.state === 'set' ? card.names.value.join(' ') : '';
+  const opening = currentFindingsOf(record).find((f) => f.kind === 'coverage' || f.kind === 'observation');
+  switch (goal) {
+    case 'verify_source': return opening ? `primary source of: ${opening.fact}` : null;
+    case 'map_segments': return theme ? `${theme}: the parts of this market and the listed companies in each` : null;
+    case 'find_names': return `listed companies that earn from ${seg ?? theme ?? ''}`.trim();
+    case 'build_why': return `${names} revenue exposure to ${seg ?? theme ?? ''}`.trim();
+    case 'strengthen': {
+      const v = part === 'names' ? names : part === 'why' ? `${names} ${card.why.shared ?? ''}` : part === 'wrongIf' ? `${names} ${card.wrongIf.text ?? ''}` : (card[part]?.value ?? '');
+      return `${String(v).trim()} ${theme ?? ''}`.trim() || null;
+    }
+    default: return null;
+  }
+}
+
+/** The finding ids the card rests on: never trimmed out of the prompt. */
+const cardFindingIdsOf = (card) => [
+  ...card.segment.findingIds, ...card.why.reasons.flatMap((r) => r.findingIds), ...(card.why.against?.findingIds ?? []), ...card.wrongIf.findingIds,
+  ...(card.why.proposal?.reasons ?? []).flatMap((r) => r.findingIds),
+];
+
+async function handleBuildStep(body, res, { db, uid }) {
+  const t0 = Date.now();
+  const settleBy = t0 + SETTLE_DEADLINE_MS;
+  if (!isHostId(body.sessionId) || !isUuid(body.stepId) || !BUILD_GOALS.includes(body.goal)) throw refuse(400, 'invalid_request');
+  const { sessionId, stepId, goal } = body;
+  const part = goal === 'strengthen' || goal === 'pick' ? body.part : null;
+  if ((goal === 'strengthen' && !THESIS_PARTS.includes(part)) || (goal === 'pick' && !PICK_PARTS.includes(part))) throw refuse(400, 'invalid_request');
+  const direction = goal === 'direction' ? cleanPlayerText(body.direction, DIRECTION_MAX) : null;
+  if (goal === 'direction' && !direction) throw refuse(400, 'invalid_direction');
+  const intent = BUILD_INTENT;
+  const nowIso = new Date(t0).toISOString();
+  const directionExchange = direction ? exchangeOf({ who: 'player', kind: 'direction', text: direction, at: nowIso, stepId, intent }) : null;
+  // The server decides what is on offer (§B4.2): a goal the card does not offer — or a ledger session — is refused
+  // inside the admission transaction, before the step's call is counted.
+  const begun = await beginStep(db, {
+    uid, sessionId, stepId, intent, directionExchange, nowIso, nowMs: t0,
+    admit: (s, rec) => {
+      if (shapeOf(s) !== 'builder' || !s.thesis) throw refuse(400, 'invalid_intent', { reason: 'shape' });
+      if (!isGoalOffered(s.thesis, cardCtxIn(s, rec), { goal, part })) throw refuse(400, 'invalid_intent', { reason: 'goal_not_offered' });
+    },
+  });
+  const day = await readQuota(db, { uid, nowIso });
+  if (begun.replay) {
+    const companies = await companiesFor(db, begun.record);
+    return res.status(200).json({
+      session: sessionViewOf(begun.session), record: projectionOf(begun.record, { lines: latestLinesOf(begun.session), nowIso }),
+      companies, thesis: thesisFor(begun.session, begun.record, companies), quota: quotaViewOf(day), replay: true,
+      changed: { findings: 0, card: false },
+    });
+  }
+  const { session, record } = begun;
+  const card = session.thesis;
+  const effective = effectiveMethodFor({ stamp: session.method, uid });
+  const { method } = effective;
+  const failed = async (status, reason, { turn = null, retrievalTally = null, cancellation = false, refundCall = false } = {}) => {
+    const atIso = new Date().toISOString();
+    await failStep(db, { uid, sessionId, stepId, reason, nowIso: atIso, refundCall });
+    if (turn) {
+      await recordTurnOutcome(db, { researchWorkId: session.researchWorkId, uid, kind: cancellation ? 'cancellation' : 'failure', elapsedMs: turn.elapsedMs, usage: turn.usage, atIso, label: 'shared-research' });
+    }
+    const pending = turn || retrievalTally?.calls ? captureLog(modelCallRecord({ uid, session, stepId, intent, turn, retrieval: retrievalTally, outcome: cancellation ? 'cancellation' : 'failure', failureReason: reason, method, goal, part })) : null;
+    const after = await readInvestigation(db, { uid, sessionId }).catch(() => ({ session, record }));
+    const companies = await companiesFor(db, after.record).catch(() => ({ supported: [], leads: [] }));
+    return answer(res, status, { error: 'step_failed', reason, session: sessionViewOf(after.session), thesis: thesisFor(after.session, after.record, companies), quota: quotaViewOf(day) }, pending, settleBy);
+  };
+
+  // Retrieval (≤ 1): none for a pick (DR-2: one model turn on what the record already holds).
+  const symbols = card.names.state === 'set' ? card.names.value : (session.entry?.names ?? []);
+  const focus = buildFocusOf({ goal, part, card, record });
+  const r = goal === 'pick' ? null : await retrieve({ question: record.question, focus, direction, symbols });
+  const query = r ? queryOf({ question: record.question, focus, direction, symbols }) : null;
+  const retrievalTally = { calls: r ? 1 : 0, costDollars: r && !r.error ? (r.costDollars ?? 0) : 0, elapsedMs: r?.elapsedMs ?? 0 };
+  const readMs = r && !r.error ? Date.parse(r.readAt) : NaN;
+  const items = r && !r.error ? r.items.map((it) => (it.publishedDate && Date.parse(it.publishedDate) > readMs ? { ...it, publishedDate: null } : it)) : [];
+  const retrievalState = !r ? 'none' : r.error ? 'failed' : 'items';
+
+  // The prompt, sized before any call (§6.12 control 2).
+  const agentSnap = session.attribution?.agentId ? await db.collection(AGENTS_COLLECTION).doc(session.attribution.agentId).get() : null;
+  const partnerName = partnerNameOf(agentSnap?.exists ? agentSnap.data() : null);
+  const system = buildBuildSystemPrompt({ partnerName, method });
+  const current = currentFindingsOf(record);
+  const companiesBefore = await companiesFor(db, record);
+  const room = Math.max(0, FINDINGS_MAX - (Array.isArray(record.findings) ? record.findings.length : 0) - 1);
+  const stepsLeft = Math.max(0, (session.stepBudget ?? 0) - (session.stepsUsed ?? 0) - 1);
+  const fit = fitPrompt({
+    system, findings: current, items, protectedIds: new Set(cardFindingIdsOf(card)),
+    render: (parts) => renderBuildUser({
+      question: record.question, entryKind: session.entry?.kind, goal, part, direction, card, supported: companiesBefore.supported,
+      stepsLeft, findings: parts.findings, items: parts.items, retrieval: retrievalState, room,
+    }),
+  });
+  if (!fit.ok) {
+    await failStep(db, { uid, sessionId, stepId, reason: 'prompt_too_large', nowIso: new Date().toISOString(), refundCall: true });
+    if (retrievalTally.calls) await settle(captureLog(modelCallRecord({ uid, session, stepId, intent, turn: null, retrieval: retrievalTally, outcome: 'failure', failureReason: 'prompt_too_large', method, goal, part })), settleBy);
+    throw refuse(400, 'prompt_too_large');
+  }
+
+  // One model turn.
+  const elapsed = Date.now() - t0;
+  const budgetMs = Math.min(r ? MODEL_AFTER_RETRIEVAL_MS : MODEL_MS, DEADLINE_MS - elapsed);
+  if (budgetMs <= 0) return failed(504, 'deadline', { retrievalTally, refundCall: true });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), budgetMs);
+  let turn;
+  try {
+    turn = await runTurn({ kind: 'step', system, user: fit.user, schema: BUILD_SCHEMA, signal: controller.signal, deadlineAt: Date.now() + budgetMs });
+  } finally {
+    clearTimeout(timer);
+  }
+  if (!turn.ok) return failed(turn.reason === 'aborted' ? 504 : 200, turn.reason, { turn, retrievalTally });
+  if (Date.now() - t0 > DEADLINE_MS) return failed(504, 'deadline', { turn, retrievalTally });
+
+  // Validate (one turn: a failed validation is never re-asked). B1's rules alone fail the step; a proposal that
+  // breaks a builder rule is dropped (K-4).
+  const nameSymbols = [...new Set([
+    ...candidateSymbolsOf(turn.output), ...buildCandidateNamesOf(turn.output).map((s) => resolveSymbol(s)).filter(Boolean), ...card.names.value,
+  ])];
+  const names = await readNames(db, nameSymbols);
+  const persistIso = new Date().toISOString();
+  const partnerExchangeId = randomUUID();
+  const checked = validateBuildTurn(turn.output, {
+    record, items: fit.items, readAt: r && !r.error ? r.readAt : null, partnerExchangeId, partnerAt: persistIso, nowIso: persistIso,
+    mintFindingId: newFindingId, names, partnerName, method, card, goal, part,
+  });
+  if (!checked.ok) return failed(200, `invalid_${checked.rule}`, { turn, retrievalTally });
+  const partnerExchange = exchangeOf({
+    who: 'partner', kind: 'step', text: checked.reply || builderFallbackReplyOf(checked.findings.length, false), at: persistIso, stepId, intent, goal, part,
+    method: methodRefOf(method),
+    methodChange: methodChangeOf(session.exchanges, method, effective.refusal),
+    findingIds: checked.findings.map((f) => f.findingId),
+    retrieval: r && !r.error ? retainedRetrievalOf({ readAt: r.readAt, items: fit.items, findings: checked.findings }) : null,
+  }, { mintId: () => partnerExchangeId });
+
+  let saved;
+  try {
+    saved = await recordStep(db, {
+      uid, sessionId, stepId, findings: checked.findings, summary: null, expectedRev: (record.summaryRevisions ?? []).length,
+      turn: { elapsedMs: turn.elapsedMs, usage: turn.usage }, partnerExchange, retrieval: retrievalTally, query, nowIso: persistIso,
+      // The proposals land on the card read in recordStep's own transaction (NO step sets a part — V2-4).
+      cardUpdate: (fresh, recordAfter) => applyProposals(fresh, checked.proposals, cardCtxIn(null, recordAfter)),
+    });
+  } catch (err) {
+    const code = err?.code ?? 'persist_failed';
+    const cancellation = code === 'summary_conflict' || err?.extra?.cancellation === true;
+    if (cancellation || err?.researchRecord) return failed(409, code, { turn, retrievalTally, cancellation });
+    return failed(500, 'persist_failed', { turn, retrievalTally });
+  }
+  const pending = captureLog(modelCallRecord({ uid, session, stepId, intent, turn, retrieval: retrievalTally, outcome: 'completion', notes: checked.notes, method, goal, part }));
+  let companies;
+  try {
+    companies = await companiesFor(db, saved.record);
+  } catch (err) {
+    await settle(pending, settleBy); // the completed call's record is never left unsettled (review C4)
+    throw err;
+  }
+  const p = checked.proposals;
+  return answer(res, 200, {
+    session: sessionViewOf(saved.session),
+    record: projectionOf(saved.record, { lines: latestLinesOf(saved.session), nowIso: persistIso }),
+    companies,
+    thesis: thesisFor(saved.session, saved.record, companies),
+    changed: { findings: checked.findings.length, card: Boolean(p.themeSuggestion || p.map || p.why || p.wrongIfOptions || p.timeFrame || p.pick) || goal === 'find_names' },
+    quota: quotaViewOf(day),
+  }, pending, settleBy);
+}
+
+// ── card (§B4.3): the free action — no model call, no step, idempotent on opId ──
+
+async function handleCard(body, res, { db, uid }) {
+  if (!isHostId(body.sessionId) || !isUuid(body.opId) || !Number.isSafeInteger(body.rev) || !CARD_OPS.includes(body.op) || !THESIS_PARTS.includes(body.part)) {
+    throw refuse(400, 'invalid_request');
+  }
+  const nowIso = new Date().toISOString();
+  const out = await applyCard(db, {
+    uid, sessionId: body.sessionId, opId: body.opId, rev: body.rev, op: body.op, part: body.part, value: body.value,
+    exchangeId: randomUUID(), exchangeOf, nowIso,
+  });
+  const companies = await companiesFor(db, out.record);
+  const thesis = thesisFor(out.session, out.record, companies);
+  if (out.stale) throw refuse(409, 'card_stale', { thesis });
+  return res.status(200).json({ session: sessionViewOf(out.session), thesis, applied: out.applied });
+}
+
+// ── adopt, the builder's (§B4.5) ─────────────────────────────────────────────
+
+async function handleAdoptThesis(body, res, { db, uid }) {
+  const statement = body.statement === undefined || body.statement === null ? null : body.statement;
+  if (statement !== null && typeof statement !== 'string') throw refuse(400, 'invalid_request');
+  const nowIso = new Date().toISOString();
+  const { record } = await readInvestigation(db, { uid, sessionId: body.sessionId });
+  const names = record ? await readNames(db, companySymbolsOf(record)) : {};
+  const companiesForRecord = (rec) => companiesOf(rec, { names });
+  const viewNow = async () => {
+    const after = await readInvestigation(db, { uid, sessionId: body.sessionId });
+    return thesisFor(after.session, after.record, after.record ? companiesForRecord(after.record) : null);
+  };
+  let out;
+  try {
+    out = await adoptThesis(db, {
+      uid, sessionId: body.sessionId, rev: body.rev, statement, companiesFor: companiesForRecord, adapter: SHARED_RESEARCH_ADAPTER,
+      mintId: randomUUID, exchangeOf, nowIso,
+    });
+  } catch (err) {
+    if (err?.sharedResearch && err.code === 'card_stale') throw refuse(409, 'card_stale', { thesis: await viewNow() });
+    throw err;
+  }
+  return res.status(200).json({ ...out, thesis: await viewNow() });
+}
+
 // ── the handler ───────────────────────────────────────────────────────────────
 
-const ACTIONS = { frame: handleFrame, open: handleOpen, step: handleStep, close: handleClose, adopt: handleAdopt };
+const ACTIONS = { frame: handleFrame, open: handleOpen, step: handleStep, close: handleClose, adopt: handleAdopt, card: handleCard };
 
 export default async function handler(req, res) {
   const gated = await gateSharedResearchRoute(req, res, { methods: ['GET', 'POST'] });

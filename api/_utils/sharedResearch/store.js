@@ -39,9 +39,13 @@ import {
 import {
   SESSIONS_COLLECTION, QUOTA_COLLECTION, GLOBAL_QUOTA_ID, etDateOf, framingSessionOf, openSessionOf, isOwnedSession,
   stepAdmissionOf, playerDayOf, globalDayOf, itemKeyOf, refuse, latestLinesOf, isFramingInFlight,
-  liveSessionOf, previousSessionOf, previousViewOf, methodsUsedOf,
+  liveSessionOf, previousSessionOf, previousViewOf, methodsUsedOf, CARD_EXCHANGE_KIND,
 } from './session.js';
-import { previewRevOf, sameRev, carriedFor, adoptPreviewOf, assertAssertionsSupported, AssertionError } from './adoptPreview.js';
+import { previewRevOf, sameRev, carriedFor, adoptPreviewOf, assertAssertionsSupported, AssertionError, assertThesisStatementSupported } from './adoptPreview.js';
+import {
+  shapeOf, cardContextOf, readinessOf, sentenceOf, priceConditionsOf, carriedIdsOf, timeFrameLabelOf, savedCardOf, cardOpOf, THESIS_CARD_FIELD,
+} from './thesis.js';
+import { companiesOf } from './companies.js';
 import { CLAIMS_READ_LIMIT } from './opening.js';
 
 export const AGENTS_COLLECTION = 'agents';
@@ -229,8 +233,9 @@ export async function beginFraming(db, { uid, requestId, observation, playerExch
     const quotaSnap = await tx.get(quotaRefOf(db, uid));
     const globalSnap = await tx.get(quotaRefOf(db, GLOBAL_QUOTA_ID));
     const day = playerDayOf(dataOf(quotaSnap), etDate);
-    // a requestId names one request, in both directions: an item's or a drop's requestId never answers a framing (refuter SI-3)
-    if (prior && prior.entry?.kind !== 'observation') throw refuse(400, 'invalid_request');
+    // a requestId names one request, in both directions: an item's or a drop's requestId never answers a framing (refuter SI-3);
+    // nor does a thesis builder's own-words open (Amendment B §B4.1)
+    if (prior && (prior.entry?.kind !== 'observation' || shapeOf(prior) === 'builder')) throw refuse(400, 'invalid_request');
     if (prior && (prior.status !== 'framing' || prior.frame || isFramingInFlight(prior, Date.parse(nowIso)))) return { session: prior, run: false, day };
     if (day.framingsRun >= FRAMINGS_PER_DAY) throw refuse(429, 'framing_limit');
     const g = globalDayOf(dataOf(globalSnap), etDate);
@@ -308,9 +313,11 @@ async function attributionIn(tx, db, uid, nowIso) {
  * carries `previous` — the newest ended one before the answer's own session,
  * `{ sessionId, endedAt, terminalReason }`, or null — read before any write.
  * `method`: the stamp the route selected (KB-1: the baseline, for a story or a drop).
+ * `builder`: `{ thesis }` when the builder mode stamps this new session a thesis builder (Amendment B §B2) — the
+ * session is written with `shape: 'builder'` and its card; absent, the session is written exactly as before.
  * @returns {Promise<{ session, record, day, existing: boolean, replay: boolean, previous: object|null }>}
  */
-export async function openFromItem(db, { uid, requestId, sessionId, entry, exchanges, findings, nowIso, method = null }) {
+export async function openFromItem(db, { uid, requestId, sessionId, entry, exchanges, findings, nowIso, method = null, builder = null }) {
   const etDate = etDateOf(nowIso);
   const key = itemKeyOf(entry.itemRef);
   return db.runTransaction(async (tx) => {
@@ -335,6 +342,7 @@ export async function openFromItem(db, { uid, requestId, sessionId, entry, excha
     const attribution = await attributionIn(tx, db, uid, nowIso);
     const record = mintRecord({ sessionId, uid, question: entry.question, findings, nowIso });
     const session = openSessionOf({ sessionId, userId: uid, requestId, entry, exchanges, attribution, researchWorkId: record.researchWorkId, nowIso, method });
+    if (builder) Object.assign(session, { shape: 'builder', thesis: builder.thesis });
     tx.set(sessionRefOf(db, sessionId), session);
     tx.create(researchWorkRefOf(db, record.researchWorkId), record);
     const after = { ...day, investigationsOpened: day.investigationsOpened + 1 };
@@ -402,9 +410,11 @@ export async function openFromFraming(db, { uid, sessionId, question, direction,
  * steps are bounded too; the persisted `steps` count (the spec's letter) is
  * still added by recordStep. A `direction` step appends the player's exchange
  * here, once.
+ * `admit(session, record)`: the shape's own admission (Amendment B §B2, §B4.2), run inside the transaction after the
+ * session and record checks and before anything is counted or written — it throws the refusal (`invalid_intent`).
  * @returns {Promise<{ replay: boolean, session, record, prior }>}  prior: the lastStep before this one
  */
-export async function beginStep(db, { uid, sessionId, stepId, intent, directionExchange = null, nowIso, nowMs = Date.parse(nowIso) }) {
+export async function beginStep(db, { uid, sessionId, stepId, intent, directionExchange = null, nowIso, nowMs = Date.parse(nowIso), admit = null }) {
   const ref = sessionRefOf(db, sessionId);
   const etDate = etDateOf(nowIso);
   return db.runTransaction(async (tx) => {
@@ -417,6 +427,7 @@ export async function beginStep(db, { uid, sessionId, stepId, intent, directionE
     if (adm.replay) return { replay: true, session: s, record, prior: s.lastStep ?? null };
     if (adm.refuse) throw refuse(409, adm.refuse);
     if (!isOwnedRecord(record, uid) || record.state !== 'open') throw refuse(409, 'session_not_open');
+    if (admit) admit(s, record);
     if ((Array.isArray(record.findings) ? record.findings.length : 0) >= FINDINGS_MAX - 1) throw refuse(409, 'findings_full');
     const g = globalDayOf(dataOf(globalSnap), etDate);
     const ceiling = globalStepCeiling();
@@ -444,8 +455,10 @@ export async function beginStep(db, { uid, sessionId, stepId, intent, directionE
  * `summary_conflict` throws, the caller records a cancellation), the turn
  * folded into the telemetry; the host's partner exchange, `stepsUsed + 1`,
  * `lastStep` completed and the retrieval tally; the app's step count + 1.
+ * `cardUpdate(card, recordAfter)`: a thesis builder step's proposals (Amendment B §B4.2), landed on the card read in
+ * THIS transaction against the record as this step leaves it — the session's `thesis`, in the same write.
  */
-export async function recordStep(db, { uid, sessionId, stepId, findings, summary, expectedRev, turn, partnerExchange, retrieval, query = null, summaryWithheld = false, nowIso }) {
+export async function recordStep(db, { uid, sessionId, stepId, findings, summary, expectedRev, turn, partnerExchange, retrieval, query = null, summaryWithheld = false, nowIso, cardUpdate = null }) {
   const ref = sessionRefOf(db, sessionId);
   const etDate = etDateOf(nowIso);
   return db.runTransaction(async (tx) => {
@@ -477,6 +490,7 @@ export async function recordStep(db, { uid, sessionId, stepId, findings, summary
         elapsedMs: (prior.elapsedMs ?? 0) + (retrieval?.elapsedMs ?? 0),
       },
       updatedAt: nowIso,
+      ...(cardUpdate ? { thesis: cardUpdate(s.thesis, r) } : {}),
     };
     tx.update(ref, sessionPatch);
     const g = globalDayOf(dataOf(globalSnap), etDate);
@@ -602,42 +616,14 @@ const savedAs = (record) => (record?.state === 'completed' && record.terminalRea
   : null);
 
 /**
- * Adopt: the SHARED MECHANICS (the pre-allocated committed list with its
- * attribution block, the v1 write, the record closed with its subject, the
- * confirming exchange, the retry-safe idempotency) plus ONE ORIGIN ADAPTER
- * the caller supplies — `{ origin, listMarker, buildVersion, evidence(record,
- * carried) → keptFindingIds, confirmText(names, horizon) }` (spec §6.6, the
- * Practice Field's item 2). A builder refusal is the player's answer (400
- * invalid_adoption), never a skipped record: `safely()` is not used here.
- *
- * @param {object} p
- * @param {object} p.input       the normalized adoption (normalizeAdoption)
- * @param {string} p.previewRev  the preview's opaque token, echoed by the client (spec §16 FQ-7)
- * @param {(record) => object} p.companiesFor   companies for a record (companiesOf with names)
- * @param {object} p.adapter
- * @param {() => string} p.mintId
+ * The adoption's one transaction — the SHARED MECHANICS of both shapes (spec §6.6; Amendment B §B4.5): the
+ * pre-allocated committed list with its attribution block, the v1 write, the record closed with its subject, the
+ * confirming exchange, the retry-safe idempotency, through the one origin adapter the caller supplies. The caller's
+ * checks before it are the shape's own (the ledger's preview and assertion; the builder's card); inside it, the
+ * shape re-checks through `recheck(fresh, session)` and names its kept findings through `keptOf(fresh, session)`.
+ * `listExtra(...)` adds the shape's own list fields (the builder's `thesisCard`; none for the ledger).
  */
-export async function adoptIdea(db, { uid, sessionId, input, previewRev, companiesFor, adapter, mintId, exchangeOf, nowIso }) {
-  // Before the transaction: the fresh record, the preview revision, the assertion check (spec §6.6).
-  const { session, record } = await readInvestigation(db, { uid, sessionId });
-  const saved = savedAs(record);
-  if (saved) return saved;
-  if (!record || record.state !== 'open') throw refuse(409, 'session_not_open');
-  const lines = latestLinesOf(session);
-  const companies = companiesFor(record);
-  if (!sameRev(previewRevOf(record, { companies, lines }), previewRev)) throw refuse(409, 'preview_stale', { adoptPreview: adoptPreviewOf(record, { companies, lines }) });
-  const supported = companies.supported;
-  const selected = input.symbols.map((s) => supported.find((c) => c.symbol === s));
-  const missing = input.symbols.find((s, i) => !selected[i]);
-  if (missing) throw refuse(400, 'names_not_supported', { notSupported: missing });
-  const deselected = supported.filter((c) => !input.symbols.includes(c.symbol));
-  const carried = carriedFor(record, { supported, lines, symbols: input.symbols });
-  try {
-    assertAssertionsSupported(input.statement, { record, carried, selected, deselected });
-  } catch (err) {
-    if (err instanceof AssertionError) throw refuse(400, err.code, { detail: err.detail });
-    throw err;
-  }
+async function commitAdoption(db, { uid, sessionId, record, input, selected, adapter, mintId, exchangeOf, nowIso, collisionCode, recheck, keptOf, listExtra = null }) {
   const tickers = splitRetiredTickers(capTickersArray(selected.map((c) => ({
     symbol: c.symbol, reasoning: c.relationship, category: 'research', addedBy: 'user', addedAt: nowIso,
   })), nowIso)).kept;
@@ -657,14 +643,10 @@ export async function adoptIdea(db, { uid, sessionId, input, previewRev, compani
     const again = savedAs(fresh);
     if (again) return again; // a retry after the commit: nothing written
     if (fresh.state !== 'open' || s.status !== 'open') throw refuse(409, 'session_not_open');
-    if (listSnap.exists) throw refuse(409, 'preview_stale');
-    const freshCompanies = companiesFor(fresh);
-    const freshLines = latestLinesOf(s);
-    if (!sameRev(previewRevOf(fresh, { companies: freshCompanies, lines: freshLines }), previewRev)) {
-      throw refuse(409, 'preview_stale', { adoptPreview: adoptPreviewOf(fresh, { companies: freshCompanies, lines: freshLines }) });
-    }
+    if (listSnap.exists) throw refuse(409, collisionCode);
+    recheck(fresh, s);
     // The kept findings: the server's carried set for the selected names, never the client's.
-    const keptFindingIds = adapter.evidence(fresh, carriedFor(fresh, { supported: freshCompanies.supported, lines: freshLines, symbols: input.symbols }));
+    const keptFindingIds = keptOf(fresh, s);
     // KB-1 (Amendment A §A4.3): the confirming exchange records the distinct methods behind the kept findings. Its
     // exchangeId — the one the version's evidence names — is the id minted before the transaction, unchanged.
     const confirmed = { ...confirm, methodsUsed: methodsUsedOf(s.exchanges, keptFindingIds) };
@@ -676,6 +658,7 @@ export async function adoptIdea(db, { uid, sessionId, input, previewRev, compani
       status: 'committed', createdAt: nowIso, updatedAt: nowIso, committedAt: nowIso,
       researchWorkId: fresh.researchWorkId, currentHypothesisVersion: 1, hypothesisVersionCount: 1,
       attribution,
+      ...(listExtra ? listExtra({ watchlistId, fresh, session: s, keptFindingIds, statement: input.statement }) : {}),
     };
     const version = adapter.buildVersion({
       list: listDoc, watchlistId, record: fresh, userId: uid, sessionId,
@@ -695,5 +678,178 @@ export async function adoptIdea(db, { uid, sessionId, input, previewRev, compani
       exchanges: [...(s.exchanges ?? []), confirmed], updatedAt: nowIso,
     });
     return { watchlistId, version: 1, researchWorkId: fresh.researchWorkId, idempotent: false };
+  });
+}
+
+/**
+ * Adopt (the ledger): its own checks — the preview revision and the assertion check — then the shared mechanics plus
+ * ONE ORIGIN ADAPTER the caller supplies — `{ origin, listMarker, buildVersion, evidence(record, carried) →
+ * keptFindingIds, confirmText(names, horizon) }` (spec §6.6, the Practice Field's item 2). A builder refusal is the
+ * player's answer (400 invalid_adoption), never a skipped record: `safely()` is not used here. A thesis builder
+ * session is refused here (`invalid_intent`): it saves through adoptThesis.
+ *
+ * @param {object} p
+ * @param {object} p.input       the normalized adoption (normalizeAdoption)
+ * @param {string} p.previewRev  the preview's opaque token, echoed by the client (spec §16 FQ-7)
+ * @param {(record) => object} p.companiesFor   companies for a record (companiesOf with names)
+ * @param {object} p.adapter
+ * @param {() => string} p.mintId
+ */
+export async function adoptIdea(db, { uid, sessionId, input, previewRev, companiesFor, adapter, mintId, exchangeOf, nowIso }) {
+  // Before the transaction: the fresh record, the preview revision, the assertion check (spec §6.6).
+  const { session, record } = await readInvestigation(db, { uid, sessionId });
+  const saved = savedAs(record);
+  if (saved) return saved;
+  if (!record || record.state !== 'open') throw refuse(409, 'session_not_open');
+  if (shapeOf(session) === 'builder') throw refuse(400, 'invalid_intent', { reason: 'shape' }); // Amendment B §B2
+  const lines = latestLinesOf(session);
+  const companies = companiesFor(record);
+  if (!sameRev(previewRevOf(record, { companies, lines }), previewRev)) throw refuse(409, 'preview_stale', { adoptPreview: adoptPreviewOf(record, { companies, lines }) });
+  const supported = companies.supported;
+  const selected = input.symbols.map((s) => supported.find((c) => c.symbol === s));
+  const missing = input.symbols.find((s, i) => !selected[i]);
+  if (missing) throw refuse(400, 'names_not_supported', { notSupported: missing });
+  const deselected = supported.filter((c) => !input.symbols.includes(c.symbol));
+  const carried = carriedFor(record, { supported, lines, symbols: input.symbols });
+  try {
+    assertAssertionsSupported(input.statement, { record, carried, selected, deselected });
+  } catch (err) {
+    if (err instanceof AssertionError) throw refuse(400, err.code, { detail: err.detail });
+    throw err;
+  }
+  return commitAdoption(db, {
+    uid, sessionId, record, input, selected, adapter, mintId, exchangeOf, nowIso, collisionCode: 'preview_stale',
+    recheck: (fresh, s) => {
+      const freshCompanies = companiesFor(fresh);
+      const freshLines = latestLinesOf(s);
+      if (!sameRev(previewRevOf(fresh, { companies: freshCompanies, lines: freshLines }), previewRev)) {
+        throw refuse(409, 'preview_stale', { adoptPreview: adoptPreviewOf(fresh, { companies: freshCompanies, lines: freshLines }) });
+      }
+    },
+    keptOf: (fresh, s) => adapter.evidence(fresh, carriedFor(fresh, { supported: companiesFor(fresh).supported, lines: latestLinesOf(s), symbols: input.symbols })),
+  });
+}
+
+// ── the thesis builder (Amendment B §B4.3, §B4.5) ───────────────────────────────
+
+/**
+ * What saving a builder card would save, or the refusal (§B4.5), from the session and record given: the card's
+ * `rev` must be the one the player saw (else 409 card_stale), the card ready (else 409 not_ready with its blockers);
+ * the statement is the composed sentence, or the player's edit of it — accepted when it names exactly the card's
+ * names (B1's company-name rule) and every number in it sits in a carried Source-backed fact, in the wrong-if text or
+ * in the time frame's label. Horizon and price lines come from the card. Pure apart from its refusals.
+ */
+export function thesisAdoptionOf({ session, record, companies, rev, statement = null }) {
+  const card = session.thesis;
+  if (!Number.isSafeInteger(rev) || rev !== card.rev) throw refuse(409, 'card_stale');
+  const ctx = cardContextOf({ record, supported: companies.supported, session });
+  const { ready, blockers } = readinessOf(card, ctx);
+  if (!ready) throw refuse(409, 'not_ready', { blockers });
+  const composed = sentenceOf(card);
+  const input = normalizeAdoption({
+    statement: statement === null || statement === undefined ? composed : statement,
+    horizonEnum: card.timeFrame.value, symbols: card.names.value, activation: [], invalidation: priceConditionsOf(card),
+  });
+  const supported = companies.supported;
+  const selected = input.symbols.map((s) => supported.find((c) => c.symbol === s));
+  if (selected.some((c) => !c)) throw refuse(409, 'not_ready', { blockers: [{ part: 'names', state: 'stale' }] });
+  const deselected = supported.filter((c) => !input.symbols.includes(c.symbol));
+  const carried = carriedIdsOf(card, ctx);
+  if (input.statement !== composed) {
+    try {
+      assertThesisStatementSupported(input.statement, {
+        record, carried, selected, deselected, ownTexts: [card.wrongIf.text, timeFrameLabelOf(card.timeFrame.value)],
+      });
+    } catch (err) {
+      if (err instanceof AssertionError) throw refuse(400, err.code, { detail: err.detail });
+      throw err;
+    }
+  }
+  return { input, selected, carried, composed };
+}
+
+/**
+ * Save a builder card (§B4.5): the card's checks before the transaction and inside it, then the shared mechanics
+ * through the same adapter. The kept findings are the card's carried ids, never the client's; the list also carries
+ * the card as `thesisCard` (§B10 S-B1, PF-1: written once, here — its only writer).
+ */
+export async function adoptThesis(db, { uid, sessionId, rev, statement = null, companiesFor, adapter, mintId, exchangeOf, nowIso }) {
+  const { session, record } = await readInvestigation(db, { uid, sessionId });
+  const saved = savedAs(record);
+  if (saved) return saved;
+  if (!record || record.state !== 'open') throw refuse(409, 'session_not_open');
+  if (shapeOf(session) !== 'builder' || !session.thesis) throw refuse(400, 'invalid_intent', { reason: 'shape' });
+  const plan = thesisAdoptionOf({ session, record, companies: companiesFor(record), rev, statement });
+  return commitAdoption(db, {
+    uid, sessionId, record, input: plan.input, selected: plan.selected, adapter, mintId, exchangeOf, nowIso, collisionCode: 'card_stale',
+    recheck: (fresh, s) => {
+      if (shapeOf(s) !== 'builder' || !s.thesis) throw refuse(400, 'invalid_intent', { reason: 'shape' });
+      const again = thesisAdoptionOf({ session: s, record: fresh, companies: companiesFor(fresh), rev, statement });
+      if (again.input.statement !== plan.input.statement || again.carried.join() !== plan.carried.join()) throw refuse(409, 'card_stale');
+    },
+    keptOf: (fresh, s) => adapter.evidence(fresh, carriedIdsOf(s.thesis, cardContextOf({ record: fresh, supported: companiesFor(fresh).supported, session: s }))),
+    listExtra: ({ watchlistId, fresh, session: s, keptFindingIds, statement: saved }) => ({
+      [THESIS_CARD_FIELD]: savedCardOf(s.thesis, { watchlistId, sessionId, researchWorkId: fresh.researchWorkId, statement: saved, carried: keptFindingIds, savedAt: nowIso }),
+    }),
+  });
+}
+
+/**
+ * Open an own-words thesis builder investigation (§B4.1, DR-6): no framing turn and no framing count. One
+ * transaction — the quota +1, the host created `open` and stamped `shape: 'builder'` with its card and its
+ * attribution, the record minted with the composed question and the player's words. Idempotent on requestId: a retry
+ * finds the session it made and writes nothing; a requestId another kind of request made answers invalid_request
+ * (B1's SI-3 rule, both ways).
+ */
+export async function openOwnWords(db, { uid, requestId, sessionId, entry, exchanges, findings, nowIso, method, thesis }) {
+  const etDate = etDateOf(nowIso);
+  return db.runTransaction(async (tx) => {
+    const prior = await byRequestIn(tx, db, uid, requestId);
+    const quotaSnap = await tx.get(quotaRefOf(db, uid));
+    const day = playerDayOf(dataOf(quotaSnap), etDate);
+    if (prior && !(prior.entry?.kind === 'observation' && shapeOf(prior) === 'builder')) throw refuse(400, 'invalid_request');
+    if (prior) {
+      const record = prior.researchWorkId ? dataOf(await tx.get(researchWorkRefOf(db, prior.researchWorkId))) : null;
+      return { session: prior, record, day, existing: false, replay: true, previous: null };
+    }
+    if (day.investigationsOpened >= PER_DAY) throw refuse(429, 'daily_limit');
+    const attribution = await attributionIn(tx, db, uid, nowIso);
+    const record = mintRecord({ sessionId, uid, question: entry.question, findings, nowIso });
+    const session = {
+      ...openSessionOf({ sessionId, userId: uid, requestId, entry, exchanges, attribution, researchWorkId: record.researchWorkId, nowIso, method }),
+      shape: 'builder', thesis,
+    };
+    tx.set(sessionRefOf(db, sessionId), session);
+    tx.create(researchWorkRefOf(db, record.researchWorkId), record);
+    const after = { ...day, investigationsOpened: day.investigationsOpened + 1 };
+    tx.set(quotaRefOf(db, uid), { ...after, updatedAt: nowIso });
+    return { session, record, day: after, existing: false, replay: false, previous: null };
+  });
+}
+
+/**
+ * The free action (§B4.3): one transaction, no model call, no step counted. The owner's builder session and its
+ * record, read fresh; an opId the card already applied answers it unchanged (idempotent — a retry appends nothing);
+ * a `rev` that is not current answers `{ stale: true }` (the route's 409 card_stale with the fresh card); otherwise
+ * the op is applied by thesis.js (refused 400 invalid_card with its reason), `rev + 1`, and ONE player exchange of
+ * kind `card` appended (§B10 R-21): its op, part, a short label and the time, its id minted before the transaction.
+ */
+export async function applyCard(db, { uid, sessionId, opId, rev, op, part, value, exchangeId, exchangeOf, nowIso }) {
+  const ref = sessionRefOf(db, sessionId);
+  return db.runTransaction(async (tx) => {
+    const s = dataOf(await tx.get(ref));
+    if (!isOwnedSession(s, uid)) throw refuse(404, 'session_not_found');
+    const record = s.researchWorkId ? dataOf(await tx.get(researchWorkRefOf(db, s.researchWorkId))) : null;
+    if (shapeOf(s) !== 'builder' || !s.thesis) throw refuse(400, 'invalid_intent', { reason: 'shape' });
+    if (Array.isArray(s.thesis.ops) && s.thesis.ops.includes(opId)) return { session: s, record, applied: false };
+    if (s.status !== 'open' || !isOwnedRecord(record, uid) || record.state !== 'open') throw refuse(409, 'session_not_open');
+    if (rev !== s.thesis.rev) return { session: s, record, applied: false, stale: true };
+    const ctx = cardContextOf({ record, supported: companiesOf(record).supported, session: s });
+    const out = cardOpOf(s.thesis, { opId, op, part, value }, ctx);
+    if (!out.ok) throw refuse(400, 'invalid_card', { reason: out.reason });
+    const exchange = exchangeOf({ who: 'player', kind: CARD_EXCHANGE_KIND, text: out.label, at: nowIso, card: { op, part } }, { mintId: () => exchangeId });
+    const patch = { thesis: out.card, exchanges: [...(s.exchanges ?? []), exchange], updatedAt: nowIso };
+    tx.update(ref, patch);
+    return { session: { ...s, ...patch }, record, applied: true };
   });
 }

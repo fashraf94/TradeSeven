@@ -28,7 +28,9 @@ export const QUOTA_COLLECTION = 'sharedResearchQuota';
 export const GLOBAL_QUOTA_ID = '_global';
 export const SESSION_SCHEMA_VERSION = 1;
 export const SESSION_STATUSES = Object.freeze(['framing', 'open', 'completed', 'abandoned', 'failed']);
-export const EXCHANGE_KINDS = Object.freeze(['observation', 'frame', 'direction', 'step', 'turn', 'confirm', 'close']);
+export const EXCHANGE_KINDS = Object.freeze(['observation', 'frame', 'direction', 'step', 'turn', 'confirm', 'close', 'card']);
+/** The thesis builder's free action leaves one player exchange of this kind per applied op (Amendment B §B10 R-21). */
+export const CARD_EXCHANGE_KIND = 'card';
 /** A `running` step older than this is treated as failed (spec §6.3 step). */
 export const RUNNING_STALE_MS = 35_000;
 /** An exchange's stored text, at most. */
@@ -76,10 +78,14 @@ export const itemKeyOf = (itemRef) => (itemRef && typeof itemRef.recordKind === 
  * the previous partner turn's), a step's `findingIds` (the findings it
  * appended, in order) and `retrieval` (what it was shown); a confirming
  * exchange's `methodsUsed`. None of them reaches the client (sessionViewOf).
+ * The thesis builder (Amendment B; B3): a builder step's `goal` and `part`, and a
+ * `card` exchange's `card: { op, part }` (§B10 R-21) — written only when given,
+ * so a ledger exchange is unchanged; the client reads all three.
  */
 export function exchangeOf({
   who, kind, text, at, stepId = null, intent = null, target = null, lines = null,
   method = null, methodChange = null, findingIds = null, retrieval = null, methodsUsed = null,
+  goal = null, part = null, card = null,
 }, { mintId = randomUUID } = {}) {
   if (!['player', 'partner'].includes(who) || !EXCHANGE_KINDS.includes(kind)) throw new Error('sharedResearch: an exchange needs a known speaker and kind');
   const ex = { exchangeId: mintId(), who, kind, text: String(text ?? '').slice(0, EXCHANGE_TEXT_MAX), at };
@@ -92,6 +98,9 @@ export function exchangeOf({
   if (findingIds) ex.findingIds = findingIds;
   if (retrieval) ex.retrieval = retrieval;
   if (methodsUsed) ex.methodsUsed = methodsUsed;
+  if (goal) ex.goal = goal;
+  if (part) ex.part = part;
+  if (card) ex.card = card;
   return ex;
 }
 
@@ -361,6 +370,9 @@ export function sessionViewOf(s) {
       if (ex.stepId) v.stepId = ex.stepId;
       if (ex.intent) v.intent = ex.intent;
       if (ex.target) v.target = ex.target;
+      if (ex.goal) v.goal = ex.goal; // the thesis builder's (B3); never on a ledger exchange
+      if (ex.part) v.part = ex.part;
+      if (ex.card) v.card = ex.card;
       return v;
     }),
     stepsUsed: count(s.stepsUsed),
@@ -369,6 +381,8 @@ export function sessionViewOf(s) {
     researchWorkId: s.researchWorkId ?? null,
     adoption: s.adoption ?? null,
     createdAt: s.createdAt, updatedAt: s.updatedAt,
+    // the thesis builder's stamp (Amendment B §B2): present only on a builder session — a ledger's view is unchanged
+    ...(s.shape === 'builder' ? { shape: 'builder' } : {}),
   };
 }
 

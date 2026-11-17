@@ -51,7 +51,6 @@ const STALE = 'stale';
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isText = (v) => typeof v === 'string' && v.length > 0;
 const idsOf = (v) => (Array.isArray(v) ? v.filter(isText) : []);
-const uniq = (xs) => xs.filter((x, i) => xs.indexOf(x) === i);
 
 /** The part names as the conversation says them. */
 export const PART_LABELS = Object.freeze({ theme: 'Theme', segment: 'Segment', names: 'Names', why: 'Why', wrongIf: 'Wrong if', timeFrame: 'Time frame' });
