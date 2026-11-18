@@ -630,25 +630,33 @@ function kindsOf(record, rows, add) {
 }
 
 /**
- * The ids a FOUNDER'S CONFLICT RULING settled on this ledger — applied with its payload, declined `none`, or declined as
- * not entitled — each with every payload the ruling covered: those its record had seen, the one applied, and those a
- * later revision record already names. A payload outside these is what the founder has not seen (S-2). Pure.
+ * The ids a FOUNDER'S RULING settled on this ledger — applied with its payload, declined `none`, or declined as not
+ * entitled — each with every payload the ruling covered (S-2). A conflict ruling made since this round carries what its
+ * record had SEEN when it was made (`seen`; AR2-C-1: a payload observed later, even before the ruling applied, is not
+ * covered). One without it (a ruling of another kind, or recorded before) covers its applied payload, and a conflict
+ * ruling's record's payloads. A revision the founder has answered (closed) is covered too. A payload outside these is
+ * what the founder has not seen. Pure.
  * @returns {Map<string, { keys: Set<string>, ruling: string|null, ruled: object|string }>}
  */
 function founderSettledIds(ledger) {
   const out = new Map();
   const receipts = ledger?.corporateActionReceipts || [];
   for (const r of receipts) {
-    if (r?.founderRuling?.kind !== 'conflict') continue;
+    const ruling = r?.founderRuling;
+    if (!ruling) continue;
     if (!(r.applied === true || r.reason === 'founder_ruled_none' || r.reason === NOT_ENTITLED)) continue;
     const keys = new Set();
-    for (const x of receipts) {
-      if (x?.actionId === r.actionId && (x.reason === CONFLICTING_ACTION || x.reason === POSSIBLE_REDATE || x.reason === REVISED_AFTER_RULING)) {
-        for (const p of recordedPayloadsOf(x)) keys.add(actionPayloadOf(p));
-      }
+    if (Array.isArray(ruling.seen)) {
+      for (const p of ruling.seen) keys.add(actionPayloadOf(p));
+    } else if (ruling.kind === 'conflict') {
+      for (const x of receipts) if (x?.actionId === r.actionId && (x.reason === CONFLICTING_ACTION || x.reason === POSSIBLE_REDATE)) for (const p of recordedPayloadsOf(x)) keys.add(actionPayloadOf(p));
     }
+    for (const x of receipts) if (x?.actionId === r.actionId && x.reason === REVISED_AFTER_RULING && x.closedBy != null) for (const p of x.rows || []) keys.add(actionPayloadOf(p));
     if (r.reason !== 'founder_ruled_none') keys.add(actionPayloadOf(r));
-    out.set(r.actionId, { keys, ruling: r.founderRuling.requestKey ?? null, ruled: r.reason === 'founder_ruled_none' ? 'none' : { ratio: r.ratio ?? null, amount: r.amount ?? null } });
+    const ruled = r.reason === 'founder_ruled_none' ? 'none' : {
+      ratio: r.ratio ?? null, amount: r.amount ?? null, ...(r.cashPerShare != null ? { cashPerShare: r.cashPerShare } : {}), ...(r.renamedTo != null ? { renamedTo: r.renamedTo } : {}),
+    };
+    out.set(r.actionId, { keys, ruling: ruling.requestKey ?? null, ruled });
   }
   return out;
 }
@@ -670,7 +678,9 @@ const byItem = (a, b) => String(a.effectiveDate).localeCompare(String(b.effectiv
 const addItem = (map, sym, item) => {
   const key = upper(sym);
   const list = map.get(key) || [];
-  if (!list.some((i) => i.actionId === item.actionId && i.ledger === item.ledger)) list.push(item);
+  const same = list.find((i) => i.actionId === item.actionId && i.ledger === item.ledger);
+  if (!same) list.push(item);
+  else if (item.ambiguous === true && same.ambiguous !== true) list[list.indexOf(same)] = { ...same, ambiguous: true }; // (a doubt about the id itself, however it was first listed)
   map.set(key, list);
 };
 
@@ -695,13 +705,14 @@ export function unresolvedShareBasis(ledger, actionsBySymbol, { date }) {
   // move now) explains nothing, so the record's own item stays and holds what is dated in its gap (fix-round refuter NF-1).
   const founder = founderSplitRowsOf(ledger, actionsBySymbol, { date, settled }).filter((a) => founderSplitMoot(ledger, upper(a.ticker), a, date) === null);
   for (const a of [...due.pending, ...due.noEntitlementData, ...founder]) if (SHARE_BASIS_TYPES.has(a.type)) addItem(out, a.ticker, itemOf(a, kind));
-  for (const r of unsettledConflicts(ledger)) if (SHARE_BASIS_TYPES.has(r.type)) addItem(out, r.ticker, itemOf(r, kind));
+  // (`ambiguous`: the item is a doubt about THE ID ITSELF — another ledger's action of that same id waits on it; AR2-B-3.)
+  for (const r of unsettledConflicts(ledger)) if (SHARE_BASIS_TYPES.has(r.type)) addItem(out, r.ticker, { ...itemOf(r, kind), ambiguous: true });
   // …and (Amendment F-7) every share-basis row recorded as a possible re-date and not settled since: the same split
   // under a moved date, or a second one — the count is in doubt either way until the founder settles it.
-  for (const r of unsettledRedates(ledger)) if (SHARE_BASIS_TYPES.has(r.type)) addItem(out, r.ticker, itemOf(r, kind));
+  for (const r of unsettledRedates(ledger)) if (SHARE_BASIS_TYPES.has(r.type)) addItem(out, r.ticker, { ...itemOf(r, kind), ambiguous: true });
   // …and (rev 1, S-2) a ruled split the feed has since listed with a ratio the ruling did not see: the count is in doubt
   // again until the founder answers.
-  for (const r of openRulingRevisions(ledger)) if (SHARE_BASIS_TYPES.has(r.type)) addItem(out, r.ticker, itemOf(r, kind));
+  for (const r of openRulingRevisions(ledger)) if (SHARE_BASIS_TYPES.has(r.type)) addItem(out, r.ticker, { ...itemOf(r, kind), ambiguous: true });
   const ambiguous = new Set([...unsettledConflicts(ledger), ...unsettledRedates(ledger)].map((r) => r.actionId));
   for (const r of heldActionRecords(ledger)) {
     if (settled.has(r.actionId)) continue;
@@ -903,8 +914,8 @@ function founderSplitMoot(ledger, sym, action, date) {
   return null;
 }
 
-export function applyLedgerActions(ledger, actionsBySymbol, { date, holds = null, deferRenames = null, renameTargetsTaken = null, renameIdsScreened = null, ruledIds = null }) {
-  return applyActions(ledger, actionsBySymbol, { date, phase: 'all', holds, deferRenames, renameTargetsTaken, renameIdsScreened, ruledIds });
+export function applyLedgerActions(ledger, actionsBySymbol, { date, holds = null, deferRenames = null, renameTargetsTaken = null, renameIdsScreened = null, ruledIds = null, replacedRows = null }) {
+  return applyActions(ledger, actionsBySymbol, { date, phase: 'all', holds, deferRenames, renameTargetsTaken, renameIdsScreened, ruledIds, replacedRows });
 }
 
 /** The order of one call: by effective date; on one date the share-basis actions FIRST (a cash action of that date is
@@ -931,7 +942,7 @@ function withoutHeld(holding, actionId) {
   return left.length > 0 ? { ...rest, heldActions: left } : rest;
 }
 
-function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, deferRenames = null, renameTargetsTaken = null, renameIdsScreened = null, ruledIds = null }) {
+function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, deferRenames = null, renameTargetsTaken = null, renameIdsScreened = null, ruledIds = null, replacedRows = null }) {
   // 'share_basis' is the dry run shareBasisHolds makes: share-basis actions only, cash actions and renames withheld.
   const everything = phase === 'all';
   const next = cloneLedger(ledger);
@@ -969,8 +980,22 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
 
   // ── AMBIGUITY IS STICKY (Amendment F rev 1, S-1, S-2; see the header) ─────────────────────────────────────────────
   const redates = [];
+  // The feed's rows a pending ruling replaces on this ledger (close.js), due now on a held symbol, by id: observed only.
+  const replacedRowsById = new Map();
+  for (const [sym, list] of Object.entries(replacedRows || {})) {
+    if (!next.holdings[upper(sym)]) continue;
+    for (const a of list || []) {
+      if (!a || typeof a.effectiveDate !== 'string' || a.effectiveDate > date) continue;
+      const id = deriveActionId(a);
+      replacedRowsById.set(id, [...(replacedRowsById.get(id) || []), a]);
+    }
+  }
   // The founder's own action for an id (resolve_hold) is the one thing that settles an ambiguous id.
-  const isRuled = (a) => a?.founderRuling != null && ruledIds?.has(a.actionId) === true;
+  // A founder's own action (any ruling kind) is never a feed row: not a conflict, a revision or a re-date of anything.
+  const isFounderAction = (a) => a?.founderRuling != null && ruledIds?.has(a.actionId) === true;
+  // …but only a CONFLICT ruling (resolve_hold, `conflict`) settles an AMBIGUOUS id (S-2; AR2-A-1, AR2-C-2: a founder split
+  // or a coverage-gap row under that id settled it with a payload its record never saw, and locked the record).
+  const isRuled = (a) => isFounderAction(a) && a.founderRuling.kind === 'conflict';
   // The feed's due rows of this call (a founder's action is not a feed row: it is never part of a conflict or a revision).
   const feedDue = [...pending, ...notEntitled, ...noEntitlementData, ...unrecognized].filter((a) => a.founderRuling == null);
   // Every ambiguous id's OPEN record — its first unsettled conflict or possible re-date receipt — kept live through the call.
@@ -1034,14 +1059,21 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
   // ambiguous id). One this ledger HOLDS a record of with a different payload — an action held behind a doubt, or one the
   // applier refused — is a revision: the id becomes ambiguous, and its record no longer replays (before rev 1 the record
   // was refreshed to whatever the feed listed now, so a revision was paid at full quality once the doubt cleared).
+  // (AR2-C-1, AR2-A-5: while a ruling is pending the close hands this ledger the feed's rows of its id apart —
+  // `replacedRows` — so the ruling's action stands for them. They are still OBSERVED: a payload among them that the
+  // record has not seen is kept, and once the ruling applies it is one the ruling did not see.)
+  for (const [id, rows] of replacedRowsById) { const open = ambiguity.get(id); if (open) observe(open, rows); }
   const singles = new Map();
   for (const a of feedDue) if (!conflicting.has(a.actionId) && !singles.has(a.actionId)) singles.set(a.actionId, a);
   for (const [id, a] of singles) {
     const sym = upper(a.ticker);
     const open = ambiguity.get(id);
     if (open) { observe(open, [a]); continue; }
-    const record = (next.holdings[sym]?.heldActions || []).find((r) => r.actionId === id && r.founderRuling == null) ?? null;
-    if (record === null || samePayload(record, a)) continue;
+    // A held action's payload, or (AR2-A-3) a waiting rename's target — a revision of either is ambiguity.
+    const deferred = a.type === 'ticker_change' && next.holdings[sym]?.deferredRename?.actionId === id ? next.holdings[sym].deferredRename : null;
+    const record = (next.holdings[sym]?.heldActions || []).find((r) => r.actionId === id && r.founderRuling == null)
+      ?? (deferred ? { renamedTo: deferred.to, source: null, heldOn: deferred.deferredOn ?? null } : null);
+    if (record === null || (samePayload(record, a) && upper(record.renamedTo) === upper(a.renamedTo))) continue;
     unresolved.add(sym);
     const rows = [rowOfPayload(record, record.heldOn ?? null), rowOfPayload(a, date)];
     recordAmbiguity({
@@ -1049,32 +1081,36 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
       entitled: !notEntitledIds.has(id), rows, seenOn: date, kinds: kindsOf(null, rows, 'revision'), revisedFrom: { heldOn: record.heldOn ?? null, ...(record.refused ? { refused: record.refused } : {}) },
     }, 'revision');
   }
-  // S-2: A RULED ID the feed lists, since the ruling, with a payload the ruling did not see — a new ambiguity. The money the
-  // ruling moved stays (an adjustment is T1a-2b-4's); the record is alerted at every close, a split's puts the count in
-  // doubt again, and the founder answers it (resolve_hold, conflict: the ruled outcome again — holdRulings.js).
-  for (const [id, covered] of founderSettledIds(next)) {
-    const rows = feedRowsListedFor(next, actionsBySymbol, id, date);
-    const unseen = rows.filter((row) => !covered.keys.has(actionPayloadOf(row)));
-    if (unseen.length === 0) continue;
-    const prior = openRulingRevisions(next).find((r) => r.actionId === id) ?? null;
-    const known = new Set((prior?.rows || []).map(actionPayloadOf));
-    const fresh = [];
-    for (const row of unseen) if (!known.has(actionPayloadOf(row))) { known.add(actionPayloadOf(row)); fresh.push(rowOfPayload(row, date)); }
-    if (fresh.length === 0) continue;
-    const first = rows[0];
-    if (SHARE_BASIS_TYPES.has(first.type)) unresolved.add(upper(first.ticker));
-    if (prior) {
-      const i = next.corporateActionReceipts.indexOf(prior);
-      next.corporateActionReceipts[i] = { ...prior, rows: [...prior.rows, ...fresh], lastRevisedOn: date };
-      ambiguities.push({ actionId: id, ticker: upper(first.ticker), type: first.type, how: 'revised_after_ruling', payloads: prior.rows.length + fresh.length });
-    } else {
-      next.corporateActionReceipts.push({
-        actionId: id, type: first.type, ticker: first.ticker, effectiveDate: first.effectiveDate, applied: false, reason: REVISED_AFTER_RULING,
-        rows: fresh, seenOn: date, ruling: covered.ruling, ruled: covered.ruled, closedBy: null,
-      });
-      ambiguities.push({ actionId: id, ticker: upper(first.ticker), type: first.type, how: 'revised_after_ruling', payloads: fresh.length });
+  // S-2: A RULED ID that shows, since the ruling, a payload the ruling did not see — a new ambiguity (`checkRulingRevisions`,
+  // run at the end of the call, once a ruling this close applies is settled: AR2-C-1).
+  const checkRulingRevisions = () => {
+    for (const [id, covered] of founderSettledIds(next)) {
+      // What the id has shown: the feed's rows now (the replaced ones included), and every payload its records kept —
+      // one observed while the ruling waited counts, though the feed may have dropped it since.
+      const listed = [...feedRowsListedFor(next, actionsBySymbol, id, date), ...(replacedRowsById.get(id) || [])];
+      const recordRows = (next.corporateActionReceipts || []).filter((r) => r?.actionId === id && (r.reason === CONFLICTING_ACTION || r.reason === POSSIBLE_REDATE)).flatMap(recordedPayloadsOf);
+      const unseen = [...listed, ...recordRows].filter((row) => !covered.keys.has(actionPayloadOf(row)));
+      if (unseen.length === 0) continue;
+      const prior = openRulingRevisions(next).find((r) => r.actionId === id) ?? null;
+      const known = new Set((prior?.rows || []).map(actionPayloadOf));
+      const fresh = [];
+      for (const row of unseen) if (!known.has(actionPayloadOf(row))) { known.add(actionPayloadOf(row)); fresh.push(rowOfPayload(row, date)); }
+      if (fresh.length === 0) continue;
+      const meta = listed[0] ?? (next.corporateActionReceipts || []).find((r) => r?.actionId === id && r.founderRuling);
+      if (SHARE_BASIS_TYPES.has(meta.type) || meta.type === 'ticker_change') unresolved.add(upper(meta.ticker));
+      if (prior) {
+        const k = next.corporateActionReceipts.indexOf(prior);
+        next.corporateActionReceipts[k] = { ...prior, rows: [...prior.rows, ...fresh], lastRevisedOn: date };
+        ambiguities.push({ actionId: id, ticker: upper(meta.ticker), type: meta.type, how: 'revised_after_ruling', payloads: prior.rows.length + fresh.length });
+      } else {
+        next.corporateActionReceipts.push({
+          actionId: id, type: meta.type, ticker: meta.ticker, effectiveDate: meta.effectiveDate, applied: false, reason: REVISED_AFTER_RULING,
+          rows: fresh, seenOn: date, ruling: covered.ruling, ruled: covered.ruled, closedBy: null,
+        });
+        ambiguities.push({ actionId: id, ticker: upper(meta.ticker), type: meta.type, how: 'revised_after_ruling', payloads: fresh.length });
+      }
     }
-  }
+  };
 
   // THE SHARE-BASIS ACTIONS THIS LEDGER CANNOT SETTLE, kept as the call goes (fix round 2): its unsettled conflicts, the
   // rows it has no entitlement data for, the ones it holds and what they wait on — and, below, each one the applier
@@ -1106,7 +1142,7 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
   // the first match's id and every UNSETTLED held row it matches (rev 1, S-1 ③: the row it may repeat becomes ambiguous
   // too), or null. `unsettledOnly`: match only a row that is not settled (the not-entitled path below).
   const redateMatchOf = (action, sym, { unsettledOnly = false } = {}) => {
-    if (isRuled(action)) return null; // the founder applied it (resolve_hold): not a re-date
+    if (isFounderAction(action)) return null; // the founder applied it (resolve_hold): not a re-date
     const settledNow = settledIdsOf(next);
     const sameKind = (r) => r?.type === action.type && upper(r.ticker) === sym;
     const pool = [];
@@ -1149,7 +1185,7 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
     // A not-entitled row that may repeat a row this ledger has NOT settled — one it holds, or an ambiguous one's payload —
     // is a possible re-date (rev 1, S-1 ③): the vendor may have moved that action past the purchase date, so the row
     // it repeats may be owed nothing. Both wait for the founder. (One matching only a settled row is declined as before.)
-    const match = isRuled(decl) ? null : redateMatchOf(decl, upper(decl.ticker), { unsettledOnly: true });
+    const match = isFounderAction(decl) ? null : redateMatchOf(decl, upper(decl.ticker), { unsettledOnly: true });
     if (match) { recordRedatePair(upper(decl.ticker), decl, match); continue; }
     // Bought on or after the effective date: the price paid already reflects the action. Declined, durably — with the
     // payload it declined (Astra T2D-01, the agreed Q10): a row the vendor re-dates past the purchase date matches it.
@@ -1199,14 +1235,20 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
     };
     const nowSettled = settledIdsOf(next);
     const out = new Map();
-    for (const i of holds?.get(sym) || []) if (i.actionId !== action.actionId && before(i) && !(i.ledger === kind && nowSettled.has(i.actionId))) addItem(out, sym, { ...i });
+    // (AR2-B-3: a SHARE-BASIS action of an id ANOTHER ledger of the idea has in doubt waits behind that doubt too — the
+    // class rule: the symbol's basis is in doubt idea-wide. Before, the item of its own id was skipped on every ledger, so a
+    // ledger without the record applied a split the idea disputed, and a same-stock pair came apart. A cash action of
+    // such an id is still its own ledger's to apply: S-5, Astra T2D-C05.)
+    const sameIdElsewhere = (i) => i.actionId === action.actionId && shareBasis && i.ledger !== kind && i.ambiguous === true && !isRuled(action);
+    const plain = ({ ambiguous: _a, ...i }) => i;
+    for (const i of holds?.get(sym) || []) if (((i.actionId !== action.actionId && before(i)) || sameIdElsewhere(i)) && !(i.ledger === kind && nowSettled.has(i.actionId))) addItem(out, sym, plain(i));
     // (A suspicion of this ledger retired earlier in this call — explained, or the founder's split for it applied —
     // holds nothing after it: the record no longer stands. One still standing holds, as always.)
     const retiredHere = (i) => i.type === SUSPECTED_SPLIT && i.ledger === kind && (() => {
       const s = openBasisSuspicion(next.holdings[sym]);
       return !s || suspicionIdOf(sym, s) !== i.actionId;
     })();
-    for (const i of blocked.get(sym) || []) if (i.actionId !== action.actionId && before(i) && !nowSettled.has(i.actionId) && !retiredHere(i)) addItem(out, sym, { ...i });
+    for (const i of blocked.get(sym) || []) if (i.actionId !== action.actionId && before(i) && !nowSettled.has(i.actionId) && !retiredHere(i)) addItem(out, sym, plain(i));
     return (out.get(sym) || []).sort(byItem);
   };
   // Not applied, not settled: the holding keeps a record of what it is owed, refreshed to the payload the feed lists now.
@@ -1379,6 +1421,7 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
         cashPerShare: delistingCashOf(action), shares: out.forcedClose.shares, cashUsd: out.forcedClose.proceeds,
         costBasisUsd: roundUsd(Number(heldBefore?.costBasisTotal) || 0), realizedPnlUsd: out.forcedClose.realizedPnl, incomeUsd: 0,
         applied: true, appliedOn: date, source: action.source ?? null, note: out.note, ...heldFields,
+        ...(action.founderRuling ? { founderRuling: action.founderRuling } : {}),
       };
       next.corporateActionReceipts.push(receipt);
       applied.push({ ...action, receipt });
@@ -1462,13 +1505,22 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
     for (const [sym, h] of Object.entries(next.holdings)) {
       const record = h?.deferredRename;
       if (!record || settledNow.has(record.actionId) || conflicting.has(record.actionId) || candidates.some((r) => r.actionId === record.actionId)) continue;
+      // Rev 1, S-2 (AR2-A-2): a waiting rename whose id is AMBIGUOUS is not applied from its record — only the founder's
+      // ruling settles it. The holding keeps its symbol and its carried mark.
+      if (ambiguity.has(record.actionId)) { unresolved.add(upper(sym)); continue; }
       // The close screened this id's row out (R-36): the record does not stand in for it, and takes the target the row
       // names now, so a later close never falls back to a target the feed corrected away from (fix-round refuters,
       // F2 and S1). The holding stays unresolved here: the close marks it blocked.
       if (renameIdsScreened?.has(record.actionId)) {
         const screenedTo = typeof renameIdsScreened.get === 'function' ? renameIdsScreened.get(record.actionId) : null;
+        // Rev 1, S-1 ② (AR2-A-3): a target the feed now names differently is a REVISION — the id is ambiguous, and the
+        // record no longer follows the row (before rev 1 it took the new target, F2/S1); the founder rules the target.
         if (typeof screenedTo === 'string' && screenedTo.length > 0 && screenedTo !== record.to) {
-          next.holdings = { ...next.holdings, [sym]: { ...h, deferredRename: { ...record, to: screenedTo } } };
+          const rows = [rowOfPayload({ renamedTo: record.to }, record.deferredOn ?? null), rowOfPayload({ renamedTo: screenedTo }, date)];
+          recordAmbiguity({
+            actionId: record.actionId, type: 'ticker_change', ticker: sym, effectiveDate: record.effectiveDate, applied: false, reason: CONFLICTING_ACTION,
+            entitled: true, rows, seenOn: date, kinds: kindsOf(null, rows, 'revision'), revisedFrom: { deferredOn: record.deferredOn ?? null },
+          }, 'revision');
         }
         continue;
       }
@@ -1504,6 +1556,7 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
       const receipt = {
         actionId: action.actionId, type: action.type, ticker: action.ticker, effectiveDate: action.effectiveDate,
         renamedTo: to, incomeUsd: 0, applied: true, appliedOn: date, source: action.source ?? null, note: out.note, ...deferral,
+        ...(action.founderRuling ? { founderRuling: action.founderRuling } : {}),
       };
       next.corporateActionReceipts.push(receipt);
       applied.push({ ...action, receipt });
@@ -1524,6 +1577,7 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
     for (const sym of unsettledShareBasisSymbols(next, actionsBySymbol, { date })) if (Object.hasOwn(next.holdings, sym)) unresolved.add(sym);
     for (const sym of holds?.keys() || []) if (Object.hasOwn(next.holdings, sym)) unresolved.add(sym);
   }
+  checkRulingRevisions();
   return {
     ledger: next, applied, declined, unresolved, conflicts, shareBasisChanges, renames, renamesDeferred, renamesBlocked, held, closedByCash, delistedWaiting, redates,
     founderSkips, founderRefusals, ambiguities,

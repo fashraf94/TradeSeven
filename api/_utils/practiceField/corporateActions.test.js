@@ -707,27 +707,29 @@ describe('Astra T2A-01 — a ticker change waits while the holding\'s share basi
     errors.mockRestore();
   });
 
-  it('the record FOLLOWS a corrected row of the same id (refuter F2): the reservation, the alert and the rename name the target the feed last listed', async () => {
+  it('a corrected TARGET under the same id is a revision (Amendment F rev 1, S-1 ②; AR2-A-3 — before, the record FOLLOWED it, refuter F2): ambiguous, so the rename waits for the founder, who names the target', async () => {
     const { ctx, price } = await waitingOnAmd();
     // S[2]: the conflict is still listed, and the rename is re-issued under the same id to NVDA.
     const out = await closeDay(ctx, S[2], { AAPL: { price, corporateActions: [basisRow('split', 1.5), basisRow('split', 1.6), rename('AAPL', 'NVDA')] } });
-    expect(ideaOf(ctx).ledger.holdings.AAPL.deferredRename).toEqual({ from: 'AAPL', to: 'NVDA', actionId: `ticker_change_AAPL_${S[1]}`, effectiveDate: S[1], deferredOn: S[1] });
-    expect(out.alerts.some((a) => a.includes('AAPL→NVDA'))).toBe(true);
-    coverHeldNames(ctx.db, ctx.bookId, etIsoOf(S[2], 18, 0)); // S[2]'s corporate-action coverage (Astra T2C-01): the basis is what refuses AAPL
-    const nvda = await admitIdea(ctx.db, { bookId: ctx.bookId, opId: 'idea-nvda', contract: contractOf({ slot: 'medium', names: ['NVDA'], capitalUsd: 15000 }), nowIso: etIsoOf(S[2], 18, 0) });
-    // (and, T1a-2b-2 §1, AAPL's unresolved share basis leaves it no mark to measure at)
-    expect(nvda.refusals).toEqual([
-      expect.objectContaining({ code: 'admission_marks_unavailable', symbols: ['AAPL'] }),
-      expect.objectContaining({ code: 'ticker_held_by_other_idea', symbol: 'NVDA' }),
-    ]);
-    // The basis settles; the corrected row is dropped: the record renames to NVDA, not to the stale AMD.
-    // Amendment F rev 1: the feed's one consistent row no longer settles a conflict — the founder's ruling does.
+    const RID = `ticker_change_AAPL_${S[1]}`;
+    // The record keeps the target it was given; the id is ambiguous, with both targets recorded.
+    expect(ideaOf(ctx).ledger.holdings.AAPL.deferredRename).toEqual({ from: 'AAPL', to: 'AMD', actionId: RID, effectiveDate: S[1], deferredOn: S[1] });
+    expect(ideaOf(ctx).ledger.corporateActionReceipts.find((r) => r.actionId === RID && r.reason === 'conflicting_action')).toMatchObject({ kinds: ['revision'], rows: [expect.objectContaining({ renamedTo: 'AMD' }), expect.objectContaining({ renamedTo: 'NVDA' })] });
+    expect(out.alerts.some((a) => a.startsWith(`PRACTICE_FIELD_CORPORATE_ACTION_AMBIGUOUS ${ctx.ideaId} idea AAPL ${RID} — revision`))).toBe(true);
+    // The basis settles by the founder's ruling; the rename still waits — its target is ambiguous.
     await ruleConflict(ctx, `split_AAPL_${S[1]}`, { ratio: 1.5 });
     await closeDay(ctx, S[3], { AAPL: { price, corporateActions: [basisRow('split', 1.5)] }, NVDA: price });
+    expect(Object.keys(ideaOf(ctx).ledger.holdings)).toEqual(['AAPL']);
+    expect(getRow(ctx.db, ctx.bookId, ctx.ideaId, S[3]).fullQuality).toBe(false);
+    // The founder names the target (AR2-A-4: a ruling may choose a rename's target): renamed once, to NVDA.
+    await ruleConflict(ctx, RID, { renamedTo: 'NVDA' });
+    await closeDay(ctx, S[4], { AAPL: undefined, NVDA: price });
     expect(Object.keys(ideaOf(ctx).ledger.holdings)).toEqual(['NVDA']);
+    expect(Object.keys(ideaOf(ctx).comparisonLedger.holdings)).toEqual(['NVDA']);
+    expect(ideaOf(ctx).ledger.corporateActionReceipts.find((r) => r.actionId === RID && r.applied)).toMatchObject({ renamedTo: 'NVDA', founderRuling: expect.objectContaining({ kind: 'conflict' }) });
   });
 
-  it('a record does NOT stand in for a row R-36 screened out, and TAKES its target (refuters F2, S1): with the corrected target held by another idea, the waiting holding keeps its symbol, blocked — never renamed to the stale target, even after the feed drops the row', async () => {
+  it('a record does NOT stand in for a row R-36 screened out (refuters F2, S1), and its corrected target is a revision (Amendment F rev 1; AR2-A-3): the waiting holding keeps its symbol — never renamed to the stale target, even after the feed drops the row', async () => {
     const { db, bookId, bookRef } = await seedBook({ archetypeCodeId: 'degen' });
     // Both admitted before either fills (T1a-2b-2 §1: admission measures the book at the marks of its moment).
     const [a, b] = await admitAllThenEnter(db, bookId, [
@@ -741,22 +743,24 @@ describe('Astra T2A-01 — a ticker change waits while the holding\'s share basi
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
     await closeDay(ctx, S[1], { AAPL: { price, corporateActions: [basisRow('split', 1.5), basisRow('split', 1.6), rename('AAPL', 'AMD')] } });
     expect(ideaOf(ctx).ledger.holdings.AAPL.deferredRename).toMatchObject({ to: 'AMD' });
-    // The corrected row names NVDA, which idea 2 holds: screened out — and the record now names NVDA.
+    // The corrected row names NVDA, which idea 2 holds: screened out — and (Amendment F rev 1, AR2-A-3) a REVISION of the
+    // target: the id is ambiguous; the record keeps AMD and no longer follows (before, it took NVDA: refuters F2, S1).
     await closeDay(ctx, S[2], { AAPL: { price, corporateActions: [basisRow('split', 1.5), basisRow('split', 1.6), rename('AAPL', 'NVDA')] } });
-    expect(ideaOf(ctx).ledger.holdings.AAPL.deferredRename).toMatchObject({ to: 'NVDA', deferredOn: S[1] });
-    expect(ideaOf(ctx).comparisonLedger.holdings.AAPL.deferredRename).toMatchObject({ to: 'NVDA' });
+    expect(ideaOf(ctx).ledger.holdings.AAPL.deferredRename).toMatchObject({ to: 'AMD', deferredOn: S[1] });
+    expect(ideaOf(ctx).comparisonLedger.holdings.AAPL.deferredRename).toMatchObject({ to: 'AMD' });
+    expect(ideaOf(ctx).ledger.corporateActionReceipts.find((r) => r.actionId === `ticker_change_AAPL_${S[1]}` && r.reason === 'conflicting_action')).toMatchObject({ kinds: ['revision'] });
     // The basis settles while the row is still listed (screened): not applied, blocked.
     // Amendment F rev 1: the feed's one consistent row no longer settles a conflict — the founder's ruling does.
     await ruleConflict(ctx, `split_AAPL_${S[1]}`, { ratio: 1.5 });
     const listed = await closeDay(ctx, S[3], { AAPL: { price, corporateActions: [basisRow('split', 1.5), rename('AAPL', 'NVDA')] } });
     expect(Object.keys(ideaOf(ctx).ledger.holdings)).toEqual(['AAPL']);
     expect(listed.alerts.some((x) => x.startsWith(`PRACTICE_FIELD_RENAME_BLOCKED ${ctx.ideaId} idea AAPL`))).toBe(true);
-    // The feed drops the row: the record applies nothing to the stale AMD; NVDA is still held, so it stays blocked.
+    // The feed drops the row: the record applies nothing to the stale AMD — the id is ambiguous, waiting for the founder.
     const dropped = await closeDay(ctx, S[4], { AAPL: { price }, NVDA: BASE.NVDA });
     const idea = ideaOf(ctx);
     expect(Object.keys(idea.ledger.holdings)).toEqual(['AAPL']);
     expect(idea.ledger.appliedActionIds).toEqual([`split_AAPL_${S[1]}`]);
-    expect(dropped.alerts.some((x) => x.startsWith(`PRACTICE_FIELD_RENAME_BLOCKED ${ctx.ideaId} idea AAPL`))).toBe(true);
+    expect(dropped.alerts.some((x) => x.startsWith(`PRACTICE_FIELD_CORPORATE_ACTION_UNSETTLED ${ctx.ideaId} idea ticker_change_AAPL_${S[1]}`))).toBe(true);
     expect(Object.keys(getBook(db, bookId).portfolio.positions).sort()).toEqual(['AAPL', 'NVDA']);
     errors.mockRestore();
   });

@@ -315,12 +315,31 @@ function closeFilledIdea(idea, {
     const c = coverage.get(sym);
     return [sym, [{ actionId: coverageGapIdOf(sym, c.coveredThrough), type: CA_COVERAGE_GAP, effectiveDate: c.coveredThrough, since: c.coveredThrough, ledger: 'idea' }]];
   }));
-  const screen = (ledger, f) => (observed ? withBasisSuspicions(ledger, closeSnapshot, actionsOf[f], { sinceDate, date, delistingWaiting, skip: uncovered, ruledIds: ruledIdsOf(f), pricesUsable: dailyRefOk, holds: coverageHolds }).ledger : ledger);
+  // …and every ledger's OPEN SHARE-BASIS AMBIGUITY, known before the screen (AR2-B-2): the real applier holds what is dated
+  // after one on EVERY ledger of the idea (the hold set), so the dry runs must too — or a split another ledger's doubt
+  // keeps from applying is simulated, and retires the record the real holding still stands under.
+  const dryHolds = new Map(coverageHolds);
+  for (const [f, name] of [['ledger', 'idea'], ['comparisonLedger', 'comparison'], ['spyLedger', 'spy']]) {
+    for (const r of openAmbiguities(idea[f])) {
+      if (!['split', 'reverse_split', 'stock_distribution'].includes(r.type)) continue;
+      // (An id a pending conflict ruling settles at this close is the ruling's: not a doubt that holds its own action.)
+      if (LEDGER_FIELDS.some((g) => ruledIdsOf(g)?.has(r.actionId))) continue;
+      const sym = String(r.ticker || '').trim().toUpperCase();
+      dryHolds.set(sym, [...(dryHolds.get(sym) || []), { actionId: r.actionId, type: r.type, effectiveDate: r.effectiveDate ?? null, ledger: name, ambiguous: true }]);
+    }
+  }
+  const screen = (ledger, f) => (observed ? withBasisSuspicions(ledger, closeSnapshot, actionsOf[f], { sinceDate, date, delistingWaiting, skip: uncovered, ruledIds: ruledIdsOf(f), pricesUsable: dailyRefOk, holds: dryHolds }).ledger : ledger);
   const ledgers = LEDGER_FIELDS.map((f) => screen(idea[f], f));
-  const holds = observed ? shareBasisHolds(ledgers, LEDGER_FIELDS.map((f) => actionsOf[f]), { date, ruledIds: LEDGER_FIELDS.map(ruledIdsOf), holds: coverageHolds }) : null;
+  const holds = observed ? shareBasisHolds(ledgers, LEDGER_FIELDS.map((f) => actionsOf[f]), { date, ruledIds: LEDGER_FIELDS.map(ruledIdsOf), holds: dryHolds }) : null;
   for (const [sym, items] of coverageHolds) holds.set(sym, [...(holds.get(sym) || []), ...items]);
   const deferRenames = holds ? new Set(holds.keys()) : null;
-  const opts = (f) => ({ date, holds, deferRenames, renameTargetsTaken: heldByOthers, renameIdsScreened, ruledIds: ruledIdsOf(f) });
+  // (AR2-C-1: the feed's rows a pending ruling replaces on a ledger reach its applier apart, to be OBSERVED only.)
+  const replacedRowsOf = (f) => {
+    const replaced = ruled?.replacedIdsByLedger?.[f];
+    if (!replaced || replaced.size === 0) return null;
+    return Object.fromEntries(Object.entries(actionsBySymbol).map(([sym, list]) => [sym, (list || []).filter((a) => replaced.has(deriveActionId(a)))]));
+  };
+  const opts = (f) => ({ date, holds, deferRenames, renameTargetsTaken: heldByOthers, renameIdsScreened, ruledIds: ruledIdsOf(f), replacedRows: replacedRowsOf(f) });
   const own = observed ? applyLedgerActions(ledgers[0], actionsOf.ledger, opts('ledger')) : noActions(ledgers[0]);
   const cmp = observed ? applyLedgerActions(ledgers[1], actionsOf.comparisonLedger, opts('comparisonLedger')) : noActions(ledgers[1]);
   const spy = observed ? applyLedgerActions(ledgers[2], actionsOf.spyLedger, opts('spyLedger')) : noActions(ledgers[2]);

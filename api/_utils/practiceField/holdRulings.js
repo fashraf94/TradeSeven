@@ -52,9 +52,26 @@ const isPlain = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const settledIdsOf = (ledger) => new Set([...(ledger?.appliedActionIds || []), ...(ledger?.declinedActionIds || [])]);
 const pendingRulings = (idea) => (idea?.founderRulings || []).filter((r) => r && r.appliedOn == null);
 
-/** The payload a conflict ruling may choose: one the record holds (a conflict's rows; a possible re-date's own row). */
-const payloadOf = (row) => ({ ratio: row?.ratio ?? null, amount: row?.amount ?? null });
-const samePayload = (a, b) => (a?.ratio ?? null) === (b?.ratio ?? null) && (a?.amount ?? null) === (b?.amount ?? null);
+/**
+ * The payload a conflict ruling may choose: one the record holds (a conflict's rows; a possible re-date's rows). Every
+ * economic field a row can carry — a delisting's cash per share and a ticker change's target too (AR2-A-4: compared on
+ * ratio and amount only, every delisting and rename payload read {null, null}, any choice matched the first row, and the
+ * ruling then applied a cashless delisting, or nothing, and locked its record).
+ */
+const payloadOf = (row) => ({
+  ratio: row?.ratio ?? null, amount: row?.amount ?? null,
+  ...(row?.cashPerShare != null ? { cashPerShare: row.cashPerShare } : {}),
+  ...(row?.renamedTo != null ? { renamedTo: upper(row.renamedTo) } : {}),
+});
+const samePayload = (a, b) => (a?.ratio ?? null) === (b?.ratio ?? null) && (a?.amount ?? null) === (b?.amount ?? null)
+  && (a?.cashPerShare ?? null) === (b?.cashPerShare ?? null) && (a?.renamedTo != null ? upper(a.renamedTo) : null) === (b?.renamedTo != null ? upper(b.renamedTo) : null);
+/** The economic fields of a chosen payload, as an action carries them. */
+const payloadFields = (p) => ({
+  ...(p?.ratio != null ? { ratio: p.ratio } : {}), ...(p?.amount != null ? { amount: p.amount } : {}),
+  ...(p?.cashPerShare != null ? { cashPerShare: p.cashPerShare } : {}), ...(p?.renamedTo != null ? { renamedTo: p.renamedTo } : {}),
+});
+/** Is `actionId` ambiguous on any ledger of the idea (an open conflict or possible re-date record; rev 1, S-2)? */
+const ambiguousOnIdea = (idea, actionId) => openActionRecords(idea, actionId).length > 0;
 
 /**
  * Astra T2D-10: CAN A RATIO BE APPLIED on these ledgers' holdings of `sym`? A ratio the applier would round a holding to
@@ -97,9 +114,9 @@ function openActionRecords(idea, recordId) {
  */
 function ruledOutcomeOn(ledger, recordId) {
   for (const r of ledger?.corporateActionReceipts || []) {
-    if (r?.actionId !== recordId || r.founderRuling?.kind !== 'conflict') continue;
+    if (r?.actionId !== recordId || !r.founderRuling) continue;
     if (r.reason === 'founder_ruled_none') return 'none';
-    if (r.applied === true || r.reason === 'not_entitled') return { ratio: r.ratio ?? null, amount: r.amount ?? null };
+    if (r.applied === true || r.reason === 'not_entitled') return payloadOf(r);
   }
   return null;
 }
@@ -142,6 +159,10 @@ export function planHoldRuling(idea, { kind, recordId, decision, ratio, payload,
       if (unrepresentableOn(idea, ledgers, sym, ratio)) return { error: 'ruling_unrepresentable', status: 422 };
       // Its own id (review D6): the record's split id, unless the feed already settled that id on a ledger carrying it.
       const derived = deriveActionId({ type: ratio > 1 ? 'split' : 'reverse_split', ticker: sym, effectiveDate: s.suspectedOn });
+      // Amendment F rev 1, S-2 (AR2-A-1, AR2-C-2): an AMBIGUOUS id is settled only by a `conflict` ruling on its record.
+      // A founder split under that id would settle it with a payload its record may never have seen; the founder rules
+      // the conflict (or re-date) first.
+      if (ambiguousOnIdea(idea, derived)) return { error: 'record_ambiguous_rule_conflict_first', status: 409 };
       split = { ratio, actionId: open.some((o) => settledIdsOf(idea[o.f]).has(derived)) ? `founder_${derived}` : derived };
     }
     return { ruling: { ...base, symbol: sym, ledgers, ...(split ?? {}), covers: { suspectedOn: s.suspectedOn, since: s.since ?? null, ratio: s.ratio, frozenMark: s.frozenMark } } };
@@ -177,11 +198,11 @@ export function planHoldRuling(idea, { kind, recordId, decision, ratio, payload,
     // again on each, and its action reaches no other (a ledger that never carried the record keeps its own feed rows).
     const ledgers = [...new Set(open.map(([f]) => f))];
     // Rev 1 (Astra T2D-C01): every payload ANY open record of the id has seen, on every ledger it names.
-    const recorded = open.flatMap(([, rec]) => recordedPayloadsOf(rec).map(payloadOf));
+    const recorded = [...new Map(open.flatMap(([, rec]) => recordedPayloadsOf(rec).map(payloadOf)).map((p) => [JSON.stringify(p), p])).values()];
     let chosen = null;
     if (decision === 'payload') {
       if (!isPlain(payload)) return { error: 'payload_invalid', status: 400 };
-      chosen = recorded.find((p) => samePayload(p, payload)) ?? null;
+      chosen = recorded.find((p) => samePayload(p, payloadOf(payload))) ?? null;
       if (chosen === null) return { error: 'payload_not_recorded', status: 422 };
       if (unrepresentableOn(idea, ledgers, upper(r.ticker), chosen.ratio)) return { error: 'ruling_unrepresentable', status: 422 };
     }
@@ -189,6 +210,8 @@ export function planHoldRuling(idea, { kind, recordId, decision, ratio, payload,
       ruling: {
         ...base, symbol: upper(r.ticker), type: r.type, effectiveDate: r.effectiveDate, recordReason: r.reason, ledgers,
         ...(chosen ? { payload: chosen } : {}),
+        // (Rev 1, S-2; AR2-C-1: what the ruling saw. A payload outside it, listed even before the ruling applies, reopens.)
+        seen: recorded,
       },
     };
   }
@@ -206,6 +229,9 @@ export function planHoldRuling(idea, { kind, recordId, decision, ratio, payload,
     const a = rows.find((x) => isPlain(x) && upper(x.ticker) === sym && deriveActionId(x) === actionId && typeof x.effectiveDate === 'string' && x.effectiveDate > gap.since
       && (typeof gap.lastSession !== 'string' || x.effectiveDate <= gap.lastSession));
     if (!a) return { error: 'row_not_recorded', status: 422 };
+    // Rev 1, S-2 (AR2-A-1 1b, 1c; AR2-C-2): a backfill row of an AMBIGUOUS id is not the founder's answer to its record —
+    // only a `conflict` ruling on that record is. `no_action` stays open; the record governs its id either way.
+    if (ambiguousOnIdea(idea, actionId)) return { error: 'row_ambiguous_rule_conflict', status: 409 };
     if (unrepresentableOn(idea, LEDGERS, sym, a.ratio ?? null)) return { error: 'ruling_unrepresentable', status: 422 };
     row = { type: a.type, ticker: sym, effectiveDate: a.effectiveDate, ...(a.ratio != null ? { ratio: a.ratio } : {}), ...(a.amount != null ? { amount: a.amount } : {}), source: a.source ?? null };
   }
@@ -233,7 +259,7 @@ export function applyFounderRulings(idea, { date }) {
   const next = { ...idea };
   for (const f of LEDGERS) if (next[f]) next[f] = cloneLedger(next[f]);
   const appliedNow = new Set();
-  const receiptOf = (r) => ({ requestKey: r.requestKey, kind: r.kind, recordId: r.recordId, decision: r.decision, by: r.by, at: r.at });
+  const receiptOf = (r) => ({ requestKey: r.requestKey, kind: r.kind, recordId: r.recordId, decision: r.decision, by: r.by, at: r.at, ...(Array.isArray(r.seen) ? { seen: r.seen } : {}) });
   const addAction = (sym, action, r, fields) => {
     const a = { ...action, ticker: sym, source: 'founder_ruling', founderRuling: receiptOf(r) };
     const id = a.actionId ?? deriveActionId(a);
@@ -319,7 +345,7 @@ export function applyFounderRulings(idea, { date }) {
         continue;
       }
       replace(r.recordId, openFields);
-      addAction(r.symbol, { type: r.type, effectiveDate: r.effectiveDate, ...(r.payload?.ratio != null ? { ratio: r.payload.ratio } : {}), ...(r.payload?.amount != null ? { amount: r.payload.amount } : {}) }, r, openFields);
+      addAction(r.symbol, { type: r.type, effectiveDate: r.effectiveDate, ...payloadFields(r.payload) }, r, openFields);
       continue; // applied when the action is (close.js marks it)
     }
 

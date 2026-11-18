@@ -421,3 +421,175 @@ describe('Amendment F rev 1 — S-2: once ambiguous, only the founder settles it
     expect(rowOf(c, 2).fullQuality).toBe(true);
   });
 });
+
+// ── AR2: the fix round's own adversarial review (lenses A, B, C) — each reproduction as a row, with rev 1's outcome ─────
+
+describe('AR2 — the review of fix round 2: each probe as a row', () => {
+  const ren = (i, to) => ({ type: 'ticker_change', ticker: 'AAPL', renamedTo: to, effectiveDate: S[i], source: 'eodhd' });
+  const dl = (i, cash) => ({ type: 'delisting', ticker: 'AAPL', effectiveDate: S[i], cashPerShare: cash, source: 'eodhd' });
+  const qx = (p = 100, a = []) => ({ ...q(p, a), AAPX: { price: 100, marketCap: 3e12 }, AAPY: { price: 120, marketCap: 3e12 } });
+  const closeX = async (c, i, p = 100, a = []) => { const out = await closeOn(c.db, c.bookId, S[i], qx(p, a)); recon(c); return out; };
+  async function uncoveredX(c, i, p, a = []) {
+    await storeCloseSnapshot(c.db, S[i], qx(p, a));
+    failed(c, i);
+    await raw(c, i);
+    recon(c);
+  }
+  const backfill = (c, from, to, actions, failedFetch = false) => c.db.doc('practiceFieldCaBackfill/AAPL').set({ schemaVersion: 1, symbol: 'AAPL', from: S[from], to: S[to], failed: failedFetch, actions, calls: 2, fetchedAt: '2026-11-18T23:00:00.000Z', source: 'idea_book_backfill' });
+  const ID1 = `cash_dividend_AAPL_${S[1]}`;
+
+  it('AR2-C-1: a payload listed at the very close a ruling applies is one the ruling did not see — a new ambiguity, alerted, below full quality', async () => {
+    const c = await start();
+    await close(c, 0);
+    await close(c, 1, 100, [div(1, 1), div(1, 2)]);
+    await rule(c, { kind: 'conflict', recordId: ID1, decision: 'payload', payload: { amount: 1 } }, 'c1');
+    const out = await close(c, 2, 100, [div(1, 3)]);
+    const idea = ideaOf(c);
+    expect(divs(idea)).toEqual([99.97, 99.97]); // the founder's ruling is applied as made
+    expect(openRulingRevisions(idea.ledger)).toEqual([expect.objectContaining({ actionId: ID1, rows: [expect.objectContaining({ amount: 3 })] })]);
+    expect(rowOf(c, 2).fullQuality).toBe(false);
+    expect(out.alerts.some((a) => a.includes(`${ID1} — revised_after_ruling`))).toBe(true);
+  });
+
+  it('AR2-C-1 / AR2-A-5: …and one listed while the ruling waits behind a coverage gap, then dropped by the feed, is kept and reopens it once it applies', async () => {
+    const c = await start();
+    await close(c, 0);
+    await close(c, 1, 100, [div(1, 1), div(1, 2)]);
+    await rule(c, { kind: 'conflict', recordId: ID1, decision: 'payload', payload: { amount: 1 } }, 'c1b');
+    await uncoveredClose(c, 2, 100, [div(1, 3)]);
+    await uncoveredClose(c, 3, 100, [div(1, 3)]);
+    expect(unsettledConflicts(ideaOf(c).ledger)[0].rows.map((r) => r.amount)).toEqual([1, 2, 3]);
+    await close(c, 4);
+    const idea = ideaOf(c);
+    expect(divs(idea)).toEqual([99.97, 99.97]);
+    expect(openRulingRevisions(idea.ledger).map((r) => r.rows.map((x) => x.amount))).toEqual([[3]]);
+    expect(rowOf(c, 4).fullQuality).toBe(false);
+  });
+
+  it('AR2-A-1 / AR2-C-2: a founder SPLIT under an id that is ambiguous is refused 409 — the conflict is ruled first; nothing moves', async () => {
+    const c = await start();
+    await close(c, 0);
+    await close(c, 1, 100);
+    await close(c, 2, 50);
+    await close(c, 3, 50, [spl(2, '3/2'), spl(2, '5/4')]);
+    const out = await rule(c, { kind: 'suspicion', recordId: `suspected_split_AAPL_${S[2]}`, decision: 'split', ratio: 2 }, 'a1', false);
+    expect(out).toMatchObject({ status: 409, body: { error: 'record_ambiguous_rule_conflict_first' } });
+    await close(c, 4, 50, [spl(2, '3/2'), spl(2, '5/4')]);
+    expect(ideaOf(c).ledger.holdings.AAPL.shares).toBe(SHARES);
+    expect(unsettledConflicts(ideaOf(c).ledger).map((r) => r.actionId)).toEqual([`split_AAPL_${S[2]}`]);
+  });
+
+  it.each([
+    ['cash ($1/$2, the row $1.50)', [div(1, 1), div(1, 2)], [div(1, 1.5)], ID1],
+    ['a split (3:2/5:4, the row 2:1)', [spl(1, '3/2'), spl(1, '5/4')], [spl(1, '2/1')], `split_AAPL_${S[1]}`],
+  ])('AR2-A-1 1b / AR2-B-1: a coverage-gap ROW of an ambiguous id is refused 409 — %s', async (_name, rows, bf, id) => {
+    const c = await start();
+    await close(c, 0);
+    await uncoveredClose(c, 1, 100, rows);
+    await backfill(c, 1, 1, bf);
+    expect(await rule(c, { kind: 'coverage_gap', recordId: `ca_coverage_gap_AAPL_${S[0]}`, decision: 'row', actionId: id }, 'b1', false)).toMatchObject({ status: 409, body: { error: 'row_ambiguous_rule_conflict' } });
+    await close(c, 2, 100);
+    await close(c, 3, 100);
+    const idea = ideaOf(c);
+    expect(divs(idea)).toEqual([0, 0]);
+    expect(idea.ledger.holdings.AAPL.shares).toBe(SHARES);
+    expect(unsettledConflicts(idea.ledger).map((r) => r.actionId)).toEqual([id]);
+    expect(rowOf(c, 3).fullQuality).toBe(false);
+  });
+
+  it('AR2-A-1 1c: a coverage-gap row of a POSSIBLE RE-DATE is refused 409 — no second payment of the same dividend', async () => {
+    const c = await start();
+    await close(c, 0);
+    await close(c, 1, 100, [div(1, 1)]);
+    for (let i = 2; i <= 7; i += 1) await uncoveredClose(c, i, 100, i >= 3 ? [div(3, 1)] : []);
+    expect(unsettledRedates(ideaOf(c).ledger).map((r) => r.actionId)).toEqual([`cash_dividend_AAPL_${S[3]}`]);
+    await backfill(c, 2, 7, [div(3, 1)], true);
+    expect(await rule(c, { kind: 'coverage_gap', recordId: `ca_coverage_gap_AAPL_${S[1]}`, decision: 'row', actionId: `cash_dividend_AAPL_${S[3]}` }, 'b1c', false)).toMatchObject({ status: 409 });
+    await close(c, 8);
+    expect(divs(ideaOf(c))).toEqual([99.97, 99.97]);
+  });
+
+  it('AR2-A-2: a waiting rename whose id became ambiguous is not applied from its record — the holding waits for the founder, who names the target', async () => {
+    const c = await start();
+    await close(c, 0);
+    await uncoveredX(c, 1, 100, [ren(1, 'AAPX')]);
+    await closeX(c, 2, 100, [ren(1, 'AAPX'), ren(1, 'AAPY')]);
+    await closeX(c, 3, 100, [ren(1, 'AAPY')]);
+    await closeX(c, 4);
+    let idea = ideaOf(c);
+    for (const f of ['ledger', 'comparisonLedger']) expect(Object.keys(idea[f].holdings).sort(), f).toEqual(['AAPL', 'MSFT']);
+    expect(Object.keys(bookOf(c).portfolio.positions).sort()).toEqual(['AAPL', 'MSFT']);
+    expect(rowOf(c, 4).fullQuality).toBe(false);
+    expect((await rule(c, { kind: 'conflict', recordId: `ticker_change_AAPL_${S[1]}`, decision: 'payload', payload: { renamedTo: 'AAPY' } }, 'a2')).status).toBe(200);
+    await closeX(c, 5);
+    idea = ideaOf(c);
+    for (const f of ['ledger', 'comparisonLedger']) expect(Object.keys(idea[f].holdings).sort(), f).toEqual(['AAPY', 'MSFT']);
+    expect(Object.keys(bookOf(c).portfolio.positions).sort()).toEqual(['AAPY', 'MSFT']);
+  });
+
+  it('AR2-A-3: a waiting rename listed again with ANOTHER target is a revision — ambiguous, not applied; `none` is accepted', async () => {
+    const c = await start();
+    await close(c, 0);
+    await uncoveredX(c, 1, 100, [ren(1, 'AAPX')]);
+    await closeX(c, 2, 100, [ren(1, 'AAPY')]);
+    await closeX(c, 3);
+    const idea = ideaOf(c);
+    expect(Object.keys(idea.ledger.holdings).sort()).toEqual(['AAPL', 'MSFT']);
+    expect(unsettledConflicts(idea.ledger)[0]).toMatchObject({ actionId: `ticker_change_AAPL_${S[1]}`, kinds: ['revision'] });
+    expect(rowOf(c, 3).fullQuality).toBe(false);
+    expect((await rule(c, { kind: 'conflict', recordId: `ticker_change_AAPL_${S[1]}`, decision: 'none' }, 'a3')).status).toBe(200);
+  });
+
+  it('AR2-A-4: a conflict ruling names a delisting\'s cash — one never recorded is refused 422; the recorded $12 is credited once', async () => {
+    const c = await start();
+    await close(c, 0);
+    await close(c, 1, 100, [dl(1, 10), dl(1, 12)]);
+    const id = `delisting_AAPL_${S[1]}`;
+    expect(await rule(c, { kind: 'conflict', recordId: id, decision: 'payload', payload: { cashPerShare: 999 } }, 'a4x', false)).toMatchObject({ status: 422, body: { error: 'payload_not_recorded' } });
+    expect((await rule(c, { kind: 'conflict', recordId: id, decision: 'payload', payload: { cashPerShare: 12 } }, 'a4')).status).toBe(200);
+    await close(c, 2, 100, [dl(1, 10), dl(1, 12)]);
+    const idea = ideaOf(c);
+    expect(idea.ledger.holdings.AAPL).toBeUndefined();
+    expect(idea.ledger.corporateActionReceipts.filter((r) => r.actionId === id && r.applied)).toEqual([expect.objectContaining({ cashPerShare: 12, cashUsd: 1199.64, founderRuling: expect.objectContaining({ kind: 'conflict' }) })]);
+  });
+
+  /** Astra's asymmetric state (T2D-09, C05): only the idea keeps the split conflict W of S[1]. */
+  async function ideaOnlySplitConflict(price) {
+    const c = await start();
+    await close(c, 0);
+    await close(c, 1, price, [spl(1, '3/2'), spl(1, '5/4')]);
+    const idea = ideaOf(c);
+    idea.comparisonLedger.corporateActionReceipts = idea.comparisonLedger.corporateActionReceipts.filter((r) => r.reason !== 'conflicting_action');
+    await c.db.doc(`mandates/${c.bookId}/ideas/${c.ideaId}`).set(idea);
+    return c;
+  }
+  it('AR2-B-2 (planted): a split the idea\'s doubt keeps from applying on the comparison is not simulated there either — no record is retired by it', async () => {
+    const c = await ideaOnlySplitConflict(100);
+    const X = `split_AAPL_${S[2]}`;
+    await close(c, 2, 50);
+    await close(c, 3, 25, [spl(2, '2/1'), div(3, 1)]);
+    const idea = ideaOf(c);
+    expect(idea.comparisonLedger.holdings.AAPL.heldActions.map((r) => r.actionId)).toContain(X);
+    expect(idea.comparisonLedger.holdings.AAPL.basisSuspicionHistory ?? []).toEqual([]);
+    expect(idea.comparisonLedger.holdings.AAPL.basisSuspicion).toMatchObject({ suspectedOn: S[2] });
+    expect(idea.ledger.holdings.AAPL.basisSuspicion).toMatchObject({ suspectedOn: S[2] });
+  });
+  it('AR2-B-3 (planted): a same-stock comparison waits on the idea\'s doubt of the same split id — the pair stays tied and the close is not refused', async () => {
+    const c = await ideaOnlySplitConflict(100 / 1.5);
+    await close(c, 2, 100 / 1.5, [spl(1, '3/2')]);
+    const idea = ideaOf(c);
+    expect([idea.ledger.holdings.AAPL.shares, idea.comparisonLedger.holdings.AAPL.shares, bookOf(c).portfolio.positions.AAPL.shares]).toEqual([SHARES, SHARES, SHARES]);
+    expect(rowOf(c, 2).fullQuality).toBe(false);
+  });
+
+  it('AR2-C-3 (a reading, put to the founder): after `none`, a revised payload cannot be chosen — 422; only `none` again closes it', async () => {
+    const c = await start();
+    await close(c, 0);
+    await close(c, 1, 100, [div(1, 1), div(1, 2)]);
+    await rule(c, { kind: 'conflict', recordId: ID1, decision: 'none' }, 'c3');
+    await close(c, 2, 100, [div(1, 1), div(1, 2)]);
+    await close(c, 3, 100, [div(1, 3)]);
+    expect(await rule(c, { kind: 'conflict', recordId: ID1, decision: 'payload', payload: { amount: 3 } }, 'c3b', false)).toMatchObject({ status: 422, body: { error: 'ruling_needs_adjustment' } });
+    expect((await rule(c, { kind: 'conflict', recordId: ID1, decision: 'none' }, 'c3c')).status).toBe(200);
+  });
+});
