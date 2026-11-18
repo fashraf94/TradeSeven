@@ -16,23 +16,25 @@
    "pass": true,
    "detail": {
     "x": 1,
-    "y": 685,
+    "y": 701,
     "w": 388,
     "h": 155.5625,
     "right": 389,
-    "bottom": 840.5625
+    "bottom": 856.5625
    }
   },
   {
-   "name": "A@390: the Rule chip's tap target is 44 px+",
+   "name": "A@390: the Rule chip is a 44 × 44 tap target, every edge hittable",
    "pass": true,
    "detail": {
-    "x": 333.015625,
-    "y": 105,
-    "w": 43.984375,
-    "h": 50,
-    "right": 377,
-    "bottom": 155
+    "w": 53.984375,
+    "h": 44,
+    "edges": [
+     true,
+     true,
+     true,
+     true
+    ]
    }
   },
   {
@@ -41,19 +43,19 @@
    "detail": {
     "note": {
      "x": 223.53125,
-     "y": 177,
+     "y": 193,
      "w": 101.46875,
      "h": 14,
      "right": 325,
-     "bottom": 191
+     "bottom": 207
     },
     "ohlc": {
      "x": 9,
-     "y": 159,
+     "y": 175,
      "w": 302.203125,
      "h": 13,
      "right": 311.203125,
-     "bottom": 172
+     "bottom": 188
     }
    }
   },
@@ -63,19 +65,19 @@
    "detail": {
     "band": {
      "x": 1,
-     "y": 685,
+     "y": 701,
      "w": 388,
      "h": 155.5625,
      "right": 389,
-     "bottom": 840.5625
+     "bottom": 856.5625
     },
     "technical": {
      "x": 1,
-     "y": 840.5625,
+     "y": 856.5625,
      "w": 388,
      "h": 650.875,
      "right": 389,
-     "bottom": 1491.4375
+     "bottom": 1507.4375
     }
    }
   },
@@ -125,23 +127,25 @@
    "pass": true,
    "detail": {
     "x": 1,
-    "y": 685,
+    "y": 701,
     "w": 388,
     "h": 155.5625,
     "right": 389,
-    "bottom": 840.5625
+    "bottom": 856.5625
    }
   },
   {
-   "name": "C@390: the Rule chip's tap target is 44 px+",
+   "name": "C@390: the Rule chip is a 44 × 44 tap target, every edge hittable",
    "pass": true,
    "detail": {
-    "x": 333.015625,
-    "y": 105,
-    "w": 43.984375,
-    "h": 50,
-    "right": 377,
-    "bottom": 155
+    "w": 53.984375,
+    "h": 44,
+    "edges": [
+     true,
+     true,
+     true,
+     true
+    ]
    }
   },
   {
@@ -150,19 +154,19 @@
    "detail": {
     "note": {
      "x": 223.53125,
-     "y": 177,
+     "y": 193,
      "w": 101.46875,
      "h": 14,
      "right": 325,
-     "bottom": 191
+     "bottom": 207
     },
     "ohlc": {
      "x": 9,
-     "y": 159,
+     "y": 175,
      "w": 302.203125,
      "h": 13,
      "right": 311.203125,
-     "bottom": 172
+     "bottom": 188
     }
    }
   },
@@ -172,19 +176,19 @@
    "detail": {
     "band": {
      "x": 1,
-     "y": 685,
+     "y": 701,
      "w": 388,
      "h": 155.5625,
      "right": 389,
-     "bottom": 840.5625
+     "bottom": 856.5625
     },
     "technical": {
      "x": 1,
-     "y": 840.5625,
+     "y": 856.5625,
      "w": 388,
      "h": 650.875,
      "right": 389,
-     "bottom": 1491.4375
+     "bottom": 1507.4375
     }
    }
   },
@@ -229,23 +233,25 @@
    "pass": true,
    "detail": {
     "x": 1,
-    "y": 685,
+    "y": 701,
     "w": 388,
     "h": 154.125,
     "right": 389,
-    "bottom": 839.125
+    "bottom": 855.125
    }
   },
   {
-   "name": "D@390: the Rule chip's tap target is 44 px+",
+   "name": "D@390: the Rule chip is a 44 × 44 tap target, every edge hittable",
    "pass": true,
    "detail": {
-    "x": 333.015625,
-    "y": 105,
-    "w": 43.984375,
-    "h": 50,
-    "right": 377,
-    "bottom": 155
+    "w": 53.984375,
+    "h": 44,
+    "edges": [
+     true,
+     true,
+     true,
+     true
+    ]
    }
   },
   {
@@ -254,19 +260,19 @@
    "detail": {
     "note": {
      "x": 223.53125,
-     "y": 177,
+     "y": 193,
      "w": 101.46875,
      "h": 14,
      "right": 325,
-     "bottom": 191
+     "bottom": 207
     },
     "ohlc": {
      "x": 9,
-     "y": 159,
+     "y": 175,
      "w": 302.203125,
      "h": 13,
      "right": 311.203125,
-     "bottom": 172
+     "bottom": 188
     }
    }
   },
@@ -276,19 +282,19 @@
    "detail": {
     "band": {
      "x": 1,
-     "y": 685,
+     "y": 701,
      "w": 388,
      "h": 154.125,
      "right": 389,
-     "bottom": 839.125
+     "bottom": 855.125
     },
     "technical": {
      "x": 1,
-     "y": 839.125,
+     "y": 855.125,
      "w": 388,
      "h": 650.875,
      "right": 389,
-     "bottom": 1490
+     "bottom": 1506
     }
    }
   },
@@ -333,23 +339,25 @@
    "pass": true,
    "detail": {
     "x": 1,
-    "y": 481,
+    "y": 497,
     "w": 318,
     "h": 191.78125,
     "right": 319,
-    "bottom": 672.78125
+    "bottom": 688.78125
    }
   },
   {
-   "name": "A@320: the Rule chip's tap target is 44 px+",
+   "name": "A@320: the Rule chip is a 44 × 44 tap target, every edge hittable",
    "pass": true,
    "detail": {
-    "x": 263.015625,
-    "y": 105,
-    "w": 43.984375,
-    "h": 50,
-    "right": 307,
-    "bottom": 155
+    "w": 53.984375,
+    "h": 44,
+    "edges": [
+     true,
+     true,
+     true,
+     true
+    ]
    }
   },
   {
@@ -358,19 +366,19 @@
    "detail": {
     "note": {
      "x": 153.53125,
-     "y": 177,
+     "y": 193,
      "w": 101.46875,
      "h": 14,
      "right": 255,
-     "bottom": 191
+     "bottom": 207
     },
     "ohlc": {
      "x": 9,
-     "y": 159,
+     "y": 175,
      "w": 302.203125,
      "h": 13,
      "right": 311.203125,
-     "bottom": 172
+     "bottom": 188
     }
    }
   },
@@ -380,19 +388,19 @@
    "detail": {
     "band": {
      "x": 1,
-     "y": 481,
+     "y": 497,
      "w": 318,
      "h": 191.78125,
      "right": 319,
-     "bottom": 672.78125
+     "bottom": 688.78125
     },
     "technical": {
      "x": 1,
-     "y": 672.78125,
+     "y": 688.78125,
      "w": 318,
      "h": 650.875,
      "right": 319,
-     "bottom": 1323.65625
+     "bottom": 1339.65625
     }
    }
   },
@@ -442,23 +450,25 @@
    "pass": true,
    "detail": {
     "x": 1,
-    "y": 481,
+    "y": 497,
     "w": 318,
     "h": 211.34375,
     "right": 319,
-    "bottom": 692.34375
+    "bottom": 708.34375
    }
   },
   {
-   "name": "C@320: the Rule chip's tap target is 44 px+",
+   "name": "C@320: the Rule chip is a 44 × 44 tap target, every edge hittable",
    "pass": true,
    "detail": {
-    "x": 263.015625,
-    "y": 105,
-    "w": 43.984375,
-    "h": 50,
-    "right": 307,
-    "bottom": 155
+    "w": 53.984375,
+    "h": 44,
+    "edges": [
+     true,
+     true,
+     true,
+     true
+    ]
    }
   },
   {
@@ -467,19 +477,19 @@
    "detail": {
     "note": {
      "x": 153.53125,
-     "y": 177,
+     "y": 193,
      "w": 101.46875,
      "h": 14,
      "right": 255,
-     "bottom": 191
+     "bottom": 207
     },
     "ohlc": {
      "x": 9,
-     "y": 159,
+     "y": 175,
      "w": 302.203125,
      "h": 13,
      "right": 311.203125,
-     "bottom": 172
+     "bottom": 188
     }
    }
   },
@@ -489,19 +499,19 @@
    "detail": {
     "band": {
      "x": 1,
-     "y": 481,
+     "y": 497,
      "w": 318,
      "h": 211.34375,
      "right": 319,
-     "bottom": 692.34375
+     "bottom": 708.34375
     },
     "technical": {
      "x": 1,
-     "y": 692.34375,
+     "y": 708.34375,
      "w": 318,
      "h": 650.875,
      "right": 319,
-     "bottom": 1343.21875
+     "bottom": 1359.21875
     }
    }
   },
@@ -546,23 +556,25 @@
    "pass": true,
    "detail": {
     "x": 1,
-    "y": 481,
+    "y": 497,
     "w": 318,
     "h": 190.34375,
     "right": 319,
-    "bottom": 671.34375
+    "bottom": 687.34375
    }
   },
   {
-   "name": "D@320: the Rule chip's tap target is 44 px+",
+   "name": "D@320: the Rule chip is a 44 × 44 tap target, every edge hittable",
    "pass": true,
    "detail": {
-    "x": 263.015625,
-    "y": 105,
-    "w": 43.984375,
-    "h": 50,
-    "right": 307,
-    "bottom": 155
+    "w": 53.984375,
+    "h": 44,
+    "edges": [
+     true,
+     true,
+     true,
+     true
+    ]
    }
   },
   {
@@ -571,19 +583,19 @@
    "detail": {
     "note": {
      "x": 153.53125,
-     "y": 177,
+     "y": 193,
      "w": 101.46875,
      "h": 14,
      "right": 255,
-     "bottom": 191
+     "bottom": 207
     },
     "ohlc": {
      "x": 9,
-     "y": 159,
+     "y": 175,
      "w": 302.203125,
      "h": 13,
      "right": 311.203125,
-     "bottom": 172
+     "bottom": 188
     }
    }
   },
@@ -593,19 +605,19 @@
    "detail": {
     "band": {
      "x": 1,
-     "y": 481,
+     "y": 497,
      "w": 318,
      "h": 190.34375,
      "right": 319,
-     "bottom": 671.34375
+     "bottom": 687.34375
     },
     "technical": {
      "x": 1,
-     "y": 671.34375,
+     "y": 687.34375,
      "w": 318,
      "h": 650.875,
      "right": 319,
-     "bottom": 1322.21875
+     "bottom": 1338.21875
     }
    }
   },
@@ -640,7 +652,7 @@
    "detail": {
     "draws": [
      3,
-     13
+     14
     ],
     "rows": [
      {
@@ -670,7 +682,7 @@
    "name": "A: after a zoom the marks are re-drawn on their bars",
    "pass": true,
    "detail": {
-    "draws": 15,
+    "draws": 16,
     "rows": [
      {
       "n": 1,
@@ -705,29 +717,31 @@
    }
   },
   {
-   "name": "sheet@390: plot bottom closed → open",
+   "name": "sheet@390: the plot yields height to the sheet",
    "pass": true,
    "detail": {
-    "plotBefore": 685,
-    "plotBottom": 459
+    "plotBefore": 701,
+    "plotBottom": 475
    }
   },
   {
    "name": "sheet@390: rises to the plot's lower edge",
    "pass": true,
    "detail": {
-    "top": 459,
-    "plotBottom": 459
+    "top": 475,
+    "plotBottom": 475
    }
   },
   {
    "name": "sheet@390: fills the view below the plot and scrolls inside itself",
    "pass": true,
    "detail": {
-    "top": 459,
-    "bottom": 830.8125,
-    "h": 371.8125,
+    "top": 475,
+    "bottom": 834.09375,
+    "h": 359.09375,
     "scrollable": true,
+    "sheetSW": 388,
+    "sheetCW": 388,
     "minTap": 44,
     "sw": 390,
     "iw": 390,
@@ -752,13 +766,15 @@
    }
   },
   {
-   "name": "sheet@390: no sideways scroll; the view stands still",
+   "name": "sheet@390: no sideways scroll (page or sheet); the view stands still",
    "pass": true,
    "detail": {
-    "top": 459,
-    "bottom": 830.8125,
-    "h": 371.8125,
+    "top": 475,
+    "bottom": 834.09375,
+    "h": 359.09375,
     "scrollable": true,
+    "sheetSW": 388,
+    "sheetCW": 388,
     "minTap": 44,
     "sw": 390,
     "iw": 390,
@@ -776,13 +792,23 @@
    }
   },
   {
+   "name": "sheet@390: Escape from the Rule chip closes only the sheet",
+   "pass": true,
+   "detail": {
+    "sheet": false,
+    "modal": true
+   }
+  },
+  {
    "name": "sheet@390: a tap lights the touch's marks (all seven drawn)",
    "pass": true,
    "detail": {
-    "top": 459,
-    "bottom": 830.8125,
-    "h": 371.8125,
+    "top": 475,
+    "bottom": 834.09375,
+    "h": 359.09375,
     "scrollable": true,
+    "sheetSW": 388,
+    "sheetCW": 388,
     "minTap": 44,
     "sw": 390,
     "iw": 390,
@@ -808,29 +834,31 @@
    }
   },
   {
-   "name": "sheet@320: plot bottom closed → open",
+   "name": "sheet@320: the plot yields height to the sheet",
    "pass": true,
    "detail": {
-    "plotBefore": 481,
-    "plotBottom": 373
+    "plotBefore": 497,
+    "plotBottom": 389
    }
   },
   {
    "name": "sheet@320: rises to the plot's lower edge",
    "pass": true,
    "detail": {
-    "top": 373,
-    "plotBottom": 373
+    "top": 389,
+    "plotBottom": 389
    }
   },
   {
    "name": "sheet@320: fills the view below the plot and scrolls inside itself",
    "pass": true,
    "detail": {
-    "top": 373,
-    "bottom": 624.40625,
-    "h": 251.40625,
+    "top": 389,
+    "bottom": 621.8125,
+    "h": 232.8125,
     "scrollable": true,
+    "sheetSW": 318,
+    "sheetCW": 318,
     "minTap": 44,
     "sw": 320,
     "iw": 320,
@@ -855,13 +883,15 @@
    }
   },
   {
-   "name": "sheet@320: no sideways scroll; the view stands still",
+   "name": "sheet@320: no sideways scroll (page or sheet); the view stands still",
    "pass": true,
    "detail": {
-    "top": 373,
-    "bottom": 624.40625,
-    "h": 251.40625,
+    "top": 389,
+    "bottom": 621.8125,
+    "h": 232.8125,
     "scrollable": true,
+    "sheetSW": 318,
+    "sheetCW": 318,
     "minTap": 44,
     "sw": 320,
     "iw": 320,
@@ -879,13 +909,23 @@
    }
   },
   {
+   "name": "sheet@320: Escape from the Rule chip closes only the sheet",
+   "pass": true,
+   "detail": {
+    "sheet": false,
+    "modal": true
+   }
+  },
+  {
    "name": "sheet@320: a tap lights the touch's marks (all seven drawn)",
    "pass": true,
    "detail": {
-    "top": 373,
-    "bottom": 624.40625,
-    "h": 251.40625,
+    "top": 389,
+    "bottom": 621.8125,
+    "h": 232.8125,
     "scrollable": true,
+    "sheetSW": 318,
+    "sheetCW": 318,
     "minTap": 44,
     "sw": 320,
     "iw": 320,
@@ -916,11 +956,11 @@
    "detail": {
     "frames": [
      "matrix(1, 0, 0, 1, 0, 24)",
-     "matrix(1, 0, 0, 1, 0, 19.1793)",
-     "matrix(1, 0, 0, 1, 0, 11.7803)",
-     "matrix(1, 0, 0, 1, 0, 9.92629)",
-     "matrix(1, 0, 0, 1, 0, 7.56904)",
-     "matrix(1, 0, 0, 1, 0, 6.88547)"
+     "matrix(1, 0, 0, 1, 0, 22.5393)",
+     "matrix(1, 0, 0, 1, 0, 20.3875)",
+     "matrix(1, 0, 0, 1, 0, 19.2942)",
+     "matrix(1, 0, 0, 1, 0, 18.8145)",
+     "matrix(1, 0, 0, 1, 0, 17.5132)"
     ]
    }
   },
@@ -944,19 +984,19 @@
    "detail": {
     "chips": {
      "x": 1,
-     "y": 731,
+     "y": 747,
      "w": 388,
      "h": 44,
      "right": 389,
-     "bottom": 775
+     "bottom": 791
     },
     "band": {
      "x": 1,
-     "y": 775,
+     "y": 791,
      "w": 388,
      "h": 155.5625,
      "right": 389,
-     "bottom": 930.5625
+     "bottom": 946.5625
     }
    }
   },
@@ -1024,19 +1064,19 @@
    "detail": {
     "chips": {
      "x": 1,
-     "y": 527,
+     "y": 543,
      "w": 318,
      "h": 44,
      "right": 319,
-     "bottom": 571
+     "bottom": 587
     },
     "band": {
      "x": 1,
-     "y": 571,
+     "y": 587,
      "w": 318,
      "h": 191.78125,
      "right": 319,
-     "bottom": 762.78125
+     "bottom": 778.78125
     }
    }
   },

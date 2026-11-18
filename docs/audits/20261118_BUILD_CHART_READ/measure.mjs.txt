@@ -48,7 +48,14 @@ for (const [w, h] of [[390, 844], [320, 640]]) {
     await page.screenshot({ path: `${OUT}/${code}-${w}.png` });
     ok(`${code}@${w}: no sideways scroll`, L.sw <= L.iw && L.viewSW <= L.viewCW + 1 && L.overflowing.length === 0, { sw: L.sw, iw: L.iw, viewSW: L.viewSW, viewCW: L.viewCW, overflowing: L.overflowing });
     ok(`${code}@${w}: the band is a 44 px+ tap target`, L.band.h >= 44, L.band);
-    ok(`${code}@${w}: the Rule chip's tap target is 44 px+`, L.rule && L.rule.h >= 44, L.rule);
+    // review L3-3: hit-test the chip's own box inset 2 px on every side — a clipped or covered edge fails
+    const hit = await page.evaluate(() => {
+      const b = document.querySelector('[data-rule-pill]');
+      const r = b.getBoundingClientRect();
+      const pts = [[r.left + r.width / 2, r.top + 2], [r.left + r.width / 2, r.bottom - 2], [r.left + 2, r.top + r.height / 2], [r.right - 2, r.top + r.height / 2]];
+      return { w: r.width, h: r.height, edges: pts.map(([x, y]) => b.contains(document.elementFromPoint(x, y))) };
+    });
+    ok(`${code}@${w}: the Rule chip is a 44 × 44 tap target, every edge hittable`, hit.w >= 44 && hit.h >= 44 && hit.edges.every(Boolean), hit);
     ok(`${code}@${w}: "prices unadjusted" sits clear of the OHLC row, left of the price scale`, L.note && L.ohlc && L.note.y >= L.ohlc.bottom - 0.5 && L.note.right <= L.iw - 56, { note: L.note, ohlc: L.ohlc });
     ok(`${code}@${w}: the read sits under the plot and above the Technical content`, L.band.y < L.technical.y, { band: L.band, technical: L.technical });
     const a0 = await alignment(page);
@@ -93,7 +100,7 @@ for (const [w, h] of [[390, 844], [320, 640]]) {
   await page.waitForSelector('[data-chart-read-sheet]');
   await page.waitForTimeout(800);
   const plotBottom = await page.evaluate(() => document.querySelector('[data-basis-note]')?.parentElement?.getBoundingClientRect().bottom ?? null);
-  report.rows.push({ name: `sheet@${w}: plot bottom closed → open`, pass: true, detail: { plotBefore, plotBottom } });
+  ok(`sheet@${w}: the plot yields height to the sheet`, plotBottom < plotBefore, { plotBefore, plotBottom });
   await page.locator('[data-check-row="touch"]').click();
   await page.waitForTimeout(300);
   const S = await page.evaluate(() => {
@@ -101,13 +108,22 @@ for (const [w, h] of [[390, 844], [320, 640]]) {
     const r = sh.getBoundingClientRect();
     const rows = [...sh.querySelectorAll('button')].map((b) => b.getBoundingClientRect().height);
     const view = document.querySelector('[data-shell-scroll="chart"]');
-    return { top: r.top, bottom: r.bottom, h: r.height, scrollable: sh.scrollHeight > sh.clientHeight, minTap: Math.min(...rows), sw: document.documentElement.scrollWidth, iw: innerWidth, viewScrollTop: view.scrollTop, lit: window.__lastDraw.filter((m) => m).map((m) => m.n), pressed: sh.querySelector('[data-check-row="touch"]').getAttribute('aria-pressed') };
+    return { top: r.top, bottom: r.bottom, h: r.height, scrollable: sh.scrollHeight > sh.clientHeight, sheetSW: sh.scrollWidth, sheetCW: sh.clientWidth, minTap: Math.min(...rows), sw: document.documentElement.scrollWidth, iw: innerWidth, viewScrollTop: view.scrollTop, lit: window.__lastDraw.filter((m) => m).map((m) => m.n), pressed: sh.querySelector('[data-check-row="touch"]').getAttribute('aria-pressed') };
   });
   await page.screenshot({ path: `${OUT}/sheet-${w}.png` });
   ok(`sheet@${w}: rises to the plot's lower edge`, plotBottom != null && Math.abs(S.top - plotBottom) <= 2, { top: S.top, plotBottom });
   ok(`sheet@${w}: fills the view below the plot and scrolls inside itself`, S.scrollable && S.bottom <= h + 1, S);
   ok(`sheet@${w}: every control 44 px+`, S.minTap >= 44, { minTap: S.minTap });
-  ok(`sheet@${w}: no sideways scroll; the view stands still`, S.sw <= S.iw && S.viewScrollTop === 0, S);
+  ok(`sheet@${w}: no sideways scroll (page or sheet); the view stands still`, S.sw <= S.iw && S.sheetSW <= S.sheetCW && S.viewScrollTop === 0, S);
+  // review L3-1: Escape with focus OUTSIDE the sheet (the Rule chip) closes only the sheet
+  await page.locator('[data-rule-pill]').focus();
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(300);
+  const out = await page.evaluate(() => ({ sheet: !!document.querySelector('[data-chart-read-sheet]'), modal: !!document.querySelector('[data-shell-view]') }));
+  ok(`sheet@${w}: Escape from the Rule chip closes only the sheet`, !out.sheet && out.modal, out);
+  await page.locator('[data-chart-read]').click();
+  await page.waitForSelector('[data-chart-read-sheet]');
+  await page.waitForTimeout(400);
   ok(`sheet@${w}: a tap lights the touch's marks (all seven drawn)`, S.pressed === 'true' && S.lit.length === 7, S);
   await page.keyboard.press('Escape');
   await page.waitForTimeout(300);

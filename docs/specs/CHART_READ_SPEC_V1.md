@@ -38,7 +38,7 @@
 | R-5 | **Mark 3's day** is five sessions before the record's day, counted on the daily series' own dates (the same on 1D and 1W). |
 | R-6 | **The candles are unadjusted under every read that shows** (any answer, a quiet state included); after a failed read, or with no slot, they stay today's. |
 | R-7 | **The Battle chart's read** keeps its lead, drops its second line and carries round 6 F's note *Daily marks are on 1D and 1W, not on these 30-minute bars.* |
-| R-8 | **While the sheet is open** the action row gives way to it and the plot yields height to about 42 % of the view (round 6 B: a 300 px plot over 844), so the sheet starts at the plot's lower edge; on a short screen it takes at least 45 % of the view and rises over the plot's lower part. |
+| R-8 | **While the sheet is open** the action row gives way to it and the plot yields height to about 42 % of the view (round 6 B: a 300 px plot over 844), so the sheet starts at the plot's lower edge; on a short screen it takes at least 40 % of the view and rises over the plot’s lower part. |
 | R-9 | **The other pattern's group** reads *not present* in quiet ink in either valid state (the prompt names Pullback; Breakout is treated the same), unless that pattern is satisfied too. |
 | R-10 | **An unknown rule set**: one line, *Measured by rule set {x}; this app can't show that rule's marks yet.*; no marks, no sheet. A record whose numbers cannot be worded (a needed fact null, an off-list reason, a chain that disagrees with its pairs) is one line, *This record can't be shown.* |
 | R-11 | **An earlier record the projection cannot read** throws (500), never a null `previous`. A refused `read` still carries its `previous` (RD-1 names only a null read). |

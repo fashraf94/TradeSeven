@@ -25,7 +25,7 @@ const mono = (size, color) => ({ fontFamily: MONO, fontSize: size, color, lineHe
 const bare = { all: 'unset', boxSizing: 'border-box' };
 const GLYPH = { pass: ['✓', ST.green], fail: ['✗', ST.ink2], unknown: ['–', ST.ink3], quiet: ['·', ST.ink3] };
 /** The least share of the view the sheet takes (a short screen: it rises over the plot's lower part). */
-export const SHEET_MIN_SHARE = 0.45;
+export const SHEET_MIN_SHARE = 0.4;
 
 const msOf = (v) => {
   if (typeof v === 'number' && Number.isFinite(v)) return v;
