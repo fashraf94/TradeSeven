@@ -308,10 +308,13 @@ export function markRulingsApplied(idea, { date, skips = new Set(), refusals = n
     // left pending — so its request lock is released: the record it covers is still open and takes another ruling
     // (`none`, or another payload), and the feed's own later row of the id is no longer replaced by it.
     if ((r.kind === 'conflict' && r.decision === 'payload') || (r.kind === 'suspicion' && r.decision === 'split')) {
-      const refused = fieldsOf(r).map((f) => refusals.get(`${r.requestKey}@${f}`)).find((x) => typeof x === 'string');
-      if (refused) {
-        alerts.push(`PRACTICE_FIELD_HOLD_RULING_REFUSED ${idea.ideaId} ${r.recordId} — the founder's ${r.kind} ruling (${r.requestKey}) cannot be applied: ${refused}; it is closed, nothing was changed, and the record takes a new ruling`);
-        return { ...r, appliedOn: date, outcome: 'refused', refusedBecause: refused };
+      const refusedOn = fieldsOf(r).filter((f) => typeof refusals.get(`${r.requestKey}@${f}`) === 'string');
+      if (refusedOn.length > 0) {
+        const refused = refusals.get(`${r.requestKey}@${refusedOn[0]}`);
+        // (A ledger it named may have taken it before another refused it: the alert and the ruling say where — refuter note.)
+        const appliedOnLedgers = fieldsOf(r).filter((f) => (idea[f]?.corporateActionReceipts || []).some((x) => x?.applied === true && x.founderRuling?.requestKey === r.requestKey));
+        alerts.push(`PRACTICE_FIELD_HOLD_RULING_REFUSED ${idea.ideaId} ${r.recordId} — the founder's ${r.kind} ruling (${r.requestKey}) was refused on ${refusedOn.join(', ')}: ${refused}; ${appliedOnLedgers.length > 0 ? `it was applied on ${appliedOnLedgers.join(', ')}` : 'nothing was changed'}. It is closed, and the record, where it still stands, takes a new ruling`);
+        return { ...r, appliedOn: date, outcome: 'refused', refusedBecause: refused, refusedOn, ...(appliedOnLedgers.length > 0 ? { appliedOnLedgers } : {}) };
       }
     }
     if (r.kind === 'suspicion' && r.decision === 'split') {

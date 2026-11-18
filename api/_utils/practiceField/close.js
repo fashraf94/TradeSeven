@@ -244,7 +244,14 @@ function closeFilledIdea(idea, {
       // and (Astra T2D-02) at every catch-up close it serves, beside valid archived entries. Each is applied only through
       // the session being valued (the engine's onOrBefore), and once (the ledger's settled ids).
       const rows = input.backfillRows ?? (r.viaBackfill ? input.backfill?.actions : null);
-      if (Array.isArray(rows) && rows.length > 0) feedActions = unionActionsBySymbol(feedActions, { [sym]: rows });
+      // (Fix-round refuter AR1-RF-05: a backfill row NEVER SETTLES A CONFLICT it took part in. A row of an id this idea
+      // holds an unsettled conflict on joins only while the session's own rows list that id too — so the conflict stays
+      // listed — and is left out once they do not: the conflict then stands for the founder, instead of the backfill's
+      // payload, which outlives the archived row's window, settling it alone.)
+      const conflicted = new Set(LEDGER_FIELDS.flatMap((f) => unsettledConflicts(idea[f]).map((x) => x.actionId)));
+      const listedBySession = new Set((sessionActions?.[sym] || []).map((a) => deriveActionId(a)));
+      const usable = Array.isArray(rows) ? rows.filter((a) => !conflicted.has(deriveActionId(a)) || listedBySession.has(deriveActionId(a))) : [];
+      if (usable.length > 0) feedActions = unionActionsBySymbol(feedActions, { [sym]: usable });
     }
   }
 
@@ -300,7 +307,7 @@ function closeFilledIdea(idea, {
     return [f, unionActionsBySymbol(kept, ruled.extraActionsByLedger[f])];
   }));
   const delistingWaiting = delistingWaitingSymbols(idea.ledger);
-  const screen = (ledger, f) => (observed ? withBasisSuspicions(ledger, closeSnapshot, actionsOf[f], { sinceDate, date, delistingWaiting, skip: uncovered, ruledIds: ruledIdsOf(f) }).ledger : ledger);
+  const screen = (ledger, f) => (observed ? withBasisSuspicions(ledger, closeSnapshot, actionsOf[f], { sinceDate, date, delistingWaiting, skip: uncovered, ruledIds: ruledIdsOf(f), pricesUsable: dailyRefOk }).ledger : ledger);
   const ledgers = LEDGER_FIELDS.map((f) => screen(idea[f], f));
   const holds = observed ? shareBasisHolds(ledgers, LEDGER_FIELDS.map((f) => actionsOf[f]), { date, ruledIds: LEDGER_FIELDS.map(ruledIdsOf) }) : null;
   // F-1: a symbol the session's data does not cover holds every count-dependent action of it dated after the last

@@ -390,7 +390,7 @@ function markSessionOf(holding) {
  * carried. It is screened at the close whose data covers it again, after the rows that data lists are applied.
  * @returns {{ ledger: object, raised: Array<object> }}
  */
-export function withBasisSuspicions(ledger, closeSnapshot, actionsBySymbol, { sinceDate, date, delistingWaiting = null, skip = null, ruledIds = null }) {
+export function withBasisSuspicions(ledger, closeSnapshot, actionsBySymbol, { sinceDate, date, delistingWaiting = null, skip = null, ruledIds = null, pricesUsable = true }) {
   if (!ledger || !closeSnapshot) return { ledger, raised: [] };
   const dry = applyActions(ledger, actionsBySymbol, { date, phase: 'share_basis', ruledIds }).ledger;
   const settled = settledIdsOf(dry);
@@ -437,17 +437,25 @@ export function withBasisSuspicions(ledger, closeSnapshot, actionsBySymbol, { si
   // another layer, says nothing a ruling may rely on; lens A's A1). Raised records already carry this close's.
   for (const [sym, h] of Object.entries(next.holdings || {})) {
     const open = openBasisSuspicion(h);
-    if (!open || open.suspectedOn === date || skip?.has(sym) || !openBasisSuspicion(dry.holdings?.[sym])) continue;
+    if (!open || open.suspectedOn === date || !pricesUsable || !openBasisSuspicion(dry.holdings?.[sym])) continue;
     const seen = quoteSeenOf(closeSnapshot, sym, date);
     if (seen === null) continue;
+    const uncoveredHere = skip?.has(sym) === true;
     // Astra T2D-08: every SPLIT-SHAPED TRANSITION seen while the record stands is kept, with its dates — the step from
-    // the last price seen to this one, put to the engine's own screen. Only the first and the last price survived
+    // the last price observed to this one, put to the engine's own screen. Only the first and the last price survived
     // before, so a halving and its recovery ($50 → $25 → $50) vanished, and a ruling on the first halving released a
-    // dividend dated inside the hidden one.
-    const step = transitionOf(sym, open.lastSeen, seen);
-    const transitions = step ? [...(Array.isArray(open.transitions) ? open.transitions : []), step] : open.transitions;
+    // dividend dated inside the hidden one. A close whose corporate-action data does not cover the symbol still OBSERVED
+    // its price (its snapshot names its layer): a transition there is kept too, flagged `uncovered` (fix-round refuter
+    // AR1-RF-04), but it never moves `lastSeen` — a ruling's reference is a covered close's (lens A's A1). The last price
+    // observed at such a close is kept as `lastQuote` until a covered close replaces it, so the next step is judged from it.
+    const prior = isSeen(open.lastQuote) && (!isSeen(open.lastSeen) || open.lastQuote.session > open.lastSeen.session) ? open.lastQuote : open.lastSeen;
+    const step = transitionOf(sym, prior, seen);
+    const transitions = step ? [...(Array.isArray(open.transitions) ? open.transitions : []), uncoveredHere ? { ...step, uncovered: true } : step] : open.transitions;
+    const { lastQuote: _replaced, ...covered } = open;
+    const record = uncoveredHere ? { ...open, lastQuote: seen } : { ...covered, lastSeen: seen };
+    if (transitions) record.transitions = transitions;
     if (next === ledger) next = cloneLedger(ledger);
-    next.holdings[sym] = { ...next.holdings[sym], basisSuspicion: { ...open, lastSeen: seen, ...(transitions ? { transitions } : {}) } };
+    next.holdings[sym] = { ...next.holdings[sym], basisSuspicion: record };
   }
   return { ledger: next, raised };
 }
@@ -905,8 +913,13 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
   const possibleRedateOf = (action, sym) => {
     if (ruledIds?.has(action.actionId)) return null; // the founder applied it (resolve_hold): not a re-date
     const applied = (next.corporateActionReceipts || []).filter((r) => (r.applied === true || r.reason === NOT_ENTITLED) && r.type === action.type && upper(r.ticker) === sym);
+    // (…and every payload of a conflict the holding was not entitled to — the feed listed the declined action two ways on
+    // its date, so no single `not_entitled` decline carries it: fix-round refuter AR1-RF-02.)
+    const declinedConflictRows = (next.corporateActionReceipts || [])
+      .filter((r) => r.reason === CONFLICTING_ACTION && r.entitled === false && r.type === action.type && upper(r.ticker) === sym)
+      .flatMap((r) => (r.rows || []).map((p) => ({ actionId: r.actionId, effectiveDate: r.effectiveDate, ratio: p?.ratio ?? null, amount: p?.amount ?? null, cashPerShare: null })));
     const heldNow = (next.holdings[sym]?.heldActions || []).filter((r) => r.type === action.type && !r.refused);
-    const match = [...applied, ...heldNow].find((r) => r.actionId !== action.actionId && samePayload(r, action)
+    const match = [...applied, ...declinedConflictRows, ...heldNow].find((r) => r.actionId !== action.actionId && samePayload(r, action)
       && withinSessions(r.effectiveDate, action.effectiveDate, REDATE_WINDOW_SESSIONS));
     return match ? match.actionId : null;
   };
@@ -924,8 +937,14 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
       && withinSessions(a.effectiveDate, c.effectiveDate, REDATE_WINDOW_SESSIONS) && (c.rows || []).some((p) => samePayload(p, a)));
   for (const c of unsettledConflicts(next)) {
     const sym = upper(c.ticker);
+    // A conflict whose own single row is HELD on the holding (an uncovered close held it, T2D-07) is the feed's answer
+    // for that id, waiting: it replays as the covered close would have applied it, and is never settled under a moved
+    // date meanwhile (fix-round refuter AR1-RF-03: the money depended on whether one day's fetch failed).
+    if ((next.holdings[sym]?.heldActions || []).some((r) => r.actionId === c.actionId && !r.refused)) continue;
     if (listedNow.has(c.actionId)) {
-      if (!conflicting.has(c.actionId) && matchingRowOf(c, sym)) ambiguousConflicts.add(c.actionId);
+      // The founder's ruling on this very conflict is never "ambiguous": it is the answer (AR1-RF-01 — otherwise a
+      // `payload` ruling was never applied and locked the record).
+      if (!conflicting.has(c.actionId) && !ruledIds?.has(c.actionId) && matchingRowOf(c, sym)) ambiguousConflicts.add(c.actionId);
       continue;
     }
     // …and never a row that is itself a possible re-date of an action already applied or held: it is not applied below,

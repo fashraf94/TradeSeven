@@ -417,6 +417,22 @@ describe('T2D-09 — a chosen conflict payload is applied only on the ledgers wh
     expect(cmp.source).toBe('eodhd_dividends');
     expect(cmp.founderRuling).toBeUndefined();
   });
+  it('(pure) a ledger that gains the record AFTER the ruling is not one it names: the payload does not reach it', async () => {
+    const c = await start();
+    await close(c, 0);
+    const idea = ideaOf(c);
+    const id = `cash_dividend_AAPL_${S[1]}`;
+    const record = { actionId: id, type: 'cash_dividend', ticker: 'AAPL', effectiveDate: S[1], applied: false, reason: 'conflicting_action', entitled: true, rows: [{ ratio: null, amount: 1, source: 'eodhd_dividends' }, { ratio: null, amount: 2, source: 'eodhd_dividends' }], seenOn: S[1] };
+    idea.ledger.corporateActionReceipts.push(record);
+    const plan = planHoldRuling(idea, { kind: 'conflict', recordId: id, decision: 'payload', payload: { amount: 1 } }, { uid: 'owner-1', requestKey: 'k', nowIso: 'now' });
+    expect(plan.ruling.ledgers).toEqual(['ledger']);
+    idea.comparisonLedger.corporateActionReceipts.push({ ...record });
+    const a = applyFounderRulings({ ...idea, founderRulings: [plan.ruling] }, { date: S[2] });
+    expect(Object.keys(a.extraActionsByLedger.ledger)).toEqual(['AAPL']);
+    expect(a.extraActionsByLedger.comparisonLedger).toEqual({});
+    expect([...a.replacedIdsByLedger.comparisonLedger]).toEqual([]);
+  });
+
   it('(pure) applyFounderRulings hands the chosen payload to the named ledgers only', async () => {
     const c = await asymmetric();
     const idea = ideaOf(c);
@@ -471,6 +487,20 @@ describe('T2D-10 — an unrepresentable founder choice is refused up front, or c
     expect(rowOf(c, 4).fullQuality).toBe(true);
   });
 
+  it('(pure) a founder split that would round a holding to nothing is refused up front', async () => {
+    const c = await start();
+    await close(c, 0);
+    const idea = ideaOf(c);
+    idea.ledger.holdings.AAPL.shares = 0.000001;
+    idea.comparisonLedger.holdings.AAPL.shares = 0.000001;
+    const s1 = { symbol: 'AAPL', suspectedOn: S[1], since: S[0], ratio: 2, shape: { kind: 'reverse_split', n: 2 }, frozenMark: 100, frozenMarkAsOf: null, resolvedBy: null, resolvedAt: null };
+    for (const f of ['ledger', 'comparisonLedger']) idea[f].holdings.AAPL.basisSuspicion = { ...s1 };
+    const refused = planHoldRuling(idea, { kind: 'suspicion', recordId: `suspected_split_AAPL_${S[1]}`, decision: 'split', ratio: 0.5 }, { uid: 'owner-1', requestKey: 'k', nowIso: 'now' });
+    expect(refused).toEqual({ error: 'ruling_unrepresentable', status: 422 });
+    // price_move stays open to the founder.
+    expect(planHoldRuling(idea, { kind: 'suspicion', recordId: `suspected_split_AAPL_${S[1]}`, decision: 'price_move' }, { uid: 'owner-1', requestKey: 'k', nowIso: 'now' }).ruling).toBeTruthy();
+  });
+
   it('(pure) a ruling whose action the applier refuses at the close is closed with its reason, and a new ruling is then accepted', async () => {
     const c = await start();
     await close(c, 0);
@@ -516,5 +546,154 @@ describe('T2D-11 — every share-basis receipt carries sharesBefore and sharesAf
     const receipts = LEDGERS.flatMap((f) => ideaOf(c)[f].corporateActionReceipts.filter((r) => r.applied && ['split', 'reverse_split'].includes(r.type)));
     expect(receipts.length).toBeGreaterThanOrEqual(4);
     // (afterEach asserts the guard over every idea of the store.)
+  });
+});
+
+// ── The fix-round refuter (AR1-RF-01 to AR1-RF-05), each probe as a row ────────────────────────────────────────────────
+
+describe('AR1-RF-01 — the founder\'s ruling on a conflict T2D-06 left open is applied: it is never "ambiguous" itself', () => {
+  it('share basis: a 2-for-1 applied, then a 2/1-vs-3/2 conflict the next session; the founder picks 3/2 — applied once, the sale free', async () => {
+    const c = await start();
+    await close(c, 0);
+    await close(c, 1, 50, [spl(1, '2/1')]);
+    await close(c, 2, 50, [spl(2, '2/1'), spl(2, '3/2')]);
+    expect((await rule(c, { kind: 'conflict', recordId: `split_AAPL_${S[2]}`, decision: 'payload', payload: { ratio: 1.5 } })).status).toBe(200);
+    for (let i = 3; i <= 6; i += 1) await close(c, i, 50 / 1.5);
+    const idea = ideaOf(c);
+    expect(idea.ledger.holdings.AAPL.shares).toBe(299.910024);
+    expect(bookOf(c).portfolio.positions.AAPL.shares).toBe(299.910024);
+    expect(idea.founderRulings[0].appliedOn).toBe(S[3]);
+    expect(saleHeldBackBy(idea.ledger, 'AAPL', { symbols: {} }, { date: S[7] })).toBe(null);
+    expect(rowOf(c, 6).fullQuality).toBe(true);
+  });
+  it('cash: T2D-06\'s own case, the founder ruling the old id a second dividend (one dollar): paid once, the conflict closed', async () => {
+    const c = await start();
+    await close(c, 0);
+    await close(c, 1, 100, [div(1, 1), div(1, 2)]);
+    await close(c, 2, 100, [div(1, 1), div(2, 2)]);
+    expect((await rule(c, { kind: 'conflict', recordId: `cash_dividend_AAPL_${S[1]}`, decision: 'payload', payload: { amount: 1 } })).status).toBe(200);
+    await close(c, 3, 100, [div(1, 1), div(2, 2)]);
+    await close(c, 4);
+    const idea = ideaOf(c);
+    expect(appliedAndDeclined(idea)).toEqual([]);
+    expect([idea.ledger.dividendsUsd, idea.comparisonLedger.dividendsUsd]).toEqual([299.91, 299.91]);
+    expect(idea.founderRulings[0].appliedOn).toBe(S[3]);
+    expect(unsettledConflicts(idea.ledger)).toEqual([]);
+    expect(rowOf(c, 4).fullQuality).toBe(true);
+  });
+  it('cash: a two-dollar row applied, then a one-or-two-dollar conflict the next session; the founder picks one dollar (no applied row carries it) — paid once', async () => {
+    const c = await start();
+    await close(c, 0);
+    await close(c, 1, 100, [div(1, 2)]);
+    await close(c, 2, 100, [div(2, 1), div(2, 2)]);
+    expect((await rule(c, { kind: 'conflict', recordId: `cash_dividend_AAPL_${S[2]}`, decision: 'payload', payload: { amount: 1 } })).status).toBe(200);
+    await close(c, 3);
+    await close(c, 4);
+    expect(ideaOf(c).ledger.dividendsUsd).toBe(299.91);
+    expect(ideaOf(c).founderRulings[0].appliedOn).toBe(S[3]);
+  });
+  it('the feed later lists the old id alone: the conflict stays open (two readings remain), and the founder\'s `none` releases it', async () => {
+    const c = await start();
+    await close(c, 0);
+    await close(c, 1, 100, [div(1, 1), div(1, 2)]);
+    await close(c, 2, 100, [div(1, 1), div(2, 2)]);
+    for (let i = 3; i <= 5; i += 1) await close(c, i, 100, [div(1, 1)]);
+    expect(ideaOf(c).ledger.dividendsUsd).toBe(199.94);
+    expect(unsettledConflicts(ideaOf(c).ledger).map((r) => r.actionId)).toEqual([`cash_dividend_AAPL_${S[1]}`]);
+    expect(rowOf(c, 5).fullQuality).toBe(false);
+    expect((await rule(c, { kind: 'conflict', recordId: `cash_dividend_AAPL_${S[1]}`, decision: 'none' })).status).toBe(200);
+    await close(c, 6, 100, [div(1, 1)]);
+    expect(ideaOf(c).ledger.dividendsUsd).toBe(199.94);
+    expect(rowOf(c, 6).fullQuality).toBe(true);
+  });
+});
+
+describe('AR1-RF-02 — an ex-date action the feed listed two ways is a decline too: its re-date is not credited (T2D-01, Q10)', () => {
+  it.each([
+    ['a 3-for-2 (with a 5/4 second row)', ['3/2', '5/4'], '3/2'],
+    ['a 1-for-2 reverse (with a 1/3 second row)', ['1/2', '1/3'], '1/2'],
+  ])('%s listed two ways on the entry date, then one payload re-dated a session later at a flat price: no phantom shares', async (_name, entryRatios, next) => {
+    const c = await start();
+    await close(c, 0, 100, entryRatios.map((r) => spl(0, r)));
+    await close(c, 1, 100, [spl(1, next)]);
+    const idea = ideaOf(c);
+    expect([idea.ledger.holdings.AAPL.shares, idea.comparisonLedger.holdings.AAPL.shares, bookOf(c).portfolio.positions.AAPL.shares]).toEqual([SHARES, SHARES, SHARES]);
+    expect(idea.ledger.corporateActionReceipts.find((r) => r.reason === 'possible_redate')).toMatchObject({ redateOf: `${spl(0, next).type}_AAPL_${S[0]}` });
+  });
+  it('cash: one dollar and two dollars listed for the entry date, then one dollar re-dated a session later: not paid', async () => {
+    const c = await start();
+    await close(c, 0, 100, [div(0, 1), div(0, 2)]);
+    const cash = bookOf(c).portfolio.cash;
+    await close(c, 1, 100, [div(1, 1)]);
+    const idea = ideaOf(c);
+    expect([idea.ledger.dividendsUsd, idea.comparisonLedger.dividendsUsd, bookOf(c).portfolio.cash]).toEqual([0, 0, cash]);
+  });
+});
+
+describe('AR1-RF-03 — a conflict id\'s own row held at an uncovered close replays as the covered close would have applied it', () => {
+  it.each([[false], [true]])('S2 uncovered: %s — the same money either way; the old id applied, never settled under the new date', async (uncovered) => {
+    const c = await start();
+    await close(c, 0);
+    await close(c, 1, 100, [div(1, 1), div(1, 2)]);
+    if (uncovered) {
+      await storeCloseSnapshot(c.db, S[2], q(100, [div(1, 1)]));
+      failed(c, 2);
+      await raw(c, 2);
+      recon(c);
+    } else {
+      await close(c, 2, 100, [div(1, 1)]);
+    }
+    await close(c, 3, 100, [div(3, 2)]);
+    await close(c, 4, 100, [div(3, 2)]);
+    const idea = ideaOf(c);
+    expect([idea.ledger.dividendsUsd, idea.comparisonLedger.dividendsUsd]).toEqual([299.91, 299.91]);
+    expect(unsettledConflicts(idea.ledger)).toEqual([]);
+    expect(rowOf(c, 4).fullQuality).toBe(true);
+    expect(idea.ledger.corporateActionReceipts.filter((r) => r.actionId === `cash_dividend_AAPL_${S[1]}` && r.reason !== 'conflicting_action').map((r) => r.reason ?? 'applied')).toEqual(['applied']);
+  });
+});
+
+describe('AR1-RF-04 — a split-shaped transition seen at an uncovered close is kept (flagged), and a ruling does not cover it', () => {
+  it('$100, $50, then $25 on a day the fetch failed, then $50: price_move on the first halving leaves the second one held', async () => {
+    const c = await start();
+    await close(c, 0);
+    await close(c, 1, 50);
+    await storeCloseSnapshot(c.db, S[2], q(25, [div(2)]));
+    failed(c, 2);
+    await raw(c, 2);
+    recon(c);
+    const record = ideaOf(c).ledger.holdings.AAPL.basisSuspicion;
+    expect(record.transitions).toEqual([expect.objectContaining({ session: S[2], since: S[1], ratio: 0.5, uncovered: true })]);
+    expect(record.lastSeen.session).toBe(S[1]); // an uncovered close never moves it (lens A's A1)
+    await close(c, 3, 50, [div(2)]);
+    expect((await rule(c, { kind: 'suspicion', recordId: `suspected_split_AAPL_${S[1]}`, decision: 'price_move' })).status).toBe(200);
+    await close(c, 4, 50);
+    const idea = ideaOf(c);
+    expect(idea.ledger.holdings.AAPL.basisSuspicion).toMatchObject({ suspectedOn: S[2], since: S[1], ratio: 0.5 });
+    expect([idea.ledger.dividendsUsd, idea.comparisonLedger.dividendsUsd]).toEqual([0, 0]);
+    expect(rowOf(c, 4).fullQuality).toBe(false);
+  });
+});
+
+describe('AR1-RF-05 — a backfill row never settles a conflict it took part in', () => {
+  it('the archived day lists 5/4 and the price falls to $80; the backfill lists 3/2 for that id: held for the founder, never 3/2 at full quality', async () => {
+    const c = await start({ slot: 'long' });
+    await close(c, 0);
+    for (let i = 1; i < 23; i += 1) await storeCloseSnapshot(c.db, S[i], q(i >= 4 ? 80 : 100, i === 4 ? [spl(4, '5/4')] : []));
+    const fetchCorporateActions = async (sym) => ({ failed: false, calls: 2, actions: sym === 'AAPL' ? [spl(4, '3/2')] : [] });
+    const args = { before: S[23], now: closeNowOf(S[23]), fetchCorporateActions };
+    await catchUpIdeaBook(c.db, c.bookRef, args);
+    recon(c);
+    await catchUpIdeaBook(c.db, c.bookRef, args);
+    recon(c);
+    let idea = ideaOf(c);
+    expect([idea.ledger.holdings.AAPL.shares, bookOf(c).portfolio.positions.AAPL.shares]).toEqual([SHARES, SHARES]);
+    expect(unsettledConflicts(idea.ledger).map((r) => r.actionId)).toEqual([`split_AAPL_${S[4]}`]);
+    expect(rowOf(c, 22).fullQuality).toBe(false);
+    // The founder reads the price ($100 to $80) and picks 5/4: applied once.
+    expect((await rule(c, { kind: 'conflict', recordId: `split_AAPL_${S[4]}`, decision: 'payload', payload: { ratio: 1.25 } })).status).toBe(200);
+    await close(c, 23, 80);
+    idea = ideaOf(c);
+    expect([idea.ledger.holdings.AAPL.shares, bookOf(c).portfolio.positions.AAPL.shares]).toEqual([124.96251, 124.96251]);
   });
 });

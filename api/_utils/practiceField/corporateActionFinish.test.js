@@ -1389,7 +1389,10 @@ describe('the review\'s fix round — the founder\'s split, the move it covers, 
     for (const f of ['ledger', 'comparisonLedger']) expect(ideaOf(ctx)[f].holdings.AAPL.basisSuspicion.lastSeen, f).toMatchObject({ session: S[1], price: 50 });
     await resolve(ctx, { kind: 'suspicion', recordId: SUSP, decision: 'price_move' });
     await closeQ(ctx, S[3], { AAPL: 25 });
-    for (const f of ['ledger', 'comparisonLedger']) expect(ideaOf(ctx)[f].holdings.AAPL.basisSuspicion, f).toMatchObject({ suspectedOn: S[3], since: S[1], ratio: 0.5, frozenMark: 50 });
+    // The second halving is a new record — dated at the uncovered close that OBSERVED it (S[2]; the fix round's
+    // AR1-RF-04 keeps a transition seen there, flagged), frozen at the covered price before it. The ruling's reference
+    // stays a covered close's price (lastSeen above).
+    for (const f of ['ledger', 'comparisonLedger']) expect(ideaOf(ctx)[f].holdings.AAPL.basisSuspicion, f).toMatchObject({ suspectedOn: S[2], since: S[1], ratio: 0.5, frozenMark: 50 });
   });
 
   it('C-6\'s own case: a SHARE-BASIS conflict the feed has dropped (a 2-for-1 and a 3-for-1 listed for one day, then neither) is ruled by payload — the 2-for-1 is applied ONCE at the next close on the idea, its comparison and the book, with a founder receipt; the dividend it held is paid on the adjusted count and the mark is fresh', async () => {
