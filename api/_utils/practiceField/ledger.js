@@ -106,7 +106,7 @@ import { markBook } from '../mandateValuation.js';
 import { snapshotExcluding, caActionsBySymbol } from '../mandateUniverseSnapshot.js';
 import { pendingActionsFor, applyCorporateAction, classifyOvernightGaps, deriveActionId } from '../mandateCorporateActions.js';
 import { MANDATE_CA_RATIO_TOLERANCE, MANDATE_CA_RATIO_MAX_N } from '../mandateConfig.js';
-import { roundUsd } from '../mandateRounding.js';
+import { roundUsd, roundShares } from '../mandateRounding.js';
 import { MARK_QUALITY } from './constants.js';
 import { closeMarkQuality } from './marks.js';
 import { addUsd, toCents } from './money.js';
@@ -641,6 +641,15 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
   const next = cloneLedger(ledger);
   const kind = next.kind ?? null;
   const settled = settledIdsOf(next);
+  // A held record whose id is settled since — applied, or declined by the founder's ruling — is owed nothing more: it
+  // is dropped, so it never holds the holding for good (review C2).
+  for (const [sym, h] of Object.entries(next.holdings)) {
+    if ((h?.heldActions || []).some((r) => settled.has(r.actionId))) {
+      const left = h.heldActions.filter((r) => !settled.has(r.actionId));
+      const { heldActions: _gone, ...rest } = h;
+      next.holdings = { ...next.holdings, [sym]: left.length > 0 ? { ...rest, heldActions: left } : rest };
+    }
+  }
   const { pending, unrecognized, notEntitled, noEntitlementData } = pendingActionsFor(
     next.holdings, actionsBySymbol, { onOrBefore: date, appliedIds: settled },
   );
@@ -701,17 +710,6 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
   // F-7 (RF-A2): A CONFLICT SETTLED UNDER A MOVED DATE. A row listed now under a new id, within the re-date window of an
   // unsettled conflict, whose payload is one of the conflict's settles it — before anything is held behind the conflict:
   // the old id is declined, receipted `settled_by_redate` naming the row, and the row is applied once below.
-  const redates = [];
-  for (const c of unsettledConflicts(next)) {
-    const sym = upper(c.ticker);
-    const row = pending.find((a) => upper(a.ticker) === sym && a.type === c.type && a.actionId !== c.actionId && !conflicting.has(a.actionId)
-      && withinSessions(a.effectiveDate, c.effectiveDate, REDATE_WINDOW_SESSIONS) && (c.rows || []).some((p) => samePayload(p, a)));
-    if (!row) continue;
-    next.declinedActionIds.push(c.actionId);
-    const receipt = { actionId: c.actionId, type: c.type, ticker: c.ticker, effectiveDate: c.effectiveDate, applied: false, reason: 'settled_by_redate', settledBy: row.actionId, seenOn: date };
-    next.corporateActionReceipts.push(receipt);
-    declined.push(receipt);
-  }
   // F-7: A POSSIBLE RE-DATE — the id of an action this ledger applied or holds that `action` may be under a moved date.
   const possibleRedateOf = (action, sym) => {
     if (ruledIds?.has(action.actionId)) return null; // the founder applied it (resolve_hold): not a re-date
@@ -721,6 +719,23 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
       && withinSessions(r.effectiveDate, action.effectiveDate, REDATE_WINDOW_SESSIONS));
     return match ? match.actionId : null;
   };
+  const redates = [];
+  const settlingRows = new Set(); // one row settles at most one conflict (review note)
+  for (const c of unsettledConflicts(next)) {
+    const sym = upper(c.ticker);
+    // …and never a row that is itself a possible re-date of an action already applied or held: it is not applied below,
+    // so it cannot be what settled the conflict (refuter C: the conflict was declined `settledBy` a row never applied).
+    const row = pending.find((a) => upper(a.ticker) === sym && a.type === c.type && a.actionId !== c.actionId && !conflicting.has(a.actionId)
+      && !settlingRows.has(a.actionId)
+      && withinSessions(a.effectiveDate, c.effectiveDate, REDATE_WINDOW_SESSIONS) && (c.rows || []).some((p) => samePayload(p, a))
+      && possibleRedateOf(a, sym) === null);
+    if (!row) continue;
+    settlingRows.add(row.actionId);
+    next.declinedActionIds.push(c.actionId);
+    const receipt = { actionId: c.actionId, type: c.type, ticker: c.ticker, effectiveDate: c.effectiveDate, applied: false, reason: 'settled_by_redate', settledBy: row.actionId, seenOn: date };
+    next.corporateActionReceipts.push(receipt);
+    declined.push(receipt);
+  }
   const recordRedate = (sym, action, redateOf) => {
     const receipt = {
       actionId: action.actionId, type: action.type, ticker: action.ticker, effectiveDate: action.effectiveDate,
@@ -826,7 +841,13 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
     // applied or holds is recorded, not applied (a cashless delisting, above, applies nothing anyway).
     {
       const redateOf = possibleRedateOf(action, sym);
-      if (redateOf !== null) { recordRedate(sym, action, redateOf); continue; }
+      if (redateOf !== null) {
+        recordRedate(sym, action, redateOf);
+        // A held action found to be a possible re-date is no longer a payload to pay later: its `possible_redate`
+        // receipt governs it, and the founder may apply it (review C2 — the record would otherwise hold for good).
+        if (next.holdings[sym]?.heldActions?.some((r) => r.actionId === action.actionId)) next.holdings = { ...next.holdings, [sym]: withoutHeld(next.holdings[sym], action.actionId) };
+        continue;
+      }
     }
     // T2A-C01: nothing whose amount or effect depends on the share count is applied while that count is in doubt.
     if (countDependent(action)) {
@@ -843,12 +864,22 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
     // on record, nothing is estimated: held, refused.
     let late = null;
     if (action.type === 'cash_dividend' && heldBefore) {
-      const after = (next.corporateActionReceipts || [])
-        .filter((r) => r.applied === true && SHARE_BASIS_TYPES.has(r.type) && upper(r.ticker) === sym && typeof r.effectiveDate === 'string' && r.effectiveDate > action.effectiveDate);
-      if (after.length > 0) {
-        const count = Number(after[0].sharesBefore);
+      const basis = (next.corporateActionReceipts || [])
+        .filter((r) => r.applied === true && SHARE_BASIS_TYPES.has(r.type) && upper(r.ticker) === sym && typeof r.effectiveDate === 'string');
+      const first = basis.findIndex((r) => r.effectiveDate > action.effectiveDate);
+      if (first >= 0) {
+        let count = Number(basis[first].sharesBefore);
         if (!(count > 0) || !Number.isFinite(count)) { hold(sym, action, [], 'count_on_ex_date_unknown'); continue; }
-        late = { entitledShares: count, countFrom: after[0].actionId };
+        // A share-basis action dated ON OR BEFORE the ex-date but applied after that one (it was listed late) belongs
+        // in the ex-date count: applied to it here, in date order, rounded at each step as the applier rounds (review C3).
+        const earlierLate = basis.slice(first + 1).filter((r) => r.effectiveDate <= action.effectiveDate).sort(byDatePhaseId);
+        for (const r of earlierLate) {
+          const ratio = Number(r.ratio);
+          if (!(ratio > 0) || !Number.isFinite(ratio)) { count = NaN; break; }
+          count = roundShares(count * ratio);
+        }
+        if (!(count > 0) || !Number.isFinite(count)) { hold(sym, action, [], 'count_on_ex_date_unknown'); continue; }
+        late = { entitledShares: count, countFrom: basis[first].actionId, ...(earlierLate.length > 0 ? { countAlsoFrom: earlierLate.map((r) => r.actionId) } : {}) };
       }
     }
     const out = applyCorporateAction({
@@ -919,7 +950,7 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
       // F-7: a share-basis receipt keeps the count before and after it (a later late dividend reads its ex-date count);
       // a late dividend says which count it was paid on, and from which action's receipt.
       ...(SHARE_BASIS_TYPES.has(action.type) ? { sharesBefore: Number(heldBefore?.shares) || 0, sharesAfter: next.holdings[sym]?.shares ?? null } : {}),
-      ...(late ? { entitledShares: late.entitledShares, entitledSharesFrom: late.countFrom } : {}),
+      ...(late ? { entitledShares: late.entitledShares, entitledSharesFrom: late.countFrom, ...(late.countAlsoFrom ? { entitledSharesAlsoFrom: late.countAlsoFrom } : {}) } : {}),
       // F-5: an action the founder's ruling supplied says so — its founder receipt.
       ...(action.founderRuling ? { founderRuling: action.founderRuling } : {}),
     };
@@ -1172,9 +1203,13 @@ export function saleHeldBackBy(ledger, symbol, snapshot, { sinceDate, date, othe
   // recovered or the shape has gone. First, before the delisting exception below: a suspicion raised before the holding
   // began waiting on a delisting still holds it.
   if (openBasisSuspicion(holding)) return 'suspected_corporate_action';
-  if ((holding.heldActions || []).length > 0) return 'corporate_action_unsettled';
-  const one = { [symbol]: holding };
   const settled = new Set([...(ledger.appliedActionIds || []), ...(ledger.declinedActionIds || [])]);
+  // (A held record whose id has since been settled — declined by the founder, say — holds nothing: review C2.)
+  if ((holding.heldActions || []).some((r) => !settled.has(r.actionId))) return 'corporate_action_unsettled';
+  // A share-basis row recorded as a possible re-date (F-7) is a doubt about THIS ledger's count, as it is for the close:
+  // the sale waits (review C1 — before, only another ledger's copy of it reached the sale).
+  if (unsettledRedates(ledger).some((r) => SHARE_BASIS_TYPES.has(r.type) && upper(r.ticker) === symbol)) return 'corporate_action_unsettled';
+  const one = { [symbol]: holding };
   const due = pendingActionsFor(one, actionsBySymbol, { onOrBefore: date, appliedIds: settled });
   // A conflicting CASH DIVIDEND holds the sale only WHILE THE FEED STILL LISTS A ROW OF IT (the pending rule above
   // covers that: the feed may yet settle on one row, and the close then credits the idea what its comparison gets —
