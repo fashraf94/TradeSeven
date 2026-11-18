@@ -325,6 +325,16 @@ export function firestoreValueBytes(v) {
   return Object.entries(v).reduce((n, [k, x]) => n + Buffer.byteLength(k, 'utf8') + 1 + firestoreValueBytes(x), 0);
 }
 
+/**
+ * A DOCUMENT's size by the same rules: its name — each segment of its path, UTF-8 bytes + 1, plus 16 — and its fields,
+ * plus 32 (firebase.google.com/docs/firestore/storage-size). Pure.
+ */
+export function firestoreDocumentBytes(path, data) {
+  const segments = String(path).split('/').filter((x) => x.length > 0);
+  const nameBytes = segments.reduce((n, seg) => n + Buffer.byteLength(seg, 'utf8') + 1, 0) + 16;
+  return nameBytes + firestoreValueBytes(data ?? {}) + 32;
+}
+
 const partIdOf = (i) => `${RESULT_RECEIPT_PART_PREFIX}${String(i).padStart(3, '0')}`;
 
 /**

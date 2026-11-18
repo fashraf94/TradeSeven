@@ -82,7 +82,7 @@ import { assertReconciled } from './reconcile.js';
 import { readLines, buildEndpoint, foldCloseIntoTrack, pendingSaleOf, completedLiquidation, ENDPOINT_KIND } from './settlement.js';
 import { firstUnclosedSessionBefore } from './sessions.js';
 import { toCents, fromCents } from './money.js';
-import { buildResultEvidence, evidenceRefOf, EVIDENCE_PACKET } from './evidence.js';
+import { buildResultEvidence, evidenceRefOf, EVIDENCE_PACKET, firestoreDocumentBytes } from './evidence.js';
 import {
   windowsRefOf, expectedIntradayWindows, buildCloseWindowRow, windowOnlySessionsBefore, readWindowOnlySessions, writeWindowOnlySessions,
   WINDOW_ONLY_SESSIONS_PER_TX, WINDOWS_ACCOUNTED_FIELD, writeWindowActionReceipts, WINDOW_ACTION_KIND,
@@ -94,6 +94,20 @@ import {
 } from './dailyCoverage.js';
 import { ensureCoverageBackfills } from './caBackfill.js';
 import { applyFounderRulings, markRulingsApplied } from './holdRulings.js';
+
+/**
+ * Amendment F-9 (T2C-04): THE IDEA DOCUMENT'S SIZE. Every close rewrites a changed idea whole — its three ledgers and
+ * every corporate-action receipt they keep — and Firestore refuses a document past 1 MiB, which would fail that close
+ * for good. Before writing it, the close measures it (evidence.js firestoreDocumentBytes, Firestore's own storage
+ * rules) and, FROM 768 KiB, alerts PRACTICE_FIELD_IDEA_DOC_LARGE with the size. The receipts stay on the idea.
+ */
+export const IDEA_DOC_ALERT_BYTES = 768 * 1024;
+/** The alert for an idea document of `bytes` (null below the line). Pure. */
+export function ideaDocSizeAlert(bookId, ideaId, bytes) {
+  return bytes >= IDEA_DOC_ALERT_BYTES
+    ? `PRACTICE_FIELD_IDEA_DOC_LARGE ${bookId} ${ideaId} ${bytes} bytes — the idea document is past ${IDEA_DOC_ALERT_BYTES} bytes (768 KiB) of Firestore's 1 MiB; a close that cannot write it fails for good`
+    : null;
+}
 
 /** From this many sessions of doubt about a symbol's corporate-action coverage, the close alerts (Amendment F-1). */
 export const CA_COVERAGE_GAP_ALERT_SESSIONS = 5;
@@ -200,7 +214,7 @@ function closeFilledIdea(idea, {
   // Amendment F-5: THE FOUNDER'S PENDING RULINGS (resolve_hold), applied first, once, at an observed close
   // (holdRulings.js): a retired suspicion and its reference mark, a declined record, the action a ruling supplies.
   const ruled = observed ? applyFounderRulings(idea, { date }) : null;
-  if (ruled) idea = ruled.idea; // eslint-disable-line no-param-reassign
+  if (ruled) idea = ruled.idea;
   const running = RUNNING_IDEA_STATUSES.includes(idea.status);
   const dueSession = idea.contract.schedule.dueSession;
   const alerts = [];
@@ -897,6 +911,13 @@ async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false, w
       observed,
     };
     if (catchUp) row.caughtUpAt = nowIso;
+
+    // F-9: each idea document about to be written, measured first.
+    for (const [ideaId, next] of nextIdeas) {
+      if (next === ideas.find((i) => i.ideaId === ideaId)) continue;
+      const alert = ideaDocSizeAlert(bookRef.id, ideaId, firestoreDocumentBytes(`mandates/${bookRef.id}/ideas/${ideaId}`, next));
+      if (alert !== null) alerts.push(alert);
+    }
 
     // Commit.
     for (const [ref, doc] of bookActionDocs) tx.set(ref, doc);

@@ -11,7 +11,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { setPracticeFieldModeForTests } from './mode.js';
 import { assertReconciled } from './reconcile.js';
 import { admitIdea } from './admission.js';
-import { closeIdeaBook } from './close.js';
+import { closeIdeaBook, IDEA_DOC_ALERT_BYTES, ideaDocSizeAlert } from './close.js';
+import { firestoreDocumentBytes } from './evidence.js';
 import { runFounderAction } from './founderControls.js';
 import { withBasisSuspicions, applyLedgerActions, ledgerOwnDoubtIds, ideaWideDoubtSymbols } from './ledger.js';
 import { dailyDocOf, dailyCoverageOf, sessionCoverage, unionActionsBySymbol, snapshotNamesDaily, DAILY_COVERAGE_REFUSAL } from './dailyCoverage.js';
@@ -967,5 +968,38 @@ describe('Amendment F-5 — the founder\'s resolution: resolve_hold', () => {
     // One key, two different rulings: the second is a conflict, not a replay.
     expect((await resolve(ctx, { kind: 'suspicion', recordId: SUSP, decision: 'price_move' }, { requestKey: 'same' })).status).toBe(200);
     expect(await resolve(ctx, { kind: 'suspicion', recordId: SUSP, decision: 'split', ratio: 2 }, { requestKey: 'same' })).toMatchObject({ status: 409, body: { error: 'request_key_conflict' } });
+  });
+});
+
+// ── F-9 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+describe('Amendment F-9 — the idea document\'s size (T2C-04)', () => {
+  it('(pure) Firestore\'s storage rules for a document, and the line: 786,432 bytes (768 KiB) alerts, 786,431 does not', () => {
+    // mandates(9) b(2) ideas(6) i(2) + 16 = 35; { a: 'xy' } = 2 + 3 = 5; + 32.
+    expect(firestoreDocumentBytes('mandates/b/ideas/i', { a: 'xy' })).toBe(72);
+    expect(IDEA_DOC_ALERT_BYTES).toBe(786432);
+    expect(ideaDocSizeAlert('b', 'i', 786431)).toBeNull();
+    expect(ideaDocSizeAlert('b', 'i', 786432)).toBe('PRACTICE_FIELD_IDEA_DOC_LARGE b i 786432 bytes — the idea document is past 786432 bytes (768 KiB) of Firestore\'s 1 MiB; a close that cannot write it fails for good');
+  });
+
+  it('through a close: the idea document it is about to write is measured — at exactly 768 KiB it alerts, one byte under it does not; nothing else changes', async () => {
+    const padded = async (len) => {
+      const ctx = await setup();
+      const path = `mandates/${ctx.bookId}/ideas/${ctx.ideaId}`;
+      const e = ctx.db._store.get(path);
+      ctx.db._store.set(path, { data: { ...e.data, padding: 'x'.repeat(len) }, version: e.version + 1 });
+      const out = await closeDay(ctx, S[1]);
+      return { ctx, out, bytes: firestoreDocumentBytes(path, ctx.db._get(path)), path };
+    };
+    const probe = await padded(1000);
+    const atLine = 1000 + (IDEA_DOC_ALERT_BYTES - probe.bytes);
+    const at = await padded(atLine);
+    expect(at.bytes).toBe(IDEA_DOC_ALERT_BYTES);
+    expect(at.out.alerts.filter((a) => a.startsWith('PRACTICE_FIELD_IDEA_DOC_LARGE'))).toEqual([`PRACTICE_FIELD_IDEA_DOC_LARGE ${at.ctx.bookId} ${at.ctx.ideaId} ${IDEA_DOC_ALERT_BYTES} bytes — the idea document is past 786432 bytes (768 KiB) of Firestore's 1 MiB; a close that cannot write it fails for good`]);
+    const under = await padded(atLine - 1);
+    expect(under.bytes).toBe(IDEA_DOC_ALERT_BYTES - 1);
+    expect(under.out.alerts.filter((a) => a.startsWith('PRACTICE_FIELD_IDEA_DOC_LARGE'))).toEqual([]);
+    // The close itself is the same either way.
+    expect(rowOf(at.ctx, S[1]).markedValue).toBe(rowOf(under.ctx, S[1]).markedValue);
   });
 });

@@ -165,7 +165,7 @@ export function applyFounderRulings(idea, { date }) {
         if (r.decision === 'split') continue; // the split explains and retires it, in the close's own order
         // price_move: retired, naming the ruling; the reference becomes the last price observed while it stood.
         const s = h.basisSuspicion;
-        const { basisSuspicion, ...rest } = h;
+        const { basisSuspicion: _retired, ...rest } = h;
         const retired = { ...s, id: r.recordId, closedOn: date, resolvedBy: r.by, resolvedAt: r.at, ruling: receiptOf(r) };
         const seen = s.lastSeen && Number(s.lastSeen.price) > 0 ? s.lastSeen : null;
         const reference = seen ? {
