@@ -79,7 +79,7 @@
 // deleted the holding, resolved the idea and returned that cash. Now the close asks the screen first, on the state the
 // cash would be paid on (after this close's share-basis rows, before any cash: withBasisSuspicions), and a symbol it
 // suspects gets a record on the holding — `basisSuspicion: { symbol, suspectedOn, since, ratio, shape, frozenMark,
-// frozenMarkAsOf, resolvedBy: null, resolvedAt: null }` — that makes its share basis UNRESOLVED in the sense above
+// frozenMarkAsOf, resolvedBy: null, resolvedAt: null, seenAtRaise, lastSeen }` — that makes its share basis UNRESOLVED in the sense above
 // (unresolvedShareBasis, idea-wide through shareBasisHolds). Every count-dependent action waits on it exactly as on a
 // conflict: a cash action dated after `since` (the session of the last trusted mark: the move came after it), and a
 // share-basis action dated after the session it was first suspected. The sale waits, a rename waits, the mark is
@@ -315,7 +315,7 @@ function paidDividendsExplain(ledger, holding, sym, snapshot, { date }) {
       && typeof r.effectiveDate === 'string' && r.effectiveDate <= date)
     .map((r) => ({ type: 'cash_dividend', ticker: sym, amount: r.amount, effectiveDate: r.effectiveDate }));
   if (paid.length === 0) return false;
-  return classifyOvernightGaps({ [sym]: holding }, snapshot, { [sym]: paid }, { sinceDate: null, asOfDate: date }).pendingCA.has(sym);
+  return classifyOvernightGaps({ [sym]: screenHoldingOf(holding) }, snapshot, { [sym]: paid }, { sinceDate: null, asOfDate: date }).pendingCA.has(sym);
 }
 
 /** A holding waiting on a delisting (E11): its fall is the delisting, not a split (R-32). */
@@ -341,6 +341,21 @@ function shapeOf(ratio) {
 }
 
 /**
+ * F-5 (review B1, B3, D1; lens A's A1): THE GAP SCREEN'S REFERENCE AFTER A FOUNDER'S `price_move` RULING — see
+ * priceMoveReference. It is kept as `screenReference` beside the holding's mark, never written into `lastMark` or its
+ * provenance, which stay the carried mark a stored snapshot priced (a carried price must cite the row that priced it;
+ * D1). A share-basis action dated after the reference's session divides it (applyActions); the first fresh mark replaces
+ * it (withCloseMarks). Every gap screen of a holding reads it (screenHoldingOf).
+ */
+const screenReferenceOf = (h) => (h?.screenReference && Number(h.screenReference.price) > 0 && typeof h.screenReference.session === 'string' ? h.screenReference : null);
+/** The holding as the gap screen sees it: its screen reference, if any, in place of its mark. */
+function screenHoldingOf(h) {
+  const ref = screenReferenceOf(h);
+  return ref ? { ...h, lastMark: Number(ref.price) } : h;
+}
+const screenView = (holdings) => Object.fromEntries(Object.entries(holdings || {}).map(([sym, h]) => [sym, screenHoldingOf(h)]));
+
+/**
  * The session the holding's last trusted mark CAME FROM, or null when it cannot be told (Amendment F-3; Astra T2B-01's
  * confirmation). It is the mark's own provenance (`lastMarkProvenance.session`): the session of the snapshot that
  * priced it, which a carry or a split's adjustment leaves unchanged. Not `lastMarkAsOf`, which keeps an older quote's
@@ -349,7 +364,8 @@ function shapeOf(ratio) {
  * cannot be told (null): every cash action after the mark then waits, the fail-closed side.
  */
 function markSessionOf(holding) {
-  const session = holding?.lastMarkProvenance?.session;
+  // (After a `price_move` ruling the screen's reference is the price seen at the record's session: the gap runs from there.)
+  const session = screenReferenceOf(holding)?.session ?? holding?.lastMarkProvenance?.session;
   return typeof session === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(session) ? session : null;
 }
 
@@ -375,7 +391,7 @@ export function withBasisSuspicions(ledger, closeSnapshot, actionsBySymbol, { si
   if (!ledger || !closeSnapshot) return { ledger, raised: [] };
   const dry = applyActions(ledger, actionsBySymbol, { date, phase: 'share_basis', ruledIds }).ledger;
   const settled = settledIdsOf(dry);
-  const scan = classifyOvernightGaps(dry.holdings, closeSnapshot, actionsBySymbol, { sinceDate: sinceDate ?? null, asOfDate: date, excludeActionIds: settled });
+  const scan = classifyOvernightGaps(screenView(dry.holdings), closeSnapshot, actionsBySymbol, { sinceDate: sinceDate ?? null, asOfDate: date, excludeActionIds: settled });
   let next = ledger;
   const raised = [];
   for (const [sym, { ratio }] of scan.suspectedCA) {
@@ -390,8 +406,11 @@ export function withBasisSuspicions(ledger, closeSnapshot, actionsBySymbol, { si
     const record = {
       symbol: sym, suspectedOn: date, since, ratio,
       shape: shapeOf(ratio),
-      frozenMark: Number(d.lastMark), frozenMarkAsOf: d.lastMarkAsOf ?? null, resolvedBy: null, resolvedAt: null,
-      lastSeen: lastSeenOf(closeSnapshot, sym, date),
+      frozenMark: Number(screenHoldingOf(d).lastMark), frozenMarkAsOf: d.lastMarkAsOf ?? null, resolvedBy: null, resolvedAt: null,
+      // F-5: the price seen at THIS session (`seenAtRaise`, written once) and the last one seen while the record stands
+      // (`lastSeen`, refreshed below): a `price_move` ruling judges the move between them (priceMoveReference).
+      seenAtRaise: quoteSeenOf(closeSnapshot, sym, date),
+      lastSeen: quoteSeenOf(closeSnapshot, sym, date),
     };
     if (next === ledger) next = cloneLedger(ledger);
     // F-8: an old note this close's row explained in the dry run (T2A-E01) is retired into the history, naming the row
@@ -401,17 +420,22 @@ export function withBasisSuspicions(ledger, closeSnapshot, actionsBySymbol, { si
     if (old) {
       const oldId = suspicionIdOf(sym, old);
       const by = (dry.corporateActionReceipts || []).find((r) => r.applied === true && r.appliedOn === date && r.explainedSuspicion?.id === oldId);
-      history = [...history, { ...old, id: oldId, closedOn: date, explainedBy: by ? { actionId: by.actionId, type: by.type, ratio: by.ratio ?? null, effectiveDate: by.effectiveDate } : null, replacedBy: suspicionIdOf(sym, record) }];
+      history = [...history, {
+        ...old, id: oldId, closedOn: date, explainedBy: by ? { actionId: by.actionId, type: by.type, ratio: by.ratio ?? null, effectiveDate: by.effectiveDate } : null, replacedBy: suspicionIdOf(sym, record),
+        // F-8: a record the founder's `split` explained names the ruling here too (review B7).
+        ...(by?.founderRuling ? { resolvedBy: by.founderRuling.by ?? null, resolvedAt: by.founderRuling.at ?? null, ruling: by.founderRuling } : {}),
+      }];
     }
     next.holdings[sym] = { ...h, basisSuspicion: record, ...(old ? { basisSuspicionHistory: history } : {}) };
     raised.push(record);
   }
-  // F-5: every record still open after this close's rows keeps the last price observed while it stands (`lastSeen`) —
-  // the price a `price_move` ruling makes the holding's reference. Raised records already carry this close's.
+  // F-5: every record still open after this close's rows keeps the last price seen while it stands (`lastSeen`) — at a
+  // close whose data covers the symbol only (`skip`: a session with no corporate-action data, or a snapshot naming
+  // another layer, says nothing a ruling may rely on; lens A's A1). Raised records already carry this close's.
   for (const [sym, h] of Object.entries(next.holdings || {})) {
     const open = openBasisSuspicion(h);
-    if (!open || open.suspectedOn === date || !openBasisSuspicion(dry.holdings?.[sym])) continue;
-    const seen = lastSeenOf(closeSnapshot, sym, date);
+    if (!open || open.suspectedOn === date || skip?.has(sym) || !openBasisSuspicion(dry.holdings?.[sym])) continue;
+    const seen = quoteSeenOf(closeSnapshot, sym, date);
     if (seen === null) continue;
     if (next === ledger) next = cloneLedger(ledger);
     next.holdings[sym] = { ...next.holdings[sym], basisSuspicion: { ...open, lastSeen: seen } };
@@ -419,8 +443,40 @@ export function withBasisSuspicions(ledger, closeSnapshot, actionsBySymbol, { si
   return { ledger: next, raised };
 }
 
+/**
+ * F-5: WHAT A `price_move` RULING LEAVES THE GAP SCREEN (review B1, B3; lens A's A1; Z1). The ruling covers EXACTLY the
+ * recorded move — the move seen at the record's own session. Every later move is judged, never covered: so the move
+ * from the price seen then (`seenAtRaise`) to the last price seen while the record stood (`lastSeen`) is put to the
+ * engine's own screen. A split-shaped one is a NEW record, of that move (`stepRecord`: first seen at `lastSeen`'s
+ * session, frozen at `seenAtRaise`'s price) — a second halving made while the record stood (B1), or a recovery the
+ * record hid (Z1) — and the screen's reference stays the ruled session's price, so a row dated after it that explains the
+ * new record divides it. Otherwise the reference is the last price seen (`screenReference`): a later move is judged
+ * against it, and a split dated after it divides it (Y4). Pure.
+ * @returns {{ screenReference: object|null, stepRecord: object|null }}
+ */
+export function priceMoveReference(symbol, s, { requestKey = null } = {}) {
+  const sym = upper(symbol);
+  const ok = (q) => q !== null && typeof q === 'object' && Number(q.price) > 0 && typeof q.session === 'string';
+  const seen = ok(s?.seenAtRaise) ? s.seenAtRaise : null;
+  if (seen === null) return { screenReference: null, stepRecord: null };
+  const reference = (q) => ({ price: Number(q.price), session: q.session, snapshotKey: q.snapshotKey ?? null, ruling: requestKey });
+  const last = ok(s.lastSeen) && s.lastSeen.session > seen.session ? s.lastSeen : null;
+  if (last === null) return { screenReference: reference(seen), stepRecord: null };
+  const scan = classifyOvernightGaps({ [sym]: { lastMark: Number(seen.price) } }, { symbols: { [sym]: { price: Number(last.price), complete: true } } }, {}, { asOfDate: last.session });
+  const step = scan.suspectedCA.get(sym);
+  if (!step) return { screenReference: reference(last), stepRecord: null };
+  return {
+    screenReference: reference(seen),
+    stepRecord: {
+      symbol: sym, suspectedOn: last.session, since: seen.session, ratio: step.ratio, shape: shapeOf(step.ratio),
+      frozenMark: Number(seen.price), frozenMarkAsOf: seen.vendorTimeIso ?? null, resolvedBy: null, resolvedAt: null,
+      seenAtRaise: last, lastSeen: last, raisedBy: { ruling: requestKey, after: suspicionIdOf(sym, s) },
+    },
+  };
+}
+
 /** What a close's snapshot shows of a symbol, as a mark's provenance would name it — or null with no complete quote. */
-function lastSeenOf(closeSnapshot, sym, date) {
+function quoteSeenOf(closeSnapshot, sym, date) {
   const e = closeSnapshot?.symbols?.[sym];
   if (!e?.complete || !(Number(e.price) > 0)) return null;
   const q = closeMarkQuality(e, date);
@@ -437,7 +493,7 @@ const actionPayloadOf = (row) => JSON.stringify([row.ratio ?? null, row.amount ?
 function conflictingActionIds(rows) {
   const byId = new Map();
   for (const row of rows) {
-    const id = deriveActionId(row);
+    const id = row.actionId ?? deriveActionId(row);
     if (!byId.has(id)) byId.set(id, []);
     byId.get(id).push(row);
   }
@@ -470,8 +526,10 @@ export function unresolvedShareBasis(ledger, actionsBySymbol, { date }) {
   const out = new Map();
   const kind = ledger?.kind ?? null;
   const settled = settledIdsOf(ledger);
-  const due = pendingActionsFor(ledger?.holdings || {}, actionsBySymbol || {}, { onOrBefore: date, appliedIds: settled });
-  for (const a of [...due.pending, ...due.noEntitlementData]) if (SHARE_BASIS_TYPES.has(a.type)) addItem(out, a.ticker, itemOf(a, kind));
+  const due = pendingActionsFor(ledger?.holdings || {}, feedRowsOf(actionsBySymbol), { onOrBefore: date, appliedIds: settled });
+  // F-5: a founder's `split` (its own id) is listed like a feed row.
+  const founder = founderSplitRowsOf(ledger, actionsBySymbol, { date, settled });
+  for (const a of [...due.pending, ...due.noEntitlementData, ...founder]) if (SHARE_BASIS_TYPES.has(a.type)) addItem(out, a.ticker, itemOf(a, kind));
   for (const r of unsettledConflicts(ledger)) if (SHARE_BASIS_TYPES.has(r.type)) addItem(out, r.ticker, itemOf(r, kind));
   // …and (Amendment F-7) every share-basis row recorded as a possible re-date and not settled since: the same split
   // under a moved date, or a second one — the count is in doubt either way until the feed or the founder settles it.
@@ -488,7 +546,7 @@ export function unresolvedShareBasis(ledger, actionsBySymbol, { date }) {
     const s = openBasisSuspicion(h);
     if (!s) continue;
     const key = upper(sym);
-    const listed = due.pending.filter((a) => upper(a.ticker) === key && !conflicted.has(a.actionId));
+    const listed = [...due.pending.filter((a) => upper(a.ticker) === key && !conflicted.has(a.actionId)), ...founder.filter((a) => upper(a.ticker) === key)];
     const recorded = (h.heldActions || []).filter((r) => !r.refused && !settled.has(r.actionId)).map((r) => actionOfRecord(key, r));
     if (typeof date === 'string' && date > s.suspectedOn && [...listed, ...recorded].some((a) => explainsSuspicion(a, s))) continue;
     addItem(out, key, { actionId: suspicionIdOf(key, s), type: SUSPECTED_SPLIT, effectiveDate: s.suspectedOn ?? null, since: s.since ?? null, ledger: kind });
@@ -609,6 +667,66 @@ export function renameDeferralSymbols(ledgers, actionsBySymbol, { date }) {
  *             closedByCash: Array<{ ticker: string, actionId: string, cashUsd: number, realizedPnlUsd: number }>,
  *             delistedWaiting: Array<{ ticker: string, actionId: string, effectiveDate: string, renamedFrom?: string }> }}
  */
+// ── F-5: THE FOUNDER'S `split` (review B2, B5, D5, D6) ─────────────────────────────────────────────────────────────
+
+/** A founder's `split` ruling's action (holdRulings.js): a share-basis row carrying its ruling and its OWN id. */
+export const isFounderSplit = (a) => a?.founderRuling?.kind === 'suspicion' && SHARE_BASIS_TYPES.has(a?.type) && typeof a?.actionId === 'string';
+/** The rows of a feed map that are not a founder's split (the engine derives a row's id; a founder split keeps its own). */
+function feedRowsOf(actionsBySymbol) {
+  if (!actionsBySymbol) return {};
+  return Object.fromEntries(Object.entries(actionsBySymbol).map(([sym, list]) => [sym, (list || []).filter((a) => !isFounderSplit(a))]));
+}
+/** The founder splits of a feed map due on this ledger at `date`: its holding holds the name, and its own id is unsettled. */
+function founderSplitRowsOf(ledger, actionsBySymbol, { date, settled }) {
+  const out = [];
+  for (const list of Object.values(actionsBySymbol || {})) {
+    for (const a of list || []) {
+      if (!isFounderSplit(a)) continue;
+      const sym = upper(a.ticker);
+      if (!ledger?.holdings?.[sym] || typeof a.effectiveDate !== 'string' || a.effectiveDate > date || settled.has(a.actionId)) continue;
+      out.push({ ...a, ticker: sym });
+    }
+  }
+  return out;
+}
+
+/**
+ * THE MOVE A RECORD STILL STANDS FOR (review D5): its recorded price ratio, less what the share-basis rows this ledger has
+ * applied SINCE it was raised, dated inside its gap (after `since`, on or before `suspectedOn`), already account for —
+ * each multiplies the price ratio by its share ratio (shares × r ⇒ price × 1/r). A row applied at the raise's own close is
+ * already in the recorded ratio (the screen reads the state after that close's share-basis rows). Two rows that together
+ * explain the move (T1a-2a Q-V) leave ×1: the count is already right, and a founder split on top would corrupt it. Pure.
+ */
+export function residualMoveOf(ledger, symbol, s) {
+  const sym = upper(symbol);
+  let move = Number(s?.ratio);
+  for (const r of ledger?.corporateActionReceipts || []) {
+    if (r?.applied !== true || !SHARE_BASIS_TYPES.has(r.type) || upper(r.ticker) !== sym) continue;
+    if (!(typeof r.appliedOn === 'string' && r.appliedOn > s.suspectedOn)) continue;
+    if (typeof r.effectiveDate !== 'string' || r.effectiveDate > s.suspectedOn || (typeof s.since === 'string' && r.effectiveDate <= s.since)) continue;
+    move *= Number(r.ratio);
+  }
+  return move;
+}
+
+/**
+ * Why a founder's split is NOT applied on this ledger now, or null (review B2, B5, D5). It is applied only where the
+ * record it was ruled for still stands — or where this close's screen retired that record because this very action
+ * explained it in the dry run (T2A-E01's replacement path) — and only for the move no applied row explains: a row of
+ * this close dated inside the gap, applied first in date order, may already have explained it (B2), and a ledger that
+ * never carried the record has nothing to correct (B5).
+ */
+function founderSplitMoot(ledger, sym, action, date) {
+  const h = ledger?.holdings?.[sym];
+  const id = action.founderRuling?.recordId;
+  const open = openBasisSuspicion(h);
+  let record = open && suspicionIdOf(sym, open) === id ? open : null;
+  if (!record) record = (h?.basisSuspicionHistory || []).find((e) => e?.id === id && e.closedOn === date && e.explainedBy?.actionId === action.actionId) ?? null;
+  if (!record) return 'record_not_open';
+  if (!ratioMatchesMove(action.ratio, residualMoveOf(ledger, sym, record))) return 'ratio_not_residual';
+  return null;
+}
+
 export function applyLedgerActions(ledger, actionsBySymbol, { date, holds = null, deferRenames = null, renameTargetsTaken = null, renameIdsScreened = null, ruledIds = null }) {
   return applyActions(ledger, actionsBySymbol, { date, phase: 'all', holds, deferRenames, renameTargetsTaken, renameIdsScreened, ruledIds });
 }
@@ -624,6 +742,8 @@ function actionOfRecord(symbol, r) {
   if (r.ratio != null) action.ratio = r.ratio;
   if (r.amount != null) action.amount = r.amount;
   if (r.cashPerShare != null) action.cashPerShare = r.cashPerShare;
+  // F-5: an action a founder's ruling supplied, held behind another doubt, keeps its ruling (its receipt names it).
+  if (r.founderRuling) action.founderRuling = r.founderRuling;
   return action;
 }
 
@@ -650,9 +770,13 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
       next.holdings = { ...next.holdings, [sym]: left.length > 0 ? { ...rest, heldActions: left } : rest };
     }
   }
+  // F-5: a founder's `split` keeps its OWN id (review D6: the feed may already have settled the record's split id on
+  // this idea) — it never passes the engine's id derivation, so it never meets the feed's row of that id.
   const { pending, unrecognized, notEntitled, noEntitlementData } = pendingActionsFor(
-    next.holdings, actionsBySymbol, { onOrBefore: date, appliedIds: settled },
+    next.holdings, feedRowsOf(actionsBySymbol), { onOrBefore: date, appliedIds: settled },
   );
+  pending.push(...founderSplitRowsOf(next, actionsBySymbol, { date, settled }));
+  const founderSkips = [];
   const applied = [];
   const declined = [];
   const unresolved = new Set();
@@ -690,7 +814,7 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
   // Every other id is processed at its FIRST row in this call; a repeated row of it is skipped.
   const seen = new Set(conflicting.keys());
   const firstOf = (row) => {
-    const id = deriveActionId(row);
+    const id = row.actionId ?? deriveActionId(row);
     if (seen.has(id)) return false;
     seen.add(id);
     return true;
@@ -800,6 +924,7 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
       actionId: action.actionId, type: action.type, ticker: sym, effectiveDate: action.effectiveDate,
       ratio: action.ratio ?? null, amount: action.amount ?? null, cashPerShare: action.cashPerShare ?? null, source: action.source ?? null,
       heldOn: prior?.heldOn ?? date, heldBecause: causes, ...(refused ? { refused } : {}),
+      ...(action.founderRuling ? { founderRuling: action.founderRuling } : {}),
     };
     const list = [...(h.heldActions || []).filter((r) => r.actionId !== action.actionId), record].sort(byDatePhaseId);
     next.holdings = { ...next.holdings, [sym]: { ...h, heldActions: list } };
@@ -837,6 +962,17 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
     // The dry run (shareBasisHolds) applies share-basis actions only.
     if (!everything && !SHARE_BASIS_TYPES.has(action.type)) continue;
     const sym = upper(action.ticker);
+    // F-5: a founder's split applies only where its record stands, and only for the move left (founderSplitMoot). Not
+    // applied, it settles nothing — the close marks the ruling moot (holdRulings.js markRulingsApplied) — and a held
+    // record of it goes.
+    if (isFounderSplit(action)) {
+      const why = founderSplitMoot(next, sym, action, date);
+      if (why !== null) {
+        founderSkips.push({ actionId: action.actionId, recordId: action.founderRuling.recordId ?? null, requestKey: action.founderRuling.requestKey ?? null, ticker: sym, reason: why });
+        if (next.holdings[sym]?.heldActions?.some((r) => r.actionId === action.actionId)) next.holdings = { ...next.holdings, [sym]: withoutHeld(next.holdings[sym], action.actionId) };
+        continue;
+      }
+    }
     // F-7: one economic action under a moved date is applied once — a row that may be a re-date of one this ledger has
     // applied or holds is recorded, not applied (a cashless delisting, above, applies nothing anyway).
     {
@@ -918,6 +1054,14 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
     }
     // (A late dividend leaves the holding as it was: its count was only read for the payment.)
     if (!late) next.holdings = out.positions;
+    // F-5 (B3): the screen's reference after a `price_move` ruling is a price of its own session — a share-basis action
+    // dated AFTER it divides it as the engine divided the mark; one dated on or before it is already in that price.
+    if (SHARE_BASIS_TYPES.has(action.type)) {
+      const ref = screenReferenceOf(next.holdings[sym]);
+      if (ref && typeof action.effectiveDate === 'string' && action.effectiveDate > ref.session) {
+        next.holdings = { ...next.holdings, [sym]: { ...next.holdings[sym], screenReference: { ...ref, price: Number(ref.price) / Number(action.ratio) } } };
+      }
+    }
     if (heldRecord && next.holdings[sym]) next.holdings = { ...next.holdings, [sym]: withoutHeld(next.holdings[sym], action.actionId) };
     // A share-basis row that EXPLAINS the holding's open suspicion, at a close after the one that raised it, releases it
     // (fix round 3, T2A-D01). F-8: THE RECEIPT LINK, both ways — the record is not deleted but retired into the holding's
@@ -1031,7 +1175,7 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
     for (const sym of unsettledShareBasisSymbols(next, actionsBySymbol, { date })) if (Object.hasOwn(next.holdings, sym)) unresolved.add(sym);
     for (const sym of holds?.keys() || []) if (Object.hasOwn(next.holdings, sym)) unresolved.add(sym);
   }
-  return { ledger: next, applied, declined, unresolved, conflicts, shareBasisChanges, renames, renamesDeferred, renamesBlocked, held, closedByCash, delistedWaiting, redates };
+  return { ledger: next, applied, declined, unresolved, conflicts, shareBasisChanges, renames, renamesDeferred, renamesBlocked, held, closedByCash, delistedWaiting, redates, founderSkips };
 }
 
 /**
@@ -1150,8 +1294,10 @@ export function withCloseMarks(ledger, valuation, { date = null, snapshotKey = n
     const m = valuation.marks[sym];
     if (!m) continue;
     const fresh = m.markSource === 'snapshot';
+    // (F-5: a fresh mark — one this close's screen passed — replaces a `price_move` ruling's screen reference.)
+    const { screenReference: _replaced, ...unreferenced } = h;
     next.holdings[sym] = {
-      ...h,
+      ...(fresh ? unreferenced : h),
       lastMark: m.mark,
       lastMarkAsOf: fresh ? (m.vendorTimeIso ?? h.lastMarkAsOf ?? null) : (h.lastMarkAsOf ?? null),
       lastMarkSource: fresh ? 'snapshot' : m.markSource,
@@ -1228,7 +1374,7 @@ export function saleHeldBackBy(ledger, symbol, snapshot, { sinceDate, date, othe
   }
   const delistedWaiting = holding.exitPending?.reason === 'delisting' || holding.settlementPending?.replacedExit?.reason === 'delisting';
   if (delistedWaiting) return null;
-  const gaps = classifyOvernightGaps(one, snapshot, actionsBySymbol, { sinceDate: sinceDate ?? null, asOfDate: date, excludeActionIds: settled });
+  const gaps = classifyOvernightGaps({ [symbol]: screenHoldingOf(holding) }, snapshot, actionsBySymbol, { sinceDate: sinceDate ?? null, asOfDate: date, excludeActionIds: settled });
   return gaps.frozen.has(symbol) ? 'suspected_corporate_action' : null;
 }
 
@@ -1240,7 +1386,7 @@ export function saleHeldBackBy(ledger, symbol, snapshot, { sinceDate, date, othe
  */
 export function suspectedActionSymbols(ledger, closeSnapshot, actionsBySymbol, { sinceDate, date }) {
   const settled = new Set([...(ledger.appliedActionIds || []), ...(ledger.declinedActionIds || [])]);
-  const scan = classifyOvernightGaps(ledger.holdings, closeSnapshot, actionsBySymbol, {
+  const scan = classifyOvernightGaps(screenView(ledger.holdings), closeSnapshot, actionsBySymbol, {
     sinceDate: sinceDate ?? null, asOfDate: date, excludeActionIds: settled,
   });
   const frozen = new Set(scan.frozen);

@@ -392,7 +392,16 @@ function closeFilledIdea(idea, {
   };
   if (Object.keys(unobservedLineSessions).length > 0 || idea.unobservedLineSessions) next.unobservedLineSessions = unobservedLineSessions;
   // F-5: a ruling whose action is now settled on every ledger that holds its symbol is applied.
-  if (ruled) next = markRulingsApplied(next, { date });
+  if (ruled) {
+    // F-5: a founder split this close found moot on a ledger (its record gone there, or standing for another move now).
+    const skips = new Set();
+    for (const [f, out] of [['ledger', own], ['comparisonLedger', cmp], ['spyLedger', spy]]) {
+      for (const s of out.founderSkips || []) skips.add(`${s.requestKey}@${f}`);
+    }
+    const m = markRulingsApplied(next, { date, skips });
+    next = m.idea;
+    alerts.push(...m.alerts);
+  }
   // F-1: the coverage record, after this close (coverageAfterClose).
   {
     const after = coverageAfterClose(idea, next, { date, observed, coverage, renames: [...own.renames, ...cmp.renames, ...spy.renames] });
@@ -555,10 +564,10 @@ function closeFilledIdea(idea, {
       statusHistory: [...(next.statusHistory || []), { status: IDEA_STATUS.RESULTED, at: nowIso }],
       ledger: { ...next.ledger, cash: 0 },
     };
-    return { nextIdea: next, row, endpointRow, returnedCents: done.returnedCents, resolved: true, ownApplied: own.applied, ownFrozen: ownV.frozen, alerts, coverageChanged: false, referenceMarks: ruled?.referenceMarks ?? new Map() };
+    return { nextIdea: next, row, endpointRow, returnedCents: done.returnedCents, resolved: true, ownApplied: own.applied, ownFrozen: ownV.frozen, alerts, coverageChanged: false };
   }
   const coverageChanged = own.renames.length + cmp.renames.length + spy.renames.length > 0;
-  return { nextIdea: next, row, endpointRow, returnedCents: 0, resolved: false, ownApplied: own.applied, ownFrozen: ownV.frozen, alerts, coverageChanged, referenceMarks: ruled?.referenceMarks ?? new Map() };
+  return { nextIdea: next, row, endpointRow, returnedCents: 0, resolved: false, ownApplied: own.applied, ownFrozen: ownV.frozen, alerts, coverageChanged };
 }
 
 /**
@@ -718,11 +727,6 @@ async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false, w
       });
       nextIdeas.set(idea.ideaId, out.nextIdea);
       ideaRows[idea.ideaId] = out.row;
-      // F-5: a `price_move` ruling set the idea's reference mark on its own holding: the book's position, which mirrors
-      // it, takes the same mark and provenance before the book is marked (the two are reconciled).
-      for (const [sym, ref] of out.referenceMarks) {
-        if (positions[sym]?.ideaId === idea.ideaId) positions = { ...positions, [sym]: { ...positions[sym], ...ref } };
-      }
       alerts.push(...out.alerts);
       if (!out.row.fullQuality) allFullQuality = false;
       for (const sym of out.ownFrozen) frozenBookSymbols.add(sym);
@@ -1014,12 +1018,20 @@ async function closeNextSessionKeepingAlerts(db, bookRef, args, committedAlerts)
  * @returns {Promise<{ complete: boolean, skipped?: string, caughtUp: Array<{ date: string, observed: boolean }>,
  *                     cancelled: string[], resulted: string[], alerts: string[] }>}
  */
-export async function catchUpIdeaBook(db, bookRef, { before, now = new Date(), tick = null } = {}) {
+export async function catchUpIdeaBook(db, bookRef, { before, now = new Date(), tick = null, fetchCorporateActions = undefined, lastCloseKey = undefined } = {}) {
   if (!db || !bookRef) throw new Error('catchUpIdeaBook: db and bookRef required');
   if (typeof before !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(before)) throw new Error('catchUpIdeaBook: before required');
   const out = { complete: false, caughtUp: [], windowsAccounted: [], cancelled: [], resulted: [], alerts: [] };
   // 'off': no Practice Field code path runs, whoever calls. Before any read.
   if (!practiceFieldLive()) return { ...out, skipped: 'practice_field_off' };
+  // Amendment F-1 (review A2): the window's catch-up is usually the FIRST close after an outage — windows run before the
+  // day's close — so it backfills first, as closeIdeaBook does, through `before` (the sessions it closes are earlier).
+  // A caller that has read the book (the window: `lastCloseKey`) spends no read on it when no session was missed.
+  const nothingMissed = lastCloseKey === null || (typeof lastCloseKey === 'string' && !(nextSessionDate(lastCloseKey) < before));
+  if (!nothingMissed) {
+    const backfill = await ensureCoverageBackfills(db, bookRef, { through: before, now, ...(fetchCorporateActions ? { fetchCorporateActions } : {}) });
+    out.alerts.push(...backfill.alerts);
+  }
   for (;;) {
     // `tick`: the window this catch-up runs at, which keeps a receipt of each session it closes (T2B-05).
     const res = await closeNextSessionKeepingAlerts(db, bookRef, { date: before, now, catchUpOnly: true, windowTick: tick }, out.alerts);

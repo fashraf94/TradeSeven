@@ -22,7 +22,7 @@
 //        data covered (`caCoveredThrough`). A session covers a symbol when the data presented to its close is continuous
 //        from the day after `caCoveredThrough` through the session: the session's own daily entry (valid by F-6, its
 //        window reaching back to that day), joined if need be by a successful BACKFILL — the symbol's actions fetched
-//        later, stored where only the idea book reads them (`practiceFieldCaBackfill/{SYM}_{from}`, caBackfill.js).
+//        later, stored where only the idea book reads them (`practiceFieldCaBackfill/{SYM}`, caBackfill.js).
 //        Otherwise the symbol's share basis is in doubt (`caCoverageGaps`), as the T1a-2a class rule holds any doubt.
 //
 // Pure. The collection names appear as literals where they are read (admissionMarks.js, exits.js, close.js), for the
@@ -190,8 +190,9 @@ export function sessionCoverage({ symbol, session, coveredThrough, daily, dailyR
   const none = { readBackfill: false, needsBackfill: false, viaBackfill: false };
   if (!isDate(coveredThrough)) return { covered: false, reason: 'covered_through_unknown', from: null, ...none };
   const from = shiftCalendarDate(coveredThrough, 1);
-  if (coveredThrough >= session) return { covered: true, reason: null, from, ...none };
+  // A snapshot naming another session's layer is not used (F-2) — on the entry session too (review, lens A A4).
   if (!dailyRefOk) return { covered: false, reason: 'snapshot_daily_mismatch', from, ...none };
+  if (coveredThrough >= session) return { covered: true, reason: null, from, ...none };
   const usable = backfill !== null && isDate(backfill.from) && backfill.from <= from;
   const beyondAnyWindow = from < shiftCalendarDate(session, -MANDATE_CA_FETCH_LOOKBACK_DAYS);
   const entry = dailyCoverageOf(daily, symbol);

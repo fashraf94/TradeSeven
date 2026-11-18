@@ -56,10 +56,13 @@ async function setup(contract = {}) {
 }
 
 let restoreMode;
-beforeEach(() => { restoreMode = setPracticeFieldModeForTests('on'); takeSeededDbs(); });
+// No row reaches the vendor (review, lens A N3): a close across a gap longer than the window asks the backfill's fetch,
+// which, with no key, fails at once — whatever key the shell exports.
+beforeEach(() => { restoreMode = setPracticeFieldModeForTests('on'); takeSeededDbs(); vi.stubEnv('EODHD_API_KEY', ''); });
 afterEach(() => {
   restoreMode();
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   for (const db of takeSeededDbs()) {
     expect(saleWordsOnMarkRows(db)).toEqual([]);
     expect(bannedWordsOnResults(db)).toEqual([]);

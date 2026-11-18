@@ -6,7 +6,7 @@
 // PRACTICE_FIELD_WINDOW_MISSED alert is returned per missed window. A window is never recorded as served when its pass
 // errored, and a retry of a served window writes nothing.
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { setPracticeFieldModeForTests } from './mode.js';
 import { admitIdea } from './admission.js';
 import { runIdeaBookEvalPass, runIdeaBookWindow } from './sweep.js';
@@ -33,8 +33,10 @@ async function setup() {
 }
 
 let restore;
-beforeEach(() => { restore = setPracticeFieldModeForTests('on'); });
-afterEach(() => restore());
+// No row reaches the vendor (review, lens A N3): a close across a gap longer than the window asks the backfill's fetch,
+// which, with no key, fails at once — whatever key the shell exports.
+beforeEach(() => { restore = setPracticeFieldModeForTests('on'); vi.stubEnv('EODHD_API_KEY', ''); });
+afterEach(() => { restore(); vi.unstubAllEnvs(); });
 
 describe('the expected windows come from windows.js alone', () => {
   it('a regular session: the engine\'s three slots at their own instants, then the close', () => {

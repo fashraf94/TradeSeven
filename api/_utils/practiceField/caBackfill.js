@@ -25,7 +25,13 @@
 // close call, counted on the day's upstream counter. Nothing is fetched while the data is complete.
 //
 // FENCED: it never throws into the close. A failure is logged and alerted (PRACTICE_FIELD_CA_BACKFILL_FAILED); the
-// close then finds no backfill and the doubt stays — which holds everything that depends on the count.
+// close then finds no backfill and the doubt stays — which holds everything that depends on the count. BOUNDED (review,
+// lens A N2): it runs before the close's transactions, under the cron's lease, so one fetch that has not answered in
+// BACKFILL_FETCH_TIMEOUT_MS is taken as failed, and once BACKFILL_PASS_BUDGET_MS has gone no further symbol is asked
+// this call (each left in doubt, alerted, and asked again at the next close).
+//
+// Reached from closeIdeaBook and from the window's catch-up (catchUpIdeaBook: review A2 — after an outage the window's
+// catch-up is usually the first close, and it closes the gap sessions from the backfill, in order).
 
 import { fetchCorporateActionsEODHD, bumpUpstreamCounter } from '../mandateUniverseSnapshot.js';
 import { MANDATE_CA_FETCH_LOOKBACK_DAYS } from '../mandateConfig.js';
@@ -34,6 +40,16 @@ import { FILLED_IDEA_STATUSES } from './constants.js';
 import { coveredThroughOf, backfillIdOf, successfulBackfill, shiftCalendarDate, heldSymbolsOf } from './dailyCoverage.js';
 
 const LOG_PREFIX = '[PracticeFieldBackfill]';
+/** One fetch that has not answered in this long is taken as failed (its doubt stays). */
+export const BACKFILL_FETCH_TIMEOUT_MS = 20_000;
+/** No further symbol is asked in a pass once this long has gone. */
+export const BACKFILL_PASS_BUDGET_MS = 60_000;
+/** The answer of `promise`, or a failed fetch once `ms` have gone (the request itself is left to end on its own). */
+function withinTimeout(promise, ms) {
+  let timer;
+  const late = new Promise((resolve) => { timer = setTimeout(() => resolve({ actions: [], calls: 0, failed: true, error: `no answer in ${ms} ms` }), ms); });
+  return Promise.race([promise, late]).finally(() => clearTimeout(timer));
+}
 /** The collection the backfill is stored in — named here for readers; the WRITE below names it by its literal. */
 export const BACKFILL_COLLECTION_NAME = 'practiceFieldCaBackfill';
 
@@ -66,8 +82,11 @@ export function backfillNeeds(ideas, through) {
  *
  * @returns {Promise<{ needed: number, fetched: number, failed: number, upstreamCalls: number, alerts: string[] }>}
  */
-export async function ensureCoverageBackfills(db, bookRef, { through, now = new Date(), fetchCorporateActions = fetchCorporateActionsEODHD } = {}) {
+export async function ensureCoverageBackfills(db, bookRef, {
+  through, now = new Date(), fetchCorporateActions = fetchCorporateActionsEODHD, fetchTimeoutMs = BACKFILL_FETCH_TIMEOUT_MS, passBudgetMs = BACKFILL_PASS_BUDGET_MS,
+} = {}) {
   const out = { needed: 0, fetched: 0, failed: 0, upstreamCalls: 0, alerts: [] };
+  const started = Date.now();
   try {
     const bookSnap = await bookRef.get();
     if (!bookSnap.exists || !isIdeaBook(bookSnap.data())) return out;
@@ -88,15 +107,20 @@ export async function ensureCoverageBackfills(db, bookRef, { through, now = new 
       // SPY is in every one — may still need the earlier one).
       const fetchFrom = stored !== null && stored.from < from ? stored.from : from;
       let res;
-      try {
-        res = await fetchCorporateActions(symbol, { from: fetchFrom, to: through });
-      } catch (err) {
-        res = { actions: [], calls: 0, failed: true, error: err?.message ?? String(err) };
+      if (Date.now() - started >= passBudgetMs) {
+        res = { actions: [], calls: 0, failed: true, error: `the pass's ${passBudgetMs} ms budget was spent; asked again at the next close` };
+      } else {
+        try {
+          res = await withinTimeout(Promise.resolve().then(() => fetchCorporateActions(symbol, { from: fetchFrom, to: through })), fetchTimeoutMs);
+        } catch (err) {
+          res = { actions: [], calls: 0, failed: true, error: err?.message ?? String(err) };
+        }
       }
       out.upstreamCalls += Number(res?.calls) || 0;
       const actions = Array.isArray(res?.actions) ? res.actions : [];
       const doc = {
-        schemaVersion: 1, symbol, from: fetchFrom, to: through, failed: res?.failed !== false, actions,
+        // (An answer whose rows are not a list is not a success, whatever it says: lens A N4.)
+        schemaVersion: 1, symbol, from: fetchFrom, to: through, failed: res?.failed !== false || !Array.isArray(res?.actions), actions,
         calls: Number(res?.calls) || 0, fetchedAt: now.toISOString(), source: 'idea_book_backfill',
       };
       if (doc.failed) {

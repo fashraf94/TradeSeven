@@ -1449,7 +1449,8 @@ describe('Fix round 3 — Astra T2A-D01: a gap-screen suspicion is recorded and 
         expect(ledger.holdings.AAPL.basisSuspicion, ledger.kind).toEqual({
           symbol: 'AAPL', suspectedOn: S[1], since: S[0], ratio: 0.5, shape: { kind: 'split', n: 2 }, frozenMark: 100,
           frozenMarkAsOf: before.ledger.holdings.AAPL.lastMarkAsOf, resolvedBy: null, resolvedAt: null,
-          // T1a-2b-3 (F-5): the last price observed while the record stands — here, the one that raised it.
+          // T1a-2b-3 (F-5): the price seen at the session that raised it, and the last one seen while it stands — here the same.
+          seenAtRaise: { session: S[1], price: 50, snapshotKey: `${S[1]}_close`, quality: 'vendor_time', vendorTimeIso: expect.any(String) },
           lastSeen: { session: S[1], price: 50, snapshotKey: `${S[1]}_close`, quality: 'vendor_time', vendorTimeIso: expect.any(String) },
         });
       }
@@ -1822,7 +1823,8 @@ describe('Final fix — Astra T2A-E01: a late split explains the old note while 
         expect(ledger.holdings.AAPL.basisSuspicion, key).toEqual({
           symbol: 'AAPL', suspectedOn: S[2], since: S[0], ratio: 0.5, shape: { kind: 'split', n: 2 }, frozenMark: 50,
           frozenMarkAsOf: ledger.holdings.AAPL.lastMarkAsOf, resolvedBy: null, resolvedAt: null,
-          lastSeen: { session: S[2], price: 25, snapshotKey: `${S[2]}_close`, quality: 'vendor_time', vendorTimeIso: expect.any(String) }, // (F-5)
+          seenAtRaise: { session: S[2], price: 25, snapshotKey: `${S[2]}_close`, quality: 'vendor_time', vendorTimeIso: expect.any(String) }, // (F-5)
+          lastSeen: { session: S[2], price: 25, snapshotKey: `${S[2]}_close`, quality: 'vendor_time', vendorTimeIso: expect.any(String) },
         });
         expect(ledger.holdings.AAPL.heldActions.map((r) => r.actionId), key).toEqual([DIV]);
       }

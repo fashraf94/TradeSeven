@@ -11,12 +11,14 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { setPracticeFieldModeForTests } from './mode.js';
 import { assertReconciled } from './reconcile.js';
 import { admitIdea } from './admission.js';
-import { closeIdeaBook, IDEA_DOC_ALERT_BYTES, ideaDocSizeAlert } from './close.js';
-import { firestoreDocumentBytes } from './evidence.js';
+import { closeIdeaBook, catchUpIdeaBook, IDEA_DOC_ALERT_BYTES, ideaDocSizeAlert } from './close.js';
+import { firestoreDocumentBytes, resultPacketMissingMarks, resultPacketProvenanceProblems } from './evidence.js';
 import { runFounderAction } from './founderControls.js';
 import { parseSplitsPayload, parseDividendsPayload } from '../mandateCorporateActions.js';
 import { fetchCorporateActionsEODHD } from '../mandateUniverseSnapshot.js';
-import { withBasisSuspicions, applyLedgerActions, ledgerOwnDoubtIds, ideaWideDoubtSymbols, saleHeldBackBy } from './ledger.js';
+import { withBasisSuspicions, applyLedgerActions, ledgerOwnDoubtIds, ideaWideDoubtSymbols, saleHeldBackBy, valueLedger } from './ledger.js';
+import { planHoldRuling } from './holdRulings.js';
+import { ledgerEndpoint, ledgerDoubts } from './settlement.js';
 import { dailyDocOf, dailyCoverageOf, sessionCoverage, unionActionsBySymbol, snapshotNamesDaily, DAILY_COVERAGE_REFUSAL } from './dailyCoverage.js';
 import { backfillNeeds, ensureCoverageBackfills } from './caBackfill.js';
 import {
@@ -68,10 +70,13 @@ function plantDaily(db, date, { symbol, entry, docDate } = {}) {
 }
 
 let restoreMode;
-beforeEach(() => { restoreMode = setPracticeFieldModeForTests('on'); takeSeededDbs(); });
+// No row reaches the vendor (review, lens A N3): a close across a gap longer than the window asks the backfill's fetch,
+// which, with no key, fails at once — whatever key the shell exports.
+beforeEach(() => { restoreMode = setPracticeFieldModeForTests('on'); takeSeededDbs(); vi.stubEnv('EODHD_API_KEY', ''); });
 afterEach(() => {
   restoreMode();
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   for (const db of takeSeededDbs()) {
     expect(saleWordsOnMarkRows(db)).toEqual([]);
     expect(bannedWordsOnResults(db)).toEqual([]);
@@ -781,22 +786,84 @@ describe('Amendment F-5 — the founder\'s resolution: resolve_hold', () => {
     expect(ideaOf(ctx).ledger.holdings.AAPL.basisSuspicion).toBeUndefined();
   });
 
-  it('Z1 — a ruling after the price had come back covers only the recorded move: an identical halving at a later close is a NEW record, and a cash delisting then is held (not paid on the old count)', async () => {
-    const ctx = await suspicion(100); // S[2]: back to $100 while the record stands — the last price seen is $100
-    expect(ideaOf(ctx).ledger.holdings.AAPL.basisSuspicion.lastSeen).toMatchObject({ session: S[2], price: 100 });
+  it('Z1 — a ruling covers only the recorded move: the split-shaped move the record hid (the price back to $100 while it stood) is judged at the ruling — a NEW record — so the identical halving after it is never read as the ruled move, and a cash delisting then is held (not paid on the old count)', async () => {
+    const ctx = await suspicion(100); // S[2]: back to $100 while the record stands
+    expect(ideaOf(ctx).ledger.holdings.AAPL.basisSuspicion).toMatchObject({ seenAtRaise: { session: S[1], price: 50 }, lastSeen: { session: S[2], price: 100 } });
     await resolve(ctx, { kind: 'suspicion', recordId: SUSP, decision: 'price_move' });
     // S[3]: AAPL halves again — identical to the ruled move — and a cash delisting is listed. Under the provisional
     // reader this read as the ruled move and paid $5,998.20 on the old count.
-    await closeQ(ctx, S[3], { AAPL: { price: 50, corporateActions: [delist(S[3])] } });
+    const out = await closeQ(ctx, S[3], { AAPL: { price: 50, corporateActions: [delist(S[3])] } });
     const idea = ideaOf(ctx);
+    const step = `suspected_split_AAPL_${S[2]}`;
     for (const f of ['ledger', 'comparisonLedger']) {
       const h = idea[f].holdings.AAPL;
-      expect(h.basisSuspicion, f).toMatchObject({ suspectedOn: S[3], ratio: 0.5, frozenMark: 100 });
-      expect(h.basisSuspicionHistory.map((e) => e.id), f).toEqual([SUSP]);
+      expect(h.basisSuspicion, f).toMatchObject({ suspectedOn: S[2], since: S[1], ratio: 2, frozenMark: 50, raisedBy: { ruling: 'rule-1', after: SUSP } });
+      expect(h.basisSuspicionHistory, f).toEqual([expect.objectContaining({ id: SUSP, ruling: expect.objectContaining({ requestKey: 'rule-1' }), replacedBy: step })]);
       expect(paid(idea[f], 'delisting'), f).toEqual([]);
       expect(h.heldActions.map((r) => r.actionId), f).toContain(`delisting_AAPL_${S[3]}`);
     }
     expect(idea.status).not.toBe('resulted');
+    expect(withoutWindowAlerts(out.alerts).filter((a) => a.startsWith('PRACTICE_FIELD_HOLD_RULING_STEP'))).toHaveLength(2);
+  });
+
+  it('B1 — a second halving made WHILE the record stood is not absorbed by a `price_move` ruling: it is a new record (×0.5, seen S[2]) and the dividend waits; the feed\'s late row for it explains it, and the dividend is paid on the adjusted count — as when the halving comes after the ruling', async () => {
+    const ctx = await suspicion(25); // S[2]: $25 — a second unfed halving while the record stands
+    await resolve(ctx, { kind: 'suspicion', recordId: SUSP, decision: 'price_move' });
+    await closeQ(ctx, S[3], { AAPL: 25 });
+    for (const f of ['ledger', 'comparisonLedger']) {
+      const l = ideaOf(ctx)[f];
+      expect(l.holdings.AAPL.basisSuspicion, f).toMatchObject({ suspectedOn: S[2], since: S[1], ratio: 0.5, frozenMark: 50 });
+      expect(l.holdings.AAPL.shares, f).toBe(199.940017);
+      expect(paid(l), f).toEqual([]);
+    }
+    await closeQ(ctx, S[4], { AAPL: { price: 25, corporateActions: [split(2, S[2])] } });
+    for (const f of ['ledger', 'comparisonLedger']) {
+      const l = ideaOf(ctx)[f];
+      expect(l.holdings.AAPL.basisSuspicion, f).toBeUndefined();
+      expect(l.holdings.AAPL.shares, f).toBe(399.880034);
+      expect(paid(l).map((r) => [r.actionId, r.incomeUsd]), f).toEqual([[`cash_dividend_AAPL_${S[2]}`, 399.88]]);
+    }
+    expect(rowOf(ctx, S[4]).marks.AAPL).toMatchObject({ mark: 25, quality: 'vendor_time' });
+    // The control: the same second halving AFTER the ruling is a record of its own at that close.
+    const ctl = await suspicion();
+    await resolve(ctl, { kind: 'suspicion', recordId: SUSP, decision: 'price_move' });
+    await closeQ(ctl, S[3], { AAPL: 25 });
+    for (const f of ['ledger', 'comparisonLedger']) expect(ideaOf(ctl)[f].holdings.AAPL.basisSuspicion, f).toMatchObject({ suspectedOn: S[3], ratio: 0.5, frozenMark: 50 });
+  });
+
+  it('B3 — a split listed while the record stood is held behind it; after a `price_move` it is applied ONCE, explains the move it made, and nothing is re-suspected — the mark is fresh', async () => {
+    const ctx = await entered();
+    await closeQ(ctx, S[1], { AAPL: 50 }); // the record
+    await closeQ(ctx, S[2], { AAPL: { price: 25, corporateActions: [split(2, S[2])] } }); // a real 2-for-1 a session later, held behind it
+    for (const f of ['ledger', 'comparisonLedger']) expect(ideaOf(ctx)[f].holdings.AAPL.heldActions.map((r) => r.actionId), f).toEqual([`split_AAPL_${S[2]}`]);
+    await resolve(ctx, { kind: 'suspicion', recordId: SUSP, decision: 'price_move' });
+    await closeQ(ctx, S[3], { AAPL: 25 });
+    for (const f of ['ledger', 'comparisonLedger']) {
+      const h = ideaOf(ctx)[f].holdings.AAPL;
+      expect(h.basisSuspicion, f).toBeUndefined();
+      expect(h.shares, f).toBe(399.880034);
+      expect(h.screenReference, f).toBeUndefined(); // replaced by the fresh mark
+    }
+    expect(rowOf(ctx, S[3]).marks.AAPL).toMatchObject({ mark: 25, quality: 'vendor_time' });
+    await closeQ(ctx, S[4], { AAPL: 25.2 });
+    expect(ideaOf(ctx).ledger.holdings.AAPL.basisSuspicion).toBeUndefined();
+  });
+
+  it('D1 — a `price_move` ruling never rewrites the mark: a mark CARRIED at the ruling\'s close still cites the snapshot that priced it, and the result packet at the due session has every endpoint mark and no provenance problem', async () => {
+    const ctx = await suspicion();
+    await resolve(ctx, { kind: 'suspicion', recordId: SUSP, decision: 'price_move' });
+    const { AAPL: _none, ...noAapl } = Q;
+    await closeOn(ctx.db, ctx.bookId, S[3], noAapl); // no AAPL quote at the ruling's close: its mark is carried
+    recon(ctx);
+    expect(rowOf(ctx, S[3]).marks.AAPL).toMatchObject({ markSource: 'carry_over' });
+    expect(ideaOf(ctx).ledger.holdings.AAPL.lastMarkProvenance).toMatchObject({ session: S[0] }); // the snapshot that priced it
+    expect(ideaOf(ctx).ledger.holdings.AAPL.screenReference).toMatchObject({ price: 50, session: S[2], ruling: 'rule-1' });
+    for (let i = 4; i <= 10; i += 1) await closeQ(ctx, S[i], { AAPL: 50 });
+    const base = `mandates/${ctx.bookId}/ideas/${ctx.ideaId}`;
+    const packet = ctx.db._get(`${base}/evidence/result`);
+    expect(packet).toBeTruthy();
+    expect(resultPacketProvenanceProblems(packet)).toEqual([]);
+    expect(resultPacketMissingMarks(packet, ctx.db._get(`${base}/rows/endpoint`))).toEqual([]);
   });
 
   it('Y4 — a listed split applied AFTER the ruling does not re-suspect the ruled move: the reference the ruling set moves with it', async () => {
@@ -1204,5 +1271,209 @@ describe('the review\'s fix round — re-dated and late actions (lens C); covera
     await closeDay(ctx, S[2], { AAPL: 289.34 });
     for (const f of ['ledger', 'comparisonLedger']) expect(sharesOf(ctx, f), f).toBe(r6(shares * 0.8));
     expect(rowOf(ctx, S[2]).marks.AAPL).toMatchObject({ mark: 289.34, quality: 'vendor_time' });
+  });
+});
+
+// ── The review's fix round (§5): F-5's split ruling (lenses B, D) and the endpoint's re-dates (lens D) ─────────────────
+
+describe('the review\'s fix round — the founder\'s split, the move it covers, and the endpoint\'s re-dates', () => {
+  const Q = { AAPL: { price: 100, marketCap: 3e12 }, MSFT: { price: 200, marketCap: 3e12 }, SPY: 500 };
+  const closeQ = async (ctx, date, over = {}) => { const out = await closeOn(ctx.db, ctx.bookId, date, { ...Q, ...over }); recon(ctx); return out; };
+  const UID = 'owner-1';
+  const SUSP = `suspected_split_AAPL_${S[1]}`;
+  const paid = (ledger, type = 'cash_dividend') => ledger.corporateActionReceipts.filter((r) => r.type === type && r.applied === true);
+  let prevEnv;
+  beforeEach(() => { prevEnv = process.env.MANDATE_FOUNDER_UIDS; process.env.MANDATE_FOUNDER_UIDS = UID; });
+  afterEach(() => { if (prevEnv === undefined) delete process.env.MANDATE_FOUNDER_UIDS; else process.env.MANDATE_FOUNDER_UIDS = prevEnv; });
+  const resolve = (ctx, body, { requestKey = 'rule-1', nowIso = etIso(S[3], 8, 0) } = {}) => runFounderAction(ctx.db, { uid: UID, body: { action: 'resolve_hold', requestKey, ideaId: ctx.ideaId, ...body }, nowIso });
+  async function entered() {
+    const { db, bookId, bookRef } = await seedBook();
+    const e = await admitAndEnter(db, bookId, { contract: contractOf(), quotes: Q });
+    const ctx = { db, bookId, bookRef, ideaId: e.ideaId };
+    await closeQ(ctx, S[0]);
+    return ctx;
+  }
+  /** A ledger planted for a pure row: AAPL, 100 shares, a record of a ×0.25 move first seen S[2] (since S[0]). */
+  const recordLedger = (receipts = []) => ({
+    kind: 'idea', reservedCapitalUsd: 10000, cash: 0, costsPaidUsd: 0, dividendsUsd: 0, realizedPnlUsd: 0, saleReceipts: [], declinedActionIds: [],
+    appliedActionIds: receipts.map((r) => r.actionId), corporateActionReceipts: receipts,
+    holdings: { AAPL: { shares: 100, costBasisTotal: 10000, avgCost: 100, lastMark: 100, openedAt: S[0], basisSuspicion: { symbol: 'AAPL', suspectedOn: S[2], since: S[0], ratio: 0.25, shape: { kind: 'split', n: 4 }, frozenMark: 100, resolvedBy: null, resolvedAt: null } } },
+  });
+  const splitReceipt = (date, appliedOn) => ({ actionId: `split_AAPL_${date}`, type: 'split', ticker: 'AAPL', effectiveDate: date, ratio: 2, applied: true, appliedOn });
+  const plan = (ledger, ratio) => planHoldRuling({ ideaId: 'i', founderRulings: [], ledger, comparisonLedger: null, spyLedger: null }, { kind: 'suspicion', recordId: `suspected_split_AAPL_${S[2]}`, decision: 'split', ratio }, { uid: UID, requestKey: 'k', nowIso: etIso(S[4], 8, 0) });
+
+  it('D5 (pure): a founder split must be the move the record STILL stands for — rows applied since inside its gap are counted; with none left (T1a-2a Q-V) it is refused, `price_move` being the ruling', () => {
+    expect(plan(recordLedger(), 4).ruling).toMatchObject({ ratio: 4, actionId: `split_AAPL_${S[2]}`, ledgers: ['ledger'] });
+    // A 2-for-1 dated inside the gap, applied at a close after the record was raised: ×2 is left.
+    expect(plan(recordLedger([splitReceipt(S[1], S[3])]), 4)).toEqual({ error: 'ruling_does_not_match_record', status: 422 });
+    expect(plan(recordLedger([splitReceipt(S[1], S[3])]), 2).ruling).toMatchObject({ ratio: 2 });
+    // One applied at the raise's own close is already in the recorded move.
+    expect(plan(recordLedger([splitReceipt(S[1], S[2])]), 4).ruling).toMatchObject({ ratio: 4 });
+    // Two (Q-V): the count is right; a split on top would corrupt it.
+    expect(plan(recordLedger([splitReceipt(S[1], S[3]), { ...splitReceipt(S[2], S[3]) }]), 4)).toEqual({ error: 'no_residual_move', status: 422 });
+  });
+
+  it('D6: the feed applied a 2-for-1 on the move\'s own session but the move was ×4 — the founder\'s 2-for-1 for the rest takes its OWN id (the record\'s split id is the feed\'s), applies once with a founder receipt, and the held dividend is paid on 799.760068 shares, $799.76', async () => {
+    const ctx = await entered();
+    await closeQ(ctx, S[1], { AAPL: { price: 25, corporateActions: [split(2, S[1])] } }); // ×2 listed; the price says ×4
+    const rec = `suspected_split_AAPL_${S[1]}`;
+    expect(ideaOf(ctx).ledger.holdings.AAPL).toMatchObject({ shares: 399.880034, basisSuspicion: { suspectedOn: S[1], ratio: 0.5 } });
+    await closeQ(ctx, S[2], { AAPL: { price: 25, corporateActions: [dividend(1, S[2])] } });
+    const res = await resolve(ctx, { kind: 'suspicion', recordId: rec, decision: 'split', ratio: 2 });
+    expect(res.status).toBe(200);
+    expect(ideaOf(ctx).founderRulings[0]).toMatchObject({ actionId: `founder_split_AAPL_${S[1]}`, ledgers: ['ledger', 'comparisonLedger'] });
+    await closeQ(ctx, S[3], { AAPL: 25 });
+    for (const f of ['ledger', 'comparisonLedger']) {
+      const l = ideaOf(ctx)[f];
+      expect(l.holdings.AAPL.shares, f).toBe(799.760068);
+      expect(l.holdings.AAPL.basisSuspicion, f).toBeUndefined();
+      expect(l.corporateActionReceipts.find((r) => r.actionId === `founder_split_AAPL_${S[1]}`), f).toMatchObject({ applied: true, ratio: 2, founderRuling: expect.objectContaining({ requestKey: 'rule-1' }), explainedSuspicion: { id: rec } });
+      expect(paid(l).map((r) => [r.actionId, r.incomeUsd]), f).toEqual([[`cash_dividend_AAPL_${S[2]}`, 799.76]]);
+    }
+    expect(bookOf(ctx).portfolio.positions.AAPL.shares).toBe(799.760068);
+    expect(ideaOf(ctx).founderRulings[0]).toMatchObject({ appliedOn: S[3], outcome: 'applied' });
+  });
+
+  it('B2: the feed\'s row for the move, dated inside the gap, arrives at the close the founder\'s split is applied — the row explains the record first, the founder split is MOOT (applied nowhere): one 2-for-1, and the ruling is closed with an alert', async () => {
+    const ctx = await entered();
+    await storeCloseSnapshot(ctx.db, S[1], { ...Q, AAPL: { price: 50, marketCap: 3e12 } });
+    plantDaily(ctx.db, S[1], { symbol: 'AAPL', entry: { sector: null, caFetchFailed: true } }); // S[1] uncovered: no record yet
+    await closeIdeaBook(ctx.db, ctx.bookRef, { date: S[1], now: closeNowOf(S[1]) });
+    recon(ctx);
+    await closeQ(ctx, S[2], { AAPL: 50 }); // the record: first seen S[2], since S[0]
+    const rec = `suspected_split_AAPL_${S[2]}`;
+    expect(ideaOf(ctx).ledger.holdings.AAPL.basisSuspicion).toMatchObject({ suspectedOn: S[2], since: S[0] });
+    expect((await resolve(ctx, { kind: 'suspicion', recordId: rec, decision: 'split', ratio: 2 })).status).toBe(200);
+    const out = await closeQ(ctx, S[3], { AAPL: { price: 50, corporateActions: [split(2, S[1])] } });
+    for (const f of ['ledger', 'comparisonLedger']) {
+      const l = ideaOf(ctx)[f];
+      expect(l.holdings.AAPL.shares, f).toBe(399.880034); // once
+      expect(l.corporateActionReceipts.filter((r) => r.applied && r.type === 'split').map((r) => r.actionId), f).toEqual([`split_AAPL_${S[1]}`]);
+      expect(l.holdings.AAPL.basisSuspicion, f).toBeUndefined();
+      expect(l.holdings.AAPL.basisSuspicionHistory, f).toEqual([expect.objectContaining({ id: rec, explainedBy: expect.objectContaining({ actionId: `split_AAPL_${S[1]}` }) })]);
+    }
+    expect(bookOf(ctx).portfolio.positions.AAPL.shares).toBe(399.880034);
+    expect(ideaOf(ctx).founderRulings[0]).toMatchObject({ appliedOn: S[3], outcome: 'moot' });
+    expect(withoutWindowAlerts(out.alerts).filter((a) => a.startsWith('PRACTICE_FIELD_HOLD_RULING_MOOT'))).toHaveLength(1);
+  });
+
+  it('B5 (pure): a founder split reaches only a ledger that carries its record — one without it applies nothing and reports it moot', () => {
+    const ledger = { ...recordLedger(), holdings: { AAPL: { ...recordLedger().holdings.AAPL, basisSuspicion: undefined } } };
+    delete ledger.holdings.AAPL.basisSuspicion;
+    const action = { type: 'split', ticker: 'AAPL', ratio: 4, effectiveDate: S[2], actionId: `split_AAPL_${S[2]}`, source: 'founder_ruling', founderRuling: { requestKey: 'k', kind: 'suspicion', recordId: `suspected_split_AAPL_${S[2]}`, decision: 'split', by: UID, at: 'x' } };
+    const out = applyLedgerActions(ledger, { AAPL: [action] }, { date: S[3], ruledIds: new Set([action.actionId]) });
+    expect(out.ledger.holdings.AAPL.shares).toBe(100);
+    expect(out.applied).toEqual([]);
+    expect(out.founderSkips).toEqual([expect.objectContaining({ actionId: action.actionId, reason: 'record_not_open' })]);
+    // …and on the ledger that carries it, it applies.
+    const carried = applyLedgerActions(recordLedger(), { AAPL: [action] }, { date: S[3], ruledIds: new Set([action.actionId]) });
+    expect(carried.ledger.holdings.AAPL.shares).toBe(400);
+    expect(carried.founderSkips).toEqual([]);
+  });
+
+  it('B7 / F-8: the founder\'s split explains the record in the dry run and a further move takes its place (T2A-E01) — the retired record names the ruling, and the split\'s receipt names the record', async () => {
+    const ctx = await entered();
+    await closeQ(ctx, S[1], { AAPL: 50 });
+    await closeQ(ctx, S[2], { AAPL: 50 });
+    expect((await resolve(ctx, { kind: 'suspicion', recordId: SUSP, decision: 'split', ratio: 2 })).status).toBe(200);
+    await closeQ(ctx, S[3], { AAPL: 25 });
+    for (const f of ['ledger', 'comparisonLedger']) {
+      const h = ideaOf(ctx)[f].holdings.AAPL;
+      expect(h.shares, f).toBe(399.880034);
+      expect(h.basisSuspicion, f).toMatchObject({ suspectedOn: S[3], ratio: 0.5 });
+      expect(h.basisSuspicionHistory, f).toEqual([expect.objectContaining({ id: SUSP, closedOn: S[3], resolvedBy: UID, resolvedAt: etIso(S[3], 8, 0), ruling: expect.objectContaining({ requestKey: 'rule-1' }), replacedBy: `suspected_split_AAPL_${S[3]}` })]);
+      expect(ideaOf(ctx)[f].corporateActionReceipts.find((r) => r.actionId === `split_AAPL_${S[1]}`), f).toMatchObject({ founderRuling: expect.objectContaining({ requestKey: 'rule-1' }), explainedSuspicion: { id: SUSP } });
+    }
+  });
+
+  it('N1 (pure): a coverage-gap `row` ruling takes a recorded backfill row dated INSIDE the gap only — after its last session it is refused', () => {
+    const idea = { ideaId: 'i', founderRulings: [], ledger: null, comparisonLedger: null, spyLedger: null, caCoverageGaps: { AAPL: { since: S[0], lastSession: S[3], sessions: 3 } } };
+    const backfill = { symbol: 'AAPL', actions: [dividend(1, S[2]), dividend(1, S[5])] };
+    const rule = (actionId) => planHoldRuling(idea, { kind: 'coverage_gap', recordId: `ca_coverage_gap_AAPL_${S[0]}`, decision: 'row', actionId }, { uid: UID, requestKey: 'k', nowIso: etIso(S[4], 8, 0), backfill });
+    expect(rule(`cash_dividend_AAPL_${S[2]}`).ruling).toMatchObject({ row: { effectiveDate: S[2] } });
+    expect(rule(`cash_dividend_AAPL_${S[5]}`)).toEqual({ error: 'row_not_recorded', status: 422 });
+  });
+
+  it('D2 / D3 / D4 (pure): at the endpoint a SHARE-BASIS possible re-date is an unsettled action (the value is in doubt by it) and is named; a dividend\'s re-date is named, with the dividend not paid, and not counted (F-7: it holds nothing)', () => {
+    const ledger = {
+      kind: 'spy', reservedCapitalUsd: 5000, cash: 0, costsPaidUsd: 0, dividendsUsd: 0, realizedPnlUsd: 0, saleReceipts: [], declinedActionIds: [], appliedActionIds: [],
+      holdings: { SPY: { shares: 10, costBasisTotal: 5000, avgCost: 500, lastMark: 500, openedAt: S[0], exitCostTier: 'tier1' } },
+      corporateActionReceipts: [
+        { actionId: `split_SPY_${S[2]}`, type: 'split', ticker: 'SPY', effectiveDate: S[2], ratio: 2, amount: null, applied: false, reason: 'possible_redate', redateOf: `split_SPY_${S[1]}`, seenOn: S[2] },
+        { actionId: `cash_dividend_SPY_${S[3]}`, type: 'cash_dividend', ticker: 'SPY', effectiveDate: S[3], ratio: null, amount: 1.5, applied: false, reason: 'possible_redate', redateOf: `cash_dividend_SPY_${S[2]}`, seenOn: S[3] },
+      ],
+    };
+    const v = valueLedger(ledger, closeSnapshot(S[4], { SPY: 500 }), { sessionDate: S[4] });
+    expect(ledgerEndpoint(ledger, v).unsettledActions).toEqual([`split_SPY_${S[2]}`]);
+    expect(ledgerDoubts(ledger)).toEqual([{
+      symbol: 'SPY',
+      reasons: [
+        { kind: 'possible_redate', actionId: `split_SPY_${S[2]}`, type: 'split', redateOf: `split_SPY_${S[1]}` },
+        { kind: 'possible_redate', actionId: `cash_dividend_SPY_${S[3]}`, type: 'cash_dividend', redateOf: `cash_dividend_SPY_${S[2]}` },
+      ],
+      heldDividends: [{ actionId: `cash_dividend_SPY_${S[3]}`, amount: 1.5, effectiveDate: S[3], heldOn: S[3], possibleRedateOf: `cash_dividend_SPY_${S[2]}` }],
+    }]);
+  });
+});
+
+// ── The review's fix round (§5): lens A — the catch-up's backfill, a bounded backfill, F-2 on the entry session ─────────
+
+describe('the review\'s fix round — coverage (lens A)', () => {
+  /** S[1]…S[6] stored, AAPL's fetch failed on each, none of them closed by the book (a missed-close outage). */
+  async function missedOutage() {
+    const ctx = await setup();
+    for (let i = 1; i <= 6; i += 1) {
+      await storeCloseSnapshot(ctx.db, S[i], quotes());
+      plantDaily(ctx.db, S[i], { symbol: 'AAPL', entry: { sector: null, caFetchFailed: true } });
+    }
+    return ctx;
+  }
+
+  it('A2: the WINDOW\'s catch-up — usually the first close after an outage — backfills first: the gap sessions close from the backfill, in order, and a dividend dated in the gap is paid at its own session\'s close', async () => {
+    const ctx = await missedOutage();
+    const shares = sharesOf(ctx);
+    const fetch = vi.fn(async (sym) => ({ actions: sym === 'AAPL' ? [dividend(0.75, S[2])] : [], calls: 2, failed: false }));
+    const out = await catchUpIdeaBook(ctx.db, ctx.bookRef, { before: S[7], now: new Date(`${S[7]}T15:00:00Z`), fetchCorporateActions: fetch });
+    recon(ctx);
+    expect(out.caughtUp.map((c) => c.date)).toEqual([S[1], S[2], S[3], S[4], S[5], S[6]]);
+    expect(fetch).toHaveBeenCalledWith('AAPL', { from: '2026-11-17', to: S[7] });
+    for (const f of ['ledger', 'comparisonLedger']) {
+      expect(ideaOf(ctx)[f].corporateActionReceipts.find((r) => r.actionId === `cash_dividend_AAPL_${S[2]}`), f).toMatchObject({ applied: true, appliedOn: S[2], incomeUsd: Math.round(shares * 0.75 * 100) / 100 });
+    }
+    for (const d of [S[1], S[2], S[6]]) expect(rowOf(ctx, d).marks.AAPL.quality, d).toBe('vendor_time');
+    expect(ideaOf(ctx).caCoveredThrough.AAPL).toBe(S[6]);
+  });
+
+  it('N2: the backfill is bounded — a fetch with no answer in its time is a failed one (the doubt stays, alerted), and once the pass\'s budget is spent no further symbol is asked', async () => {
+    const ctx = await missedOutage();
+    await storeCloseSnapshot(ctx.db, S[7], quotes());
+    const hung = vi.fn(() => new Promise(() => {}));
+    const res = await ensureCoverageBackfills(ctx.db, ctx.bookRef, { through: S[7], now: closeNowOf(S[7]), fetchCorporateActions: hung, fetchTimeoutMs: 20 });
+    expect(res.failed).toBe(res.needed);
+    expect(res.fetched).toBe(0);
+    expect(res.alerts.some((a) => a.includes('no answer in 20 ms'))).toBe(true);
+    expect(ctx.db._get('practiceFieldCaBackfill/AAPL')).toMatchObject({ failed: true });
+    const asked = vi.fn(async () => ({ actions: [], calls: 2, failed: false }));
+    const spent = await ensureCoverageBackfills(ctx.db, ctx.bookRef, { through: S[7], now: closeNowOf(S[7]), fetchCorporateActions: asked, passBudgetMs: 0 });
+    expect(asked).not.toHaveBeenCalled();
+    expect(spent.alerts.some((a) => a.includes('budget was spent'))).toBe(true);
+  });
+
+  it('N4: an answer whose rows are not a list is a FAILED backfill, whatever it says — the doubt stays', async () => {
+    const ctx = await missedOutage();
+    await storeCloseSnapshot(ctx.db, S[7], quotes());
+    await ensureCoverageBackfills(ctx.db, ctx.bookRef, { through: S[7], now: closeNowOf(S[7]), fetchCorporateActions: async () => ({ actions: 'garbage', calls: 2, failed: false }) });
+    expect(ctx.db._get('practiceFieldCaBackfill/AAPL')).toMatchObject({ failed: true, actions: [] });
+  });
+
+  it('A4 (pure): a snapshot naming another session\'s layer covers nothing — on the entry session too, where the data already covers the session', () => {
+    const daily = { date: S[0], caWindow: { from: '2026-11-11', to: '2026-11-18' }, symbols: { AAPL: { sector: null } } };
+    expect(sessionCoverage({ symbol: 'AAPL', session: S[0], coveredThrough: S[0], daily, dailyRefOk: true })).toMatchObject({ covered: true });
+    expect(sessionCoverage({ symbol: 'AAPL', session: S[0], coveredThrough: S[0], daily, dailyRefOk: false })).toMatchObject({ covered: false, reason: 'snapshot_daily_mismatch' });
+  });
+
+  it('the vendor is never reached from a row (lens A N3): the key is empty, so a backfill the rows did not stub fails at once', async () => {
+    expect(process.env.EODHD_API_KEY).toBe('');
+    await expect(fetchCorporateActionsEODHD('AAPL', { from: S[0], to: S[1] })).rejects.toThrow(/not configured/);
   });
 });

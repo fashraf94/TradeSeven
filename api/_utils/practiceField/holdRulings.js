@@ -7,15 +7,22 @@
 //
 //   suspicion     (a gap-screen record `suspected_split_SYM_<suspectedOn>`)
 //     price_move  the move was real. The record is retired (its history names the ruling); everything it held is
-//                 released, to be paid ONCE on the current count; and the holding's reference mark becomes the last price
-//                 observed while the record stood (`lastSeen` — a quote a stored close snapshot carried; its provenance
-//                 travels with it). So the ruling covers EXACTLY the recorded move: the screen at this close and after
-//                 compares against that price — a later split-shaped gap, an identical one included, is a new record
-//                 (closes Z1); a listed split applied after the ruling adjusts that reference and re-suspects nothing
-//                 (Y4); a later move is judged against it, so a later 2-for-1 is explained by its own row (N3).
-//     split       a split of the founder's ratio — which must match the recorded move's shape — applied ONCE at that
-//                 close on every ledger that holds the name and in the book's mirror, dated the session the move was
-//                 first seen, with a founder receipt; it explains (and retires) the record in the ordinary way.
+//                 released, to be paid ONCE on the current count. The ruling covers EXACTLY the recorded move: the move
+//                 from the price seen at the record's session to the last price seen while it stood is judged by the
+//                 screen (ledger.js priceMoveReference) — a split-shaped one is a NEW record (a second halving while it
+//                 stood, review B1; a recovery it hid, Z1) — and the gap screen's reference becomes the last price seen
+//                 (or, with a new record, the ruled session's), kept beside the mark as `screenReference`: the mark and
+//                 its provenance are not touched (review D1). A later split-shaped gap, an identical one included, is a
+//                 new record (Z1); a split dated after the reference divides it and re-suspects nothing (Y4, B3); a later
+//                 move is judged against it (N3).
+//     split       a split of the founder's ratio — which must match the move the record still stands for (its recorded
+//                 move less what rows applied since inside its gap account for: review D5; none left is refused) —
+//                 dated the session the move was first seen, with a founder receipt, under its own id (the record's
+//                 split id, or `founder_…` when the feed already settled that one: review D6). At the next close it is
+//                 applied ONCE on each ledger whose record still stands, after this close's rows in date order — a row
+//                 that explains the record first leaves it moot (review B2), and a ledger without the record never
+//                 takes it (B5) — and it explains (and retires) the record in the ordinary way. A ruling applied
+//                 nowhere is closed as moot, with an alert, and the founder may rule again.
 //   conflict      (an unsettled `conflicting_action` receipt, or a `possible_redate` one — F-7)
 //     payload     one recorded payload: applied once, in date, phase and id order, replacing whatever rows of that id the
 //                 feed lists — also when the feed has dropped the conflict (C-6);
@@ -31,7 +38,7 @@
 // Pure. The store's reads and writes are founderControls.js's and close.js's.
 
 import {
-  cloneLedger, markProvenance, MARK_PROVENANCE_SOURCE, suspicionIdOf, ratioMatchesMove, CONFLICTING_ACTION, POSSIBLE_REDATE, actionIdOf as deriveActionId,
+  cloneLedger, suspicionIdOf, ratioMatchesMove, residualMoveOf, priceMoveReference, CONFLICTING_ACTION, POSSIBLE_REDATE, actionIdOf as deriveActionId,
 } from './ledger.js';
 import { coverageGapIdOf } from './dailyCoverage.js';
 
@@ -87,12 +94,22 @@ export function planHoldRuling(idea, { kind, recordId, decision, ratio, payload,
     }
     if (open.length === 0) return retired ? { error: 'record_already_resolved', status: 409 } : { error: 'record_not_found', status: 404 };
     const { sym, s } = open[0];
+    const ledgers = [...new Set(open.map((o) => o.f))];
+    let split = null;
     if (decision === 'split') {
-      // The founder's ratio is the share multiplier (2 for a 2-for-1); it must be the split the recorded move shows.
+      // The founder's ratio is the share multiplier (2 for a 2-for-1); it must be the split of the move the record STILL
+      // stands for on every ledger that carries it (review D5): rows applied since inside its gap are already counted.
       if (!(typeof ratio === 'number' && Number.isFinite(ratio) && ratio > 0 && ratio !== 1)) return { error: 'ratio_invalid', status: 400 };
-      if (!open.every((o) => ratioMatchesMove(ratio, o.s.ratio))) return { error: 'ruling_does_not_match_record', status: 422 };
+      for (const o of open) {
+        const residual = residualMoveOf(idea[o.f], o.sym, o.s);
+        if (ratioMatchesMove(1, residual)) return { error: 'no_residual_move', status: 422 };
+        if (!ratioMatchesMove(ratio, residual)) return { error: 'ruling_does_not_match_record', status: 422 };
+      }
+      // Its own id (review D6): the record's split id, unless the feed already settled that id on a ledger carrying it.
+      const derived = deriveActionId({ type: ratio > 1 ? 'split' : 'reverse_split', ticker: sym, effectiveDate: s.suspectedOn });
+      split = { ratio, actionId: open.some((o) => settledIdsOf(idea[o.f]).has(derived)) ? `founder_${derived}` : derived };
     }
-    return { ruling: { ...base, symbol: sym, ...(decision === 'split' ? { ratio } : {}), covers: { suspectedOn: s.suspectedOn, since: s.since ?? null, ratio: s.ratio, frozenMark: s.frozenMark } } };
+    return { ruling: { ...base, symbol: sym, ledgers, ...(split ?? {}), covers: { suspectedOn: s.suspectedOn, since: s.since ?? null, ratio: s.ratio, frozenMark: s.frozenMark } } };
   }
 
   if (kind === 'conflict') {
@@ -127,7 +144,8 @@ export function planHoldRuling(idea, { kind, recordId, decision, ratio, payload,
     if (typeof actionId !== 'string') return { error: 'action_id_invalid', status: 400 };
     // One RECORDED backfill row of the symbol, dated inside the gap.
     const rows = Array.isArray(backfill?.actions) && upper(backfill?.symbol) === sym ? backfill.actions : [];
-    const a = rows.find((x) => isPlain(x) && upper(x.ticker) === sym && deriveActionId(x) === actionId && typeof x.effectiveDate === 'string' && x.effectiveDate > gap.since);
+    const a = rows.find((x) => isPlain(x) && upper(x.ticker) === sym && deriveActionId(x) === actionId && typeof x.effectiveDate === 'string' && x.effectiveDate > gap.since
+      && (typeof gap.lastSession !== 'string' || x.effectiveDate <= gap.lastSession));
     if (!a) return { error: 'row_not_recorded', status: 422 };
     row = { type: a.type, ticker: sym, effectiveDate: a.effectiveDate, ...(a.ratio != null ? { ratio: a.ratio } : {}), ...(a.amount != null ? { amount: a.amount } : {}), source: a.source ?? null };
   }
@@ -136,13 +154,13 @@ export function planHoldRuling(idea, { kind, recordId, decision, ratio, payload,
 
 /**
  * APPLY THE PENDING RULINGS of an idea at an OBSERVED close of `date` (see the header). Pure. Returns the idea with
- * what the rulings change before the close's actions — retired suspicions, reference marks, declines — and what the
- * close must add: action rows by symbol (each with its `founderRuling`), their ids (`ruledIds`: not re-date-screened),
- * coverage overrides, and the reference marks the book's positions take.
+ * what the rulings change before the close's actions — retired suspicions and their screen references, declines — and
+ * what the close must add: action rows by symbol (each with its `founderRuling`), their ids (`ruledIds`: not
+ * re-date-screened), the feed ids they replace, and coverage overrides.
  */
 export function applyFounderRulings(idea, { date }) {
   const pending = pendingRulings(idea);
-  const out = { idea, extraActions: {}, ruledIds: new Set(), replacedIds: new Set(), coveredThroughOverrides: new Map(), referenceMarks: new Map(), applied: [], alerts: [] };
+  const out = { idea, extraActions: {}, ruledIds: new Set(), replacedIds: new Set(), coveredThroughOverrides: new Map(), applied: [], alerts: [] };
   if (pending.length === 0) return out;
   const next = { ...idea };
   for (const f of LEDGERS) if (next[f]) next[f] = cloneLedger(next[f]);
@@ -151,7 +169,7 @@ export function applyFounderRulings(idea, { date }) {
   const addAction = (sym, action, r) => {
     const a = { ...action, ticker: sym, source: 'founder_ruling', founderRuling: receiptOf(r) };
     (out.extraActions[sym] = out.extraActions[sym] || []).push(a);
-    out.ruledIds.add(deriveActionId(a));
+    out.ruledIds.add(a.actionId ?? deriveActionId(a));
   };
 
   for (const r of pending) {
@@ -163,23 +181,28 @@ export function applyFounderRulings(idea, { date }) {
         if (!isPlain(h?.basisSuspicion) || suspicionIdOf(r.symbol, h.basisSuspicion) !== r.recordId) continue;
         found = true;
         if (r.decision === 'split') continue; // the split explains and retires it, in the close's own order
-        // price_move: retired, naming the ruling; the reference becomes the last price observed while it stood.
+        // price_move: retired, naming the ruling; the move seen since is judged (priceMoveReference) — a new record if it
+        // is split-shaped — and the screen takes its reference.
         const s = h.basisSuspicion;
         const { basisSuspicion: _retired, ...rest } = h;
-        const retired = { ...s, id: r.recordId, closedOn: date, resolvedBy: r.by, resolvedAt: r.at, ruling: receiptOf(r) };
-        const seen = s.lastSeen && Number(s.lastSeen.price) > 0 ? s.lastSeen : null;
-        const reference = seen ? {
-          lastMark: Number(seen.price),
-          lastMarkAsOf: seen.vendorTimeIso ?? rest.lastMarkAsOf ?? null,
-          lastMarkSource: 'snapshot',
-          lastMarkProvenance: markProvenance({ source: MARK_PROVENANCE_SOURCE.CLOSE, symbol: r.symbol, session: seen.session, snapshotKey: seen.snapshotKey, quality: seen.quality, vendorTimeIso: seen.vendorTimeIso }),
-        } : {};
-        l.holdings[r.symbol] = { ...rest, ...reference, basisSuspicionHistory: [...(rest.basisSuspicionHistory || []), retired] };
-        if (f === 'ledger' && seen) out.referenceMarks.set(r.symbol, reference);
+        const { screenReference, stepRecord } = priceMoveReference(r.symbol, s, { requestKey: r.requestKey });
+        const retired = {
+          ...s, id: r.recordId, closedOn: date, resolvedBy: r.by, resolvedAt: r.at, ruling: receiptOf(r),
+          ...(stepRecord ? { replacedBy: suspicionIdOf(r.symbol, stepRecord) } : {}),
+        };
+        l.holdings[r.symbol] = {
+          ...rest, ...(screenReference ? { screenReference } : {}), ...(stepRecord ? { basisSuspicion: stepRecord } : {}),
+          basisSuspicionHistory: [...(rest.basisSuspicionHistory || []), retired],
+        };
+        if (stepRecord) out.alerts.push(`PRACTICE_FIELD_HOLD_RULING_STEP ${idea.ideaId} ${f} ${r.symbol} ${r.recordId} — the founder's price_move ruling (${r.requestKey}) covers the recorded move only: the price then moved again with a split's shape (×${stepRecord.ratio}, seen ${stepRecord.suspectedOn}) while the record stood — a new record, ${suspicionIdOf(r.symbol, stepRecord)}`);
       }
       if (r.decision === 'split' && found) {
         const ratio = Number(r.ratio);
-        addAction(r.symbol, { type: ratio > 1 ? 'split' : 'reverse_split', ratio, effectiveDate: r.covers.suspectedOn }, r);
+        const derived = deriveActionId({ type: ratio > 1 ? 'split' : 'reverse_split', ticker: r.symbol, effectiveDate: r.covers.suspectedOn });
+        const actionId = typeof r.actionId === 'string' ? r.actionId : derived;
+        addAction(r.symbol, { type: ratio > 1 ? 'split' : 'reverse_split', ratio, effectiveDate: r.covers.suspectedOn, actionId }, r);
+        // The feed's rows of the record's split id do not meet the founder's at this close (it stands for them).
+        if (actionId === derived) out.replacedIds.add(derived);
         continue; // applied when the split is (close.js marks it)
       }
       appliedNow.add(r.requestKey);
@@ -219,20 +242,39 @@ export function applyFounderRulings(idea, { date }) {
 /**
  * After the close applied its actions: a ruling whose ACTION (a founder split, a chosen payload, a backfill row) is now
  * settled on every ledger of the idea that holds its symbol is applied (`appliedOn`); one held behind another doubt stays
- * pending. Pure.
+ * pending. A founder SPLIT is done on each ledger that carried its record (`ledgers`) once it was applied there, or the
+ * record no longer stands there (a row explained it first), or this close found it moot there (`skips`:
+ * `<requestKey>@<ledger field>`, applyActions' founderSkips). Done everywhere with no founder receipt, it is closed as
+ * MOOT (`outcome`), with an alert: the record, if it still stands, takes a new ruling. Pure.
+ * @returns {{ idea: object, alerts: string[] }}
  */
-export function markRulingsApplied(idea, { date }) {
+export function markRulingsApplied(idea, { date, skips = new Set() }) {
   const rulings = idea?.founderRulings || [];
-  if (!rulings.some((r) => r && r.appliedOn == null)) return idea;
+  const alerts = [];
+  if (!rulings.some((r) => r && r.appliedOn == null)) return { idea, alerts };
   const marked = rulings.map((r) => {
     if (!r || r.appliedOn != null) return r;
+    if (r.kind === 'suspicion' && r.decision === 'split') {
+      const actionId = typeof r.actionId === 'string' ? r.actionId : deriveActionId({ type: Number(r.ratio) > 1 ? 'split' : 'reverse_split', ticker: r.symbol, effectiveDate: r.covers.suspectedOn });
+      const states = (Array.isArray(r.ledgers) ? r.ledgers : LEDGERS).map((f) => {
+        const l = idea[f];
+        if (!l) return 'gone';
+        if ((l.corporateActionReceipts || []).some((x) => x?.actionId === actionId && x.applied === true)) return 'applied';
+        const s = l.holdings?.[r.symbol]?.basisSuspicion;
+        if (!(isPlain(s) && suspicionIdOf(r.symbol, s) === r.recordId)) return 'gone';
+        return skips.has(`${r.requestKey}@${f}`) ? 'moot' : 'pending';
+      });
+      if (states.includes('pending')) return r;
+      if (states.includes('applied')) return { ...r, appliedOn: date, outcome: 'applied' };
+      alerts.push(`PRACTICE_FIELD_HOLD_RULING_MOOT ${idea.ideaId} ${r.recordId} — the founder's split (${r.requestKey}) was applied on no ledger: ${states.includes('moot') ? 'the record stands for a different move now (rows applied since inside its gap)' : 'a row explained the record first'}; nothing was changed — a record still standing takes a new ruling`);
+      return { ...r, appliedOn: date, outcome: 'moot' };
+    }
     let id = null;
-    if (r.kind === 'suspicion' && r.decision === 'split') id = deriveActionId({ type: Number(r.ratio) > 1 ? 'split' : 'reverse_split', ticker: r.symbol, effectiveDate: r.covers.suspectedOn });
-    else if (r.kind === 'conflict' && r.decision === 'payload') id = r.recordId;
+    if (r.kind === 'conflict' && r.decision === 'payload') id = r.recordId;
     if (id === null) return r;
     const holders = LEDGERS.map((f) => idea[f]).filter((l) => l && Object.hasOwn(l.holdings || {}, r.symbol));
     const settledEverywhere = holders.every((l) => settledIdsOf(l).has(id));
     return settledEverywhere ? { ...r, appliedOn: date } : r;
   });
-  return { ...idea, founderRulings: marked };
+  return { idea: { ...idea, founderRulings: marked }, alerts };
 }

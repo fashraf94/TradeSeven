@@ -42,7 +42,8 @@ import {
 import { PracticeFieldError } from './errors.js';
 import { modelledSaleProceeds, isCostTier, costTierOf } from './fills.js';
 import { fundOf, frictionForSymbol } from './symbols.js';
-import { unsettledConflicts, heldActionRecords, basisSuspicionRecords } from './ledger.js';
+import { unsettledConflicts, heldActionRecords, basisSuspicionRecords, unsettledRedates } from './ledger.js';
+const SHARE_BASIS_TYPES = new Set(['split', 'reverse_split', 'stock_distribution']);
 import { coverageGapIdOf } from './dailyCoverage.js';
 import { toCents, fromCents } from './money.js';
 
@@ -201,8 +202,12 @@ export function ledgerEndpoint(ledger, valuation, { coverageGaps = null } = {}) 
   // (fix round 3, T2A-D01): the value is in doubt by it.
   // …and (T1a-2b-3, Amendment F-1) every open coverage gap of a symbol this ledger holds: the session's data did not
   // cover it, so what it is owed cannot be known.
+  // …and (Amendment F-7; review D2, D3) every SHARE-BASIS row recorded as a possible re-date and not settled: the count
+  // is in doubt by it, as the close and the sale already hold. (A cash dividend's re-date holds nothing — F-7 — and is
+  // named, not counted: ledgerDoubts.)
   const unsettledActions = [
     ...unsettledConflicts(ledger).map((r) => r.actionId), ...heldActionRecords(ledger).map((r) => r.actionId), ...basisSuspicionRecords(ledger).map((r) => r.actionId),
+    ...unsettledRedates(ledger).filter((r) => SHARE_BASIS_TYPES.has(r.type)).map((r) => r.actionId),
     ...Object.keys(ledger.holdings || {}).sort().filter((sym) => coverageGaps?.[sym]).map((sym) => coverageGapIdOf(sym, coverageGaps[sym].since)),
   ];
   let marksFullQuality = true;
@@ -258,6 +263,7 @@ export function ledgerEndpoint(ledger, valuation, { coverageGaps = null } = {}) 
 export function ledgerDoubts(ledger, { coverageGaps = null } = {}) {
   const upper = (s) => String(s || '').trim().toUpperCase();
   const held = heldActionRecords(ledger);
+  const redates = unsettledRedates(ledger);
   const out = [];
   for (const sym of Object.keys(ledger?.holdings || {}).sort()) {
     const reasons = [
@@ -265,10 +271,17 @@ export function ledgerDoubts(ledger, { coverageGaps = null } = {}) {
       ...held.filter((r) => r.symbol === sym).map((r) => ({ kind: r.refused ? 'refused_action' : 'held_action', actionId: r.actionId, type: r.type, ...(r.refused ? { refused: r.refused } : {}) })),
       ...basisSuspicionRecords(ledger).filter((s) => s.symbol === sym).map((s) => ({ kind: 'suspected_split', actionId: s.actionId, suspectedOn: s.suspectedOn ?? null })),
       ...(coverageGaps?.[sym] ? [{ kind: 'ca_coverage_gap', actionId: coverageGapIdOf(sym, coverageGaps[sym].since), since: coverageGaps[sym].since ?? null }] : []),
+      // F-7 (review D2, D4): a row recorded as a possible re-date and not settled — a split's puts the count in doubt; a
+      // dividend's is one not paid, waiting for the founder. Both are named.
+      ...redates.filter((r) => upper(r.ticker) === sym).map((r) => ({ kind: 'possible_redate', actionId: r.actionId, type: r.type ?? null, redateOf: r.redateOf ?? null })),
     ];
     if (reasons.length === 0) continue;
-    const heldDividends = held.filter((r) => r.symbol === sym && r.type === 'cash_dividend')
-      .map((r) => ({ actionId: r.actionId, amount: r.amount ?? null, effectiveDate: r.effectiveDate ?? null, heldOn: r.heldOn ?? null }));
+    const heldDividends = [
+      ...held.filter((r) => r.symbol === sym && r.type === 'cash_dividend')
+        .map((r) => ({ actionId: r.actionId, amount: r.amount ?? null, effectiveDate: r.effectiveDate ?? null, heldOn: r.heldOn ?? null })),
+      ...redates.filter((r) => upper(r.ticker) === sym && r.type === 'cash_dividend')
+        .map((r) => ({ actionId: r.actionId, amount: r.amount ?? null, effectiveDate: r.effectiveDate ?? null, heldOn: r.seenOn ?? null, possibleRedateOf: r.redateOf ?? null })),
+    ];
     out.push({ symbol: sym, reasons, heldDividends });
   }
   return out;

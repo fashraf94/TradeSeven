@@ -214,7 +214,7 @@ export async function runIdeaBookWindow(db, { bookRef, tick, now = new Date() })
   if (last === null || next === null || next < tick.date) {
     let caught;
     try {
-      caught = await catchUpIdeaBook(db, bookRef, { before: tick.date, now, tick });
+      caught = await catchUpIdeaBook(db, bookRef, { before: tick.date, now, tick, lastCloseKey: last });
     } catch (err) {
       console.error(`${LOG_PREFIX} idea book ${bookRef.id} catch-up failed before ${tick.tickKey}: ${err.message}`);
       return { ...out, complete: false, skipped: 'catch_up_failed', errors: 1 };
