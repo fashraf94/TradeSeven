@@ -701,6 +701,36 @@ describe('B5 — before the switch (§B13): the theme, the save while a step run
     expect(recordOf(id).state).toBe('completed');
   });
 
+  it('review B4 (T-4): a running step is named before the rev — a stale rev answers step_in_flight, as the card route does', async () => {
+    const { id, rev } = await toReady();
+    const doc = sessionDoc(id);
+    env.store.set(`sharedResearchSessions/${id}`, { ...doc, lastStep: running(new Date().toISOString()) });
+    const writes = env.writes.length;
+    const save = await post({ action: 'adopt', sessionId: id, rev: rev - 1 });
+    const tap = await card(id, 92, 'set', 'timeFrame', 'swing', rev - 1);
+    expect([save.statusCode, save.body.error, tap.statusCode, tap.body.error]).toEqual([409, 'step_in_flight', 409, 'step_in_flight']);
+    expect(env.writes.length).toBe(writes);
+  });
+
+  it('review B2 (T-2): a story with no theme and the segment skipped searches its question, not an empty subject', async () => {
+    const r0 = await post({ action: 'open', requestId: 'req-story-b2', entry: { kind: 'item', itemRef: { recordKind: 'fantasyTimesStories', recordId: 'story-1' }, question: 'Which companies earn from this?' } });
+    const id = r0.body.session.sessionId;
+    let rev = r0.body.thesis.rev;
+    const v = await build(id, 1, 'verify_source', out({ reply: 'The story matches its source.' })); // no theme suggestion
+    expect(v.body.thesis.parts.theme.state).toBe('unset');
+    rev = v.body.thesis.rev;
+    const skip = await card(id, 1, 'set', 'segment', 'skip', rev);
+    rev = skip.body.thesis.rev;
+    const n = await build(id, 2, 'find_names', NAMES());
+    expect(n.statusCode, JSON.stringify(n.body)).toBe(200);
+    expect(state.retrievals.at(-1).focus).toBeNull();
+    rev = n.body.thesis.rev;
+    await card(id, 2, 'set', 'names', ['NVDA'], rev);
+    const w = await build(id, 3, 'build_why', WHY());
+    expect(w.statusCode, JSON.stringify(w.body)).toBe(200);
+    expect(state.retrievals.at(-1).focus).toBe('NVDA revenue exposure');
+  });
+
   it('T-4: a running step found at once is refused the same way, and the card route agrees', async () => {
     const { id, rev } = await toReady();
     const doc = sessionDoc(id);

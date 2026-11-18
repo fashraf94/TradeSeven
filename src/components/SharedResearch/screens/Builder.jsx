@@ -179,11 +179,19 @@ function BuilderWork({ sr, agentName, phone, wide, open, viewingEarlier, onBackT
   const askFor = (where) => (open && clearAsk?.where === where
     ? <ClearConfirm choice={clearAsk.choice} disabled={busy} onConfirm={confirmClear} onCancel={() => setClearAsk(null)} />
     : null);
-  // the panel's close puts focus back on its part (review 4C-1)
+  // the panel's close puts focus back on what opened it (review 4C-1): its part, or the theme line's "Write your own"
+  // (§B13 T-6, review B6 — a suggested theme has no slot in the server's sentence)
+  const openerRef = useRef(null);
+  const tapPart = (part) => { openerRef.current = null; setTapped(part); };
   const closePanel = () => {
     const part = tapped;
+    const opener = openerRef.current;
+    openerRef.current = null;
     setTapped(null);
-    setTimeout(() => cardRef.current?.querySelector(`[data-sr-slot="${part}"]`)?.focus({ preventScroll: true }), 0);
+    setTimeout(() => {
+      const back = opener?.isConnected ? opener : cardRef.current?.querySelector(`[data-sr-slot="${part}"]`);
+      back?.focus({ preventScroll: true });
+    }, 0);
   };
   useFootRoom(footRef, { top: wide ? 0 : STRIP_ROOM, active: open, anchorRef: cardRef, present: hasComposer });
   const research = (g) => sr.buildStep({ goal: g.goal, part: g.part ?? null });
@@ -212,7 +220,7 @@ function BuilderWork({ sr, agentName, phone, wide, open, viewingEarlier, onBackT
         <CardHead thesis={thesis} stepsLeft={stepsLeft} more={more('card')} />
         <Rail thesis={thesis} working={working} />
       </div>
-      <Sentence thesis={thesis} working={working} tapped={tapped} onTap={setTapped} panelId={panelId} agentName={agentName} />
+      <Sentence thesis={thesis} working={working} tapped={tapped} onTap={tapPart} panelId={panelId} agentName={agentName} />
       {panel && (
         <PartPanel id={panelId} part={tapped} thesis={thesis} companies={companies} byId={byId} agentName={agentName} onClose={closePanel}
           change={open ? panel.change : null} onChange={() => onFree(panel.change)}>
@@ -232,7 +240,7 @@ function BuilderWork({ sr, agentName, phone, wide, open, viewingEarlier, onBackT
       {askFor('card')}
       {['set', 'stale'].includes(thesis.parts?.why?.state) && <WhyBlock thesis={thesis} agentName={agentName} folded={foot.part !== null && foot.part !== 'why'} />}
       <div style={{ ...S.row, justifyContent: 'flex-end' }}>
-        {open && revisedWhyChoiceOf(thesis) && tapped !== 'why' && <LinkButton onClick={() => setTapped('why')} attrs={{ 'data-sr-revised-waiting': '' }}>{B.revisedWaiting}</LinkButton>}
+        {open && revisedWhyChoiceOf(thesis) && tapped !== 'why' && <LinkButton onClick={() => tapPart('why')} attrs={{ 'data-sr-revised-waiting': '' }}>{B.revisedWaiting}</LinkButton>}
         {(thesis.filled ?? 0) > 1 && <LinkButton onClick={onAllEvidence} attrs={{ 'data-sr-all-evidence-open': '' }}>{`${B.allEvidence} ›`}</LinkButton>}
       </div>
     </section>
@@ -288,7 +296,8 @@ function BuilderWork({ sr, agentName, phone, wide, open, viewingEarlier, onBackT
       {running && <Running attrs={{ 'data-sr-working': '' }}>{B.workingLine(agentName)}</Running>}
       {!running && themeLine && (
         <ThemeLine confirm={themeLine.confirm} disabled={busy} onConfirm={() => onFreeInChoices(themeLine.confirm)}
-          onWriteOwn={themeLine.text ? () => setTapped('theme') : null} />
+          onWriteOwn={themeLine.text ? (e) => { openerRef.current = e?.currentTarget ?? null; setTapped('theme'); } : null}
+          expanded={tapped === 'theme'} controls={panelId} />
       )}
       {!running && staleRunning && (
         <Notice role="status" tone="gold" attrs={{ 'data-sr-was-running': '' }}>

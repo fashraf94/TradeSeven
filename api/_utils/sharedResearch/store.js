@@ -777,6 +777,9 @@ export async function adoptThesis(db, { uid, sessionId, rev, statement = null, c
   const saved = savedAs(record);
   if (saved) return saved;
   if (!record || record.state !== 'open') throw refuse(409, 'session_not_open');
+  // §B13 T-4: a running step is named before the rev and readiness here too, so the save answers as the card route does
+  // (review B4); the check inside the transaction below is the one that holds against a step that starts meanwhile
+  if (isStaleRunning(session.lastStep, Date.parse(nowIso)) === false && session.lastStep?.status === 'running') throw refuse(409, 'step_in_flight');
   const plan = thesisAdoptionOf({ session, record, companies: companiesFor(record), rev, statement });
   return commitAdoption(db, {
     uid, sessionId, record, input: plan.input, selected: plan.selected, adapter, mintId, exchangeOf, nowIso, collisionCode: 'card_stale',

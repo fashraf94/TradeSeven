@@ -251,12 +251,14 @@ describe('§B13 T-3 — two short sentences', () => {
     const short = 'The idea splits into chips and power. I would stand on the chips.';
     expect(validate(base({ reply: short, segments: MAP.map((m) => ({ label: m.label, line: m.line, refs: [] })) }), { goal: 'map_segments', card: openingCardOf({ entryKind: 'observation', observation: OBS }) }).reply).toBe(short);
   });
-  it('a first sentence longer than 320 is cut at its last space before 320 (never inside a word)', () => {
+  // review A2 (moved from the validator keeping the word-boundary cut): the model's run-on reply is now replaced (below);
+  // cutAtSentence's own fallback, which the unsourced-line path still uses, cuts at the last space, never inside a word
+  it('cutAtSentence: a first sentence longer than the limit is cut at its last space (never inside a word)', () => {
     const one = `${'Nvidia sells accelerators to the cloud companies building data centers '.repeat(6)}today.`;
-    const v = validate(base({ reply: one, segments: MAP.map((m) => ({ label: m.label, line: m.line, refs: [] })) }), { goal: 'map_segments', card: openingCardOf({ entryKind: 'observation', observation: OBS }) });
-    expect(v.reply.length).toBeLessThanOrEqual(320);
-    expect(one.startsWith(v.reply)).toBe(true);
-    expect(one[v.reply.length]).toBe(' ');
+    const cut = cutAtSentence(one, 320);
+    expect(cut.length).toBeLessThanOrEqual(320);
+    expect(one.startsWith(cut)).toBe(true);
+    expect(one[cut.length]).toBe(' ');
   });
   it('the server\'s own lines may take the whole to 600: a cut reply plus the unsourced line', () => {
     const card = cardOf({ theme: 'unset', segment: 'set', names: 'set' });
@@ -330,5 +332,69 @@ describe('§B13 T-5 — the newer time-frame answer wins', () => {
     expect(c.pick).toBeNull();
     expect(c.timeFrame.suggestion).toMatchObject({ value: 'positional' });
     expect(confirmOf(c)).toEqual([{ op: 'confirm', part: 'timeFrame', value: 'positional' }]);
+  });
+});
+
+// ── the review's fixes (report §7) ──────────────────────────────────────────────
+
+const mapOut = (over = {}) => base({
+  reply: 'The idea splits into chips and the power behind them. I would stand on the chips.',
+  segments: MAP.map((m) => ({ label: m.label, line: m.line, refs: [] })), pick: { value: 'GPUs and accelerators', reason: 'Sales tie to it most directly.' }, ...over,
+});
+const openCard = () => openingCardOf({ entryKind: 'observation', observation: OBS });
+
+describe('review A1 (T-1): the player\'s own words never come back as the agent\'s suggestion', () => {
+  it.each([[OBS], ['  i want to PLAY ai. '], ['I want to play AI!']])('a suggestion of %j — the player\'s words — is dropped; nothing lands on the theme', (t) => {
+    const v = validate(mapOut({ themeSuggestion: t }), { goal: 'map_segments', card: openCard() });
+    expect(v.ok, JSON.stringify(v)).toBe(true);
+    expect(v.notes).toContain('dropped:themeSuggestion:player_words');
+    expect(v.proposals.themeSuggestion).toBeNull();
+    expect(land(openCard(), v).theme).toEqual(emptyCard().theme);
+    expect(v.proposals.map).not.toBeNull(); // the map still lands
+  });
+  it('a suggestion in the agent\'s own words still lands', () => {
+    const v = validate(mapOut({ themeSuggestion: 'AI chips and data centers' }), { goal: 'map_segments', card: openCard() });
+    expect(v.notes.filter((n) => n.startsWith('dropped:themeSuggestion'))).toEqual([]);
+    expect(v.proposals.themeSuggestion).toBe('AI chips and data centers');
+  });
+});
+
+describe('review A5 (T-1): a suggestion waiting for the player is never replaced', () => {
+  const suggestedCard = () => { const c = openCard(); c.theme.suggestion = 'Cloud AI data-center spending'; return c; };
+  it('a later map\'s suggestion is dropped (theme_suggested); the waiting one stands', () => {
+    const v = validate(mapOut({ themeSuggestion: 'AI chips and data centers' }), { goal: 'map_segments', card: suggestedCard() });
+    expect(v.notes).toContain('dropped:themeSuggestion:theme_suggested');
+    expect(land(suggestedCard(), v).theme.suggestion).toBe('Cloud AI data-center spending');
+  });
+  it('applyProposals itself never replaces a waiting suggestion', () => {
+    const c = applyProposals(suggestedCard(), { goal: 'map_segments', part: null, themeSuggestion: 'Something else', map: null, why: null, wrongIfOptions: null, timeFrame: null, pick: null }, ctxOf());
+    expect(c.theme.suggestion).toBe('Cloud AI data-center spending');
+  });
+  it('a story after its check: the map is asked for no theme, and the check\'s suggestion survives the map', () => {
+    const story = SESSION({ entry: { kind: 'item' }, exchanges: [{ who: 'partner', kind: 'step', goal: 'verify_source' }] });
+    const card = suggestedCard();
+    expect(offeredGoalsOf(card, ctxOf(RECORD, story)).map((g) => g.goal)).toContain('map_segments');
+    const u = renderBuildUser({ question: RECORD.question, entryKind: 'item', goal: 'map_segments', card, supported: [], stepsLeft: 8, findings: [], items: [], retrieval: 'none' });
+    expect(u).toContain('  Theme: not set; you suggested "Cloud AI data-center spending"');
+    expect(u).not.toContain('The card has no theme yet');
+    expect(u).toContain('This step: map the idea behind the question above into two to five segments (segments), then mark the one you would stand on (pick) with a one-line reason.\n');
+  });
+});
+
+describe('review A2 (T-3): a reply that cannot be cut at a sentence\'s end within 320 is replaced by the plain line', () => {
+  const runOn = `Nvidia designs the accelerator chips that most of the new AI data centers are buying ${'and the cloud companies building them keep raising what they spend on those chips '.repeat(3)}though none of the sources says how large this business is.`;
+  it('the first sentence alone runs past 320: no mid-sentence text survives', () => {
+    expect(runOn.length).toBeGreaterThan(320);
+    const v = validate(mapOut({ reply: runOn, themeSuggestion: 'AI chips and data centers' }), { goal: 'map_segments', card: openCard() });
+    expect(v.ok, JSON.stringify(v)).toBe(true);
+    expect(v.notes).toContain('reply_replaced:too_long');
+    expect(v.reply).toBe('This step added 0 findings. The card shows what it proposes.');
+    expect(runOn.startsWith(v.reply)).toBe(false);
+  });
+  it('a long reply whose sentences fit is cut at a sentence\'s end, not replaced', () => {
+    const fits = `${'The idea splits into chips, power and the networks between them. '.repeat(5)}I would stand on the chips.`;
+    const v = validate(mapOut({ reply: fits, themeSuggestion: 'AI chips and data centers' }), { goal: 'map_segments', card: openCard() });
+    expect(v.notes).not.toContain('reply_replaced:too_long');
+    expect(v.reply).toBe(cutAtSentence(fits, 320));
   });
 });

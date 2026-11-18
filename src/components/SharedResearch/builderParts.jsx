@@ -253,7 +253,7 @@ export function freeLabelOf(choice, thesis, agentName) {
  * top of the choices — "Use “{suggestion}” as the theme · free", and Write your own, which opens the theme's part (its
  * text box is there). The confirm is the server's free choice, sent as offered.
  */
-export function ThemeLine({ confirm, onConfirm, onWriteOwn = null, disabled = false }) {
+export function ThemeLine({ confirm, onConfirm, onWriteOwn = null, expanded = false, controls = undefined, disabled = false }) {
   const off = disabled ? { opacity: 0.5, cursor: 'not-allowed' } : {};
   return (
     <div role="group" aria-label={B.themeLineLabel} data-sr-theme-line="" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', columnGap: 12, minWidth: 0 }}>
@@ -264,7 +264,8 @@ export function ThemeLine({ confirm, onConfirm, onWriteOwn = null, disabled = fa
         <Mark attrs={{ 'data-sr-cost': 'free' }}>{B.free}</Mark>
       </button>
       {onWriteOwn && (
-        <button type="button" onClick={disabled ? undefined : onWriteOwn} disabled={disabled} data-sr-theme-own=""
+        // it opens the theme's part (its text box) in the card, as a slot does: the same disclosure semantics (review B6)
+        <button type="button" onClick={disabled ? undefined : onWriteOwn} disabled={disabled} data-sr-theme-own="" aria-expanded={expanded} aria-controls={controls}
           style={{ ...linkStyle, ...off, fontSize: 13.5, color: T.ink2 }}>{B.writeOwnTheme}</button>
       )}
     </div>

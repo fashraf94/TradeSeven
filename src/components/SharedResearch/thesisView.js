@@ -212,35 +212,35 @@ export function slotOf(thesis, part) {
 
 const bare = (s) => String(s ?? '').trim().replace(/[\s.!?;:,]+$/u, '');
 /**
+ * The order the server's sentence holds the parts in (api/_utils/sharedResearch/thesis.js sentenceOf): theme, segment,
+ * names, … with a theme set; with none it opens at the names — "Built on {names}, through {segment}, because …" (§B13
+ * T-2). Restated here to FIND the parts, never to compose the sentence.
+ */
+const SENTENCE_ORDER_NO_THEME = Object.freeze(['names', 'segment', 'why', 'wrongIf', 'timeFrame']);
+
+/**
  * The server's finished sentence cut into runs, so each part that holds a value (set, or stale) can be tapped where it
- * stands (K-7) and a stale one marked there: each part's own text is FOUND in the sentence; nothing is added or
- * reworded, and the runs join back to the sentence exactly (pinned by a table row). The parts are found in the order
- * they STAND in the sentence — the earliest found from where the last one ended, a tie going to the sentence's own part
- * order — because the server's order is not fixed: with no theme it opens "Built on {names}, through {segment}, …"
- * (§B13 T-2). A part whose text is not found is simply not tappable there.
+ * stands (K-7) and a stale one marked there: each part's own text is FOUND in the sentence, in the order the sentence
+ * holds the parts (SENTENCE_ORDER_NO_THEME when no theme is set — review B3: an earliest-found scan tagged a segment
+ * named like a name, or found inside "My theme is"); nothing is added or reworded, and the runs join back to the
+ * sentence exactly (pinned by a table row). A part whose text is not found is simply not tappable there.
  * @returns {{ text: string, part: string|null, state?: string }[]}
  */
 export function sentenceRunsOf(sentence, thesis) {
   const s = typeof sentence === 'string' ? sentence : '';
-  let left = THESIS_PARTS.map((part) => {
-    const slot = slotOf(thesis, part);
-    if ((slot.state !== 'set' && slot.state !== 'stale') || !slot.text) return null;
-    const needle = part === 'timeFrame' ? slot.text : bare(slot.text);
-    return needle ? { part, state: slot.state, needle } : null;
-  }).filter(Boolean);
+  const order = slotOf(thesis, 'theme').state === 'set' ? THESIS_PARTS : SENTENCE_ORDER_NO_THEME;
   const runs = [];
   let at = 0;
-  while (left.length > 0) {
-    let next = null;
-    for (const w of left) {
-      const i = s.indexOf(w.needle, at);
-      if (i >= 0 && (next === null || i < next.i)) next = { ...w, i };
-    }
-    if (next === null) break;
-    if (next.i > at) runs.push({ text: s.slice(at, next.i), part: null });
-    runs.push({ text: next.needle, part: next.part, state: next.state });
-    at = next.i + next.needle.length;
-    left = left.filter((w) => w.part !== next.part);
+  for (const part of order) {
+    const slot = slotOf(thesis, part);
+    if ((slot.state !== 'set' && slot.state !== 'stale') || !slot.text) continue;
+    const needle = part === 'timeFrame' ? slot.text : bare(slot.text);
+    if (!needle) continue;
+    const i = s.indexOf(needle, at);
+    if (i < 0) continue;
+    if (i > at) runs.push({ text: s.slice(at, i), part: null });
+    runs.push({ text: needle, part, state: slot.state });
+    at = i + needle.length;
   }
   if (at < s.length) runs.push({ text: s.slice(at), part: null });
   return runs;

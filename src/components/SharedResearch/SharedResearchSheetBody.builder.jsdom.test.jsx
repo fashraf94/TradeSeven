@@ -1417,6 +1417,21 @@ describe('B5 — before the switch (§B13): the screen', () => {
     expect($('[data-sr-slot="theme"]').textContent).toBe(phrase);
     expect($('[data-sr-theme-line]')).toBeNull();
   });
+  it('review B6 (T-6): "Write your own" is a disclosure for the theme\'s part, and closing the part puts focus back on it', async () => {
+    await openOn(TA.walkGetMap);
+    const own = $('[data-sr-theme-own]');
+    expect(own.getAttribute('aria-expanded')).toBe('false');
+    await tap('[data-sr-theme-own]');
+    const panel = $('[data-sr-panel="theme"]');
+    expect(own.getAttribute('aria-expanded')).toBe('true');
+    expect(own.getAttribute('aria-controls')).toBe(panel.id);
+    await act(async () => { own.focus(); });
+    await tap('[data-sr-panel-close="theme"]');
+    await act(async () => { await new Promise((r) => { setTimeout(r, 5); }); });
+    expect($('[data-sr-panel="theme"]')).toBeNull();
+    expect(document.activeElement).toBe($('[data-sr-theme-own]'));
+    expect($('[data-sr-theme-own]').getAttribute('aria-expanded')).toBe('false');
+  });
   it('T-6: an unset theme with no suggestion stays in front — no line; its text box is the composer\'s', async () => {
     await openOn(TA.walkGetOpen);
     expect($('[data-sr-theme-line]')).toBeNull();

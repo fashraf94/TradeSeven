@@ -207,6 +207,10 @@ const FIELD_SHAPES = Object.freeze({
   pick: (v) => v !== null && typeof v === 'object' && !Array.isArray(v),
 });
 
+/** The same words, read loosely: case, spacing and closing punctuation aside (a theme suggestion against the player's words). */
+const wordsOf = (s) => clean(s).toLowerCase().replace(/[\s.!?;:,]+$/u, '');
+const sameWords = (a, b) => wordsOf(a) !== '' && wordsOf(a) === wordsOf(b);
+
 /**
  * A text cut to `max` characters at a sentence's end (never inside a word or a figure: B3 review RB-7) — the first
  * sentence alone, when it is longer, at the last space before `max`.
@@ -302,10 +306,14 @@ export function validateBuildTurn(output, ctx) {
   const recordAfter = { ...record, findings: [...(record?.findings ?? []), ...b1.findings] };
   const supportedAfterOf = () => companiesOf(recordAfter, { universe }).supported.map((c) => c.symbol);
 
-  // the theme suggestion — only while the card has no theme
+  // the theme suggestion — only while the card has no theme and no suggestion yet (§B13 T-1: the first map suggests one;
+  // a story keeps verify_source's), and never the player's own words handed back as the agent's (T-1: "in the agent's
+  // own words")
   if (takes('themeSuggestion')) {
     const t = lineOf(output.themeSuggestion, L.theme);
-    const why = card.theme.state === 'set' ? 'theme_set' : !t ? 'length' : lineFail(t, recordVerified);
+    const suggested = typeof card.theme.suggestion === 'string' && card.theme.suggestion !== '';
+    const why = card.theme.state === 'set' ? 'theme_set' : suggested ? 'theme_suggested' : !t ? 'length'
+      : recordCurrent.some((f) => f.kind === 'observation' && sameWords(f.fact, t)) ? 'player_words' : lineFail(t, recordVerified);
     if (why) drop('themeSuggestion', why);
     else proposals.themeSuggestion = t;
   }
@@ -471,7 +479,12 @@ export function validateBuildTurn(output, ctx) {
   const main = goal === 'direction' ? (asked && given(MAIN_FIELD[asked]) ? asked : null) : mainOf(goal, part);
   const offered = accepts.filter((f) => given(f));
   const deadEnd = (goal === 'find_names' || (goal === 'direction' && shape.goal === 'find_names')) && card.names.state !== 'set' && supportedAfterOf().length === 0;
+  // §B13 T-3: a reply whose first sentence alone runs past MODEL_REPLY_MAX cannot be cut at a sentence's end; the cut
+  // would end mid-sentence (cutAtSentence's last-space fallback), so the server's plain line replaces it
+  const said = clean(output.reply);
+  const runOn = said.length > MODEL_REPLY_MAX && (sentencesOf(said)[0] ?? '').length > MODEL_REPLY_MAX;
   const replaceFor = notes.some((n) => n.startsWith('reply_replaced:')) ? 'unsupported_number'
+    : runOn ? 'too_long'
     : reply && promisesService(reply, partnerName) ? 'service_promise'
       : reply && builderWordingOf(reply, partnerName) ? 'builder_wording'
       : main && !proposals[main] ? 'goal_proposal_dropped'

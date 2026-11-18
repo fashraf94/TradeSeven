@@ -210,6 +210,29 @@ describe('K-7: the card draws the server\'s states; it composes no sentence', ()
     expect([...order].sort()).toEqual([...setParts].sort());
     for (const r of runs.filter((x) => x.part)) expect(t.sentence.indexOf(r.text)).toBeGreaterThanOrEqual(0);
   });
+  // review B3: the parts are found in the order the sentence holds them, so a segment named like a name, or a word of the
+  // frame, never takes another part's span (the server's sentence, its parts and their texts changed together)
+  it('review B3: no theme, a segment named like one of the names — each found where it stands', () => {
+    const t = T('walkTimeFrame');
+    const sentence = t.sentence.replace('Built on NVDA, through Accelerator chips', 'Built on AMD and NVDA, through AMD');
+    const odd = { ...t, sentence, parts: { ...t.parts, segment: { ...t.parts.segment, value: 'AMD' }, names: { ...t.parts.names, value: ['AMD', 'NVDA'] } } };
+    const runs = sentenceRunsOf(sentence, odd);
+    expect(runs.map((r) => r.text).join('')).toBe(sentence);
+    expect(runs.slice(0, 4)).toEqual([
+      { text: 'Built on ', part: null }, { text: 'AMD and NVDA', part: 'names', state: 'set' },
+      { text: ', through ', part: null }, { text: 'AMD', part: 'segment', state: 'set' },
+    ]);
+  });
+  it('review B3: a theme set, a segment whose label is a word of the frame ("theme") — found after "through", not in "My theme is"', () => {
+    const t = T('getReadyThemed');
+    const sentence = t.sentence.replace('through Accelerator chips', 'through theme');
+    const odd = { ...t, sentence, parts: { ...t.parts, segment: { ...t.parts.segment, value: 'theme' } } };
+    const runs = sentenceRunsOf(sentence, odd);
+    expect(runs.map((r) => r.text).join('')).toBe(sentence);
+    const seg = runs.findIndex((r) => r.part === 'segment');
+    expect(runs.slice(0, seg).map((r) => r.text).join('')).toMatch(/, through $/);
+    expect(runs[0]).toEqual({ text: 'My theme is ', part: null });
+  });
   it('a stale part stays findable in the server\'s sentence, with its state, so it can be marked where it stands', () => {
     const t = T('getStaleSegment');
     const runs = sentenceRunsOf(t.sentence, t);

@@ -255,12 +255,14 @@ function goalLineOf({ goal, part, card }) {
   const names = card?.names?.state === 'set' ? card.names.value.join(', ') : null;
   // §B13 T-2: find_names may run with no theme set; it then works on the question above, never on "the theme"
   const themed = card?.theme?.state === 'set' && card.theme.value;
+  // §B13 T-1: a suggestion already waits for the player (verify_source's on a story, or the first map's): ask for none
+  const suggested = !themed && typeof card?.theme?.suggestion === 'string' && card.theme.suggestion !== '';
   const where = card?.segment?.state === 'set' && !card.segment.skipped ? card.segment.value : (themed ? card.theme.value : null);
   switch (goal) {
     case 'verify_source': return "This step: check the starting point against its primary source: find the filing, release or report it rests on, and that source's own date. Suggest a theme for the thesis in a short phrase (themeSuggestion).";
     case 'map_segments': return themed
       ? 'This step: map the theme into two to five segments (segments), then mark the one you would stand on (pick) with a one-line reason.'
-      : "This step: map the idea behind the question above into two to five segments (segments), then mark the one you would stand on (pick) with a one-line reason. The card has no theme yet: suggest one in your own words, a short noun phrase of two to six words, never a sentence (themeSuggestion).";
+      : `This step: map the idea behind the question above into two to five segments (segments), then mark the one you would stand on (pick) with a one-line reason.${suggested ? '' : ' The card has no theme yet: suggest one in your own words, a short noun phrase of two to six words, never a sentence (themeSuggestion).'}`;
     case 'find_names': return `This step: find listed companies from the game universe with a sourced connection to ${where ? line(where) : 'the idea behind the question above'} (relationship findings and companies). Mark the one company, or the group of up to four, you would build on (pick).`;
     case 'build_why': return `This step: build the why for ${names}: the reason they share (why.shared), one Source-backed reason per name (why.reasons) and the strongest point against (why.against). Offer up to three ways the thesis could be proved wrong (wrongIfOptions), mark the one you would pick (pick), and say which time frame fits (timeFramePick).`;
     case 'strengthen': return `This step: the card's ${part} is already set by the player. Look for evidence for or against it; do not pick for it.${STRENGTHEN_REVISES[part] ? ` Revise ${STRENGTHEN_REVISES[part]} only if the evidence changes it.` : ''}`;

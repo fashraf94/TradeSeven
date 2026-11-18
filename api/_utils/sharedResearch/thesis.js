@@ -606,7 +606,9 @@ export function cardOpOf(card, { opId, op, part, value }, ctx) {
  */
 export function applyProposals(card, p, ctx) {
   const next = structuredClone(card);
-  if (isText(p.themeSuggestion) && next.theme.state !== SET) next.theme.suggestion = p.themeSuggestion;
+  // a theme suggestion lands only on a card with neither a theme nor a suggestion (§B13 T-1: the first map suggests one; a
+  // story keeps verify_source's) — a later step never replaces the one the player may be about to confirm
+  if (isText(p.themeSuggestion) && next.theme.state !== SET && !isText(next.theme.suggestion)) next.theme.suggestion = p.themeSuggestion;
   if (Array.isArray(p.map) && p.map.length >= THESIS_LIMITS.segmentsMin) next.segment.map = p.map.map((m) => ({ ...m, findingIds: [...m.findingIds] }));
   if (p.why && next.names.state === SET && sameNames(p.why.forNames, next.names.value)) next.why.proposal = structuredClone(p.why);
   if (Array.isArray(p.wrongIfOptions) && p.wrongIfOptions.length > 0) next.wrongIf.options = p.wrongIfOptions.map((o) => ({ ...o, findingIds: [...o.findingIds] }));
