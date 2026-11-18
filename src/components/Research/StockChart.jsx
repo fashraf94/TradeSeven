@@ -7,6 +7,10 @@ import { detectTrendlines } from './trendlineDetection';
 import OHLCDisplay from '../shared/OHLCDisplay';
 import { getDailyHL } from '../../services/websocketService';
 import { priceDecimals } from './priceFormat';
+import { RuleMarksPrimitive } from './ChartRead/ruleMarksPrimitive.js';
+import { placeMarks } from './ChartRead/placeMarks.js';
+import { formatPriceBare } from './ChartRead/format.js';
+import { readToken } from '../../theme/cssTokens.js';
 
 const TIMEFRAMES = [
   { key: '1D', label: '1D' },
@@ -84,6 +88,21 @@ const StockChart = ({
   //   onMarkerTap  (id) => void — a tap on a marker (the library's hit test, hoveredObjectId).
   battlePill = null,
   onMarkerTap = null,
+  // The Chart view's read (spec docs/specs/CHART_READ_SPEC_V1.md; build prompt §4, §7, CR-4, CR-5, CR-7). Absent
+  // (every caller but the shell's Chart view with the read admitted), nothing below changes and the chart makes
+  // no new library call.
+  //   candleBasis  'raw' — the candles as traded (prepareChartData's one option, UC-1 – UC-2), 1D only by the caller.
+  //   basisNote    the words at the right of the OHLC row ("prices unadjusted", UC-3).
+  //   ruleMarks    { marks, shown, lit, dailyDates } — the read's marks (ChartRead/marks.js), the numbers to draw
+  //                and to light, and the daily series' dates; placed on THIS chart's bars (ChartRead/placeMarks.js)
+  //                and drawn by a series primitive on 1D and 1W (MK-4 – MK-6).
+  //   dailyStub    { value, label } — the Battle chart's one stub at the right edge (MK-5).
+  //   ruleChip     { on, onToggle } — the "Rule" chip beside SMA · S/R · Idea (CR-5, MK-7).
+  candleBasis = null,
+  basisNote = null,
+  ruleMarks = null,
+  dailyStub = null,
+  ruleChip = null,
 }) => {
   const chartContainerRef = useRef(null);
   const chartRef = useRef(null);
@@ -106,6 +125,7 @@ const StockChart = ({
   const [showIdea, setShowIdea] = useState(true);
   const sheetLinesRef = useRef({ series: null, lines: [] });
   const markersPluginRef = useRef(null);
+  const ruleMarksRef = useRef(null); // { series, primitive } — the read's marks on the current candle series
   const [isSpectateMode, setIsSpectateMode] = useState(false);
   const [spectateLevel, setSpectateLevel] = useState(null);
 
@@ -205,8 +225,8 @@ const StockChart = ({
   // Prepare chart-ready data
   const chartData = useMemo(() => {
     if (!ohlcvData || ohlcvData.length === 0) return [];
-    return prepareChartData(ohlcvData);
-  }, [ohlcvData]);
+    return candleBasis === 'raw' ? prepareChartData(ohlcvData, { basis: 'raw' }) : prepareChartData(ohlcvData);
+  }, [ohlcvData, candleBasis]);
 
   // The bar a record marker sits on (Build C BC-8; BC2-3): 1D — its day's own bar (a day with no bar
   // draws nothing); 1W — the week bar holding its day (with the sheet's Battle pill only); Battle — the
@@ -1038,6 +1058,36 @@ const StockChart = ({
     return () => { try { chart.unsubscribeClick(onClick); } catch { /* the chart is gone */ } };
   }, [onMarkerTap, chartData, height, timeframe, isBombView, isSpectateView, bombLevels, triggeredLevels, spectateLevel, bombDailyOhlc, symbol, controlled, scaffoldTime]);
 
+  // The Chart view's read (MK-4 – MK-6): the rule's marks, as one series primitive on the candle series, re-attached
+  // whenever the series is rebuilt (this effect carries the chart effect's dependencies, as the markers' does —
+  // review C1/D4), updated in place otherwise (lit / unlit: setScene + requestUpdate, never a rebuild). The
+  // library repaints it on every pan, zoom, resize and price-scale drag. Absent props: no library call at all.
+  const wantsRuleMarks = (ruleMarks != null && typeof ruleMarks === 'object' && Array.isArray(ruleMarks.shown) && ruleMarks.shown.length > 0) || (dailyStub != null && typeof dailyStub === 'object');
+  useEffect(() => {
+    const series = candleSeriesRef.current;
+    const held = ruleMarksRef.current;
+    if (held && held.series !== series) ruleMarksRef.current = null; // the old series went with its chart
+    const want = !!series && !isBombView && wantsRuleMarks;
+    if (!want) {
+      const cur = ruleMarksRef.current;
+      if (cur && cur.series === series && series) { try { series.detachPrimitive(cur.primitive); } catch { /* ok */ } }
+      ruleMarksRef.current = null;
+      return;
+    }
+    if (typeof series.attachPrimitive !== 'function') return;
+    let cur = ruleMarksRef.current;
+    if (!cur) {
+      const token = (name, fallback) => { try { return readToken(name) || fallback; } catch { return fallback; } };
+      const primitive = new RuleMarksPrimitive({ ink: token('ink', 'white'), paper: token('bg-dashboard', 'black'), font: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', format: formatPriceBare });
+      try { series.attachPrimitive(primitive); } catch (e) { console.warn('[StockChart] Rule marks error:', e); return; }
+      cur = { series, primitive };
+      ruleMarksRef.current = cur;
+    }
+    const onDaily = (timeframe === '1D' || timeframe === '1W') && !isBattleView;
+    const items = onDaily && ruleMarks ? placeMarks({ ...ruleMarks, barTimes: chartData.map((b) => b.time), timeframe }) : [];
+    cur.primitive.setScene({ items, stub: isBattleView && dailyStub ? dailyStub : null });
+  }, [ruleMarks, dailyStub, wantsRuleMarks, chartData, height, timeframe, isBombView, isBattleView, isSpectateView, bombLevels, triggeredLevels, spectateLevel, bombDailyOhlc, symbol, controlled, scaffoldTime]);
+
   // The open marker's label (BC-8: one open label), when its marker has a bar on the chart.
   const openPin = (() => {
     if (isBombView || !Array.isArray(markers)) return null;
@@ -1113,6 +1163,11 @@ const StockChart = ({
                 Idea
               </button>
             )}
+            {ruleChip && typeof ruleChip.onToggle === 'function' && (
+              <button type="button" data-rule-pill={ruleChip.on ? 'on' : 'off'} aria-pressed={!!ruleChip.on} onClick={ruleChip.onToggle} style={pillStyle(!!ruleChip.on)}>
+                {ruleChip.label}
+              </button>
+            )}
           </div>
         )}
         {plotOwned && bombChip}
@@ -1128,6 +1183,13 @@ const StockChart = ({
 
         {/* OHLC overlay — hidden in spectate view (back button uses same position) */}
         {!isSpectateView && <OHLCDisplay data={displayOhlc} showUnavailable={controlled} />}
+
+        {/* The Chart view's read (UC-3): the candles' basis, once, at the right of the OHLC row, left of the price scale */}
+        {basisNote && (
+          <div data-basis-note style={{ position: 'absolute', top: 8, right: 64, zIndex: 2, pointerEvents: 'none', fontSize: 10, lineHeight: 1.3, color: HOLO_COLORS.textSecondary, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' }}>
+            {basisNote}
+          </div>
+        )}
 
         {/* Build C: the open pin's label, bottom-left above the time axis, clear of the
             library's attribution logo (x 10–45 px at every size; review D6) */}

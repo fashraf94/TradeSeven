@@ -2,7 +2,8 @@
 //
 // The chart's evidence — the client read (spec docs/specs/CHART_EVIDENCE_SPEC_V1.md §4.6):
 // the three answers passed on unchanged, every failure a rejection with its status and
-// error, a body outside the contract never resolved, and no caller anywhere in src yet.
+// error, a body outside the contract never resolved, and one caller in src: the Chart view's read
+// (src/components/Research/ChartRead/useChartRead.js — docs/specs/CHART_READ_SPEC_V1.md).
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -83,8 +84,8 @@ describe('fetchSetupRead', () => {
   });
 });
 
-describe('no caller yet (spec §4.6: the Chart view\'s read is the next build)', () => {
-  it('nothing under src imports the client read except its own test', () => {
+describe('one caller (the Chart view\'s read build: spec docs/specs/CHART_READ_SPEC_V1.md)', () => {
+  it('nothing under src imports the client read but the Chart view\'s read hook — and the tests that pin it', () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const src = resolve(here, '../../..');
     const hits = [];
@@ -95,6 +96,10 @@ describe('no caller yet (spec §4.6: the Chart view\'s read is the next build)',
       }
     };
     walk(src);
-    expect(hits).toEqual(['components/Research/Sheet/setupRead.test.js']);
+    expect(hits.sort()).toEqual([
+      'components/Research/ChartRead/useChartRead.js', // the one caller: the Chart view's read, behind CHART_READ_MODE
+      'components/Research/ChartRead/useChartRead.jsdom.test.jsx', // its rows mock the client read
+      'components/Research/Sheet/setupRead.test.js',
+    ]);
   });
 });
