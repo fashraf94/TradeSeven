@@ -180,6 +180,8 @@ export function loadHolds(out, { window = 'v2' } = {}) {
   return { meta: doc.meta, holds };
 }
 export const windowOf = (argv) => (argv.includes('--long') ? 'long' : 'v2');
+/** Output-name suffix for a window, so a --long run never overwrites V2's files. */
+export const suffixOf = (window) => (window === 'long' ? '-long' : '');
 
 // ---- the real reward context and the real scorer --------------------------------------------------------------------
 const FILL_AT = '2026-01-02T15:00:00.000Z';

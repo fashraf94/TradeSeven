@@ -14,17 +14,19 @@
 // Tier points split into bonus / penalty use the canonical table (THRESHOLD_POINTS, src/constants/baggerBombScoring.js);
 // every position total is the fenced scorer's own (calculateAssetScoreServer, CALLED).
 //
-// USAGE: node scripts/experiments/scoring-shape/step3Shapes.mjs [--out <dir>]
+// USAGE: node scripts/experiments/scoring-shape/step3Shapes.mjs [--out <dir>] [--long]
 
 import path from 'node:path';
 import { THRESHOLD_POINTS } from '../../../src/constants/baggerBombScoring.js';
-import { BONUS_KEYS, CARRY_VALUES, drawMatches, fx, loadHolds, MATCH_SLOTS, mdTable, median, outDirOf, PENALTY_KEYS, quantile, readJson, unitOf, writeJson } from './lib.mjs';
+import { BONUS_KEYS, CARRY_VALUES, drawMatches, fx, loadHolds, MATCH_SLOTS, mdTable, median, outDirOf, PENALTY_KEYS, quantile, readJson, unitOf, writeJson , suffixOf, windowOf } from './lib.mjs';
 import { bankDays, dailyBanked, dailyPoints, dailyReset, heldShapes, isBonus, isPenalty, legacyAgrees, pathSets, tierPoints } from './shapes.mjs';
 
 const argv = process.argv;
 const out = outDirOf(argv);
-const { holds } = loadHolds(out, { window: 'v2' });
-const step2 = readJson(path.join(out, 'step2-units.json'));
+const WINDOW = windowOf(argv);
+const SUFFIX = suffixOf(WINDOW);
+const { holds } = loadHolds(out, { window: WINDOW });
+const step2 = readJson(path.join(out, `step2-units${SUFFIX}.json`));
 const REC = step2.recommendation.recommended;
 const UNITS = [...new Set(['U1', 'U4', 'U6', REC])];
 const tierSum = (set, pred) => set.filter(pred).reduce((n, t) => n + THRESHOLD_POINTS[t], 0);
@@ -139,7 +141,7 @@ for (const id of UNITS) {
 for (const k of ['S5t-pc', 'S5c-pc', 'S5t-fill', 'S5c-fill']) rows.push(summarize(k, { nDays: 3 }));
 const sensRows = Object.entries(sens).map(([k, s]) => ({ key: `${k} penalties at close`, bustsPerMatch: 7 * s.bust / holds.length, crashesPerMatch: 7 * s.crash / holds.length, meltdownsPerMatch: 7 * s.meltdown / holds.length }));
 
-writeJson(path.join(out, 'step3-shapes.json'), { recommendedUnit: REC, units: UNITS, holds: holds.length, matches: matches.length, rows, penaltiesAtCloseSensitivity: sensRows, legacyCrossCheck: { agree: legacyOk, of: legacyChecked } });
+writeJson(path.join(out, `step3-shapes${SUFFIX}.json`), { recommendedUnit: REC, units: UNITS, holds: holds.length, matches: matches.length, rows, penaltiesAtCloseSensitivity: sensRows, legacyCrossCheck: { agree: legacyOk, of: legacyChecked } });
 
 const P = (x) => (x == null ? '—' : `${(100 * x).toFixed(1)}%`);
 console.log(`# Step 3 — scoring shapes (${holds.length} holds, ${matches.length} seeded 7-position matches; recommended unit ${REC})\n`);

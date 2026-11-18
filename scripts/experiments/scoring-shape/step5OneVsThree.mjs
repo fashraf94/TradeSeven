@@ -12,18 +12,20 @@
 //   (b) at the position level, the overnight share of the absolute log movement;
 //   (c) the share of bonus first touches on sessions 2–3 made AT the open (a gap through the level).
 //
-// USAGE: node scripts/experiments/scoring-shape/step5OneVsThree.mjs [--out <dir>]
+// USAGE: node scripts/experiments/scoring-shape/step5OneVsThree.mjs [--out <dir>] [--long]
 
 import path from 'node:path';
 import { THRESHOLD_POINTS } from '../../../src/constants/baggerBombScoring.js';
 import { CONVICTION_MULTIPLIERS } from '../../../src/constants/baggerBombScoring.js';
-import { admitted, drawMatches, fx, levelsOf, loadHolds, MATCH_SLOTS, mdTable, mean, median, outDirOf, quantile, readJson, unitOf, writeJson } from './lib.mjs';
+import { admitted, drawMatches, fx, levelsOf, loadHolds, MATCH_SLOTS, mdTable, mean, median, outDirOf, quantile, readJson, unitOf, writeJson , suffixOf, windowOf } from './lib.mjs';
 import { dailyBanked, dailyPoints, dailyReset, firstDay, heldShapes, isBonus, isPenalty, pathSets, tierPoints } from './shapes.mjs';
 
 const argv = process.argv;
 const out = outDirOf(argv);
-const { holds } = loadHolds(out, { window: 'v2' });
-const REC = readJson(path.join(out, 'step2-units.json')).recommendation.recommended;
+const WINDOW = windowOf(argv);
+const SUFFIX = suffixOf(WINDOW);
+const { holds } = loadHolds(out, { window: WINDOW });
+const REC = readJson(path.join(out, `step2-units${SUFFIX}.json`)).recommendation.recommended;
 const UNITS = [...new Set([REC, 'U1'])];
 const C_MID = 10;
 
@@ -101,7 +103,7 @@ const gaps = {
   positionAbsShareOvernight: absOn.reduce((a, b) => a + b, 0) / (absOn.reduce((a, b) => a + b, 0) + absId.reduce((a, b) => a + b, 0)),
   bonusFirstTouches: { unit: REC, all: allFirst, onSessions2or3: laterFirst, atTheOpen: gapFirst },
 };
-writeJson(path.join(out, 'step5-one-vs-three.json'), { recommendedUnit: REC, holds: holds.length, matches: matches.length, rows, gaps });
+writeJson(path.join(out, `step5-one-vs-three${SUFFIX}.json`), { recommendedUnit: REC, holds: holds.length, matches: matches.length, rows, gaps });
 
 console.log(`# Step 5 — one day against three (${holds.length} holds, ${matches.length} matches)\n`);
 console.log(mdTable(['Game', 'Points per day', 'Bonuses per day', 'Penalties per day', 'Three-day total: median [P10, P90]'],
