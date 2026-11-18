@@ -1,12 +1,14 @@
 # Build report — Shared Research "Work an idea" B5, the round before the switch (dark)
 
-**Smoke preview:** https://trade-seven-l6196i977-fais-projects-bc179554.vercel.app — **`?srFixture=walk`** plays the walk, now with the theme point; `?srFixture=index` lists every scenario. It opens with no Vercel login (a cookieless request answers 200 with no redirect, and a fresh headless 393×852 context with no cookies walks to "Thesis saved", §8). Branch `claude/shared-research-b4-smoke` (never merged), commit `e490f592` = the code head `8d7a3a0f` + B4's three smoke files, byte for byte (B4's loader, unchanged).
+**Smoke preview, current (the §B14 round, §14):** https://trade-seven-klgaytnb5-fais-projects-bc179554.vercel.app. **The B5 round's (superseded):** https://trade-seven-l6196i977-fais-projects-bc179554.vercel.app — **`?srFixture=walk`** plays the walk, now with the theme point; `?srFixture=index` lists every scenario. It opens with no Vercel login (a cookieless request answers 200 with no redirect, and a fresh headless 393×852 context with no cookies walks to "Thesis saved", §8). Branch `claude/shared-research-b4-smoke` (never merged), commit `e490f592` = the code head `8d7a3a0f` + B4's three smoke files, byte for byte (B4's loader, unchanged).
 
-**Date:** Nov 18, 2026 (build prompt dated Nov 17) · **Session:** local Claude Code (Opus 5.5), own worktree · **Branch:** `claude/shared-research-b5` · **PR:** [#1089](https://github.com/fashraf94/TradeSeven/pull/1089) (draft, dark) · **Pushed head:** the commit that adds this line (docs only; the code is `8d7a3a0f`)
+**Date:** Nov 18, 2026 (build prompt dated Nov 17) · **Session:** local Claude Code (Opus 5.5), own worktree · **Branch:** `claude/shared-research-b5` · **PR:** [#1089](https://github.com/fashraf94/TradeSeven/pull/1089) (draft, dark) · **Pushed head:** the commit that adds §14 (docs only; the code is `ce06e1ce` after the §B14 round; `8d7a3a0f` for §1–§13)
 
 **Spec of record:** `docs/specs/20261116_SHARED_RESEARCH_SPEC_V1_2_AMENDMENT_B_THESIS_BUILDER.md` §B13 (this branch's first commit, `2cc7fc48`: the founder's T-1 to T-8 as written), over §B1, §B3, §B4 and §B10–§B12; B3's report §4, §6, §8, §15; B4's report §10, §12, §15.
 
 ## Verdict
+
+**The §B14 round (Nov 18) is §14; its verdict is §14.1.** The table below is the B5 round's, at `8d7a3a0f`.
 
 | Check | Result |
 |---|---|
@@ -372,3 +374,162 @@ On the smoke preview, iPhone, `?srFixture=walk`:
 - **Typing your own theme:** at step 3 the sample is "AI chips and data centers" (loosely matched). Tap *Write your own*, type it, *Send · free*. Any other phrase answers a line naming the sample.
 - **Picking the segment first** also works; the theme then stays suggested, and the saved sentence opens "Built on …".
 - **The rest of the walk** after the segment is B4's tree (names, why, wrong-if, time frame), on every theme branch.
+
+## 14. The §B14 round (Nov 18): the founder's rulings on this report
+
+**Smoke preview, current:** https://trade-seven-klgaytnb5-fais-projects-bc179554.vercel.app (`?srFixture=walk`; the theme block alone at `?srFixture=builder-map`, and on the ready view at `?srFixture=builder-ready`). It opens with no Vercel login: a cookieless request answers 200 with no redirect. Branch `claude/shared-research-b4-smoke` is at `d403b67c`, which is code `d97fea95` + B4's three smoke files, byte for byte. The commit after `d97fea95` changes only a test file. The round's earlier preview (`e490f592`, §8) is superseded.
+
+**Rulings:** §B14 of the amendment (`b63d872a`), as written. **`main` merged first:** `origin/main` had moved to `bd841257`, merging #1087 and #1090–#1092 (chart read, setup frequency). It was merged at `1a788152`; no file overlaps this branch, the lockfile is unchanged, and no Shared Research module moved (the differential's base is `bd841257`). **Code head:** `ce06e1ce`. The round's own diff is 18 files, +1,949 / −268; 16 files, +377 / −64 without the generated JSON. **Fences, as in §B13:**
+- dark;
+- the ledger byte-identical;
+- no shape change;
+- no schema change (`BUILD_SCHEMAS` untouched);
+- `modelTurn.js` and `method.js` untouched;
+- no provider call: the probes are replayed, not re-run.
+
+### 14.1 Verdict
+
+| Check | Result |
+|---|---|
+| The rulings | Q-1, Q-2, Q-3, Q-4, Q-5 and Watch 10 built, each with its rows and mutants (§14.2) |
+| Full suite (WSL, `TZ=UTC`, 8 workers, `flock`) at `ce06e1ce` | **exit 0** · Test Files 1,575 passed, 13 skipped (1,588) · Tests **35,860 passed, 0 failed**, 179 skipped (36,039) · 319 s |
+| `lint:gate` · `test:rules` · minified build | **exit 0** · **exit 0** (46 files, 839 passed) · **exit 0** |
+| The ledger differential at `ce06e1ce` (base `bd841257`) | **4 / 4 byte-identical**; the planted control fails 4 / 4 |
+| Mutants | **53 / 53 killed**: the 36 of §6 (3 re-cut) + 17 for §B14. Each mutant's own row is among its failures; the runner now keeps every failing row's name |
+| Real browser, on the new preview | **55 / 55**: B2's 11, B4's 38, and §B14's 6 (the theme block on one row at 320, 393 and 1280, in the work view and on the ready view). A planted control (CSS stacking the buttons) fails the same measurement 6 / 6 |
+| Bundle vs `main` `bd841257` | only the lazy Shared Research chunk changes (146,384 → 149,301 B); CSS the same file |
+| Dark | `SHARED_RESEARCH_BUILDER_MODE` stays `'off'` |
+
+### 14.2 The rulings, as built
+
+| Ruling | Built | Rows | Mutants |
+|---|---|---|---|
+| **Q-1 → (b)** the newest time-frame answer survives | An asked time-frame pick lands as the suggestion too: `{ value, reason }` from the pick (`thesis.js:620`). While the pick stands, the confirm wears "{agent}'s pick" (the pick comes first, §B13 T-5). After the next step replaces the pick, the suggestion still carries its value, and the confirm wears "{agent} suggested". A newer suggestion still replaces it. | `thesisB5` §B14 Q-1 ×2; T-5's row moved (§14.4); fixtures `getTimeFramePicked` (moved) and `getTimeFrameAfterPick` (new); jsdom "Q-1 (b): after a later step the asked pick's value is still offered, now as '{agent} suggested'" | B14-Q1; T5b re-cut |
+| **Q-2 → (b) and (c)** | §4 (1) leaves the builder prompt only: `BUILDER_OPENING_RULES` drops indexes 0 and 6 (`stepPrompt.js:215-219`). The ledger's step and framing prompts carry §4 whole, byte-identical (the differential, the `prompt.honesty` pins, and a row). §6 gains the two lines, word for word, in the rulebook and `THESIS_BUILDER_RULES` (`stepPrompt.js:207-208`), pinned byte for byte. | `prompt.builder` (moved: without lines (1) and (7)); `thesisB5` §B14 Q-2 ×2 | B14-Q2a–d |
+| **Q-3 → (b)** first and last | `keptReplyOf` (`thesisSchema.js:216`): the reply whole when it fits in 320; else its first and its last sentence; else its first; else none fits (`runOn`), and the server's plain line replaces it (review A2, as built). Never cut inside a sentence. B1's number check reads the text kept (`:280`). `cutAtSentence` is unchanged for the unsourced-line path. | `thesisB5` §B14 Q-3 ×6 (the four cases and the validator) + the moved T-3 rows; `thesisSchema.recorded*` (moved, §14.3) | B14-Q3a–b; T3a re-cut |
+| **Q-4 → yes** | The ready view draws the theme block when the theme is only suggested (`ThesisReady.jsx:130-134`): *Use it* confirms it, and the server's new sentence opens "My theme is …". *Write your own* opens the theme's part with its text box (`:139-141`); closing it returns focus to the opener. A ready card with the theme set draws none. | jsdom §B14 Q-4 ×3; browser `builder-ready` ×3 | B14-Q4a–c |
+| **Q-5 → yes, map only** | A map's theme suggestion is dropped past six words (`too_many_words`) or ending in `.` `?` `!` (`sentence`) (`thesisSchema.js:339-343`). `verify_source`'s is unchanged. A `direction` step asked as the map takes the map's rule. | `thesisB5` §B14 Q-5 ×6 | B14-Q5a–c |
+| **Watch 10** the theme block | `ThemeLine` (`builderParts.jsx:252-284`): "{agent} suggests a theme", the suggestion on its own line, then *Use it · FREE* and *Write your own* side by side. Each is half the row, 44 px, one-line label (inner spans sized; the app forces 16 px on `button`). The block is used in the work view and on the ready view. | jsdom Watch 10 ×2 (the structure; the row's styles); browser §B14 ×6 (one row, side by side, 44 px, one line each, nothing clipped, each under its own tap, at 320/393/1280) + the planted control | B14-W10a–d |
+
+### 14.3 Q-3: the recorded probes through the new keep
+
+Every recorded reply (B3's 12, made before the T-3 prompt; B5's 3), replayed through `keptReplyOf` at 320. No provider call. "B5 cut" is what §B13's leading-sentences cut kept.
+
+| Recording | Chars | Sentences | Keeps | Kept | B5 cut | The last sentence, when kept |
+|---|---|---|---|---|---|---|
+| b5 `build_why` | 267 | 140, 126 | whole | 267 | 267 | — |
+| b5 `find_names` | 327 | 210, 52, 63 | **first + last** | 274 | 263 | "I would build on Nvidia and AMD, with Broadcom as a third name." (the proposal, dropped before) |
+| b5 `map_segments` | 209 | 87, 121 | whole | 209 | 209 | — |
+| `build_why` | 367 | 190, 89, 86 | first + last | 277 | 280 | "I propose a wrong-if tied to that customer concentration, and a positional time frame." |
+| `direction` | 353 | 147, 99, 105 | first + last | 253 | 247 | "Next, a source would have to tie a named company to this equipment and say how much…" |
+| `find_names` | 268 | 100, 167 | whole | 268 | 268 | — |
+| `map_segments` | 421 | 209, 111, 99 | first + last | 309 | 209 | "No listed company has a sourced connection yet, so the next steps need to find who earns…" |
+| `pick` | 393 | 51, 169, 171 | first + last | 223 | 221 | "The strongest point against it is already on the record: several of the largest cloud…" |
+| `strengthen:names` | 414 | 54, 191, 98, 68 | first + last | 123 | 246 | "How much of NVDA's revenue comes from that company is not disclosed." |
+| `strengthen:segment` | 340 | 229, 110 | first | 229 | 229 | — (the two do not fit together) |
+| `strengthen:theme` | 357 | 42, 154, 159 | first + last | 202 | 197 | "A second report says one large cloud company now runs more of its AI work on its own chips…" |
+| `strengthen:timeFrame` | 365 | 59, 305 | first | 59 | 59 | — (the second alone is 305; as before, only "The time frame is the player's own, so I am not picking it.") |
+| `strengthen:why` | 388 | 33, 125, 118, 109 | first + last | 143 | 278 | "The proposal stays as it is; how large the in-house chip share is for the company's results…" |
+| `strengthen:wrongIf` | 349 | 43, 201, 103 | first + last | 147 | 245 | "The second point bears directly on the player's second option, so I would keep both options…" |
+| `verify_source` | 394 | 197, 144, 51 | first + last | 249 | 197 | "A theme to consider: cloud AI data-center spending." |
+
+**In short:**
+- 10 recordings keep first + last, 3 stay whole, 2 keep their first only.
+- None takes the plain line.
+- Each recording's proposal or closing point now survives where the two sentences fit. Two cases are worth noting:
+  - B5's `find_names` gets its proposal back.
+  - B3's `strengthen:names` and `strengthen:why` now keep less than before (123 and 143 characters, from 246 and 278): their last sentence is short, and the middle evidence goes.
+
+### 14.4 Rows that moved, each with its reason
+
+| File | Row | Was | Now, and why |
+|---|---|---|---|
+| `thesisB5.test.js` | T-3 "cut at a sentence's end at 320"; review A2 "a long reply whose sentences fit" | the leading sentences that fit | the first and the last (Q-3) |
+| `thesisB5.test.js` | T-5 "an asked pick after a suggestion" | `suggestion: null` | `suggestion: { value: 'longterm', … }`, the pick itself (Q-1) |
+| `thesisSchema.recorded.test.js` | strengthen:names / :timeFrame reply | `cutAtSentence` | `keptReplyOf` (Q-3) |
+| `thesisSchema.recorded.b5.test.js` | the kept reply is a prefix; `find_names` "kept two sentences" | a prefix | the reply's own sentences as kept; the proposal stays (Q-3) |
+| `prompt.builder.test.js` | "carries §4 without its line (7)" | without (7) | without (1) and (7); rule (1)'s text absent (Q-2) |
+| `__fixtures__/thesisAnswers.test.js` | `getTimeFramePicked` | `suggestion: null` | `suggestion: { value: 'longterm' }` (Q-1) |
+| jsdom builder | THE WALK's theme line; the story after its check | "Use “…” as the theme" on one link | the block: who suggests, the suggestion's own line, *Use it* (Watch 10) |
+| jsdom builder | review B6's focus row | focused the opener before tapping × | focuses × first, as a tap does (B14-Q4c survived the first battery: jsdom's click does not move focus) |
+
+**The fixtures,** regenerated by the server's functions. 36 states of `thesisAnswers.json` differ, every one explained:
+- states holding a recorded reply now kept first and last (the walk from its why on, the asked pick, the revised why, the story's check);
+- the time-frame pick (Q-1);
+- four new states: `getTimeFrameAfterPick`, `readyThemeConfirm` and `readyThemeOwn`, plus the ids that follow them.
+
+`thesisWalk.json` changes the same way.
+
+### 14.5 The mutation table (§B14's 17)
+
+On a `git archive` of `d97fea95`, with all 53 mutants. B14-Q4c survived there, and the row was fixed (§14.4). B14-Q4c and the four mutants sharing its rows (B14-Q4a, B14-Q4b, B5-RB6a, B5-RB6b) were then re-run on `ce06e1ce`: 5 / 5 killed. The other 48 kept their verdicts: the code they mutate is identical between the two commits, and only that test file changed.
+
+| Id | Defect | Killed by (its own row) | Failed / run |
+|---|---|---|---|
+| B14-Q1 | the asked pick clears the suggestion again | `thesisB5` "§B14 Q-1 (b)…" | 4 / 243 |
+| B14-Q2a | §4 (1) back in the builder prompt | `prompt.builder` "carries §4 without its lines (1) and (7)…" | 2 / 86 |
+| B14-Q2b | the ledger's step prompt loses §4 (1) | `thesisB5` "§B14 Q-2…: the ledger's step prompt still carries §4 (1)" (+ `prompt.honesty`) | 2 / 83 |
+| B14-Q2c | §6 loses "The player's words are theirs…" | `prompt.builder` "§6 equals THESIS_BUILDER_RULES byte for byte" | 2 / 86 |
+| B14-Q2d | §6 loses "Use plain words…" | `prompt.builder` same | 2 / 86 |
+| B14-Q3a | no first + last (first only) | `thesisB5` "§B14 Q-3 (b)…" | 5 / 137 |
+| B14-Q3b | back to the leading sentences | `thesisB5` "§B14 Q-3 (b)…" | 5 / 137 |
+| B14-Q5a | the six-word limit dropped | `thesisB5` "§B14 Q-5 … seven words" | 1 / 74 |
+| B14-Q5b | the sentence-punctuation rule dropped | `thesisB5` "§B14 Q-5 … ends with …" ×3 | 3 / 74 |
+| B14-Q5c | the rule applied to verify_source | `thesisB5` "§B14 Q-5 … verify_source … still lands" | 1 / 74 |
+| B14-Q4a | no block on the ready view | jsdom "Q-4: a ready card whose theme is only suggested draws the block…" | 2 / 156 |
+| B14-Q4b | no text box in the ready view's theme part | jsdom "Q-4: on the ready view, Write your own opens…" | 1 / 156 |
+| B14-Q4c | no focus return on the ready view | jsdom "Q-4: on the ready view, Write your own … closing returns focus to the opener" (after the row fix) | 1 / 156 |
+| B14-W10a | the two buttons stacked | jsdom "Watch 10 (the styles…)" | 1 / 156 |
+| B14-W10b | the labels may wrap | jsdom "Watch 10 (the styles…)" | 1 / 156 |
+| B14-W10c | the suggestion not on its own line | jsdom "Watch 10: '{agent} suggests a theme', the suggestion on its own line…" | 3 / 156 |
+| B14-W10d | the block does not say who suggests | jsdom same | 2 / 156 |
+
+**Re-cut because §B14 moved their anchors:**
+- T3a: now the `keptReplyOf` limit.
+- T5b: now "the pick leaves the older suggestion in place".
+- RA1: the player-words rule's own line.
+
+**The layout itself** (one row at 320, 393 and 1280) is held by the real-browser rows. In place of a browser mutant, which would need a preview per mutant, a planted control on the live preview (CSS stacking the buttons) fails the same measurement 6 / 6. B14-W10a is the jsdom-visible half of the same defect.
+
+### 14.6 The checks
+
+| Check | Result |
+|---|---|
+| Full suite (WSL `~/pd-ci-srb5`, Node 20.20.2, `TZ=UTC`, `--maxWorkers=8`, `flock`) at `ce06e1ce` | **exit 0** · Test Files 1,575 passed, 13 skipped (1,588) · Tests **35,860 passed, 0 failed**, 179 skipped (36,039) · 319 s |
+| `lint:gate` | **exit 0** |
+| `test:rules` | **exit 0** · 46 files · 839 passed |
+| Minified build, head and `main` `bd841257` | **exit 0** both |
+| Ledger differential + control | 4 / 4 byte-identical; control 4 / 4 red |
+| Mutants | 53 / 53 |
+| Real browser on the preview | 55 / 55; the planted control 6 / 6 red |
+| The checklist, scripted on the preview (`b14/checklist.json`) | **12 / 12** (the walk, the theme confirmed, to saved: the sentence opens "My theme is AI data-center buildout, …"; the wrong-if reads "in words") and **14 / 14** for *Write your own* at 393×852 and 320×568 (the part in view, its text box and *Send · free* each under their own tap, the theme set, focus kept on the theme) |
+| Renders | `C:/Users/fashr/Documents/FantasyTrades/SharedResearch/B5/b14/`: `theme-block-builder-map-{320x568,393x852,1280x800}`, `theme-block-builder-ready-…`, and the walk: `walk-1-opened` … `walk-6-saved`, `own-theme-*` |
+
+### 14.7 The bundle diff
+
+Minified `vite build` of `ce06e1ce` against `main` `bd841257` (the merged base), same install, hashed names stripped before comparing: only the lazy Shared Research chunk changes (146,384 → **149,301 B**, +2,917 over `main`; +993 over §B13's 148,308): the theme block, the ready view's block and its text box, `themeLineOf` on the ready view. Every other `.js` stem (54) and `index.html` identical but for hashed file names (3 byte-identical); `index-Bt3Ms9P_.css` the same file on both. Nothing under `src/constants/` moved; the walk JSON has no production importer.
+
+### 14.8 Routine choices made here
+
+1. **§6's first paragraph now says "These lines take the place of §4's lines 1 and 7 there".** Q-2 drops line 1 from the builder prompt, so the old wording ("line 7 … the rest of §4 still holds") would have been false inside the very prompt it sits in. The paragraph is otherwise unchanged; §6 stays pinned byte for byte.
+2. **The player's-words check comes before Q-5's rules.** The player's own words with a closing "." are dropped as `player_words` (the more telling note), not as `sentence`.
+3. **Q-5 applies to the map's shape.** A `direction` step asked as `map_segments` takes the map's rule; `verify_source` never does.
+4. **Q-3's "first and last" means exactly those two.** It is not "as many as fit plus the last". When the first and the last don't fit together, it keeps the first.
+5. **The block's buttons use the `flex` longhands** (`flexBasis: '0%'`): jsdom drops the `1 1 0` shorthand, so the row's styles could not be pinned otherwise. The layout in a browser is the same.
+6. **On the ready view, *Write your own* opens the theme's part** (the work view's pattern) with only the theme's text box in it. The block's *Use it* sits outside.
+
+### 14.9 Watch list, after §B14
+
+- B5 §11 items 1–9 stand. Item 10 (two rows) is answered by Watch 10; Q-1 to Q-5 are ruled.
+- **`strengthen:timeFrame`'s recording still keeps only its first sentence (59 characters).** Its second is 305 characters alone; no first-and-last fits.
+- **"No trading jargon" is a prompt line only.** Nothing on the server scans a reply for "exit" or similar words.
+- **The `map_segments` schema description still says "a short phrase … at most 80 characters".** Unchanged, as ruled (no recompile). The server now enforces the six words and the punctuation.
+
+### 14.10 The phone checklist, updated
+
+On the smoke preview, iPhone, `?srFixture=walk`:
+1. Type "I want to play AI": the card opens with the theme blank and your words in the conversation.
+2. *Map the segments*: above the segment choices, a small block reads "Atlas suggests a theme", the suggestion on its own line, then *Use it · free* and *Write your own* side by side. Atlas's reply is two short sentences.
+3. *Use it*, or *Write your own* and type "AI chips and data centers"; then pick a segment.
+4. Walk on to *Save thesis*: the sentence opens with your theme; a wrong-if Atlas wrote reads "in words".
+5. *(New)* At `?srFixture=builder-ready`: a ready card whose theme is only suggested shows the same block above the names. *Use it* turns the sentence to "My theme is …", and it stays ready.
