@@ -712,3 +712,20 @@ describe('AR1-RF-04 (its edge) — a snapshot that names another day\'s layer is
     expect(record.lastSeen.session).toBe(S[1]);
   });
 });
+
+describe('T2D-08 — with no split-shaped step, the move from the raise to the last price seen is still judged (FR-14, the drift case)', () => {
+  it('$100, $50 (the record), then $40, $32, $25: no single step is split-shaped, the whole is — price_move leaves a new record', async () => {
+    const c = await start();
+    await close(c, 0);
+    await close(c, 1, 50);
+    await close(c, 2, 40, [div(2)]);
+    await close(c, 3, 32, [div(2)]);
+    await close(c, 4, 25, [div(2)]);
+    expect(ideaOf(c).ledger.holdings.AAPL.basisSuspicion.transitions ?? []).toEqual([]);
+    expect((await rule(c, { kind: 'suspicion', recordId: `suspected_split_AAPL_${S[1]}`, decision: 'price_move' })).status).toBe(200);
+    await close(c, 5, 25);
+    const idea = ideaOf(c);
+    expect(idea.ledger.holdings.AAPL.basisSuspicion).toMatchObject({ suspectedOn: S[4], since: S[1], ratio: 0.5 });
+    expect([idea.ledger.dividendsUsd, idea.comparisonLedger.dividendsUsd]).toEqual([0, 0]);
+  });
+});
