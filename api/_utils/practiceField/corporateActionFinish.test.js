@@ -627,7 +627,8 @@ describe('Amendment F-7 — re-dated and late actions; F-8 — the receipt link'
     }
     expect(rowOf(ctx, S[2]).marks.AAPL.quality).toBe('carried_forward');
     // The doubt survives the feed dropping the row (its receipt is durable): the dividend still waits, the mark is carried.
-    await closeDay(ctx, S[3]);
+    // (The price stays where it is — a move back would raise the gap screen's own record and hide this one.)
+    await closeDay(ctx, S[3], { AAPL: 115.74 });
     expect(ideaOf(ctx).ledger.holdings.AAPL.heldActions.map((r) => r.actionId)).toEqual([`cash_dividend_AAPL_${S[2]}`]);
     expect(rowOf(ctx, S[3]).marks.AAPL.quality).toBe('carried_forward');
   });
@@ -1164,6 +1165,8 @@ describe('the review\'s fix round — re-dated and late actions (lens C); covera
     await closeDay(ctx, S[2], { AAPL: { price: 115.74, corporateActions: [...conflict, dividend(0.24, S[2])] } });
     expect((await resolve(ctx, { kind: 'conflict', recordId: `cash_dividend_AAPL_${S[2]}`, decision: 'payload', payload: { amount: 0.24 } }, 'rule-1', etIso(S[3], 8, 0))).status).toBe(200);
     await closeDay(ctx, S[3], { AAPL: { price: 115.74, corporateActions: conflict } });
+    // Held behind the conflict, the founder's action keeps its ruling on its held record.
+    for (const f of ['ledger', 'comparisonLedger']) expect(ideaOf(ctx)[f].holdings.AAPL.heldActions.find((r) => r.actionId === `cash_dividend_AAPL_${S[2]}`), f).toMatchObject({ founderRuling: expect.objectContaining({ requestKey: 'rule-1' }) });
     await closeDay(ctx, S[4], { AAPL: { price: 115.74, corporateActions: [split(2, S[1])] } }); // the conflict settles: ×2
     for (const f of ['ledger', 'comparisonLedger']) {
       const l = ideaOf(ctx)[f];
