@@ -65,7 +65,7 @@ export const CHART_READ_COPY = Object.freeze({
   footProvenance: 'Read from the stored record. Nothing is computed here; no message cost.',
   footBasis: (day) => `daily · completed sessions · prices unadjusted · as of ${day} close`,
   // Result glyphs' words for assistive tech.
-  resultWords: Object.freeze({ pass: 'holds', fail: 'does not hold', unknown: 'no reading', quiet: 'not present' }),
+  resultWords: Object.freeze({ pass: 'holds', fail: 'does not hold', unknown: 'not measured', quiet: 'not present' }),
   // The chart (CR-5, CR-7, MK-5).
   ruleChip: 'Rule',
   basisNote: 'prices unadjusted',
