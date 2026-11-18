@@ -202,7 +202,7 @@ export const THESIS_BUILDER_RULES = [
   'How to work:',
   '- You propose; the player decides. Never set a part yourself, and never fill one to finish the card.',
   '- Each step works on the goal it was given and on nothing else.',
-  '- A reply is two or three sentences: what the step found and what it proposes for the card.',
+  '- A reply is at most two short sentences, about 280 characters: first what this step found, then what it proposes for the card. Do not repeat what the card or the choices already show. Speak to the player as a partner; never "your observation", "the retrieved items" or "the record".',
   '- A thesis says what a company earns from, is exposed to or depends on, and what would prove that wrong. Never call a stock a good purchase, a great play or a winner, and never say where its price is headed.',
   '- When no listed company has a sourced connection, say so plainly: that is an honest ending, and no company is picked to finish the card.',
   '- Never say the thesis will be watched, tracked, tested or held by you, the agent or any part of the app.',
@@ -236,14 +236,14 @@ export function buildBuildSystemPrompt({ partnerName, method = null } = {}) {
     '- A correction names the record finding it corrects in supersedes; correct one finding at most once. A Source-backed finding is corrected only by another retrieved fact, or by an unresolved finding when the evidence now conflicts; never by an inference.',
     `- companies (when the schema has them): at most 6. role is one of ${RELATIONSHIP_ROLES.join(', ')}. relationshipRef names the relationship finding about that company. A company is supported, and can be a name on the card, only when a retrieved item verifies the relationship and its symbol is in the game universe.`,
     `- Unresolved reasons: ${UNRESOLVED_REASONS.join(', ')}.`,
-    '- themeSuggestion: a theme in a short phrase (at most 80 characters), only when the card has no theme; else an empty string.',
+    '- themeSuggestion: only when the card has no theme, a theme in your own words: a short noun phrase of two to six words, never a sentence, at most 80 characters (for example "AI chips and data centers"); else an empty string.',
     '- segments: two to five, each a label (at most 60 characters), one line (at most 120) and refs naming the findings that back it; refs empty when it is your own reasoning.',
     '- why: shared is the reason the names share, written as a clause that follows "because" (at most 160 characters); reasons: one per name, each citing only Source-backed findings, at least one of them about that company (refs); against is the strongest point against with the findings it rests on (an empty text when you found none).',
     "- wrongIfOptions: up to three, each a business condition written as a clause that follows \"It's wrong if\" (at most 160 characters), with the findings it rests on, if any. Never a price level or a share-price move.",
     '- timeFramePick: the time frame that fits the why, and why in one line (at most 140 characters).',
     "- pick: the one choice you would make for the part this step is about (its value exactly as the card writes it; names as symbols separated by commas) and your reason in one line (at most 140 characters). When the step's goal is pick, also give two or three reasons, each citing only findings already on the record (refs), or with refs empty when it is your own reasoning.",
     '- Every number in a line you write appears in a Source-backed finding that line cites.',
-    '- reply: two or three plain sentences, at most 600 characters: what this step found and what it proposes for the card. Write no sentence about yourself or your own process.',
+    '- reply: at most two short sentences, about 280 characters: first what this step found, then what it proposes for the card. Do not repeat what the card or the choices already show. Speak to the player as a partner; never "your observation", "the retrieved items" or "the record". Write no sentence about yourself or your own process.',
   ].join('\n');
 }
 
@@ -253,11 +253,15 @@ const STRENGTHEN_REVISES = Object.freeze({ segment: 'the segment map (segments)'
 /** What each goal asks of the step (the user turn's goal line). */
 function goalLineOf({ goal, part, card }) {
   const names = card?.names?.state === 'set' ? card.names.value.join(', ') : null;
-  const where = card?.segment?.state === 'set' && !card.segment.skipped ? card.segment.value : (card?.theme?.value ?? 'the theme');
+  // §B13 T-2: find_names may run with no theme set; it then works on the question above, never on "the theme"
+  const themed = card?.theme?.state === 'set' && card.theme.value;
+  const where = card?.segment?.state === 'set' && !card.segment.skipped ? card.segment.value : (themed ? card.theme.value : null);
   switch (goal) {
     case 'verify_source': return "This step: check the starting point against its primary source: find the filing, release or report it rests on, and that source's own date. Suggest a theme for the thesis in a short phrase (themeSuggestion).";
-    case 'map_segments': return `This step: map the theme into two to five segments (segments), then mark the one you would stand on (pick) with a one-line reason.${card?.theme?.state === 'set' ? '' : ' The card has no theme yet: suggest one (themeSuggestion).'}`;
-    case 'find_names': return `This step: find listed companies from the game universe with a sourced connection to ${line(where)} (relationship findings and companies). Mark the one company, or the group of up to four, you would build on (pick).`;
+    case 'map_segments': return themed
+      ? 'This step: map the theme into two to five segments (segments), then mark the one you would stand on (pick) with a one-line reason.'
+      : "This step: map the idea behind the question above into two to five segments (segments), then mark the one you would stand on (pick) with a one-line reason. The card has no theme yet: suggest one in your own words, a short noun phrase of two to six words, never a sentence (themeSuggestion).";
+    case 'find_names': return `This step: find listed companies from the game universe with a sourced connection to ${where ? line(where) : 'the idea behind the question above'} (relationship findings and companies). Mark the one company, or the group of up to four, you would build on (pick).`;
     case 'build_why': return `This step: build the why for ${names}: the reason they share (why.shared), one Source-backed reason per name (why.reasons) and the strongest point against (why.against). Offer up to three ways the thesis could be proved wrong (wrongIfOptions), mark the one you would pick (pick), and say which time frame fits (timeFramePick).`;
     case 'strengthen': return `This step: the card's ${part} is already set by the player. Look for evidence for or against it; do not pick for it.${STRENGTHEN_REVISES[part] ? ` Revise ${STRENGTHEN_REVISES[part]} only if the evidence changes it.` : ''}`;
     case 'pick': return `This step: no search. Pick for the player among the card's choices for ${part} and say why (pick, with two or three reasons). Cite only findings already on the record; a reason no finding backs is your own reasoning and has empty refs.`;

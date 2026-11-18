@@ -591,10 +591,12 @@ async function openBuilderOwnWords(body, res, { db, uid }, nowIso) {
 
 /** The search text a builder step's retrieval runs on, by goal (routine: the card's own words, the names in play). */
 function buildFocusOf({ goal, part, card, record }) {
-  const theme = card.theme.value ?? card.theme.suggestion ?? null;
+  const opening = currentFindingsOf(record).find((f) => f.kind === 'coverage' || f.kind === 'observation');
+  // §B13 T-1: own words no longer become the theme, so until one is suggested or set the search names the player's
+  // words themselves (the observation on the record) — the text the first map searched on before T-1
+  const theme = card.theme.value ?? card.theme.suggestion ?? (opening?.kind === 'observation' ? opening.fact : null);
   const seg = card.segment.state === 'set' && !card.segment.skipped ? card.segment.value : null;
   const names = card.names.state === 'set' ? card.names.value.join(' ') : '';
-  const opening = currentFindingsOf(record).find((f) => f.kind === 'coverage' || f.kind === 'observation');
   switch (goal) {
     case 'verify_source': return opening ? `primary source of: ${opening.fact}` : null;
     case 'map_segments': return theme ? `${theme}: the parts of this market and the listed companies in each` : null;

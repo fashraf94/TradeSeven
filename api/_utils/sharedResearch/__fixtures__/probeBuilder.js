@@ -8,8 +8,13 @@
 // facts and not a real search result. scripts/sharedResearch/probeBuilder.mjs
 // sends them; thesisSchema.recorded.test.js validates the recorded answers.
 
-import { emptyCard, cardContextOf, offeredGoalsOf, blockedNow } from '../thesis.js';
-import { schemaKeyOf, turnShapeOf } from '../thesisSchema.js';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { emptyCard, openingCardOf, cardContextOf, offeredGoalsOf, blockedNow, applyProposals, applyCardOp } from '../thesis.js';
+import { schemaKeyOf, turnShapeOf, validateBuildTurn } from '../thesisSchema.js';
+import { companiesOf } from '../companies.js';
+import { BASELINE } from '../method.js';
 
 export const PROBE_B_READ_AT = '2026-11-16T15:00:00.000Z';
 export const PROBE_B_NOW = '2026-11-16T15:00:05.000Z';
@@ -133,12 +138,14 @@ const POWER_ITEMS = [
  * offers there (offeredGoalsOf — the probe's goal must be on it), and the shape the turn is asked in (turnShapeOf).
  */
 const probe = (p) => {
-  const q = { part: null, direction: null, retrieval: 'items', entryKind: 'observation', ...p };
+  const { recordedShape = null, ...rest } = p;
+  const q = { part: null, direction: null, retrieval: 'items', entryKind: 'observation', ...rest };
   const session = { status: 'open', entry: { kind: q.entryKind }, stepBudget: 8, stepsUsed: 1, exchanges: [] };
   const ctx = cardContextOf({ record: q.record, supported: q.supported, session });
   const offered = offeredGoalsOf(q.card, ctx);
-  const shape = turnShapeOf({ goal: q.goal, part: q.part }, offered, { deadEnd: blockedNow(q.card, ctx) });
-  return { ...q, session, offered, shape, key: schemaKeyOf(shape) };
+  // `recordedShape`: the shape a probe was RECORDED in, when today's offers would ask its card in another (B5, §B13 T-2)
+  const shape = recordedShape ?? turnShapeOf({ goal: q.goal, part: q.part }, offered, { deadEnd: blockedNow(q.card, ctx) });
+  return { ...q, session, offered, shape, key: schemaKeyOf(shape), asNow: turnShapeOf({ goal: q.goal, part: q.part }, offered, { deadEnd: blockedNow(q.card, ctx) }) };
 };
 
 /** Every probe: the five goals, `strengthen` on each part, `direction` with nothing else on offer (S-4). */
@@ -170,9 +177,85 @@ export function builderProbes() {
     ...['theme', 'segment', 'names', 'why', 'wrongIf', 'timeFrame'].map((part) => probe({
       goal: 'strengthen', part, card: fullCard(), record: record([OBSERVATION, NVDA_REL, NVDA_SALES, OWN_CHIPS, SPENDING]), supported: NVDA_SUPPORTED, items: STRENGTHEN_ITEMS,
     })),
+    // B3 recorded this one as bare `direction` (findings and companies only): a suggested theme then held the map back.
+    // Under §B13 T-2 the theme gates nothing, so today this card asks direction as map_segments, and no builder card
+    // reaches the bare shape (thesisB5.test.js). The recording is replayed in the shape it was made in; the `direction`
+    // schema stays compiled and unchanged.
     probe({
-      goal: 'direction', direction: 'look at power and cooling',
+      goal: 'direction', direction: 'look at power and cooling', recordedShape: Object.freeze({ goal: 'direction', part: null }),
       card: pending, record: record([{ ...OBSERVATION, fact: longWords }], `Build a thesis on: ${longWords}`), supported: [], items: POWER_ITEMS,
     }),
   ];
+}
+
+// ── the B5 probes (Amendment B §B13 T-7): three calls, one chain ───────────────────
+//
+// Own words "I want to play AI", on the cards §B13 makes: (1) map_segments on the T-1 card (the theme unset); (2)
+// find_names on the card that map leaves, the segment set (the map's pick, confirmed) and the theme still unset (T-2);
+// (3) build_why on one name (the find_names pick's first, else the first supported). Each card is DERIVED from the
+// recorded answer before it — validated, landed and tapped by B3's own functions — so a probe runs only after the one
+// before it is recorded (one key per run of the script). Recorded as build.b5.<goal>.recorded.json; the round's own
+// ledger is build.b5.probes.ledger.json (at most 3 calls and $0.10, T-7). B3's sixteen calls are untouched.
+
+export const PROBE_B5_READ_AT = '2026-11-17T15:00:00.000Z';
+export const PROBE_B5_NOW = '2026-11-17T15:00:05.000Z';
+export const PROBE_B5_EXCHANGE_ID = '4c5d6e7f-8091-4a2b-8c3d-4e5f60718294';
+export const PROBE_B5_KEYS = Object.freeze(['b5:map_segments', 'b5:find_names', 'b5:build_why']);
+const B5_FIXTURES = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../test/fixtures/sharedResearch');
+/** A B5 probe's recorded file (`b5:find_names` → build.b5.find_names.recorded.json). */
+export const b5FileOf = (key) => resolve(B5_FIXTURES, `build.${key.replace(':', '.')}.recorded.json`);
+const b5Recorded = (key) => (existsSync(b5FileOf(key)) ? JSON.parse(readFileSync(b5FileOf(key), 'utf8')) : null);
+
+/** Validate a B5 probe's answer as the route would (each probe mints its own finding ids). */
+export function validateB5(p, output) {
+  let n = 0;
+  return validateBuildTurn(output, {
+    record: p.record, items: p.items, readAt: PROBE_B5_READ_AT, partnerExchangeId: PROBE_B5_EXCHANGE_ID, partnerAt: PROBE_B5_NOW, nowIso: PROBE_B5_NOW,
+    mintFindingId: () => `f_7c0000${String(p.index).padStart(2, '0')}-0000-4000-8000-${String(++n).padStart(12, '0')}`, names: PROBE_B_NAMES, partnerName: 'Atlas', method: BASELINE,
+    card: p.card, goal: p.goal, part: p.part, shape: p.shape,
+  });
+}
+/** The record and the card after a probe's recorded answer lands (recordStep's order: findings, then the proposals). */
+function landedB5(p, output) {
+  const v = validateB5(p, output);
+  if (!v.ok) throw new Error(`b5 fixture: the recorded ${p.key} answer does not validate: ${JSON.stringify(v)}`);
+  const after = { ...p.record, findings: [...p.record.findings, ...v.findings] };
+  const card = applyProposals(p.card, v.proposals, cardContextOf({ record: after, supported: companiesOf(after).supported }));
+  return { record: after, card, v };
+}
+const b5Probe = (index, p) => {
+  const q = probe({ ...p, retrieval: 'items', entryKind: 'observation' });
+  return { ...q, index, key: PROBE_B5_KEYS[index] };
+};
+
+/**
+ * The B5 probes whose inputs can be built now: the map always; find_names once the map is recorded; build_why once
+ * find_names is. `recordedOf(key)` reads a recorded answer (the files, by default).
+ */
+export function b5Probes({ recordedOf = b5Recorded } = {}) {
+  const out = [];
+  const map = b5Probe(0, { goal: 'map_segments', card: openingCardOf({ entryKind: 'observation', observation: 'I want to play AI' }), record: record([OBSERVATION]), supported: [], items: AI_ITEMS });
+  out.push(map);
+  const mapRec = recordedOf(map.key);
+  if (!mapRec?.ok) return out;
+  const afterMap = landedB5(map, mapRec.output);
+  const ctxMap = cardContextOf({ record: afterMap.record, supported: companiesOf(afterMap.record).supported, session: map.session });
+  // the segment: the map's pick, confirmed (the walk's tap); else the map's first label, chosen
+  const seg = afterMap.card.pick?.part === 'segment'
+    ? applyCardOp(afterMap.card, { op: 'confirm', part: 'segment' }, ctxMap)
+    : applyCardOp(afterMap.card, { op: 'set', part: 'segment', value: afterMap.card.segment.map?.[0]?.label }, ctxMap);
+  if (!seg.ok) throw new Error(`b5 fixture: the segment could not be set: ${seg.reason}`);
+  const names = b5Probe(1, { goal: 'find_names', card: seg.card, record: afterMap.record, supported: companiesOf(afterMap.record, { names: PROBE_B_NAMES }).supported, items: NAMES_ITEMS });
+  out.push(names);
+  const namesRec = recordedOf(names.key);
+  if (!namesRec?.ok) return out;
+  const afterNames = landedB5(names, namesRec.output);
+  const supported = companiesOf(afterNames.record, { names: PROBE_B_NAMES }).supported;
+  const ctxNames = cardContextOf({ record: afterNames.record, supported, session: names.session });
+  const pickFirst = afterNames.card.pick?.part === 'names' ? afterNames.card.pick.value[0] : null;
+  const one = pickFirst ?? supported[0]?.symbol;
+  const named = applyCardOp(afterNames.card, { op: 'set', part: 'names', value: [one] }, ctxNames);
+  if (!named.ok) throw new Error(`b5 fixture: the name could not be set: ${named.reason}`);
+  out.push(b5Probe(2, { goal: 'build_why', card: named.card, record: afterNames.record, supported, items: WHY_ITEMS }));
+  return out;
 }

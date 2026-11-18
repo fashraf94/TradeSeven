@@ -198,15 +198,17 @@ describe('the shape stamp (§B2; §B10 S-B2; K-2)', () => {
 });
 
 describe('own words open at once (§B4.1, DR-6)', () => {
-  it('no framing call, no framing count; one investigation counted; the theme is the player\'s words', async () => {
+  // §B13 T-1 (moved from "the theme is the player's words"): the words stay on record as the player's observation
+  it("no framing call, no framing count; one investigation counted; the theme unset, the words on record as the player's (§B13 T-1)", async () => {
     const o = await openOwn('I want to play AI');
     expect(state.turns).toEqual([]);
     expect(quotaDoc()).toMatchObject({ investigationsOpened: 1, framingsRun: 0 });
-    expect(o.thesis.parts.theme).toMatchObject({ state: 'set', value: 'I want to play AI', by: 'player_wrote' });
+    expect(o.thesis.parts.theme).toMatchObject({ state: 'unset', value: null, by: null, suggestion: null });
+    expect(o.session.exchanges).toEqual([expect.objectContaining({ who: 'player', kind: 'observation', text: 'I want to play AI' })]);
     expect(o.record.question).toBe('Build a thesis on: I want to play AI');
     expect(o.record.findings.map((f) => f.kind)).toEqual(['observation']);
     expect(sessionDoc(o.session.sessionId).attribution).toMatchObject(STAMP);
-    expect(o.thesis.choices.research.map((g) => g.goal)).toEqual(['map_segments', 'strengthen', 'direction']);
+    expect(o.thesis.choices.research.map((g) => g.goal)).toEqual(['map_segments', 'direction']); // §B13 T-1: no theme, so no strengthen:theme
   });
   it('words over 80 leave the theme unset for the first step to suggest (SQ-2)', async () => {
     const o = await openOwn('x'.repeat(81));
@@ -276,7 +278,7 @@ describe('a step only proposes (V2-4)', () => {
     expect(r.body.thesis.parts.segment).toMatchObject({ state: 'unset', map: [{ label: 'GPUs and accelerators' }, { label: 'Data-center power' }] });
     expect(r.body.thesis.pick).toMatchObject({ part: 'segment', value: 'GPUs and accelerators', asked: false, basis: 'reasoning' });
     expect(r.body.thesis.rev).toBe(o.thesis.rev + 1);
-    expect(r.body.thesis.filled).toBe(1);
+    expect(r.body.thesis.filled).toBe(0); // §B13 T-1 (moved from 1): the open no longer sets the theme
     expect(state.turns[0].schema).toBe(BUILD_SCHEMAS.map_segments);
     expect(state.turns[0].system).not.toContain('weakest link');
     expect(state.logs.at(-1)).toMatchObject({ outcome: 'completion', intent: 'build', goal: 'map_segments' });
@@ -327,6 +329,7 @@ describe('one schema per goal (the founder\'s S-1, Nov 17)', () => {
     await step(3, 'find_names', NAMES());
     await tap(2, 'set', 'names', ['NVDA']);
     await step(4, 'build_why', WHY());
+    await tap(3, 'set', 'theme', 'AI chips'); // §B13 T-1 (added): strengthen:theme needs a set theme, and the open no longer sets one
     await step(5, 'strengthen', out({ reply: 'Nothing new changes the theme.' }), { part: 'theme' });
     expect(state.turns.map((t) => t.schema)).toEqual([
       BUILD_SCHEMAS.map_segments, BUILD_SCHEMAS.pick, BUILD_SCHEMAS.find_names, BUILD_SCHEMAS.build_why, BUILD_SCHEMAS['strengthen:theme'],
@@ -362,20 +365,22 @@ describe('one schema per goal (the founder\'s S-1, Nov 17)', () => {
     expect(r.body.companies.supported).toEqual([expect.objectContaining({ symbol: 'NVDA', role: 'Supplier' })]);
     expect(r.body.thesis.pick).toMatchObject({ part: 'names', value: ['NVDA'], asked: false });
   });
-  it('with nothing else on offer, direction is asked with findings and companies only, and lands nothing on the card', async () => {
+  // §B13 T-2 (moved from "with nothing else on offer, direction is asked with findings and companies only"): a suggested
+  // theme no longer holds the map back, so this card asks direction as map_segments. No builder card reaches the bare
+  // direction shape now (thesisB5.test.js walks the offers); its schema stays compiled, unchanged.
+  it('a suggested theme holds nothing back (§B13 T-2): the map stays on offer, and direction is asked as map_segments', async () => {
     const long = 'I want to play AI through the chips, the power and the networking that the largest data centers keep buying';
     const o = await openOwn(long, 'req-own-long');
     const id = o.session.sessionId;
     const m = await build(id, 1, 'map_segments', out({ ...MAP().output, themeSuggestion: 'AI data-center build-out' }));
     expect(m.statusCode, JSON.stringify(m.body)).toBe(200);
     expect(m.body.thesis.parts.theme).toMatchObject({ state: 'suggested', suggestion: 'AI data-center build-out' });
-    expect(m.body.thesis.choices.research.map((g) => g.goal)).not.toContain('map_segments');
+    expect(m.body.thesis.choices.research.map((g) => g.goal)).toContain('map_segments');
     const r = await build(id, 2, 'direction', out({ reply: 'I looked at power.', segments: [{ label: 'A', line: 'a', refs: [] }, { label: 'B', line: 'b', refs: [] }] }), { direction: 'look at power' });
     expect(r.statusCode, JSON.stringify(r.body)).toBe(200);
-    expect(state.turns[1].schema).toBe(BUILD_SCHEMAS.direction);
-    expect(state.turns[1].user).toContain('Propose nothing for the card this step: findings only.');
-    expect(r.body.thesis.parts.segment.map.map((x) => x.label)).toEqual(['GPUs and accelerators', 'Data-center power']);
-    expect(state.logs.at(-1).validationNotes).toContain('ignored:segments');
+    expect(state.turns[1].schema).toBe(BUILD_SCHEMAS.map_segments);
+    expect(state.turns[1].user).toContain("The proposals you may make are those of the card's next step (map segments)");
+    expect(r.body.thesis.parts.segment.map.map((x) => x.label)).toEqual(['A', 'B']);
   });
 });
 
@@ -408,8 +413,11 @@ describe('the free action (§B4.3; K-5; §B10 R-21)', () => {
     expect([stale.statusCode, stale.body.error, stale.body.thesis.rev]).toEqual([409, 'card_stale', o.thesis.rev]);
     const bad = await card(id, 2, 'set', 'timeFrame', 'intraday', o.thesis.rev);
     expect([bad.statusCode, bad.body.error, bad.body.reason]).toEqual([400, 'invalid_card', 'invalid_value']);
-    const theme = await card(id, 3, 'set', 'theme', 'Something else', o.thesis.rev);
-    expect([theme.statusCode, theme.body.reason]).toEqual([400, 'theme_fixed']);
+    // §B13 T-1 (moved): the open leaves the theme unset, so the player's first phrase sets it; a second is refused
+    const theme = await card(id, 3, 'set', 'theme', 'AI chips', o.thesis.rev);
+    expect([theme.statusCode, theme.body.thesis.parts.theme.value]).toEqual([200, 'AI chips']);
+    const again = await card(id, 4, 'set', 'theme', 'Something else', theme.body.thesis.rev);
+    expect([again.statusCode, again.body.reason]).toEqual([400, 'theme_fixed']);
   });
   it('never takes a part\'s finding, a reason or a ready verdict from the client — only an operation', async () => {
     const o = await openOwn();
@@ -504,7 +512,8 @@ describe('to a ready card, and its save (§B4.5; §B10 S-B1, PF-1, PF-3)', () =>
     const { last } = await toReady();
     const t = last.body.thesis;
     expect(t.ready).toBe(true);
-    expect(t.sentence).toBe("My theme is I want to play AI, through GPUs and accelerators, built on NVDA, because it sells the accelerators AI data centers are buying. It's wrong if big buyers cut accelerator spending for two quarters. Time frame: Positional · about 30 sessions.");
+    // §B13 T-1/T-2 (moved from "My theme is I want to play AI, through …"): no theme is set on this path, so it opens at the names
+    expect(t.sentence).toBe("Built on NVDA, through GPUs and accelerators, because it sells the accelerators AI data centers are buying. It's wrong if big buyers cut accelerator spending for two quarters. Time frame: Positional · about 30 sessions.");
     expect(t.parts.why).toMatchObject({ state: 'set', by: 'partner_suggested_confirmed', against: { text: 'Several large buyers design their own chips.' } });
     expect(t.parts.wrongIf.priceLines).toEqual([{ symbol: 'NVDA', level: 120 }]);
     const g = await get({ sessionId: last.body.session.sessionId });
@@ -593,5 +602,114 @@ describe('to a ready card, and its save (§B4.5; §B10 S-B1, PF-1, PF-3)', () =>
     expect(t.statusCode).toBe(200);
     const saved = await post({ action: 'adopt', sessionId: id, rev: t.body.thesis.rev });
     expect(saved.statusCode, JSON.stringify(saved.body)).toBe(200);
+  });
+});
+
+// ── B5: before the switch (Amendment B §B13, Nov 17) ───────────────────────────────
+describe('B5 — before the switch (§B13): the theme, the save while a step runs', () => {
+  const running = (startedAt) => ({ stepId: uuid(77), intent: 'build', status: 'running', startedAt, endedAt: null, error: null });
+  const watchlists = () => [...env.store.keys()].filter((k) => k.startsWith('watchlists/'));
+  const recordOf = (id) => env.doc(`researchWork/sr_${id}`);
+
+  it("T-1: the first map lands the theme suggestion and searches on the player's own words; confirming it is free", async () => {
+    const o = await openOwn();
+    const id = o.session.sessionId;
+    const m = await build(id, 1, 'map_segments', out({ ...MAP().output, themeSuggestion: 'AI chips and data centers' }));
+    expect(m.statusCode, JSON.stringify(m.body)).toBe(200);
+    // the search text the first map ran on before T-1, when the words were the theme (buildFocusOf)
+    expect(state.retrievals[0].focus).toBe('I want to play AI: the parts of this market and the listed companies in each');
+    expect(state.turns[0].user).toContain('The card has no theme yet: suggest one in your own words, a short noun phrase of two to six words, never a sentence (themeSuggestion).');
+    expect(m.body.thesis.parts.theme).toMatchObject({ state: 'suggested', value: null, by: null, suggestion: 'AI chips and data centers' });
+    expect(m.body.thesis.choices.free).toContainEqual({ op: 'confirm', part: 'theme', value: 'AI chips and data centers' });
+    const c = await card(id, 1, 'confirm', 'theme', undefined, m.body.thesis.rev);
+    expect(c.body.thesis.parts.theme).toMatchObject({ state: 'set', value: 'AI chips and data centers', by: 'partner_suggested_confirmed' });
+    expect([state.turns.length, sessionDoc(id).stepsUsed]).toEqual([1, 1]);
+  });
+
+  it('T-1/T-2: find_names runs with the theme unset; the theme confirmed later opens the saved sentence and rides on thesisCard', async () => {
+    const o = await openOwn();
+    const id = o.session.sessionId;
+    let rev = o.thesis.rev;
+    const step = async (n, goal, a) => { const r = await build(id, n, goal, a); expect(r.statusCode, JSON.stringify(r.body)).toBe(200); rev = r.body.thesis.rev; return r; };
+    const tap = async (n, op, part, value) => { const r = await card(id, n, op, part, value, rev); expect(r.statusCode, JSON.stringify(r.body)).toBe(200); rev = r.body.thesis.rev; return r; };
+    await step(1, 'map_segments', out({ ...MAP().output, themeSuggestion: 'AI chips and data centers' }));
+    await tap(1, 'set', 'segment', 'GPUs and accelerators');
+    const n = await step(2, 'find_names', NAMES()); // T-2: the theme is only suggested; find_names is on offer all the same
+    expect(n.body.thesis.parts.theme.state).toBe('suggested');
+    await tap(2, 'set', 'names', ['NVDA']);
+    await step(3, 'build_why', WHY());
+    await tap(3, 'confirm', 'why');
+    await tap(4, 'set', 'wrongIf', { option: 0 });
+    const ready = await tap(5, 'set', 'timeFrame', 'positional');
+    expect(ready.body.thesis.sentence).toMatch(/^Built on NVDA, through GPUs and accelerators, because /);
+    expect(ready.body.thesis.choices.free).toContainEqual({ op: 'confirm', part: 'theme', value: 'AI chips and data centers' }); // still on offer
+    const themed = await tap(6, 'confirm', 'theme');
+    expect(themed.body.thesis.sentence).toMatch(/^My theme is AI chips and data centers, through GPUs and accelerators, built on NVDA, because /);
+    const r = await post({ action: 'adopt', sessionId: id, rev });
+    expect(r.statusCode, JSON.stringify(r.body)).toBe(200);
+    const list = env.doc(`watchlists/${r.body.watchlistId}`);
+    expect(list.thesisCard.theme).toEqual({ value: 'AI chips and data centers', by: 'partner_suggested_confirmed' });
+    expect(list.thesisCard.sentence).toBe(themed.body.thesis.sentence);
+  });
+
+  it('T-4: a save sent while a step is in flight is refused 409 step_in_flight and writes nothing; the step then lands', async () => {
+    const { id, rev } = await toReady();
+    let release;
+    const held = new Promise((r) => { release = r; });
+    state.retrievalQueue.push({ items: ITEMS, costDollars: 0, elapsedMs: 1, readAt: new Date().toISOString() });
+    state.turnQueue.push(async () => { await held; return out({ reply: 'Nothing new changes the why.' }); });
+    const before = state.turns.length;
+    const inFlight = post({ action: 'step', sessionId: id, stepId: uuid(40), intent: 'build', goal: 'strengthen', part: 'why' });
+    while (state.turns.length === before) await new Promise((r) => { setTimeout(r, 1); });
+    expect(sessionDoc(id).lastStep).toMatchObject({ stepId: uuid(40), status: 'running' });
+    const writes = env.writes.length;
+    const save = await post({ action: 'adopt', sessionId: id, rev });
+    expect([save.statusCode, save.body.error]).toEqual([409, 'step_in_flight']);
+    expect(env.writes.length).toBe(writes);
+    expect(watchlists()).toEqual([]);
+    expect(recordOf(id).state).toBe('open');
+    expect(sessionDoc(id).status).toBe('open');
+    release();
+    const landed = await inFlight;
+    expect(landed.statusCode, JSON.stringify(landed.body)).toBe(200);
+    expect(sessionDoc(id).lastStep).toMatchObject({ stepId: uuid(40), status: 'completed' });
+  });
+
+  it("T-4: checked inside the transaction, before the rev — a step that started after the save's first read is caught there", async () => {
+    const { id, rev } = await toReady();
+    env.hooks.atTxStart = (store) => {
+      const s = store.get(`sharedResearchSessions/${id}`);
+      s.lastStep = running(new Date().toISOString());
+      s.thesis.rev += 1; // the rev moved too: the running step is named, not the stale card
+    };
+    const writes = env.writes.length;
+    const save = await post({ action: 'adopt', sessionId: id, rev });
+    expect([save.statusCode, save.body.error]).toEqual([409, 'step_in_flight']);
+    expect(env.writes.length).toBe(writes);
+    expect(watchlists()).toEqual([]);
+    expect(recordOf(id).state).toBe('open');
+  });
+
+  it('T-4: a stale running step (past RUNNING_STALE_MS) does not block the save, as it does not block the card route', async () => {
+    const { id, rev } = await toReady();
+    const doc = sessionDoc(id);
+    env.store.set(`sharedResearchSessions/${id}`, { ...doc, lastStep: running(new Date(Date.now() - 60_000).toISOString()) });
+    const tapped = await card(id, 90, 'set', 'wrongIf', { priceLines: [{ symbol: 'NVDA', level: 121 }] }, rev);
+    expect(tapped.statusCode, JSON.stringify(tapped.body)).toBe(200);
+    const save = await post({ action: 'adopt', sessionId: id, rev: tapped.body.thesis.rev });
+    expect(save.statusCode, JSON.stringify(save.body)).toBe(200);
+    expect(recordOf(id).state).toBe('completed');
+  });
+
+  it('T-4: a running step found at once is refused the same way, and the card route agrees', async () => {
+    const { id, rev } = await toReady();
+    const doc = sessionDoc(id);
+    env.store.set(`sharedResearchSessions/${id}`, { ...doc, lastStep: running(new Date().toISOString()) });
+    const writes = env.writes.length;
+    const save = await post({ action: 'adopt', sessionId: id, rev });
+    const tap = await card(id, 91, 'set', 'timeFrame', 'swing', rev);
+    expect([save.statusCode, save.body.error, tap.statusCode, tap.body.error]).toEqual([409, 'step_in_flight', 409, 'step_in_flight']);
+    expect(env.writes.length).toBe(writes);
+    expect(watchlists()).toEqual([]);
   });
 });

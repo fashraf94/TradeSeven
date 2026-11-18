@@ -4,7 +4,8 @@
 // §B4.2; §B10 S-B3; K-4).
 //
 // ONE SCHEMA PER GOAL (the founder's S-1/S-2, Nov 17): each goal's schema holds
-// `reply` (at most 600 characters) plus only what that goal may land (ACCEPTS,
+// `reply` (its description still says 600 characters; the server cuts the
+// model's reply at 320 — §B13 T-3) plus only what that goal may land (ACCEPTS,
 // the rule the validator enforces), with B1's `findings` and the builder's
 // `companies` where S-1 lists them; B1's `summary`, `lines` and `nextAction`
 // are gone. Builder companies drop `claim` and `openRef` (the card's why
@@ -45,6 +46,14 @@ import { NAMES_A_PRICE, lineFailOf, builderWordingOf } from './thesisWords.js';
 import { applyProposals, cardContextOf } from './thesis.js';
 
 export { NAMES_A_PRICE };
+
+/**
+ * The model's own reply, at most (§B13 T-3): cut at a sentence's end at 320 characters — the rule asks for two short
+ * sentences, about 280. The server's own lines (the replaced reply, the dead-end line, the unsourced line) may take
+ * the whole to THESIS_LIMITS.reply (600), as before. Kept here, not in THESIS_LIMITS: that module ships in the client.
+ * The schema's description text is unchanged (no recompile).
+ */
+export const MODEL_REPLY_MAX = 320;
 
 // ── the schemas (structured outputs: every object closed, every key required, nullable through anyOf) ──
 //
@@ -240,10 +249,11 @@ export function validateBuildTurn(output, ctx) {
   // The builder writes no ledger claim and no open question (S-2): whatever a company carries, B1 reads none.
   const companies = (holds('companies') && Array.isArray(output.companies) ? output.companies : []).map((c) => (c && typeof c === 'object' && !Array.isArray(c) ? { ...c, openRef: null, claim: null } : c));
 
-  // 1. B1's validator on the reply, the findings and the companies — its rules alone can fail the step. The reply is cut
-  //    to its 600 characters at a sentence's end FIRST, so B1's number check reads the text that is kept (RB-7).
+  // 1. B1's validator on the reply, the findings and the companies — its rules alone can fail the step. The model's reply
+  //    is cut to MODEL_REPLY_MAX (§B13 T-3: 320) at a sentence's end FIRST, so B1's number check reads the text that is
+  //    kept (RB-7).
   const b1 = validateStepTurn({
-    reply: cutAtSentence(clean(output.reply), L.reply), findings: rawFindings, companies,
+    reply: cutAtSentence(clean(output.reply), MODEL_REPLY_MAX), findings: rawFindings, companies,
     summary: null, lines: { support: null, complication: null, missing: null }, nextAction: null,
   }, ctx);
   if (!b1.ok) return b1;
@@ -450,7 +460,7 @@ export function validateBuildTurn(output, ctx) {
   const cardChanged = JSON.stringify({ ...preview, rev: 0 }) !== JSON.stringify({ ...card, rev: 0 });
   const landed = Boolean(proposals.themeSuggestion || proposals.map || proposals.why || proposals.wrongIfOptions || proposals.timeFrame || proposals.pick);
 
-  // The reply (K-4): B1's, already cut to 600 characters at a sentence's end, replaced by the plain line when it cannot
+  // The reply (K-4): B1's, already cut to MODEL_REPLY_MAX (320) at a sentence's end, replaced by the plain line when it cannot
   // stand — B1 replaced it, it breaks the builder's own wording, the goal's own proposal is missing, everything the step
   // proposed was dropped, or a dead end's reply names a listed company (RB-5).
   let reply = b1.reply;
