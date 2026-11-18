@@ -192,15 +192,21 @@ export function sessionCoverage({ symbol, session, coveredThrough, daily, dailyR
   const from = shiftCalendarDate(coveredThrough, 1);
   // A snapshot naming another session's layer is not used (F-2) — on the entry session too (review, lens A A4).
   if (!dailyRefOk) return { covered: false, reason: 'snapshot_daily_mismatch', from, ...none };
-  if (coveredThrough >= session) return { covered: true, reason: null, from, ...none };
-  const usable = backfill !== null && isDate(backfill.from) && backfill.from <= from;
-  const beyondAnyWindow = from < shiftCalendarDate(session, -MANDATE_CA_FETCH_LOOKBACK_DAYS);
+  // Astra T2D-07: the ENTITLEMENT START (`coveredThrough` may be the opening session — nothing dated on or before it is
+  // owed) is not EVIDENCE about this session. The session's own valid entry, or a backfill reaching it, is required
+  // whatever `coveredThrough` says: on the entry session a failed entry was read as covered, and the close marked a $100
+  // fill at a fresh $104, full quality. The range the evidence must reach back to is the day after `coveredThrough`, or
+  // the session itself when that is later.
+  const needFrom = coveredThrough >= session ? session : from;
+  const usable = backfill !== null && isDate(backfill.from) && backfill.from <= needFrom;
+  const beyondAnyWindow = needFrom < shiftCalendarDate(session, -MANDATE_CA_FETCH_LOOKBACK_DAYS);
   const entry = dailyCoverageOf(daily, symbol);
   if (entry.refusal !== null) {
     // The session's own layer does not cover the symbol: only a backfill that covers the session itself does.
     const viaBackfill = usable && backfill.to >= session;
     return { covered: viaBackfill, reason: viaBackfill ? null : entry.refusal, from, readBackfill: true, needsBackfill: !viaBackfill && beyondAnyWindow, viaBackfill };
   }
+  if (coveredThrough >= session) return { covered: true, reason: null, from, ...none };
   const windowFrom = dailyWindowFrom(daily, session);
   if (windowFrom <= from) return { covered: true, reason: null, from, ...none };
   const viaBackfill = usable && backfill.to >= shiftCalendarDate(windowFrom, -1);

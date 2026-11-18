@@ -113,6 +113,8 @@ export function ideaDocSizeAlert(bookId, ideaId, bytes) {
 export const CA_COVERAGE_GAP_ALERT_SESSIONS = 5;
 
 const upperSym = (s) => String(s || '').trim().toUpperCase();
+/** An idea's three ledgers, by field. */
+const LEDGER_FIELDS = Object.freeze(['ledger', 'comparisonLedger', 'spyLedger']);
 
 /** The trading sessions after `from` up to and including `through` (0 when `through` is not after it). */
 function sessionsAfterThrough(from, through) {
@@ -228,15 +230,9 @@ function closeFilledIdea(idea, {
   const coverage = new Map();
   const uncovered = new Set();
   let feedActions = sessionActions;
-  if (ruled) {
-    // A ruling's action replaces whatever rows of its id the feed lists, for this idea (F-5).
-    if (ruled.replacedIds.size > 0) {
-      feedActions = Object.fromEntries(Object.entries(feedActions || {}).map(([sym, list]) => [sym, (list || []).filter((a) => !ruled.replacedIds.has(deriveActionId(a)))]));
-    }
-    feedActions = unionActionsBySymbol(feedActions, ruled.extraActions);
-    alerts.push(...ruled.alerts);
-  }
-  const ruledIds = ruled?.ruledIds ?? null;
+  if (ruled) alerts.push(...ruled.alerts);
+  // The ids a ruling supplied, ledger by ledger (Astra T2D-09): not re-date-screened on that ledger only.
+  const ruledIdsOf = (f) => ruled?.ruledIdsByLedger?.[f] ?? null;
   if (observed) {
     for (const [sym, input] of coverageInputs) {
       // F-5: a coverage-gap ruling counts the symbol's data as covered through the gap's last session.
@@ -244,7 +240,11 @@ function closeFilledIdea(idea, {
       const r = sessionCoverage({ symbol: sym, session: date, coveredThrough, daily, dailyRefOk, backfill: input.backfill });
       coverage.set(sym, { ...r, coveredThrough });
       if (!r.covered) uncovered.add(sym);
-      if (r.covered && r.viaBackfill) feedActions = unionActionsBySymbol(feedActions, { [sym]: input.backfill.actions });
+      // The rows of a SUCCESSFUL backfill the close read join this idea's rows for the symbol — when it covers the gap,
+      // and (Astra T2D-02) at every catch-up close it serves, beside valid archived entries. Each is applied only through
+      // the session being valued (the engine's onOrBefore), and once (the ledger's settled ids).
+      const rows = input.backfillRows ?? (r.viaBackfill ? input.backfill?.actions : null);
+      if (Array.isArray(rows) && rows.length > 0) feedActions = unionActionsBySymbol(feedActions, { [sym]: rows });
     }
   }
 
@@ -289,10 +289,20 @@ function closeFilledIdea(idea, {
   //    holds every count-dependent action of it, on every ledger of the idea, until a listed row explains the move or the
   //    founder resolves it.
   //    A holding the idea is waiting to sell on a delisting is screened on no ledger (R-32).
+  // F-5, Astra T2D-09: EACH LEDGER'S ROWS. A ruling's action, and the feed rows of its id it replaces, belong to the
+  // ledgers whose record it covers: each ledger is handed the session's rows less what a ruling replaces ON IT, plus
+  // what a ruling adds ON IT. A ledger that never carried the record keeps the feed's own rows of that id.
+  const actionsOf = Object.fromEntries(LEDGER_FIELDS.map((f) => {
+    if (!ruled) return [f, actionsBySymbol];
+    const replaced = ruled.replacedIdsByLedger[f];
+    const kept = replaced.size === 0 ? actionsBySymbol
+      : Object.fromEntries(Object.entries(actionsBySymbol).map(([sym, list]) => [sym, (list || []).filter((a) => !replaced.has(deriveActionId(a)))]));
+    return [f, unionActionsBySymbol(kept, ruled.extraActionsByLedger[f])];
+  }));
   const delistingWaiting = delistingWaitingSymbols(idea.ledger);
-  const screen = (ledger) => (observed ? withBasisSuspicions(ledger, closeSnapshot, actionsBySymbol, { sinceDate, date, delistingWaiting, skip: uncovered, ruledIds }).ledger : ledger);
-  const ledgers = [screen(idea.ledger), screen(idea.comparisonLedger), screen(idea.spyLedger)];
-  const holds = observed ? shareBasisHolds(ledgers, actionsBySymbol, { date, ruledIds }) : null;
+  const screen = (ledger, f) => (observed ? withBasisSuspicions(ledger, closeSnapshot, actionsOf[f], { sinceDate, date, delistingWaiting, skip: uncovered, ruledIds: ruledIdsOf(f) }).ledger : ledger);
+  const ledgers = LEDGER_FIELDS.map((f) => screen(idea[f], f));
+  const holds = observed ? shareBasisHolds(ledgers, LEDGER_FIELDS.map((f) => actionsOf[f]), { date, ruledIds: LEDGER_FIELDS.map(ruledIdsOf) }) : null;
   // F-1: a symbol the session's data does not cover holds every count-dependent action of it dated after the last
   // session its data covered, on every ledger of the idea — and its rename (deferRenames, below).
   for (const sym of uncovered) {
@@ -301,10 +311,10 @@ function closeFilledIdea(idea, {
     holds.set(sym, [...(holds.get(sym) || []), item]);
   }
   const deferRenames = holds ? new Set(holds.keys()) : null;
-  const opts = { date, holds, deferRenames, renameTargetsTaken: heldByOthers, renameIdsScreened, ruledIds };
-  const own = observed ? applyLedgerActions(ledgers[0], actionsBySymbol, opts) : noActions(ledgers[0]);
-  const cmp = observed ? applyLedgerActions(ledgers[1], actionsBySymbol, opts) : noActions(ledgers[1]);
-  const spy = observed ? applyLedgerActions(ledgers[2], actionsBySymbol, opts) : noActions(ledgers[2]);
+  const opts = (f) => ({ date, holds, deferRenames, renameTargetsTaken: heldByOthers, renameIdsScreened, ruledIds: ruledIdsOf(f) });
+  const own = observed ? applyLedgerActions(ledgers[0], actionsOf.ledger, opts('ledger')) : noActions(ledgers[0]);
+  const cmp = observed ? applyLedgerActions(ledgers[1], actionsOf.comparisonLedger, opts('comparisonLedger')) : noActions(ledgers[1]);
+  const spy = observed ? applyLedgerActions(ledgers[2], actionsOf.spyLedger, opts('spyLedger')) : noActions(ledgers[2]);
 
   for (const [name, out] of [['idea', own], ['comparison', cmp], ['spy', spy]]) {
     const blocked = new Set([...renameBlocked, ...out.renamesBlocked.map((b) => b.from)]);
@@ -321,6 +331,10 @@ function closeFilledIdea(idea, {
     for (const r of heldActionRecords(out.ledger)) {
       const on = (r.heldBecause || []).map((c) => `${c.actionId}@${c.ledger}`).join(', ');
       alerts.push(`PRACTICE_FIELD_CORPORATE_ACTION_HELD ${idea.ideaId} ${name} ${r.symbol} ${r.actionId} — the holding's share basis is unresolved (${on}); not applied, nothing credited or released (held since ${r.heldOn})`);
+    }
+    // Astra T2D-06: a conflict left open because its own row is still listed beside a matching row under another date.
+    for (const id of out.ambiguousConflicts || []) {
+      alerts.push(`PRACTICE_FIELD_CORPORATE_ACTION_AMBIGUOUS ${idea.ideaId} ${name} ${id} — the conflict's own row is still listed beside a matching row under another date: two readings remain, so the conflict stays open and its row is not applied — the founder may rule (resolve_hold, conflict)`);
     }
     // F-7: a row this close did not apply because it may be one already applied or held, under a moved date.
     for (const r of out.redates || []) {
@@ -368,14 +382,14 @@ function closeFilledIdea(idea, {
   //    corporate-action data does not cover is carried and NAMED so (`ca_coverage_missing`, F-1): never a fresh price
   //    written over a count the data cannot vouch for (refuter R8).
   const carriedQuality = new Map([...uncovered].map((sym) => [sym, MARK_QUALITY.CA_COVERAGE_MISSING]));
-  const value = (ledger, unresolved) => {
+  const value = (ledger, unresolved, f) => {
     if (!observed) return { valuation: unobservedValuation(ledger, date), frozen: new Set() };
-    const frozen = new Set([...unresolved, ...uncovered, ...suspectedActionSymbols(ledger, closeSnapshot, actionsBySymbol, { sinceDate, date })]);
+    const frozen = new Set([...unresolved, ...uncovered, ...suspectedActionSymbols(ledger, closeSnapshot, actionsOf[f], { sinceDate, date })]);
     return { valuation: valueLedger(ledger, closeSnapshot, { sessionDate: date, frozen, carriedQuality }), frozen };
   };
-  const ownV = value(ownLedger, own.unresolved);
-  const cmpV = value(cmp.ledger, cmp.unresolved);
-  const spyV = value(spy.ledger, spy.unresolved);
+  const ownV = value(ownLedger, own.unresolved, 'ledger');
+  const cmpV = value(cmp.ledger, cmp.unresolved, 'comparisonLedger');
+  const spyV = value(spy.ledger, spy.unresolved, 'spyLedger');
   // Conflicts recorded on a ledger and not settled since (neither applied nor declined), this close's included.
   const openConflicts = [['idea', ownLedger], ['comparison', cmp.ledger], ['spy', spy.ledger]].flatMap(([name, ledger]) => unsettledConflicts(ledger).map((r) => ({ name, actionId: r.actionId })));
 
@@ -395,10 +409,13 @@ function closeFilledIdea(idea, {
   if (ruled) {
     // F-5: a founder split this close found moot on a ledger (its record gone there, or standing for another move now).
     const skips = new Set();
+    const refusals = new Map();
     for (const [f, out] of [['ledger', own], ['comparisonLedger', cmp], ['spyLedger', spy]]) {
       for (const s of out.founderSkips || []) skips.add(`${s.requestKey}@${f}`);
+      // Astra T2D-10: a ruling's action the applier refused for good on this ledger.
+      for (const s of out.founderRefusals || []) refusals.set(`${s.requestKey}@${f}`, s.reason);
     }
-    const m = markRulingsApplied(next, { date, skips });
+    const m = markRulingsApplied(next, { date, skips, refusals });
     next = m.idea;
     alerts.push(...m.alerts);
   }
@@ -669,12 +686,19 @@ async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false, w
         for (const sym of heldSymbolsOf(idea)) {
           const coveredThrough = coveredThroughOf(idea, sym);
           let backfill = null;
-          if (typeof coveredThrough === 'string' && coveredThrough < session
-            && sessionCoverage({ symbol: sym, session, coveredThrough, daily, dailyRefOk }).readBackfill) {
+          let backfillRows = null;
+          // Astra T2D-02: a CATCH-UP close reads the symbol's stored backfill too, whatever its archived daily entry says.
+          // An archived entry was valid when it was built, but the backfill this catch-up fetched may list an action
+          // the vendor added since (a split, a dividend): without it a 20-session catch-up closed every session on
+          // the old rows and valued the book as if neither existed, at full quality.
+          if (typeof coveredThrough === 'string'
+            && (catchUp || sessionCoverage({ symbol: sym, session, coveredThrough, daily, dailyRefOk }).readBackfill)) {
             const snap = await tx.get(db.collection('practiceFieldCaBackfill').doc(backfillIdOf(sym)));
-            backfill = successfulBackfill(snap.exists ? snap.data() : null, sym, shiftCalendarDate(coveredThrough, 1));
+            const data = snap.exists ? snap.data() : null;
+            backfill = successfulBackfill(data, sym, shiftCalendarDate(coveredThrough, 1));
+            backfillRows = successfulBackfill(data, sym, null)?.actions ?? null;
           }
-          inputs.set(sym, { coveredThrough, backfill });
+          inputs.set(sym, { coveredThrough, backfill, backfillRows });
         }
         coverageInputsOf.set(idea.ideaId, inputs);
       }

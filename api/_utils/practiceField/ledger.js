@@ -185,8 +185,8 @@ export const CONFLICTING_ACTION = 'conflicting_action';
 // ── RE-DATED AND LATE ACTIONS (Amendment F-7; T1a-1 FR-A5, RF-A2; T1a-2a C-16) ──────────────────────────────────────
 // The engine's id is (type, ticker, effective date): a vendor that moves an action's date lists it under a NEW id.
 //   • A POSSIBLE RE-DATE: a row with the same symbol, type and payload (amount, or ratio) as an action this ledger has
-//     already applied or holds, under a different id, with an effective date within REDATE_WINDOW_SESSIONS sessions of
-//     it, is NOT applied. It is recorded once (`possible_redate`, naming both ids) and alerted while listed; it is not
+//     already applied or holds — or declined as not entitled (the agreed Q10; Astra T2D-01) — under a different id, with
+//     an effective date within REDATE_WINDOW_SESSIONS sessions of it, is NOT applied. It is recorded once (`possible_redate`, naming both ids) and alerted while listed; it is not
 //     settled, so the founder may apply it (resolve_hold, `conflict`). A share-basis one is a doubt about the symbol's
 //     count — it is either the same split (the count is right) or a second one (it is not) — so it holds, as a conflict
 //     does; a cash dividend's puts no count in doubt and holds nothing.
@@ -200,6 +200,9 @@ export const CONFLICTING_ACTION = 'conflicting_action';
 
 /** The receipt reason of a row the ledger does not apply as a possible re-date of one it applied or holds. */
 export const POSSIBLE_REDATE = 'possible_redate';
+/** The receipt reason of an action the holding was not entitled to (bought on or after its effective date). Since the
+ *  T1a-2b-3 fix round the receipt keeps the payload it declined, and a row re-dated within the window matches it (Q10). */
+export const NOT_ENTITLED = 'not_entitled';
 /** Two effective dates this many trading sessions apart, or fewer, can be one action re-dated by the vendor. */
 export const REDATE_WINDOW_SESSIONS = 5;
 
@@ -437,11 +440,51 @@ export function withBasisSuspicions(ledger, closeSnapshot, actionsBySymbol, { si
     if (!open || open.suspectedOn === date || skip?.has(sym) || !openBasisSuspicion(dry.holdings?.[sym])) continue;
     const seen = quoteSeenOf(closeSnapshot, sym, date);
     if (seen === null) continue;
+    // Astra T2D-08: every SPLIT-SHAPED TRANSITION seen while the record stands is kept, with its dates — the step from
+    // the last price seen to this one, put to the engine's own screen. Only the first and the last price survived
+    // before, so a halving and its recovery ($50 → $25 → $50) vanished, and a ruling on the first halving released a
+    // dividend dated inside the hidden one.
+    const step = transitionOf(sym, open.lastSeen, seen);
+    const transitions = step ? [...(Array.isArray(open.transitions) ? open.transitions : []), step] : open.transitions;
     if (next === ledger) next = cloneLedger(ledger);
-    next.holdings[sym] = { ...next.holdings[sym], basisSuspicion: { ...open, lastSeen: seen } };
+    next.holdings[sym] = { ...next.holdings[sym], basisSuspicion: { ...open, lastSeen: seen, ...(transitions ? { transitions } : {}) } };
   }
   return { ledger: next, raised };
 }
+
+/** A quote seen, as kept on a record (`seenAtRaise`, `lastSeen`, a transition's ends). */
+const isSeen = (q) => q !== null && typeof q === 'object' && Number(q.price) > 0 && typeof q.session === 'string';
+
+/**
+ * T2D-08: the split-shaped move from one price seen to a later one, as the engine's screen judges an overnight gap —
+ * `{ session, since, ratio, from, to }` — or null (no such move, or either end unknown). Pure.
+ */
+function transitionOf(symbol, from, to) {
+  if (!isSeen(from) || !isSeen(to) || !(to.session > from.session)) return null;
+  const sym = upper(symbol);
+  const scan = classifyOvernightGaps({ [sym]: { lastMark: Number(from.price) } }, { symbols: { [sym]: { price: Number(to.price), complete: true } } }, {}, { asOfDate: to.session });
+  const step = scan.suspectedCA.get(sym);
+  return step ? { session: to.session, since: from.session, ratio: step.ratio, from, to } : null;
+}
+
+/**
+ * T2D-08: THE RECORD A TRANSITION BECOMES once the record it was seen under is retired — by the founder's ruling, or by a
+ * row that explains it. It stands for that move exactly: first seen at its own session, frozen at the price before it,
+ * holding what is dated after the session that price came from; the transitions after it travel with it, and it keeps
+ * the last price seen. `raisedBy` names what retired the record before it. Pure.
+ */
+function recordOfTransition(symbol, t, rest, lastSeen, raisedBy) {
+  const sym = upper(symbol);
+  return {
+    symbol: sym, suspectedOn: t.session, since: t.since, ratio: t.ratio, shape: shapeOf(t.ratio),
+    frozenMark: Number(t.from.price), frozenMarkAsOf: t.from.vendorTimeIso ?? null, resolvedBy: null, resolvedAt: null,
+    seenAtRaise: t.to, lastSeen: isSeen(lastSeen) && lastSeen.session >= t.to.session ? lastSeen : t.to,
+    ...(rest.length > 0 ? { transitions: rest } : {}), raisedBy,
+  };
+}
+
+/** The transitions a record still carries (well formed, in session order). */
+const transitionsOf = (s) => (Array.isArray(s?.transitions) ? s.transitions.filter((t) => t && isSeen(t.from) && isSeen(t.to) && Number(t.ratio) > 0) : []);
 
 /**
  * F-5: WHAT A `price_move` RULING LEAVES THE GAP SCREEN (review B1, B3; lens A's A1; Z1). The ruling covers EXACTLY the
@@ -456,10 +499,19 @@ export function withBasisSuspicions(ledger, closeSnapshot, actionsBySymbol, { si
  */
 export function priceMoveReference(symbol, s, { requestKey = null } = {}) {
   const sym = upper(symbol);
-  const ok = (q) => q !== null && typeof q === 'object' && Number(q.price) > 0 && typeof q.session === 'string';
+  const ok = isSeen;
   const seen = ok(s?.seenAtRaise) ? s.seenAtRaise : null;
   if (seen === null) return { screenReference: null, stepRecord: null };
   const reference = (q) => ({ price: Number(q.price), session: q.session, snapshotKey: q.snapshotKey ?? null, ruling: requestKey });
+  // Astra T2D-08: the split-shaped transitions seen while the record stood come first, each its own move: the first is
+  // the new record, carrying the rest — a halving hidden by its recovery is never covered by the ruling before it.
+  const [first, ...rest] = transitionsOf(s);
+  if (first) {
+    return {
+      screenReference: reference(seen),
+      stepRecord: recordOfTransition(sym, first, rest, s.lastSeen, { ruling: requestKey, after: suspicionIdOf(sym, s) }),
+    };
+  }
   const last = ok(s.lastSeen) && s.lastSeen.session > seen.session ? s.lastSeen : null;
   if (last === null) return { screenReference: reference(seen), stepRecord: null };
   const scan = classifyOvernightGaps({ [sym]: { lastMark: Number(seen.price) } }, { symbols: { [sym]: { price: Number(last.price), complete: true } } }, {}, { asOfDate: last.session });
@@ -621,11 +673,16 @@ export function ideaWideDoubtSymbols(ledger, actionsBySymbol, { date }) {
  */
 export function shareBasisHolds(ledgers, actionsBySymbol, { date, ruledIds = null }) {
   const out = new Map();
-  for (const ledger of ledgers || []) {
+  // Each ledger may be handed its OWN rows (an array aligned with `ledgers`; Astra T2D-09: a founder ruling's action and
+  // the feed rows it replaces belong to the ledgers whose record it covers), and its own ruled ids likewise.
+  const rowsOf = (i) => (Array.isArray(actionsBySymbol) ? actionsBySymbol[i] : actionsBySymbol);
+  const ruledOf = (i) => (Array.isArray(ruledIds) ? ruledIds[i] ?? null : ruledIds);
+  for (const [i, ledger] of (ledgers || []).entries()) {
     if (!ledger) continue;
-    const after = applyActions(ledger, actionsBySymbol, { date, phase: 'share_basis', ruledIds }).ledger;
-    const own = isPaperLedger(ledger) ? ledgerOwnDoubtIds(after, actionsBySymbol, { date }) : null;
-    for (const [sym, items] of unresolvedShareBasis(after, actionsBySymbol, { date })) {
+    const rows = rowsOf(i);
+    const after = applyActions(ledger, rows, { date, phase: 'share_basis', ruledIds: ruledOf(i) }).ledger;
+    const own = isPaperLedger(ledger) ? ledgerOwnDoubtIds(after, rows, { date }) : null;
+    for (const [sym, items] of unresolvedShareBasis(after, rows, { date })) {
       for (const i of items) if (!own?.has(i.actionId)) addItem(out, sym, i);
     }
   }
@@ -779,6 +836,7 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
   );
   pending.push(...founderSplitRowsOf(next, actionsBySymbol, { date, settled }));
   const founderSkips = [];
+  const founderRefusals = [];
   const applied = [];
   const declined = [];
   const unresolved = new Set();
@@ -824,9 +882,13 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
 
   for (const decl of notEntitled) {
     if (!firstOf(decl)) continue;
-    // Bought on or after the effective date: the price paid already reflects the action. Declined, durably.
+    // Bought on or after the effective date: the price paid already reflects the action. Declined, durably — with the
+    // payload it declined (Astra T2D-01, the agreed Q10): a row the vendor re-dates past the purchase date matches it.
     next.declinedActionIds.push(decl.actionId);
-    const receipt = { actionId: decl.actionId, type: decl.type, ticker: decl.ticker, effectiveDate: decl.effectiveDate, applied: false, reason: 'not_entitled', seenOn: date };
+    const receipt = {
+      actionId: decl.actionId, type: decl.type, ticker: decl.ticker, effectiveDate: decl.effectiveDate, applied: false, reason: NOT_ENTITLED, seenOn: date,
+      ratio: decl.ratio ?? null, amount: decl.amount ?? null, cashPerShare: decl.cashPerShare ?? null,
+    };
     next.corporateActionReceipts.push(receipt);
     declined.push(receipt);
   }
@@ -836,10 +898,13 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
   // F-7 (RF-A2): A CONFLICT SETTLED UNDER A MOVED DATE. A row listed now under a new id, within the re-date window of an
   // unsettled conflict, whose payload is one of the conflict's settles it — before anything is held behind the conflict:
   // the old id is declined, receipted `settled_by_redate` naming the row, and the row is applied once below.
-  // F-7: A POSSIBLE RE-DATE — the id of an action this ledger applied or holds that `action` may be under a moved date.
+  // F-7: A POSSIBLE RE-DATE — the id of an action this ledger applied, holds, or DECLINED as not entitled (the agreed Q10;
+  // Astra T2D-01: an idea bought on a 3-for-2's ex-date was credited the split when the vendor moved it one session
+  // later) that `action` may be under a moved date. A decline's payload is on its receipt since this round; one written
+  // before carries none and matches nothing.
   const possibleRedateOf = (action, sym) => {
     if (ruledIds?.has(action.actionId)) return null; // the founder applied it (resolve_hold): not a re-date
-    const applied = (next.corporateActionReceipts || []).filter((r) => r.applied === true && r.type === action.type && upper(r.ticker) === sym);
+    const applied = (next.corporateActionReceipts || []).filter((r) => (r.applied === true || r.reason === NOT_ENTITLED) && r.type === action.type && upper(r.ticker) === sym);
     const heldNow = (next.holdings[sym]?.heldActions || []).filter((r) => r.type === action.type && !r.refused);
     const match = [...applied, ...heldNow].find((r) => r.actionId !== action.actionId && samePayload(r, action)
       && withinSessions(r.effectiveDate, action.effectiveDate, REDATE_WINDOW_SESSIONS));
@@ -847,8 +912,22 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
   };
   const redates = [];
   const settlingRows = new Set(); // one row settles at most one conflict (review note)
+  // Astra T2D-06: a conflict whose OWN id is still listed in this call is not settled under a moved date. Its row and a
+  // matching row under a new date are two readings — the vendor moved one payload, or there are two actions — so the
+  // conflict stays open (`ambiguousConflicts`): its own row is not applied either, and the founder decides
+  // (resolve_hold, conflict). The row under the new date is the same under both readings, and is applied as any row.
+  const listedNow = new Set([...pending, ...notEntitled, ...noEntitlementData, ...unrecognized].map((a) => a.actionId ?? deriveActionId(a)));
+  const ambiguousConflicts = new Set();
+  // (The matching row may be listed now, or already applied by an earlier close while both dates stayed in the window.)
+  const matchingRowOf = (c, sym) => [...pending, ...(next.corporateActionReceipts || []).filter((r) => r.applied === true)]
+    .find((a) => upper(a.ticker) === sym && a.type === c.type && a.actionId !== c.actionId && !conflicting.has(a.actionId)
+      && withinSessions(a.effectiveDate, c.effectiveDate, REDATE_WINDOW_SESSIONS) && (c.rows || []).some((p) => samePayload(p, a)));
   for (const c of unsettledConflicts(next)) {
     const sym = upper(c.ticker);
+    if (listedNow.has(c.actionId)) {
+      if (!conflicting.has(c.actionId) && matchingRowOf(c, sym)) ambiguousConflicts.add(c.actionId);
+      continue;
+    }
     // …and never a row that is itself a possible re-date of an action already applied or held: it is not applied below,
     // so it cannot be what settled the conflict (refuter C: the conflict was declined `settledBy` a row never applied).
     const row = pending.find((a) => upper(a.ticker) === sym && a.type === c.type && a.actionId !== c.actionId && !conflicting.has(a.actionId)
@@ -896,10 +975,11 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
     // releasing it).
     const suspicionHolds = (i) => (shareBasis ? action.effectiveDate > i.effectiveDate : (typeof i.since !== 'string' || action.effectiveDate > i.since));
     const before = (i) => {
-      // A coverage gap (Amendment F-1): no data is known for the symbol after the last session its data covered
-      // (`since`), so EVERY count-dependent action dated after it waits — cash or share basis: an action the gap hides
-      // may precede it. One dated on or before `since` was presented while the data covered it.
-      if (i.type === CA_COVERAGE_GAP) return typeof i.since !== 'string' || action.effectiveDate > i.since;
+      // A coverage gap (Amendment F-1): the data presented to THIS close does not vouch for the symbol, so EVERY
+      // count-dependent action of it waits — cash or share basis, whatever its date (Astra T2D-07: a dividend dated on the
+      // last covered session but first listed at an uncovered close was paid; F-1 and exit criterion 6 bind the session
+      // doing the work). It is held on the holding and replayed once at the close whose data covers the symbol again.
+      if (i.type === CA_COVERAGE_GAP) return true;
       if (typeof i.effectiveDate !== 'string') return true;
       if (i.type === SUSPECTED_SPLIT) return suspicionHolds(i);
       return shareBasis ? byDatePhaseId(i, action) < 0 : i.effectiveDate <= action.effectiveDate;
@@ -957,6 +1037,11 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
 
   for (const action of candidates) {
     if (!firstOf(action)) continue;
+    // Astra T2D-06: ONE LIVE SETTLED SET. An id this call has already declined (a conflict settled under a moved date)
+    // or applied is never a candidate again — the candidates were listed before those declines.
+    if (settledIdsOf(next).has(action.actionId)) continue;
+    // …and the row of a conflict left open as ambiguous (above) is not applied: the conflict stands.
+    if (ambiguousConflicts.has(action.actionId)) { unresolved.add(upper(action.ticker)); continue; }
     if (!APPLICABLE_TYPES.has(action.type)) { unresolved.add(upper(action.ticker)); continue; }
     // Ticker changes are taken last, below (T2A-01): after every share-basis action of this call.
     if (action.type === 'ticker_change') { renameRows.push(action); continue; }
@@ -1029,7 +1114,19 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
     const out = applyCorporateAction({
       positions: late ? { ...next.holdings, [sym]: { ...heldBefore, shares: late.entitledShares } } : next.holdings, cash: next.cash,
     }, action);
+    // Astra T2D-10: an action a founder's CONFLICT or SPLIT ruling supplied that the applier refuses for good (a ratio it
+    // refuses, a holding it would round to nothing) is a permanent refusal, not a wait for evidence: it is reported
+    // (`founderRefusals`) and leaves no held record, so the close closes the ruling with its reason and the record it
+    // covers — still open — takes another ruling (`none`, or another payload). Kept as a held record, it locked the
+    // record for good (`record_already_resolved`) and masked the feed's later correction.
+    const founderRefusal = (reason) => {
+      unresolved.add(sym);
+      founderRefusals.push({ actionId: action.actionId, recordId: action.founderRuling.recordId ?? null, requestKey: action.founderRuling.requestKey ?? null, ticker: sym, reason });
+      if (next.holdings[sym]?.heldActions?.some((r) => r.actionId === action.actionId)) next.holdings = { ...next.holdings, [sym]: withoutHeld(next.holdings[sym], action.actionId) };
+    };
+    const refusableRuling = action.founderRuling?.kind === 'conflict' || action.founderRuling?.kind === 'suspicion';
     if (!out.ok) {
+      if (refusableRuling && SHARE_BASIS_TYPES.has(action.type)) { founderRefusal(out.reason ?? 'not_applicable'); continue; }
       unresolved.add(sym);
       if (SHARE_BASIS_TYPES.has(action.type)) hold(sym, action, [], out.reason ?? 'not_applicable');
       continue;
@@ -1057,6 +1154,7 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
     // its carried mark, not full quality, until T1a-2's policy decides it — never a holding of zero shares with a basis.
     // Read under the holding's own key (upper case), whatever case the row carries (review F3).
     if (SHARE_BASIS_TYPES.has(action.type) && !(Number(out.positions[sym]?.shares) > 0)) {
+      if (refusableRuling) { founderRefusal('rounds_to_nothing'); continue; }
       hold(sym, action, [], 'rounds_to_nothing');
       continue;
     }
@@ -1084,12 +1182,17 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
     if (suspicion && date > suspicion.suspectedOn && (explainsSuspicion(action, suspicion) || ruledFor)) {
       const { basisSuspicion, ...rest } = next.holdings[sym];
       const id = suspicionIdOf(sym, basisSuspicion);
+      // T2D-08: a split-shaped transition seen while this record stood is not explained by the row that explains the
+      // record: the first becomes the record (carrying the rest), and what is dated after it stays held.
+      const [nextStep, ...later] = transitionsOf(basisSuspicion);
+      const promoted = nextStep ? recordOfTransition(sym, nextStep, later, basisSuspicion.lastSeen, { explainedBy: action.actionId, after: id }) : null;
       const retired = {
         ...basisSuspicion, id, closedOn: date, explainedBy: { actionId: action.actionId, type: action.type, ratio: action.ratio ?? null, effectiveDate: action.effectiveDate },
         // F-8: a record closed by the founder's `split` ruling names the ruling.
         ...(action.founderRuling ? { resolvedBy: action.founderRuling.by, resolvedAt: action.founderRuling.at, ruling: action.founderRuling } : {}),
+        ...(promoted ? { replacedBy: suspicionIdOf(sym, promoted) } : {}),
       };
-      next.holdings = { ...next.holdings, [sym]: { ...rest, basisSuspicionHistory: [...(rest.basisSuspicionHistory || []), retired] } };
+      next.holdings = { ...next.holdings, [sym]: { ...rest, ...(promoted ? { basisSuspicion: promoted } : {}), basisSuspicionHistory: [...(rest.basisSuspicionHistory || []), retired] } };
       explained = { explainedSuspicion: { id, suspectedOn: basisSuspicion.suspectedOn, ratio: basisSuspicion.ratio, frozenMark: basisSuspicion.frozenMark } };
     } else if (SHARE_BASIS_TYPES.has(action.type)) {
       const past = (next.holdings[sym]?.basisSuspicionHistory || []).find((e) => e.closedOn === date && e.explainedBy?.actionId === action.actionId);
@@ -1186,7 +1289,10 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
     for (const sym of unsettledShareBasisSymbols(next, actionsBySymbol, { date })) if (Object.hasOwn(next.holdings, sym)) unresolved.add(sym);
     for (const sym of holds?.keys() || []) if (Object.hasOwn(next.holdings, sym)) unresolved.add(sym);
   }
-  return { ledger: next, applied, declined, unresolved, conflicts, shareBasisChanges, renames, renamesDeferred, renamesBlocked, held, closedByCash, delistedWaiting, redates, founderSkips };
+  return {
+    ledger: next, applied, declined, unresolved, conflicts, shareBasisChanges, renames, renamesDeferred, renamesBlocked, held, closedByCash, delistedWaiting, redates,
+    founderSkips, founderRefusals, ambiguousConflicts: [...ambiguousConflicts],
+  };
 }
 
 /**

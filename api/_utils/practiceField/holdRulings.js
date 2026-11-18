@@ -41,6 +41,7 @@ import {
   cloneLedger, suspicionIdOf, ratioMatchesMove, residualMoveOf, priceMoveReference, CONFLICTING_ACTION, POSSIBLE_REDATE, actionIdOf as deriveActionId,
 } from './ledger.js';
 import { coverageGapIdOf } from './dailyCoverage.js';
+import { roundShares } from '../mandateRounding.js';
 
 export const HOLD_KINDS = Object.freeze(['suspicion', 'conflict', 'coverage_gap']);
 const DECISIONS = Object.freeze({ suspicion: ['price_move', 'split'], conflict: ['payload', 'none'], coverage_gap: ['no_action', 'row'] });
@@ -53,6 +54,22 @@ const pendingRulings = (idea) => (idea?.founderRulings || []).filter((r) => r &&
 /** The payload a conflict ruling may choose: one the record holds (a conflict's rows; a possible re-date's own row). */
 const payloadOf = (row) => ({ ratio: row?.ratio ?? null, amount: row?.amount ?? null });
 const samePayload = (a, b) => (a?.ratio ?? null) === (b?.ratio ?? null) && (a?.amount ?? null) === (b?.amount ?? null);
+
+/**
+ * Astra T2D-10: CAN A RATIO BE APPLIED on these ledgers' holdings of `sym`? A ratio the applier would round a holding to
+ * nothing on (or one it refuses) is a choice the close could never apply: it is refused up front (`ruling_unrepresentable`)
+ * instead of being recorded, where it would lock its record for good. (The close still closes, with its reason, a ruling
+ * whose holding has changed by then — markRulingsApplied.)
+ */
+function unrepresentableOn(idea, fields, sym, ratio) {
+  if (ratio == null) return false;
+  const r = Number(ratio);
+  if (!(Number.isFinite(r) && r > 0)) return true;
+  return fields.some((f) => {
+    const h = idea?.[f]?.holdings?.[sym];
+    return h != null && !(roundShares((Number(h.shares) || 0) * r) > 0);
+  });
+}
 
 /** The ledgers of an idea whose OPEN conflict or possible re-date record is `recordId`: [field, receipt]. */
 function openActionRecords(idea, recordId) {
@@ -105,6 +122,7 @@ export function planHoldRuling(idea, { kind, recordId, decision, ratio, payload,
         if (ratioMatchesMove(1, residual)) return { error: 'no_residual_move', status: 422 };
         if (!ratioMatchesMove(ratio, residual)) return { error: 'ruling_does_not_match_record', status: 422 };
       }
+      if (unrepresentableOn(idea, ledgers, sym, ratio)) return { error: 'ruling_unrepresentable', status: 422 };
       // Its own id (review D6): the record's split id, unless the feed already settled that id on a ledger carrying it.
       const derived = deriveActionId({ type: ratio > 1 ? 'split' : 'reverse_split', ticker: sym, effectiveDate: s.suspectedOn });
       split = { ratio, actionId: open.some((o) => settledIdsOf(idea[o.f]).has(derived)) ? `founder_${derived}` : derived };
@@ -119,16 +137,20 @@ export function planHoldRuling(idea, { kind, recordId, decision, ratio, payload,
       return ever ? { error: 'record_already_resolved', status: 409 } : { error: 'record_not_found', status: 404 };
     }
     const [, r] = open[0];
+    // Astra T2D-09: the ruling names the ledgers whose record it covers — and only those: at the close it is checked
+    // again on each, and its action reaches no other (a ledger that never carried the record keeps its own feed rows).
+    const ledgers = [...new Set(open.map(([f]) => f))];
     const recorded = r.reason === CONFLICTING_ACTION ? (r.rows || []).map(payloadOf) : [payloadOf(r)];
     let chosen = null;
     if (decision === 'payload') {
       if (!isPlain(payload)) return { error: 'payload_invalid', status: 400 };
       chosen = recorded.find((p) => samePayload(p, payload)) ?? null;
       if (chosen === null) return { error: 'payload_not_recorded', status: 422 };
+      if (unrepresentableOn(idea, ledgers, upper(r.ticker), chosen.ratio)) return { error: 'ruling_unrepresentable', status: 422 };
     }
     return {
       ruling: {
-        ...base, symbol: upper(r.ticker), type: r.type, effectiveDate: r.effectiveDate, recordReason: r.reason,
+        ...base, symbol: upper(r.ticker), type: r.type, effectiveDate: r.effectiveDate, recordReason: r.reason, ledgers,
         ...(chosen ? { payload: chosen } : {}),
       },
     };
@@ -147,6 +169,7 @@ export function planHoldRuling(idea, { kind, recordId, decision, ratio, payload,
     const a = rows.find((x) => isPlain(x) && upper(x.ticker) === sym && deriveActionId(x) === actionId && typeof x.effectiveDate === 'string' && x.effectiveDate > gap.since
       && (typeof gap.lastSession !== 'string' || x.effectiveDate <= gap.lastSession));
     if (!a) return { error: 'row_not_recorded', status: 422 };
+    if (unrepresentableOn(idea, LEDGERS, sym, a.ratio ?? null)) return { error: 'ruling_unrepresentable', status: 422 };
     row = { type: a.type, ticker: sym, effectiveDate: a.effectiveDate, ...(a.ratio != null ? { ratio: a.ratio } : {}), ...(a.amount != null ? { amount: a.amount } : {}), source: a.source ?? null };
   }
   return { ruling: { ...base, symbol: sym, coversThrough: gap.lastSession, covers: { since: gap.since, lastSession: gap.lastSession }, ...(row ? { row } : {}) } };
@@ -160,26 +183,46 @@ export function planHoldRuling(idea, { kind, recordId, decision, ratio, payload,
  */
 export function applyFounderRulings(idea, { date }) {
   const pending = pendingRulings(idea);
-  const out = { idea, extraActions: {}, ruledIds: new Set(), replacedIds: new Set(), coveredThroughOverrides: new Map(), applied: [], alerts: [] };
+  const perLedger = (make) => Object.fromEntries(LEDGERS.map((f) => [f, make()]));
+  const out = {
+    idea, extraActions: {}, ruledIds: new Set(), replacedIds: new Set(),
+    // Astra T2D-09: what a ruling adds or replaces, LEDGER BY LEDGER — the close hands each ledger its own. (The three
+    // fields above are their unions, for a reader that wants every one.)
+    extraActionsByLedger: perLedger(() => ({})), ruledIdsByLedger: perLedger(() => new Set()), replacedIdsByLedger: perLedger(() => new Set()),
+    coveredThroughOverrides: new Map(), applied: [], alerts: [],
+  };
   if (pending.length === 0) return out;
   const next = { ...idea };
   for (const f of LEDGERS) if (next[f]) next[f] = cloneLedger(next[f]);
   const appliedNow = new Set();
   const receiptOf = (r) => ({ requestKey: r.requestKey, kind: r.kind, recordId: r.recordId, decision: r.decision, by: r.by, at: r.at });
-  const addAction = (sym, action, r) => {
+  const addAction = (sym, action, r, fields) => {
     const a = { ...action, ticker: sym, source: 'founder_ruling', founderRuling: receiptOf(r) };
+    const id = a.actionId ?? deriveActionId(a);
     (out.extraActions[sym] = out.extraActions[sym] || []).push(a);
-    out.ruledIds.add(a.actionId ?? deriveActionId(a));
+    out.ruledIds.add(id);
+    for (const f of fields) {
+      (out.extraActionsByLedger[f][sym] = out.extraActionsByLedger[f][sym] || []).push(a);
+      out.ruledIdsByLedger[f].add(id);
+    }
   };
+  const replace = (id, fields) => {
+    out.replacedIds.add(id);
+    for (const f of fields) out.replacedIdsByLedger[f].add(id);
+  };
+  /** The ledgers a ruling names (`ledgers`, recorded when it was made); a ruling recorded without them names all three. */
+  const namedLedgers = (r) => (Array.isArray(r.ledgers) ? LEDGERS.filter((f) => r.ledgers.includes(f)) : LEDGERS);
 
   for (const r of pending) {
     if (r.kind === 'suspicion') {
       let found = false;
-      for (const f of LEDGERS) {
+      const standing = [];
+      for (const f of namedLedgers(r)) {
         const l = next[f];
         const h = l?.holdings?.[r.symbol];
         if (!isPlain(h?.basisSuspicion) || suspicionIdOf(r.symbol, h.basisSuspicion) !== r.recordId) continue;
         found = true;
+        standing.push(f);
         if (r.decision === 'split') continue; // the split explains and retires it, in the close's own order
         // price_move: retired, naming the ruling; the move seen since is judged (priceMoveReference) — a new record if it
         // is split-shaped — and the screen takes its reference.
@@ -200,9 +243,10 @@ export function applyFounderRulings(idea, { date }) {
         const ratio = Number(r.ratio);
         const derived = deriveActionId({ type: ratio > 1 ? 'split' : 'reverse_split', ticker: r.symbol, effectiveDate: r.covers.suspectedOn });
         const actionId = typeof r.actionId === 'string' ? r.actionId : derived;
-        addAction(r.symbol, { type: ratio > 1 ? 'split' : 'reverse_split', ratio, effectiveDate: r.covers.suspectedOn, actionId }, r);
+        // Only to the ledgers whose record still stands (T2D-09; review B5): a ledger without it keeps its feed rows.
+        addAction(r.symbol, { type: ratio > 1 ? 'split' : 'reverse_split', ratio, effectiveDate: r.covers.suspectedOn, actionId }, r, standing);
         // The feed's rows of the record's split id do not meet the founder's at this close (it stands for them).
-        if (actionId === derived) out.replacedIds.add(derived);
+        if (actionId === derived) replace(derived, standing);
         continue; // applied when the split is (close.js marks it)
       }
       appliedNow.add(r.requestKey);
@@ -211,26 +255,30 @@ export function applyFounderRulings(idea, { date }) {
     }
 
     if (r.kind === 'conflict') {
-      const open = openActionRecords(next, r.recordId);
+      // Astra T2D-09: revalidated on each ledger the ruling names — the record must still be open there — and applied,
+      // replaced and completed only there. A ledger that never carried the record keeps its own feed rows of the id.
+      const named = namedLedgers(r);
+      const open = openActionRecords(next, r.recordId).filter(([f]) => named.includes(f));
       if (open.length === 0) { appliedNow.add(r.requestKey); continue; }
+      const openFields = [...new Set(open.map(([f]) => f))];
       if (r.decision === 'none') {
         for (const [f, rec] of open) {
           const l = next[f];
           l.declinedActionIds.push(r.recordId);
           l.corporateActionReceipts.push({ actionId: r.recordId, type: rec.type, ticker: rec.ticker, effectiveDate: rec.effectiveDate, applied: false, reason: 'founder_ruled_none', founderRuling: receiptOf(r), seenOn: date });
         }
-        out.replacedIds.add(r.recordId);
+        replace(r.recordId, openFields);
         appliedNow.add(r.requestKey);
         continue;
       }
-      out.replacedIds.add(r.recordId);
-      addAction(r.symbol, { type: r.type, effectiveDate: r.effectiveDate, ...(r.payload?.ratio != null ? { ratio: r.payload.ratio } : {}), ...(r.payload?.amount != null ? { amount: r.payload.amount } : {}) }, r);
+      replace(r.recordId, openFields);
+      addAction(r.symbol, { type: r.type, effectiveDate: r.effectiveDate, ...(r.payload?.ratio != null ? { ratio: r.payload.ratio } : {}), ...(r.payload?.amount != null ? { amount: r.payload.amount } : {}) }, r, openFields);
       continue; // applied when the action is (close.js marks it)
     }
 
-    // coverage_gap
+    // coverage_gap: a fact about the symbol, for every ledger of the idea that holds it.
     out.coveredThroughOverrides.set(r.symbol, r.coversThrough);
-    if (r.row) addAction(r.symbol, { type: r.row.type, effectiveDate: r.row.effectiveDate, ...(r.row.ratio != null ? { ratio: r.row.ratio } : {}), ...(r.row.amount != null ? { amount: r.row.amount } : {}) }, r);
+    if (r.row) addAction(r.symbol, { type: r.row.type, effectiveDate: r.row.effectiveDate, ...(r.row.ratio != null ? { ratio: r.row.ratio } : {}), ...(r.row.amount != null ? { amount: r.row.amount } : {}) }, r, LEDGERS);
     appliedNow.add(r.requestKey);
   }
   next.founderRulings = (idea.founderRulings || []).map((r) => (appliedNow.has(r.requestKey) && r.appliedOn == null ? { ...r, appliedOn: date } : r));
@@ -248,12 +296,24 @@ export function applyFounderRulings(idea, { date }) {
  * MOOT (`outcome`), with an alert: the record, if it still stands, takes a new ruling. Pure.
  * @returns {{ idea: object, alerts: string[] }}
  */
-export function markRulingsApplied(idea, { date, skips = new Set() }) {
+export function markRulingsApplied(idea, { date, skips = new Set(), refusals = new Map() }) {
   const rulings = idea?.founderRulings || [];
   const alerts = [];
   if (!rulings.some((r) => r && r.appliedOn == null)) return { idea, alerts };
+  const fieldsOf = (r) => (Array.isArray(r.ledgers) ? LEDGERS.filter((f) => r.ledgers.includes(f)) : LEDGERS);
   const marked = rulings.map((r) => {
     if (!r || r.appliedOn != null) return r;
+    // Astra T2D-10: the applier REFUSED the ruling's action for good on a ledger it names (`refusals`:
+    // `<requestKey>@<ledger field>` → reason, applyActions' founderRefusals). The ruling is closed with its reason — not
+    // left pending — so its request lock is released: the record it covers is still open and takes another ruling
+    // (`none`, or another payload), and the feed's own later row of the id is no longer replaced by it.
+    if ((r.kind === 'conflict' && r.decision === 'payload') || (r.kind === 'suspicion' && r.decision === 'split')) {
+      const refused = fieldsOf(r).map((f) => refusals.get(`${r.requestKey}@${f}`)).find((x) => typeof x === 'string');
+      if (refused) {
+        alerts.push(`PRACTICE_FIELD_HOLD_RULING_REFUSED ${idea.ideaId} ${r.recordId} — the founder's ${r.kind} ruling (${r.requestKey}) cannot be applied: ${refused}; it is closed, nothing was changed, and the record takes a new ruling`);
+        return { ...r, appliedOn: date, outcome: 'refused', refusedBecause: refused };
+      }
+    }
     if (r.kind === 'suspicion' && r.decision === 'split') {
       const actionId = typeof r.actionId === 'string' ? r.actionId : deriveActionId({ type: Number(r.ratio) > 1 ? 'split' : 'reverse_split', ticker: r.symbol, effectiveDate: r.covers.suspectedOn });
       const states = (Array.isArray(r.ledgers) ? r.ledgers : LEDGERS).map((f) => {
@@ -272,7 +332,8 @@ export function markRulingsApplied(idea, { date, skips = new Set() }) {
     let id = null;
     if (r.kind === 'conflict' && r.decision === 'payload') id = r.recordId;
     if (id === null) return r;
-    const holders = LEDGERS.map((f) => idea[f]).filter((l) => l && Object.hasOwn(l.holdings || {}, r.symbol));
+    // (Completed on the ledgers it names — T2D-09.)
+    const holders = fieldsOf(r).map((f) => idea[f]).filter((l) => l && Object.hasOwn(l.holdings || {}, r.symbol));
     const settledEverywhere = holders.every((l) => settledIdsOf(l).has(id));
     return settledEverywhere ? { ...r, appliedOn: date } : r;
   });

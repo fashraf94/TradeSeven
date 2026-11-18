@@ -296,7 +296,11 @@ describe('corporate actions: once per ledger', () => {
     expect(idea.ledger.cash).toBe(before.ledger.cash);
     expect(idea.ledger.dividendsUsd).toBe(0);
     expect(idea.ledger.declinedActionIds).toEqual([`cash_dividend_AAPL_${DAYS.d1}`]);
-    expect(idea.ledger.corporateActionReceipts).toEqual([{ actionId: `cash_dividend_AAPL_${DAYS.d1}`, type: 'cash_dividend', ticker: 'AAPL', effectiveDate: DAYS.d1, applied: false, reason: 'not_entitled', seenOn: DAYS.d1 }]);
+    // (Since the T1a-2b-3 fix round the decline keeps the payload it declined — Astra T2D-01, Q10.)
+    expect(idea.ledger.corporateActionReceipts).toEqual([{
+      actionId: `cash_dividend_AAPL_${DAYS.d1}`, type: 'cash_dividend', ticker: 'AAPL', effectiveDate: DAYS.d1, applied: false, reason: 'not_entitled', seenOn: DAYS.d1,
+      ratio: null, amount: sameDay.amount, cashPerShare: null,
+    }]);
     expect(getRow(db, bookId, r.ideaId, DAYS.d2).fullQuality).toBe(true);
   });
 
