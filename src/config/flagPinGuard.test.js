@@ -338,9 +338,10 @@ const DARK_BY_DESIGN = {
   // integrity test below would fail the key outright. Noted HERE so a flip is
   // loud in the place a reader looks for the dark runway;
   // chartReadFlag.test.js asserts both halves.
-  //   Runway: 'off' ships with the read-route build (PR A, dark): the route
+  //   Runway: 'off' shipped with the read-route build (PR A, dark): the route
   //   answers 404 chart_read_unavailable to every caller before any record
-  //   read. 'allowlist' (per player, the cockpit allowlist) and then 'on' are
+  //   read. CURRENT: 'allowlist' (the Chart view's read build, PR C, 18 Nov
+  //   2026). 'allowlist' (per player, the cockpit allowlist) and then 'on' are
   //   each a one-line founder PR, never a build PR, after the daily sweep has
   //   filled records and the Chart view's read is built. Each step moves the
   //   pin row in chartReadFlag.test.js in the same commit (BUILD_RULES §2).
