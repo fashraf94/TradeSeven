@@ -14,6 +14,8 @@
 
 ## Verdict
 
+**Current head, after the phone round: see §15.6.** The table below is the first round's (checked at `20d776e5`).
+
 | Check | Result |
 |---|---|
 | Base | #1083 merged; branch from `4feb6b8e`; `origin/main` `a6b7baa0` merged (re-fetched before the checks) |
@@ -475,7 +477,7 @@ This replaces §14 for the founder's phone walk (on the new smoke preview, iPhon
 6. **Time frame:** under "Time frame:", tap Swing, Positional or Longterm.
 7. **Ready:** the card arrives at its top: the finished sentence (not bold), *Edit the sentence*, "How it will be judged" with "in your words" and "optional · add your own"; *Save thesis*.
 8. **Saved:** "Thesis saved", the names and time frame you chose, the honest line about the idea book, *Done* and *Use it in my next game*.
-9. **One scroll:** nothing in the sheet scrolls on its own; every choice sits under the latest turn and is reached by scrolling the sheet. "⋯" in the card's head (and in the strip) reveals *Discard*. A tap the walk does not cover says, in plain words, which taps it answers there.
+9. **One scroll:** nothing in the sheet scrolls on its own; every choice sits under the latest turn and is reached by scrolling the sheet. "⋯" in the card's head (and in the strip) reveals *Discard*. A tap the walk does not cover says, in plain words, which taps it answers there. **The 1-step buttons drawn at these points** — *You pick, and tell me why*, *Find the listed companies* again, and your own direction in the composer — **are not in this walk**: tapping one answers that line. Follow the free choices.
 10. **The hard states** (from `?srFixture=index`): the dead end, out of steps, a failed step with *Try again*, a stale card, the revised why, the group.
 11. **Rotate the phone, or narrow a desktop window** with the sheet open: it stays one column; no word breaks inside itself.
 12. **An old investigation** (`?srFixture=index`, a ledger one): it looks exactly as it does today. **Live app:** nothing has changed anywhere.
