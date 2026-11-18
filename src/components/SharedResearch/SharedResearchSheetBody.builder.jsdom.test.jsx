@@ -1429,7 +1429,8 @@ describe('B5 — before the switch (§B13): the screen', () => {
     const panel = $('[data-sr-panel="theme"]');
     expect(own.getAttribute('aria-expanded')).toBe('true');
     expect(own.getAttribute('aria-controls')).toBe(panel.id);
-    await act(async () => { own.focus(); });
+    // a tap on × moves focus to it first (jsdom's click does not), so the opener must win it back (§B14 mutant B14-Q4c)
+    await act(async () => { $('[data-sr-panel-close="theme"]').focus(); });
     await tap('[data-sr-panel-close="theme"]');
     await act(async () => { await new Promise((r) => { setTimeout(r, 5); }); });
     expect($('[data-sr-panel="theme"]')).toBeNull();
@@ -1522,7 +1523,8 @@ describe('§B14 (Nov 18): the theme block, the ready view, the surviving time-fr
     const panel = $('[data-sr-panel="theme"]');
     expect(own.getAttribute('aria-expanded')).toBe('true');
     expect(own.getAttribute('aria-controls')).toBe(panel.id);
-    await act(async () => { own.focus(); });
+    // a tap on × moves focus to it first (jsdom's click does not), so the opener must win it back (§B14 mutant B14-Q4c)
+    await act(async () => { $('[data-sr-panel-close="theme"]').focus(); });
     await tap('[data-sr-panel-close="theme"]');
     await act(async () => { await new Promise((r) => { setTimeout(r, 5); }); });
     expect(document.activeElement).toBe($('[data-sr-ready] [data-sr-theme-own]'));
