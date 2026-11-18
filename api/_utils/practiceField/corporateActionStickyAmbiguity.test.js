@@ -13,6 +13,7 @@ import { assertReconciled } from './reconcile.js';
 import { closeIdeaBook, catchUpIdeaBook } from './close.js';
 import { parseSplitsPayload, parseDividendsPayload } from '../mandateCorporateActions.js';
 import { unsettledConflicts, unsettledRedates, openRulingRevisions, heldActionRecords, saleHeldBackBy } from './ledger.js';
+import { ledgerDoubts } from './settlement.js';
 import { nextSessionDate } from './windows.js';
 import {
   seedBook, admitAndEnter, closeOn, contractOf, getBook, getIdea, getRow, closeNowOf, storeCloseSnapshot, founderRules,
@@ -368,6 +369,45 @@ describe('Amendment F rev 1 — S-2: once ambiguous, only the founder settles it
     expect(openRulingRevisions(ideaOf(c).ledger)).toEqual([]);
     expect(divs(ideaOf(c))).toEqual([99.97, 99.97]);
     expect(rowOf(c, 5).fullQuality).toBe(true);
+  });
+
+  it('S-2, a SPLIT revised after its ruling: the count is in doubt again — what depends on it waits, the sale waits, the endpoint names it — until the founder answers', async () => {
+    const c = await start();
+    await close(c, 0);
+    await close(c, 1, 100 / 1.5, [spl(1, '3/2'), spl(1, '5/4')]);
+    await rule(c, { kind: 'conflict', recordId: `split_AAPL_${S[1]}`, decision: 'payload', payload: { ratio: 1.5 } }, 'split-r1');
+    await close(c, 2, 100 / 1.5, [spl(1, '3/2')]);
+    expect(ideaOf(c).ledger.holdings.AAPL.shares).toBe(149.955012);
+    // The vendor now lists 7:4 for that id, and a dividend dated after it.
+    await close(c, 3, 100 / 1.5, [spl(1, '7/4'), div(3, 1)]);
+    let idea = ideaOf(c);
+    expect(openRulingRevisions(idea.ledger)).toEqual([expect.objectContaining({ actionId: `split_AAPL_${S[1]}`, ruling: 'split-r1' })]);
+    expect(idea.ledger.holdings.AAPL.shares).toBe(149.955012); // the money the ruling moved stays
+    expect(divs(idea)).toEqual([0, 0]);
+    expect(heldActionRecords(idea.ledger).map((r) => r.actionId)).toEqual([`cash_dividend_AAPL_${S[3]}`]);
+    expect(rowOf(c, 3).fullQuality).toBe(false);
+    expect(saleHeldBackBy(idea.ledger, 'AAPL', { symbols: {} }, { date: S[4] })).toBe('corporate_action_unsettled');
+    expect(ledgerDoubts(idea.ledger).find((x) => x.symbol === 'AAPL').reasons).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'revised_after_ruling', actionId: `split_AAPL_${S[1]}` })]));
+    // The founder answers with the ruled outcome: the record closes, the count is trusted again, the dividend is paid once.
+    await rule(c, { kind: 'conflict', recordId: `split_AAPL_${S[1]}`, decision: 'payload', payload: { ratio: 1.5 } }, 'split-r2');
+    await close(c, 4, 100 / 1.5, [spl(1, '7/4'), div(3, 1)]);
+    idea = ideaOf(c);
+    expect(openRulingRevisions(idea.ledger)).toEqual([]);
+    expect(divs(idea)).toEqual([149.96, 149.96]);
+    expect(rowOf(c, 4).fullQuality).toBe(true);
+  });
+
+  it('a possible re-date whose own id later shows a second payload: the founder may choose the payload first seen later (every payload of the record is choosable)', async () => {
+    const c = await start();
+    await close(c, 0);
+    await close(c, 1, 100, [div(1, 1)]);
+    await close(c, 2, 100, [div(1, 1), div(2, 1)]);
+    expect(unsettledRedates(ideaOf(c).ledger).map((r) => r.actionId)).toEqual([`cash_dividend_AAPL_${S[2]}`]);
+    await close(c, 3, 100, [div(2, 4)]);
+    expect(unsettledRedates(ideaOf(c).ledger)[0].rows.map((r) => r.amount)).toEqual([1, 4]);
+    expect((await rule(c, { kind: 'conflict', recordId: `cash_dividend_AAPL_${S[2]}`, decision: 'payload', payload: { amount: 4 } }, 'redate-4')).status).toBe(200);
+    await close(c, 4, 100, [div(2, 4)]);
+    expect(divs(ideaOf(c))).toEqual([499.85, 499.85]); // $1 on S[1] (never ambiguous) and the founder's $4 on S[2]
   });
 
   it('S-3: an action that was never ambiguous is applied exactly as before — one payload, covered, no re-date', async () => {

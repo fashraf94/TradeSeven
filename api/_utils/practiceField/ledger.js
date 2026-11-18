@@ -970,7 +970,7 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
   // ── AMBIGUITY IS STICKY (Amendment F rev 1, S-1, S-2; see the header) ─────────────────────────────────────────────
   const redates = [];
   // The founder's own action for an id (resolve_hold) is the one thing that settles an ambiguous id.
-  const isRuled =(a) => a?.founderRuling != null && ruledIds?.has(a.actionId) === true;
+  const isRuled = (a) => a?.founderRuling != null && ruledIds?.has(a.actionId) === true;
   // The feed's due rows of this call (a founder's action is not a feed row: it is never part of a conflict or a revision).
   const feedDue = [...pending, ...notEntitled, ...noEntitlementData, ...unrecognized].filter((a) => a.founderRuling == null);
   // Every ambiguous id's OPEN record — its first unsettled conflict or possible re-date receipt — kept live through the call.
