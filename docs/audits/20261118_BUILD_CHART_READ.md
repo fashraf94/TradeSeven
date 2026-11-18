@@ -7,7 +7,7 @@
 | | |
 |---|---|
 | **What ships** | Three PRs, merged A → B → C. A: the route's `previous` and the pure logic. B: the read on the Chart view, its marks, the Rule chip, the sheet, the unadjusted 1D candles, this report and the spec. C: `CHART_READ_MODE = 'allowlist'`. |
-| **Flag off** | Byte-identical: no request, no element, no chart-library call (lens 3's differential: 12 steps on a browse and a battle mount, base vs head, 0 diffs; its positive controls 8 diffs each). |
+| **Flag off** | Byte-identical: no request, no element, no chart-library call. A differential renders the real modal at flag off on a browse and a battle mount through 20 steps (open, Chart, 1W, SMA, S/R, 1D, a record-day chip, Analysis, Chart, Escape) and records the DOM, every chart-library call, every request and the focused element: `main`'s four screen files vs the final B head `f2c77918`, **0 diffs**; positive control (one flag-off style changed) 16 diffs. Lens 3 ran the same check at `a9a9afb6`: 0 diffs. |
 | **Never** | A verdict computed, a model call, a provider call, a write, a stop or a target. |
 | **Review** | Three lenses, each with a refuter (BUILD_RULES §2). 28 findings: 23 confirmed, 1 refuted (L1-9), 3 partly refuted (L2-3, L2-10, L3-8), 1 a duplicate (L2-9). Every confirmed defect is fixed with a row that failed first, except one pre-existing hook defect for separate tasking (L2-2) and the items that follow ruled text (founder questions §7). |
 | **Mutation** | 71 mutants: 69 killed, 2 equivalent (S4, H2). |
@@ -140,14 +140,16 @@ The first full Linux run on B (`50aab38a`) failed one row, the intraday copy gua
 
 ## 10. Live checklist (founder, on a phone, after C merges and deploys)
 
-1. Open a ranked stock from a battle you own (an allowlisted account) → Chart. Under the plot: *Setup check · daily*, the date, one sentence; *prices unadjusted* under the OHLC row; the Rule chip lit.
-2. The numbered ticks sit on the candles near the right edge; tap Rule: they go; tap again: they come back.
-3. Tap the read: the sheet rises from the plot's lower edge; the uptrend group shows *n of 3*.
-4. Tap *The touch*: marks 4 and 1 thicken and their prices show on the right scale; tap again: they clear.
-5. Press the device's back / Escape (or tap ✕): only the sheet closes.
-6. Switch to 1W: the marks sit on the weeks; no *prices unadjusted*.
-7. Switch to Battle: no ticks; one short *20-day · daily · {day} close* stub at the right edge; the read says where its marks are.
-8. From an account not on the allowlist: the same screen shows no read and no Rule chip.
+The daily sweep is on in `main` (#1082), so the ranked stocks have records. A stock whose line reads *Measured after each close; no read yet* has none yet: try another ranked stock.
+
+1. Signed in on an allowlisted account, open a ranked stock from one of your agent battles → Chart. Under the plot: *Setup check · daily*, the date, one sentence; *prices unadjusted* under the OHLC row; the Rule chip lit.
+2. The numbered ticks sit on the candles near the right edge. Tap Rule: they go; tap again: they come back.
+3. Tap the read: the sheet rises from the plot's lower edge (the plot gets shorter, the Ask row hides); the uptrend group shows *n of 3*.
+4. Tap *The touch*: marks 4 and 1 thicken and their prices show on the right scale; tap it again: they clear.
+5. Tap ✕ on the sheet: only the sheet closes; the read and the Ask row are back.
+6. Tap 1W: the ticks sit on the weeks; *prices unadjusted* is gone.
+7. Tap Battle: no ticks; one short *20-day · daily · {day} close* stub at the right edge; the read says where its marks are.
+8. On an account that is not on the allowlist: the same Chart view shows no read and no Rule chip.
 
 ## 11. For separate tasking (found, not fixed)
 
