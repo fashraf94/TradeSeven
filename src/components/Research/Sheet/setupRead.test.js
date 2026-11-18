@@ -2,13 +2,14 @@
 //
 // The chart's evidence — the client read (spec docs/specs/CHART_EVIDENCE_SPEC_V1.md §4.6):
 // the three answers passed on unchanged, every failure a rejection with its status and
-// error, a body outside the contract never resolved, and no caller anywhere in src yet.
+// error, a body outside the contract never resolved, and one caller in src: the Chart view's read
+// (src/components/Research/ChartRead/useChartRead.js — docs/specs/CHART_READ_SPEC_V1.md).
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, relative, resolve } from 'node:path';
-import { SETUP_READ_FIELDS } from './setupReadContract.js';
+import { SETUP_READ_FIELDS, SETUP_READ_PREVIOUS_FIELDS } from './setupReadContract.js';
 
 const net = vi.hoisted(() => ({ calls: [], respond: null }));
 vi.mock('../../../utils/fetchWithAuth.js', () => ({
@@ -19,7 +20,9 @@ const { fetchSetupRead, setupReadBodyOk, SETUP_READ_PATH } = await import('./set
 
 const reply = (status, body) => () => ({ ok: status >= 200 && status < 300, status, json: async () => (body instanceof Error ? Promise.reject(body) : structuredClone(body)) });
 const read = () => Object.fromEntries(SETUP_READ_FIELDS.map((k) => [k, k === 'behind' ? false : null]));
-const body = (answer, over = {}) => ({ answer, symbol: 'BRK-B', servedAt: 1_763_330_400_000, sessionsTried: ['2026-11-16'], read: answer === 'absent' ? null : read(), ...over });
+const body = (answer, over = {}) => ({ answer, symbol: 'BRK-B', servedAt: 1_763_330_400_000, sessionsTried: ['2026-11-16'], read: answer === 'absent' ? null : read(), previous: null, ...over });
+// RD-2: `previous` — the earlier session's record as a small summary.
+const previous = () => ({ session: '2026-11-13', verdict: 'invalid', reason: 'no_setup', pattern: null, regime: 'uptrend', patternsSatisfied: [], checks: [{ id: 'regime_stack', result: true }, { id: 'extension', result: 'unknown' }] });
 
 beforeEach(() => { net.calls = []; net.respond = null; });
 
@@ -27,6 +30,11 @@ describe('fetchSetupRead', () => {
   it.each(['measured', 'refused', 'absent'])('%s: the body is resolved exactly as sent', async (answer) => {
     net.respond = reply(200, body(answer));
     await expect(fetchSetupRead('BRK-B')).resolves.toEqual(body(answer));
+  });
+  it.each(['measured', 'refused'])('%s with a previous record (RD-4): resolved exactly as sent', async (answer) => {
+    net.respond = reply(200, body(answer, { previous: previous() }));
+    await expect(fetchSetupRead('BRK-B')).resolves.toEqual(body(answer, { previous: previous() }));
+    expect(Object.keys(previous())).toEqual([...SETUP_READ_PREVIOUS_FIELDS]);
   });
   it('asks the one route, the symbol encoded, through the authenticated fetch', async () => {
     net.respond = reply(200, body('absent'));
@@ -56,6 +64,14 @@ describe('fetchSetupRead', () => {
     ['a missing body key', (() => { const { sessionsTried: _s, ...b } = body('measured'); return b; })()],
     ['a read with an extra field', { ...body('measured'), read: { ...read(), writer: {} } }],
     ['a read missing a field', { ...body('refused'), read: (() => { const { checks: _c, ...r } = read(); return r; })() }],
+    // RD-4: the body's new key, held to its closed list.
+    ['no previous key at all', (() => { const { previous: _p, ...b } = body('measured'); return b; })()],
+    ['absent with a previous record', body('absent', { previous: previous() })],
+    ['a previous with an extra field (a fact)', body('measured', { previous: { ...previous(), facts: { C: 1 } } })],
+    ['a previous missing a field', body('measured', { previous: (() => { const { regime: _r, ...p } = previous(); return p; })() })],
+    ['a previous check with a side', body('measured', { previous: { ...previous(), checks: [{ id: 'extension', result: true, rhs: 141.1 }] } })],
+    ['a previous whose checks are not a list', body('measured', { previous: { ...previous(), checks: {} } })],
+    ['a previous that is not an object', body('measured', { previous: 'invalid' })],
     ['not an object', ['measured']],
     ['no body', new Error('not json')],
   ])('a 200 with %s is never resolved', async (_label, payload) => {
@@ -68,8 +84,8 @@ describe('fetchSetupRead', () => {
   });
 });
 
-describe('no caller yet (spec §4.6: the Chart view\'s read is the next build)', () => {
-  it('nothing under src imports the client read except its own test', () => {
+describe('one caller (the Chart view\'s read build: spec docs/specs/CHART_READ_SPEC_V1.md)', () => {
+  it('nothing under src imports the client read but the Chart view\'s read hook — and the tests that pin it', () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const src = resolve(here, '../../..');
     const hits = [];
@@ -80,6 +96,10 @@ describe('no caller yet (spec §4.6: the Chart view\'s read is the next build)',
       }
     };
     walk(src);
-    expect(hits).toEqual(['components/Research/Sheet/setupRead.test.js']);
+    expect(hits.sort()).toEqual([
+      'components/Research/ChartRead/useChartRead.js', // the one caller: the Chart view's read, behind CHART_READ_MODE
+      'components/Research/ChartRead/useChartRead.jsdom.test.jsx', // its rows mock the client read
+      'components/Research/Sheet/setupRead.test.js',
+    ]);
   });
 });

@@ -16,9 +16,11 @@
 //      anything else                                              → 400 invalid_symbol
 //   6  the per-user limiter, before any read                      → 429
 //   7  the reads: readSnapshot for the last completed session (lastCompletedSessionAt), then
-//      for the session before it — AT MOST TWO, through a per-instance memory cache of at
-//      most 60 seconds keyed by symbol and session
-//   8  200 { answer, symbol, servedAt, sessionsTried, read } with Cache-Control: private, no-store
+//      for the session before it — AT MOST TWO for `read` — and, when `read` is a record, ONE
+//      more for `previous` (the session before `read`'s; the Chart view's read build, RD-1 –
+//      RD-5, docs/specs/CHART_READ_SPEC_V1.md): 0 to 3 record reads a call, through a
+//      per-instance memory cache of at most 60 seconds keyed by symbol and session
+//   8  200 { answer, symbol, servedAt, sessionsTried, read, previous } with Cache-Control: private, no-store
 //
 // THE SESSION IS THE SERVER'S (RR-4). A client `session` is ignored. `read.behind` is true
 // when only the earlier session has a record. Three answers, never merged (RR-5): `measured`
@@ -40,7 +42,7 @@ import { readSnapshot, lastCompletedSessionAt } from '../_utils/setupEvidence/in
 import { describeRuleSet } from '../_utils/setupEvaluator/thresholds.js';
 import { isCryptoSymbol } from '../_utils/marketDataCache.js';
 import { ALL_TICKERS } from '../_utils/rankingConfig.js';
-import { answerOf, projectSetupRecord } from '../_utils/setupRead/projection.js';
+import { answerOf, projectSetupRecord, projectPreviousRecord } from '../_utils/setupRead/projection.js';
 import { chartReadModeOn, resolveChartReadMode } from '../../src/components/Research/Sheet/chartReadMode.js';
 
 export const config = { maxDuration: 5 };
@@ -90,16 +92,25 @@ export function symbolOf(value) {
   return RANKED.has(symbol) ? { symbol } : { error: 'invalid_symbol' };
 }
 
+/** The session before a session; null when the calendar cannot say. Pure. */
+export function sessionBefore(session) {
+  // Noon UTC on a session's own date is before its close, so the answer is the session before it.
+  const prior = lastCompletedSessionAt(Date.parse(`${session}T12:00:00Z`));
+  return prior.ok && prior.session < session ? prior.session : null;
+}
+
 /** RR-4: the last completed session, then the one before it; null when the calendar cannot say. Pure. */
 export function sessionsToTry(nowMs) {
   const latest = lastCompletedSessionAt(nowMs);
   if (!latest.ok) return null;
-  // Noon UTC on a session's own date is before its close, so the answer is the session before it.
-  const prior = lastCompletedSessionAt(Date.parse(`${latest.session}T12:00:00Z`));
-  return prior.ok && prior.session < latest.session ? [latest.session, prior.session] : [latest.session];
+  const prior = sessionBefore(latest.session);
+  return prior ? [latest.session, prior] : [latest.session];
 }
 
-/** Step 7: the answer for one symbol now, through the cache. At most two record reads. */
+/**
+ * Step 7: the answer for one symbol now, through the cache. At most two record reads for `read`, and
+ * one more for `previous` (RD-3) when `read` is a record: 0 to 3 a call.
+ */
 export async function readSetup({ db, symbol, nowMs }) {
   const sessions = sessionsToTry(nowMs);
   if (!sessions) return null;
@@ -108,18 +119,27 @@ export async function readSetup({ db, symbol, nowMs }) {
   let value = hit && nowMs - hit.atMs >= 0 && nowMs - hit.atMs < SETUP_READ_CACHE_MS ? hit.value : null;
   if (!value) {
     const ruleSet = describeRuleSet();
+    // The one readSnapshot call site (RR-1): every record this route reads comes through it.
+    const recordAt = (session) => readSnapshot({ db, session, symbol, ruleSet });
     const tried = [];
     for (let i = 0; i < sessions.length && !value; i++) {
       const session = sessions[i];
       tried.push(session);
-      const record = await readSnapshot({ db, session, symbol, ruleSet });
-      if (record) value = { answer: answerOf(record), sessionsTried: [...tried], read: projectSetupRecord(record, { session, symbol, behind: i > 0 }) };
+      const record = await recordAt(session);
+      if (record) value = { answer: answerOf(record), sessionsTried: [...tried], read: projectSetupRecord(record, { session, symbol, behind: i > 0 }), previous: null };
     }
-    if (!value) value = { answer: 'absent', sessionsTried: tried, read: null };
+    if (!value) value = { answer: 'absent', sessionsTried: tried, read: null, previous: null };
+    // RD-1: the record of the session before `read`'s — one more read, the same cache and the same rule:
+    // a record the projection cannot read throws (500), never null and never in part.
+    if (value.read) {
+      const before = sessionBefore(value.read.session);
+      const earlier = before ? await recordAt(before) : null;
+      if (earlier) value.previous = projectPreviousRecord(earlier, { session: before, symbol });
+    }
     for (const [k, v] of cache) if (nowMs - v.atMs >= SETUP_READ_CACHE_MS) cache.delete(k);
     cache.set(key, { atMs: nowMs, value });
   }
-  return { answer: value.answer, symbol, servedAt: nowMs, sessionsTried: [...value.sessionsTried], read: value.read };
+  return { answer: value.answer, symbol, servedAt: nowMs, sessionsTried: [...value.sessionsTried], read: value.read, previous: value.previous };
 }
 
 export default async function handler(req, res) {

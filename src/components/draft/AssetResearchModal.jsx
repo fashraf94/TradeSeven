@@ -44,6 +44,15 @@ import { opensInRedZone } from '../Research/Sheet/sheetOpen';
 import { resolveSheetMode, sheetModeOn } from '../Research/Sheet/sheetMode';
 import { shellViewsFor, openingView, bombOnlyOpensOnBomb, switchView, seeOnChartTimeframe, isChartTimeframe, isLiveZoneMode, viewOnShellAppear, shellChartHeight } from '../Research/Sheet/shellView';
 import { motionToken } from '../../theme/motion';
+// The Chart view's read (spec docs/specs/CHART_READ_SPEC_V1.md): the stored setup check under the plot.
+import { useChartRead } from '../Research/ChartRead/useChartRead';
+import { readLineOf } from '../Research/ChartRead/chartRead';
+import { CHART_READ_COPY } from '../Research/ChartRead/chartReadCopy';
+import { etDateOf } from '../Research/ChartRead/format';
+import { chartReadProps, barsMatchTimeframe } from '../Research/ChartRead/chartProps';
+import ChartReadBand from '../Research/ChartRead/ChartReadBand';
+import ChartReadSheet from '../Research/ChartRead/ChartReadSheet';
+import { getSessionForDate } from '../../utils/marketCalendar';
 
 /**
  * AssetResearchModal - Detailed asset research view (reusable across screens)
@@ -557,6 +566,45 @@ const AssetResearchModal = ({
   const battleSeries = useBattleSeries({ symbol: currentAsset?.symbol, spec: battleSpec, active: battleShown });
   // The chart unmounts while Battle's bars load: its S/R pill goes with it (§3; PR 2 review B4).
   if (srOn && battleShown && battleSeries.status !== 'ready') setSrOn(false);
+  // The Chart view's read (spec docs/specs/CHART_READ_SPEC_V1.md; build prompt §5 – §7): asked for only on the
+  // shell's Chart view of a stock — never crypto, an index or a sector fund (RD-11; the shell is off for them, R-35)
+  // — and only while CHART_READ_MODE resolves on; 'off' makes no request and draws nothing (useChartRead).
+  const chartRead = useChartRead({ symbol: currentAsset?.symbol, enabled: shellOn && shellAsset === 'stock' && !failClosed && shellView === 'chart' });
+  const readReady = chartRead.status === 'ready';
+  const readTodayEt = readReady ? etDateOf(Date.now()) : null;
+  const readLine = readReady ? readLineOf(chartRead.body, { todayEt: readTodayEt, todayIsSession: getSessionForDate(readTodayEt)?.isTradingDay === true, battle: battleShown }) : null;
+  const [readSheetFor, setReadSheetFor] = useState(null); // the symbol whose sheet is open
+  const [readRuleOn, setReadRuleOn] = useState(true); // CR-5: the Rule chip, on by default
+  const [readLit, setReadLit] = useState(null); // { key, marks } — the tapped check (SH-2)
+  const [readExpanded, setReadExpanded] = useState(false); // SH-3
+  const chartViewRef = useRef(null);
+  const readButtonRef = useRef(null);
+  // A sheet opened for one stock closes when the modal moves to another, its lit check with it (review L2-3).
+  if (readSheetFor !== null && readSheetFor !== (currentAsset?.symbol ?? null)) { setReadSheetFor(null); setReadLit(null); }
+  const readSheetOpen = readReady && readLine?.opensSheet === true && readSheetFor === currentAsset?.symbol && shellView === 'chart';
+  // What the chart is handed (ChartRead/chartProps.js): UC-1's unadjusted 1D candles exactly where the read shows,
+  // the Rule chip and the marks on 1D and 1W, the one 20-day stub on Battle; nothing without a read.
+  // Only on bars that ARE the timeframe's (review L2-1: the hook keeps the old series until the new one lands); lit
+  // marks only while the sheet is open (review L2-3).
+  const readChartBase = chartReadProps({
+    line: readLine, timeframe: battleShown || barsMatchTimeframe(researchData.ohlcvData, researchData.timeframe) ? researchData.timeframe : null,
+    battle: battleShown, ruleOn: readRuleOn, sheetOpen: readSheetOpen,
+    lit: readSheetOpen ? readLit?.marks ?? [] : [], dailyDates: (researchData.dailyData || []).map((d) => String(d?.date || '').slice(0, 10)),
+  });
+  const readChart = readChartBase?.ruleChip ? { ...readChartBase, ruleChip: { ...readChartBase.ruleChip, onToggle: () => setReadRuleOn((v) => !v) } } : readChartBase;
+  const openReadSheet = () => {
+    if (chartViewRef.current) chartViewRef.current.scrollTop = 0; // the plot shows above the sheet
+    setReadLit(null);
+    setReadExpanded(false);
+    setReadSheetFor(currentAsset?.symbol ?? null);
+  };
+  const closeReadSheet = () => { setReadSheetFor(null); setReadLit(null); };
+  // SH-4: focus goes back to the read when the sheet closes.
+  const readWasOpenRef = useRef(false);
+  useEffect(() => {
+    if (readWasOpenRef.current && !readSheetOpen && readButtonRef.current) readButtonRef.current.focus({ preventScroll: true });
+    readWasOpenRef.current = readSheetOpen;
+  }, [readSheetOpen]);
   // (Build C's drawer geometry — the shorter chart above the drawer, its mid snap and
   // footer — is replaced by the shell, R-28: the sheet now lives only in the shell.)
 
@@ -614,6 +662,7 @@ const AssetResearchModal = ({
     if (shownView === 'chart' && to !== 'chart') setSrOn(false); // the chart unmounts with its S/R pill
     // BC2-4: the Chart view opened on its own starts on its 1D / 1W pill (§3), never on Battle.
     if (to === 'chart' && shownView !== 'chart') setBattleOn(false);
+    if (to !== 'chart') setReadSheetFor(null); // the read's sheet goes with the Chart view
     setShellView(next.view);
   };
   // The chart's own pills: Battle is the modal's (its bars are not the research hook's); 1D and 1W the hook's.
@@ -894,7 +943,7 @@ const AssetResearchModal = ({
           </div>
         </div>
         {shownView === 'chart' && (
-          <motion.div key="chart" data-shell-scroll="chart" {...fadeIn} style={viewScroll}>
+          <motion.div key="chart" ref={chartViewRef} data-shell-scroll="chart" {...fadeIn} style={readSheetOpen ? { ...viewScroll, overflowY: 'hidden' } : viewScroll}>
             {battleShown && battleSeries.status !== 'ready' && (
               // BC2-1: the Battle bars' own states — loading, a refused or failed request (Retry is a tap), none yet.
               <div data-shell-chart-state={`battle-${battleSeries.status}`} style={{ height: `${shellChartH + 44}px`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', background: ST.bg }}>
@@ -940,7 +989,9 @@ const AssetResearchModal = ({
                 levels={chartLevels}
                 smaData={battleShown ? null : researchData.smaData}
                 activeHighlight={chartHighlight}
-                height={shellChartH}
+                // The Chart view's read: while its sheet is open the plot gives the sheet room (round 6 B — a 300 px plot
+                // over an 844 px screen, about 42 % of the view); closed, the shell's own height.
+                height={readSheetOpen ? Math.min(shellChartH, Math.max(180, Math.round(shellBodyHeight * 0.42))) : shellChartH}
                 // 💣 is a view of its own here (the header's pill), never a pill inside the chart;
                 // with Bomb mode rolled back the legacy bomb chart keeps its pill (bombData).
                 bombData={bombOn || bombHidden ? null : bombData}
@@ -951,11 +1002,27 @@ const AssetResearchModal = ({
                 onToggleSR={setSrOn}
                 {...(sheetView?.chart ? { markers: sheetView.chart.markers, priceLines: sheetView.chart.priceLines } : {})}
                 {...(battleSpec ? { battlePill: { label: SHELL_COPY.timeBattle }, onMarkerTap: (id) => { if (typeof id === 'string' && id.startsWith('day:')) onRecordDay(); } } : {})}
+                {...(readChart || {})}
+              />
+            )}
+            {/* The Chart view's read: its sheet rises to the plot's lower edge, over the chips, the read and the
+                Technical content (round 6 B); it scrolls inside itself while the view stands still. */}
+            {readSheetOpen && (
+              <ChartReadSheet
+                body={chartRead.body}
+                symbol={currentAsset?.symbol}
+                litKey={readLit?.key ?? null}
+                onRow={(row) => setReadLit((l) => (l?.key === row.key ? null : { key: row.key, marks: row.marks }))}
+                expanded={readExpanded}
+                onExpand={() => setReadExpanded(true)}
+                onClose={closeReadSheet}
+                viewRef={chartViewRef}
+                reducedMotion={reducedMotion}
               />
             )}
             {/* BC2-3: on 1D and 1W, each day of the record with its count — a tap opens Battle (a phone's tap
                 target; the counted marker itself also takes a tap). */}
-            {battleSpec && !battleShown && chartShown && sheetView?.chart?.days?.length > 0 && (
+            {!readSheetOpen && battleSpec && !battleShown && chartShown && sheetView?.chart?.days?.length > 0 && (
               <div data-shell-record-days aria-label={SHELL_COPY.dayChipsLabel} style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', padding: '8px 12px 0' }}>
                 {sheetView.chart.days.map((g) => (
                   <button key={g.day} type="button" data-record-day={g.day} onClick={onRecordDay}
@@ -965,7 +1032,12 @@ const AssetResearchModal = ({
                 ))}
               </div>
             )}
+            {/* The Chart view's read (§5): after the record-day chips, before the Technical content (round 6 F). */}
+            {!readSheetOpen && (readReady || chartRead.status === 'failed') && (
+              <ChartReadBand ref={readButtonRef} line={readLine} status={chartRead.status} onOpen={openReadSheet} onRetry={chartRead.retry} />
+            )}
             {/* SQ-1: today's Technical tab, below the chart in the same scroll; a level tapped here still lights on the chart */}
+            {!readSheetOpen && (
             <div data-shell-technical style={{ padding: '16px 16px 28px' }}>
               <TechnicalTabV2
                 asset={shownAsset}
@@ -974,8 +1046,10 @@ const AssetResearchModal = ({
                 levels={researchData.levels}
                 sessionDate={sessionDateOf(Date.now(), !!isCrypto)}
                 onLevelHighlight={setHighlightedLevel}
+                {...(readReady ? { levelsNote: CHART_READ_COPY.levelsApart } : {})}
               />
             </div>
+            )}
           </motion.div>
         )}
         {shownView === 'bomb' && bombView && (
@@ -1847,7 +1921,8 @@ const AssetResearchModal = ({
         {/* Action Button Section - Flexible Configuration. Under the shell in battle, Build C's
             action row (the Ask with its cost, → Cockpit — SB-10, R-29), pinned under every view;
             in browse, the mount's own action below, unchanged. */}
-        {shellOn && sheetView ? <SheetActionRow view={sheetActionView} onAnalysis={shownView === 'analysis'} /> : showActionButton && (
+        {/* The Chart view's read: while its sheet is open the action row gives way to it (round 6 B). */}
+        {readSheetOpen ? null : shellOn && sheetView ? <SheetActionRow view={sheetActionView} onAnalysis={shownView === 'analysis'} /> : showActionButton && (
           <div
             style={{
               padding: '16px 20px',

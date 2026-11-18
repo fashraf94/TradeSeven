@@ -10,8 +10,22 @@
 /** The three answers, never merged (RR-5). */
 export const SETUP_READ_ANSWERS = Object.freeze(['measured', 'refused', 'absent']);
 
-/** The 200 body's keys, in order. `read` is the projection, or null when the answer is `absent`. */
-export const SETUP_READ_BODY_KEYS = Object.freeze(['answer', 'symbol', 'servedAt', 'sessionsTried', 'read']);
+/**
+ * The 200 body's keys, in order. `read` is the projection, or null when the answer is `absent`.
+ * `previous` (the Chart view's read build, ruling RD-1 – RD-4, docs/specs/CHART_READ_SPEC_V1.md) is a
+ * small summary of the record for the session before `read`'s, or null when `read` is null or that
+ * earlier session has no record.
+ */
+export const SETUP_READ_BODY_KEYS = Object.freeze(['answer', 'symbol', 'servedAt', 'sessionsTried', 'read', 'previous']);
+
+/**
+ * `previous`'s keys, in order (RD-2): copied from the earlier session's record, never derived. No facts
+ * and no prices: the session, the verdict and its reason, the pattern, the regime, the satisfied
+ * patterns, and each check's id and result.
+ */
+export const SETUP_READ_PREVIOUS_FIELDS = Object.freeze(['session', 'verdict', 'reason', 'pattern', 'regime', 'patternsSatisfied', 'checks']);
+/** Each of `previous.checks`' keys, in order (RD-2). */
+export const SETUP_READ_PREVIOUS_CHECK_FIELDS = Object.freeze(['id', 'result']);
 
 /**
  * The projection's keys, in order (RR-6): copied from the stored record, never derived.

@@ -20,6 +20,9 @@ import AnalysisSheet, { SheetActionRow } from './AnalysisSheet.jsx';
 import { measuredSheetBattle, SHEET_NOW, ARCHETYPES, AAPL_DAILY, RANKINGS } from './__fixtures__/sheetBattles.js';
 import { renderResearchAskBlock, RESEARCH_ASK_QUESTION_GUIDE } from '../../../../api/_utils/voiceLayerPrompt.js';
 import { FORBIDDEN_SIGNALS } from '../../../../api/_utils/__fixtures__/promptHonestyRegistry.js';
+// The Chart view's read (build prompt RD-13, Phase 0 point 8): its copy module lives in ../ChartRead/ and this
+// file is where every copy module is held to the forbidden terms, so it is scanned here too.
+import { CHART_READ_COPY, RULE_SET_COPY, REFUSAL_WORDS, REFUSAL_FALLBACK } from '../ChartRead/chartReadCopy.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DESK_FORBIDDEN = ['watching', 'thinking', 'researching', 'analyzing', 'about to', 'close to trading', 'wants to', 'looking at', 'eyeing', 'considering'];
@@ -102,6 +105,65 @@ describe('every template of the copy module', () => {
     })(ast);
     expect(strings.length).toBeGreaterThan(50);
     for (const term of ALL) for (const s of strings) expect(hit(s, term), s).toBe(false);
+  });
+});
+
+// The Chart view's read (RD-13): never "will", "likely", "should buy", "live", and never a stop or a target beside
+// a price — on top of every term the sheet's own copy is held to.
+const CHART_READ_FORBIDDEN = [...ALL, 'will', 'likely', 'should buy', 'live'];
+const CR_ARG = { day: 'Tue Nov 17', weekday: 'Tue', why: 'a split or dividend inside the window', ruleSet: 'tf-setup-v2', asOf: 'as of Tue Nov 17 close', n: 73, of: 3, time: 'Wed 1:44 PM ET', names: '20-day, 50-day', sma: '$141.10', high: '$148.90', x: '1.6', parts: ['closed below its 20-day ($141.10)', 'the 50-day is falling'], fact: 'the close', facts: 'the 50-day and the close', avg: '5.3M', many: true };
+function chartReadTemplates() {
+  const out = [];
+  const walk = (prefix, obj) => {
+    for (const [k, v] of Object.entries(obj)) {
+      const key = `${prefix}.${k}`;
+      if (typeof v === 'string') out.push([key, v]);
+      else if (typeof v === 'function') {
+        const names = paramsOf(v);
+        for (const n of names) expect(CR_ARG, `${key}(${n})`).toHaveProperty(n);
+        out.push([key, v(...names.map((n) => CR_ARG[n]))]);
+        if (names.includes('many')) out.push([key, v(...names.map((n) => (n === 'many' ? false : CR_ARG[n])))]);
+      } else if (v && typeof v === 'object') walk(key, v);
+    }
+  };
+  walk('chartRead', CHART_READ_COPY);
+  walk('ruleSet', RULE_SET_COPY);
+  walk('refusal', REFUSAL_WORDS);
+  out.push(['refusal.fallback', REFUSAL_FALLBACK]);
+  return out;
+}
+
+describe('the Chart view\'s read: every template and every literal of its copy module (RD-13)', () => {
+  it('the scan covers the module (every word the read shows)', () => {
+    expect(chartReadTemplates().length).toBeGreaterThan(80);
+  });
+  it.each(CHART_READ_FORBIDDEN)('never says "%s"', (term) => {
+    for (const [k, s] of chartReadTemplates()) expect(hit(s, term), `${k}: ${s}`).toBe(false);
+  });
+  it('never puts a stop or a target beside a price', () => {
+    for (const [k, s] of chartReadTemplates()) expect(STOP_PRICE.test(s), `${k}: ${s}`).toBe(false);
+  });
+  it('the string literals of chartReadCopy.js (comments excluded) never say a forbidden term', () => {
+    const src = readFileSync(path.join(HERE, '..', 'ChartRead', 'chartReadCopy.js'), 'utf8');
+    const strings = [];
+    const ast = Parser.parse(src, { ecmaVersion: 'latest', sourceType: 'module' });
+    (function walk(n) {
+      if (!n || typeof n !== 'object') return;
+      if (n.type === 'Literal' && typeof n.value === 'string') strings.push(n.value);
+      if (n.type === 'TemplateElement') strings.push(n.value.cooked);
+      for (const v of Object.values(n)) if (Array.isArray(v)) v.forEach(walk); else if (v && typeof v.type === 'string') walk(v);
+    })(ast);
+    expect(strings.length).toBeGreaterThan(80);
+    for (const term of CHART_READ_FORBIDDEN) for (const s of strings) expect(hit(s, term), s).toBe(false);
+    for (const s of strings) expect(STOP_PRICE.test(s), s).toBe(false);
+  });
+  it('each rule bites (planted)', () => {
+    expect(hit('The pattern will hold.', 'will')).toBe(true);
+    expect(hit('A likely bounce.', 'likely')).toBe(true);
+    expect(hit('You should  buy here.', 'should buy')).toBe(true);
+    expect(hit('The live price.', 'live')).toBe(true);
+    expect(STOP_PRICE.test('A stop at $141.10.')).toBe(true);
+    expect(hit('It delivers.', 'live')).toBe(false); // a word boundary, not a substring
   });
 });
 
