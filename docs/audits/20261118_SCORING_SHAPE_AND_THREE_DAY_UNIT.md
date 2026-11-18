@@ -19,31 +19,53 @@ This report measures. It rules on nothing and changes no product code. No policy
 
 ## Summary table — shape × unit
 
-Each cell: **bonuses banked per 7-position match · share of match-days with at least one bonus · which policy wins the snap-exit test on average** (Support position; the margin is SELL's points minus the next best policy's, per position). 8,892 holds, 15,600 seeded matches, entries 22 Sep → 13 Nov 2026.
+Each cell gives three things:
+1. Bonuses banked per 7-position match.
+2. The share of match-days with at least one bonus.
+3. The snap-exit verdict: which policy wins on average, with SELL's mean margin over HOLD per Support position. Margins are given for V2's window (39 entry sessions) / the long window (174).
 
-| Shape | U1 — today's one-day unit, unscaled | U4 — × √3 | U6 — measured 3-session range | **U5 — × 2 (recommended)** |
+The verdict words:
+- **HOLD** or **BELL**: SELL clearly loses (best in at most 7% of resamples of whole entry sessions).
+- **even**: no clear winner.
+- **SELL**: SELL clearly wins.
+
+The first two figures come from V2's window: 8,892 holds and 15,600 seeded matches, entries 22 Sep → 13 Nov 2026, fill at the open.
+
+| Shape | U1 — today's one-day unit, unscaled | U4 — × √3 | U6 — measured 3-session range | **U5 — × 2 (recommended, open fill)** |
 |---|---|---|---|---|
-| **Baseline: today's one-day game** (V2 unit, touch) | 0.98 · 47% · — | | | |
-| One-day game, exit only | 0.51 · 27% · — | | | |
-| **S1** touch (today) | 5.21 · 62% · HOLD (SELL −29.7) | 1.57 · 28% · HOLD (−11.1) | 1.55 · 28% · HOLD (−12.2) | 1.01 · 20% · HOLD (−9.7) |
-| **S2** exit only (BB-8 as adopted) | 2.68 · 24% · BELL (−7.9) | 0.76 · 13% · **SELL (+1.8)** | 0.75 · 12% · **SELL (+1.8)** | 0.47 · 9% · **SELL (+3.2)** |
-| **S3** at the bell | 3.31 · 45% · HOLD (−12.3) | 0.88 · 18% · **SELL (+1.1)** | 0.88 · 18% · **SELL (+0.2)** | 0.55 · 12% · **SELL (+2.4)** |
-| **S4** bell + carry, C = 5 | 3.31 · 45% (52% with carries) · HOLD (−17.4) | 0.88 · 18% (21%) · HOLD (−2.7)\* | 0.88 · 18% (21%) · HOLD (−3.6) | 0.55 · 12% (15%) · HOLD (−1.2)\* |
-| **S4** C = 10 | same counts · HOLD (−22.5) | same · HOLD (−6.6) | same · HOLD (−7.5) | same · HOLD (−4.8) |
-| **S4** C = 15 | same counts · HOLD (−27.5) | same · HOLD (−10.4) | same · HOLD (−11.3) | same · HOLD (−8.5) |
-| **S5** daily reset, on touch (dormant legacy) | 5.40 · 60% · HOLD (−21.1) | one-day unit only | | |
-| **S5** daily reset, at each close | 2.93 · 38% · BELL (−5.0) | one-day unit only | | |
+| **Baseline: today's one-day game** (V2 unit, touch) | 0.98 · 47% · HOLD (−11.4 / −8.7) | | | |
+| One-day game, exit only (practice under BB-8) | 0.51 · 27% · **SELL (+1.2 / +4.1)** | | | |
+| **S1** touch (today) | 5.21 · 62% · HOLD (−29.7 / −28.3) | 1.57 · 28% · HOLD (−11.1 / −15.0) | 1.55 · 28% · HOLD (−12.2 / −15.0) | 1.01 · 20% · HOLD (−9.7 / −13.8) |
+| **S2** exit only (BB-8 as adopted) | 2.68 · 24% · HOLD/BELL (−7.5 / −7.0) | 0.76 · 13% · even (+3.1 / −1.1) | 0.75 · 12% · even (+2.4 / −1.3) | 0.47 · 9% · even (+4.2 / −0.6) |
+| **S3** at the bell | 3.31 · 45% · HOLD (−12.3 / −11.1) | 0.88 · 18% · even (+1.1 / −3.1) | 0.88 · 18% · even (+0.2 / −3.3) | 0.55 · 12% · even (+2.4 / −2.2) |
+| **S4** bell + carry, C = 5 | 3.31 · 45% (52% with carries) · HOLD (−17.4 / −16.0) | 0.88 · 18% (21%) · HOLD (−2.7 / −7.0)\* | 0.88 · 18% (21%) · HOLD (−3.6 / −7.2)\* | 0.55 · 12% (15%) · HOLD (−1.2 / −5.9)\* |
+| **S4** C = 10 | same counts · HOLD (−22.5 / −20.8) | same · HOLD (−6.6 / −11.0) | same · HOLD (−7.5 / −11.2) | same · HOLD (−4.8 / −9.7) |
+| **S4** C = 15 | same counts · HOLD (−27.5 / −25.6) | same · HOLD (−10.4 / −14.9) | same · HOLD (−11.3 / −15.1) | same · HOLD (−8.5 / −13.4) |
+| **S5** daily reset, on touch (dormant legacy) | 5.40 · 60% · HOLD (−21.1 / −19.1) | one-day unit only | | |
+| **S5** daily reset, at each close | 2.93 · 38% · BELL (−3.0 / −1.5) | one-day unit only | | |
 
-\* Flips to SELL when a gap through the line is filled at the open instead of at the line (§6 variants). No other variant flips a Support winner.
+\* At C = 5, V2's window is within noise (SELL best in 15–34% of resamples). The long window is clear (0%).
+
+**The recommended unit depends on the fill** (§4). With the open fill used throughout, U5 (×2) matches V2's one-day rarity. With the prior-close fill V2 uses for a battle created out of hours, U4 (×√3) or U6 does.
 
 ## In plain terms
 
-- **V2 reproduced.** Its published one-day figures come back bit-exact from its own inputs (228 of 228). From the bars on disk, three stocks miss the tolerance set beforehand. In every case the provider finalised the 12 Oct bar after V2 read it (§3).
-- **The unit that keeps V2's rarity is twice the one-day unit, not √3 times it.** On today's one-day game a stock touches its +1.0 line in 10.7% of sessions. Over three sessions from the same open, ×2 (U5) gives 11.0%; ×√3 gives 16.4%; the measured three-session range (U6) gives 16.1%; the unscaled unit gives 41.0%. The exact match is ×2.03, and ×1.97 over the longer March–November sample. √3 undershoots because the three-day hold carries two overnight gaps and starts at an open, not a close (§4).
-- **Every three-day shape on a scaled unit has fewer scoring moments than today's game.** Today's game banks a bonus on 47% of match-days. On U5 the three-day shapes bank on 9% (exit only) to 20% (touch) of match-days. 68–72% of three-day matches on U5 bank no bonus at all under exit-only or at-the-bell, against 53% of today's one-day matches (§5).
-- **No shape makes selling at the line a clear winner.** Under exit-only (S2) and at-the-bell (S3), on the wider three-day units, SELL comes out ahead on average by 0.2–3.2 points per Support position (0.3–5% of a sale's 61–68 points). But every such margin's 90% interval, resampling whole entry sessions, spans zero, and SELL is the best policy in only 52–86% of resamples. Call it a tie with a lean toward SELL. Where SELL loses, it loses clearly: on today's touch rule, on the unscaled unit under every shape, and under the daily reset on touch, SELL is best in 0% of resamples (§6).
-- **With a carry, holding beats selling at the line on average.** With C = 10 or more, HOLD beats SELL on average on every unit, and SELL is the best policy in at most 7% of bootstrap resamples. With C = 5 the gap is within noise: SELL is best in 15–34% of resamples, and it wins on U4 and U5 if gap-throughs fill at the open (§6).
-- **One day against three.** Three re-entered one-day matches pay 0.97 bonuses a day. One three-day match on U5 pays 0.34 a day under touch and 0.16–0.18 under exit-only or at-the-bell. The two overnight gaps supply 28.5% of a three-day match's variance; removing them flips the sign of 16% of matches. On U5, 17.5% of bonus first-touches after day 1 happen at the open, not during the session (§7).
+- **V2 reproduced.** Its published one-day figures come back bit-exact from its own inputs (228 of 228). Rebuilt from the bars on disk, three stocks miss the tolerance set beforehand. In every case the provider finalised the 12 Oct bar after V2 read it (§3).
+- **The unit that keeps V2's rarity is ×2 if a match fills at the open, and about ×√3 if it fills at the prior close.**
+  - From the open: a stock touches its one-day +1.0 line in 10.7% of sessions. Over three sessions, ×2 (U5) gives 11.0%, ×√3 (U4) 16.4%, the measured three-session range (U6) 16.1%, and the unscaled unit 41.0%. The exact match is ×2.03, and ×1.97 over March–November.
+  - From the prior close, with the opening gap counted as V2 counts it out of hours: the exact match is ×1.83 (×1.77 over March–November), and the rule picks U6 or U4.
+  - The fill convention for ranked matches must be fixed before the unit (§4, FQ-8).
+- **Every three-day shape on a scaled unit has fewer scoring moments than today's game.**
+  - Today's game banks a bonus on 47% of match-days. On U5 the three-day shapes bank on 9% (exit only) to 20% (touch).
+  - 68–72% of three-day matches on U5 bank no bonus at all under exit-only or at-the-bell, against 53% of today's one-day matches (§5).
+- **In the three-day game, no shape makes selling at the line a clear winner** (§6).
+  - Exit-only (S2) and at-the-bell (S3) on the wider units come out even. SELL leads by up to 4.2 points per Support position over V2's window and trails by up to 3.3 over the long window, and no lead clears the noise.
+  - Selling clearly loses under today's touch rule, on the unscaled unit, under the daily reset on touch, and under the bell with a carry. With C = 10 or 15 that holds on every unit and in both windows. With C = 5 it holds on the long window.
+- **In the one-day game, exit-only does make selling at the line pay.** Over March–November, selling at the +1.0 line beats holding to the close by +4.1 points per Support position, interval +2.0 to +6.1, in 100% of resamples. Under today's touch rule the same sale loses 8.7 points. If BB-8 applies to one-day practice, the snap exit shows up there (§6).
+- **One day against three.**
+  - Three re-entered one-day matches pay 0.97 bonuses a day (0.82 over March–November). One three-day match on U5 pays 0.34 a day under touch (0.27), and 0.16–0.18 under exit-only or at-the-bell (0.13–0.15).
+  - The two overnight gaps supply 28.5% of a three-day match's variance (27.6%). Removing them flips the sign of 16% of matches (17%).
+  - On U5, about 17.5% of bonus first-touches after day 1 happen at the open (§7).
 - **The 15-minute check sees about 85% of the +1.0 touches that daily highs show** (23 of 27 on real checks; 58 of 70 on a larger 10-minute-bar sample). Touch-based figures here are that much too high for the game. Close-based shapes are unaffected, except that the last check comes about 14 minutes before the close (§4).
 - **No market-data request and no production read.** Every input was already on this machine.
 
@@ -139,6 +161,19 @@ Script: `buildHolds.mjs` (MEASURED).
 **Recommended: U5.** Its gap to V2's +1.0 rate is 0.4 points. The others are U1 30.3, U2 20.3, U3 11.8, U4 5.8 and U6 5.5. The exact multiple of the one-day unit that matches V2's +1.0 rate is **×2.03**, read off the real model's own `maxMultiplier`. U5's other tiers also sit close to V2's: +1.5 2.7% against 2.6%, +2.0 0.7% against 0.8%. Its penalties are a little rarer: −1.0 8.8% against 11.0%.
 
 **The long window agrees** (MEASURED, 39,672 holds): V2's one-session +1.0 rate is 9.2%; U5 8.9%, U4 13.2%, U6 11.9%. Recommended again: U5, exact multiple ×1.97.
+
+### The answer depends on where a match fills (sensitivity, added after the first run)
+
+V2 fills a battle created out of hours at the prior close, so the opening jump counts as movement after the fill (policy `offHoursCreation`, Ruling 7: `"openingJump": "post_fill_movement"`, `docs/specs/BAGGERBOMB_STOCK_THRESHOLDS_POLICY_V2_20261015.json:97`). A battle created during the session fills at the live price. Re-running Step 2 with every hold filled at the close of t−1 (`step2Units.mjs --fill prior_close`; the unit is unchanged) moves the answer:
+
+| Fill | V2 one-session +1.0 | U4 × √3 | U5 × 2 | U6 measured | Rule picks | Exact multiple |
+|---|---|---|---|---|---|---|
+| Open, V2's window (primary) | 10.7% | 16.4% | 11.0% | 16.1% | **U5** | ×2.03 |
+| Open, long window | 9.2% | 13.2% | 8.9% | 11.9% | **U5** | ×1.97 |
+| Prior close, V2's window | 17.1% | 19.2% | 13.7% | 19.0% | **U6** (U4 0.2 points behind) | ×1.83 |
+| Prior close, long window | 15.0% | 15.7% | 11.0% | 14.2% | **U4** (U6 0.1 points behind) | ×1.77 |
+
+**Plain reading.** A match that starts at the open needs about twice the one-day unit to keep V2's rarity. A match that starts from the prior close, with the opening gap counted, needs about √3 times. The opening gap is one more overnight move on the one-day side, and it adds proportionally more to a one-session hold than to a three-session one. The unit cannot be chosen without first fixing how a ranked match fills (FQ-8). Steps 3–5 use the open fill throughout. U4 and U6 appear in every one of their tables, so the prior-close candidates' shape and snap-exit figures are already there, though measured from the open.
 
 ### Cleared at a close
 
@@ -270,52 +305,109 @@ S5 uses its own daily +1.0 line, the one-day unit from the day's anchor.
 | U5 | 981 | 74 / 353 / 554 | 2 | 163 |
 | S5 daily line | 3,747 | 1,520 / 1,272 / 955 | 57 | 353 (the line sat below the fill in 460) |
 
-### Support position (conviction 1.0), primary (MEASURED)
+The same counts over the long window (174 entry sessions, 10 Mar → 13 Nov): U1 14,384 (first on session 1 / 2 / 3: 3,663 / 6,331 / 4,390), U4 5,242, U6 4,719, U5 3,533 (209 / 1,390 / 1,934), S5 15,057. The one-session game's line is reached in 947 holds (V2's window) and 3,663 (long window).
 
-| Shape · unit | n | Mean SELL / BELL / HOLD | Median SELL / BELL / HOLD | Best of three: SELL / BELL / HOLD | Best on average | SELL − next best |
-|---|---|---|---|---|---|---|
-| S1 · U1 | 3,643 | 41.4 / 64.3 / 71.1 | 39 / 50 / 60 | 30% / 32% / 38% | HOLD | −29.7 |
-| S2 · U1 | 3,643 | 41.4 / 49.2 / 48.9 | 39 / 41 / 36 | 35% / 34% / 31% | BELL | −7.9 |
-| S3 · U1 | 3,643 | 41.4 / 49.6 / 53.6 | 39 / 41 / 40 | 34% / 34% / 32% | HOLD | −12.3 |
-| S4 · U1 · C 5 / 10 / 15 | 3,643 | 41.4 / 53.1…60.2 / 58.7…68.9 | 39 / 46…56 / 45…56 | 33–34% / 29–31% / 35–38% | HOLD | −17.4 / −22.5 / −27.5 |
-| S1 · U4 | 1,459 | 60.6 / 69.9 / 71.8 | 55 / 59 / 58 | 39% / 30% / 31% | HOLD | −11.1 |
-| **S2 · U4** | 1,459 | 60.6 / 58.9 / 57.5 | 55 / 53 / 49 | 43% / 30% / 27% | **SELL** | **+1.8** |
-| **S3 · U4** | 1,459 | 60.6 / 59.0 / 59.5 | 55 / 53 / 50 | 43% / 30% / 27% | **SELL** | **+1.1** |
-| S4 · U4 · C 5 / 10 / 15 | 1,459 | 60.6 / 61.9…67.8 / 63.4…71.1 | 55 / 57…66 / 55…64 | 42% / 27–28% / 30–32% | HOLD | −2.7\* / −6.6 / −10.4 |
-| S1 · U6 | 1,432 | 61.0 / 70.5 / 73.2 | 56 / 60 / 59 | 41% / 29% / 30% | HOLD | −12.2 |
-| **S2 · U6** | 1,432 | 61.0 / 59.3 / 58.6 | 56 / 54 / 50 | 43% / 30% / 27% | **SELL** | **+1.8** |
-| **S3 · U6** | 1,432 | 61.0 / 59.4 / 60.8 | 56 / 54 / 52 | 43% / 30% / 27% | **SELL** | **+0.2** |
-| S4 · U6 · C 5 / 10 / 15 | 1,432 | 61.0 / 62.4…68.3 / 64.7…72.4 | 56 / 58…68 / 57…66 | 42% / 26–28% / 30–31% | HOLD | −3.6 / −7.5 / −11.3 |
-| S1 · U5 | 981 | 67.6 / 75.2 / 77.3 | 61 / 62 / 62 | 42% / 28% / 30% | HOLD | −9.7 |
-| **S2 · U5** | 981 | 67.6 / 64.4 / 63.4 | 61 / 57 / 54 | 44% / 29% / 26% | **SELL** | **+3.2** |
-| **S3 · U5** | 981 | 67.6 / 64.4 / 65.2 | 61 / 57 / 56 | 44% / 29% / 27% | **SELL** | **+2.4** |
-| S4 · U5 · C 5 / 10 / 15 | 981 | 67.6 / 67.3…73.0 / 68.8…76.0 | 61 / 62…71 / 61…70 | 43–44% / 26–28% / 28–30% | HOLD | −1.2\* / −4.8 / −8.5 |
-| S5 on touch | 3,747 | 28.0 / 48.9 / 49.0 | 30 / 43 / 42 | 29% / 36% / 34% | HOLD | −21.1 |
-| S5 at each close | 3,747 | 28.0 / 33.0 / 31.0 | 30 / 32 / 28 | 40% / 32% / 29% | BELL | −5.0 |
+### The verdicts (MEASURED, Support position)
 
-"Best of three" splits ties equally. \* Flips to SELL under the gap-fill-at-open variant.
+The test is run on two windows: V2's (39 entry sessions) and the long one (174). Margins are SELL's mean points minus HOLD's, per Support position.
 
-**Where SELL is the best policy on average:**
-- **S2 (exit only)** on U4, U6 and U5, by 1.8, 1.8 and **3.2** points per Support position.
-- **S3 (at the bell)** on the same units, by 1.1, 0.2 and **2.4**.
+**Uncertainty is measured by resampling whole entry sessions.** Holds entered on the same day move together, so the session, not the hold, is the independent unit.
+- 2,000 seeded resamples, drawn with replacement.
+- "SELL best in x%" is the share of resamples in which SELL has the highest average of the three policies.
+- Brackets are 90% intervals.
 
-Those margins are 0.3–4.7% of a sale's points. SELL is never best on average under S1, S4, S5, or on the unscaled unit U1. Even where SELL wins on average, it is the single best policy in only 43–44% of holds; HOLD wins most often in the long right tail.
+**1. SELL clearly loses.** SELL is best in 0–3% of long-window resamples, and in at most 7% of V2-window resamples.
+- Today's touch rule (S1), on every unit: −9.7 to −29.7 (V2), −13.8 to −28.3 (long).
+- Every shape on the unscaled unit U1: −7.0 to −29.7.
+- The daily reset on touch (S5): −21.1 (V2), −19.1 (long).
+- The daily reset at each close (S5): BELL wins. SELL is best in 1% (V2) and 3% (long) of resamples.
+- The bell with a carry (S4):
+  - C = 10 and 15: on every unit and in both windows.
+  - C = 5: on the long window, −5.9 to −7.2 on U4–U6 (0% of resamples). On V2's window C = 5 is within noise: −1.2 to −3.6, SELL best in 15–34%.
 
-**Star position (conviction 2.0), the check.** The same winners, with two exceptions:
-- S5 on touch moves from HOLD to BELL (BELL 68.7 against HOLD 67.5).
-- Under the gap-fill-at-open variant, S4 · C = 5 flips to SELL on U6 as well as U4 and U5, and S4 · U5 · C = 10 flips too.
+**2. Even, with no clear winner: exit only (S2) and at-the-bell (S3) on the wider units U4, U5 and U6.**
+- On V2's window, SELL leads by +0.2 to +4.2. Every 90% interval spans zero, and SELL is best in 52–86% of resamples.
+- On the long window, SELL trails:
+  - S2: −0.6 to −1.3. The intervals span zero, and SELL is best in 20–34%.
+  - S3: −2.2 to −3.3. Two of the three intervals end below zero, and SELL is best in 2–9%.
+- The sign also depends on how a gap-through sale is priced. Filling it at the open instead of at the line flips the long window's S2 and S3 back to SELL.
 
-SELL's margins under S2 / S3: U4 +1.4 / +1.4, U6 +1.5 / +0.7, U5 +3.1 / +3.0. Bonuses are flat and base points double, so conviction barely moves the balance.
+**3. SELL clearly wins: the one-session game under exit only.** That is practice, if BB-8 applies to it. Across the long window, selling at the +1.0 line beats holding to the close:
+- by **+4.1** points [+2.0, +6.1], best in **100%** of resamples (long window);
+- by +1.2 [−3.9, +6.5], best in 71% (V2's window).
 
-**By the session of first touch (Support):**
+The same game under today's touch rule goes the other way: SELL loses −8.7 [−10.4, −7.0] (long) and −11.4 (V2).
+
+| Shape · unit | V2's window: SELL − HOLD [90%] · SELL best | Long window: SELL − HOLD [90%] · SELL best | Best on average (V2 / long) |
+|---|---|---|---|
+| **One-session game, touch (today)** | −11.4 [−15.6, −6.8] · 0% | −8.7 [−10.4, −7.0] · 0% | HOLD = BELL / HOLD = BELL |
+| **One-session game, exit only** | +1.2 [−3.9, +6.5] · 71% | **+4.1 [+2.0, +6.1] · 100%** | SELL / **SELL** |
+| S1 · U1 / U4 / U6 / U5 | −29.7 / −11.1 / −12.2 / −9.7 · 0% | −28.3 / −15.0 / −15.0 / −13.8 · 0% | HOLD / HOLD |
+| S2 · U1 | −7.5 [−13.3, −0.7] · 0% | −7.0 [−9.6, −4.6] · 0% | BELL / HOLD |
+| S2 · U4 | +3.1 [−2.2, +9.4] · 72% | −1.1 [−3.9, +1.6] · 22% | SELL / HOLD |
+| S2 · U6 | +2.4 [−3.1, +8.8] · 68% | −1.3 [−4.2, +1.4] · 20% | SELL / HOLD |
+| S2 · U5 | +4.2 [−1.0, +9.4] · 86% | −0.6 [−3.5, +2.2] · 34% | SELL / HOLD |
+| S3 · U1 | −12.3 [−17.6, −5.8] · 0% | −11.1 [−13.6, −8.8] · 0% | HOLD / HOLD |
+| S3 · U4 | +1.1 [−3.9, +7.1] · 61% | −3.1 [−5.8, −0.5] · 2% | SELL / HOLD |
+| S3 · U6 | +0.2 [−4.8, +6.2] · 52% | −3.3 [−6.2, −0.6] · 2% | SELL / HOLD |
+| S3 · U5 | +2.4 [−2.5, +7.4] · 78% | −2.2 [−5.1, +0.5] · 9% | SELL / HOLD |
+| S4 · C = 5 · U1 / U4 / U6 / U5 | −17.4 / −2.7 / −3.6 / −1.2 · 0 / 21 / 15 / 34% | −16.0 / −7.0 / −7.2 / −5.9 · 0% | HOLD / HOLD |
+| S4 · C = 10 · U1 / U4 / U6 / U5 | −22.5 / −6.6 / −7.5 / −4.8 · 0 / 5 / 4 / 7% | −20.8 / −11.0 / −11.2 / −9.7 · 0% | HOLD / HOLD |
+| S4 · C = 15 · U1 / U4 / U6 / U5 | −27.5 / −10.4 / −11.3 / −8.5 · 0 / 1 / 1 / 1% | −25.6 / −14.9 / −15.1 / −13.4 · 0% | HOLD / HOLD |
+| S5 on touch | −21.1 [−25.9, −16.2] · 0% | −19.1 [−21.2, −17.1] · 0% | HOLD / HOLD |
+| S5 at each close | −3.0 [−7.6, +1.7] · 1% | −1.5 [−3.6, +0.4] · 3% | BELL / BELL |
+
+**The prompt asks which shapes make SELL the best policy on average, and by how much:**
+- **Three-day game:** none, clearly. On V2's window SELL leads under exit only (+2.4 to +4.2 over HOLD) and at the bell (+0.2 to +2.4) on U4–U6, but none of those leads clears noise, and over the long window all of them turn negative.
+- **One-day game:** exit only makes SELL the best policy, by about 4 points per Support position over the long window (about 9% of the 44 points a sale at the line earns).
+
+### Points per policy, V2's window (Support)
+
+| Shape · unit | n | Mean SELL / BELL / HOLD | Median SELL / BELL / HOLD | Best of three: SELL / BELL / HOLD |
+|---|---|---|---|---|
+| One-session game, touch | 947 | 42.3 / 53.7 / 53.7 | 40 / 41 / 41 | 45% / 27% / 27% (BELL = HOLD) |
+| One-session game, exit only | 947 | 42.3 / 41.1 / 41.1 | 40 / 34 / 34 | 51% / 25% / 25% (BELL = HOLD) |
+| S1 · U1 | 3,643 | 41.4 / 64.3 / 71.1 | 39 / 50 / 60 | 30% / 32% / 38% |
+| S2 · U1 | 3,643 | 41.4 / 49.2 / 48.9 | 39 / 41 / 36 | 35% / 34% / 31% |
+| S3 · U1 | 3,643 | 41.4 / 49.6 / 53.6 | 39 / 41 / 40 | 34% / 34% / 32% |
+| S4 · U1 · C 5 / 10 / 15 | 3,643 | 41.4 / 53.1…60.2 / 58.7…68.9 | 39 / 46…56 / 45…56 | 33–34% / 29–31% / 35–38% |
+| S1 · U4 | 1,459 | 60.6 / 69.9 / 71.8 | 55 / 59 / 58 | 39% / 30% / 31% |
+| S2 · U4 | 1,459 | 60.6 / 58.9 / 57.5 | 55 / 53 / 49 | 43% / 30% / 27% |
+| S3 · U4 | 1,459 | 60.6 / 59.0 / 59.5 | 55 / 53 / 50 | 43% / 30% / 27% |
+| S4 · U4 · C 5 / 10 / 15 | 1,459 | 60.6 / 61.9…67.8 / 63.4…71.1 | 55 / 57…66 / 55…64 | 42% / 27–28% / 30–32% |
+| S1 · U6 | 1,432 | 61.0 / 70.5 / 73.2 | 56 / 60 / 59 | 41% / 29% / 30% |
+| S2 · U6 | 1,432 | 61.0 / 59.3 / 58.6 | 56 / 54 / 50 | 43% / 30% / 27% |
+| S3 · U6 | 1,432 | 61.0 / 59.4 / 60.8 | 56 / 54 / 52 | 43% / 30% / 27% |
+| S4 · U6 · C 5 / 10 / 15 | 1,432 | 61.0 / 62.4…68.3 / 64.7…72.4 | 56 / 58…68 / 57…66 | 42% / 26–28% / 30–31% |
+| S1 · U5 | 981 | 67.6 / 75.2 / 77.3 | 61 / 62 / 62 | 42% / 28% / 30% |
+| S2 · U5 | 981 | 67.6 / 64.4 / 63.4 | 61 / 57 / 54 | 44% / 29% / 26% |
+| S3 · U5 | 981 | 67.6 / 64.4 / 65.2 | 61 / 57 / 56 | 44% / 29% / 27% |
+| S4 · U5 · C 5 / 10 / 15 | 981 | 67.6 / 67.3…73.0 / 68.8…76.0 | 61 / 62…71 / 61…70 | 43–44% / 26–28% / 28–30% |
+| S5 on touch | 3,747 | 28.0 / 48.9 / 49.0 | 30 / 43 / 42 | 29% / 36% / 34% |
+| S5 at each close | 3,747 | 28.0 / 33.0 / 31.0 | 30 / 32 / 28 | 40% / 32% / 29% |
+
+"Best of three" splits ties equally. On one session BELL and HOLD are the same sale, so they share a tie.
+
+**SELL is often the single best outcome but rarely the best average.**
+- Under S2–S4 on the wider units, SELL is the single best policy in 42–44% of holds, more often than either other policy.
+- HOLD still wins on average in most of those rows, because a minority of held positions run much further.
+
+**Star position (conviction 2.0), the check.** Bonuses are flat and base points double, so the balance barely moves.
+- **V2's window:** the same winners, except S5 on touch, which goes to BELL (68.7 against HOLD's 67.5). SELL leads under S2 and S3 on U4–U6 by +0.7 to +4.8 over HOLD, best in 52–73% of resamples.
+- **Long window:** HOLD leads under S2 and S3 on U4–U6 (SELL best in 2–10%). The one-session exit-only game again favours SELL: +4.6 [+1.7, +7.5], 100%.
+
+**By the session of first touch (Support, V2's window):**
 - Touches on session 3 make BELL equal to HOLD by construction. There, SELL wins under S2 and S3 on U4, U5 and U6, and under S4 with C = 5 on U4 and U5.
 - Touches on session 2 favour HOLD under S3 and S4 on every unit.
-- Session-1 touches are rare on U5 (74 of 981). Full table: `step4-snap-exit.json`, `byDay`.
+- Session-1 touches are rare on U5 (74 of 981). The full table is in `step4-snap-exit.json` under `byDay`.
 
 **Variants run, and whether a Support winner flips:**
-- *Session-d ordering:* a penalty touched on the same session as the line always counts, or never counts. **No flips.** The cases are few: 2 to 57.
-- *Gap through the line, filled at the open:* the stock opened beyond the line, so no sale at the line was possible. **Flips S4 · C = 5 to SELL on U4 and U5** (on U4, U5 and U6 for Star), and S4 · U5 · C = 10 for Star. Nothing else.
-- *S4 + BELL:* the close BELL sells at earns its carry (primary), or does not. **No flips.**
+- **Session-d ordering.** The variant counts a penalty touched in the same session as the line always, or never. **No flips in either window.** The cases are few: 2–57 (V2), 3–167 (long).
+- **Gap through the line, filled at the open.** The stock opened beyond the line, so no sale at the line was possible.
+  - V2's window: flips S4 · C = 5 to SELL on U4 and U5.
+  - Long window: flips S2 and S3 on U4–U6, and S5 at each close, to SELL.
+  - Nothing else flips.
+- **S4 + BELL.** The variant settles whether the close BELL sells at earns its carry. **No flips.**
 
 ## 7. Step 5 — one day against three
 
@@ -323,30 +415,31 @@ Script: `step5OneVsThree.mjs`. The same seeded seven-stock matches, no setup fil
 - **one 3-day match**, entered at the open of session 1 and held to the close of session 3;
 - **three consecutive 1-day matches**, the same seven re-entered at each open, each with that day's one-day unit, measured from the 15 bars before that session as V2 would.
 
-| Game (MEASURED) | Points per day | Bonuses per day | Penalties per day | Three days' total: median [10th, 90th pct] |
-|---|---|---|---|---|
-| **Three 1-day matches, touch (today)** | 5.2 | **0.97** | 1.04 | 13 [−252, 289] |
-| Three 1-day matches, exit only | −4.0 | 0.50 | 1.04 | −8 [−271, 246] |
-| 3-day, S1 · U5 | 6.2 | 0.34 | 0.27 | 16 [−239, 281] |
-| 3-day, S2 · U5 | 2.5 | 0.16 | 0.27 | 8 [−243, 258] |
-| 3-day, S3 · U5 | 3.0 | 0.18 | 0.27 | 9 [−242, 261] |
-| 3-day, S4 · U5 · C = 10 | 4.9 | 0.18 | 0.27 | 12 [−241, 275] |
-| 3-day, S1 · U1 | 23.1 | 1.74 | 1.40 | 60 [−303, 458] |
-| 3-day, S2 · U1 | 1.8 | 0.89 | 1.40 | −1 [−340, 363] |
-| 3-day, S3 · U1 | 6.5 | 1.10 | 1.40 | 12 [−331, 383] |
-| 3-day, S4 · U1 · C = 10 | 16.2 | 1.10 | 1.40 | 37 [−323, 440] |
-| 3-day, S5 on touch | 22.0 | 1.80 | 1.41 | 57 [−248, 396] |
-| 3-day, S5 at each close | 4.1 | 0.98 | 1.41 | 8 [−284, 316] |
+| Game (MEASURED) | Points per day | Bonuses per day | Penalties per day | Three days' total: median [10th, 90th pct] | Long window: points / bonuses per day |
+|---|---|---|---|---|---|
+| **Three 1-day matches, touch (today)** | 5.2 | **0.97** | 1.04 | 13 [−252, 289] | −0.6 / 0.82 |
+| Three 1-day matches, exit only | −4.0 | 0.50 | 1.04 | −8 [−271, 246] | −8.8 / 0.39 |
+| 3-day, S1 · U5 | 6.2 | 0.34 | 0.27 | 16 [−239, 281] | 4.5 / 0.27 |
+| 3-day, S2 · U5 | 2.5 | 0.16 | 0.27 | 8 [−243, 258] | 1.8 / 0.13 |
+| 3-day, S3 · U5 | 3.0 | 0.18 | 0.27 | 9 [−242, 261] | 2.1 / 0.15 |
+| 3-day, S4 · U5 · C = 10 | 4.9 | 0.18 | 0.27 | 12 [−241, 275] | 3.7 / 0.15 |
+| 3-day, S1 · U1 | 23.1 | 1.74 | 1.40 | 60 [−303, 458] | 15.5 / 1.48 |
+| 3-day, S2 · U1 | 1.8 | 0.89 | 1.40 | −1 [−340, 363] | −2.5 / 0.74 |
+| 3-day, S3 · U1 | 6.5 | 1.10 | 1.40 | 12 [−331, 383] | 1.0 / 0.90 |
+| 3-day, S4 · U1 · C = 10 | 16.2 | 1.10 | 1.40 | 37 [−323, 440] | 9.1 / 0.90 |
+| 3-day, S5 on touch | 22.0 | 1.80 | 1.41 | 57 [−248, 396] | 15.8 / 1.51 |
+| 3-day, S5 at each close | 4.1 | 0.98 | 1.41 | 8 [−284, 316] | 0.4 / 0.76 |
 
 **How much of the 3-day result the overnight gaps decide (MEASURED):**
 - **28.5%** of the variance of a match's three-day move (conviction-weighted log return) comes from the two overnight moves. 78.6% comes from the three sessions, and the covariance is −7.1%.
 - Removing the two overnight moves changes the sign of **16.1%** of matches' three-day moves.
 - Per position, 31.9% of all absolute movement over the three days happens overnight.
 - On U5 under touch, 1,197 of 1,277 bonus first-touches come on sessions 2 or 3. **209 of those (17.5%) are made at the open**, by a gap through the level, not during a session.
+- The long window agrees: 27.6% of the variance (intraday 77.1%, covariance −4.7%); 16.6% of signs flip; 30.4% of absolute movement is overnight; 776 of 4,419 later first touches (17.6%) are made at the open.
 
 Two readings:
 - **Per day, the one-day game pays about three times the bonuses** of a three-day match on the recommended unit (0.97 against 0.34 on touch).
-- **The unscaled unit under exit-only nearly matches it per day** (0.89 against 0.97, S2 · U1). But it puts a stock beyond its +1.0 line at the end in 21.9% of holds, and on that unit the snap-exit test favours BELL (§6).
+- **The unscaled unit under exit-only nearly matches it per day** (0.89 against 0.97, S2 · U1). But it puts a stock beyond its +1.0 line at the end in 21.9% of holds, and on that unit selling at the line clearly loses (§6).
 
 **The setup payoff check.** `docs/audits/` at `origin/main` (`bd841257`, fetched 18 Nov) holds no setup payoff check dated 18 Nov 2026 or later. No branch on origin holds one either (searched with `git ls-tree` over every remote branch for "payoff"). There is nothing to quote beside this section.
 
@@ -373,15 +466,15 @@ Cited at `bd841257`, all VERIFIED; nothing changed. "Concept-fenced" means the f
 
 ## 10. Limits
 
-- **Daily bars cannot order a session's high and low.** SELL's same-session penalty uses a rule: the low came first if the session closed at or above its open. Both bounds were run (§6); no winner flips. The cases are few (2–57).
-- **SELL assumes a fill at the line.** Sessions that opened beyond the line (163–641 per unit) cannot fill there. The open-fill variant flips S4 at C = 5 on U4 and U5. Note the other direction too: a seller acting at a 15-minute check usually sells above the line. That favours SELL slightly and is not measured here.
+- **Daily bars cannot order a session's high and low.** SELL's same-session penalty uses a rule: the low came first if the session closed at or above its open. Both bounds were run (§6); no winner flips. The cases are few (2–57 on V2's window, 3–167 on the long one).
+- **SELL assumes a fill at the line.** Sessions that opened beyond the line (163–641 per unit) cannot fill there. The open-fill variant flips S4 at C = 5 on U4 and U5 (V2's window), and S2 and S3 on U4–U6 (long window). Note the other direction too: a seller acting at a 15-minute check usually sells above the line. That favours SELL slightly and is not measured here.
 - **A seller could refill the slot.** This test does not credit it; SELL's cash earns nothing.
 - **The 15-minute check** sees about 80–85% of daily-bar touches. That estimate rests on 128 and 309 stock-sessions over 11 sessions, from stocks agents held. Close-based shapes are not affected by sampling, but the last check is about 14 minutes before the close.
 - **The sample.**
   - 39 entry sessions (22 Sep → 13 Nov 2026). Stocks on the same day move together, so the effective sample is closer to 39 market days than to 8,892 holds.
   - November was a down-trending market (setup-frequency count, §2).
-  - The unit choice holds over the 174-session window. The shape and snap-exit tables were run on V2's window only.
-- **The entry is the session open.** Real battles fill at the deploy time: mid-session, or at the prior close when deployed out of hours (V2 Ruling 7).
+  - Steps 2–5 were also run over the 174-session window (10 Mar → 13 Nov). The unit choice and every shape count hold there. The snap-exit leads that SELL showed on V2's window under S2 and S3 do not.
+- **The entry is the session open.** Real battles fill at the deploy time: mid-session, or at the prior close when deployed out of hours (V2 Ruling 7). Step 2 was re-run with the prior-close fill and the recommended unit moves (§4). Steps 3–5 were not.
 - **Fully adjusted prices.** An ex-dividend drop inside a hold does not appear; the game would see it.
 - **Provider revisions.** Bars are as served on 17 Nov; the latest sessions' bars were read about two hours after their close (§3).
 - **Random seven-stock matches.** No setup filter, no agent selection, no opponent: points are not compared against a CPU book.
@@ -393,11 +486,13 @@ Cited at `bd841257`, all VERIFIED; nothing changed. "Concept-fenced" means the f
 
 - **FQ-1 — Penalties under exit-only and at-the-bell.** BB-8 says when a *bonus* banks. Should penalties (Bust, Crash, Meltdown) also bank only on exit, or at a close? Or keep banking on touch, as measured here? On U5, penalties at the end close cut Busts per match from 0.60 to 0.28.
 - **FQ-2 — S5's first-day anchor, if a daily reset is pursued.** The prior close is the prompt's letter. The entry is what the legacy code did (`api/cron/agent-evaluate.js:1453`). With the prior close, a bonus can be paid for an opening gap the position never held: the line sat below the fill in 460 of 3,747 first touches.
-- **FQ-3 — The unit's target.** U5 (×2) keeps V2's one-day rarity per match (11.0% against 10.7% at +1.0). That leaves about one bonus per three-day match, a third per day. Is the target equal rarity per match (U5), or more scoring moments per day (a smaller unit; U1 under exit-only gives 0.89 bonuses a day, against 0.97 today)?
-- **FQ-4 — The carry's size.** At C = 10 or more, holding beats selling at the line on average on every unit. At C = 5 it wins narrowly, and loses on U4 and U5 if gap-throughs fill at the open. Which C, if any?
+- **FQ-3 — The unit's target.** Keeping V2's one-day rarity per match (U5 from the open, U4 or U6 from the prior close) leaves about one bonus per three-day match, a third of today's per day. Is the target equal rarity per match, or more scoring moments per day? A smaller unit gives more: U1 under exit-only pays 0.89 bonuses a day, against 0.97 today.
+- **FQ-4 — The carry's size.** At C = 10 or more, holding beats selling at the line on every unit, in both windows. At C = 5 it does so clearly over March–November, and within noise over V2's window. Without a carry, exit-only and at-the-bell are already even on the scaled units. Which C, if any?
 - **FQ-5 — Match length.** Per day, today's one-day game pays about three times the bonuses of a three-day match on U5. Overnight gaps decide 28.5% of a three-day match's variance and flip 16% of results. Which length?
 - **FQ-6 — Which price is "the bell"?** The last 15-minute check runs about 14 minutes before the close and sits a median 0.07 units from it. Phase 0 D1 read that the closing price itself is not scored today (not verified against a live battle). S3 and S4 need it named: the 16:00 close, or the last check.
-- **FQ-7 — The window reading.** "V2's sessions plus every session since" was read as entries 22 Sep → 13 Nov (the last entry with three sessions on disk); 18 Nov was not fetched (0 requests). Say if a different window was meant.
+- **FQ-7 — Exit-only in one-day practice.** In the one-day game, exit-only makes selling at the +1.0 line the better policy: +4.1 points per Support position over March–November, in 100% of resamples. Under today's touch rule the same sale loses 8.7 points. Does BB-8 apply to one-day practice matches?
+- **FQ-8 — How a ranked match fills.** At the open, ×2 (U5) keeps V2's rarity. At the prior close, with the opening gap counted (what V2 does for a battle created out of hours), about ×√3 (U4) or the measured three-session range (U6) does. Which fill will a ranked three-day match use?
+- **FQ-9 — The window reading.** "V2's sessions plus every session since" was read as entries 22 Sep → 13 Nov (the last entry with three sessions on disk); 18 Nov was not fetched (0 requests). Say if a different window was meant.
 
 ## Reproduce
 
@@ -405,10 +500,10 @@ Offline, in order. Each script writes to `C:/Users/fashr/Documents/FantasyTrades
 
 1. `node scripts/experiments/scoring-shape/step1Reproduce.mjs`
 2. `node scripts/experiments/scoring-shape/buildHolds.mjs`
-3. `node scripts/experiments/scoring-shape/step2Units.mjs` (add `--long` for the 174-session check)
+3. `node scripts/experiments/scoring-shape/step2Units.mjs` (add `--long` for the 174-session check, `--fill prior_close` for the fill sensitivity)
 4. `node scripts/experiments/scoring-shape/touchGap.mjs`
 5. `node scripts/experiments/scoring-shape/step3Shapes.mjs`
 6. `node scripts/experiments/scoring-shape/step4SnapExit.mjs`
 7. `node scripts/experiments/scoring-shape/step5OneVsThree.mjs`
 
-Steps 5–7 read Step 2's recommended unit from `step2-units.json`. The matches are seeded (`RNG_SEED = 20261118`, 400 per entry session).
+Steps 5–7 take `--long` too, and read Step 2's recommended unit from `step2-units.json` (or `step2-units-long.json`). The matches are seeded (`RNG_SEED = 20261118`, 400 per entry session).
