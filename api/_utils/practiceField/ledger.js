@@ -837,13 +837,14 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
     const heldFields = heldRecord ? { held: true, heldOn: heldRecord.heldOn } : {};
     const heldBefore = next.holdings[sym] || null;
     // F-7 (C-16): A LATE CASH DIVIDEND — dated before a share-basis action this ledger has already applied — is paid on
-    // the count the holding had on its own ex-date: the `sharesBefore` of the first share-basis action applied after that
-    // date (in the order of application). With no such count on record, nothing is estimated: held, refused.
+    // the count the holding had on its own ex-date: the `sharesBefore` of the FIRST APPLIED of the share-basis actions
+    // dated after it — the receipts are kept in the order they were applied, and a split listed late may have been
+    // applied after a later-dated one, so the earliest DATED one's count can already hold another. With no such count
+    // on record, nothing is estimated: held, refused.
     let late = null;
     if (action.type === 'cash_dividend' && heldBefore) {
       const after = (next.corporateActionReceipts || [])
-        .filter((r) => r.applied === true && SHARE_BASIS_TYPES.has(r.type) && upper(r.ticker) === sym && typeof r.effectiveDate === 'string' && r.effectiveDate > action.effectiveDate)
-        .sort(byDatePhaseId);
+        .filter((r) => r.applied === true && SHARE_BASIS_TYPES.has(r.type) && upper(r.ticker) === sym && typeof r.effectiveDate === 'string' && r.effectiveDate > action.effectiveDate);
       if (after.length > 0) {
         const count = Number(after[0].sharesBefore);
         if (!(count > 0) || !Number.isFinite(count)) { hold(sym, action, [], 'count_on_ex_date_unknown'); continue; }

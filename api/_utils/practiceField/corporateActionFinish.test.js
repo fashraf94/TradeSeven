@@ -672,6 +672,21 @@ describe('Amendment F-7 — re-dated and late actions; F-8 — the receipt link'
     expect(ideaOf(ctx).ledger.dividendsUsd).toBe(owed);
   });
 
+  it('C-16 (pure): the ex-date count is the one before the FIRST APPLIED of the later-dated splits — a split listed late and applied after a later-dated one does not lend its count', () => {
+    const ledger = {
+      kind: 'idea', reservedCapitalUsd: 1000, cash: 0, costsPaidUsd: 0, dividendsUsd: 0, realizedPnlUsd: 0, saleReceipts: [], declinedActionIds: [],
+      holdings: { AAPL: { shares: 40, costBasisTotal: 1000, avgCost: 25, lastMark: 25, openedAt: S[0] } },
+      appliedActionIds: [`split_AAPL_${S[5]}`, `split_AAPL_${S[4]}`],
+      corporateActionReceipts: [ // in the order they were applied: S[5]'s first, then S[4]'s, listed late
+        { actionId: `split_AAPL_${S[5]}`, type: 'split', ticker: 'AAPL', effectiveDate: S[5], ratio: 2, applied: true, appliedOn: S[5], sharesBefore: 10, sharesAfter: 20 },
+        { actionId: `split_AAPL_${S[4]}`, type: 'split', ticker: 'AAPL', effectiveDate: S[4], ratio: 2, applied: true, appliedOn: S[6], sharesBefore: 20, sharesAfter: 40 },
+      ],
+    };
+    const out = applyLedgerActions(ledger, { AAPL: [dividend(0.5, S[3])] }, { date: S[7] });
+    expect(out.applied).toEqual([expect.objectContaining({ actionId: `cash_dividend_AAPL_${S[3]}`, entitledShares: 10 })]);
+    expect(out.ledger.dividendsUsd).toBe(5); // 10 × $0.50 — never 20 × $0.50
+  });
+
   it('C-16 (pure): with no ex-date count on record (a share-basis receipt without `sharesBefore`), nothing is estimated — the late dividend is held, refused `count_on_ex_date_unknown`', () => {
     const ledger = {
       kind: 'idea', reservedCapitalUsd: 1000, cash: 0, costsPaidUsd: 0, dividendsUsd: 0, realizedPnlUsd: 0, saleReceipts: [], declinedActionIds: [],
