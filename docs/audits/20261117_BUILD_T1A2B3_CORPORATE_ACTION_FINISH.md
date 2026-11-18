@@ -41,7 +41,7 @@ Contents:
 
 All of these are fixed, each with a test that fails without the fix. One refuter then checked the fix round and found two more: a moot founder split could still release a dividend, and a book that had never closed skipped the backfill. Both are fixed too. The mutation battery kills all 85 of its mutants. Pre-existing defects the review found, which behave the same on `main`, are recorded in the register as carried, not fixed here.
 
-**Money.** When the data is complete, money moves exactly as before: in the end-to-end run no money figure changed (§6). The quarterly product is unchanged: both differentials against `main` are identical (§4).
+**Money.** When the data is complete, money moves exactly as before: in the end-to-end run no money figure changed (§6). The quarterly product is unchanged: both differentials against `main` are identical. A planted backfill reaches no quarterly reader, while the same split from the vendor does (§4).
 
 **What the founder is asked.**
 - Ten questions (§3.2).
@@ -177,6 +177,7 @@ The final head is **62d49765**, which has `origin/main` (2e069d42) merged in. It
 | Seventeen-scenario quarterly differential | Astra's harness (`astra-differential.test.js`), base `git archive` of `origin/main` 2e069d42 against head 047c77b0: `node ../node_modules/vitest/vitest.mjs run --config vitest.config.mjs` | **0** | 17 scenarios × modes `off` and `on`: **34/34 identical**; 4,000 default build sets identical; quarterly prompts byte-identical in 4 cases (with or without a real idea book; positive control detects a leak) |
 | 40-case traced differential | Astra's harness (`astra-cron-trace.test.js`), the same run | **0** | **40/40 identical** |
 | Both harnesses | (the run's own lines) | **0** | `Test Files  2 passed (2)` · `Tests  76 passed (76)` |
+| Backfill isolation (rule 5) | A scenario added beside Astra's harness, in the scratchpad (`astra-backfill-isolation.test.js`; her mocks and `run()` unchanged but for three seams), base 2e069d42 against head 047c77b0, modes `off` and `on`: the quarterly close of a book holding AAPL, with `practiceFieldCaBackfill/AAPL` planted, holding a 2-for-1 and a $1.50 dividend dated that session | **0** | `Tests  4 passed (4)`. **Planted:** base and head identical, and the head identical to the plain close but for the planted document (AAPL 100 shares, cash $90,000, as without it). **Positive control:** the same split answered by the vendor, through the daily layer, does reach the quarterly close (100 → 200 shares), base and head alike |
 | The idea book (Windows, targeted) | `vitest run api/_utils/practiceField api/practice-field api/cron/practiceFieldIsolation.test.js api/_utils/compositionProtectedStores.scan.test.js --maxWorkers=6` | **0** | `Test Files  23 passed (23)` · `Tests  723 passed (723)` |
 | Mutation battery | `run-battery.mjs` on a `git archive` of 047c77b0, and its two survivors rerun at 62d49765 (§5.4) | — | defined 85, ran 85, broken 0, **killed 85**, survived 0 |
 
@@ -189,6 +190,10 @@ The final head is **62d49765**, which has `origin/main` (2e069d42) merged in. It
 | 047c77b0 (after fix round 4) | 1561 passed \| 13 skipped | 35551 passed \| 173 skipped |
 
 At 33b120c9 and again at 047c77b0 these also passed: lint gate 0, build 0, rules 0 (`Test Files 46 passed (46)`, `Tests 839 passed (839)`), and both differentials (34/34, 40/40).
+
+**Rule 5 — the backfill reaches no quarterly reader.** The two differentials show that the quarterly product is unchanged, but neither scenario has a stored backfill. The backfill-isolation row above is the direct proof, at both modes: a planted backfill is ignored, and its control shows the scenario would see the same split arriving by the quarterly path. The rest of the evidence:
+- The F1-05 mutant (a backfill written into the daily layer) is killed by "the backfill is confined".
+- Lens A and its refuter read every reader of the collection: only the idea book's close and `resolve_hold` read it.
 
 **No vendor call.** No Linux run had an EODHD key. The final suite log has 25 lines saying the key is not configured, all from rows whose backfill fails at once, and no request to the vendor. Three test files now stub the key empty, so a key exported in a shell cannot reach the vendor either (§9).
 
@@ -554,7 +559,7 @@ Test rows are cited by line at 047c77b0 and the start of the row's name.
 | 2b3 late dividend after a line sale [C] | A dividend listed only after the idea's line sale, though dated while it held the stock, is never paid to the idea (the comparison gets it). Same on base. | Carried | Q8 | §5 (C-n4) |
 | 2b3-C7 (share basis) [C] | An idea entered on a 3:2 split's ex-date, the split then re-dated one session later at a flat price, is credited the split: a +$4,998.50 phantom at full quality. The gap screen's known blind spot for 1.2 and 1.5 ratios. Same on base. | Carried | Q8 | §5 (C7); the blind spot: T1A2A:478, :753 (R-57) |
 | 2b3-A3 [A] | A row the parser rejects leaves the daily entry, and the backfill, "successful" and empty. Pre-existing on the daily path (the shared fetch is quarterly and untouched). | Carried | Q8 | §5 (A3) |
-| 2b3-D4 [D] | At the endpoint a dividend's possible re-date is named, unpaid, and not counted. | Accepted by ruling (Amendment F-7's letter: "not applied … recorded and alerted"); Q9 asks again | — | AmF F-7, F-4; FR-18; Fin:1497 |
+| 2b3-D4 [D] | At the endpoint a dividend's possible re-date is named, unpaid, but not counted as an unsettled action. F-7's letter covers "not applied, recorded, alerted"; "not counted" is this build's reading (FR-18). | Carried | Q9 (the founder's ruling) | AmF F-7, F-4; FR-18; Fin:1497 |
 | 2b3 weekly payer [C] | A stock paying the same dividend every week alternates paid and held (F-7's 5-session window). | Accepted by ruling (F-7's letter); Q4 asks again | — | AmF F-7 |
 | 2b3-C7 (dividend) [C] | A re-date of a dividend the holding was not entitled to is paid (F-7 matches actions applied or held, not declined). | Accepted by ruling (F-7's letter); Q10 asks again | — | AmF F-7 |
 | 2b3 two genuine splits | Two genuine identical splits within five sessions look like one re-dated split: the second, and any dividend behind it, waits for the founder. | Accepted by ruling (F-7's letter); Q1 asks again | — | AmF F-7; Astra's T2A-E01 case (T1A2A:1166; AC-2A-3:3) now waits: CA:1858; a founder ruling pays it once: Fin:965 |
