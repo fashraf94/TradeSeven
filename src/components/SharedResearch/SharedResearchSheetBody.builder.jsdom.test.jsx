@@ -1493,6 +1493,14 @@ describe('§B14 (Nov 18): the theme block, the ready view, the surviving time-fr
     expect(buttons[0].dataset.srFree).toBe('confirm:theme');
     expect(buttons[1].hasAttribute('data-sr-theme-own')).toBe(true);
   });
+  it('Watch 10 (the styles jsdom can read; the real browser measures the row): a flex row that does not wrap, two equal halves, 44 px, one-line labels', async () => {
+    await openOn(TA.walkGetMap);
+    const row = $('[data-sr-theme-buttons]');
+    expect([row.style.display, row.style.flexDirection, row.style.flexWrap]).toEqual(['flex', '', '']);
+    for (const b of row.querySelectorAll(':scope > button')) {
+      expect([b.style.flexGrow, b.style.flexShrink, b.style.flexBasis, b.style.minHeight, b.style.whiteSpace]).toEqual(['1', '1', '0%', '44px', 'nowrap']);
+    }
+  });
   it('Q-4: a ready card whose theme is only suggested draws the block on the ready view; Use it confirms it, and the sentence opens with it', async () => {
     await openOn(TA.walkGetReady, {}, { card: TA.readyThemeConfirm });
     expect($('[data-sr-ready]')).not.toBeNull();

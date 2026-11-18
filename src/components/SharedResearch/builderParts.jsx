@@ -249,7 +249,7 @@ export function freeLabelOf(choice, thesis, agentName) {
 }
 
 /** The theme block's two buttons, side by side on one row (§B14 Watch 10): each half the row, 44 px, a single-line label. */
-const THEME_BUTTON = { flex: '1 1 0', minWidth: 0, minHeight: 44, padding: '6px 8px', gap: 6, whiteSpace: 'nowrap' };
+const THEME_BUTTON = { flexGrow: 1, flexShrink: 1, flexBasis: '0%', minWidth: 0, minHeight: 44, padding: '6px 8px', gap: 6, whiteSpace: 'nowrap' };
 
 /**
  * §B13 T-6, as §B14 Watch 10 draws it: a suggested theme does not hold the front. It sits as a small block at the top of
