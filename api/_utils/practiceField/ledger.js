@@ -1247,6 +1247,25 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
     }
   }
   const candidates = [...pending, ...fromRecords].sort(byDatePhaseId);
+  // S-1 ③, BEFORE ANYTHING IS APPLIED: two UNSETTLED rows of this call — listed, or held on the holding — that may be one
+  // action under two dates (same symbol, type and payload, within the window) are BOTH ambiguous. Matched only in the
+  // loop below, the earlier-dated one was applied first (a held row replaying once its doubt cleared) and only the later
+  // one waited: which of the two was paid depended on the order the vendor's rows happened to reach the close.
+  {
+    const open = candidates.filter((a) => !isRuled(a) && a.founderRuling == null && !ambiguity.has(a.actionId) && !conflicting.has(a.actionId)
+      && APPLICABLE_TYPES.has(a.type) && a.type !== 'ticker_change' && !(a.type === 'delisting' && delistingCashOf(a) === null));
+    const paired = new Set();
+    for (const a of open) {
+      for (const b of open) {
+        if (a === b || a.actionId === b.actionId || a.type !== b.type || upper(a.ticker) !== upper(b.ticker) || !samePayload(a, b)) continue;
+        if (!withinSessions(a.effectiveDate, b.effectiveDate, REDATE_WINDOW_SESSIONS) || paired.has(a.actionId)) continue;
+        paired.add(a.actionId);
+        const sym = upper(a.ticker);
+        if (next.holdings[sym]?.heldActions?.some((r) => r.actionId === a.actionId)) next.holdings = { ...next.holdings, [sym]: withoutHeld(next.holdings[sym], a.actionId) };
+        recordRedate(sym, a, b.actionId);
+      }
+    }
+  }
 
   for (const action of candidates) {
     if (!firstOf(action)) continue;

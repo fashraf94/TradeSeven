@@ -1885,14 +1885,18 @@ describe('Final fix — Astra T2A-E01: a late split explains the old note while 
     });
   }
 
-  it('the same-session CONTROL — under Amendment F-7: both 2-for-1 rows listed on Nov 18 are the same split under two dates, as far as anything can tell: the Nov 17 one applies, the Nov 18 one is a possible re-date, and the dividend waits — nothing is paid on either count', async () => {
+  it('the same-session CONTROL — under Amendment F-7 and rev 1 (S-1 ③): both 2-for-1 rows listed on Nov 18 are the same split under two dates, as far as anything can tell: EACH is the other\'s possible re-date, neither applies, and the dividend waits — nothing is paid on either count', async () => {
     const ctx = await suspectedOnce();
     const bookBefore = bookOf(ctx);
     await closeQ(ctx, S[2], { ...Q, AAPL: { price: 25, corporateActions: [...splitRows(S[1], S[2]), ...dividendRows()] } });
     for (const key of ['ledger', 'comparisonLedger']) {
       const ledger = ideaOf(ctx)[key];
-      expect(ledger.holdings.AAPL.shares, key).toBe(399.880034);
-      expect(ledger.corporateActionReceipts.filter((r) => r.reason === 'possible_redate').map((r) => [r.actionId, r.redateOf]), key).toEqual([[`split_AAPL_${S[2]}`, `split_AAPL_${S[1]}`]]);
+      // (Before rev 1 the Nov 17 row applied first — 399.880034 — and only the Nov 18 one waited: which of the two was
+      // applied depended on the order the rows reached the close. Both are unsettled when the close sees them: both wait.)
+      expect(ledger.holdings.AAPL.shares, key).toBe(199.940017);
+      expect(ledger.corporateActionReceipts.filter((r) => r.reason === 'possible_redate').map((r) => [r.actionId, r.redateOf]), key).toEqual([
+        [`split_AAPL_${S[1]}`, `split_AAPL_${S[2]}`], [`split_AAPL_${S[2]}`, `split_AAPL_${S[1]}`],
+      ]);
       expect(paidDividends(ledger), key).toHaveLength(0);
       expect(ledger.holdings.AAPL.heldActions.map((r) => r.actionId), key).toEqual([DIV]);
     }
