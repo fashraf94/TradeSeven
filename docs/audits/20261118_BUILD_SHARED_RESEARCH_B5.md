@@ -2,7 +2,7 @@
 
 **Smoke preview:** https://trade-seven-l6196i977-fais-projects-bc179554.vercel.app — **`?srFixture=walk`** plays the walk, now with the theme point; `?srFixture=index` lists every scenario. It opens with no Vercel login (a cookieless request answers 200 with no redirect, and a fresh headless 393×852 context with no cookies walks to "Thesis saved", §8). Branch `claude/shared-research-b4-smoke` (never merged), commit `e490f592` = the code head `8d7a3a0f` + B4's three smoke files, byte for byte (B4's loader, unchanged).
 
-**Date:** Nov 18, 2026 (build prompt dated Nov 17) · **Session:** local Claude Code (Opus 5.5), own worktree · **Branch:** `claude/shared-research-b5` · **PR:** draft, dark (its number is in the PR and in the session's closing message) · **Pushed head:** the commit that adds this report (docs only; the code is `8d7a3a0f`)
+**Date:** Nov 18, 2026 (build prompt dated Nov 17) · **Session:** local Claude Code (Opus 5.5), own worktree · **Branch:** `claude/shared-research-b5` · **PR:** [#1089](https://github.com/fashraf94/TradeSeven/pull/1089) (draft, dark) · **Pushed head:** the commit that adds this line (docs only; the code is `8d7a3a0f`)
 
 **Spec of record:** `docs/specs/20261116_SHARED_RESEARCH_SPEC_V1_2_AMENDMENT_B_THESIS_BUILDER.md` §B13 (this branch's first commit, `2cc7fc48`: the founder's T-1 to T-8 as written), over §B1, §B3, §B4 and §B10–§B12; B3's report §4, §6, §8, §15; B4's report §10, §12, §15.
 
@@ -17,10 +17,10 @@
 | Full suite (WSL, `TZ=UTC`, 8 workers, `flock`) at `8d7a3a0f` | **exit 0** · 1,575 files · 35,762 tests: **35,589 passed, 0 failed**, 173 skipped (341 s) |
 | `lint:gate` · `test:rules` · minified build | **exit 0** · **exit 0** (46 files, 839 passed) · **exit 0** |
 | The ledger differential (B3 §8) at `8d7a3a0f` | **4 / 4 byte-identical**; the planted control fails 4 / 4 |
-| Mutants | **36 / 36 killed** on `8d7a3a0f`, each by the row it names |
+| Mutants | **36 / 36 killed** on `8d7a3a0f`; each mutant's own row is among its failures (§6) |
 | Review (BUILD_RULES §2) | 3 lenses + 1 refuter: **13 findings, 13 CONFIRMED / 0 REFUTED**; 8 fixed with rows and mutants; 4 go to the founder as questions (§11); 1 on the watch list |
 | Bundle vs `main` | only the lazy Shared Research chunk changes (146,384 → 148,308 B); every other chunk and `index.html` identical but for hashed file names; CSS byte-identical |
-| Real browser (on the smoke preview) | B4's and B2's rows **49 / 49**; the founder's checklist scripted **12 / 12** |
+| Real browser (on the smoke preview) | B4's and B2's rows **49 / 49**; the founder's checklist scripted **12 / 12**; its "Write your own" branch **14 / 14** at 393×852 and 320×568 |
 | Dark | `SHARED_RESEARCH_BUILDER_MODE` stays `'off'` |
 
 ## 1. Base and the preamble
@@ -169,7 +169,7 @@ No reply says "your observation", "the retrieved items" or "the record" (pinned)
 
 ## 6. The mutation table
 
-36 mutants on a `git archive` of `8d7a3a0f` (`mutate.mjs`, B3's runner). Each anchor must match exactly once, or the mutant is reported BROKEN and not run. The verdict is read from the exit code and the failed rows (JSON reporter, the report deleted first). Each file is restored to its exact bytes, SHA-256 checked, and `cmp`'d against the commit afterwards. Defined 36, logged 36, none missing.
+36 mutants on a `git archive` of `8d7a3a0f` (`mutate.mjs`, B3's runner). The table shows each mutant's FIRST failing row. The runner keeps six failure names per mutant; for every mutant whose first is not its own row, its own row is among them. The one exception was T2a: its six recorded names are B3 route rows, of 24 failures. Re-run against `thesisB5.test.js` alone, it fails its own six T-2 rows: the offers table ×4, "the offers are the same…", and "find_names with the segment set and the theme unset…". Each anchor must match exactly once, or the mutant is reported BROKEN and not run. The verdict is read from the exit code and the failed rows (JSON reporter, the report deleted first). Each file is restored to its exact bytes, SHA-256 checked, and `cmp`'d against the commit afterwards. Defined 36, logged 36, none missing.
 
 | Id | Defect | Killed by (first failing row) | Failed / run |
 |---|---|---|---|
@@ -266,6 +266,7 @@ The review was one round, as the prompt says; every check after it (suite, batte
 | Mutants | §6 | 36 / 36 |
 | Real browser | headless Edge against the smoke preview (`SR_LAYER_URL`): `thesisBuilder.browser.test.js` + `sheetLayer.browser.test.js` | **49 / 49** (38 + 11): the fold, focus through a step, a free tap, a Change and a save, the tapped part at 320/390/1280, every choice reachable and under its own tap, the pinned foot, one column at 393 |
 | The founder's checklist, scripted | a fresh 393×852 context with no cookies on the preview (`walk/checklist.json`) | **12 / 12**: the preview opens with no login; the theme blank and the words in the conversation; the suggestion first in the choices with the segments under it; the reply in two sentences; the theme confirmed; the segment set; the ready sentence "My theme is AI data-center buildout, through Accelerator chips, built on NVDA, because …"; the wrong-if tagged "in words"; saved |
+| Checklist step 3's other branch, scripted | the same preview at 393×852 and 320×568, fresh contexts (`walk/checklist.json` → `ownTheme`) | **14 / 14** at both sizes. After the map, scrolled to the choices: *Write your own* is on screen and under its own tap. The theme's panel comes into view (top 111 of 852; 88 of 568). Its text box and *Send · free* are each under their own tap. The typed phrase sets the theme and the line goes. Closing the part keeps focus in the sheet, on the theme. Renders `own-theme-1-panel-*`, `own-theme-2-set-*` |
 | Renders | 393×852, `C:/Users/fashr/Documents/FantasyTrades/SharedResearch/B5/walk/` | `walk-1-opened`, `walk-2-map`, `walk-3-theme-confirmed`, `walk-4-segment-set` (the first four screens), plus `walk-5-ready`, `walk-6-saved` |
 
 **On Windows, during the build:** three hub jsdom rows (`CommandCenterHub.s5`, `.s6`, `.testIntegrity`) timed out once under load and passed on a re-run. They pass in the WSL suite, and none touches a file of this branch.
@@ -324,6 +325,7 @@ Minified `vite build` of `8d7a3a0f` against `main` `2e069d42`, each in its own W
 7. `build_why`'s reply in probe 3 says "a business-condition exit": plain enough, not a forbidden phrase, but jargon.
 8. The walk JSON is 5.55 MB raw (183 KB gzipped), smoke only.
 9. B4's smoke scenario labels read one higher than the card (routine choice 9).
+10. **T-6's "one small line" is two rows on a phone.** With a real suggestion, "Use “AI data-center buildout” as the theme · FREE" fills the row at 393 px, and *Write your own* wraps under it (render `walk-2-map`). Both are 44 px taps, smaller text than the choices, and above them. Not reworked here; one row would need a shorter label.
 
 ## 12. The PR description
 
