@@ -152,6 +152,32 @@ describe('the network: one service, no model or provider (STOP list)', () => {
   });
 });
 
+describe('the thesis builder\'s files (B4 build prompt K-2, K-3, K-18 d)', () => {
+  const NEW = ['builderMode.js', 'builderParts.jsx', 'thesisView.js', 'screens/Builder.jsx', 'screens/ThesisReady.jsx', 'screens/ThesisSaved.jsx'];
+  it('each new file is in the walk above, so each passes the boundary, the hub-path and the network rows', () => {
+    const walked = OURS.map((p) => relative(HERE, p).replace(/\\/g, '/'));
+    for (const f of NEW) expect(walked, f).toContain(f);
+  });
+  it('the switch is read in ONE place (K-3): builderMode.js, the one file here that imports the flag module or names the builder mode', () => {
+    const readers = OURS.filter((p) => {
+      const c = readFileSync(p, 'utf8');
+      return specifiersOf(c).map((s) => resolveFrom(p, s)).some((t) => /src\/config\/sharedResearchFlags(\.js)?$/.test(t)) || /SHARED_RESEARCH_BUILDER_MODE/.test(stripComments(c));
+    });
+    expect(readers.map((p) => relative(HERE, p).replace(/\\/g, '/'))).toEqual(['builderMode.js']);
+    // ...and it reads at call time, inside the function: no module-scope read of the literal
+    const reader = stripComments(readFileSync(join(HERE, 'builderMode.js'), 'utf8'));
+    expect(reader).toMatch(/export function sharedResearchBuilderMode\(\) \{\s*return SHARED_RESEARCH_BUILDER_MODE === 'on' \? 'on' : 'off';\s*\}/);
+    expect(reader).not.toMatch(/\btry\b/); // a try would stop Rollup folding the literal (review 4D-1)
+    expect(reader.match(/SHARED_RESEARCH_BUILDER_MODE/g)).toHaveLength(2); // the import and the one read
+  });
+  it('the body reads the mode only for Start, and chooses the view by the session (K-2)', () => {
+    const body = stripComments(readFileSync(join(HERE, 'SharedResearchSheetBody.jsx'), 'utf8'));
+    expect(body.match(/sharedResearchBuilderMode\(\)/g)).toHaveLength(1);
+    expect(body).toMatch(/isBuilderSession\(sr\.inv\.session\)/);
+    expect(body).not.toMatch(/builderStart\s*\?\s*\(?\s*<Builder/);
+  });
+});
+
 describe('the drop modal\'s layer (ruling P-1)', () => {
   it('SR_DROP_LAYER is above the hub sheet and below the deploy ceremony', () => {
     const ceremony = Number(/const Z_INDEX = (\d+);/.exec(readFileSync(resolve(REPO, 'src/components/Dashboard/deployCeremony/DeployCeremony.jsx'), 'utf8'))[1]);

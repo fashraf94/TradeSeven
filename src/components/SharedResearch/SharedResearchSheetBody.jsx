@@ -44,6 +44,11 @@ import Framing from './screens/Framing';
 import Work from './screens/Work';
 import Adopt from './screens/Adopt';
 import Discard from './screens/Discard';
+// The thesis builder (B4; Amendment B §B7): a builder SESSION gets the builder's view (K-2); the switch is read in one
+// place, Start's own words (K-3), never to choose a view.
+import Builder from './screens/Builder';
+import { isBuilderSession } from './thesisView';
+import { sharedResearchBuilderMode } from './builderMode';
 
 const initialView = (mode, item, sessionId) => {
   if (mode === 'session' && sessionId) return 'work';
@@ -136,6 +141,17 @@ export default function SharedResearchSheetBody({
   const toStart = (text = '') => { setPrefill(text); setStory(null); setDrop(null); setEarlier(null); sr.clearFailure(); setView('start'); if (sr.list.status !== 'loading') sr.loadList(); };
   const pickStory = (s) => { sr.beginPreview(); setStory(s); setView('item'); };
   const frame = (text) => { setPrefill(text); sr.frame(text); setView('framing'); };
+  // K-3: with the builder mode on, own words open at once as a thesis builder (DR-6) — no framing screen. A 400
+  // invalid_entry means the mode rolled back on the server (W-4): today's framing path, with the words kept.
+  const builderStart = sharedResearchBuilderMode() === 'on';
+  const startOwnWords = async (text) => {
+    setPrefill(text);
+    const answer = await sr.openOwnWords(text);
+    if (answer && !answer.ok && answer.status === 400 && answer.body?.error === 'invalid_entry' && live.current) {
+      sr.clearFailure();
+      frame(text);
+    }
+  };
   const editWords = async () => { const words = await sr.editWords(); toStart(words || prefill); };
   const toAdopt = (symbol) => {
     setPreselect(symbol);
@@ -168,14 +184,19 @@ export default function SharedResearchSheetBody({
       ? <Adopt key={adoptEpoch} sr={sr} agentName={name} agentId={agentId} equippedListLabel={equippedListLabel} preselect={preselect} phone={phone} onBack={() => setView('work')} onClose={onClose} />
       : <Running>{COPY.opening}</Running>;
   } else if (view === 'discard' && sr.inv?.record) {
-    body = <Discard sr={sr} phone={phone} onBack={() => setView('work')} onDone={() => setView('work')} />;
+    body = <Discard sr={sr} phone={phone} builder={isBuilderSession(sr.inv.session)} onBack={() => setView('work')} onDone={() => setView('work')} />;
   } else if (view === 'work' && sr.inv?.record) {
     body = sr.existing
       ? <ExistingContinue sr={sr} phone={phone} onClose={onClose} />
-      : (
-        <Work sr={sr} agentName={name} phone={phone} viewingEarlier={earlier !== null} onBackToCurrent={backToCurrent} onOpenEarlier={openEarlier}
-          onAdopt={toAdopt} onDiscard={() => setView('discard')} onNewInvestigation={newInvestigation} onClose={onClose} />
-      );
+      : isBuilderSession(sr.inv.session)
+        ? (
+          <Builder key={sr.inv.session.sessionId} sr={sr} agentName={name} agentId={agentId} phone={phone} viewingEarlier={earlier !== null} onBackToCurrent={backToCurrent} onOpenEarlier={openEarlier}
+            onDiscard={() => setView('discard')} onNewInvestigation={newInvestigation} onClose={onClose} />
+        )
+        : (
+          <Work sr={sr} agentName={name} phone={phone} viewingEarlier={earlier !== null} onBackToCurrent={backToCurrent} onOpenEarlier={openEarlier}
+            onAdopt={toAdopt} onDiscard={() => setView('discard')} onNewInvestigation={newInvestigation} onClose={onClose} />
+        );
   } else if (view === 'work' && sr.inv?.session && !sr.inv.record) {
     // A framing that never finished (no record yet): the words go back to the box.
     body = (
@@ -199,8 +220,8 @@ export default function SharedResearchSheetBody({
       : <Running>{COPY.opening}</Running>;
   } else {
     body = (
-      <Start sr={sr} stories={stories} gated={sr.gated} phone={phone} prefill={prefill} onPickStory={pickStory} onFrame={frame}
-        onUseDrop={openDropModal} onContinue={(id) => sr.loadSession(id)} onClose={onClose} />
+      <Start sr={sr} stories={stories} gated={sr.gated} phone={phone} prefill={prefill} onPickStory={pickStory} onFrame={builderStart ? startOwnWords : frame}
+        builder={builderStart} onUseDrop={openDropModal} onContinue={(id) => sr.loadSession(id)} onClose={onClose} />
     );
   }
 

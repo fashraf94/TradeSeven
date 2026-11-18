@@ -266,9 +266,10 @@ export default function Adopt({ sr, agentName, agentId, equippedListLabel, prese
 
 /**
  * An unconfirmed save's states (K-8), wherever the adoption view stands: the uncertain line with ONLY "Check the
- * record" (held during a 429's wait), the check running, and the "closed elsewhere" answer.
+ * record" (held during a 429's wait), the check running, and the "closed elsewhere" answer. The thesis builder's
+ * Save shows the same states (B4 K-12).
  */
-function SaveStates({ sr, phone }) {
+export function SaveStates({ sr, phone }) {
   const status = sr.save.status;
   if (!['uncertain', 'checking', 'closed'].includes(status)) return null;
   const line = sr.save.checkFailed ? (sr.save.message ?? COPY.checkFailed) : COPY.saveUncertain;

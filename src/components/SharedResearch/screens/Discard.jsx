@@ -9,7 +9,7 @@ import { SR_COPY as COPY } from '../sharedResearchCopy';
 import { S } from '../sharedResearchStyle';
 import { Button, Notice, Running } from '../parts';
 
-export default function Discard({ sr, phone, onBack, onDone }) {
+export default function Discard({ sr, phone, onBack, onDone, builder = false }) {
   const closing = sr.pending?.kind === 'close';
   const refusal = sr.failure?.action === 'close' ? sr.failure : null;
   const discard = async () => {
@@ -20,7 +20,7 @@ export default function Discard({ sr, phone, onBack, onDone }) {
     <div data-screen-label="Discard" style={S.col}>
       <h3 style={S.h3}>{COPY.discardTitle}</h3>
       <Notice tone="copper">{COPY.discardConfirm}</Notice>
-      <p style={S.meta}>{COPY.discardAlt}</p>
+      <p style={S.meta}>{builder ? COPY.builder.discardAlt : COPY.discardAlt}</p>
       {refusal && <Notice role="alert" attrs={{ 'data-sr-refusal': refusal.code }}>{refusal.message}</Notice>}
       {closing && <Running>{COPY.discard}</Running>}
       <div style={S.actions}>

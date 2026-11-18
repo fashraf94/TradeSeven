@@ -28,7 +28,10 @@ const HUB_BANNED = [
   /\bsources?\s*·\s*\d/i, /\bremembers?\b/i, /\bTester\b/, /\bsimulat/i, /\bprototype\b/i, /\billustrative\b/i,
 ];
 const OURS = [/Shadow/, /confidence/i, /%/];
-const BANNED = [...HUB_BANNED, ...OURS];
+// B4 K-13 (Amendment B W-2; the Practice Field's three limits): until the idea book reads saved theses, no line says a
+// thesis is watched, sold, held or expired at the player's level or date. The hub's list already bans "grow".
+const K13 = [/watched/i, /will sell/i, /sells at/i, /holds it/i, /held for/i, /expire/i];
+const BANNED = [...HUB_BANNED, ...OURS, ...K13];
 
 /** Every string SR_COPY can produce: values, and each function called with placeholder arguments. */
 function copyStrings(node, out = []) {
@@ -101,7 +104,8 @@ describe('the screens write no words of their own', () => {
   const files = sourceFiles(HERE).filter((p) => p.endsWith('.jsx'));
   it('the scan reads the body, the parts and every screen', () => {
     expect(files.map((p) => relative(HERE, p).replace(/\\/g, '/')).sort()).toEqual([
-      'SharedResearchSheetBody.jsx', 'parts.jsx', 'screens/Adopt.jsx', 'screens/Discard.jsx', 'screens/Framing.jsx', 'screens/Previews.jsx', 'screens/Start.jsx', 'screens/Work.jsx',
+      'SharedResearchSheetBody.jsx', 'builderParts.jsx', 'parts.jsx', 'screens/Adopt.jsx', 'screens/Builder.jsx', 'screens/Discard.jsx', 'screens/Framing.jsx',
+      'screens/Previews.jsx', 'screens/Start.jsx', 'screens/ThesisReady.jsx', 'screens/ThesisSaved.jsx', 'screens/Work.jsx',
     ]);
   });
   it.each(files.map((p) => [relative(REPO, p).replace(/\\/g, '/'), p]))('%s: no JSX text or name attribute with a letter', (_rel, p) => {
@@ -114,6 +118,36 @@ describe('the screens write no words of their own', () => {
   });
   it('no file in the directory names "Shadow"', () => {
     const named = sourceFiles(HERE).filter((p) => /Shadow/.test(stripComments(readFileSync(p, 'utf8'))));
+    expect(named).toEqual([]);
+  });
+});
+
+describe('the thesis builder\'s words (B4 K-5, K-13, K-14)', () => {
+  it('K-13: the banned list catches what it names (a planted line each)', () => {
+    for (const line of ['Watched by your agent', 'It will sell at your level', 'It sells at 120', 'The idea book holds it for a month', 'Held for about 30 sessions', 'It expires on the date']) {
+      expect(BANNED.some((re) => re.test(line)), line).toBe(true);
+    }
+  });
+  it('the save-issue lines held for codes the view sends without a message are the server\'s lines, word for word', () => {
+    expect(SR_COPY.builder.saveIssue.unsupported_assertion).toBe(SR_SERVER_COPY.unsupported_assertion);
+    expect(SR_COPY.builder.saveIssue.names_not_supported).toBe(SR_SERVER_COPY.names_not_supported);
+    expect(Object.keys(SR_COPY.builder.saveIssue).sort()).toEqual(['names_not_supported', 'too_many_evidence_refs', 'unsupported_assertion']);
+  });
+  it('the saved screen: REVIEW_HONEST_LINE with the agent\'s name, then the idea book is not reading saved theses yet', () => {
+    expect(SR_COPY.builder.honestLine('Atlas')).toBe(REVIEW_HONEST_LINE.replace('[AGENT]', 'Atlas'));
+    expect(SR_COPY.builder.honestLine(SR_COPY.agentFallback).startsWith('Your agent ')).toBe(true);
+    expect(SR_COPY.builder.ideaBook('Atlas')).toBe('Atlas’s idea book isn’t reading saved theses yet. Yours is saved to your lists.');
+    expect(SR_COPY.builder.ideaBook(SR_COPY.agentFallback).startsWith('Your agent’s idea book')).toBe(true);
+  });
+  it('K-5 and K-13: the goal labels, the two marks, the two judged lines', () => {
+    expect(SR_COPY.builder.goals).toMatchObject({
+      verify_source: 'Check the story against its source', map_segments: 'Map the segments', find_names: 'Find the listed companies',
+      build_why: 'Find the reasons', pick: 'You pick, and tell me why', strengthen: 'Keep researching',
+    });
+    expect([SR_COPY.builder.oneStep, SR_COPY.builder.free, SR_COPY.builder.inYourWords, SR_COPY.builder.priceOptional]).toEqual(['1 step', 'free', 'in your words', 'optional · add your own']);
+  });
+  it('no source file in the directory writes an agent\'s name (a prop; "your agent" when absent)', () => {
+    const named = sourceFiles(HERE).filter((p) => /\bAtlas\b/.test(stripComments(readFileSync(p, 'utf8'))));
     expect(named).toEqual([]);
   });
 });
