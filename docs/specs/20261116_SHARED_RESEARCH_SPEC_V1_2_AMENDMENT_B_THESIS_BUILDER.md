@@ -286,3 +286,19 @@ B3 (the server, #1083) and B4 (the screen, #1086) are merged and dark. The found
 | **T-8** | **Two closings from B4.** (a) B4's Q-1 and Q-2 stand as built: record them closed in §B13. (b) The wrong-if tag reads **"in your words"** only when the player wrote it (`by: 'player_wrote'`). Otherwise it reads **"in words"**: still not "watched" (W-2), and no longer claiming words the agent wrote. |
 
 **Closed by T-8 (a):** B4's **Q-1** (a why proposal's reason wears "Source-backed" only when its name is not incomplete and it is that name's only reason) and **Q-2** (Save stays held for `too_many_evidence_refs` whatever the player writes; for `unsupported_assertion` and `names_not_supported` it is held only while the statement sent would be the server's own sentence) stand as B4 built them (`docs/audits/20261117_BUILD_SHARED_RESEARCH_B4.md` §10). No change.
+
+---
+
+## §B14 · B5 report rulings (Nov 18)
+
+The founder ruled on the B5 report's five questions and its watch item 10 (`docs/audits/20261118_BUILD_SHARED_RESEARCH_B5.md` §11) on Nov 18, 2026. B5 builds them on the same branch, under §B13's fences: dark, the ledger byte-identical, no shape change, no schema change, `modelTurn.js` and `method.js` untouched, no new provider calls. Where a ruling and an earlier section of this amendment disagree, the ruling wins.
+
+| ID | Ruling |
+|---|---|
+| **Q-1 → (b)** | An asked time-frame pick also lands as the suggestion; the newest answer survives a later step ("{agent}'s pick" while the pick stands, "{agent} suggested" after). |
+| **Q-2 → (b) and (c)** | Drop §4 rule (1) from the BUILDER prompt only (the ledger prompt keeps §4 whole, byte-identical). Add to §6: "The player's words are theirs: call them 'what you wrote', and never restate them as true." Also add to §6: "Use plain words a player would use; no trading jargon such as 'exit'." §6 stays pinned byte for byte. |
+| **Q-3 → (b)** | When the model's reply does not fit in 320, keep its first and its last sentence; if those two still do not fit, keep the first; if the first alone does not fit, the server's plain line (A2, as built). Never mid-sentence. Re-run the recorded probes through it and report what each keeps. |
+| **Q-4 → yes** | A ready card whose theme is only suggested draws the theme's line on the ready view. |
+| **Q-5 → yes, map only** | The server drops a map_segments theme suggestion longer than six words or ending in sentence punctuation (. ? !). verify_source's suggestion is unchanged. |
+| **Watch 10** | The theme line becomes a small block: "{agent} suggests a theme", the suggestion on its own line, then two buttons side by side, "Use it · free" and "Write your own", both 44 px. One row of buttons at 320, 393 and 1280 (real-browser rows). |
+| — | Then: a row and a mutant for each, the ledger differential, the full suite, the bundle diff, the preview refreshed, and the report appended as §14. |
