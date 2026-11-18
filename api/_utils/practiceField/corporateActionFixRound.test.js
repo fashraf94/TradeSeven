@@ -729,3 +729,26 @@ describe('T2D-08 — with no split-shaped step, the move from the raise to the l
     expect([idea.ledger.dividendsUsd, idea.comparisonLedger.dividendsUsd]).toEqual([0, 0]);
   });
 });
+
+describe('T2D-06 — a matching row HELD at an uncovered close counts as one the conflict met: the same money either way', () => {
+  it.each([[false], [true]])('S2 uncovered: %s — the old row beside a matching new-date row, then the old row alone: the conflict stays open', async (uncovered) => {
+    const c = await start();
+    await close(c, 0);
+    await close(c, 1, 100, [div(1, 1), div(1, 2)]);
+    if (uncovered) {
+      await storeCloseSnapshot(c.db, S[2], q(100, [div(1, 1), div(2, 2)]));
+      failed(c, 2);
+      await raw(c, 2);
+      recon(c);
+    } else {
+      await close(c, 2, 100, [div(1, 1), div(2, 2)]);
+    }
+    await close(c, 3, 100, [div(1, 1)]);
+    await close(c, 4, 100, [div(1, 1)]);
+    const idea = ideaOf(c);
+    expect(appliedAndDeclined(idea)).toEqual([]);
+    expect([idea.ledger.dividendsUsd, idea.comparisonLedger.dividendsUsd]).toEqual([199.94, 199.94]);
+    expect(unsettledConflicts(idea.ledger).map((r) => r.actionId)).toEqual([`cash_dividend_AAPL_${S[1]}`]);
+    expect(rowOf(c, 4).fullQuality).toBe(false);
+  });
+});

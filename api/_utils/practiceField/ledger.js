@@ -931,8 +931,11 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
   // (resolve_hold, conflict). The row under the new date is the same under both readings, and is applied as any row.
   const listedNow = new Set([...pending, ...notEntitled, ...noEntitlementData, ...unrecognized].map((a) => a.actionId ?? deriveActionId(a)));
   const ambiguousConflicts = new Set();
-  // (The matching row may be listed now, or already applied by an earlier close while both dates stayed in the window.)
-  const matchingRowOf = (c, sym) => [...pending, ...(next.corporateActionReceipts || []).filter((r) => r.applied === true)]
+  // (The matching row may be listed now, already applied by an earlier close while both dates stayed in the window, or
+  // HELD on the holding — an uncovered close held it: without that, the old row applied the next close and the money
+  // depended on whether one day's fetch had failed.)
+  const matchingRowOf = (c, sym) => [...pending, ...(next.corporateActionReceipts || []).filter((r) => r.applied === true),
+    ...heldActionRecords(next).filter((r) => !r.refused).map((r) => ({ ...r, ticker: r.symbol }))]
     .find((a) => upper(a.ticker) === sym && a.type === c.type && a.actionId !== c.actionId && !conflicting.has(a.actionId)
       && withinSessions(a.effectiveDate, c.effectiveDate, REDATE_WINDOW_SESSIONS) && (c.rows || []).some((p) => samePayload(p, a)));
   for (const c of unsettledConflicts(next)) {
