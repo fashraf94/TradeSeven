@@ -905,7 +905,13 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
     const nowSettled = settledIdsOf(next);
     const out = new Map();
     for (const i of holds?.get(sym) || []) if (i.actionId !== action.actionId && before(i) && !(i.ledger === kind && nowSettled.has(i.actionId))) addItem(out, sym, { ...i });
-    for (const i of blocked.get(sym) || []) if (i.actionId !== action.actionId && before(i) && !nowSettled.has(i.actionId)) addItem(out, sym, { ...i });
+    // (A suspicion of this ledger retired earlier in this call — explained, or the founder's split for it applied —
+    // holds nothing after it: the record no longer stands. One still standing holds, as always.)
+    const retiredHere = (i) => i.type === SUSPECTED_SPLIT && i.ledger === kind && (() => {
+      const s = openBasisSuspicion(next.holdings[sym]);
+      return !s || suspicionIdOf(sym, s) !== i.actionId;
+    })();
+    for (const i of blocked.get(sym) || []) if (i.actionId !== action.actionId && before(i) && !nowSettled.has(i.actionId) && !retiredHere(i)) addItem(out, sym, { ...i });
     return (out.get(sym) || []).sort(byItem);
   };
   // Not applied, not settled: the holding keeps a record of what it is owed, refreshed to the payload the feed lists now.
@@ -1070,7 +1076,10 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
     // (T2A-E01) is already in the history, naming this row: the receipt names it too.
     let explained = {};
     const suspicion = SHARE_BASIS_TYPES.has(action.type) ? openBasisSuspicion(next.holdings[sym]) : null;
-    if (suspicion && date > suspicion.suspectedOn && explainsSuspicion(action, suspicion)) {
+    // (F-5: the founder's split for this very record explains it — it is the founder's account of the move left, which
+    // after a row applied inside the gap is less than the recorded move: review D5.)
+    const ruledFor = suspicion !== null && isFounderSplit(action) && action.founderRuling.recordId === suspicionIdOf(sym, suspicion);
+    if (suspicion && date > suspicion.suspectedOn && (explainsSuspicion(action, suspicion) || ruledFor)) {
       const { basisSuspicion, ...rest } = next.holdings[sym];
       const id = suspicionIdOf(sym, basisSuspicion);
       const retired = {

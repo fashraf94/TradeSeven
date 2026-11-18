@@ -1168,6 +1168,8 @@ describe('the review\'s fix round — re-dated and late actions (lens C); covera
     for (const f of ['ledger', 'comparisonLedger']) {
       const l = ideaOf(ctx)[f];
       expect(paidIds(l), f).toEqual([`cash_dividend_AAPL_${S[2]}`]); // once
+      // Held behind the conflict at S[3] and applied from its record: its receipt still names the ruling.
+      expect(l.corporateActionReceipts.find((r) => r.actionId === `cash_dividend_AAPL_${S[2]}` && r.applied), f).toMatchObject({ founderRuling: expect.objectContaining({ requestKey: 'rule-1' }) });
       expect(held(l), f).toEqual([]);
       expect(l.corporateActionReceipts.find((r) => r.actionId === `cash_dividend_AAPL_${S[1]}` && r.reason === 'possible_redate'), f).toMatchObject({ redateOf: `cash_dividend_AAPL_${S[2]}` });
     }
@@ -1355,6 +1357,36 @@ describe('the review\'s fix round — the founder\'s split, the move it covers, 
     expect(bookOf(ctx).portfolio.positions.AAPL.shares).toBe(399.880034);
     expect(ideaOf(ctx).founderRulings[0]).toMatchObject({ appliedOn: S[3], outcome: 'moot' });
     expect(withoutWindowAlerts(out.alerts).filter((a) => a.startsWith('PRACTICE_FIELD_HOLD_RULING_MOOT'))).toHaveLength(1);
+  });
+
+  it('D5 at the close (pure): a founder split is applied only for the move still left — after a 2-for-1 applied inside the gap a ×4 is moot, a ×2 is applied and retires the record (the founder\'s account of the rest), and the cash behind it is paid at the same close', () => {
+    const ledger = recordLedger([splitReceipt(S[1], S[3])]);
+    ledger.holdings.AAPL = { ...ledger.holdings.AAPL, shares: 200, costBasisTotal: 10000, avgCost: 50, lastMark: 50 };
+    const id = `suspected_split_AAPL_${S[2]}`;
+    const action = { type: 'split', ticker: 'AAPL', ratio: 4, effectiveDate: S[2], actionId: `split_AAPL_${S[2]}`, source: 'founder_ruling', founderRuling: { requestKey: 'k', kind: 'suspicion', recordId: id, decision: 'split', by: UID, at: 'x' } };
+    const four = applyLedgerActions(ledger, { AAPL: [action] }, { date: S[4], ruledIds: new Set([action.actionId]) });
+    expect(four.ledger.holdings.AAPL.shares).toBe(200);
+    expect(four.ledger.holdings.AAPL.basisSuspicion).toMatchObject({ suspectedOn: S[2] });
+    expect(four.founderSkips).toEqual([expect.objectContaining({ reason: 'ratio_not_residual' })]);
+    const two = applyLedgerActions(ledger, { AAPL: [{ ...action, ratio: 2 }, dividend(0.5, S[3])] }, { date: S[4], ruledIds: new Set([action.actionId]) });
+    expect(two.ledger.holdings.AAPL.shares).toBe(400);
+    expect(two.ledger.holdings.AAPL.basisSuspicion).toBeUndefined();
+    expect(two.ledger.holdings.AAPL.basisSuspicionHistory).toEqual([expect.objectContaining({ id, explainedBy: expect.objectContaining({ actionId: `split_AAPL_${S[2]}`, ratio: 2 }), ruling: expect.objectContaining({ requestKey: 'k' }) })]);
+    expect(two.applied.map((a) => a.actionId)).toEqual([`split_AAPL_${S[2]}`, `cash_dividend_AAPL_${S[3]}`]);
+    expect(two.ledger.dividendsUsd).toBe(200); // 400 × $0.50, at the same close
+  });
+
+  it('A1: the last price seen while a record stands is taken only at a close whose data covers the symbol — an uncovered close\'s price is never what a ruling relies on', async () => {
+    const ctx = await entered();
+    await closeQ(ctx, S[1], { AAPL: 50 }); // the record
+    await storeCloseSnapshot(ctx.db, S[2], { ...Q, AAPL: { price: 25, marketCap: 3e12 } });
+    plantDaily(ctx.db, S[2], { symbol: 'AAPL', entry: { sector: null, caFetchFailed: true } });
+    await closeIdeaBook(ctx.db, ctx.bookRef, { date: S[2], now: closeNowOf(S[2]) });
+    recon(ctx);
+    for (const f of ['ledger', 'comparisonLedger']) expect(ideaOf(ctx)[f].holdings.AAPL.basisSuspicion.lastSeen, f).toMatchObject({ session: S[1], price: 50 });
+    await resolve(ctx, { kind: 'suspicion', recordId: SUSP, decision: 'price_move' });
+    await closeQ(ctx, S[3], { AAPL: 25 });
+    for (const f of ['ledger', 'comparisonLedger']) expect(ideaOf(ctx)[f].holdings.AAPL.basisSuspicion, f).toMatchObject({ suspectedOn: S[3], since: S[1], ratio: 0.5, frozenMark: 50 });
   });
 
   it('B5 (pure): a founder split reaches only a ledger that carries its record — one without it applies nothing and reports it moot', () => {
