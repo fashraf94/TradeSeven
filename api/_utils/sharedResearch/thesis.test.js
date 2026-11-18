@@ -58,8 +58,9 @@ describe('the card at open (§B4.1)', () => {
     expect([c.rev, c.pick, c.ops]).toEqual([0, null, []]);
   });
   it.each([
-    ['own words ≤ 80 → the theme, the player wrote it', 'observation', 'I want to play AI', { state: 'set', value: 'I want to play AI', by: 'player_wrote' }],
-    ['own words of exactly 80', 'observation', 'x'.repeat(80), { state: 'set', by: 'player_wrote' }],
+    // §B13 T-1 (moved from "own words ≤ 80 → the theme"): own words of any length leave the theme unset
+    ['own words ≤ 80 → unset: own words never become the theme (§B13 T-1)', 'observation', 'I want to play AI', { state: 'unset', value: null, by: null, suggestion: null }],
+    ['own words of exactly 80 → unset (§B13 T-1)', 'observation', 'x'.repeat(80), { state: 'unset', value: null, by: null, suggestion: null }],
     ['own words of 81 → unset, for the first step to suggest (SQ-2)', 'observation', 'x'.repeat(81), { state: 'unset', value: null }],
     ['a story opens empty', 'item', 'ignored', { state: 'unset', value: null }],
     ['a drop opens empty', 'signaldrop', null, { state: 'unset' }],
@@ -178,22 +179,26 @@ describe('the sentence (§B3)', () => {
 
 describe('the goals on offer (§B4.2 — each goal\'s offer rule)', () => {
   const goals = (c, ctx = CTX) => offeredGoalsOf(c, ctx).map((g) => (g.part ? `${g.goal}:${g.part}` : g.goal));
-  it('own words, theme set: map the segments (and direction)', () => {
+  // §B13 T-1 (moved): the open no longer sets the theme, so a theme-set card is made by hand for the old row's offer
+  it('own words open with the theme unset: map the segments (and direction); a set theme adds its strengthen', () => {
     const c = openingCardOf({ entryKind: 'observation', observation: 'AI' });
+    expect(goals(c)).toEqual(['map_segments', 'direction']);
+    c.theme = { state: 'set', value: 'AI', by: 'player_wrote', suggestion: null };
     expect(goals(c)).toEqual(['map_segments', 'strengthen:theme', 'direction']);
   });
-  it('own words over 80 (SQ-2): the theme unset with no suggestion still offers the map; once suggested, the player confirms first', () => {
+  // §B13 T-2 (moved from SQ-2's "once suggested, the player confirms first"): a suggested theme holds nothing up
+  it('own words over 80: the map is offered with no suggestion and with one (§B13 T-2: the theme gates nothing)', () => {
     const c = openingCardOf({ entryKind: 'observation', observation: 'x'.repeat(81) });
     expect(goals(c)).toEqual(['map_segments', 'direction']);
     c.theme.suggestion = 'AI';
-    expect(goals(c)).toEqual(['direction']);
+    expect(goals(c)).toEqual(['map_segments', 'direction']);
   });
   it('a story or a drop verifies first: until then only verify_source and direction', () => {
     for (const kind of ['item', 'signaldrop']) {
       const ctx = ctxOf({ s: session({ entry: { kind } }) });
       expect(goals(cardWith({ names: ['NVDA'] }), ctx)).toEqual(['verify_source', 'direction']);
       const done = ctxOf({ s: session({ entry: { kind }, exchanges: [{ who: 'partner', kind: 'step', goal: 'verify_source' }] }) });
-      expect(goals(emptyCard(), done)).toEqual(['direction']);
+      expect(goals(emptyCard(), done)).toEqual(['map_segments', 'direction']); // §B13 T-2 (moved): checked, the map is offered with no theme set
       expect(done.verified).toBe(true);
       expect(verifiedOf({ exchanges: [{ who: 'partner', kind: 'step', goal: 'map_segments' }] })).toBe(false);
     }

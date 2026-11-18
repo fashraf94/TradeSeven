@@ -2,7 +2,7 @@
 //
 // Shared Research B3 — THE BUILDER'S PROMPT AND THE RULEBOOK §6 (Amendment B
 // §B5; K-6). THESIS_BUILDER_RULES equals the rulebook's §6 byte for byte (the
-// §4/§5 precedent); the builder's system prompt carries §4 without its line (7),
+// §4/§5 precedent); the builder's system prompt carries §4 without its lines (1) and (7) (§B14 Q-2),
 // §6 and the method block as today; its own text passes the forbidden patterns;
 // §1–§5 are untouched by the append; the ledger's prompts are not changed (their
 // byte pins live in prompt.honesty.test.js and session.kb1.test.js, unedited).
@@ -42,8 +42,10 @@ describe('the rulebook §6 (K-6)', () => {
 
 describe('the builder\'s system prompt (§B5)', () => {
   const p = buildBuildSystemPrompt({ partnerName: 'Atlas' });
-  it('carries §4 without its line (7), renumbered, then §6, then the method block as today', () => {
-    expect(BUILDER_OPENING_RULES).toEqual(WRITTEN_OPENING_RULES.filter((_, i) => i !== 6));
+  // §B14 Q-2 (b) (moved from "without its line (7)"): §4's line (1) leaves the builder prompt too; the ledger keeps §4 whole
+  it('carries §4 without its lines (1) and (7), renumbered, then §6, then the method block as today', () => {
+    expect(BUILDER_OPENING_RULES).toEqual(WRITTEN_OPENING_RULES.filter((_, i) => i !== 0 && i !== 6));
+    expect(p).not.toContain(WRITTEN_OPENING_RULES[0]);
     BUILDER_OPENING_RULES.forEach((r, i) => expect(p).toContain(`${i + 1}. ${r}`));
     expect(p).not.toContain('weakest link');
     expect(p).toContain(`The thesis builder:\n${THESIS_BUILDER_RULES}`);

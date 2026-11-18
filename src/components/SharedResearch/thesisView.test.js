@@ -10,7 +10,7 @@ import A from './__fixtures__/thesisAnswers.json';
 import {
   frontPartOf, footOf, panelOf, valueChoicesOf, confirmMarkOf, slotOf, sentenceRunsOf, conversationOf, partFindingIdsOf,
   isBuilderSession, joinNames, horizonLabelOf, hasSuggestedPart, partOfGoal, directionOffered, revisedWhyChoiceOf, PARTLESS_GOALS, THESIS_PARTS,
-  proposalReasonHolds,
+  proposalReasonHolds, themeLineOf,
 } from './thesisView';
 import { THESIS_PARTS as SHARED_THESIS_PARTS, STATUS_LABELS, findingLabelOf } from '../../constants/sharedResearch';
 
@@ -21,8 +21,10 @@ const isOffered = (thesis, entry) => offered(thesis).some((c) => JSON.stringify(
 
 describe('K-4: the part in front (the table)', () => {
   it.each([
-    ['walkOpen', 'segment'],
-    ['walkMap', 'segment'],
+    ['walkOpen', 'theme'], // §B13 T-1 (moved from segment): the open leaves the theme unset with no suggestion — it stays in front
+    ['walkMap', 'segment'], // §B13 T-6: the map's suggested theme does not hold the front
+    ['walkThemeConfirm', 'segment'],
+    ['walkThemeOwn', 'segment'],
     ['walkSegment', 'names'],
     ['walkNames', 'names'],
     ['walkOneStock', 'why'],
@@ -34,7 +36,7 @@ describe('K-4: the part in front (the table)', () => {
     ['getDeadEnd', 'names'],
     ['getOutOfSteps', 'wrongIf'],
     ['storyOpen', 'theme'],
-    ['storyVerified', 'theme'],
+    ['storyVerified', 'segment'], // §B13 T-6 (moved from theme): the check's suggested theme does not hold the front
     ['getIncompleteWhy', 'why'],
     ['getGroupReady', null],
   ])('%s → %s', (key, part) => {
@@ -65,17 +67,21 @@ describe('K-4: the foot holds only what the server offered, ordered', () => {
       for (const e of [p.change, ...p.research, ...p.values, p.text, p.skip, p.revised, p.priceLines].filter(Boolean)) expect(isOffered(t, e), `${part}: ${JSON.stringify(e)}`).toBe(true);
     }
   });
-  it('the open card: Map the segments (no part), the segment\'s skip last, the direction left to the composer', () => {
+  // §B13 T-1 (moved from "the segment's skip last" and no text box): the theme is in front at the open, so the foot holds
+  // its own text box (the composer) and Map the segments; the segment's skip waits until the segment is in front
+  it('the open card: Map the segments (no part), the theme\'s own text box in the composer, no skip yet', () => {
     const f = footOf(T('walkOpen'));
+    expect(f.part).toBe('theme');
     expect(f.research).toEqual([{ goal: 'map_segments' }]);
-    expect(f.skip).toEqual({ op: 'set', part: 'segment', value: 'skip' });
+    expect(f.skip).toBe(null);
     expect(f.values).toEqual([]);
-    expect(f.text).toBe(null);
+    expect(f.text).toEqual({ op: 'set', part: 'theme', input: 'text', max: 80 });
   });
+  // §B13 T-7 (moved from B3's map labels): the walk's map is now the B5 recorded answer
   it('the map: the four segments, the agent\'s pick standing in for its own `set` (never twice), You pick, Map again', () => {
     const t = T('walkMap');
     const f = footOf(t);
-    expect(f.values.map((c) => `${c.op}:${c.value}`)).toEqual(['confirm:Accelerator chips', 'set:Chip networking', 'set:Data-center power', 'set:Cloud spenders']);
+    expect(f.values.map((c) => `${c.op}:${c.value}`)).toEqual(['confirm:Accelerator chips', 'set:Networking', 'set:Power and grid', 'set:Cloud spenders']);
     expect(confirmMarkOf(f.values[0], t)).toBe('pick');
     expect(f.research).toEqual([{ goal: 'pick', part: 'segment' }, { goal: 'map_segments' }]);
   });
@@ -108,7 +114,8 @@ describe('K-4: the foot holds only what the server offered, ordered', () => {
   it('ready: no part in front; the foot lists every research choice but direction (Keep researching)', () => {
     const f = footOf(T('walkTimeFrame'));
     expect(f.part).toBe(null);
-    expect(f.research.map((g) => `${g.goal}:${g.part}`)).toEqual(['strengthen:theme', 'strengthen:segment', 'strengthen:names', 'strengthen:why', 'strengthen:wrongIf', 'strengthen:timeFrame']);
+    // §B13 T-1 (moved): the walk leaves the theme suggested, so there is no strengthen:theme
+    expect(f.research.map((g) => `${g.goal}:${g.part}`)).toEqual(['strengthen:segment', 'strengthen:names', 'strengthen:why', 'strengthen:wrongIf', 'strengthen:timeFrame']);
   });
   it('a stale part in front brings its Change and its strengthen (K-7: it names what to do)', () => {
     const f = footOf(T('getStaleSegment'));
@@ -120,11 +127,15 @@ describe('K-4: the foot holds only what the server offered, ordered', () => {
     expect(valueChoicesOf(t, 'why')).toEqual([{ op: 'set', part: 'names', value: ['NVDA'], reason: 'drop_unsourced', clears: [] }]);
     expect(valueChoicesOf(t, 'names')).toEqual([]);
   });
-  it('the story: verify first; then the theme suggestion as its own confirm', () => {
+  // §B13 T-6 (moved from "the theme suggestion as its own confirm" in the foot): the suggestion sits in the theme's line
+  it('the story: verify first; then the theme suggestion in the theme\'s line, the segment in front with Map the segments', () => {
     expect(footOf(T('storyOpen')).research).toEqual([{ goal: 'verify_source' }]);
     expect(footOf(T('storyOpen')).text).toEqual({ op: 'set', part: 'theme', input: 'text', max: 80 });
-    const v = footOf(T('storyVerified'));
-    expect(v.values).toEqual([{ op: 'confirm', part: 'theme', value: 'Cloud AI data-center spending' }]);
+    const t = T('storyVerified');
+    const v = footOf(t);
+    expect(v.part).toBe('segment');
+    expect(v.research).toEqual([{ goal: 'map_segments' }]); // §B13 T-2: the map does not wait for the theme
+    expect(themeLineOf(t)).toEqual({ confirm: { op: 'confirm', part: 'theme', value: 'Cloud AI data-center spending' }, text: { op: 'set', part: 'theme', input: 'text', max: 80 } });
   });
   it('4A-5: a pick marks only the confirm whose value is the pick\'s; another confirm keeps its own mark', () => {
     const t = T('walkWrongIf'); // the time frame in front; its confirm is the suggestion's (positional)
@@ -172,17 +183,55 @@ describe('K-7: the card draws the server\'s states; it composes no sentence', ()
     expect(slotOf(t, 'why')).toEqual({ part: 'why', state: 'suggested', text: t.parts.why.proposal.shared, skipped: false });
     expect(slotOf(t, 'timeFrame')).toMatchObject({ state: 'suggested', text: 'Positional · about 30 sessions' });
     expect(hasSuggestedPart(t)).toBe(true);
-    expect(hasSuggestedPart(T('walkTimeFrame'))).toBe(false);
+    // §B13 T-1 (moved from false): the walk's ready card still holds the map's theme suggestion; confirmed, none is left
+    expect(hasSuggestedPart(T('walkTimeFrame'))).toBe(true);
+    expect(hasSuggestedPart(T('getReadyThemed'))).toBe(false);
   });
   it('an unset part has no text; a stale one keeps its value with its state', () => {
     expect(slotOf(T('walkOpen'), 'segment')).toEqual({ part: 'segment', state: 'unset', text: null, skipped: false });
     expect(slotOf(T('getStaleSegment'), 'segment')).toMatchObject({ state: 'stale', text: 'Accelerator chips' });
   });
-  it.each(['walkTimeFrame', 'getGroupReady', 'getSaveIssue', 'walkPriceLine'])('%s: the sentence runs join back to the server\'s sentence exactly, each set part found', (key) => {
+  // §B13 T-2 (moved from one order, theme first): the server's sentence has four shapes — with no theme it opens at the
+  // names, then the segment — so each set part is found where it STANDS, in the sentence's own order
+  it.each([
+    ['walkTimeFrame', ['names', 'segment', 'why', 'wrongIf', 'timeFrame']],
+    ['getGroupReady', ['names', 'segment', 'why', 'wrongIf', 'timeFrame']],
+    ['getSaveIssue', ['names', 'segment', 'why', 'wrongIf', 'timeFrame']],
+    ['walkPriceLine', ['names', 'segment', 'why', 'wrongIf', 'timeFrame']],
+    ['getReadyThemed', ['theme', 'segment', 'names', 'why', 'wrongIf', 'timeFrame']],
+    ['getReadySkipped', ['names', 'why', 'wrongIf', 'timeFrame']],
+    ['getReadyThemedSkipped', ['theme', 'names', 'why', 'wrongIf', 'timeFrame']],
+  ])('%s: the sentence runs join back to the server\'s sentence exactly, each set part found where it stands', (key, order) => {
     const t = T(key);
     const runs = sentenceRunsOf(t.sentence, t);
     expect(runs.map((r) => r.text).join('')).toBe(t.sentence);
-    expect(runs.filter((r) => r.part).map((r) => r.part)).toEqual(['theme', 'segment', 'names', 'why', 'wrongIf', 'timeFrame']);
+    expect(runs.filter((r) => r.part).map((r) => r.part)).toEqual(order);
+    const setParts = THESIS_PARTS.filter((p) => t.parts[p].state === 'set' && !(p === 'segment' && t.parts.segment.skipped));
+    expect([...order].sort()).toEqual([...setParts].sort());
+    for (const r of runs.filter((x) => x.part)) expect(t.sentence.indexOf(r.text)).toBeGreaterThanOrEqual(0);
+  });
+  // review B3: the parts are found in the order the sentence holds them, so a segment named like a name, or a word of the
+  // frame, never takes another part's span (the server's sentence, its parts and their texts changed together)
+  it('review B3: no theme, a segment named like one of the names — each found where it stands', () => {
+    const t = T('walkTimeFrame');
+    const sentence = t.sentence.replace('Built on NVDA, through Accelerator chips', 'Built on AMD and NVDA, through AMD');
+    const odd = { ...t, sentence, parts: { ...t.parts, segment: { ...t.parts.segment, value: 'AMD' }, names: { ...t.parts.names, value: ['AMD', 'NVDA'] } } };
+    const runs = sentenceRunsOf(sentence, odd);
+    expect(runs.map((r) => r.text).join('')).toBe(sentence);
+    expect(runs.slice(0, 4)).toEqual([
+      { text: 'Built on ', part: null }, { text: 'AMD and NVDA', part: 'names', state: 'set' },
+      { text: ', through ', part: null }, { text: 'AMD', part: 'segment', state: 'set' },
+    ]);
+  });
+  it('review B3: a theme set, a segment whose label is a word of the frame ("theme") — found after "through", not in "My theme is"', () => {
+    const t = T('getReadyThemed');
+    const sentence = t.sentence.replace('through Accelerator chips', 'through theme');
+    const odd = { ...t, sentence, parts: { ...t.parts, segment: { ...t.parts.segment, value: 'theme' } } };
+    const runs = sentenceRunsOf(sentence, odd);
+    expect(runs.map((r) => r.text).join('')).toBe(sentence);
+    const seg = runs.findIndex((r) => r.part === 'segment');
+    expect(runs.slice(0, seg).map((r) => r.text).join('')).toMatch(/, through $/);
+    expect(runs[0]).toEqual({ text: 'My theme is ', part: null });
   });
   it('a stale part stays findable in the server\'s sentence, with its state, so it can be marked where it stands', () => {
     const t = T('getStaleSegment');
@@ -291,5 +340,47 @@ describe('P-1 (the phone round): no builder file lets a word break inside itself
   });
   it('WRAP breaks a word only when it alone is wider than its line', () => {
     expect(src('builderParts.jsx')).toContain("export const WRAP = Object.freeze({ overflowWrap: 'break-word', minWidth: 0 });");
+  });
+});
+
+describe('§B13 T-6: a suggested theme does not hold the front', () => {
+  it.each([
+    ['walkOpen', 'unset', 'theme', false], // no suggestion: the theme stays in front, as before
+    ['walkMap', 'suggested', 'segment', true],
+    ['walkSegment', 'suggested', 'names', true],
+    ['walkWhy', 'suggested', 'why', true],
+    ['walkThemeConfirm', 'set', 'segment', false],
+    ['walkThemeOwn', 'set', 'segment', false],
+    ['storyOpen', 'unset', 'theme', false],
+    ['storyVerified', 'suggested', 'segment', true],
+  ])('%s: the theme %s → %s in front; the theme\'s line %s', (key, state, front, line) => {
+    const t = T(key);
+    expect(t.parts.theme.state).toBe(state);
+    expect(frontPartOf(t)).toBe(front);
+    expect(themeLineOf(t) !== null).toBe(line);
+  });
+  it('the line carries the server\'s confirm and its text box, exactly as offered', () => {
+    const t = T('walkMap');
+    const line = themeLineOf(t);
+    expect(line.confirm).toEqual({ op: 'confirm', part: 'theme', value: t.parts.theme.suggestion });
+    expect(line.text).toEqual({ op: 'set', part: 'theme', input: 'text', max: 80 });
+    expect(isOffered(t, line.confirm) && isOffered(t, line.text)).toBe(true);
+  });
+  it('after the first map, the segment\'s choices are the foot\'s at once; the theme\'s are not among them', () => {
+    const f = footOf(T('walkMap'));
+    expect(f.part).toBe('segment');
+    expect(f.values.every((c) => c.part === 'segment')).toBe(true);
+    expect(f.text).toBe(null);
+    expect(f.skip).toEqual({ op: 'set', part: 'segment', value: 'skip' });
+  });
+  it('a suggested theme in front of nothing else: every other part set, nothing in front (ready holds no theme)', () => {
+    expect(T('walkTimeFrame').parts.theme.state).toBe('suggested');
+    expect(frontPartOf(T('walkTimeFrame'))).toBe(null);
+  });
+  it('the theme\'s panel, opened from "Write your own": its confirm and its text box', () => {
+    const p = panelOf(T('walkMap'), 'theme');
+    expect(p.values).toEqual([{ op: 'confirm', part: 'theme', value: T('walkMap').parts.theme.suggestion }]);
+    expect(p.text).toEqual({ op: 'set', part: 'theme', input: 'text', max: 80 });
+    expect(p.change).toBe(null);
   });
 });

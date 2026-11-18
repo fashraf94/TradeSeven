@@ -591,15 +591,21 @@ async function openBuilderOwnWords(body, res, { db, uid }, nowIso) {
 
 /** The search text a builder step's retrieval runs on, by goal (routine: the card's own words, the names in play). */
 function buildFocusOf({ goal, part, card, record }) {
-  const theme = card.theme.value ?? card.theme.suggestion ?? null;
+  const opening = currentFindingsOf(record).find((f) => f.kind === 'coverage' || f.kind === 'observation');
+  // §B13 T-1: own words no longer become the theme, so until one is suggested or set the search names the player's own
+  // words — the record's observation finding (a SignalDrop's opening is one too). For own words of 80 characters or
+  // fewer that is the text the first map searched on before T-1; longer words searched on the record's question then.
+  const theme = card.theme.value ?? card.theme.suggestion ?? (opening?.kind === 'observation' ? opening.fact : null);
   const seg = card.segment.state === 'set' && !card.segment.skipped ? card.segment.value : null;
   const names = card.names.state === 'set' ? card.names.value.join(' ') : '';
-  const opening = currentFindingsOf(record).find((f) => f.kind === 'coverage' || f.kind === 'observation');
+  // §B13 T-2: find_names and build_why can now run with neither a segment nor a theme (a story whose check left no
+  // suggestion, the segment skipped): no subject means no focus, so the search falls back to the record's question
+  const subject = seg ?? theme ?? null;
   switch (goal) {
     case 'verify_source': return opening ? `primary source of: ${opening.fact}` : null;
     case 'map_segments': return theme ? `${theme}: the parts of this market and the listed companies in each` : null;
-    case 'find_names': return `listed companies that earn from ${seg ?? theme ?? ''}`.trim();
-    case 'build_why': return `${names} revenue exposure to ${seg ?? theme ?? ''}`.trim();
+    case 'find_names': return subject ? `listed companies that earn from ${subject}` : null;
+    case 'build_why': return subject ? `${names} revenue exposure to ${subject}`.trim() : (names ? `${names} revenue exposure` : null);
     case 'strengthen': {
       const v = part === 'names' ? names : part === 'why' ? `${names} ${card.why.shared ?? ''}` : part === 'wrongIf' ? `${names} ${card.wrongIf.text ?? ''}` : (card[part]?.value ?? '');
       return `${String(v).trim()} ${theme ?? ''}`.trim() || null;

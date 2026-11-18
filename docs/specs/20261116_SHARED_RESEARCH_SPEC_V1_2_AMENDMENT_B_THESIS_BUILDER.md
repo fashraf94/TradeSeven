@@ -267,3 +267,38 @@ The founder ruled on the §B11 round's two questions and its watch list on Nov 1
 | **W-12** | Leave. S-1 meant the model's output; the validator's ceiling stays three. |
 | **W-11** | No change; note it in the report's §4 for B4. |
 | — | Then: a row and a mutant for each change, the ledger differential re-run, the full suite, and the report appended as the §B12 round. |
+
+---
+
+## §B13 · Before the switch (Nov 17)
+
+B3 (the server, #1083) and B4 (the screen, #1086) are merged and dark. The founder walked the phone preview and ruled four server fixes and two screen lines before the one-line switch, on Nov 17, 2026. B5 builds them from `main` @ `2e069d42` on branch `claude/shared-research-b5`, dark: `SHARED_RESEARCH_BUILDER_MODE` stays `'off'`, the ledger byte-identical, `modelTurn.js` untouched, no schema recompiled, no merge, no CI watch. Where a ruling and an earlier section of this amendment disagree, the ruling wins.
+
+| ID | Ruling |
+|---|---|
+| **T-1** | **Own words never become the theme.** This amends DR-6, which said the player's words become the theme. `openingCardOf` leaves the theme unset for every own-words open: SQ-2's rule for long words now holds for all. The words stay on record as the player's observation ("Your words"). The first `map_segments` suggests a theme when none is set: a short noun phrase of two to six words, never a sentence, at most 80 characters, in the agent's own words. The player confirms it (free) or writes their own (free), as today's free choices allow. Stories and drops keep `verify_source`'s suggestion, unchanged. |
+| **T-2** | **The theme gates nothing.** No research goal requires a set theme. `map_segments` is offered while the segment and the names are unset; `find_names` while the segment is set, the names are unset and no dead end holds. Ready is unchanged (it never needed the theme). When the card is saved with no theme, the composed sentence opens **"Built on {names}, through {segment}, because …"** (or "Built on {names}, because …" with no segment) instead of "Through …". The theme's free choices stay on offer until it is set. |
+| **T-3** | **Two short sentences.** Rulebook §6 and the builder prompt say: reply in at most two short sentences, about 280 characters — first what this step found, then what it proposes for the card. Do not repeat what the card or the choices already show. Speak to the player as a partner; never "your observation", "the retrieved items" or "the record". §6 changes in one place and stays pinned byte for byte. The server cuts the model's reply at a sentence's end at **320** characters. The server's own lines (the replaced reply, the dead-end line, the unsourced line) may take the whole to 600, as today. The schema's description text is unchanged (no recompile). |
+| **T-4** | **No save while a step is running.** `adoptThesis` refuses `409 step_in_flight` inside its transaction, by the same rule `applyCard` uses (a running step that is not stale). It is checked before the rev and before anything is written. A stale running step does not block, as on the card route. Builder save only; B1's ledger adopt is untouched. |
+| **T-5** | **The newer time-frame answer wins.** When a step lands an asked time-frame pick, it clears the older time-frame suggestion. When a later step lands a new suggestion, the next step's pick rule (already: every step replaces the pick) leaves only that suggestion. The free `confirm` then always carries the one that is on the card, and its label says which ("{agent} suggested" or "{agent}'s pick"). |
+| **T-6** | **The screen: a suggested theme does not hold the front.** In `frontPartOf`, a theme whose state is `suggested` is skipped. Its confirm and its "write your own" show as one small line at the top of the choices: "Use '{suggestion}' as the theme · free". The part in front is the next one, so the segment map's choices show at once after the first map. An unset theme with no suggestion stays in front, as today. |
+| **T-7** | **Three recorded probes** (founder-authorized, at most 3 calls, total at most $0.10, a new ledger file for this round). Own words "I want to play AI": (1) `map_segments` on the T-1 card, which must return a theme suggestion of six words or fewer and a reply of at most 320 characters; (2) `find_names` on that card with the segment set and the theme unset (T-2); (3) `build_why` on one name. On `claude-sonnet-5-5`, with the real builder prompt. `CLAUDE_API_KEY` comes from the parent checkout's `.env.local`, loaded into the probe process only: never print it, never copy `.env.local` into the worktree, never commit it. The fixtures hold the response, usage and cost only. A refusal or a missing theme suggestion: STOP and report the API's own message. |
+| **T-8** | **Two closings from B4.** (a) B4's Q-1 and Q-2 stand as built: record them closed in §B13. (b) The wrong-if tag reads **"in your words"** only when the player wrote it (`by: 'player_wrote'`). Otherwise it reads **"in words"**: still not "watched" (W-2), and no longer claiming words the agent wrote. |
+
+**Closed by T-8 (a):** B4's **Q-1** (a why proposal's reason wears "Source-backed" only when its name is not incomplete and it is that name's only reason) and **Q-2** (Save stays held for `too_many_evidence_refs` whatever the player writes; for `unsupported_assertion` and `names_not_supported` it is held only while the statement sent would be the server's own sentence) stand as B4 built them (`docs/audits/20261117_BUILD_SHARED_RESEARCH_B4.md` §10). No change.
+
+---
+
+## §B14 · B5 report rulings (Nov 18)
+
+The founder ruled on the B5 report's five questions and its watch item 10 (`docs/audits/20261118_BUILD_SHARED_RESEARCH_B5.md` §11) on Nov 18, 2026. B5 builds them on the same branch, under §B13's fences: dark, the ledger byte-identical, no shape change, no schema change, `modelTurn.js` and `method.js` untouched, no new provider calls. Where a ruling and an earlier section of this amendment disagree, the ruling wins.
+
+| ID | Ruling |
+|---|---|
+| **Q-1 → (b)** | An asked time-frame pick also lands as the suggestion; the newest answer survives a later step ("{agent}'s pick" while the pick stands, "{agent} suggested" after). |
+| **Q-2 → (b) and (c)** | Drop §4 rule (1) from the BUILDER prompt only (the ledger prompt keeps §4 whole, byte-identical). Add to §6: "The player's words are theirs: call them 'what you wrote', and never restate them as true." Also add to §6: "Use plain words a player would use; no trading jargon such as 'exit'." §6 stays pinned byte for byte. |
+| **Q-3 → (b)** | When the model's reply does not fit in 320, keep its first and its last sentence; if those two still do not fit, keep the first; if the first alone does not fit, the server's plain line (A2, as built). Never mid-sentence. Re-run the recorded probes through it and report what each keeps. |
+| **Q-4 → yes** | A ready card whose theme is only suggested draws the theme's line on the ready view. |
+| **Q-5 → yes, map only** | The server drops a map_segments theme suggestion longer than six words or ending in sentence punctuation (. ? !). verify_source's suggestion is unchanged. |
+| **Watch 10** | The theme line becomes a small block: "{agent} suggests a theme", the suggestion on its own line, then two buttons side by side, "Use it · free" and "Write your own", both 44 px. One row of buttons at 320, 393 and 1280 (real-browser rows). |
+| — | Then: a row and a mutant for each, the ledger differential, the full suite, the bundle diff, the preview refreshed, and the report appended as §14. |

@@ -4,7 +4,8 @@
 // §B4.2; §B10 S-B3; K-4).
 //
 // ONE SCHEMA PER GOAL (the founder's S-1/S-2, Nov 17): each goal's schema holds
-// `reply` (at most 600 characters) plus only what that goal may land (ACCEPTS,
+// `reply` (its description still says 600 characters; the server cuts the
+// model's reply at 320 — §B13 T-3) plus only what that goal may land (ACCEPTS,
 // the rule the validator enforces), with B1's `findings` and the builder's
 // `companies` where S-1 lists them; B1's `summary`, `lines` and `nextAction`
 // are gone. Builder companies drop `claim` and `openRef` (the card's why
@@ -45,6 +46,14 @@ import { NAMES_A_PRICE, lineFailOf, builderWordingOf } from './thesisWords.js';
 import { applyProposals, cardContextOf } from './thesis.js';
 
 export { NAMES_A_PRICE };
+
+/**
+ * The model's own reply, at most (§B13 T-3): cut at a sentence's end at 320 characters — the rule asks for two short
+ * sentences, about 280. The server's own lines (the replaced reply, the dead-end line, the unsourced line) may take
+ * the whole to THESIS_LIMITS.reply (600), as before. Kept here, not in THESIS_LIMITS: that module ships in the client.
+ * The schema's description text is unchanged (no recompile).
+ */
+export const MODEL_REPLY_MAX = 320;
 
 // ── the schemas (structured outputs: every object closed, every key required, nullable through anyOf) ──
 //
@@ -199,6 +208,30 @@ const FIELD_SHAPES = Object.freeze({
 });
 
 /**
+ * The model's reply as the server keeps it (§B13 T-3; §B14 Q-3), never cut inside a sentence: whole when it fits in
+ * `max`; else its first and its last sentence; else its first; else none fits — `runOn`, and the server's plain line
+ * replaces it (review A2).
+ * @returns {{ text: string, runOn: boolean }}
+ */
+export function keptReplyOf(text, max = MODEL_REPLY_MAX) {
+  const t = String(text ?? '');
+  if (t.length <= max) return { text: t, runOn: false };
+  const s = sentencesOf(t);
+  const first = s[0] ?? '';
+  const last = s.length > 1 ? s[s.length - 1] : null;
+  if (last !== null && first.length + 1 + last.length <= max) return { text: `${first} ${last}`, runOn: false };
+  if (first.length <= max) return { text: first, runOn: false };
+  return { text: '', runOn: true };
+}
+
+/** A map's theme suggestion is a short noun phrase (§B14 Q-5): at most six words, and it does not end like a sentence. */
+export const MAP_THEME_WORDS_MAX = 6;
+
+/** The same words, read loosely: case, spacing and closing punctuation aside (a theme suggestion against the player's words). */
+const wordsOf = (s) => clean(s).toLowerCase().replace(/[\s.!?;:,]+$/u, '');
+const sameWords = (a, b) => wordsOf(a) !== '' && wordsOf(a) === wordsOf(b);
+
+/**
  * A text cut to `max` characters at a sentence's end (never inside a word or a figure: B3 review RB-7) — the first
  * sentence alone, when it is longer, at the last space before `max`.
  */
@@ -240,10 +273,13 @@ export function validateBuildTurn(output, ctx) {
   // The builder writes no ledger claim and no open question (S-2): whatever a company carries, B1 reads none.
   const companies = (holds('companies') && Array.isArray(output.companies) ? output.companies : []).map((c) => (c && typeof c === 'object' && !Array.isArray(c) ? { ...c, openRef: null, claim: null } : c));
 
-  // 1. B1's validator on the reply, the findings and the companies — its rules alone can fail the step. The reply is cut
-  //    to its 600 characters at a sentence's end FIRST, so B1's number check reads the text that is kept (RB-7).
+  // 1. B1's validator on the reply, the findings and the companies — its rules alone can fail the step. The model's reply
+  //    is kept within MODEL_REPLY_MAX (§B13 T-3: 320; §B14 Q-3: its first and last sentence, else its first) FIRST, so
+  //    B1's number check reads the text that is kept (RB-7). A reply none of whose sentences fits is replaced below.
+  const said = clean(output.reply);
+  const kept = keptReplyOf(said, MODEL_REPLY_MAX);
   const b1 = validateStepTurn({
-    reply: cutAtSentence(clean(output.reply), L.reply), findings: rawFindings, companies,
+    reply: kept.runOn ? cutAtSentence(said, MODEL_REPLY_MAX) : kept.text, findings: rawFindings, companies,
     summary: null, lines: { support: null, complication: null, missing: null }, nextAction: null,
   }, ctx);
   if (!b1.ok) return b1;
@@ -292,10 +328,19 @@ export function validateBuildTurn(output, ctx) {
   const recordAfter = { ...record, findings: [...(record?.findings ?? []), ...b1.findings] };
   const supportedAfterOf = () => companiesOf(recordAfter, { universe }).supported.map((c) => c.symbol);
 
-  // the theme suggestion — only while the card has no theme
+  // the theme suggestion — only while the card has no theme and no suggestion yet (§B13 T-1: the first map suggests one;
+  // a story keeps verify_source's), and never the player's own words handed back as the agent's (T-1: "in the agent's
+  // own words")
   if (takes('themeSuggestion')) {
     const t = lineOf(output.themeSuggestion, L.theme);
-    const why = card.theme.state === 'set' ? 'theme_set' : !t ? 'length' : lineFail(t, recordVerified);
+    const suggested = typeof card.theme.suggestion === 'string' && card.theme.suggestion !== '';
+    // §B14 Q-5, the map only (verify_source's suggestion is unchanged): a short noun phrase — at most six words, and not
+    // ending like a sentence
+    const map = shape.goal === 'map_segments';
+    const why = card.theme.state === 'set' ? 'theme_set' : suggested ? 'theme_suggested' : !t ? 'length'
+      : recordCurrent.some((f) => f.kind === 'observation' && sameWords(f.fact, t)) ? 'player_words'
+        : map && t.split(/\s+/).filter(Boolean).length > MAP_THEME_WORDS_MAX ? 'too_many_words'
+          : map && /[.?!]$/.test(t) ? 'sentence' : lineFail(t, recordVerified);
     if (why) drop('themeSuggestion', why);
     else proposals.themeSuggestion = t;
   }
@@ -450,7 +495,7 @@ export function validateBuildTurn(output, ctx) {
   const cardChanged = JSON.stringify({ ...preview, rev: 0 }) !== JSON.stringify({ ...card, rev: 0 });
   const landed = Boolean(proposals.themeSuggestion || proposals.map || proposals.why || proposals.wrongIfOptions || proposals.timeFrame || proposals.pick);
 
-  // The reply (K-4): B1's, already cut to 600 characters at a sentence's end, replaced by the plain line when it cannot
+  // The reply (K-4): B1's, already cut to MODEL_REPLY_MAX (320) at a sentence's end, replaced by the plain line when it cannot
   // stand — B1 replaced it, it breaks the builder's own wording, the goal's own proposal is missing, everything the step
   // proposed was dropped, or a dead end's reply names a listed company (RB-5).
   let reply = b1.reply;
@@ -461,7 +506,11 @@ export function validateBuildTurn(output, ctx) {
   const main = goal === 'direction' ? (asked && given(MAIN_FIELD[asked]) ? asked : null) : mainOf(goal, part);
   const offered = accepts.filter((f) => given(f));
   const deadEnd = (goal === 'find_names' || (goal === 'direction' && shape.goal === 'find_names')) && card.names.state !== 'set' && supportedAfterOf().length === 0;
+  // §B13 T-3 (review A2): a reply whose first sentence alone runs past MODEL_REPLY_MAX cannot be kept at a sentence's
+  // end; the server's plain line replaces it, never a mid-sentence cut
+  const { runOn } = kept;
   const replaceFor = notes.some((n) => n.startsWith('reply_replaced:')) ? 'unsupported_number'
+    : runOn ? 'too_long'
     : reply && promisesService(reply, partnerName) ? 'service_promise'
       : reply && builderWordingOf(reply, partnerName) ? 'builder_wording'
       : main && !proposals[main] ? 'goal_proposal_dropped'

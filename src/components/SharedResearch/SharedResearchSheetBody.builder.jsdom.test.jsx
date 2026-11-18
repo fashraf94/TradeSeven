@@ -101,8 +101,12 @@ describe('THE WALK: "I want to play AI" to a saved thesis, every request body ch
     expect(open.requestId).toMatch(UUID);
     expect(server.sent('frame')).toHaveLength(0);
     expect($('[data-sr-builder="one-column"]')).not.toBeNull();
-    expect($('[data-sr-filled]').textContent).toBe('1 of 6');
-    expect($('[data-sr-slot="theme"]').textContent).toBe('I want to play AI');
+    // §B13 T-1 (moved from "1 of 6" and the theme reading the player's words): the theme opens blank; the words are
+    // the player's, in the conversation
+    expect($('[data-sr-filled]').textContent).toBe('0 of 6');
+    expect($('[data-sr-slot="theme"]').dataset.srSlotState).toBe('unset');
+    expect($('[data-sr-slot="theme"]').textContent).toBe(B.blank.theme);
+    expect($('[data-sr-words]').textContent).toContain('I want to play AI');
 
     // Map the segments (1 step)
     await tap('[data-sr-research="map_segments"]');
@@ -110,6 +114,14 @@ describe('THE WALK: "I want to play AI" to a saved thesis, every request body ch
     expect(Object.keys(map).sort()).toEqual(['action', 'goal', 'intent', 'sessionId', 'stepId']);
     expect(map).toMatchObject({ action: 'step', sessionId: SID, intent: 'build', goal: 'map_segments' });
     expect(map.stepId).toMatch(UUID);
+    // §B13 T-6: the theme suggestion sits as one line at the top of the choices, the segment's choices under it
+    const line = $('[data-sr-choices="segment"] > [data-sr-theme-line]');
+    expect(line).not.toBeNull();
+    // §B14 Watch 10 (moved from the one-link line): "{agent} suggests a theme", the suggestion on its own line, two buttons
+    expect(line.querySelector('[data-sr-theme-suggests]').textContent).toBe(B.themeSuggests('Atlas'));
+    expect(line.querySelector('[data-sr-theme-suggestion]').textContent).toBe(thesisOf('walkMap').parts.theme.suggestion);
+    expect($('[data-sr-choices="segment"]').firstElementChild).toBe(line);
+    expect($('[data-sr-slot="theme"]').dataset.srSlotState).toBe('suggested');
     // the agent's pick, marked on its free choice; the part stays unset
     expect($('[data-sr-slot="segment"]').dataset.srSlotState).toBe('unset');
     const pick = $('[data-sr-free="confirm:segment"]');
@@ -232,9 +244,10 @@ describe('K-3: Start reads the switch; own words open at once with it on', () =>
 });
 
 describe('every state, from the server\'s answers', () => {
+  // §B13 T-1 (moved, each one less): the open no longer sets the theme, and the walk leaves it suggested
   it.each([
-    ['walkGetOpen', 1], ['walkGetMap', 1], ['walkGetSegment', 2], ['walkGetNames', 2], ['walkGetOneStock', 3],
-    ['walkGetWhy', 3], ['walkGetConfirmWhy', 4], ['walkGetWrongIf', 5], ['getStoryOpen', 0],
+    ['walkGetOpen', 0], ['walkGetMap', 0], ['walkGetSegment', 1], ['walkGetNames', 1], ['walkGetOneStock', 2],
+    ['walkGetWhy', 2], ['walkGetConfirmWhy', 3], ['walkGetWrongIf', 4], ['getStoryOpen', 0], ['walkGetThemeConfirm', 1],
   ])('%s: the card head reads the server\'s filled (%i of 6) and the steps left', async (key, n) => {
     await openOn(TA[key]);
     expect($('[data-sr-filled]').textContent).toBe(`${n} of 6`);
@@ -248,7 +261,7 @@ describe('every state, from the server\'s answers', () => {
     expect(why.dataset.srSlotState).toBe('suggested');
     expect(why.querySelector('[data-sr-suggested-mark]').textContent).toBe(B.suggested);
     expect($('[data-sr-rail="why"]').dataset.srRailState).toBe('suggested');
-    expect($('[data-sr-filled]').textContent).toBe('3 of 6');
+    expect($('[data-sr-filled]').textContent).toBe('2 of 6'); // §B13 T-1 (moved from 3): the theme is only suggested
     expect($('[data-sr-why-block]')).toBeNull(); // the why block waits for a why that holds a value
   });
   it('a stale part is marked and names what to do: Change it, or check it again for a step', async () => {
@@ -265,12 +278,19 @@ describe('every state, from the server\'s answers', () => {
     expect($$('[data-sr-research]').map((b) => b.dataset.srResearch)).toEqual(['verify_source']);
     expect($('[data-sr-composer]').dataset.srComposer).toBe('free');
   });
-  it('the story after its check (T8b): the theme suggested, offered as a free confirm', async () => {
+  // §B13 T-6 (moved from the confirm as a marked button in the foot): the suggestion is the theme's line at the top of
+  // the choices — "Use … as the theme · free" — and the segment holds the front with Map the segments (T-2)
+  it('the story after its check (T8b): the theme suggested, its line at the top of the choices, the map on offer', async () => {
     await openOn(TA.getStoryVerified);
     expect($('[data-sr-slot="theme"]').dataset.srSlotState).toBe('suggested');
-    const c = $('[data-sr-free="confirm:theme"]');
-    expect(c.textContent).toContain(B.themeConfirm('Cloud AI data-center spending'));
-    expect(c.textContent).toContain(B.suggestedTag('Atlas'));
+    expect($('[data-sr-slot="theme"] [data-sr-suggested-mark]').textContent).toBe(B.suggested);
+    // §B14 Watch 10 (moved from "Use “…” as the theme" on one link): the block names the suggestion on its own line
+    expect($('[data-sr-theme-line] [data-sr-theme-suggestion]').textContent).toBe('Cloud AI data-center spending');
+    const c = $('[data-sr-theme-line] [data-sr-free="confirm:theme"]');
+    expect(c.textContent).toContain(B.useIt);
+    expect(c.querySelector('[data-sr-cost="free"]').textContent).toBe(B.free);
+    expect($('[data-sr-choices]').dataset.srChoices).toBe('segment');
+    expect($('[data-sr-research="map_segments"]')).not.toBeNull();
   });
   it('P-1: two columns (D1) only when the sheet itself measures at least 880 px, and never on the phone', async () => {
     const realRO = globalThis.ResizeObserver;
@@ -382,8 +402,9 @@ describe('K-7: a tapped part', () => {
     expect($$('[data-sr-panel="segment"] [data-sr-finding]').map((n) => n.dataset.srFinding)).toEqual(ids);
     expect(panel.querySelector('[data-sr-change="segment"]')).not.toBeNull();
   });
+  // §B13 T-1 (moved from walkGetConfirmWhy, where the open had set the player's words): the player's own phrase, typed
   it('the theme: "you wrote", "Your words · no sources", and no Change — a different theme is a new investigation', async () => {
-    await openOn(TA.walkGetConfirmWhy);
+    await openOn(TA.walkGetThemeOwn);
     await tap('[data-sr-slot="theme"]');
     const panel = $('[data-sr-panel="theme"]');
     expect(panel.querySelector('[data-sr-who]').textContent).toBe('you wrote');
@@ -443,7 +464,7 @@ describe('K-10: the agent\'s pick', () => {
     expect(b.querySelector('[data-sr-pick-reason]').textContent).toContain(B.reasoningTag('Atlas'));
     expect(b.textContent).not.toContain('Source-backed');
     expect($('[data-sr-slot="segment"]').dataset.srSlotState).toBe('unset');
-    expect($('[data-sr-filled]').textContent).toBe('1 of 6');
+    expect($('[data-sr-filled]').textContent).toBe('0 of 6'); // §B13 T-1 (moved from 1): the theme is only suggested
     // the matching `set` is not drawn beside it: one button per value
     expect($$('[data-sr-free="set:segment"]').map((n) => n.dataset.srFreeValue)).not.toContain('Accelerator chips');
   });
@@ -761,9 +782,12 @@ describe('the review\'s fixes (4B: state and wiring)', () => {
 });
 
 describe('K-13: what the idea book allows the screen to say', () => {
-  it('the wrong-if reads "in your words"; the price line "optional · add your own"; nothing watched', async () => {
+  // §B13 T-8 (b) (moved from "in your words" on every wrong-if): the walk's wrong-if is the agent's pick, confirmed
+  it('the wrong-if the player did not write reads "in words"; the price line "optional · add your own"; nothing watched', async () => {
     await openOn(TA.walkGetReady, {}, { card: TA.walkPriceLine });
-    expect($('[data-sr-judged]').textContent).toContain(B.inYourWords);
+    expect(thesisOf('walkGetReady').parts.wrongIf.by).toBe('partner_suggested_confirmed');
+    expect($('[data-sr-wrongif-tag]').textContent).toBe(B.inWords);
+    expect($('[data-sr-judged]').textContent).not.toContain(B.inYourWords);
     expect($('[data-sr-price-open]').textContent).toBe(B.priceOptional);
     expect(textOf()).not.toMatch(/watched|will sell|sells at|holds it|held for|expire/i);
     await tap('[data-sr-price-open]');
@@ -1352,7 +1376,8 @@ describe('lens (c) on the phone round: the fixes', () => {
     expect(document.getElementById(pick.getAttribute('aria-describedby'))).toBe($('[data-sr-pick-reason]'));
     mounted.forEach((m) => m.unmount()); mounted = [];
     await openOn(TA.walkGetConfirmWhy);
-    const group = $('[data-sr-choices] [role="group"]');
+    // §B13 T-6 (moved from the first group): the theme's line is a group too (aria-label), so the lead's is named by its label
+    const group = $('[data-sr-choices] [role="group"][aria-labelledby]');
     expect(document.getElementById(group.getAttribute('aria-labelledby'))).toBe($('[data-sr-lead="wrongIf"]'));
     expect(group.querySelectorAll('[data-sr-free="set:wrongIf"]').length).toBeGreaterThan(0);
   });
@@ -1366,5 +1391,162 @@ describe('lens (c) on the phone round: the fixes', () => {
     expect($('[data-sr-discard="card"]')).not.toBeNull();
     await act(async () => { $('[data-sr-more="card"]').dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: $('[data-sr-slot="theme"]') })); });
     expect($('[data-sr-discard="card"]')).toBeNull();
+  });
+});
+
+describe('B5 — before the switch (§B13): the screen', () => {
+  it('T-6: after the first map, the theme\'s line confirms the suggestion — the server\'s confirm, as offered; the segment stays in front', async () => {
+    await openOn(TA.walkGetMap, {}, { card: TA.walkThemeConfirm });
+    const suggestion = thesisOf('walkGetMap').parts.theme.suggestion;
+    expect($('[data-sr-choices]').dataset.srChoices).toBe('segment');
+    expect($('[data-sr-choices]').firstElementChild).toBe($('[data-sr-theme-line]'));
+    expect($$('[data-sr-choices] [data-sr-free="set:segment"]').length).toBeGreaterThan(0); // the map's choices at once
+    await tap('[data-sr-theme-line] [data-sr-free="confirm:theme"]');
+    expect(last('card')).toEqual({ action: 'card', sessionId: SID, opId: expect.stringMatching(UUID), rev: thesisOf('walkGetMap').rev, op: 'confirm', part: 'theme', value: suggestion });
+    expect($('[data-sr-theme-line]')).toBeNull();
+    expect($('[data-sr-slot="theme"]').textContent).toBe(suggestion);
+    expect($('[data-sr-choices]').dataset.srChoices).toBe('segment');
+    expect(server.sent('step')).toHaveLength(0); // free: no step
+  });
+  it('T-6: Write your own opens the theme\'s part with its text box; the phrase goes as the player\'s own words (free)', async () => {
+    await openOn(TA.walkGetMap, {}, { card: TA.walkThemeOwn });
+    const phrase = thesisOf('walkThemeOwn').parts.theme.value;
+    await tap('[data-sr-theme-own]');
+    const panel = $('[data-sr-panel="theme"]');
+    expect(panel).not.toBeNull();
+    expect(panel.querySelector('[data-sr-theme-fixed]')).toBeNull(); // only suggested: nothing is fixed yet
+    typeInto(panel.querySelector('[data-sr-composer-input]'), phrase);
+    await tap('[data-sr-panel="theme"] [data-sr-composer-send="free"]');
+    expect(last('card')).toEqual({ action: 'card', sessionId: SID, opId: expect.stringMatching(UUID), rev: thesisOf('walkGetMap').rev, op: 'set', part: 'theme', value: { text: phrase } });
+    expect($('[data-sr-slot="theme"]').textContent).toBe(phrase);
+    expect($('[data-sr-theme-line]')).toBeNull();
+  });
+  it('review B6 (T-6): "Write your own" is a disclosure for the theme\'s part, and closing the part puts focus back on it', async () => {
+    await openOn(TA.walkGetMap);
+    const own = $('[data-sr-theme-own]');
+    expect(own.getAttribute('aria-expanded')).toBe('false');
+    await tap('[data-sr-theme-own]');
+    const panel = $('[data-sr-panel="theme"]');
+    expect(own.getAttribute('aria-expanded')).toBe('true');
+    expect(own.getAttribute('aria-controls')).toBe(panel.id);
+    // a tap on × moves focus to it first (jsdom's click does not), so the opener must win it back (§B14 mutant B14-Q4c)
+    await act(async () => { $('[data-sr-panel-close="theme"]').focus(); });
+    await tap('[data-sr-panel-close="theme"]');
+    await act(async () => { await new Promise((r) => { setTimeout(r, 5); }); });
+    expect($('[data-sr-panel="theme"]')).toBeNull();
+    expect(document.activeElement).toBe($('[data-sr-theme-own]'));
+    expect($('[data-sr-theme-own]').getAttribute('aria-expanded')).toBe('false');
+  });
+  it('T-6: an unset theme with no suggestion stays in front — no line; its text box is the composer\'s', async () => {
+    await openOn(TA.walkGetOpen);
+    expect($('[data-sr-theme-line]')).toBeNull();
+    expect($('[data-sr-choices]').dataset.srChoices).toBe('theme');
+    expect($('[data-sr-composer]').dataset.srComposer).toBe('free');
+    expect($('[data-sr-composer-input]').getAttribute('placeholder')).toBe(B.placeholder.theme);
+  });
+  it.each(['walkGetSegment', 'walkGetNames', 'walkGetWhy', 'walkGetConfirmWhy', 'walkGetWrongIf'])('T-6: %s — the theme only suggested: its line stays at the top of the choices', async (key) => {
+    await openOn(TA[key]);
+    expect(thesisOf(key).parts.theme.state).toBe('suggested');
+    expect($('[data-sr-choices]').firstElementChild).toBe($('[data-sr-theme-line]'));
+    expect($('[data-sr-choices]').dataset.srChoices).not.toBe('theme');
+  });
+  it('T-2: the server\'s "Built on …, through …" sentence, drawn as received, every set part tappable where it stands', async () => {
+    await openOn(TA.walkGetReady);
+    const sentence = $('[data-sr-sentence="server"]');
+    expect(sentence.textContent).toBe(thesisOf('walkGetReady').sentence);
+    expect(sentence.textContent.startsWith('Built on NVDA, through Accelerator chips, because ')).toBe(true);
+    expect([...sentence.querySelectorAll('[data-sr-slot]')].map((n) => n.dataset.srSlot)).toEqual(['names', 'segment', 'why', 'wrongIf', 'timeFrame']);
+  });
+  it('T-8 (b): a wrong-if the player wrote reads "in your words"', async () => {
+    await openOn(TA.getReadySkipped);
+    expect(thesisOf('getReadySkipped').parts.wrongIf.by).toBe('player_wrote');
+    expect($('[data-sr-wrongif-tag]').textContent).toBe(B.inYourWords);
+    expect($('[data-sr-judged]').textContent).not.toMatch(/watched/i);
+  });
+  it('T-5: the time frame\'s confirm says whose answer it carries — "{agent} suggested", or the asked pick\'s "{agent}\'s pick"', async () => {
+    await openOn(TA.walkGetWrongIf);
+    const suggested = $('[data-sr-choices="timeFrame"] [data-sr-free="confirm:timeFrame"]');
+    expect(suggested.dataset.srFreeValue).toBe('positional');
+    expect(suggested.querySelector('[data-sr-mark]').textContent).toBe(B.suggestedTag('Atlas'));
+    mounted.forEach((m) => m.unmount()); mounted = [];
+    await openOn(TA.getTimeFramePicked, {}, { card: TA.walkTimeFrame });
+    const picked = $$('[data-sr-choices="timeFrame"] [data-sr-free="confirm:timeFrame"]');
+    expect(picked).toHaveLength(1); // one confirm: the newer answer
+    expect(picked[0].dataset.srFreeValue).toBe('longterm');
+    expect(picked[0].querySelector('[data-sr-mark]').textContent).toBe(B.pickTag('Atlas'));
+    expect(picked[0].textContent).toContain(B.confirmValue('Longterm · about 60 sessions'));
+    await tap('[data-sr-choices="timeFrame"] [data-sr-free="confirm:timeFrame"]');
+    expect(last('card')).toMatchObject({ op: 'confirm', part: 'timeFrame', value: 'longterm' });
+  });
+});
+
+describe('§B14 (Nov 18): the theme block, the ready view, the surviving time-frame answer', () => {
+  it('Watch 10: "{agent} suggests a theme", the suggestion on its own line, then two buttons side by side — "Use it · free" and "Write your own"', async () => {
+    await openOn(TA.walkGetMap);
+    const block = $('[data-sr-theme-line]');
+    expect(block.getAttribute('aria-label')).toBe(B.themeSuggests('Atlas'));
+    expect(block.querySelector('[data-sr-theme-suggests]').textContent).toBe('Atlas suggests a theme');
+    const suggestion = block.querySelector('[data-sr-theme-suggestion]');
+    expect(suggestion.textContent).toBe(thesisOf('walkGetMap').parts.theme.suggestion);
+    const buttons = [...block.querySelectorAll('[data-sr-theme-buttons] > button')];
+    expect(buttons.map((b) => b.textContent)).toEqual([`${B.useIt}·${B.free}`, B.writeOwnTheme]);
+    expect(buttons[0].getAttribute('aria-describedby')).toBe(suggestion.id);
+    expect(buttons[0].dataset.srFree).toBe('confirm:theme');
+    expect(buttons[1].hasAttribute('data-sr-theme-own')).toBe(true);
+  });
+  it('Watch 10 (the styles jsdom can read; the real browser measures the row): a flex row that does not wrap, two equal halves, 44 px, one-line labels', async () => {
+    await openOn(TA.walkGetMap);
+    const row = $('[data-sr-theme-buttons]');
+    expect([row.style.display, row.style.flexDirection, row.style.flexWrap]).toEqual(['flex', '', '']);
+    for (const b of row.querySelectorAll(':scope > button')) {
+      expect([b.style.flexGrow, b.style.flexShrink, b.style.flexBasis, b.style.minHeight, b.style.whiteSpace]).toEqual(['1', '1', '0%', '44px', 'nowrap']);
+    }
+  });
+  it('Q-4: a ready card whose theme is only suggested draws the block on the ready view; Use it confirms it, and the sentence opens with it', async () => {
+    await openOn(TA.walkGetReady, {}, { card: TA.readyThemeConfirm });
+    expect($('[data-sr-ready]')).not.toBeNull();
+    expect(thesisOf('walkGetReady').parts.theme.state).toBe('suggested');
+    expect($('[data-sr-ready] [data-sr-theme-line]')).not.toBeNull();
+    expect($('[data-sr-sentence]').textContent.startsWith('Built on NVDA')).toBe(true);
+    await tap('[data-sr-ready] [data-sr-theme-line] [data-sr-free="confirm:theme"]');
+    expect(last('card')).toEqual({ action: 'card', sessionId: SID, opId: expect.stringMatching(UUID), rev: thesisOf('walkGetReady').rev, op: 'confirm', part: 'theme', value: thesisOf('walkGetReady').parts.theme.suggestion });
+    expect($('[data-sr-theme-line]')).toBeNull();
+    expect($('[data-sr-sentence]').textContent).toBe(thesisOf('readyThemeConfirm').sentence);
+    expect($('[data-sr-sentence]').textContent.startsWith('My theme is ')).toBe(true);
+    expect($('[data-sr-ready]')).not.toBeNull(); // still ready
+  });
+  it('Q-4: on the ready view, Write your own opens the theme\'s part with its text box; the phrase goes as the player\'s own; closing returns focus to the opener', async () => {
+    await openOn(TA.walkGetReady, {}, { card: TA.readyThemeOwn });
+    const own = $('[data-sr-ready] [data-sr-theme-own]');
+    expect(own.getAttribute('aria-expanded')).toBe('false');
+    await tap('[data-sr-ready] [data-sr-theme-own]');
+    const panel = $('[data-sr-panel="theme"]');
+    expect(own.getAttribute('aria-expanded')).toBe('true');
+    expect(own.getAttribute('aria-controls')).toBe(panel.id);
+    // a tap on × moves focus to it first (jsdom's click does not), so the opener must win it back (§B14 mutant B14-Q4c)
+    await act(async () => { $('[data-sr-panel-close="theme"]').focus(); });
+    await tap('[data-sr-panel-close="theme"]');
+    await act(async () => { await new Promise((r) => { setTimeout(r, 5); }); });
+    expect(document.activeElement).toBe($('[data-sr-ready] [data-sr-theme-own]'));
+    await tap('[data-sr-ready] [data-sr-theme-own]');
+    const phrase = thesisOf('readyThemeOwn').parts.theme.value;
+    typeInto($('[data-sr-panel="theme"] [data-sr-composer-input]'), phrase);
+    await tap('[data-sr-panel="theme"] [data-sr-composer-send="free"]');
+    expect(last('card')).toEqual({ action: 'card', sessionId: SID, opId: expect.stringMatching(UUID), rev: thesisOf('walkGetReady').rev, op: 'set', part: 'theme', value: { text: phrase } });
+    expect($('[data-sr-sentence]').textContent.startsWith(`My theme is ${phrase}`)).toBe(true);
+    expect($('[data-sr-theme-line]')).toBeNull();
+  });
+  it('Q-4: a ready card with its theme set draws no block', async () => {
+    await openOn(TA.getReadyThemed);
+    expect($('[data-sr-ready]')).not.toBeNull();
+    expect($('[data-sr-theme-line]')).toBeNull();
+  });
+  it('Q-1 (b): after a later step the asked pick\'s value is still offered, now as "{agent} suggested"', async () => {
+    await openOn(TA.getTimeFrameAfterPick, {}, { card: TA.walkTimeFrame });
+    expect(thesisOf('getTimeFrameAfterPick').pick).toBeNull();
+    const c = $$('[data-sr-choices="timeFrame"] [data-sr-free="confirm:timeFrame"]');
+    expect(c).toHaveLength(1);
+    expect(c[0].dataset.srFreeValue).toBe('longterm');
+    expect(c[0].querySelector('[data-sr-mark]').textContent).toBe(B.suggestedTag('Atlas'));
   });
 });
