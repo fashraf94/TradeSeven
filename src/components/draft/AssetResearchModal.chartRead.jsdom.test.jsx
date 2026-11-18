@@ -297,6 +297,18 @@ describe('flag on: the candles and the marks (§4, §7)', () => {
     expect($('[data-chart-read-sheet]')).toBeNull();
     expect((scene()?.items ?? []).filter((i) => i.lit)).toEqual([]);
   });
+  it('review L2-3 (mutant Y7): leaving the Chart view closes the sheet, and back on it no mark is left lit', async () => {
+    await browse();
+    await toChart();
+    await click($('[data-chart-read]'));
+    await click($('[data-check-row="touch"]'));
+    expect(scene().items.filter((i) => i.lit).length).toBe(2);
+    await click($('[data-shell-pill="analysis"]'));
+    await toChart();
+    expect($('[data-chart-read-sheet]')).toBeNull();
+    expect(scene().items.filter((i) => i.lit)).toEqual([]);
+    expect(prim().priceAxisViews()).toEqual([]);
+  });
   it('a read that opens no sheet: no chip, no marks; the 1D candles still unadjusted under it', async () => {
     net.read = answer(200, B.SPLIT);
     await browse();
