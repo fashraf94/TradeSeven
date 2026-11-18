@@ -1,0 +1,49 @@
+{
+  "ruling": "§B13 T-7 (Nov 17): at most 3 calls and $0.10 in total",
+  "callsMax": 3,
+  "costMaxUsd": 0.1,
+  "calls": [
+    {
+      "at": "2026-11-18T17:11:17.169Z",
+      "key": "b5:map_segments",
+      "ok": true,
+      "reason": null,
+      "apiError": null,
+      "usage": {
+        "input": 6127,
+        "output": 830
+      },
+      "costUsd": 0.020554,
+      "elapsedMs": 7923,
+      "attempts": 1
+    },
+    {
+      "at": "2026-11-18T17:11:32.895Z",
+      "key": "b5:find_names",
+      "ok": true,
+      "reason": null,
+      "apiError": null,
+      "usage": {
+        "input": 6270,
+        "output": 970
+      },
+      "costUsd": 0.02224,
+      "elapsedMs": 7676,
+      "attempts": 1
+    },
+    {
+      "at": "2026-11-18T17:11:51.373Z",
+      "key": "b5:build_why",
+      "ok": true,
+      "reason": null,
+      "apiError": null,
+      "usage": {
+        "input": 7584,
+        "output": 1009
+      },
+      "costUsd": 0.025258,
+      "elapsedMs": 9111,
+      "attempts": 1
+    }
+  ]
+}
