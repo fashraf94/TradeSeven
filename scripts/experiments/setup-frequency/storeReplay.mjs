@@ -1,51 +1,59 @@
 // scripts/experiments/setup-frequency/storeReplay.mjs
 //
-// Setup frequency count — THE REPLAY, THROUGH THE STORE'S OWN CODE (prompt §1 rule 3). This is the one module of the
-// experiment that imports the shared setup-evidence store, and it imports only its pure acquisition and classifier:
+// Setup frequency count — THE REPLAY, THROUGH THE STORE'S OWN PURE FUNCTIONS (prompt §1 rules 3 and 5). No acquire
+// path is called: not getOrAcquireSnapshot, not acquireOnce. The chain is the one acquireOnce runs
+// (api/_utils/setupEvidence/acquire.js:95–130) and the one getOrAcquireSnapshot classifies with (index.js:70), called
+// here in the same order on a slice of one long series fetched once per symbol (fetchBars.mjs):
 //
-//   acquireOnce      (api/_utils/setupEvidence/acquire.js:95)  — the store's request window (130 calendar days to the
-//                    session, newest first), mapDailyRows, the date-defect refusal, attachAdjustedClose,
-//                    buildDailyEvidence with MIN_COMPLETED_BARS, and evaluateTfEntry, in that order;
-//   classifyEvidence (api/_utils/setupEvidence/classify.js:68) — final / confirm / retryable / programming_error, the
-//                    split refusal (basis_discontinuity) included.
+//   requestWindowOf  (acquire.js:56)   the store's request range for the session (130 calendar days to it)
+//   mapDailyRows     (marketDataCache.js:317), newest first, as the store requests (`order: 'd'`)
+//   attachAdjustedClose, buildDailyEvidence with MIN_COMPLETED_BARS (setupEvaluator/dailyBarsAdapter.js:116, :139)
+//   evaluateTfEntry  (setupEvaluator/tfSetupV1.js:360)
+//   classifyEvidence (setupEvidence/classify.js:68): final / confirm / retryable / programming_error, the split
+//                    refusal (basis_discontinuity) included.
 //
-// The provider is replaced by a slice of one long series fetched once per symbol (fetchBars.mjs): `fetchPayload`
-// answers the store's own { from, to, order: 'd' } request with the series' rows in that range, newest first, as fresh
-// objects. The clock is the instant that long series was received, read by acquireOnce before and after its "fetch"
-// exactly as it reads the real one; it is never invented. Nothing here reads or writes the store's collections:
-// getOrAcquireSnapshot, claimSnapshot and every other store.js export stay unimported.
+// THE CLOCK is injected per session: the session's own close (the calendar of record), so the adapter's expected
+// completed session is the session itself. The bars class is stated as what it is, `later_reconstruction`.
+// acquireOnce's one step that is not exported — refusing a payload whose mapper dropped a row with a bad or duplicate
+// date — is not copied: every slice's drop count is returned instead, and the run reports it.
 //
 // setupEvidenceImportGuard.test.js lists this file by exact name.
 
-import { acquireOnce } from '../../../api/_utils/setupEvidence/acquire.js';
-import { classifyAcquisitionFailure, classifyEvidence } from '../../../api/_utils/setupEvidence/classify.js';
+import { requestWindowOf, EVIDENCE_SOURCE } from '../../../api/_utils/setupEvidence/acquire.js';
+import { classifyEvidence } from '../../../api/_utils/setupEvidence/classify.js';
+import { attachAdjustedClose, buildDailyEvidence } from '../../../api/_utils/setupEvaluator/dailyBarsAdapter.js';
+import { evaluateTfEntry } from '../../../api/_utils/setupEvaluator/tfSetupV1.js';
+import { MIN_COMPLETED_BARS } from '../../../api/_utils/setupEvaluator/thresholds.js';
 import { mapDailyRows } from '../../../api/_utils/marketDataCache.js';
+import { getSessionForDate } from '../../../api/_utils/marketSchedule.js';
 
 export { lastCompletedSessionAt } from '../../../api/_utils/setupEvidence/sessionAt.js';
 
-/** The provider stand-in: the store's request answered from the long series (newest first). */
-export function sliceProvider(series) {
-  return async (symbol, { from, to, order } = {}) => {
-    if (order !== 'd') throw new TypeError('storeReplay: the store asks newest first');
-    return series.filter((r) => r.date >= from && r.date <= to).map((r) => ({ ...r }));
-  };
+/** The store's request answered from the long series: rows in [from, to], newest first, as fresh objects. */
+export function sliceOf(series, session) {
+  const { from, to } = requestWindowOf(session);
+  return { from, to, payload: series.filter((r) => r.date >= from && r.date <= to).map((r) => ({ ...r })) };
 }
 
 /**
- * One (symbol, session) through the store's acquisition and classifier.
- * @returns {Promise<{ acquired: object, disposition: { disposition: string, reason: string|null, detail: object|null } }>}
+ * One (symbol, session) through the store's pure chain.
+ * @returns {{ evidence: object, entry: object, disposition: object, dropped: number }}
  */
-export async function replayOne({ series, symbol, session, receivedAtMs }) {
-  const now = () => new Date(receivedAtMs);
-  const acquired = await acquireOnce({ session, symbol, now, fetchPayload: sliceProvider(series) });
-  const disposition = acquired.failure ? classifyAcquisitionFailure(acquired.failure) : classifyEvidence(acquired.evidence, { session });
-  return { acquired, disposition };
+export function replayOne({ series, symbol, session, fetchedAt }) {
+  const { from, to, payload } = sliceOf(series, session);
+  const mapped = mapDailyRows(payload);
+  const rows = attachAdjustedClose(mapped.rows, payload);
+  const now = new Date(getSessionForDate(session).closeMs);
+  const evidence = buildDailyEvidence({
+    rows, asOf: session, now, minBars: MIN_COMPLETED_BARS, source: EVIDENCE_SOURCE,
+    sourceMeta: { fetchedAt, from, to }, barsClass: 'later_reconstruction', symbol,
+  });
+  const entry = evaluateTfEntry(evidence);
+  return { evidence, entry, disposition: classifyEvidence(evidence, { session }), dropped: mapped.dropped };
 }
 
 /** The compact record the analysis reads: the verdict fields, the regime, what is missing, the refusal and the extension limit. */
-export function compactOf({ acquired, disposition }) {
-  if (acquired.failure) return { failure: acquired.failure, d: disposition.disposition };
-  const e = acquired.entry;
+export function compactOf({ evidence, entry: e, disposition, dropped }) {
   const ext = Array.isArray(e.checks) ? e.checks.find((c) => c.id === 'extension') : null;
   return {
     v: e.verdict,
@@ -54,21 +62,21 @@ export function compactOf({ acquired, disposition }) {
     ps: e.patternsSatisfied ?? [],
     rg: e.regime ?? null,
     m: e.missing ?? [],
-    ok: acquired.evidence.ok === true,
+    ok: evidence.ok === true,
     rf: e.refusal ? e.refusal.reason : null,
     rfDate: e.refusal?.detail?.date ?? null,
     d: disposition.disposition,
     dr: disposition.reason ?? null,
     C: e.factsUsed?.C?.value ?? null,
     extLimit: ext && Number.isFinite(ext.rhs) ? ext.rhs : null,
+    dropped,
   };
 }
 
 /**
  * The compression inputs at a session (prompt §6), as the rankings producer reads its bars: mapDailyRows over the
- * store's own request window (closes are the mapper's `close`, highs and lows its raw fields), newest first.
+ * store's request window (closes are the mapper's `close`, highs and lows its raw fields), newest first.
  */
-export function rankingBarsAt(series, session, fromDate) {
-  const rows = series.filter((r) => r.date >= fromDate && r.date <= session);
-  return mapDailyRows(rows).rows;
+export function rankingBarsAt(series, session) {
+  return mapDailyRows(sliceOf(series, session).payload).rows;
 }

@@ -79,7 +79,7 @@ const ALLOWED_OUTSIDE = new Set([
   'test/rules/setupEvidenceSweep.rules.mjs', // the sweep against the emulator, with the real store underneath
   // The setup frequency count (17 Nov 2026; docs/audits/20261117_SETUP_FREQUENCY_COUNT.md): a read-only experiment,
   // never deployed. Each by exact filename.
-  'scripts/experiments/setup-frequency/storeReplay.mjs', // acquireOnce + classifyEvidence on a local slice of fetched bars; never a store read or write
+  'scripts/experiments/setup-frequency/storeReplay.mjs', // requestWindowOf, EVIDENCE_SOURCE, classifyEvidence and sessionAt.js around the pure adapter + evaluator, on a local slice of fetched bars; no acquire path, no store read or write
   'scripts/experiments/setup-frequency/exportProduction.mjs', // field-masked reads of setupEvidence records through a restricted reader; no write
 ]);
 const isListed = (file) => ALLOWED_OUTSIDE.has(file);

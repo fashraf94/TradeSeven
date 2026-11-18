@@ -24,7 +24,7 @@ import { fileURLToPath } from 'node:url';
 import { mapDailyRows } from '../../../api/_utils/marketDataCache.js';
 import { getSessionForDate } from '../../../api/_utils/marketSchedule.js';
 import { ALL_TICKERS } from '../../../api/_utils/rankingConfig.js';
-import { bump, die, FUND_SECTOR, MARKET_SYMBOL, median, nextSessionOf, PROJECT_ROOT, readJson, runDirOf, SECTOR_FUNDS, share, spread, UNIVERSE_SECTOR, uniq, writeJson, writeVerbGrep } from './lib.mjs';
+import { bump, die, exists, FUND_SECTOR, MARKET_SYMBOL, median, nextSessionOf, PROJECT_ROOT, readJson, runDirOf, SECTOR_FUNDS, share, spread, UNIVERSE_SECTOR, uniq, writeJson, writeVerbGrep } from './lib.mjs';
 
 // ---- The cited code, checked as text --------------------------------------------------------------------------------
 
@@ -113,31 +113,57 @@ function weekOf(date) {
   return new Date(d.getTime() - back * 86_400_000).toISOString().slice(0, 10);
 }
 
-/** The battle's lists: the frozen starting book and the bench at creation, reconstructed from the revolving bench. */
+/** The deploy step's bench: exactly three stocks (api/agent/decide.js:1173, "Bench must have exactly 3 stocks"). */
+export const CREATION_BENCH_STOCKS = 3;
+
+/**
+ * The battle's list at creation: the frozen starting book, and the bench at creation recovered from the revolving bench
+ * (`portfolio.bench` is rewritten by every swap; no trade records where its incoming name came from). A final-bench
+ * name no swap touched was on the bench from the start. The rest of the three places are filled by names that were
+ * swapped in: when exactly that many such names exist the bench is identified; when more exist it is bounded.
+ */
 export function battleListOf(b) {
-  const book = b.book.filter((a) => !a.crypto && a.symbol).map((a) => a.symbol);
+  const book = uniq(b.book.filter((a) => !a.crypto && a.symbol).map((a) => a.symbol));
   const crypto = [...b.book.filter((a) => a.crypto), ...b.bench.filter((a) => a.crypto)].length + (b.benchCrypto ? 1 : 0);
   const stockTrades = b.trades.filter((t) => !t.crypto);
   const swappedIn = uniq(stockTrades.map((t) => t.in).filter(Boolean));
   const swappedOut = uniq(stockTrades.map((t) => t.out).filter(Boolean));
-  const finalBench = b.bench.filter((a) => !a.crypto && a.symbol).map((a) => a.symbol);
-  const bench = [];
-  const ambiguous = [];
-  let anomalies = 0;
-  for (const s of finalBench) {
-    if (book.includes(s) || swappedIn.includes(s)) continue;
-    if (swappedOut.includes(s)) { anomalies += 1; continue; }
-    bench.push(s);
-  }
-  for (const s of swappedIn) {
-    if (book.includes(s)) continue;
-    if (b.hotBench.includes(s)) ambiguous.push(s); else bench.push(s);
-  }
+  const finalBench = uniq(b.bench.filter((a) => !a.crypto && a.symbol).map((a) => a.symbol));
+  const untouched = finalBench.filter((s) => !book.includes(s) && !swappedIn.includes(s) && !swappedOut.includes(s));
+  const swappedInElsewhere = swappedIn.filter((s) => !book.includes(s) && !untouched.includes(s));
+  const slots = CREATION_BENCH_STOCKS - untouched.length;
   const truncated = Number.isInteger(b.tradeCount) && b.tradeCount > b.trades.length;
-  const kind = b.trades.length === 0 && !truncated ? 'exact' : truncated ? 'truncated' : 'reconstructed';
+  let kind;
+  if (truncated || slots < 0 || swappedInElsewhere.length < slots) kind = 'anomaly';
+  else if (b.trades.length === 0) kind = 'exact';
+  else if (slots === 0 || swappedInElsewhere.length === slots) kind = 'identified'; // three untouched: every swap-in came from elsewhere
+  else kind = 'bounded';
+  // The names that may have filled the open places: all of them when the count fits, none when no place is open.
+  const candidates = kind === 'bounded' || kind === 'identified' ? (slots === 0 ? [] : swappedInElsewhere) : [];
   const sectorOf = {};
   for (const a of [...b.book, ...b.bench]) if (a.symbol && a.sector) sectorOf[a.symbol] = a.sector;
-  return { names: uniq([...book, ...bench]), bookSize: book.length, benchSize: uniq(bench).length, crypto, ambiguous: ambiguous.length, anomalies, kind, sectorOf };
+  return { definite: uniq([...book, ...untouched]), candidates, slots: Math.max(0, slots), bookSize: book.length, crypto, kind, swapInsFromElsewhere: slots === 0 ? swappedInElsewhere.length : null, sectorOf };
+}
+
+/** Valid, unknown and sectors for a battle list at a session: one number when the list is resolved, a range when bounded. */
+function battleCountsOf(list, lookup) {
+  const cls = (s) => classOf(lookup(s));
+  const isUnknown = (c) => !isValid(c) && !c.startsWith('invalid_');
+  const dv = list.definite.filter((s) => isValid(cls(s)));
+  const du = list.definite.filter((s) => isUnknown(cls(s))).length;
+  const cv = list.candidates.filter((s) => isValid(cls(s)));
+  const cu = list.candidates.filter((s) => isUnknown(cls(s))).length;
+  const cOther = list.candidates.length - cv.length;
+  const resolved = list.kind === 'exact' || list.kind === 'identified';
+  const sectorsOf = (names) => uniq(names.map((s) => list.sectorOf[s] || UNIVERSE_SECTOR[s] || 'Unknown')).length;
+  if (resolved) return { resolved, size: list.definite.length + list.candidates.length, valid: [dv.length + cv.length, dv.length + cv.length], unknown: [du + cu, du + cu], sectors: sectorsOf([...dv, ...cv]) };
+  return {
+    resolved,
+    size: list.definite.length + list.slots,
+    valid: [dv.length + Math.max(0, list.slots - cOther), dv.length + Math.min(list.slots, cv.length)],
+    unknown: [du + Math.max(0, list.slots - (list.candidates.length - cu)), du + Math.min(list.slots, cu)],
+    sectors: null,
+  };
 }
 
 // ---- Main -----------------------------------------------------------------------------------------------------------
@@ -154,7 +180,24 @@ async function main() {
   const last = sessions[sessions.length - 1];
   const U = ALL_TICKERS;
   const R = rep.bySymbol;
-  const summary = { window: rep.window, cites, request: { made: requests.made, cap: requests.cap, from: requests.from, to: requests.to }, reproduction: { compared: repro.compared, matched: repro.matched, differing: repro.differing, otherRuleSet: repro.otherRuleSet, recordsWithFactDrift: repro.recordsWithFactDrift, driftFacts: repro.driftFacts } };
+  const summary = { window: rep.window, cites, request: { made: requests.made, cap: requests.cap, from: requests.from, to: requests.to }, reproduction: { compared: repro.compared, matched: repro.matched, differing: repro.differing, otherRuleSet: repro.otherRuleSet, mapperDroppedRows: repro.mapperDroppedRows ?? null, recordsWithFactDrift: repro.recordsWithFactDrift, driftFacts: repro.driftFacts } };
+
+  // The first replay of this run went through acquireOnce; the record of record uses the pure chain. Where the first
+  // replay's output is kept, every compact field that carries a verdict is compared, symbol by symbol, session by session.
+  const priorFile = path.join(runDir, 'replay.acquireOnce.json');
+  if (exists(priorFile)) {
+    const prior = readJson(priorFile).bySymbol;
+    const fields = ['v', 'r', 'p', 'rg', 'ok', 'rf', 'd', 'extLimit'];
+    let compared = 0; let identical = 0;
+    for (const [sym, bySession] of Object.entries(R)) {
+      for (const [s, c] of Object.entries(bySession)) {
+        const o = prior[sym]?.[s];
+        compared += 1;
+        if (o && fields.every((f) => (o[f] ?? null) === (c[f] ?? null)) && JSON.stringify(o.ps) === JSON.stringify(c.ps) && JSON.stringify(o.m) === JSON.stringify(c.m)) identical += 1;
+      }
+    }
+    summary.chainCheck = { against: 'the first replay, through acquireOnce', compared, identical };
+  }
 
   // Raw opens and the funds' closes, from the long series.
   const rowsOf = {};
@@ -227,17 +270,20 @@ async function main() {
     for (let i = 0; i <= sessions.length; i++) {
       const v = i < sessions.length && isValid(classOf(R[sym]?.[sessions[i]]));
       if (v && start === null) start = i;
-      if (!v && start !== null) { runs.push({ len: i - start, left: start === 0, right: i === sessions.length }); start = null; }
+      if (!v && start !== null) { runs.push({ len: i - start, left: start === 0, right: i === sessions.length, regime: marketRegime[sessions[start]] }); start = null; }
     }
   }
-  const closed = runs.filter((r) => !r.left && !r.right);
-  const buckets = { 1: 0, 2: 0, 3: 0, '4-5': 0, '6-10': 0, '11+': 0 };
-  for (const r of closed) bump(buckets, r.len <= 3 ? String(r.len) : r.len <= 5 ? '4-5' : r.len <= 10 ? '6-10' : '11+');
-  summary.persistence = { class: 'reconstructed', runs: runs.length, censored: runs.length - closed.length, closed: closed.length, median: median(closed.map((r) => r.len)), mean: closed.length ? Math.round((closed.reduce((a, r) => a + r.len, 0) / closed.length) * 100) / 100 : null, buckets, shareAtLeast3: share(closed.filter((r) => r.len >= 3).length, closed.length), shareExactly1: share(closed.filter((r) => r.len === 1).length, closed.length) };
+  const persistenceOf = (all) => {
+    const closed = all.filter((r) => !r.left && !r.right);
+    const buckets = { 1: 0, 2: 0, 3: 0, '4-5': 0, '6-10': 0, '11+': 0 };
+    for (const r of closed) bump(buckets, r.len <= 3 ? String(r.len) : r.len <= 5 ? '4-5' : r.len <= 10 ? '6-10' : '11+');
+    return { runs: all.length, censored: all.length - closed.length, closed: closed.length, median: median(closed.map((r) => r.len)), mean: closed.length ? Math.round((closed.reduce((a, r) => a + r.len, 0) / closed.length) * 100) / 100 : null, buckets, shareAtLeast3: share(closed.filter((r) => r.len >= 3).length, closed.length), shareExactly1: share(closed.filter((r) => r.len === 1).length, closed.length) };
+  };
+  summary.persistence = { class: 'reconstructed', ...persistenceOf(runs), byStartRegime: Object.fromEntries(uniq(runs.map((r) => r.regime)).sort().map((g) => [g, persistenceOf(runs.filter((r) => r.regime === g))])) };
 
   // Still enterable at the next open: the next session's raw open against the record's own extension limit.
   const enter = (lookup, ss) => {
-    const t = { names: 0, enterable: 0, excludedLast: 0, excludedSplit: 0, excludedNoOpen: 0, byPattern: {} };
+    const t = { names: 0, enterable: 0, excludedLast: 0, excludedSplit: 0, excludedNoOpen: 0, byPattern: {}, byRegime: {} };
     for (const s of ss) {
       for (const sym of U) {
         const c = lookup(sym, s);
@@ -255,10 +301,14 @@ async function main() {
         t.byPattern[k] = t.byPattern[k] || { names: 0, enterable: 0 };
         t.byPattern[k].names += 1;
         if (ok) t.byPattern[k].enterable += 1;
+        const g = marketRegime[s];
+        t.byRegime[g] = t.byRegime[g] || { names: 0, enterable: 0 };
+        t.byRegime[g].names += 1;
+        if (ok) t.byRegime[g].enterable += 1;
       }
     }
     t.share = share(t.enterable, t.names);
-    for (const v of Object.values(t.byPattern)) v.share = share(v.enterable, v.names);
+    for (const v of [...Object.values(t.byPattern), ...Object.values(t.byRegime)]) v.share = share(v.enterable, v.names);
     return t;
   };
   summary.enterable = { class: 'reconstructed', label: 'approximate: the open price against the record\'s own limit, not a new verdict', ...enter((sym, s) => R[sym]?.[s], sessions) };
@@ -310,22 +360,32 @@ async function main() {
 
   // ---- Step 3: battle lists (non-League, created since the prompt's date) ----
   const nonLeague = exp.battles.filter((b) => !b.league);
+  // The session the list is read at: the completed session before its first trading day (never after use); the
+  // creation instant's last completed session is recorded beside it, and any disagreement counted.
+  let sessionDisagreements = 0;
   const battleRows = nonLeague.map((b) => {
     const list = battleListOf(b);
-    const inWindow = sessions.includes(b.session);
-    let valid = 0; let unknown = 0; let invalid = 0; let notFetched = 0;
-    const sectors = {};
-    for (const sym of list.names) {
-      const c = inWindow ? R[sym]?.[b.session] : null;
-      if (!R[sym]) notFetched += 1;
-      const cls = classOf(c);
-      if (isValid(cls)) { valid += 1; sectors[list.sectorOf[sym] || UNIVERSE_SECTOR[sym] || 'Unknown'] = true; } else if (cls.startsWith('invalid_')) invalid += 1; else unknown += 1;
-    }
-    return { n: b.n, owner: b.owner, archetype: b.archetype, status: b.status, created: b.createdAt.slice(0, 10), session: b.session, inWindow, size: list.names.length, book: list.bookSize, bench: list.benchSize, crypto: list.crypto, valid, invalid, unknown, notFetched, sectors: Object.keys(sectors).length, kind: list.kind, ambiguous: list.ambiguous, anomalies: list.anomalies };
+    const beforeFirstDay = b.firstDay ? getSessionForDate(b.firstDay)?.previousEtDate ?? null : null;
+    const session = beforeFirstDay || b.session;
+    if (beforeFirstDay && beforeFirstDay !== b.session) sessionDisagreements += 1;
+    const inWindow = sessions.includes(session);
+    const k = battleCountsOf(list, (sym) => (inWindow ? R[sym]?.[session] : null));
+    return { n: b.n, owner: b.owner, archetype: b.archetype, status: b.status, created: b.createdAt.slice(0, 10), session, inWindow, kind: list.kind, size: k.size, book: list.bookSize, crypto: list.crypto, candidates: list.candidates.length, slots: list.slots, valid: k.valid, unknown: k.unknown, sectors: k.sectors, universeValid: inWindow ? perSession[session].valid : null };
   });
-  const bv = battleRows.map((r) => r.valid);
+  const resolved = battleRows.filter((r) => r.kind === 'exact' || r.kind === 'identified');
+  const lo = (rows) => rows.map((r) => r.valid[0]);
+  const hi = (rows) => rows.map((r) => r.valid[1]);
   const kinds = {}; for (const r of battleRows) bump(kinds, r.kind);
-  summary.battles = { class: 'reconstructed', label: 'the battle lists were ranked by today\'s rules, which trader v1 will change', count: battleRows.length, leagueExcluded: exp.battles.length - nonLeague.length, kinds, medianSize: median(battleRows.map((r) => r.size)), sizeRange: [Math.min(...battleRows.map((r) => r.size)), Math.max(...battleRows.map((r) => r.size))], medianValidShare: median(battleRows.map((r) => share(r.valid, r.size))), universeValidShareSameSessions: median(battleRows.filter((r) => r.inWindow).map((r) => share(perSession[r.session].valid, U.length))), byArchetype: Object.fromEntries(uniq(battleRows.map((r) => r.archetype)).sort().map((a) => [a, { battles: battleRows.filter((r) => r.archetype === a).length, medianValid: median(battleRows.filter((r) => r.archetype === a).map((r) => r.valid)) }])), medianValid: median(bv), medianUnknown: median(battleRows.map((r) => r.unknown)), medianSectors: median(battleRows.map((r) => r.sectors)), under7: share(bv.filter((v) => v < 7).length, bv.length), under3: share(bv.filter((v) => v < 3).length, bv.length), zero: share(bv.filter((v) => v === 0).length, bv.length), ambiguous: battleRows.reduce((a, r) => a + r.ambiguous, 0), anomalies: battleRows.reduce((a, r) => a + r.anomalies, 0), rows: battleRows };
+  const band = (v) => ({ median: median(v), under7: share(v.filter((x) => x < 7).length, v.length), under3: share(v.filter((x) => x < 3).length, v.length), zero: share(v.filter((x) => x === 0).length, v.length) });
+  summary.battles = {
+    class: 'reconstructed', label: 'the battle lists were ranked by today\'s rules, which trader v1 will change',
+    count: battleRows.length, leagueExcluded: exp.battles.length - nonLeague.length, kinds, sessionDisagreements,
+    sizes: uniq(battleRows.map((r) => r.size)).sort(),
+    resolved: { battles: resolved.length, valid: band(lo(resolved)), unknownMedian: median(resolved.map((r) => r.unknown[0])), sectorsMedian: median(resolved.map((r) => r.sectors)), validShareMedian: median(resolved.map((r) => share(r.valid[0], r.size))), universeShareSameSessions: median(resolved.map((r) => share(r.universeValid, U.length))) },
+    all: { battles: battleRows.length, validLow: band(lo(battleRows)), validHigh: band(hi(battleRows)) },
+    byArchetype: Object.fromEntries(uniq(battleRows.map((r) => r.archetype)).sort().map((a) => { const rs = battleRows.filter((r) => r.archetype === a); return [a, { battles: rs.length, medianValidLow: median(lo(rs)), medianValidHigh: median(hi(rs)) }]; })),
+    rows: battleRows,
+  };
 
   // ---- Step 3: equipped lists, at every session ----
   summary.equipped = exp.equipped.map((l) => {
@@ -378,7 +438,7 @@ async function main() {
   summary.compression = { class: 'reconstructed', label: 'precondition only', nr7: spread(nr7), squeeze: spread(squeeze) };
 
   writeJson(path.join(runDir, 'summary.json'), summary);
-  console.log(JSON.stringify({ reproduction: summary.reproduction, valid: summary.universe.valid, persistence: summary.persistence.median, enterable: summary.enterable.share, battles: { median: summary.battles.medianValid, under7: summary.battles.under7 } }));
+  console.log(JSON.stringify({ reproduction: { compared: summary.reproduction.compared, matched: summary.reproduction.matched, dropped: summary.reproduction.mapperDroppedRows }, chainCheck: summary.chainCheck ?? null, valid: summary.universe.valid.median, persistence: summary.persistence.median, enterable: summary.enterable.share, battles: { kinds: summary.battles.kinds, resolved: summary.battles.resolved.valid, sessionDisagreements: summary.battles.sessionDisagreements } }));
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {

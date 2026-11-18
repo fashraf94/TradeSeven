@@ -4,8 +4,9 @@
 // Setup frequency count — THE RECONSTRUCTION AND THE REPRODUCTION CHECK (prompt §2). Offline and deterministic once
 // export.json and bars/ exist: no Firestore, no network.
 //
-//   1  Every planned symbol at every session of the window, through storeReplay.mjs (the store's acquireOnce and
-//      classifyEvidence on a slice of the symbol's long series). One compact record per (symbol, session).
+//   1  Every planned symbol at every session of the window, through storeReplay.mjs (the store's pure chain and
+//      classifyEvidence on a slice of the symbol's long series, the clock at the session's close). One compact record
+//      per (symbol, session), with the mapper's drop count for the slice.
 //   2  The compression inputs for the 228 ranked stocks (§6): calculateNR7 and calculateBollingerBands
 //      (api/_utils/technicalCalculations.js:422 and :247) on the bars the rankings producer reads (mapDailyRows rows,
 //      newest first), as api/cron/compute-index-intelligence.js:997–1000 calls them.
@@ -53,6 +54,7 @@ async function main() {
   const series = {};
   const received = {};
   const full = {}; // `${symbol}|${session}` → the full replay, kept only for stored-record pairs
+  let dropped = 0;
   const wanted = {};
   for (const r of exp.records) wanted[`${r.symbol}|${r.session}`] = true;
 
@@ -61,18 +63,17 @@ async function main() {
     if (!Array.isArray(file.payload)) die(`${symbol}: the stored payload is not an array`);
     series[symbol] = file.payload;
     received[symbol] = file.receivedAt;
-    const receivedAtMs = Date.parse(file.receivedAt);
     bySymbol[symbol] = {};
     for (const session of sessions) {
-      const out = await replayOne({ series: file.payload, symbol, session, receivedAtMs });
+      const out = replayOne({ series: file.payload, symbol, session, fetchedAt: file.receivedAt });
+      dropped += out.dropped;
       bySymbol[symbol][session] = compactOf(out);
       if (wanted[`${symbol}|${session}`]) full[`${symbol}|${session}`] = out;
     }
     if (ALL_TICKERS.includes(symbol)) {
       compression[symbol] = {};
       for (const session of sessions) {
-        const from = new Date(Date.parse(`${session}T12:00:00Z`) - 130 * 86_400_000).toISOString().slice(0, 10);
-        const rows = rankingBarsAt(file.payload, session, from);
+        const rows = rankingBarsAt(file.payload, session);
         const nr7 = rows.length >= 7 ? calculateNR7(rows.map((r) => r.high), rows.map((r) => r.low)) : null;
         const bb = rows.length >= 20 ? calculateBollingerBands(rows.map((r) => r.close), 20, 2) : null;
         compression[symbol][session] = { nr7: nr7 ? nr7.nr7 : null, bw: bb && Number.isFinite(bb.bandwidth) ? bb.bandwidth : null };
@@ -88,8 +89,7 @@ async function main() {
   for (const rec of sameRule) {
     const out = full[`${rec.symbol}|${rec.session}`];
     if (!out) { diffs.push({ symbol: rec.symbol, session: rec.session, why: 'not_replayed' }); continue; }
-    if (out.acquired.failure) { diffs.push({ symbol: rec.symbol, session: rec.session, why: `replay_failure:${out.acquired.failure}` }); continue; }
-    const e = out.acquired.entry;
+    const e = out.entry;
     const fields = { verdict: [rec.verdict, e.verdict], reason: [rec.reason, e.reason ?? null], pattern: [rec.pattern, e.pattern ?? null], patternsSatisfied: [rec.patternsSatisfied, e.patternsSatisfied] };
     const differing = Object.entries(fields).filter(([k, [a, b]]) => (k === 'patternsSatisfied' ? !sameList(a, b) : a !== b)).map(([k]) => k);
     if (differing.length === 0) { matched += 1; continue; }
@@ -99,7 +99,7 @@ async function main() {
       symbol: rec.symbol, session: rec.session, why: 'verdict_fields', differing,
       stored: { verdict: rec.verdict, reason: rec.reason, pattern: rec.pattern, patternsSatisfied: rec.patternsSatisfied, facts: rec.facts, capturedAt: rec.capturedAt },
       replay: { verdict: e.verdict, reason: e.reason ?? null, pattern: e.pattern ?? null, patternsSatisfied: e.patternsSatisfied, facts: replayFacts, disposition: out.disposition.disposition },
-      bars: barDiffs(rec.bars, out.acquired.evidence?.bars),
+      bars: barDiffs(rec.bars, out.evidence?.bars),
     });
   }
   // Facts that differ even where the verdict fields agree: a provider revision the verdict happened to survive.
@@ -107,8 +107,8 @@ async function main() {
   const driftFacts = {};
   for (const rec of sameRule) {
     const out = full[`${rec.symbol}|${rec.session}`];
-    if (!out || out.acquired.failure) continue;
-    const e = out.acquired.entry;
+    if (!out) continue;
+    const e = out.entry;
     let drift = false;
     for (const [k, v] of Object.entries(rec.facts || {})) {
       if ((e.factsUsed?.[k]?.value ?? null) !== v) { drift = true; driftFacts[k] = (driftFacts[k] || 0) + 1; }
@@ -118,6 +118,7 @@ async function main() {
 
   const reproduction = {
     storedTotal: exp.records.length,
+    mapperDroppedRows: dropped,
     inWindow: inWindow.length,
     otherRuleSet: inWindow.length - sameRule.length,
     compared: sameRule.length,
@@ -129,7 +130,7 @@ async function main() {
   };
   writeJson(path.join(runDir, 'replay.json'), { window: { first: sessions[0], last: sessions[sessions.length - 1], sessions }, received, bySymbol, compression });
   writeJson(path.join(runDir, 'reproduction.json'), reproduction);
-  console.log(`replayed ${plan.all.length} symbols × ${sessions.length} sessions`);
+  console.log(`replayed ${plan.all.length} symbols × ${sessions.length} sessions; rows the mapper dropped: ${dropped}`);
   console.log(`reproduction: ${reproduction.compared} compared, ${matched} match, ${diffs.length} differ; facts drifted on ${factDrift} (verdict fields unchanged where they match)`);
 }
 
