@@ -69,7 +69,8 @@ const render = (props) => act(() => {
   root.render(<StockChart rawData={null} onTimeframeChange={() => {}} levels={null} smaData={null} activeHighlight={null} height={200} ohlcvData={DAILY} timeframe="1D" {...props} />);
 });
 const candle = () => log.charts.at(-1).series.find((s) => s.kind === 'Candlestick');
-const dayOf = (t) => new Date(t * 1000).toISOString().slice(0, 10);
+// A chart time is a local-midnight parse of its date (chartUtils.formatTime): read it back with local getters (review L2-7).
+const dayOf = (t) => { const d = new Date(t * 1000); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
 describe('absent: the chart as today', () => {
   it('no primitive, no Rule pill, no note; the candles adjusted', () => {

@@ -6,7 +6,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { bodyFor } from './__fixtures__/chartReadRecords.js';
 import { readLineOf } from './chartRead.js';
-import { chartReadProps } from './chartProps.js';
+import { chartReadProps, barsMatchTimeframe } from './chartProps.js';
 
 const SESSION = '2026-11-17';
 const L = {};
@@ -15,6 +15,20 @@ beforeAll(async () => {
   L.ABSENT = readLineOf({ answer: 'absent', symbol: 'ABC', servedAt: 1, sessionsTried: [SESSION], read: null, previous: null });
 });
 const at = (over) => ({ line: L.VALID_PULLBACK, timeframe: '1D', battle: false, ruleOn: true, sheetOpen: false, lit: [], dailyDates: ['2026-11-17'], ...over });
+
+describe('review L2-1: barsMatchTimeframe', () => {
+  const days = (dates) => dates.map((date) => ({ date }));
+  it('a day series is 1D, a week series is 1W; a mismatch, too few bars or any other timeframe is no', () => {
+    const d = days(['2026-11-10', '2026-11-11', '2026-11-12', '2026-11-13', '2026-11-16', '2026-11-17', '2026-11-18']);
+    const w = days(['2026-10-19', '2026-10-26', '2026-11-02', '2026-11-09', '2026-11-16']);
+    expect([barsMatchTimeframe(d, '1D'), barsMatchTimeframe(d, '1W'), barsMatchTimeframe(w, '1W'), barsMatchTimeframe(w, '1D')]).toEqual([true, false, true, false]);
+    expect(barsMatchTimeframe(d.slice(0, 2), '1D')).toBe(false);
+    expect(barsMatchTimeframe(d, 'battle')).toBe(false);
+    expect(barsMatchTimeframe(null, '1D')).toBe(false);
+    // a synthetic current-week bar dated today does not tip a week series
+    expect(barsMatchTimeframe([...w, { date: '2026-11-18' }], '1W')).toBe(true);
+  });
+});
 
 describe('chartReadProps', () => {
   it('1D: the raw candles and their note, the Rule chip on, the default marks', () => {

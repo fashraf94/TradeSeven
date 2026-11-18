@@ -49,7 +49,7 @@ import { useChartRead } from '../Research/ChartRead/useChartRead';
 import { readLineOf } from '../Research/ChartRead/chartRead';
 import { CHART_READ_COPY } from '../Research/ChartRead/chartReadCopy';
 import { etDateOf } from '../Research/ChartRead/format';
-import { chartReadProps } from '../Research/ChartRead/chartProps';
+import { chartReadProps, barsMatchTimeframe } from '../Research/ChartRead/chartProps';
 import ChartReadBand from '../Research/ChartRead/ChartReadBand';
 import ChartReadSheet from '../Research/ChartRead/ChartReadSheet';
 import { getSessionForDate } from '../../utils/marketCalendar';
@@ -579,12 +579,17 @@ const AssetResearchModal = ({
   const [readExpanded, setReadExpanded] = useState(false); // SH-3
   const chartViewRef = useRef(null);
   const readButtonRef = useRef(null);
+  // A sheet opened for one stock closes when the modal moves to another, its lit check with it (review L2-3).
+  if (readSheetFor !== null && readSheetFor !== (currentAsset?.symbol ?? null)) { setReadSheetFor(null); setReadLit(null); }
   const readSheetOpen = readReady && readLine?.opensSheet === true && readSheetFor === currentAsset?.symbol && shellView === 'chart';
   // What the chart is handed (ChartRead/chartProps.js): UC-1's unadjusted 1D candles exactly where the read shows,
   // the Rule chip and the marks on 1D and 1W, the one 20-day stub on Battle; nothing without a read.
+  // Only on bars that ARE the timeframe's (review L2-1: the hook keeps the old series until the new one lands); lit
+  // marks only while the sheet is open (review L2-3).
   const readChartBase = chartReadProps({
-    line: readLine, timeframe: researchData.timeframe, battle: battleShown, ruleOn: readRuleOn, sheetOpen: readSheetOpen,
-    lit: readLit?.marks ?? [], dailyDates: (researchData.dailyData || []).map((d) => String(d?.date || '').slice(0, 10)),
+    line: readLine, timeframe: battleShown || barsMatchTimeframe(researchData.ohlcvData, researchData.timeframe) ? researchData.timeframe : null,
+    battle: battleShown, ruleOn: readRuleOn, sheetOpen: readSheetOpen,
+    lit: readSheetOpen ? readLit?.marks ?? [] : [], dailyDates: (researchData.dailyData || []).map((d) => String(d?.date || '').slice(0, 10)),
   });
   const readChart = readChartBase?.ruleChip ? { ...readChartBase, ruleChip: { ...readChartBase.ruleChip, onToggle: () => setReadRuleOn((v) => !v) } } : readChartBase;
   const openReadSheet = () => {

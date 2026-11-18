@@ -35,6 +35,21 @@ export function chartReadProps({ line, timeframe, battle, ruleOn, sheetOpen, lit
   return out;
 }
 
+const DAY_MS = 86_400_000;
+/**
+ * Are these bars (oldest first, the hook's ohlcvData) the timeframe's own (review L2-1)? The hook flips its timeframe at
+ * once and keeps the previous series until the new one lands, so for a moment 1W can hold 52 daily bars (adjusted) and
+ * 1D a weekly series. The median gap between bars decides: a day series ≤ 4 days, a week series ≥ 5. Pure.
+ */
+export function barsMatchTimeframe(bars, timeframe) {
+  if (timeframe !== '1D' && timeframe !== '1W') return false;
+  const ms = (Array.isArray(bars) ? bars : []).map((b) => Date.parse(String(b?.date || b?.datetime || '').slice(0, 10))).filter(Number.isFinite);
+  if (ms.length < 3) return false;
+  const gaps = ms.slice(1).map((t, i) => (t - ms[i]) / DAY_MS).sort((a, b) => a - b);
+  const median = gaps[Math.floor(gaps.length / 2)];
+  return timeframe === '1D' ? median <= 4 : median >= 5;
+}
+
 /** A read that opens no sheet (unknown, refused, absent, …) still shows: the 1D candles are unadjusted under it (CR-7). */
 function rawOnly(line, timeframe, battle) {
   return !battle && timeframe === '1D' ? { candleBasis: 'raw', basisNote: C.basisNote } : null;

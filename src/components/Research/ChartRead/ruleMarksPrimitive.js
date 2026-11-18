@@ -36,6 +36,15 @@ const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
  */
 export function layoutRuleMarks(scene, { toX, toY, spacing, width }) {
   const ops = [];
+  // Two marks on one bar at one price (a flat stock: the 20-day IS the 50-day) would stack their squares; each later one
+  // steps left of the one it meets (review L2-8).
+  const squares = [];
+  const placeSquare = (x, y) => {
+    let sx = x;
+    while (squares.some(([px, py]) => Math.abs(px - sx) < SQUARE && Math.abs(py - y) < SQUARE)) sx -= SQUARE + 2;
+    squares.push([sx, y]);
+    return sx;
+  };
   const pitch = isNum(spacing) && spacing > 0 ? spacing : 6;
   for (const m of scene?.items || []) {
     const y = toY(m.value);
@@ -50,7 +59,7 @@ export function layoutRuleMarks(scene, { toX, toY, spacing, width }) {
       const yb = y + BRACKET_DROP;
       ops.push({ op: 'line', x0: x - (LOW_TICK_BARS / 2) * pitch, x1: x + (LOW_TICK_BARS / 2) * pitch, y, w, n: m.n });
       ops.push({ op: 'path', points: [[x0, yb - 4], [x0, yb], [x1, yb], [x1, yb - 4]], w, n: m.n });
-      ops.push({ op: 'square', x: x1 + 3, y: yb, n: m.n, lit: !!m.lit });
+      ops.push({ op: 'square', x: placeSquare(x1 + 3, yb), y: yb, n: m.n, lit: !!m.lit });
       continue;
     }
     const x = toX(m.time);
@@ -58,7 +67,7 @@ export function layoutRuleMarks(scene, { toX, toY, spacing, width }) {
     const x0 = x - (TICK_BARS / 2) * pitch;
     const x1 = x + (TICK_BARS / 2) * pitch;
     ops.push({ op: 'line', x0, x1, y, w, n: m.n });
-    ops.push({ op: 'square', x: x0 - SQUARE - 3, y, n: m.n, lit: !!m.lit });
+    ops.push({ op: 'square', x: placeSquare(x0 - SQUARE - 3, y), y, n: m.n, lit: !!m.lit });
   }
   if (scene?.stub && isNum(scene.stub.value)) {
     const y = toY(scene.stub.value);
@@ -106,6 +115,23 @@ export class RuleMarksPrimitive {
   }
 
   updateAllViews() {}
+
+  /**
+   * The price scale takes in the shown marks whose bars are in view, and the Battle stub always (review L2-5: a value
+   * outside the bars' own range was drawn off the pane — the stub vanished). The Battle chart's scale already takes in
+   * its entry and rung lines the same way (StockChart BC2-5).
+   */
+  autoscaleInfo(start, end) {
+    const a = this.attachedTo;
+    const ts = a?.chart?.timeScale?.();
+    const values = [];
+    for (const m of this.scene.items || []) {
+      const i = ts && typeof ts.timeToIndex === 'function' ? ts.timeToIndex(m.time, false) : null;
+      if (isNum(m.value) && isNum(i) && i >= start && i <= end) values.push(m.value);
+    }
+    if (this.scene.stub && isNum(this.scene.stub.value)) values.push(this.scene.stub.value);
+    return values.length ? { priceRange: { minValue: Math.min(...values), maxValue: Math.max(...values) } } : null;
+  }
 
   paneViews() { return [this._paneView]; }
 

@@ -59,6 +59,21 @@ export function uptrendRows(read) {
   ];
 }
 
+/**
+ * The record carries some numbers twice — a fact and the check side that compared it, the swing high and its dated
+ * evidence. The read prints one and the marks draw another, so each pair must be the same number, or the record is
+ * not shown (review L2-10; BUILD_RULES §9). Equal by the evaluator's construction.
+ */
+export function copiesAgree(read) {
+  const f = read?.facts || {};
+  const same = (a, b) => a === b || (a === null && b === null);
+  const pc = checkOf(read, 'pullback_close');
+  const bc = checkOf(read, 'breakout_close');
+  const pt = checkOf(read, 'pullback_touch');
+  return same(f.SMA_fast, pc?.rhs ?? null) && same(f.C, pc?.lhs ?? null) && same(f.swingHigh, bc?.rhs ?? null)
+    && same(f.swingHigh, read?.swingHigh?.value ?? null) && same(f.swingLow, read?.swingLow?.value ?? null) && same(f.SMA_fast, pt?.rhs ?? null);
+}
+
 /** The read's state: the record's own answer, verdict, reason and pattern, mapped one to one (states never merge). */
 export function readStateOf(body) {
   if (!body || typeof body !== 'object') return null;
@@ -183,7 +198,7 @@ export function readLineOf(body, { todayEt = null, todayIsSession = false, battl
   // Fail closed for every state that opens a sheet (review L1-2, L1-9): a record whose uptrend rows disagree with
   // its recorded chain, or one measured on another basis than the raw candles it would be drawn on, is never shown
   // in part.
-  const lead = read.basis === 'raw' && uptrendRows(read) ? leadOf(state, read, words) : null;
+  const lead = read.basis === 'raw' && uptrendRows(read) && copiesAgree(read) ? leadOf(state, read, words) : null;
   if (!lead) { state = 'unshown'; return lineOf(state, { ...base, rest: C.unshown }); }
   const marks = marksOf(read);
   return {

@@ -228,11 +228,16 @@ describe('every number printed equals the record\'s, to the cent (RD-6, BUILD_RU
     expect(rows.find((x) => x.key === 'fastAboveSlow').sides[0][0]).toBe(sma);
     expect(cents(l.marks.find((m) => m.n === 1).value)).toBe(sma);
   });
-  it('a half-cent value rounds half up from its decimal, never by the double\'s binary (141.105 → $141.11)', () => {
+  it('a half-cent value rounds half up from its decimal, never by the double\'s binary (195.605 → $195.61)', () => {
     const b = clone(B.VALID_PULLBACK);
-    b.read.facts.SMA_fast = 141.105;
-    expect(text(readLineOf(b))).toContain('($141.11)');
-    expect((141.105).toFixed(2)).toBe('141.10'); // the trap avoided
+    // every copy of the 20-day the record carries (they must agree — review L2-10)
+    b.read.facts.SMA_fast = 195.605;
+    for (const c of b.read.checks) {
+      if (c.id === 'pullback_close' || c.id === 'pullback_touch') c.rhs = 195.605;
+      if (c.id === 'regime_stack') { c.lhs[1] = 195.605; c.rhs[0] = 195.605; }
+    }
+    expect(text(readLineOf(b))).toContain('($195.61)');
+    expect((195.605).toFixed(2)).toBe('195.60'); // the trap avoided
   });
 });
 
@@ -389,6 +394,14 @@ describe('the review (docs/audits/20261118_BUILD_CHART_READ.md §4, lens 1): eac
     b.read.checks.find((c) => c.id === 'breakout_volume').lhs = 150_000;
     const r2 = sheetOf(b).groups.find((x) => x.key === 'breakout').rows.find((x) => x.key === 'volumeFloor');
     expect(r2.sides).toEqual([['150K', 'volume'], ['225K', '1.5 × the 150K average']]);
+  });
+  it('L2-10: a record whose copies of one number disagree is not shown (the mark and the words would print two)', () => {
+    for (const [fld, mut] of [['swingHigh.value', (r) => { r.swingHigh.value += 0.01; }], ['breakout_close.rhs', (r) => { r.checks.find((c) => c.id === 'breakout_close').rhs = 1; }], ['facts.SMA_fast', (r) => { r.facts.SMA_fast += 0.0001; }], ['swingLow.value', (r) => { r.swingLow.value = 1; }]]) {
+      const b = clone(B.VALID_BREAKOUT);
+      mut(b.read);
+      expect(readLineOf(b).state, fld).toBe('unshown');
+    }
+    expect(readLineOf(B.VALID_BREAKOUT).state).toBe('valid_breakout');
   });
   it('L1-9: a record on another basis is never drawn on the raw candles: not shown', () => {
     const b = clone(B.VALID_PULLBACK);

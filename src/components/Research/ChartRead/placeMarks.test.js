@@ -101,6 +101,24 @@ describe('layoutRuleMarks — the primitive\'s geometry (MK-4, CR-4)', () => {
   });
 });
 
+describe('review L2-8 / L2-5: coincident squares step aside; the scale takes in the shown marks in view and the stub', () => {
+  const at = { toX: (t) => t * 10, toY: (p) => 1000 - p, spacing: 10, width: 400 };
+  it('two marks on one bar at one price: two squares, side by side', () => {
+    const ops = layoutRuleMarks({ items: [{ n: 1, kind: 'tick', time: 20, value: 150.13 }, { n: 2, kind: 'tick', time: 20, value: 150.13 }] }, at);
+    const sq = ops.filter((o) => o.op === 'square');
+    expect(Math.abs(sq[0].x - sq[1].x)).toBeGreaterThanOrEqual(13);
+  });
+  it('autoscaleInfo: the shown marks whose bars are in view, and the Battle stub always', () => {
+    const p = new RuleMarksPrimitive({ ink: 'white', paper: 'black', font: 'monospace', format: formatPriceBare });
+    p.attached({ chart: { timeScale: () => ({ timeToIndex: (t) => t }) }, series: {}, requestUpdate() {} });
+    p.setScene({ items: [{ n: 7, kind: 'tick', time: 50, value: 210.5 }, { n: 6, kind: 'tick', time: 5, value: 120.1 }], stub: null });
+    expect(p.autoscaleInfo(40, 60)).toEqual({ priceRange: { minValue: 210.5, maxValue: 210.5 } });
+    expect(p.autoscaleInfo(70, 90)).toBeNull();
+    p.setScene({ items: [], stub: { value: 100.75, label: 'x' } });
+    expect(p.autoscaleInfo(0, 10)).toEqual({ priceRange: { minValue: 100.75, maxValue: 100.75 } });
+  });
+});
+
 describe('RuleMarksPrimitive — the library interface', () => {
   const fakeCtx = () => {
     const calls = [];

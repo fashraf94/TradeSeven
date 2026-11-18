@@ -34,7 +34,7 @@ vi.mock('../../services/eodhdAPI', () => ({
   fetchHistoricalOHLCV: (symbol, timeframe, opts) => {
     net.calls.push(['history', symbol, timeframe, opts ?? null]);
     if (timeframe === '1d') return Promise.resolve(net.daily ?? []);
-    if (timeframe === '1w') return Promise.resolve(net.weekly ?? []);
+    if (timeframe === '1w') return net.weeklyGate ? net.weeklyGate.then(() => net.weekly ?? []) : Promise.resolve(net.weekly ?? []);
     return Promise.resolve([]);
   },
   getStockPrice: (symbol) => { net.calls.push(['quote', symbol]); return Promise.resolve({ symbol, price: 0 }); },
@@ -129,7 +129,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
   vi.setSystemTime(new Date(NOW));
   container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
-  net.calls.length = 0; net.daily = dailyFor('VALID_PULLBACK'); net.weekly = null; net.read = answer(200, B.VALID_PULLBACK); net.score = { factors: { sectorRSPercentile: 73 }, updatedAt: '2026-11-18T18:30:00.000Z' };
+  net.calls.length = 0; net.daily = dailyFor('VALID_PULLBACK'); net.weekly = null; net.weeklyGate = null; net.read = answer(200, B.VALID_PULLBACK); net.score = { factors: { sectorRSPercentile: 73 }, updatedAt: '2026-11-18T18:30:00.000Z' };
   for (const k of Object.keys(rec)) rec[k].length = 0;
   FLAG.sheet = 'on'; FLAG.bomb = 'on'; FLAG.read = 'on';
   Element.prototype.scrollIntoView = vi.fn();
@@ -253,6 +253,49 @@ describe('flag on: the candles and the marks (§4, §7)', () => {
     const days = scene().items.map((i) => [i.n, new Date(i.time * 1000).toISOString().slice(0, 10)]);
     expect(days).toEqual([[1, '2026-11-16'], [4, '2026-11-16'], [5, '2026-11-16'], [6, '2026-10-19']]);
     expect($('[data-rule-pill]')).toBeTruthy();
+  });
+  it('review L2-1: while 1W loads (the daily series still in hand) nothing of the read is drawn — no marks on daily bars, no raw basis', async () => {
+    let release;
+    net.weekly = null;
+    const weekly = [{ date: '2026-11-16', open: 199, high: 202, low: 197, close: 200.37, volume: 1 }, { date: '2026-11-09', open: 197, high: 200, low: 195, close: 198.1, volume: 1 }, { date: '2026-11-02', open: 195, high: 198, low: 193, close: 196.3, volume: 1 }, { date: '2026-10-26', open: 193, high: 196, low: 191, close: 194.4, volume: 1 }];
+    await browse();
+    await toChart();
+    expect(scene().items.length).toBeGreaterThan(0);
+    const { fetchHistoricalOHLCV } = await import('../../services/eodhdAPI');
+    void fetchHistoricalOHLCV; // the mock's 1w answer is held below
+    net.weeklyGate = new Promise((r) => { release = r; });
+    await click(chartBtn('1W'));
+    // Whatever primitive sits on the CURRENT candle series (the chart rebuilt for 1W) draws nothing on these daily bars.
+    const onCurrent = rec.prims.filter((p) => p.series === candle()).flatMap((p) => p.primitive.scene.items);
+    expect(onCurrent).toEqual([]);
+    expect($('[data-basis-note]')).toBeNull();
+    net.weekly = weekly;
+    release();
+    await flush();
+    expect(rec.prims.filter((p) => p.series === candle()).flatMap((p) => p.primitive.scene.items).length).toBeGreaterThan(0);
+  });
+  it('review L2-6: with SMA on, mark 1 sits on the drawn 20-day at the record\'s day (the line drawn from the raw closes)', async () => {
+    await browse();
+    await toChart();
+    await click(chartBtn('SMA'));
+    const sma20 = rec.series.filter((s) => s.kind === 'Line').find((s) => s.opts?.color === '#00d9ff');
+    const t = scene().items.find((i) => i.n === 1).time;
+    const point = sma20.data.find((p) => p.time === t);
+    expect(Math.abs(point.value - B.VALID_PULLBACK.read.facts.SMA_fast)).toBeLessThanOrEqual(0.005 + 1e-9);
+  });
+  it('review L2-3: the open sheet and its lit check never follow the modal to another stock', async () => {
+    await browse();
+    await toChart();
+    await click($('[data-chart-read]'));
+    await click($('[data-check-row="touch"]'));
+    expect(scene().items.filter((i) => i.lit).length).toBe(2);
+    await act(async () => { root.render(<AssetResearchModal asset={{ symbol: 'VST', name: 'Vistra', price: PRICE, percentChange: 0.2 }} onClose={() => {}} version={2} actionConfig={{ label: 'Add to Watchlist', onClick: () => {}, variant: 'primary' }} />); });
+    await flush();
+    await act(async () => { root.render(<AssetResearchModal asset={{ symbol: 'CEG', name: 'Constellation Energy', price: PRICE, percentChange: 0.6 }} onClose={() => {}} version={2} actionConfig={{ label: 'Add to Watchlist', onClick: () => {}, variant: 'primary' }} />); });
+    await flush();
+    if (!$('[data-shell-scroll="chart"]')) await toChart();
+    expect($('[data-chart-read-sheet]')).toBeNull();
+    expect((scene()?.items ?? []).filter((i) => i.lit)).toEqual([]);
   });
   it('a read that opens no sheet: no chip, no marks; the 1D candles still unadjusted under it', async () => {
     net.read = answer(200, B.SPLIT);
