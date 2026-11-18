@@ -19,7 +19,7 @@
 //
 // To write the dump to a file: PF_E2E_DUMP=<path> npx vitest run api/_utils/practiceField/endToEnd.test.js
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { admitIdea } from './admission.js';
@@ -29,8 +29,10 @@ import { setPracticeFieldModeForTests } from './mode.js';
 import { roundUsd } from '../mandateRounding.js';
 import {
   seedBook, closeOn, windowAt, contractOf, getBook, getIdea, getRow, dumpStore, countDocs, etIso, ADMIT_ISO,
-  takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, countResults, withoutWindowAlerts,
+  takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, countResults, withoutWindowAlerts, admitAndEnter, closeNowOf,
 } from './__testsupport__/fixtures.js';
+import { closeIdeaBook } from './close.js';
+import { ensureDailySnapshot, ensureUniverseSnapshot } from '../mandateUniverseSnapshot.js';
 import {
   verifyPacket, resultPacketMissingMarks, resultPacketProvenanceProblems, recomputeResultFromPacket, resultPacketPartProblems, resultPacketReceipts,
 } from './evidence.js';
@@ -453,5 +455,97 @@ describe('three ideas side by side — the book\'s row is the sum of its ideas\'
       expect(getIdea(db, bookId, ideas[slot])).toMatchObject({ status: 'holding', result: null, postEntryFillCount: 0 });
     }
     expect(getBook(db, bookId)).toMatchObject({ revision: 3 + 3 + 10, execState: { lastCloseKey: DAYS12[9], submitted: 0, executed: 0 } });
+  });
+});
+
+// ── T1a-2b-3 (Amendment F-1): THE END-TO-END CASE WITH A COVERAGE GAP ─────────────────────────────────────────────────
+// Built the engine's own way — every session's daily layer by ensureDailySnapshot and its close snapshot by
+// ensureUniverseSnapshot, from one fake vendor — and closed by the idea book's close, which backfills through the same
+// vendor. AAPL's corporate-action fetch FAILS for six sessions (S[1]…S[6]); meanwhile a 4-for-5 reverse split takes
+// effect on S[3] (+25%: under the gap screen's 40%, so coverage alone has to catch it) and a $0.30 dividend on S[6].
+// On S[7] the fetch recovers, but its window starts 2026-11-20: the split of 2026-11-19 is outside it. Not part of the
+// pinned dump above.
+describe('the end-to-end case with a coverage gap (Amendment F-1)', () => {
+  const PRE = 231.47;
+  const POST = 289.34; // 231.47 / 0.8
+  const SPY_P = 597.31;
+  const truth = { AAPL: [{ type: 'reverse_split', ticker: 'AAPL', effectiveDate: SESSIONS[3], ratio: 0.8, source: 'eodhd_splits' }, { type: 'cash_dividend', ticker: 'AAPL', effectiveDate: SESSIONS[6], amount: 0.3, source: 'eodhd_dividends' }], SPY: [] };
+  const outage = new Set(SESSIONS.slice(1, 7));
+  /** The fake vendor: AAPL's rows in [from, to]; on an outage day the daily build's AAPL fetch fails. */
+  const vendor = (asOf) => async (sym, { from, to }) => {
+    if (sym === 'AAPL' && outage.has(asOf)) return { actions: [], calls: 2, failed: true };
+    return { actions: (truth[sym] || []).filter((a) => a.effectiveDate >= from && a.effectiveDate <= to), calls: 2, failed: false };
+  };
+  const priceOf = (sym, date) => (sym === 'SPY' ? SPY_P : (date >= SESSIONS[3] ? POST : PRE));
+  async function buildSession(db, date) {
+    await ensureDailySnapshot(db, {
+      date, heldTickers: [], coverageTickers: ['AAPL', 'SPY'], candidateUniverse: [], now: new Date(etIso(date, 8, 30)),
+      getFundamentals: async () => ({ fundamentals: { sector: 'Technology', industry: 'Consumer Electronics', marketCap: 3.4e12 }, cacheStatus: { fundamentals: 'cache' } }),
+      fetchCorporateActions: vendor(date),
+    });
+    await ensureUniverseSnapshot(db, {
+      tickKey: `${date}_close`, sessionDate: date, heldTickers: [], coverageTickers: ['AAPL', 'SPY'], candidateUniverse: [], minCandidateCapacity: 0,
+      now: new Date(etIso(date, 16, 20)), dailyDoc: db._get(`mandateUniverseDaily/${date}`) ?? null,
+      fetchQuotes: async (syms) => Object.fromEntries(syms.map((s) => [s, { close: priceOf(s, date), timestamp: Date.parse(etIso(date, 16, 0)) / 1000 }])),
+    });
+  }
+
+  it('the doubt, the carried marks, the alert, the backfill, the split applied ONCE, and the dividend after it paid on the adjusted count — on the idea, its comparison and the book', async () => {
+    const { db, bookId, bookRef } = await seedBook();
+    const e = await admitAndEnter(db, bookId, { contract: contractOf({ slot: 'long', names: ['AAPL'], capitalUsd: 30000 }), quotes: { AAPL: { price: PRE, marketCap: 3.4e12 }, SPY: SPY_P }, date: SESSIONS[0] });
+    const ideaId = e.ideaId;
+    const ideaNow = () => getIdea(db, bookId, ideaId);
+    const recon = () => { const b = getBook(db, bookId); assertReconciled(b, b.openIdeaIds.map((id) => getIdea(db, bookId, id))); };
+    await buildSession(db, SESSIONS[0]);
+    await closeIdeaBook(db, bookRef, { date: SESSIONS[0], now: closeNowOf(SESSIONS[0]), fetchCorporateActions: vendor(SESSIONS[0]) });
+    recon();
+    const shares = ideaNow().ledger.holdings.AAPL.shares;
+    const gapAlerts = [];
+    for (let i = 1; i <= 6; i += 1) {
+      const date = SESSIONS[i];
+      await buildSession(db, date);
+      expect(db._get(`mandateUniverseDaily/${date}`).symbols.AAPL).toMatchObject({ caFetchFailed: true }); // the builder's own record
+      const out = await closeIdeaBook(db, bookRef, { date, now: closeNowOf(date), fetchCorporateActions: vendor(date) });
+      recon();
+      gapAlerts.push(out.alerts.filter((a) => a.startsWith('PRACTICE_FIELD_CA_COVERAGE_GAP')).length);
+      // The doubt: AAPL carried at its pre-split mark, named; nothing count-dependent applied; SPY covered.
+      const row = getRow(db, bookId, ideaId, date);
+      expect(row.marks.AAPL, date).toMatchObject({ mark: PRE, quality: 'ca_coverage_missing', markSource: 'carry_over' });
+      expect(row.spyMarks.SPY.quality, date).toBe('vendor_time');
+      for (const f of ['ledger', 'comparisonLedger']) expect(ideaNow()[f].holdings.AAPL.shares, `${date} ${f}`).toBe(shares);
+      expect(ideaNow().caCoverageGaps.AAPL, date).toMatchObject({ since: SESSIONS[0], sessions: i });
+    }
+    expect(gapAlerts).toEqual([0, 0, 0, 0, 1, 1]);
+    expect(ideaNow().ledger.dividendsUsd).toBe(0);
+    // S[7]: AAPL's fetch recovers. Its window misses the split: the close's backfill fetches from the day after S[0].
+    await buildSession(db, SESSIONS[7]);
+    expect(db._get(`mandateUniverseDaily/${SESSIONS[7]}`).caWindow.from).toBe('2026-11-20');
+    const backfill = vi.fn(vendor(SESSIONS[7]));
+    const bookCash = getBook(db, bookId).portfolio.cash;
+    await closeIdeaBook(db, bookRef, { date: SESSIONS[7], now: closeNowOf(SESSIONS[7]), fetchCorporateActions: backfill });
+    recon();
+    expect(backfill.mock.calls).toEqual([['AAPL', { from: '2026-11-17', to: SESSIONS[7] }]]);
+    expect(db._get('practiceFieldCaBackfill/AAPL')).toMatchObject({ from: '2026-11-17', to: SESSIONS[7], failed: false });
+    const after = Math.round(shares * 0.8 * 1e6) / 1e6;
+    const owed = roundUsd(after * 0.3);
+    for (const f of ['ledger', 'comparisonLedger']) {
+      const l = ideaNow()[f];
+      expect(l.holdings.AAPL.shares, f).toBe(after);
+      expect(l.appliedActionIds, f).toEqual([`reverse_split_AAPL_${SESSIONS[3]}`, `cash_dividend_AAPL_${SESSIONS[6]}`]);
+      expect(l.dividendsUsd, f).toBe(owed); // on the adjusted count — never the pre-split one
+    }
+    expect(getBook(db, bookId).portfolio.positions.AAPL.shares).toBe(after);
+    expect(Math.round(getBook(db, bookId).portfolio.cash * 100) - Math.round(bookCash * 100)).toBe(Math.round(owed * 100));
+    expect(getRow(db, bookId, ideaId, SESSIONS[7]).marks.AAPL).toMatchObject({ mark: POST, quality: 'vendor_time' });
+    expect(ideaNow().caCoveredThrough.AAPL).toBe(SESSIONS[7]);
+    expect(ideaNow().caCoverageGaps).toEqual({});
+    // S[8]: the data is continuous again — nothing fetched, nothing applied twice.
+    await buildSession(db, SESSIONS[8]);
+    const quiet = vi.fn(vendor(SESSIONS[8]));
+    await closeIdeaBook(db, bookRef, { date: SESSIONS[8], now: closeNowOf(SESSIONS[8]), fetchCorporateActions: quiet });
+    recon();
+    expect(quiet).not.toHaveBeenCalled();
+    expect(ideaNow().ledger.dividendsUsd).toBe(owed);
+    expect(ideaNow().ledger.holdings.AAPL.shares).toBe(after);
   });
 });

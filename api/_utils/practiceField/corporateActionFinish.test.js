@@ -14,6 +14,8 @@ import { admitIdea } from './admission.js';
 import { closeIdeaBook, IDEA_DOC_ALERT_BYTES, ideaDocSizeAlert } from './close.js';
 import { firestoreDocumentBytes } from './evidence.js';
 import { runFounderAction } from './founderControls.js';
+import { parseSplitsPayload, parseDividendsPayload } from '../mandateCorporateActions.js';
+import { fetchCorporateActionsEODHD } from '../mandateUniverseSnapshot.js';
 import { withBasisSuspicions, applyLedgerActions, ledgerOwnDoubtIds, ideaWideDoubtSymbols } from './ledger.js';
 import { dailyDocOf, dailyCoverageOf, sessionCoverage, unionActionsBySymbol, snapshotNamesDaily, DAILY_COVERAGE_REFUSAL } from './dailyCoverage.js';
 import { backfillNeeds, ensureCoverageBackfills } from './caBackfill.js';
@@ -1001,5 +1003,37 @@ describe('Amendment F-9 — the idea document\'s size (T2C-04)', () => {
     expect(under.out.alerts.filter((a) => a.startsWith('PRACTICE_FIELD_IDEA_DOC_LARGE'))).toEqual([]);
     // The close itself is the same either way.
     expect(rowOf(at.ctx, S[1]).markedValue).toBe(rowOf(under.ctx, S[1]).markedValue);
+  });
+});
+
+// ── F-1 and the gap screen; C-12 ─────────────────────────────────────────────────────────────────────────────────────
+
+describe('F-1 beside the gap screen, and C-12', () => {
+  it('a 2-for-1 DURING an outage halves the price: the screen leaves the uncovered symbol alone (no record a later row could fail to explain); the backfilled split applies at recovery and the mark is fresh — no suspicion at all', async () => {
+    const ctx = await setup({ names: ['AAPL'] });
+    const shares = sharesOf(ctx);
+    for (let i = 1; i <= 6; i += 1) await closeWithAaplFailed(ctx, S[i], i >= 2 ? { AAPL: 115.74 } : {});
+    for (const f of ['ledger', 'comparisonLedger']) expect(ideaOf(ctx)[f].holdings.AAPL.basisSuspicion, f).toBeUndefined();
+    const fetch = vi.fn(async (sym) => ({ actions: sym === 'AAPL' ? [split(2, S[2])] : [], calls: 2, failed: false }));
+    await storeCloseSnapshot(ctx.db, S[7], quotes({ AAPL: 115.8 }));
+    await closeIdeaBook(ctx.db, ctx.bookRef, { date: S[7], now: closeNowOf(S[7]), fetchCorporateActions: fetch });
+    recon(ctx);
+    for (const f of ['ledger', 'comparisonLedger']) {
+      const h = ideaOf(ctx)[f].holdings.AAPL;
+      expect(h.shares, f).toBe(r6(shares * 2));
+      expect(h.basisSuspicion, f).toBeUndefined();
+      expect(h.basisSuspicionHistory, f).toBeUndefined();
+    }
+    expect(rowOf(ctx, S[7]).marks.AAPL).toMatchObject({ mark: 115.8, quality: 'vendor_time' });
+  });
+
+  it('C-12 is NOT reachable under today\'s feed: the feed\'s parsers — the daily layer\'s and the backfill\'s, one fetch — emit only splits, reverse splits and cash dividends; a ticker change (or a delisting) comes only from a row the founder writes', () => {
+    const splits = parseSplitsPayload('aapl', [{ date: '2026-11-17', split: '2/1' }, { date: '2026-11-18', split: '1/5' }, { date: '2026-11-19', split: '1/1' }, { date: 'x', split: 'nonsense' }]);
+    const dividends = parseDividendsPayload('aapl', [{ date: '2026-11-17', value: 0.24 }, { date: '2026-11-18', unadjustedValue: 0.3, value: 0.15 }, { date: '2026-11-19', value: -1 }]);
+    const types = new Set([...splits.actions, ...dividends.actions].map((a) => a.type));
+    expect([...types].sort()).toEqual(['cash_dividend', 'reverse_split', 'split']);
+    // The backfill calls the daily builder's own fetch (caBackfill.js imports fetchCorporateActionsEODHD), which parses
+    // with exactly these two functions.
+    expect(fetchCorporateActionsEODHD.toString()).toMatch(/parseSplitsPayload\][\s\S]*parseDividendsPayload\]/);
   });
 });
