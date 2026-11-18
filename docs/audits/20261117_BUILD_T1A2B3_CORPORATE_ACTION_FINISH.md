@@ -8,7 +8,7 @@
 | Code head | 047c77b0; final head 62d49765 (two rows tightened, test file only — §5.4). The suite, lint, build and rules ran at 62d49765; the differentials and the battery at 047c77b0, whose code is identical |
 | Branch | `claude/practice-field-t1a2b3-corporate-action-finish` |
 | Mode | `PRACTICE_FIELD_MODE` stays `'off'`. No flag value, pin, rules or index changed; no fenced file edited; no model call, Firestore write or EODHD call made |
-| Fix round (18 Nov 2026) | Astra's final review (`docs/audits/20261118_ASTRA_REVIEW_T1A2B3.md`, committed byte-identical in ad413fb4) answered in the scope the founder set: commits 737282ed, 3373476c, 943f1286, 782cb74b, d96af701 (code head), then this report. §10 is the round; §7 is updated |
+| Fix round (18 Nov 2026) | Astra's final review (`docs/audits/20261118_ASTRA_REVIEW_T1A2B3.md`, committed byte-identical in ad413fb4) answered in the scope the founder set: commits 737282ed, 3373476c, 943f1286, 782cb74b, d96af701, de7180d0 (code head), and the report's. §10 is the round; §7 is updated |
 
 Contents:
 1. In plain terms
@@ -24,7 +24,7 @@ Contents:
 
 ## 1. In plain terms
 
-**Fix round, 18 Nov 2026 (§10).** Astra's final review returned DO NOT MERGE and NOT READY on twelve findings. In the scope the founder set, seven are fixed, with the agreed Q10, and one is guarded. Four (T2D-03, T2D-04, T2D-05 and T2D-12) move to T1a-2b-4, before the switch; two go to T5. One refuter checked the round and found five more, all fixed. The founder allowlist stays NOT READY until T1a-2b-4. The rest of this section describes the build as first reported.
+**Fix round, 18 Nov 2026 (§10).** Astra's final review returned DO NOT MERGE and NOT READY on twelve findings. In the scope the founder set, seven are fixed, with the agreed Q10, and one is guarded. Four (T2D-03, T2D-04, T2D-05 and T2D-12) move to T1a-2b-4, before the switch; two go to T5. One refuter checked the round and found five more, and a last review found one more of the same class; all are fixed. The founder allowlist stays NOT READY until T1a-2b-4. The rest of this section describes the build as first reported.
 
 **What this build is.** The idea book's last corporate-action work before release: every item of Amendment F (F-1 to F-9), built dark. `PRACTICE_FIELD_MODE` stays `'off'`, so none of it runs in production yet. No rules, index, flag or pin changed, and no fenced file was edited.
 
@@ -646,8 +646,8 @@ The backfill's upstream calls are counted on the existing day counter `mandateUp
 |---|---|
 | Review | `docs/audits/20261118_ASTRA_REVIEW_T1A2B3.md` — Astra's final review of the corporate-action path at c79367b5, committed byte-identical (SHA-256 `5840bd21ee5950304b384711992cf6fc8d12e4d4b6ca64dcfd49efc8f3879f08`, CRLF as attached) in ad413fb4. Verdicts: dark merge **DO NOT MERGE**; founder allowlist **NOT READY** |
 | Scope | Set by the founder (§10.1): seven findings fixed, one guarded, four carried to T1a-2b-4, three to T5 |
-| Commits | ad413fb4 (the review), 737282ed (the fixes and their rows), 3373476c (the refuter's fixes), 943f1286 and d96af701 (rows the battery asked for), 782cb74b (no all-ledger ruling map), then this report |
-| Head | Code head d96af701; this report's commit adds documents only |
+| Commits | ad413fb4 (the review), 737282ed (the fixes and their rows), 3373476c (the refuter's fixes), 943f1286 and d96af701 (rows the battery asked for), 782cb74b (no all-ledger ruling map), 7fcfbd19 (this report), de7180d0 (a matching row held at an uncovered close, §10.7), then this report's update |
+| Head | Code head de7180d0; the report's commits add documents only |
 | Mode | `PRACTICE_FIELD_MODE` stays `'off'`. No flag, pin, rule, index or quarterly file changed; no fenced file edited; no new store; no model, Firestore or EODHD call made |
 
 ### 10.1 What the founder asked
@@ -677,17 +677,17 @@ What was wrong, and what now happens:
 
 ### 10.3 The fixes, by `file:line`
 
-Line numbers are at the code head 782cb74b. **Fix** rows are `corporateActionFixRound.test.js` by line and the start of the row's name. Every Fix row was run at c79367b5 (the reviewed head) and at 737282ed (before the refuter's fixes): §10.6 gives which fail where.
+Line numbers are at the code head de7180d0. **Fix** rows are `corporateActionFixRound.test.js` by line and the start of the row's name. Every Fix row was run at c79367b5 (the reviewed head) and at 737282ed (before the refuter's fixes): §10.6 gives which fail where.
 
 | Finding | What changed | `file:line` | Rows |
 |---|---|---|---|
 | **T2D-01, with Q10** | A `not_entitled` decline keeps the payload it declined (`ratio`, `amount`, `cashPerShare`). `possibleRedateOf` matches it, and every payload of a conflict the holding was not entitled to (AR1-RF-02), so a row of the same type and payload within five sessions is a `possible_redate`: a split is a doubt held for the founder (Q1), a dividend is not paid (Q10). The founder's `conflict` ruling (`payload` or `none`) settles it | `ledger.js:205` `NOT_ENTITLED` · `:897` the decline's receipt · `:913` `possibleRedateOf` · `:918` the not-entitled conflict's rows | Fix:103 "T2D-01 / Q10 …" (a 3-for-2 and a 1-for-2), Fix:136 "Q10: …", Fix:612 "AR1-RF-02 …" (two), Fix:623 |
 | **T2D-02** | A catch-up close reads each held symbol's stored backfill, inside its transaction, whatever the archived daily entry says, and a successful backfill's rows join that idea's rows. They are applied through the session being valued, and once. A backfill row never settles a conflict it took part in (AR1-RF-05): it joins only while the session's own rows list that id | `close.js:702` the read · `:246`–`:254` the union and the RF-05 filter | Fix:160 "T2D-02 …" (both variants, the 20-session boundary, a replay), Fix:679 "AR1-RF-05 …" |
-| **T2D-06** | An unsettled conflict whose own id is listed in the call is never settled under a moved date. With a matching row under another date listed now or applied earlier, it stays open (`ambiguousConflicts`, alerted `PRACTICE_FIELD_CORPORATE_ACTION_AMBIGUOUS`) and its own row is not applied. The founder's own ruling on it is never "ambiguous" (AR1-RF-01). A conflict whose own row is held on the holding replays it (AR1-RF-03). Candidates read the live settled set, so no id is both declined and applied | `ledger.js:932` `listedNow` · `:935` `matchingRowOf` · `:943` the held row (RF-03) · `:947` the ruled id (RF-01) · `:1061` the live settled set · `:1063` · `close.js:344` the alert | Fix:199 "the $1/$2 conflict …", Fix:223 "the old id no longer listed …", Fix:555–595 "AR1-RF-01 …" (four), Fix:634 "AR1-RF-03 …" (two) |
-| **T2D-07** | The session's own valid entry, or a backfill reaching it, is required even when `caCoveredThrough` is the session or later (the entry session, whose start is the opening date). On an uncovered close a coverage-gap item holds EVERY count-dependent row of the symbol, whatever its date. It is held on the holding and replayed once when coverage returns | `dailyCoverage.js:200` `needFrom` · `ledger.js:1001` | Fix:239 "the entry session …", Fix:251 "a dividend dated on the last covered session …" |
-| **T2D-08** | While a record stands, each split-shaped transition between consecutive prices observed is kept with its dates (`transitions`). One seen at an uncovered close is kept too, flagged `uncovered`, and never moves `lastSeen` (AR1-RF-04). Whatever retires a record promotes its first transition to the next record, carrying the rest: a `price_move` ruling (`priceMoveReference`), a founder `split`, or an explaining feed row. What is dated after that transition stays held | `ledger.js:451` the refresh · `:470` `transitionOf` · `:484` `recordOfTransition` · `:516` the ruling · `:1206` the explaining row · `close.js:310` (`pricesUsable`) | Fix:279 "a round trip …", Fix:305 "a FEED split …", Fix:329 "a partial recovery …", Fix:657 "AR1-RF-04 …", Fix:702 "… its edge" |
+| **T2D-06** | An unsettled conflict whose own id is listed in the call is never settled under a moved date. With a matching row under another date listed now, applied earlier, or held on the holding (an uncovered close held it), it stays open (`ambiguousConflicts`, alerted `PRACTICE_FIELD_CORPORATE_ACTION_AMBIGUOUS`) and its own row is not applied. The founder's own ruling on it is never "ambiguous" (AR1-RF-01). A conflict whose own row is held on the holding replays it (AR1-RF-03). Candidates read the live settled set, so no id is both declined and applied | `ledger.js:932` `listedNow` · `:937` `matchingRowOf` · `:946` the held row (RF-03) · `:950` the ruled id (RF-01) · `:1064` the live settled set · `:1066` · `close.js:344` the alert | Fix:199 "the $1/$2 conflict …", Fix:223 "the old id no longer listed …", Fix:555–595 "AR1-RF-01 …" (four), Fix:634 "AR1-RF-03 …" (two), Fix:733 (a matching row held at an uncovered close; both paths) |
+| **T2D-07** | The session's own valid entry, or a backfill reaching it, is required even when `caCoveredThrough` is the session or later (the entry session, whose start is the opening date). On an uncovered close a coverage-gap item holds EVERY count-dependent row of the symbol, whatever its date. It is held on the holding and replayed once when coverage returns | `dailyCoverage.js:200` `needFrom` · `ledger.js:1004` | Fix:239 "the entry session …", Fix:251 "a dividend dated on the last covered session …" |
+| **T2D-08** | While a record stands, each split-shaped transition between consecutive prices observed is kept with its dates (`transitions`). One seen at an uncovered close is kept too, flagged `uncovered`, and never moves `lastSeen` (AR1-RF-04). Whatever retires a record promotes its first transition to the next record, carrying the rest: a `price_move` ruling (`priceMoveReference`), a founder `split`, or an explaining feed row. What is dated after that transition stays held | `ledger.js:451` the refresh · `:470` `transitionOf` · `:484` `recordOfTransition` · `:516` the ruling · `:1209` the explaining row · `close.js:310` (`pricesUsable`) | Fix:279 "a round trip …", Fix:305 "a FEED split …", Fix:329 "a partial recovery …", Fix:657 "AR1-RF-04 …", Fix:702 "… its edge" |
 | **T2D-09** | A conflict ruling records the ledgers whose record it covers (`ledgers`). At the close it is revalidated on each, and it is applied, replaces feed rows and completes only there. `applyFounderRulings` returns per-ledger maps only (`extraActionsByLedger`, `ruledIdsByLedger`, `replacedIdsByLedger`). The close hands each ledger its own rows (`actionsOf`), and `shareBasisHolds` takes them per ledger | `holdRulings.js:142` · `:192` · `:212` · `:259` · `:337` · `close.js:302` · `ledger.js:682` | Fix:356–436 "T2D-09 …" (eight: all three ledger roles, a frozen-basket close, a genuine feed row kept, a ledger gaining the record after the ruling) |
-| **T2D-10** | A choice that would round a named ledger's holding to nothing is refused up front: `ruling_unrepresentable` (422), which writes nothing, so the record takes another ruling. That covers a conflict payload, a founder split and a coverage-gap row. At the close, a conflict or suspicion ruling's action the applier refuses for good is reported (`founderRefusals`) and leaves no held record. `markRulingsApplied` closes the ruling `outcome: 'refused'` with its reason and where it applied, if anywhere (alert `PRACTICE_FIELD_HOLD_RULING_REFUSED`), which releases the record's lock and stops it masking the feed's own row | `holdRulings.js:64` `unrepresentableOn` · `:125` · `:149` · `:172` · `:309` · `ledger.js:1141`–`:1146` · `close.js:423` | Fix:452 "a recorded 1-for-1,000,000,000 …", Fix:472 "a possible re-date …", Fix:490 "(pure) a founder split …", Fix:504 "(pure) a ruling whose action the applier refuses …" |
+| **T2D-10** | A choice that would round a named ledger's holding to nothing is refused up front: `ruling_unrepresentable` (422), which writes nothing, so the record takes another ruling. That covers a conflict payload, a founder split and a coverage-gap row. At the close, a conflict or suspicion ruling's action the applier refuses for good is reported (`founderRefusals`) and leaves no held record. `markRulingsApplied` closes the ruling `outcome: 'refused'` with its reason and where it applied, if anywhere (alert `PRACTICE_FIELD_HOLD_RULING_REFUSED`), which releases the record's lock and stops it masking the feed's own row | `holdRulings.js:64` `unrepresentableOn` · `:125` · `:149` · `:172` · `:309` · `ledger.js:1144`–`:1149` · `close.js:423` | Fix:452 "a recorded 1-for-1,000,000,000 …", Fix:472 "a possible re-date …", Fix:490 "(pure) a founder split …", Fix:504 "(pure) a ruling whose action the applier refuses …" |
 | **T2D-11** (T5) | The guard: every applied share-basis receipt on every ledger of every idea in the store carries finite, positive `sharesBefore` and `sharesAfter`. It is checked in the Fix file's `afterEach` after every row, and by a row exercising feed splits, a held split applied late, a conflict payload and a founder split | `corporateActionFixRound.test.js` `shareBasisReceiptsMissingCounts` | Fix:536 "T2D-11 …" |
 
 Two build rows changed with the round:
@@ -713,7 +713,7 @@ Where Astra's fix instruction stops, this is what was built. Each is a question 
 | # | Finding | Reading built |
 |---|---|---|
 | AR1-1 | T2D-01, Q10 | The decline that matches is the `not_entitled` one: the action exists and the holding was not owed it. A `founder_ruled_none` or `settled_by_redate` decline carries no payload of its own and matches nothing new (a re-date of what settled a conflict already matches the applied row). Every payload of a conflict the holding was not entitled to (an action the feed listed two ways on the ex-date) matches too (AR1-RF-02). A decline written before this round carries no payload and matches nothing; no idea book has run in production |
-| AR1-2 | T2D-06 | "Two economic interpretations remain" is read as: the conflict's own id is listed in this call with one payload, and a matching row under another date (within five sessions) is listed now or was applied by an earlier close. The row under the new date is applied — both readings pay it — and the old id's row is not; the conflict stays open, alerted `PRACTICE_FIELD_CORPORATE_ACTION_AMBIGUOUS`, until the founder rules (`none`, or a payload). RF-A2's settle under a moved date still happens when the old id is not listed. The founder's own ruling on the conflict is never ambiguous (AR1-RF-01). A conflict whose own row is held on the holding — an uncovered close held it — replays it as the covered close would have applied it, and is not settled under a moved date meanwhile (AR1-RF-03) |
+| AR1-2 | T2D-06 | "Two economic interpretations remain" is read as: the conflict's own id is listed in this call with one payload, and a matching row under another date (within five sessions) is listed now, was applied by an earlier close, or is held on the holding. The row under the new date is applied — both readings pay it — and the old id's row is not; the conflict stays open, alerted `PRACTICE_FIELD_CORPORATE_ACTION_AMBIGUOUS`, until the founder rules (`none`, or a payload). RF-A2's settle under a moved date still happens when the old id is not listed. The founder's own ruling on the conflict is never ambiguous (AR1-RF-01). A conflict whose own row is held on the holding — an uncovered close held it — replays it as the covered close would have applied it, and is not settled under a moved date meanwhile (AR1-RF-03) |
 | AR1-3 | T2D-07 | Evidence for the session itself is required whenever `caCoveredThrough` (or the opening session standing in for it) is the session or later. On the entry session an uncovered symbol keeps `caCoveredThrough` at its opening session — nothing dated on or before it is owed — so the next covered close continues from there |
 | AR1-4 | T2D-02 | A catch-up close reads every held symbol's stored backfill (one read each; catch-ups only), and a successful backfill's rows join that idea's rows whether or not coverage needed them. A row dated after the session waits (the engine's `onOrBefore`); a row already settled is skipped (the ledger's ids). A backfill row never settles a conflict it took part in: a row of an id this idea holds an unsettled conflict on joins only while the session's own rows list the id, so once the archived row has left the window the conflict stands for the founder (AR1-RF-05; FQ-3) |
 | AR1-5 | T2D-08 | A transition is a split-shaped move (the engine's own screen) between two consecutive prices seen while the record stands, recorded at every close whose snapshot is used and whose quote is complete. One seen at a close whose corporate-action data does not cover the symbol is kept, flagged `uncovered`, and never moves `lastSeen` (AR1-RF-04): the price is observed, but a ruling's reference stays a covered close's (lens A's A1). Every retirement promotes the first transition — a founder `price_move`, a founder `split`, or a feed row that explains the record. With none left, FR-14's endpoint judgement still runs |
@@ -722,13 +722,13 @@ Where Astra's fix instruction stops, this is what was built. Each is a question 
 
 ### 10.6 Tests: rows first, then the checks
 
-**The fix round's rows.** `corporateActionFixRound.test.js` has 38 rows. Each was run against `git archive` trees of the earlier heads, with the vendor stubbed:
+**The fix round's rows.** `corporateActionFixRound.test.js` has 40 rows. Each was run against `git archive` trees of the earlier heads, with the vendor stubbed:
 
 | Head | Fail | Pass | The passes are |
 |---|---|---|---|
-| c79367b5 (the reviewed head) | **29** | 9 | Two controls (T2D-02 with failed archived entries; RF-A2 with the old id no longer listed) and the T2D-11 guard. Four refuter rows for regressions this round itself introduced and then fixed (AR1-RF-01's share-basis and $2-applied rows, AR1-RF-03's two paths). The RF-04 edge row and the drift row, which the reviewed head already handled |
-| 737282ed (before the refuter's fixes) | **9** | 29 | Exactly the refuter's nine failing probes fail |
-| d96af701 (the code head) | 0 | **38** | — |
+| c79367b5 (the reviewed head) | **31** | 9 | Two controls (T2D-02 with failed archived entries; RF-A2 with the old id no longer listed) and the T2D-11 guard. Four refuter rows for regressions this round itself introduced and then fixed (AR1-RF-01's share-basis and $2-applied rows, AR1-RF-03's two paths). The RF-04 edge row and the drift row, which the reviewed head already handled |
+| 737282ed (before the refuter's fixes) | **10** | 30 | The refuter's nine failing probes, and the uncovered path of the held-row row (Fix:733), found after the refuter (§10.7) |
+| de7180d0 (the code head) | 0 | **40** | — |
 
 **Astra's own probes**, rerun unmodified on this round's code (`run/probe/independent.test.js`, `more.test.js`; her base and head harness, the head tree swapped). Her numbers flip:
 
@@ -750,27 +750,29 @@ Two of her probes assert her own observation and now fail, as they should:
 
 | Check | Where, and the command | Exit | Log lines |
 |---|---|---|---|
-| Full suite (Linux) | WSL worktree of `~/pd-ci` at d96af701: `TZ=UTC flock /tmp/pd-suite.lock npx vitest run --maxWorkers=8` | **0** | `Test Files  1562 passed | 13 skipped (1575)` · `Tests  35589 passed | 173 skipped (35762)` — the build's 35,551 plus the round's 38 rows |
+| Full suite (Linux) | WSL worktree of `~/pd-ci` at de7180d0: `TZ=UTC flock /tmp/pd-suite.lock npx vitest run --maxWorkers=8` | **0** | `Test Files  1562 passed | 13 skipped (1575)` · `Tests  35591 passed | 173 skipped (35764)` — the build's 35,551 plus the round's 40 rows |
 | Lint gate | the same tree: `npm run lint:gate` | **0** | no error, no warning (`--max-warnings 0`) |
-| Build | the same tree: `npx vite build` | **0** | `✓ built in 25.53s`. The two esbuild CSS-minify warnings are the build's own (the same two in each of its final runs) |
+| Build | the same tree: `npx vite build` | **0** | `✓ built in 16.43s`. Its four esbuild CSS-minify warnings are the build's own: the same four in its final runs |
 | Rules suite | the same tree: `npm run test:rules` (Firestore emulator) | **0** | `Test Files  46 passed (46)` · `Tests  839 passed (839)` |
-| Seventeen-scenario differential | Astra's harness, base `git archive` of `origin/main` 2e069d42 against a tree of d96af701 | **0** | 17 scenarios × `off` and `on`: **34/34 identical**; 4,000 default build sets identical; the quarterly prompts byte-identical, with the positive control |
+| Seventeen-scenario differential | Astra's harness, base `git archive` of `origin/main` 2e069d42 against a tree of de7180d0 | **0** | 17 scenarios × `off` and `on`: **34/34 identical**; 4,000 default build sets identical; the quarterly prompts byte-identical, with the positive control |
 | 40-case traced differential | Astra's harness, the same run | **0** | **40/40 identical** |
 | Backfill isolation (rule 5) | the build's scenario beside her harness, the same run | **0** | 4/4: a planted backfill reaches no quarterly reader; the vendor's split does (control) |
-| The idea book (Windows, targeted) | `vitest run api/_utils/practiceField api/practice-field api/cron/practiceFieldIsolation.test.js api/cron/practiceFieldNoBook.trace.test.js api/_utils/compositionProtectedStores.scan.test.js` | **0** | `Test Files  25 passed (25)` · `Tests  806 passed (806)` |
+| The idea book (Windows, targeted) | `vitest run api/_utils/practiceField api/practice-field api/cron/practiceFieldIsolation.test.js api/cron/practiceFieldNoBook.trace.test.js api/_utils/compositionProtectedStores.scan.test.js` | **0** | `Test Files  25 passed (25)` · `Tests  808 passed (808)` |
 | Linux-only scans | `mandateMoneyRounding.scan.test.js`, `compositionProtectedStores.scan.test.js` (WSL) | **0** | 33/33 — no raw rounding added; no new store |
 | End-to-end pin | `endToEnd.test.js` (in the suite) | **0** | the dump's SHA-256 is still `abcf8420…c24ed9` (443,533 bytes): with complete data no money leaf — and no leaf — changed this round |
 
 No vendor call, model call or Firestore write was made: every store is the in-memory fake or the local emulator, the vendor key is stubbed empty and `fetch` refuses in every new row, and the suite's backfill lines all say "not configured". The report's own commit adds documents only; the build, lint and suite ran again on it before the push (the PR description records them).
 
 **The mutation battery** (the build's `run-battery.mjs`):
-- 114 mutants on the code head: the build's 85, plus 29 for this round (AR1-M01 to AR1-M29; one each per fix and per refuter fix).
+- 115 mutants on the code head: the build's 85, plus 30 for this round (AR1-M01 to AR1-M30; one or more per fix, per refuter fix and for the held-row match).
 - Five of the build's anchors moved with this round's edits and were re-cut with the same intent: F1-06, F1-13, F8-01, R-A1 and R-A4.
-- Run in a private WSL worktree at 943f1286, then every `holdRulings.js` mutant and the survivors again at d96af701 (`holdRulings.js` changed after 943f1286).
-- Baseline 806 rows, 0 failing. **Defined 114, ran 114, broken 0, killed 113, survived 1.**
-- R-B1 (`priceMoveReference`'s endpoint judgement disabled) survived the first run: this round's transitions catch every case its rows built. The drift row (Fix:717: a split-shaped whole made of non-split-shaped steps) kills it.
+- The final run was in a private WSL worktree at de7180d0, the final code, in one pass. Baseline 808 rows, 0 failing. **Defined 115, ran 115, broken 0, killed 114, survived 1.**
+- Earlier runs:
+  - At 943f1286, 112 of 114 were killed. R-B1 (`priceMoveReference`'s endpoint judgement disabled) survived: this round's transitions catch every case its rows built. The drift row (Fix:717: a split-shaped whole made of steps that are not split-shaped) kills it.
+  - At d96af701, every `holdRulings.js` mutant was rerun after that file changed.
+  - The held-row fix then changed `ledger.js`, so the whole battery ran again.
 - **AR1-M05 survives and is equivalent.** It removes the live settled-set check in the candidates loop. After this round no candidate's id can be declined earlier in the same call:
-  - RF-A2 settles only a conflict whose own id is not listed and whose own row is not held (`ledger.js:932`, `:943`), so it never declines a candidate;
+  - RF-A2 settles only a conflict whose own id is not listed and whose own row is not held (`ledger.js:932`, `:946`), so it never declines a candidate;
   - a `not_entitled` id is never pending;
   - a founder's `none` is declined before the call.
   
@@ -782,12 +784,21 @@ The founder asked for one refuter on the fix round. It checked 737282ed on its o
 
 | Id | What it broke | Introduced by | Exit criterion | Done |
 |---|---|---|---|---|
-| AR1-RF-01 | A founder `payload` ruling on a conflict that T2D-06 left open was never applied: the ruling's own row met the ambiguity rule. The record stayed locked (`none` answered 409), with the sale held | T2D-06 | 4, 5 | **Fixed** (`ledger.js:947`). Fix:555–595 |
+| AR1-RF-01 | A founder `payload` ruling on a conflict that T2D-06 left open was never applied: the ruling's own row met the ambiguity rule. The record stayed locked (`none` answered 409), with the sale held | T2D-06 | 4, 5 | **Fixed** (`ledger.js:950`). Fix:555–595 |
 | AR1-RF-02 | An ex-date action the feed listed two ways (a conflict with `entitled: false`, not a `not_entitled` decline) still credited its re-date: +$4,998.50 on a 3-for-2, at full quality | Pre-existing; T2D-01's fix was incomplete | 3 | **Fixed** (`ledger.js:918`). Fix:612, Fix:623 |
-| AR1-RF-03 | A conflict id's own row, held at an uncovered close (T2D-07), was then settled `settled_by_redate` under a new date. $199.94 where the covered path pays $299.91: the money depended on whether one day's fetch failed | T2D-07 with T2D-06 | 3, 6 | **Fixed** (`ledger.js:943`): the held row replays as the covered close would have applied it. Fix:634 (both paths) |
+| AR1-RF-03 | A conflict id's own row, held at an uncovered close (T2D-07), was then settled `settled_by_redate` under a new date. $199.94 where the covered path pays $299.91: the money depended on whether one day's fetch failed | T2D-07 with T2D-06 | 3, 6 | **Fixed** (`ledger.js:946`): the held row replays as the covered close would have applied it. Fix:634 (both paths) |
 | AR1-RF-04 | No transition was recorded at an uncovered close, so a halving seen only there escaped the `price_move` ruling's scope | Pre-existing; T2D-08's fix was incomplete | 5 | **Fixed** (`ledger.js:451`): kept, flagged `uncovered`; `lastSeen` still moves only at a covered close (lens A's A1). A snapshot naming another layer yields none. Fix:657, Fix:702 |
 | AR1-RF-05 | The T2D-02 union let a backfill row outlive the archived row it conflicted with and settle the conflict alone. 3/2 was applied at full quality where the price showed 5/4 (149.955012 shares at $80) | T2D-02 | 2, 3 | **Fixed** (`close.js:248`–`:254`): a backfill row never settles a conflict it took part in, so the founder decides. Fix:679 |
 | Note | A partly refused ruling's alert said "nothing was changed" while one ledger had applied it | T2D-10 | — | **Fixed**: the alert and the ruling name where it applied (`appliedOnLedgers`) |
+| After the refuter | Found in a last review of the round; the same class as AR1-RF-03. A matching row HELD at an uncovered close did not count for T2D-06's ambiguity. The next close applied the old row and replayed the held one: $299.91, where the covered path leaves the conflict open at $199.94 | T2D-06 with T2D-07 | 3, 6 | **Fixed** (`ledger.js:937`–`:938`): a held, unrefused row counts. Fix:733 (both paths; the uncovered one fails at 737282ed and up to 7fcfbd19) |
+
+**No refuter ran after the refuter's fixes.** The founder's scope named one refuter, and it checked 737282ed. The code no refuter has seen is:
+- `ledger.js:918` (RF-02);
+- `:937`–`:950` (RF-01, RF-03 and the held match);
+- `:438`–`:459` (RF-04);
+- `close.js:248`–`:254` (RF-05).
+
+Each is pinned by its rows and by the battery's AR1-M23 to AR1-M30 (§10.6). Astra's confirmation is the next adversarial read.
 
 What it found to HOLD, with probes:
 - The end-to-end dump is byte-identical to Astra's H, so complete-data money is unchanged.
@@ -815,5 +826,5 @@ Code read only, not probed:
 
 ### 10.9 Where this leaves the verdicts
 
-- **The dark merge.** Every finding the founder put in this round is fixed, and the refuter's five with them. Each has a row that fails at the head it answers, and the mutation battery kills every mutant but one equivalent. The quarterly product is unchanged: the differentials are identical, a planted backfill reaches no quarterly reader, and no quarterly file, flag, pin, rule or index changed. With complete data, money is unchanged: the end-to-end pin `abcf8420…` is byte-identical. That is for Astra's confirmation to judge.
+- **The dark merge.** Every finding the founder put in this round is fixed, and so are the refuter's five and the one found after it. Each has a row that fails at the head it answers, and the mutation battery kills every mutant but one equivalent. The quarterly product is unchanged: the differentials are identical, a planted backfill reaches no quarterly reader, and no quarterly file, flag, pin, rule or index changed. With complete data, money is unchanged: the end-to-end pin `abcf8420…` is byte-identical. That is for Astra's confirmation to judge.
 - **The founder allowlist stays NOT READY** by the founder's own scope: T2D-03, T2D-04, T2D-05 and T2D-12 are T1a-2b-4's, before the switch.
