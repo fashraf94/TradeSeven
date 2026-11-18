@@ -271,7 +271,7 @@ export function sheetOf(body, { sector = null, expanded = false } = {}) {
   const at = sector && isNum(sector.updatedAtMs) ? etTimeLabel(sector.updatedAtMs) : null;
   const context = { title: C.contextTitle, name: C.sectorName, value: pct !== null && at ? C.sectorReading(pct, at) : C.sectorNone, def: C.sectorDef };
 
-  const other = words.other[state];
+  const otherReading = words.other[state];
   return {
     state,
     lead: `${line.lead}${line.rest}`,
@@ -279,7 +279,7 @@ export function sheetOf(body, { sector = null, expanded = false } = {}) {
     groups,
     collapsed,
     context,
-    other: [{ title: C.otherReadingTitle, text: other.reading }, { title: C.separatesTitle, text: other.separates(weekdayShort(read.session)) }],
+    other: [{ title: C.otherReadingTitle, text: otherReading.reading }, { title: C.separatesTitle, text: otherReading.separates(weekdayShort(read.session)) }],
     foot: [words.footRuleSet, C.footBasis(day), C.footProvenance],
     marks: line.marks,
   };
