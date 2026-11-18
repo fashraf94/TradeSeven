@@ -20,5 +20,8 @@ import { SHARED_RESEARCH_BUILDER_MODE } from '../../config/sharedResearchFlags';
 
 /** 'on' | 'off' — SHARED_RESEARCH_BUILDER_MODE as it reads now. */
 export function sharedResearchBuilderMode() {
+  // SMOKE ONLY, NEVER MERGE: the smoke page (src/smoke/SharedResearchSmokeScreen.jsx) turns the builder on for its own
+  // builder scenarios; the flag's literal is untouched, and the app beside the page reads 'off'.
+  if (typeof window !== 'undefined' && window.__srSmokeBuilderOn === true) return 'on';
   return SHARED_RESEARCH_BUILDER_MODE === 'on' ? 'on' : 'off';
 }
