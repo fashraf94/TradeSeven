@@ -1027,7 +1027,9 @@ export async function catchUpIdeaBook(db, bookRef, { before, now = new Date(), t
   // Amendment F-1 (review A2): the window's catch-up is usually the FIRST close after an outage — windows run before the
   // day's close — so it backfills first, as closeIdeaBook does, through `before` (the sessions it closes are earlier).
   // A caller that has read the book (the window: `lastCloseKey`) spends no read on it when no session was missed.
-  const nothingMissed = lastCloseKey === null || (typeof lastCloseKey === 'string' && !(nextSessionDate(lastCloseKey) < before));
+  // (A book that has never closed — `lastCloseKey` null — closes from its first entry session: it may have missed some.
+  // Fix-round refuter NF-2.)
+  const nothingMissed = typeof lastCloseKey === 'string' && !(nextSessionDate(lastCloseKey) < before);
   if (!nothingMissed) {
     const backfill = await ensureCoverageBackfills(db, bookRef, { through: before, now, ...(fetchCorporateActions ? { fetchCorporateActions } : {}) });
     out.alerts.push(...backfill.alerts);

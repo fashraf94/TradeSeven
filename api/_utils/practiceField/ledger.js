@@ -528,7 +528,9 @@ export function unresolvedShareBasis(ledger, actionsBySymbol, { date }) {
   const settled = settledIdsOf(ledger);
   const due = pendingActionsFor(ledger?.holdings || {}, feedRowsOf(actionsBySymbol), { onOrBefore: date, appliedIds: settled });
   // F-5: a founder's `split` (its own id) is listed like a feed row.
-  const founder = founderSplitRowsOf(ledger, actionsBySymbol, { date, settled });
+  // …only one that would be applied on this state: a founder split moot here (its record gone, or standing for another
+  // move now) explains nothing, so the record's own item stays and holds what is dated in its gap (fix-round refuter NF-1).
+  const founder = founderSplitRowsOf(ledger, actionsBySymbol, { date, settled }).filter((a) => founderSplitMoot(ledger, upper(a.ticker), a, date) === null);
   for (const a of [...due.pending, ...due.noEntitlementData, ...founder]) if (SHARE_BASIS_TYPES.has(a.type)) addItem(out, a.ticker, itemOf(a, kind));
   for (const r of unsettledConflicts(ledger)) if (SHARE_BASIS_TYPES.has(r.type)) addItem(out, r.ticker, itemOf(r, kind));
   // …and (Amendment F-7) every share-basis row recorded as a possible re-date and not settled since: the same split
