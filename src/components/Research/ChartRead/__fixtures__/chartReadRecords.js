@@ -13,6 +13,8 @@
 //   UNKNOWN_V        unknown · missing_fact, missing ['V'] (readRecords.js zeroVolumeRows)
 //   NO_ADJUSTMENT    valid · pullback_resume, adjustment metadata absent (readRecords.js noAdjustmentRows)
 //   SPLIT            refused · basis_discontinuity      (readRecords.js splitRows)
+//   PULLBACK_NO_V    valid · pullback_resume with the breakout UNTESTABLE: bar 0 above the 20-session high, no volume
+//   EXTENDED_BREAKOUT invalid · extended with patternsSatisfied ['breakout'] (review L1-5)
 //   REGIME_*         invalid · regime, one per combination of the three uptrend rows that fail:
 //                    A close above the 20-day · B the 20-day above the 50-day · C the 50-day rising
 //                    (REGIME_A, REGIME_B, REGIME_C, REGIME_AB, REGIME_AC, REGIME_BC, REGIME_ABC_FLAT — all three
@@ -48,6 +50,11 @@ export const STATE_ROWS = Object.freeze({
   UNKNOWN_V: (s) => zeroVolumeRows(s),
   NO_ADJUSTMENT: (s) => noAdjustmentRows(s),
   SPLIT: (s) => splitRows(s),
+  // Review L1-3: the pullback, bar 0 closing above every high of bars 1..20 on a session with no volume — the breakout
+  // can't be tested (its close check passes, its volume check is unknown), never "not present".
+  PULLBACK_NO_V: (s) => { const rows = pullbackRows(s); rows[0] = { ...rows[0], close: 202.37, high: 203.11, adjusted_close: 202.37, volume: 0 }; return rows; },
+  // Review L1-5: the breakout, bar 0 far past the stretch guard.
+  EXTENDED_BREAKOUT: (s) => { const rows = rowsFromCloses(s, closesOf(80, (i) => (i === 0 ? 215.61 : rise(i))), { up: 2.13, down: 0.41, volume0: 2_100_013 }); rows[0] = { ...rows[0], high: 216.37 }; return rows; },
   // A only: the rise, but bar 0 closes under its 20-day.
   REGIME_A: (s) => rowsFromCloses(s, closesOf(80, (i) => (i === 0 ? 192.37 : rise(i)))),
   // B only: old lows (bars 50+), a high middle (20..49), a lower recent run (1..19), bar 0 above that run's average.

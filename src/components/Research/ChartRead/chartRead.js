@@ -180,7 +180,10 @@ export function readLineOf(body, { todayEt = null, todayIsSession = false, battl
   if (read.adjustmentMetadata === 'absent') notes.push(C.adjustmentNote);
   if (state === 'unknown') return lineOf(state, { ...base, lead: C.unknownLead, rest: C.unknownRest(unknownWhy(read, words)), notes });
   if (state === 'unshown') return lineOf(state, { ...base, rest: C.unshown });
-  const lead = leadOf(state, read, words);
+  // Fail closed for every state that opens a sheet (review L1-2, L1-9): a record whose uptrend rows disagree with
+  // its recorded chain, or one measured on another basis than the raw candles it would be drawn on, is never shown
+  // in part.
+  const lead = read.basis === 'raw' && uptrendRows(read) ? leadOf(state, read, words) : null;
   if (!lead) { state = 'unshown'; return lineOf(state, { ...base, rest: C.unshown }); }
   const marks = marksOf(read);
   return {
@@ -234,9 +237,15 @@ export function sheetOf(body, { sector = null, expanded = false } = {}) {
   const bclose = checkOf(read, 'breakout_close') || {};
   const bvol = checkOf(read, 'breakout_volume') || {};
   const patterns = read.patterns || {};
-  // A valid read's OTHER pattern reads "not present" in quiet ink, never as a failure — unless it is satisfied too.
-  const quietPullback = state === 'valid_breakout' && patterns.pullback_resume !== 'satisfied';
-  const quietBreakout = state === 'valid_pullback' && patterns.breakout !== 'satisfied';
+  // "The other pattern" is the one the record did not name (its valid pattern, or the stretched one; review L1-5);
+  // with neither, Trend Breakout, as §6 orders it. A VALID read's other pattern reads "not present" in quiet ink
+  // only when the record says it FAILED — an untestable one shows its rows' own results (review L1-3: missing is
+  // never absence), a satisfied one its count.
+  const named = read.pattern ?? (Array.isArray(read.patternsSatisfied) ? read.patternsSatisfied[0] : null) ?? null;
+  const other = named === 'breakout' ? 'pullback_resume' : 'breakout';
+  const valid = read.verdict === 'valid';
+  const quietPullback = valid && other === 'pullback_resume' && patterns.pullback_resume === 'failed';
+  const quietBreakout = valid && other === 'breakout' && patterns.breakout === 'failed';
   const pullbackRows = [
     row('touch', W.touch, { lhs: price(touch.lhs), rhs: price(touch.rhs), result: touch.result, marks: [4, 1] }, exist, quietPullback),
     row('pullbackClose', W.pullbackClose, { lhs: price(pclose.lhs), rhs: price(pclose.rhs), result: pclose.result, marks: [1] }, exist, quietPullback),
@@ -253,9 +262,9 @@ export function sheetOf(body, { sector = null, expanded = false } = {}) {
   if (collapsed) {
     groups.push({ key: 'patterns', collapsed: true, line: C.collapsed, expand: C.expand });
   } else {
-    groups.push({ key: 'pullback_resume', title: words.groups.pullback_resume, sub: state === 'valid_breakout' ? C.theOtherPattern : null, count: quietPullback ? C.notPresent : C.groupCount(count(pullbackRows), 2), quiet: quietPullback, rows: pullbackRows });
+    groups.push({ key: 'pullback_resume', title: words.groups.pullback_resume, sub: other === 'pullback_resume' ? C.theOtherPattern : null, count: quietPullback ? C.notPresent : C.groupCount(count(pullbackRows), 2), quiet: quietPullback, rows: pullbackRows });
     groups.push({ key: 'stretch', title: words.groups.stretch, count: null, rows: stretchRows });
-    groups.push({ key: 'breakout', title: words.groups.breakout, sub: state === 'valid_breakout' ? null : C.theOtherPattern, count: quietBreakout ? C.notPresent : C.groupCount(count(breakoutRows), 2), quiet: quietBreakout, rows: breakoutRows });
+    groups.push({ key: 'breakout', title: words.groups.breakout, sub: other === 'breakout' ? C.theOtherPattern : null, count: quietBreakout ? C.notPresent : C.groupCount(count(breakoutRows), 2), quiet: quietBreakout, rows: breakoutRows });
   }
 
   const pct = sector && isNum(sector.percentile) ? decimalString(sector.percentile, 0) : null;
