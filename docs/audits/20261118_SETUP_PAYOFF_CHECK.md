@@ -66,7 +66,15 @@ This check counts past price moves on paper. It ignores trading costs and the ga
   - the evaluator's decimal helpers (`api/_utils/setupEvaluator/evidenceValues.js`);
   - the provider request `fetchDailyPayload` (`api/_utils/eodhdDailyWindow.js:34`), in `fetchLong.mjs` only.
 - **Fenced functions: none called, none edited.** `api/_utils/archetypeScoring.js` (fenced, `docs/BUILD_RULES.md:23`) is read as text, and each cited level is asserted on its line.
-- **Markers.** Every `file:line` is VERIFIED: read at `bd841257` in this session and re-asserted by `analyze.mjs` at run time.
+- **Markers.** Every `file:line` is VERIFIED: read in this session at the branch head. `analyze.mjs` also re-asserts the text on its line at every run for these citations:
+  - `archetypeScoring.js:83`, `:87`, `:89`, `:91` and `:93`;
+  - `compute-index-intelligence.js:1000` and `:1293`;
+  - `tfSetupV1.js:242`;
+  - `dailyBarsAdapter.js:97` and `:214`;
+  - `marketCalendar.js:69`;
+  - `technicalCalculations.js:247`.
+
+  The others were read at HEAD only.
 - **No account ids, player text or list names** appear anywhere. The check reads only symbols, scores, bars and verdicts.
 - **Two operational notes.**
   - The first enrichment attempt ran 12 processes with no heap cap, and free memory fell to 0.5 GB of 32 GB. Those processes were stopped by their own command line, and the step re-ran with a 600 MB heap, six at a time. Nothing from the first attempt is used.
