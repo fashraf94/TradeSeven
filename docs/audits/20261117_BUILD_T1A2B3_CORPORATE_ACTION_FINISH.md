@@ -8,6 +8,7 @@
 | Code head | 047c77b0; final head 62d49765 (two rows tightened, test file only — §5.4). The suite, lint, build and rules ran at 62d49765; the differentials and the battery at 047c77b0, whose code is identical |
 | Branch | `claude/practice-field-t1a2b3-corporate-action-finish` |
 | Mode | `PRACTICE_FIELD_MODE` stays `'off'`. No flag value, pin, rules or index changed; no fenced file edited; no model call, Firestore write or EODHD call made |
+| Fix round (18 Nov 2026) | Astra's final review (`docs/audits/20261118_ASTRA_REVIEW_T1A2B3.md`, committed byte-identical in ad413fb4) answered in the scope the founder set: commits 737282ed, 3373476c, 943f1286, 782cb74b, d96af701 (code head), then this report. §10 is the round; §7 is updated |
 
 Contents:
 1. In plain terms
@@ -19,8 +20,11 @@ Contents:
 7. The register (F-10)
 8. New stores and fields; founder steps after merge
 9. Found outside the task
+10. Astra's final review, and the fix round (18 Nov 2026)
 
 ## 1. In plain terms
+
+**Fix round, 18 Nov 2026 (§10).** Astra's final review returned DO NOT MERGE and NOT READY on twelve findings. In the scope the founder set, seven are fixed, with the agreed Q10, and one is guarded. Four (T2D-03, T2D-04, T2D-05 and T2D-12) move to T1a-2b-4, before the switch; two go to T5. One refuter checked the round and found five more, all fixed. The founder allowlist stays NOT READY until T1a-2b-4. The rest of this section describes the build as first reported.
 
 **What this build is.** The idea book's last corporate-action work before release: every item of Amendment F (F-1 to F-9), built dark. `PRACTICE_FIELD_MODE` stays `'off'`, so none of it runs in production yet. No rules, index, flag or pin changed, and no fenced file was edited.
 
@@ -445,8 +449,9 @@ Every corporate-action item raised since T1a-1, with its status, written for a r
 - **Closed earlier**
 - **Accepted by ruling**
 - **Carried** (with its home)
+- **Fixed in the T1a-2b-3 fix round** — the round that answers Astra's final review (§10)
 
-"Q8" means the home is still to be named by the founder (§3.2 Q8).
+The founder's Q8 ruling (18 Nov 2026) named the homes for the rename-dependent and quarterly items, and Astra's final review sorted the rest (A-2B3, "Register audit and carried-item decisions"); each row carries its home. **T1a-2b-4 (before the switch)** is the founder's home for four of Astra's findings that need a new adjustment mechanism (§10).
 
 **Ids.** Plain ids (C-5, Q-P, FR-A5, R8, T2C-04 …) are unique. Review letters that repeat across builds carry a prefix:
 - `2a-`: T1a-2a's review.
@@ -467,6 +472,8 @@ Every corporate-action item raised since T1a-1, with its status, written for a r
 - **A-2B2** = `20261117_ASTRA_REVIEW_T1A2B2.md`
 - **AmF** = `docs/design/20261117_PRACTICE_FIELD_AMENDMENT_F_CORPORATE_ACTION_FINISH.md`
 - **Fin** = `api/_utils/practiceField/corporateActionFinish.test.js`
+- **A-2B3** = `20261118_ASTRA_REVIEW_T1A2B3.md` (Astra's final review of the corporate-action path)
+- **Fix** = `api/_utils/practiceField/corporateActionFixRound.test.js` (the fix round's rows; cited by the start of the row's name)
 - **CA** = `api/_utils/practiceField/corporateActions.test.js`
 
 Test rows are cited by line at 047c77b0 and the start of the row's name.
@@ -475,20 +482,20 @@ Test rows are cited by line at 047c77b0 and the start of the row's name.
 
 | Id | Item | Status | Home | Evidence |
 |---|---|---|---|---|
-| C-5 | On a day the corporate-action fetch failed, the close still marked the holding at the day's price, through a gap screen that misses a split smaller than its threshold. | Fixed in T1a-2b-3 | — | T1A2A:478; AmF F-1; Fin:369 "refuter R8: the fetch fails for three sessions…"; Fin:146 "THE CLOSE: the name with that entry is carried…" |
-| C-6 | Two holds only the founder could clear: a **share-basis** conflict the feed has dropped, and a split-shaped move the feed never explains. | Fixed in T1a-2b-3 | — | T1A2A:479, :636, :1161; AmF F-5. The dropped share-basis conflict: Fin:1392 "C-6's own case: a SHARE-BASIS conflict the feed has dropped…" (review R6); a dividend one: Fin:929. The move: Fin:756 "SUSPICION, `price_move`…", Fin:902 "SUSPICION, `split`…" |
-| C-7 | The idea book's cron work has no deadline of its own and spends the quarterly loop's 290 s. This build's backfill is bounded per fetch (20 s) and per pass (60 s). | Carried | T5 (capacity) | T1A2A:480 ("Capacity is T5"); Fin:1562 "N2: the backfill is bounded…" |
-| C-8 | The catch-up covers 20 sessions per fire. An idea starting inside a longer gap can time out without one attempt, and its record does not say why. | Carried | Q8 (the source asks for "a ruling on what the record should say") | T1A2A:481 |
+| C-5 | On a day the corporate-action fetch failed, the close still marked the holding at the day's price, through a gap screen that misses a split smaller than its threshold. | Fixed in T1a-2b-3 | — | T1A2A:478; AmF F-1; Fin:369 "refuter R8: the fetch fails for three sessions…"; Fin:146 "THE CLOSE: the name with that entry is carried…"; A-2B3 T2D-07 (two exceptions: the entry session read as covered, and a backdated row paid at an uncovered close) **fixed in the fix round** (§10) |
+| C-6 | Two holds only the founder could clear: a **share-basis** conflict the feed has dropped, and a split-shaped move the feed never explains. | Fixed in T1a-2b-3 | — | T1A2A:479, :636, :1161; AmF F-5. The dropped share-basis conflict: Fin:1392 "C-6's own case: a SHARE-BASIS conflict the feed has dropped…" (review R6); a dividend one: Fin:929. The move: Fin:756 "SUSPICION, `price_move`…", Fin:902 "SUSPICION, `split`…"; A-2B3 T2D-09 (a chosen payload paid a ledger without the record) and T2D-10 (a refused payload locked its own record) **fixed in the fix round** (§10) |
+| C-7 | The idea book's cron work has no deadline of its own and spends the quarterly loop's 290 s. This build's backfill is bounded per fetch (20 s) and per pass (60 s). | Carried | T5 (capacity) | T1A2A:480 ("Capacity is T5"); Fin:1562 "N2: the backfill is bounded…"; A-2B3 T2D-13: the 60 s budget bounds the STARTS of fetches, not their completion (a fourth 19.5 s answer ends at 78 s) — carried to T5 with C-7 |
+| C-8 | The catch-up covers 20 sessions per fire. An idea starting inside a longer gap can time out without one attempt, and its record does not say why. | Carried | T5 (records; Q8, A-2B3 table) | T1A2A:481; the 20-session limit and the return of reserved cash stay. The new missed-action case on an already-filled idea was A-2B3 T2D-02, **fixed in the fix round** (§10) |
 | C-9 (fallback) | `exitTierOf` costed a holding with no stored tier at the widest tier. | Closed earlier | — | T1A2A:482; removed in T1a-2b-1: T1A2B1:17, :107; A-2B1:65 |
-| C-9 (record) | A ticker change while a settlement sale waits records the wait once under each symbol (cosmetic). | Carried | Q8 | T1A2A:482 |
-| C-10 | If the feed renamed two different held stocks into one new ticker, both ideas would block each other for good. Both stay held and alerting; nothing sells on a wrong count. | Carried | Q8 | T1A2A:630, :614; AC-2A-1:55 (no blocker, no ruling). Today's feed emits no rename: Fin:1113 "C-12 is NOT reachable…" |
-| C-11 | A rename correction that arrives as a conflict leaves the waiting rename on its older target, which applies once the share basis settles. | Carried | Q8 | T1A2A:631; Fin:1113; see 2b3-N2 [B] |
-| C-12 | A conflicting cash dividend plus a rename at the same close: the sale goes ahead while the conflict is listed, and the dividend is credited to neither ledger. **Not reachable under today's feed** (the parsers emit only splits, reverse splits and cash dividends; a rename or delisting comes only from a row the founder writes); not fixed. | Carried | Q8 | T1A2A:632, :604; Fin:1113 |
+| C-9 (record) | A ticker change while a settlement sale waits records the wait once under each symbol (cosmetic). | Carried | T5 (founder tools; Q8) | T1A2A:482 |
+| C-10 | If the feed renamed two different held stocks into one new ticker, both ideas would block each other for good. Both stay held and alerting; nothing sells on a wrong count. | Carried | T5 (founder tools; Q8) | T1A2A:630, :614; AC-2A-1:55 (no blocker, no ruling). Today's feed emits no rename: Fin:1113 "C-12 is NOT reachable…" |
+| C-11 | A rename correction that arrives as a conflict leaves the waiting rename on its older target, which applies once the share basis settles. | Carried | T5 (founder tools; Q8) | T1A2A:631; Fin:1113; see 2b3-N2 [B] |
+| C-12 | A conflicting cash dividend plus a rename at the same close: the sale goes ahead while the conflict is listed, and the dividend is credited to neither ledger. **Not reachable under today's feed** (the parsers emit only splits, reverse splits and cash dividends; a rename or delisting comes only from a row the founder writes); not fixed. | Carried | T5 (founder tools; Q8) | T1A2A:632, :604; Fin:1113 |
 | C-13 | A cashless delisting plus a rename of the same stock in one close lost the waiting sale. | Closed earlier | — | T1A2A:633; fixed in T1a-2a round 2: T1A2A:658, :778; AC-2A-2:66, :77; CA:1253 |
-| C-14 | The rename screen (R-36) also screens a comparison-only rename, so a comparison holding can sit at a carried mark while another idea holds the target. | Carried | Q8 | T1A2A:634 (the source calls it "a ruling"; none was made); Fin:1113 |
-| C-15 | Three rename edge cases. (1) A rename into a symbol the same idea already holds keeps its waiting record for good, so that holding stays at a carried mark for good. (2) A future-dated rename into a held symbol marks the holding blocked early. (3) Only the first refusal is recorded when a reserved name and a missing price coincide. | Carried | Q8 | T1A2A:635, :612, :614; `ledger.js` (an unapplied rename adds the symbol to `unresolved` at every close); Fin:1113 |
+| C-14 | The rename screen (R-36) also screens a comparison-only rename, so a comparison holding can sit at a carried mark while another idea holds the target. | Carried | T5 (founder tools; Q8) | T1A2A:634 (the source calls it "a ruling"; none was made); Fin:1113 |
+| C-15 | Three rename edge cases. (1) A rename into a symbol the same idea already holds keeps its waiting record for good, so that holding stays at a carried mark for good. (2) A future-dated rename into a held symbol marks the holding blocked early. (3) Only the first refusal is recorded when a reserved name and a missing price coincide. | Carried | T5 (founder tools; Q8) | T1A2A:635, :612, :614; `ledger.js` (an unapplied rename adds the symbol to `unresolved` at every close); Fin:1113 |
 | C-16 | A dividend dated before a split, but first listed after the split was applied, was paid on the post-split count. | Fixed in T1a-2b-3 | — | T1A2A:832, :1160; AmF F-7; Fin:655 "C-16: a dividend dated BEFORE a split…", Fin:681, Fin:696; with 2b3-C3 |
-| C-17 | A dividend can explain its own price drop. If the ex-date close carries the mark for another reason (an incomplete quote), the pre-ex price stays frozen: the value counts the dividend twice and the stock is held. **No ruling exists**: "residual, fail-closed" is T1a-2a's own wording. F-5's `price_move` can now clear the hold; no row runs this exact case. | Carried | Q8 | T1A2A:1146 (2a-X1/C3), :1158 |
+| C-17 | A dividend can explain its own price drop. If the ex-date close carries the mark for another reason (an incomplete quote), the pre-ex price stays frozen: the value counts the dividend twice and the stock is held. **No ruling exists**: "residual, fail-closed" is T1a-2a's own wording. F-5's `price_move` can now clear the hold; no row runs this exact case. | Carried | T5 (A-2B3 table) | T1A2A:1146 (2a-X1/C3), :1158; Astra ran the exact missing-quote variant: the special dividend paid once, the stale $100 mark carried at reduced quality, and a founder `price_move` restored the $50 mark with no second payment (A-2B3, register table) |
 | Q-A | A comparison or SPY holding delisted for cash is receipted, and realised, on that paper ledger. | Accepted by ruling | — | T1A2A:165; A-2A:87 ("the accepted Q-A…Q-J decisions"); AC-2A-1:35 |
 | Q-F | A sale held for a corporate action reads `blocked` under its own name, and waits one session for an ordinary dividend to be credited. | Accepted by ruling | — | T1A2A:170; A-2A:87 |
 | Q-G | A sale caused by a delisting gets its own origin on the decision record. | Closed earlier | — | T1A2A:171; built in T1a-2b-1 as `delisting_exit`: T1A2B1:17; A-2B1:65 |
@@ -501,33 +508,37 @@ Test rows are cited by line at 047c77b0 and the start of the row's name.
 | Q-R | A real fall to a split-shaped price, with no feed row, holds the idea's sale, payments and value until a split row explains it or the founder resolves it. | Accepted by ruling | — | T1A2A:972; AC-2A-3:54; the founder tool is F-5 (Fin:756, :902) |
 | Q-S | After a dividend that explains its own drop, the close trusts the ex-date price. | Accepted by ruling | — | T1A2A:967 (R-67), :974; AC-2A-3:52 ("a correction") |
 | Q-T | A late cash dividend that would explain the move does not release a suspicion; only a share-basis row or the founder does. | Accepted by ruling | — | T1A2A:963 (R-63), :976; AC-2A-3:54 |
-| Q-U | What a founder's resolution of a suspicion covers: Z1, Y4, N3. | Fixed in T1a-2b-3 | — | T1A2A:978–986; AC-2A-3:54; AmF F-5; Fin:789 "Z1 — …", Fin:869 "Y4 — …", Fin:885 "N3 — …"; with 2b3-B1/A1, B3, D1 |
+| Q-U | What a founder's resolution of a suspicion covers: Z1, Y4, N3. | Fixed in T1a-2b-3 | — | T1A2A:978–986; AC-2A-3:54; AmF F-5; Fin:789 "Z1 — …", Fin:869 "Y4 — …", Fin:885 "N3 — …"; with 2b3-B1/A1, B3, D1; A-2B3 T2D-08 (a ruling covered a later halving hidden by its recovery) **fixed in the fix round** (§10) |
 | Q-V | A move explained only by two rows together is never released by the feed. The count is right; the cash is held. | Accepted by ruling | — | T1A2A:988; AC-2A-3:54 ("held for release 1"). **The remedy is `price_move`**: a `split` ruling is refused `no_residual_move` (Fin:1307 "D5 (pure)…"; §3.2 Q7). The draft's "F-5 split ruling" was wrong (review D5) |
 | FR-A1, A2, A4, A6; RF-A1, A5 | T1a-1's other in-build findings. | Closed earlier | — | T1A1:701–717; AC-T1A1:43 |
-| FR-A3 (residue) | A finite but wrong mark on a sector-fund comparison or an SPY ledger is not detected: there is nothing to compare it with. | Carried | Q8 | T1A1:703, :761 (FR-A3's fixed parts closed in T1a-1) |
+| FR-A3 (residue) | A finite but wrong mark on a sector-fund comparison or an SPY ledger is not detected: there is nothing to compare it with. | Carried | T5 (integrity checks; A-2B3 table) | T1A1:703, :761 (FR-A3's fixed parts closed in T1a-1) |
 | FR-A5 | A dividend the vendor re-dated (same amount, a new id one day later) was paid twice. | Fixed in T1a-2b-3 | — | T1A1:705, :759; AmF F-7; Fin:590 "FR-A5: a dividend the vendor RE-DATES…" |
 | FR-A7 | The entry filled from a snapshot its caller supplied, checked by key only. | Closed earlier | — | T1A1:707, :760; closed in T1a-2a: T1A2A:74, :197; T1A2B2:413 |
-| RF-A2 | A conflict the vendor settled under a moved ex-date (a new id) was paid, but the old id stayed unsettled and the rows stayed flagged. | Fixed in T1a-2b-3 | — | T1A1:714, :759; AmF F-7; Fin:635 "RF-A2: a CONFLICT the vendor settles under a MOVED date…"; tightened by 2b3-RF-A2 |
-| RF-A3 (residue) | A flipped stored `contract.comparison.type` is not detected. | Carried | Q8 | T1A1:715, :761 |
+| RF-A2 | A conflict the vendor settled under a moved ex-date (a new id) was paid, but the old id stayed unsettled and the rows stayed flagged. | Fixed in T1a-2b-3 | — | T1A1:714, :759; AmF F-7; Fin:635 "RF-A2: a CONFLICT the vendor settles under a MOVED date…"; tightened by 2b3-RF-A2; A-2B3 T2D-06 (an old conflict id declined and paid in one close) **fixed in the fix round** (§10) |
+| RF-A3 (residue) | A flipped stored `contract.comparison.type` is not detected. | Carried | T5 (integrity checks; A-2B3 table) | T1A1:715, :761 |
 | RF-A4 | Outside the conflict branch, a hand-written row with a lower-case ticker was not held back, and a lower-case split was never applied. | Closed earlier | — | T1A1:716, :762; T1a-2a round 2's raw-ticker fixes: T1A2A:774, :793, :799; AC-2A-2:79 |
 | T1A-06 | Two concurrent daily top-ups could lose newly fetched corporate-action data. | Closed earlier | — | A-T1A1:72; fixed in T1a-2b-2: T1A2B2:20, :104; A-2B2:10, :65 |
+| T1A-01 | Two identical vendor rows in one window paid a dividend twice and applied a split twice. | Closed earlier | — | AC-T1A1:26 ("T1A-01 — CLOSED": $199.94 paid once, one applied id; the repeated 2:1 gives 399.880034 shares); ledger.js header "ONE ACTION, ONE APPLICATION" |
+| T2A-01 | A rename applied over an unresolved share basis let the next window sell the unadjusted holding under the new ticker. | Closed earlier | — | AC-2A-1:41–43 (closed in all three variants: zero sales, 199.940017 shares kept) |
+| T2A-C01 | A cash delisting paid shares × cash on an unadjusted count while the share basis was unresolved. | Closed earlier | — | AC-2A-2:62 (fixed for all three basis types, released exactly once) |
+| T2A-D02 | Two share-basis actions of one date applied out of order left a different (rounded) count. | Closed earlier | — | AC-2A-3:3 ("the original D01 and D02 reproductions are fixed"); `ledger.js` applyActions (`byDatePhaseId`). D01 is Q-P; E01 is the two-split case (2b3 two genuine splits) |
 | T1A-08 (residual) | While the flag was `'off'`, an action dated in the gap, beyond the first close's 5-day lookback, never reached the idea. | Fixed in T1a-2b-3 | — | T1A2B2:412; AmF F-1; Fin:459 "T1A-08's residual — THE FLAG'S TIME 'OFF' IS A GAP…" |
 | T2B-01 (gap-screen read; F-3's source) | The gap screen dated a suspicion's window from `lastMarkAsOf`, which can keep an older quote's time, so the window could start too early. | Fixed in T1a-2b-3 | — | AC-2B1:38–44, :102; AmF F-3; Fin:323 "Astra's case: Nov 27 timed → Nov 30 UNTIMED…", Fin:347 |
 | 2a provisional reader | T1a-2a's founder-resolution reader (`resolvedBy`/`resolvedAt`, which nothing wrote). | Fixed in T1a-2b-3 | — | T1A2A:964 (R-64), :1156; AC-2A-3:54; replaced by `resolve_hold` (AmF F-5) and removed |
-| 2a-D4 | After the endpoint, a settlement sale that replaced a delisting exit records no reason; the comparison's copy can then still get a suspicion record (alerts and stale comparison rows; no result figure moves). | Carried | Q8 | T1A2A:1142, :1157 |
+| 2a-D4 | After the endpoint, a settlement sale that replaced a delisting exit records no reason; the comparison's copy can then still get a suspicion record (alerts and stale comparison rows; no result figure moves). | Carried | T5 (founder tools; Q8) | T1A2A:1142, :1157 |
 | T2C-01 | Admission ignored a recorded failed fetch and admitted against an unadjusted count. | Closed earlier | — | A-2B2:25; T1A2B2:426–433; `admissionMarks.test.js:414` |
 | Admission race row | No committed row pinned admission's daily-layer read inside its transaction. | Fixed in T1a-2b-3 | — | T1A2B2:529, :579; Fin:293 "the layer turns to failed between admission's read and its commit…", Fin:311 |
 | R3 | Odd daily-entry values (`false`, `0`, `''`, `'x'`, `[]`, `caFetchFailed` of `'true'` or `1`) read as covered. | Fixed in T1a-2b-3 | — | T1A2B2:532, :578; AmF F-6; Fin:102, Fin:120 "%s — on all three paths"; `{}` stays covered by F-6's letter (Q2) |
 | R7a, R7b | A daily document listed a reverse split that the slot snapshot lacked, and admission still measured the unadjusted count. | Fixed in T1a-2b-3 | — | T1A2B2:534–536; AmF F-2; Fin:215 "R7a / R7b — …" |
 | R7c | A daily document's own `date` was not checked against its key. | Fixed in T1a-2b-3 | — | T1A2B2:533; AmF F-6; Fin:169 |
 | R7d | A snapshot built with no daily document (`dailyRef: null`) was still used after the daily document was built. | Fixed in T1a-2b-3 | — | T1A2B2:537; AmF F-2; Fin:253 "R7d, and a snapshot naming ANOTHER session's layer…" |
-| R8 | The close never read the daily layer; during a failed fetch it wrote the adjusted price over the unadjusted count. | Fixed in T1a-2b-3 | — | T1A2B2:543, :577; AmF F-1; Fin:369 |
+| R8 | The close never read the daily layer; during a failed fetch it wrote the adjusted price over the unadjusted count. | Fixed in T1a-2b-3 | — | T1A2B2:543, :577; AmF F-1; Fin:369; with C-5's two exceptions (A-2B3 T2D-07), **fixed in the fix round** (§10) |
 | T2C-04 | The idea document keeps every receipt and passes 1 MiB at about 2,900 of them, with no warning. | Fixed in T1a-2b-3 (the alert; receipts stay unless Astra asks) | — | A-2B2:85; T1A2B2:417, :571; AmF F-9; Fin:1062, Fin:1070 |
 | T2C-03 | A `force` rebuild of the daily document can erase carried actions under a concurrent top-up. | Carried | T5 | A-2B2:84; T1A2B2:266, :582 |
 | 2b2-Q1 | On a held stock's ex-dividend day, admission refuses all session (the dividend is credited only at the close). | Carried | T1b (the refill rule); the block awaits the founder | T1A2B2:192, :567; A-2B2:87 |
 | 2b2-Q3 | A held stock never quoted again blocks every admission of the book. | Carried | T5 (the tool for a stuck sale with no quote) | T1A2B2:194, :261; A-2B2:87 |
-| 2b2-B2 | The **quarterly** close pays two rows of one action id twice (a dividend paid twice, or a split applied twice). The idea book does not. A money item. | Carried | Q8 (the source: "worth separate tasking") | T1A2B2:263, :418; A-2B2:10 |
-| 2b2-Pointer | Two concurrent top-ups with two vendor answers can leave two payloads under one id: a conflict, which reaches the quarterly close as 2b2-B2. | Carried | Q8, with 2b2-B2 | T1A2B2:275; in the idea book both payloads are kept (Fin:202) and the founder can rule |
+| 2b2-B2 | The **quarterly** close pays two rows of one action id twice (a dividend paid twice, or a split applied twice). The idea book does not. A money item. | Carried | Separate quarterly task (Q8) | T1A2B2:263, :418; A-2B2:10 |
+| 2b2-Pointer | Two concurrent top-ups with two vendor answers can leave two payloads under one id: a conflict, which reaches the quarterly close as 2b2-B2. | Carried | Separate quarterly task (Q8), with 2b2-B2 | T1A2B2:275; in the idea book both payloads are kept (Fin:202) and the founder can rule |
 
 ### 7.2 Items this build's review raised (§5)
 
@@ -551,22 +562,43 @@ Test rows are cited by line at 047c77b0 and the start of the row's name.
 | 2b3-N1 [B] | A coverage-gap `row` ruling could take a backfill row dated after the gap. | Fixed in T1a-2b-3 | — | Fin:1489 "N1 (pure)…" |
 | 2b3-A2 [A] | The window's catch-up, often the first close after an outage, never backfilled. | Fixed in T1a-2b-3 | — | Fin:1532 "A2: …" |
 | 2b3-A4 [A] | On the entry session a snapshot naming another session's layer still counted. | Fixed in T1a-2b-3 | — | Fin:1584 "A4 (pure)…" |
-| 2b3-N2 [A] | The backfill fetch had no timeout and no budget per pass. | Fixed in T1a-2b-3 | — | Fin:1562 "N2: …" |
+| 2b3-N2 [A] | The backfill fetch had no timeout and no budget per pass. | Fixed in T1a-2b-3 | — | Fin:1562 "N2: …"; qualified by A-2B3 T2D-13: the pass budget bounds starts, not completion — carried to T5 |
 | 2b3-N4 [A] | A backfill answer whose rows are not a list was not failed. | Fixed in T1a-2b-3 | — | Fin:1577 "N4: …" |
 | 2b3-N3 [A] | Test rows could reach the vendor. | Fixed in T1a-2b-3 | — | Fin:1590 "the vendor is never reached from a row…" |
-| 2b3-C4 [C] | After a rename, the vendor relisting an action under the new ticker applies it twice (shares or dividend). Same on base. A money item; reachable only after a founder-written rename. | Carried | Q8 | §5 (C4; refuter C, probes `rename_relist`, `late_count`) |
-| 2b3-C5 [C] | A late dividend across a ticker change is paid on the current count. Same on base. | Carried | Q8 | §5 (C5) |
-| 2b3 late dividend after a line sale [C] | A dividend listed only after the idea's line sale, though dated while it held the stock, is never paid to the idea (the comparison gets it). Same on base. | Carried | Q8 | §5 (C-n4) |
-| 2b3-C7 (share basis) [C] | An idea entered on a 3:2 split's ex-date, the split then re-dated one session later at a flat price, is credited the split: a +$4,998.50 phantom at full quality. The gap screen's known blind spot for 1.2 and 1.5 ratios. Same on base. | Carried | Q8 | §5 (C7); the blind spot: T1A2A:478, :753 (R-57) |
-| 2b3-A3 [A] | A row the parser rejects leaves the daily entry, and the backfill, "successful" and empty. Pre-existing on the daily path (the shared fetch is quarterly and untouched). | Carried | Q8 | §5 (A3) |
-| 2b3-D4 [D] | At the endpoint a dividend's possible re-date is named, unpaid, but not counted as an unsettled action. F-7's letter covers "not applied, recorded, alerted"; "not counted" is this build's reading (FR-18). | Carried | Q9 (the founder's ruling) | AmF F-7, F-4; FR-18; Fin:1497 |
-| 2b3 weekly payer [C] | A stock paying the same dividend every week alternates paid and held (F-7's 5-session window). | Accepted by ruling (F-7's letter); Q4 asks again | — | AmF F-7 |
-| 2b3-C7 (dividend) [C] | A re-date of a dividend the holding was not entitled to is paid (F-7 matches actions applied or held, not declined). | Accepted by ruling (F-7's letter); Q10 asks again | — | AmF F-7 |
-| 2b3 two genuine splits | Two genuine identical splits within five sessions look like one re-dated split: the second, and any dividend behind it, waits for the founder. | Accepted by ruling (F-7's letter); Q1 asks again | — | AmF F-7; Astra's T2A-E01 case (T1A2A:1166; AC-2A-3:3) now waits: CA:1858; a founder ruling pays it once: Fin:965 |
-| 2b3-B4 [B] | F-4's narrowing of a paper ledger's own-count doubt lasts one close (the next close's gap screen turns it into a symbol doubt). Not reachable under today's admission (it needs a basket leg rounded to 0.000001 shares, or a holding with no `openedAt`). | Carried | Q8 | §5 (B4) |
-| 2b3-B6 [B] | A ruling pending on one ledger locks its record against another ruling. A moot founder split now closes its ruling; the rest is reachable only from planted state. | Carried | Q8 | §5 (B6); Fin:1014 "the REFUSALS…" |
-| 2b3-N2 [B] | A conflict `payload` ruling cannot carry `cashPerShare` or `renamedTo`. Reachable only from rows the founder writes (C-12). | Carried | Q8 | §5 (B-N2); `holdRulings.js` `payloadOf` |
-| 2b3 unrecognized type | A row of an unrecognized type is not kept once coverage moves past it. Today's parsers emit none. | Carried | Q8 | Fin:1113 |
+| 2b3-C4 [C] | After a rename, the vendor relisting an action under the new ticker applies it twice (shares or dividend). Same on base. A money item; reachable only after a founder-written rename. | Carried | T5 (founder tools; Q8) | §5 (C4; refuter C, probes `rename_relist`, `late_count`) |
+| 2b3-C5 [C] | A late dividend across a ticker change is paid on the current count. Same on base. | Carried | T5 (founder tools; Q8) | §5 (C5) |
+| 2b3 late dividend after a line sale [C] | A dividend listed only after the idea's line sale, though dated while it held the stock, is never paid to the idea (the comparison gets it). Same on base. | Carried | **T1a-2b-4 (before the switch)** — A-2B3 T2D-03 | §5 (C-n4); A-2B3 T2D-03 reproduced it on base and head (the comparison $99.97, the idea $0, full quality). The founder moved its fix to T1a-2b-4, with the adjustment mechanism (§10) |
+| 2b3-C7 (share basis) [C] | An idea entered on a 3:2 split's ex-date, the split then re-dated one session later at a flat price, is credited the split: a +$4,998.50 phantom at full quality. The gap screen's known blind spot for 1.2 and 1.5 ratios. Same on base. | Fixed in the T1a-2b-3 fix round | — | §5 (C7); the blind spot: T1A2A:478, :753 (R-57); A-2B3 T2D-01 showed it reachable under today's feed (no hand-written row). Fixed with the agreed Q10 (§10): Fix:"T2D-01 / Q10 …" (3-for-2 and 1-for-2) |
+| 2b3-A3 [A] | A row the parser rejects leaves the daily entry, and the backfill, "successful" and empty. Pre-existing on the daily path (the shared fetch is quarterly and untouched). | Carried | **T1a-2b-4 (before the switch)** — A-2B3 T2D-12 | §5 (A3); A-2B3 T2D-12: a `5:4` row the real adapter rejects leaves 99.970008 shares valued at $80, full quality ($1,999.40 understated). The founder moved its fix to T1a-2b-4 (§10) |
+| 2b3-D4 [D] | At the endpoint a dividend's possible re-date is named, unpaid, but not counted as an unsettled action. F-7's letter covers "not applied, recorded, alerted"; "not counted" is this build's reading (FR-18). | Accepted by ruling | — | AmF F-7, F-4; FR-18; Fin:1497; the founder's Q9 (18 Nov): named, not counted. Kept |
+| 2b3 weekly payer [C] | A stock paying the same dividend every week alternates paid and held (F-7's 5-session window). | Accepted by ruling | — | AmF F-7; the founder's Q4 (18 Nov): accepted for release 1 (no weekly payer is in the universe) |
+| 2b3-C7 (dividend) [C] | A re-date of a dividend the holding was not entitled to is paid (F-7 matches actions applied or held, not declined). | Fixed in the T1a-2b-3 fix round | — | AmF F-7; the founder's Q10 (18 Nov) changed the rule: a decline counts as a match. Built in the fix round (§10): Fix:"Q10: …" |
+| 2b3 two genuine splits | Two genuine identical splits within five sessions look like one re-dated split: the second, and any dividend behind it, waits for the founder. | Accepted by ruling (F-7's letter); Q1 asks again | — | AmF F-7; Astra's T2A-E01 case (T1A2A:1166; AC-2A-3:3) now waits: CA:1858; a founder ruling pays it once: Fin:965; the founder's Q1 (18 Nov): kept |
+| 2b3-B4 [B] | F-4's narrowing of a paper ledger's own-count doubt lasts one close (the next close's gap screen turns it into a symbol doubt). Not reachable under today's admission (it needs a basket leg rounded to 0.000001 shares, or a holding with no `openedAt`). | Carried | T5 (A-2B3 table) | §5 (B4) |
+| 2b3-B6 [B] | A ruling pending on one ledger locks its record against another ruling. A moot founder split now closes its ruling; the rest is reachable only from planted state. | Fixed in the T1a-2b-3 fix round (the permanent-refusal path); the rest carried | T5 (artificial pending states) | §5 (B6); Fin:1014 "the REFUSALS…"; A-2B3 T2D-10: the permanent-refusal path is reachable from ordinary entry and parsed rows — fixed in the fix round (§10). The register's "only from planted state" was wrong for that path. Other planted pending states wait for T5 |
+| 2b3-N2 [B] | A conflict `payload` ruling cannot carry `cashPerShare` or `renamedTo`. Reachable only from rows the founder writes (C-12). | Carried | T5 (founder tools; Q8) | §5 (B-N2); `holdRulings.js` `payloadOf` |
+| 2b3 unrecognized type | A row of an unrecognized type is not kept once coverage moves past it. Today's parsers emit none. | Carried | T5 (founder tools; Q8) | Fin:1113 |
+
+### 7.3 Astra's final review (A-2B3): T2D-01 to T2D-14
+
+The founder set the fix round's scope (§10.1). Statuses at the fix round's head:
+
+| Id | Finding | Status | Home | Evidence |
+|---|---|---|---|---|
+| T2D-01 | A 3-for-2 split re-dated one session past an ex-date purchase credited +$4,998.50 at full quality (the register's 2b3-C7 share basis) | Fixed in the T1a-2b-3 fix round, with the agreed Q10 | — | A-2B3 T2D-01; Fix:103 "T2D-01 / Q10 …" (a 3-for-2 and a 1-for-2), Fix:136 "Q10: …"; the refuter's AR1-RF-02 (the ex-date action listed two ways): Fix:612, Fix:623 |
+| T2D-02 | A 20-session catch-up through valid archived entries ignored the backfill it fetched: 99.970008 shares and $0 at full quality instead of 124.962510 and $124.96 | Fixed in the fix round | — | Fix:160 "T2D-02 …" (both variants, across the 20-session boundary and a replay); AR1-RF-05 (a backfill row never settles a conflict it took part in): Fix:679 |
+| T2D-03 | A line sale erased a dividend the idea was owed (the register's late dividend after a line sale) | Carried | **T1a-2b-4 (before the switch)** | A-2B3 T2D-03 |
+| T2D-04 | A late split never corrected a dividend already paid ($24.99 short, full quality) | Carried | **T1a-2b-4 (before the switch)** | A-2B3 T2D-04 |
+| T2D-05 | A vendor correction under an id already settled was ignored (124.962510 shares and $124.96 kept where 149.955012 and $299.91 were owed) | Carried | **T1a-2b-4 (before the switch)** | A-2B3 T2D-05 |
+| T2D-06 | A conflict's old id was declined and paid in one close ($299.91 where the system's own resolution chose $199.94) | Fixed in the fix round | — | Fix:199 "the $1/$2 conflict …", Fix:223 "the old id no longer listed …"; AR1-RF-01: Fix:555–595 (four); AR1-RF-03: Fix:634 (both paths) |
+| T2D-07 | Coverage: the entry session read as covered (a $100 fill marked at a fresh $104), and a backdated dividend was paid at an uncovered close | Fixed in the fix round | — | Fix:239 "the entry session …", Fix:251 "a dividend dated on the last covered session …" |
+| T2D-08 | A `price_move` ruling covered a later halving hidden by its recovery | Fixed in the fix round | — | Fix:279 "a round trip …", Fix:305 "a FEED split …", Fix:329 "a partial recovery …", Fix:717 (the drift case); AR1-RF-04: Fix:657, Fix:702 |
+| T2D-09 | A chosen conflict payload paid a ledger that never carried the record | Fixed in the fix round | — | Fix:356–436 (eight: all three ledger roles, a frozen-basket close, a genuine feed row kept, a ledger gaining the record after the ruling) |
+| T2D-10 | A permanently refused founder payload locked its own record and masked the feed's later correction | Fixed in the fix round | — | Fix:452 "a recorded 1-for-1,000,000,000 …", Fix:472 "a possible re-date …", Fix:490, Fix:504 |
+| T2D-11 | A legacy split receipt (no `sharesBefore`) stranded a dividend and a sale | Carried | **T5**. The founder ruled the guard only: no idea book has run in production, so the legacy shape cannot exist. Every share-basis receipt is checked for both counts (Fix:"T2D-11 …", and every Fix row's `afterEach`) | A-2B3 T2D-11 |
+| T2D-12 | A parser rejection read as clean coverage (the register's 2b3-A3) | Carried | **T1a-2b-4 (before the switch)**; §10.4 records the proposal | A-2B3 T2D-12 |
+| T2D-13 | P2: the 60 s pass budget bounds the starts of fetches, not their completion | Carried | **T5** (with C-7) | A-2B3 T2D-13 |
+| T2D-14 | P2: a stale failed backfill can overwrite a committed successful one | Carried | **T5** | A-2B3 T2D-14 |
 
 ## 8. New stores and fields, and the founder's steps after merge
 
@@ -607,3 +639,181 @@ The backfill's upstream calls are counted on the existing day counter `mandateUp
 - **The daily builder's own fetch has no timeout** (`mandateUniverseSnapshot.js`, quarterly, untouched): it runs once a day before the books. The idea book's backfill now bounds its own calls (FR-5).
 - **Lint:** two unused variables in `evidence.test.js` are on `main` and outside this build; `npm run lint:gate` passes.
 - **Pre-existing corporate-action defects the review found** (C4, C5, a late dividend after the idea's line sale, C7's share-basis analogue, A3) are corporate-action items, so they are in the register (§7) as carried, not here.
+
+## 10. Astra's final review, and the fix round (18 Nov 2026)
+
+| | |
+|---|---|
+| Review | `docs/audits/20261118_ASTRA_REVIEW_T1A2B3.md` — Astra's final review of the corporate-action path at c79367b5, committed byte-identical (SHA-256 `5840bd21ee5950304b384711992cf6fc8d12e4d4b6ca64dcfd49efc8f3879f08`, CRLF as attached) in ad413fb4. Verdicts: dark merge **DO NOT MERGE**; founder allowlist **NOT READY** |
+| Scope | Set by the founder (§10.1): seven findings fixed, one guarded, four carried to T1a-2b-4, three to T5 |
+| Commits | ad413fb4 (the review), 737282ed (the fixes and their rows), 3373476c (the refuter's fixes), 943f1286 and d96af701 (rows the battery asked for), 782cb74b (no all-ledger ruling map), then this report |
+| Head | Code head d96af701; this report's commit adds documents only |
+| Mode | `PRACTICE_FIELD_MODE` stays `'off'`. No flag, pin, rule, index or quarterly file changed; no fenced file edited; no new store; no model, Firestore or EODHD call made |
+
+### 10.1 What the founder asked
+
+The founder's scope for this round, from the session (the prompt file it names, `FIX_PROMPT_T1A2B3_ASTRA_ROUND1_NOV18_2026.md`, was not on this machine; the scope below is the founder's own words in the session):
+- **Fix now:** T2D-01 (with Q10), T2D-02, T2D-06, T2D-07, T2D-08, T2D-09, T2D-10.
+- **T2D-11:** only the guard test (every share-basis receipt carries `sharesBefore` and `sharesAfter`); registered as T5. No idea book has ever run in production, so the legacy shape cannot exist.
+- **Not fixed:** T2D-03, T2D-04, T2D-05 and T2D-12, registered "Carried: T1a-2b-4 (before the switch)". They need a new adjustment mechanism, which will be its own build.
+- **T2D-13 and T2D-14:** T5.
+- Failing rows first, one refuter on the fix round, the full Linux suite, lint, build, rules, both differentials, Astra's review committed byte-identical, the §7 register updated; push to the draft PR and stop. Nothing merged; the flag stays `'off'`.
+
+### 10.2 In plain terms
+
+What was wrong, and what now happens:
+- **A split the vendor moves by a day after the idea bought (T2D-01, with Q10).** The idea bought on a split's ex-date, so it was not owed the split, and the close declined it. When the vendor moved the same split to the next day, the close took it as a new split and credited the idea 50% more shares: +$4,998.50 that never existed. A declined action now keeps its terms, and a matching row a few sessions away is held for the founder instead of paid. A dividend moved the same way is not paid (Q10).
+- **A long catch-up after an outage (T2D-02).** The idea book fetched the missing split and dividend, then closed 22 sessions from old daily records that did not have them, so neither was ever applied. Every catch-up session now reads what was fetched.
+- **One conflicting dividend paid twice (T2D-06).** When the vendor listed the old date and a new date at once, the close both declined and paid the old one. That can no longer happen: with two possible readings, the old one stays open for the founder.
+- **Two gaps in "a day without data is a day of doubt" (T2D-07).** On the day an idea bought, a failed data fetch still produced a fresh price; and a dividend dated on the last good day, first reported on a bad day, was paid. Both now wait for a day whose data is good.
+- **A ruling that reached too far (T2D-08).** When a price halved, halved again and recovered while a hold stood, a ruling on the first halving also released a dividend dated in the second. Each split-shaped move is now kept, with its date, and a ruling releases only its own.
+- **A ruling paid on the wrong ledger (T2D-09).** The founder's choice for a conflict on the idea's own record could be paid to a comparison that never had the conflict. A ruling now names the records it covers and reaches only them.
+- **A ruling that locked itself (T2D-10).** If the founder chose a ratio that would round a holding to nothing, the ruling could never apply and could not be replaced. Such a choice is now refused when it is made; if it fails later anyway, the ruling closes with its reason and the founder can choose again.
+- **Old receipts (T2D-11).** Every split receipt now carries the share counts before and after it, and a test checks that on every receipt.
+
+**Not fixed in this round, by the founder's decision:** a dividend owed after a line sale (T2D-03), a dividend paid before a late split (T2D-04), a vendor correction of an action already applied (T2D-05), and a vendor row the parser rejects (T2D-12). They need a way to adjust money already paid, which is its own build, T1a-2b-4, before the switch. Two backfill timing items (T2D-13, T2D-14) wait for T5.
+
+**So the switch stays NOT READY** until T1a-2b-4 lands; this round answers the seven findings the founder put in it.
+
+### 10.3 The fixes, by `file:line`
+
+Line numbers are at the code head 782cb74b. **Fix** rows are `corporateActionFixRound.test.js` by line and the start of the row's name. Every Fix row was run at c79367b5 (the reviewed head) and at 737282ed (before the refuter's fixes): §10.6 gives which fail where.
+
+| Finding | What changed | `file:line` | Rows |
+|---|---|---|---|
+| **T2D-01, with Q10** | A `not_entitled` decline keeps the payload it declined (`ratio`, `amount`, `cashPerShare`). `possibleRedateOf` matches it, and every payload of a conflict the holding was not entitled to (AR1-RF-02), so a row of the same type and payload within five sessions is a `possible_redate`: a split is a doubt held for the founder (Q1), a dividend is not paid (Q10). The founder's `conflict` ruling (`payload` or `none`) settles it | `ledger.js:205` `NOT_ENTITLED` · `:897` the decline's receipt · `:913` `possibleRedateOf` · `:918` the not-entitled conflict's rows | Fix:103 "T2D-01 / Q10 …" (a 3-for-2 and a 1-for-2), Fix:136 "Q10: …", Fix:612 "AR1-RF-02 …" (two), Fix:623 |
+| **T2D-02** | A catch-up close reads each held symbol's stored backfill, inside its transaction, whatever the archived daily entry says, and a successful backfill's rows join that idea's rows. They are applied through the session being valued, and once. A backfill row never settles a conflict it took part in (AR1-RF-05): it joins only while the session's own rows list that id | `close.js:702` the read · `:246`–`:254` the union and the RF-05 filter | Fix:160 "T2D-02 …" (both variants, the 20-session boundary, a replay), Fix:679 "AR1-RF-05 …" |
+| **T2D-06** | An unsettled conflict whose own id is listed in the call is never settled under a moved date. With a matching row under another date listed now or applied earlier, it stays open (`ambiguousConflicts`, alerted `PRACTICE_FIELD_CORPORATE_ACTION_AMBIGUOUS`) and its own row is not applied. The founder's own ruling on it is never "ambiguous" (AR1-RF-01). A conflict whose own row is held on the holding replays it (AR1-RF-03). Candidates read the live settled set, so no id is both declined and applied | `ledger.js:932` `listedNow` · `:935` `matchingRowOf` · `:943` the held row (RF-03) · `:947` the ruled id (RF-01) · `:1061` the live settled set · `:1063` · `close.js:344` the alert | Fix:199 "the $1/$2 conflict …", Fix:223 "the old id no longer listed …", Fix:555–595 "AR1-RF-01 …" (four), Fix:634 "AR1-RF-03 …" (two) |
+| **T2D-07** | The session's own valid entry, or a backfill reaching it, is required even when `caCoveredThrough` is the session or later (the entry session, whose start is the opening date). On an uncovered close a coverage-gap item holds EVERY count-dependent row of the symbol, whatever its date. It is held on the holding and replayed once when coverage returns | `dailyCoverage.js:200` `needFrom` · `ledger.js:1001` | Fix:239 "the entry session …", Fix:251 "a dividend dated on the last covered session …" |
+| **T2D-08** | While a record stands, each split-shaped transition between consecutive prices observed is kept with its dates (`transitions`). One seen at an uncovered close is kept too, flagged `uncovered`, and never moves `lastSeen` (AR1-RF-04). Whatever retires a record promotes its first transition to the next record, carrying the rest: a `price_move` ruling (`priceMoveReference`), a founder `split`, or an explaining feed row. What is dated after that transition stays held | `ledger.js:451` the refresh · `:470` `transitionOf` · `:484` `recordOfTransition` · `:516` the ruling · `:1206` the explaining row · `close.js:310` (`pricesUsable`) | Fix:279 "a round trip …", Fix:305 "a FEED split …", Fix:329 "a partial recovery …", Fix:657 "AR1-RF-04 …", Fix:702 "… its edge" |
+| **T2D-09** | A conflict ruling records the ledgers whose record it covers (`ledgers`). At the close it is revalidated on each, and it is applied, replaces feed rows and completes only there. `applyFounderRulings` returns per-ledger maps only (`extraActionsByLedger`, `ruledIdsByLedger`, `replacedIdsByLedger`). The close hands each ledger its own rows (`actionsOf`), and `shareBasisHolds` takes them per ledger | `holdRulings.js:142` · `:192` · `:212` · `:259` · `:337` · `close.js:302` · `ledger.js:682` | Fix:356–436 "T2D-09 …" (eight: all three ledger roles, a frozen-basket close, a genuine feed row kept, a ledger gaining the record after the ruling) |
+| **T2D-10** | A choice that would round a named ledger's holding to nothing is refused up front: `ruling_unrepresentable` (422), which writes nothing, so the record takes another ruling. That covers a conflict payload, a founder split and a coverage-gap row. At the close, a conflict or suspicion ruling's action the applier refuses for good is reported (`founderRefusals`) and leaves no held record. `markRulingsApplied` closes the ruling `outcome: 'refused'` with its reason and where it applied, if anywhere (alert `PRACTICE_FIELD_HOLD_RULING_REFUSED`), which releases the record's lock and stops it masking the feed's own row | `holdRulings.js:64` `unrepresentableOn` · `:125` · `:149` · `:172` · `:309` · `ledger.js:1141`–`:1146` · `close.js:423` | Fix:452 "a recorded 1-for-1,000,000,000 …", Fix:472 "a possible re-date …", Fix:490 "(pure) a founder split …", Fix:504 "(pure) a ruling whose action the applier refuses …" |
+| **T2D-11** (T5) | The guard: every applied share-basis receipt on every ledger of every idea in the store carries finite, positive `sharesBefore` and `sharesAfter`. It is checked in the Fix file's `afterEach` after every row, and by a row exercising feed splits, a held split applied late, a conflict payload and a founder split | `corporateActionFixRound.test.js` `shareBasisReceiptsMissingCounts` | Fix:536 "T2D-11 …" |
+
+Two build rows changed with the round:
+- `close.test.js` "a holding opened ON the effective date …" pins the decline's receipt, which now carries its payload (T2D-01).
+- `corporateActionFinish.test.js` "A1: …" now dates the second halving at the uncovered close that observed it (S[2], AR1-RF-04). It still asserts that `lastSeen` stays at the covered close, which is the row's own guarantee.
+
+### 10.4 Carried, with homes
+
+| Id | Home | Note |
+|---|---|---|
+| T2D-03 | **T1a-2b-4 (before the switch)** | Needs the ledger's holding history (fills, actions and sales) to pay a dividend owed on a holding sold since its ex-date, once, to the idea and the book |
+| T2D-04 | **T1a-2b-4 (before the switch)** | Needs a linked, idempotent cent adjustment on each ledger and the book when a late share-basis row predates a paid dividend |
+| T2D-05 | **T1a-2b-4 (before the switch)** | Needs a correction record for a changed payload under a settled id, a hold on the disputed money or quality, and one auditable adjustment after resolution |
+| T2D-12 | **T1a-2b-4 (before the switch)** | **The proposal, for that build** (the founder asked it to be recorded): a per-symbol parse report in its own server-only collection (`practiceFieldCaParseReports/{date}`), written by a Practice Field fetch wrapper that the daily build receives only when an idea book is active. `ensureDailySnapshot` already takes a `fetchCorporateActions` option, and `practiceFieldBuildInputs` (`sweep.js`) already supplies the daily build's options, so `mandateUniverseSnapshot.js` stays byte-identical. The wrapper tees the vendor's raw JSON through `fetchImpl`, runs the exported parsers, and counts a reject or a non-array envelope as incomplete. It returns exactly `{ actions, calls, failed }`, so the daily document, the logs and the calls are unchanged. The backfill records the same report. **The lean, also the founder's:** a session whose report is missing counts as uncovered (fail-closed). That needs the founder's sign-off for the new collection, as Q6 did |
+| T2D-11 | **T5** | The guard is built (§10.3) |
+| T2D-13 | **T5**, with C-7 | Pass the lesser of the remaining pass time and the per-fetch limit to the fetch, cancel unfinished HTTP work, count requests already started; until then the documented deadline is "starts within 60 s" |
+| T2D-14 | **T5** | Re-read the backfill document in a transaction at publication; a committed success is never overwritten by a failure |
+
+### 10.5 Readings stated
+
+Where Astra's fix instruction stops, this is what was built. Each is a question if the founder or Astra reads it otherwise.
+
+| # | Finding | Reading built |
+|---|---|---|
+| AR1-1 | T2D-01, Q10 | The decline that matches is the `not_entitled` one: the action exists and the holding was not owed it. A `founder_ruled_none` or `settled_by_redate` decline carries no payload of its own and matches nothing new (a re-date of what settled a conflict already matches the applied row). Every payload of a conflict the holding was not entitled to (an action the feed listed two ways on the ex-date) matches too (AR1-RF-02). A decline written before this round carries no payload and matches nothing; no idea book has run in production |
+| AR1-2 | T2D-06 | "Two economic interpretations remain" is read as: the conflict's own id is listed in this call with one payload, and a matching row under another date (within five sessions) is listed now or was applied by an earlier close. The row under the new date is applied — both readings pay it — and the old id's row is not; the conflict stays open, alerted `PRACTICE_FIELD_CORPORATE_ACTION_AMBIGUOUS`, until the founder rules (`none`, or a payload). RF-A2's settle under a moved date still happens when the old id is not listed. The founder's own ruling on the conflict is never ambiguous (AR1-RF-01). A conflict whose own row is held on the holding — an uncovered close held it — replays it as the covered close would have applied it, and is not settled under a moved date meanwhile (AR1-RF-03) |
+| AR1-3 | T2D-07 | Evidence for the session itself is required whenever `caCoveredThrough` (or the opening session standing in for it) is the session or later. On the entry session an uncovered symbol keeps `caCoveredThrough` at its opening session — nothing dated on or before it is owed — so the next covered close continues from there |
+| AR1-4 | T2D-02 | A catch-up close reads every held symbol's stored backfill (one read each; catch-ups only), and a successful backfill's rows join that idea's rows whether or not coverage needed them. A row dated after the session waits (the engine's `onOrBefore`); a row already settled is skipped (the ledger's ids). A backfill row never settles a conflict it took part in: a row of an id this idea holds an unsettled conflict on joins only while the session's own rows list the id, so once the archived row has left the window the conflict stands for the founder (AR1-RF-05; FQ-3) |
+| AR1-5 | T2D-08 | A transition is a split-shaped move (the engine's own screen) between two consecutive prices seen while the record stands, recorded at every close whose snapshot is used and whose quote is complete. One seen at a close whose corporate-action data does not cover the symbol is kept, flagged `uncovered`, and never moves `lastSeen` (AR1-RF-04): the price is observed, but a ruling's reference stays a covered close's (lens A's A1). Every retirement promotes the first transition — a founder `price_move`, a founder `split`, or a feed row that explains the record. With none left, FR-14's endpoint judgement still runs |
+| AR1-6 | T2D-09 | A ruling recorded before this round has no `ledgers` and names all three (as before). A founder split goes only to the ledgers where its record still stands. A coverage-gap `row` stays idea-wide: it is a fact about the symbol, not a ledger's record |
+| AR1-7 | T2D-10 | A choice is refused up front (`ruling_unrepresentable`, 422) when it would round the holding to nothing on ANY ledger the ruling names — the conservative side: the founder then chooses another payload or `none`. A refusal writes nothing, so it leaves no request to replay. The close's backstop (a holding changed after the ruling) closes the ruling `outcome: 'refused'` with its reason (and, partly refused, names where it applied). A coverage-gap `row` is checked up front on every ledger; refused at the close, it is held as a feed row would be |
+
+### 10.6 Tests: rows first, then the checks
+
+**The fix round's rows.** `corporateActionFixRound.test.js` has 38 rows. Each was run against `git archive` trees of the earlier heads, with the vendor stubbed:
+
+| Head | Fail | Pass | The passes are |
+|---|---|---|---|
+| c79367b5 (the reviewed head) | **29** | 9 | Two controls (T2D-02 with failed archived entries; RF-A2 with the old id no longer listed) and the T2D-11 guard. Four refuter rows for regressions this round itself introduced and then fixed (AR1-RF-01's share-basis and $2-applied rows, AR1-RF-03's two paths). The RF-04 edge row and the drift row, which the reviewed head already handled |
+| 737282ed (before the refuter's fixes) | **9** | 29 | Exactly the refuter's nine failing probes fail |
+| d96af701 (the code head) | 0 | **38** | — |
+
+**Astra's own probes**, rerun unmodified on this round's code (`run/probe/independent.test.js`, `more.test.js`; her base and head harness, the head tree swapped). Her numbers flip:
+
+| Finding | Astra at c79367b5 | This round |
+|---|---|---|
+| T2D-01 | 149.955012 shares, full quality (+$4,998.50) | 99.970008 shares, held for the founder (not full quality) |
+| T2D-02 (valid archived entries) | 99.970008 shares, $0, full quality | 124.962510 shares, $124.96 — the same as with failed entries |
+| T2D-06 | $299.91, full quality | $199.94, the old id neither declined nor paid; the conflict open (not full quality) |
+| T2D-07 (entry session; backdated dividend) | a fresh $104 mark, full quality; $99.97 paid | carried as `ca_coverage_missing` at $100; $0, held |
+| T2D-08 | $99.97 released, full quality | a record for the hidden halving; $0, held |
+| T2D-09 | the comparison credited $99.97 with a founder receipt | nothing reaches the comparison; the ruling names `['ledger']` |
+| T2D-10 | the ruling pending for good; `record_already_resolved` | 422 `ruling_unrepresentable` up front; the alternative applied (79.976006 shares); `none` declines the re-date |
+
+Two of her probes assert her own observation and now fail, as they should:
+- "split redated after ex-date purchase" asserts full quality.
+- "live conflict ruling … on just one ledger" plants a same-stock comparison whose receipts differ from the idea's. The close now pays only the ledger with the record, and the same-stock tie (`reconcile.js` `comparison_not_tied`) refuses the planted book. The scoping is pinned without planting an inconsistent book: Fix:361 (all three ledger roles), and Fix:388 on a frozen-basket comparison that also holds AAPL.
+
+**The checks.**
+
+| Check | Where, and the command | Exit | Log lines |
+|---|---|---|---|
+| Full suite (Linux) | WSL worktree of `~/pd-ci` at d96af701: `TZ=UTC flock /tmp/pd-suite.lock npx vitest run --maxWorkers=8` | **0** | `Test Files  1562 passed | 13 skipped (1575)` · `Tests  35589 passed | 173 skipped (35762)` — the build's 35,551 plus the round's 38 rows |
+| Lint gate | the same tree: `npm run lint:gate` | **0** | no error, no warning (`--max-warnings 0`) |
+| Build | the same tree: `npx vite build` | **0** | `✓ built in 25.53s`. The two esbuild CSS-minify warnings are the build's own (the same two in each of its final runs) |
+| Rules suite | the same tree: `npm run test:rules` (Firestore emulator) | **0** | `Test Files  46 passed (46)` · `Tests  839 passed (839)` |
+| Seventeen-scenario differential | Astra's harness, base `git archive` of `origin/main` 2e069d42 against a tree of d96af701 | **0** | 17 scenarios × `off` and `on`: **34/34 identical**; 4,000 default build sets identical; the quarterly prompts byte-identical, with the positive control |
+| 40-case traced differential | Astra's harness, the same run | **0** | **40/40 identical** |
+| Backfill isolation (rule 5) | the build's scenario beside her harness, the same run | **0** | 4/4: a planted backfill reaches no quarterly reader; the vendor's split does (control) |
+| The idea book (Windows, targeted) | `vitest run api/_utils/practiceField api/practice-field api/cron/practiceFieldIsolation.test.js api/cron/practiceFieldNoBook.trace.test.js api/_utils/compositionProtectedStores.scan.test.js` | **0** | `Test Files  25 passed (25)` · `Tests  806 passed (806)` |
+| Linux-only scans | `mandateMoneyRounding.scan.test.js`, `compositionProtectedStores.scan.test.js` (WSL) | **0** | 33/33 — no raw rounding added; no new store |
+| End-to-end pin | `endToEnd.test.js` (in the suite) | **0** | the dump's SHA-256 is still `abcf8420…c24ed9` (443,533 bytes): with complete data no money leaf — and no leaf — changed this round |
+
+No vendor call, model call or Firestore write was made: every store is the in-memory fake or the local emulator, the vendor key is stubbed empty and `fetch` refuses in every new row, and the suite's backfill lines all say "not configured". The report's own commit adds documents only; the build, lint and suite ran again on it before the push (the PR description records them).
+
+**The mutation battery** (the build's `run-battery.mjs`):
+- 114 mutants on the code head: the build's 85, plus 29 for this round (AR1-M01 to AR1-M29; one each per fix and per refuter fix).
+- Five of the build's anchors moved with this round's edits and were re-cut with the same intent: F1-06, F1-13, F8-01, R-A1 and R-A4.
+- Run in a private WSL worktree at 943f1286, then every `holdRulings.js` mutant and the survivors again at d96af701 (`holdRulings.js` changed after 943f1286).
+- Baseline 806 rows, 0 failing. **Defined 114, ran 114, broken 0, killed 113, survived 1.**
+- R-B1 (`priceMoveReference`'s endpoint judgement disabled) survived the first run: this round's transitions catch every case its rows built. The drift row (Fix:717: a split-shaped whole made of non-split-shaped steps) kills it.
+- **AR1-M05 survives and is equivalent.** It removes the live settled-set check in the candidates loop. After this round no candidate's id can be declined earlier in the same call:
+  - RF-A2 settles only a conflict whose own id is not listed and whose own row is not held (`ledger.js:932`, `:943`), so it never declines a candidate;
+  - a `not_entitled` id is never pending;
+  - a founder's `none` is declined before the call.
+  
+  The check stays as the backstop for Astra's "one id never both declined and paid", which the T2D-06 rows assert after every close (`appliedAndDeclined`).
+
+### 10.7 The fix-round refuter
+
+The founder asked for one refuter on the fix round. It checked 737282ed on its own `git archive` tree. It worked read-only on git and on the shared tree, against the reviewed head as a base. Every finding below had a probe, and each probe is now a committed row. Its ids are AR1-RF-n.
+
+| Id | What it broke | Introduced by | Exit criterion | Done |
+|---|---|---|---|---|
+| AR1-RF-01 | A founder `payload` ruling on a conflict that T2D-06 left open was never applied: the ruling's own row met the ambiguity rule. The record stayed locked (`none` answered 409), with the sale held | T2D-06 | 4, 5 | **Fixed** (`ledger.js:947`). Fix:555–595 |
+| AR1-RF-02 | An ex-date action the feed listed two ways (a conflict with `entitled: false`, not a `not_entitled` decline) still credited its re-date: +$4,998.50 on a 3-for-2, at full quality | Pre-existing; T2D-01's fix was incomplete | 3 | **Fixed** (`ledger.js:918`). Fix:612, Fix:623 |
+| AR1-RF-03 | A conflict id's own row, held at an uncovered close (T2D-07), was then settled `settled_by_redate` under a new date. $199.94 where the covered path pays $299.91: the money depended on whether one day's fetch failed | T2D-07 with T2D-06 | 3, 6 | **Fixed** (`ledger.js:943`): the held row replays as the covered close would have applied it. Fix:634 (both paths) |
+| AR1-RF-04 | No transition was recorded at an uncovered close, so a halving seen only there escaped the `price_move` ruling's scope | Pre-existing; T2D-08's fix was incomplete | 5 | **Fixed** (`ledger.js:451`): kept, flagged `uncovered`; `lastSeen` still moves only at a covered close (lens A's A1). A snapshot naming another layer yields none. Fix:657, Fix:702 |
+| AR1-RF-05 | The T2D-02 union let a backfill row outlive the archived row it conflicted with and settle the conflict alone. 3/2 was applied at full quality where the price showed 5/4 (149.955012 shares at $80) | T2D-02 | 2, 3 | **Fixed** (`close.js:248`–`:254`): a backfill row never settles a conflict it took part in, so the founder decides. Fix:679 |
+| Note | A partly refused ruling's alert said "nothing was changed" while one ledger had applied it | T2D-10 | — | **Fixed**: the alert and the ruling name where it applied (`appliedOnLedgers`) |
+
+What it found to HOLD, with probes:
+- The end-to-end dump is byte-identical to Astra's H, so complete-data money is unchanged.
+- No id is ever both applied and declined, in any run.
+- The entry-session requirement breaks no normal flow.
+- A held dividend is paid exactly once after a long outage and a backfill: same id, a re-dated id, or a corrected amount.
+- A founder `split` on a record with transitions conserves on all three ledgers and the book.
+- A replay of the original request key after a close-time refusal answers the stored response and acts again on nothing.
+- The Q10 matcher's false positives fall inside the accepted Q4 and Q1 limits.
+
+Code read only, not probed:
+- A conflict of three or more rows still settles against the first matching row (pre-existing).
+- A ruling recorded without `ledgers` names all three (none exists; dark).
+- T2D-09 with a named ledger that sold the symbol collapses into T2D-03 (carried).
+- A coverage-gap `row` refused at the close leaves a refused held record that no ruling kind releases. It needs the holding to change between ruling and close, and the up-front check refuses the case it can see. This is T2D-11's class (no ruling kind for a refused held record), carried to T5.
+
+### 10.8 Questions for the founder
+
+| # | Question | Built |
+|---|---|---|
+| FQ-1 | The scope above is your answer in the session; the prompt file it names (`FIX_PROMPT_T1A2B3_ASTRA_ROUND1_NOV18_2026.md`) was not on this machine. Is anything in that file outside what was built? | The answer's scope |
+| FQ-2 | T2D-06: when a conflict's old row is still listed beside a matching row under another date, the conflict waits for you even after the new row has left the window and the feed lists only the old one (AR1-2; Fix:595). The alternative: let the old row settle it alone once the new date's row is gone. | Waits for the founder |
+| FQ-3 | AR1-RF-05: a backfill row that disagrees with an archived row of the same id makes a conflict only you can settle — more holds after a long outage. The alternative: the archived row wins and the disagreement is only alerted (the money `main` would show). | Waits for the founder |
+| FQ-4 | T2D-10: a choice is refused up front if it would round the holding to nothing on ANY ledger the ruling names, so a comparison's tiny holding can block a payload the idea could take (AR1-7). The alternative: refuse only on the idea's own ledger and let a paper ledger hold its own-count doubt (F-4). | Refused on any named ledger |
+
+### 10.9 Where this leaves the verdicts
+
+- **The dark merge.** Every finding the founder put in this round is fixed, and the refuter's five with them. Each has a row that fails at the head it answers, and the mutation battery kills every mutant but one equivalent. The quarterly product is unchanged: the differentials are identical, a planted backfill reaches no quarterly reader, and no quarterly file, flag, pin, rule or index changed. With complete data, money is unchanged: the end-to-end pin `abcf8420…` is byte-identical. That is for Astra's confirmation to judge.
+- **The founder allowlist stays NOT READY** by the founder's own scope: T2D-03, T2D-04, T2D-05 and T2D-12 are T1a-2b-4's, before the switch.
