@@ -49,6 +49,19 @@ describe('formatRatio / formatVolume', () => {
     expect(formatVolume(2_100_000_000)).toBe('2.1B');
     expect(formatVolume(null)).toBeNull();
   });
+  it('review L1-1: whole numbers keep their zeros; the unit follows the rounding', () => {
+    expect(formatVolume(100_000)).toBe('100K');
+    expect(formatVolume(150_000)).toBe('150K');
+    expect(formatVolume(250_000)).toBe('250K');
+    expect(formatVolume(300_000_000)).toBe('300M');
+    expect(formatVolume(120_000)).toBe('120K');
+    expect(formatVolume(10_000)).toBe('10K');
+    expect(formatVolume(1_000_000)).toBe('1M');
+    expect(formatVolume(999_600)).toBe('1M');
+    expect(formatVolume(999_400)).toBe('999K');
+    expect(formatVolume(999)).toBe('999');
+    expect(formatVolume(99_950)).toBe('100K');
+  });
 });
 
 describe('dates', () => {

@@ -1,0 +1,56 @@
+// SCRATCH ONLY (never committed): the Chart view's read on fixture data, for real-browser measurement.
+import React from 'react';
+
+export async function start(root) {
+  const code = new URLSearchParams(window.location.search).get('chartReadFixture');
+  const realFetch = window.fetch.bind(window);
+  const fx = await (await realFetch(`/chartread/${code}.json`)).json();
+  // The clock: the fixture instant, moving.
+  const base = Date.parse(fx.now);
+  const t0 = performance.now();
+  const RealDate = Date;
+  class FixedDate extends RealDate {
+    constructor(...a) { if (a.length === 0) super(base + (performance.now() - t0)); else super(...a); }
+    static now() { return base + (performance.now() - t0); }
+  }
+  window.Date = FixedDate;
+  try { for (const k of Object.keys(localStorage)) if (/ohlcv_/.test(k)) localStorage.removeItem(k); } catch { /* none */ }
+  window.__fetches = [];
+  window.fetch = async (url) => {
+    const u = new URL(String(url), window.location.origin);
+    window.__fetches.push(u.pathname + u.search);
+    const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+    if (u.pathname === '/api/stocks/historical') {
+      const tf = u.searchParams.get('timeframe');
+      const data = tf === '1d' ? fx.daily : tf === '1w' ? fx.weekly : (fx.thirty || []);
+      return json(200, { success: true, data, timeframe: tf, requestedTimeframe: tf });
+    }
+    if (u.pathname === '/api/research/setup-read') return json(200, fx.body);
+    if (u.pathname === '/api/stocks/prices') { const t = fx.daily[0]; return json(200, { success: true, count: 1, prices: { [fx.symbol]: { price: fx.price, open: t.open, high: Math.max(t.high, fx.price), low: Math.min(t.low, fx.price), close: fx.price, previousClose: fx.daily[1].close, change: fx.price - fx.daily[1].close, changePercent: ((fx.price / fx.daily[1].close) - 1) * 100 } } }); }
+    return json(404, { error: 'fixture' });
+  };
+  // The alignment probe: every draw of the rule's marks records where it put each mark, and the chart it asked.
+  const { RuleMarksPrimitive } = await import('./components/Research/ChartRead/ruleMarksPrimitive.js');
+  const orig = RuleMarksPrimitive.prototype._draw;
+  RuleMarksPrimitive.prototype._draw = function probe(target) {
+    orig.call(this, target);
+    const a = this.attachedTo;
+    if (!a) return;
+    const ts = a.chart.timeScale();
+    window.__probe = { chart: a.chart, series: a.series, prim: this };
+    window.__draws = (window.__draws || 0) + 1;
+    window.__lastDraw = this.scene.items.map((m) => ({ n: m.n, time: m.time, value: m.value, x: ts.timeToCoordinate(m.time), y: a.series.priceToCoordinate(m.value) }));
+  };
+  const { default: AssetResearchModal } = await import('./components/draft/AssetResearchModal');
+  const b = fx.battle;
+  root.render(
+    <AssetResearchModal
+      asset={b ? b.asset : { symbol: fx.symbol, name: 'Sample Co', price: fx.price, percentChange: 0.39 }}
+      onClose={() => {}}
+      version={2}
+      {...(b
+        ? { showActionButton: false, isGameContext: true, defaultTab: 'baggerbomb', defaultTimeframe: 'bomb', wsPrice: fx.price, sheetContext: b.ctx, bombContext: b.bomb }
+        : { actionConfig: { label: 'Add to Watchlist', onClick() {}, variant: 'primary' } })}
+    />,
+  );
+}

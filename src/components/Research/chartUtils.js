@@ -129,9 +129,14 @@ export const aggregateToMonthly = (weeklyData) => {
  * chart-ready format (oldest-first, validated, deduplicated).
  *
  * @param {Array} rawData - OHLCV candles from fetchHistoricalOHLCV (newest-first)
+ * @param {{ basis?: 'raw' }} [options] - The Chart view's read (ACX-3, CR-7, UC-1 – UC-2; spec
+ *   docs/specs/CHART_READ_SPEC_V1.md): `basis: 'raw'` draws each candle as traded — open, high, low and close
+ *   unscaled, so the last candle's close is the price the hook patched in (UC-4) and the rule's marks, measured
+ *   on raw prices, sit on these bars. Absent (every other caller), the candles are scaled by adjusted close ÷
+ *   close exactly as before, byte for byte.
  * @returns {Array} Chart-ready candles (oldest-first) with { time, open, high, low, close, volume }
  */
-export const prepareChartData = (rawData) => {
+export const prepareChartData = (rawData, { basis } = {}) => {
   if (!rawData || rawData.length === 0) return [];
 
   const isIntraday = (() => {
@@ -148,6 +153,16 @@ export const prepareChartData = (rawData) => {
     const rawTime = candle.date || candle.datetime || candle.timestamp;
     const time = formatTime(rawTime, isIntraday);
     if (!time) return null;
+    if (basis === 'raw') {
+      return {
+        time,
+        open: Number(candle.open),
+        high: Number(candle.high),
+        low: Number(candle.low),
+        close: Number(candle.close),
+        volume: Number(candle.volume) || 0,
+      };
+    }
     const adjClose = Number(candle.adjusted_close) || Number(candle.close);
     const rawClose = Number(candle.close);
     const factor = rawClose > 0 ? adjClose / rawClose : 1;

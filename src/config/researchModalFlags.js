@@ -173,24 +173,30 @@ export const CHART_READ_MODES = Object.freeze(['off', 'allowlist', 'on']);
 
 /**
  * CHART_READ_MODE — the chart's evidence (spec of record
- * docs/specs/CHART_EVIDENCE_SPEC_V1.md RR-7): the stored Trend Follower setup
- * record of one ranked stock, read by GET /api/research/setup-read and, in a
- * later build, by the Chart view's read. The route is READ ONLY: one or two
- * record reads, never a provider call, never a write, never a model call.
+ * docs/specs/CHART_EVIDENCE_SPEC_V1.md RR-7; the Chart view's read,
+ * docs/specs/CHART_READ_SPEC_V1.md): the stored Trend Follower setup record of
+ * one ranked stock, read by GET /api/research/setup-read and shown by the
+ * shell's Chart view under the plot (the read, its marks, its sheet, the
+ * unadjusted 1D candles). The route is READ ONLY: zero to three record reads
+ * (`read`, then `previous`), never a provider call, never a write, never a
+ * model call.
  *
  * A STRING TRI-STATE ('off' | 'allowlist' | 'on'), resolved at CALL time by
  * resolveChartReadMode() (src/components/Research/Sheet/chartReadMode.js —
- * the route reads it, and the Chart view's read will), which maps any value
- * outside CHART_READ_MODES to 'off'. Never read at module scope.
+ * the route and the Chart view's read, ChartRead/useChartRead.js, both read
+ * it), which maps any value outside CHART_READ_MODES to 'off'. Never read at
+ * module scope.
  *
  *   'off'        the route answers 404 chart_read_unavailable to every signed-in
  *                player, after auth and before the symbol is read: no record
- *                read. Nothing on screen reads it yet, so the app is the same
- *                byte for byte at this value.
+ *                read. The Chart view asks nothing and draws nothing: the
+ *                app is the same byte for byte at this value.
  *   'allowlist'  PER PLAYER, not per battle (a record carries no owner and no
  *                battle id): the route admits a caller only when
  *                isCockpitOwnerAllowlisted names it, read at call time (the
  *                cockpit's server-side allowlist, the founder and FT_QA).
+ *                The client cannot know that verdict: the Chart view asks
+ *                once per stock and shows a slot only on a 200 (spec R-2).
  *   'on'         every signed-in player.
  *
  * RUNWAY: CURRENT: 'off' (the read-route build, PR A, dark). 'allowlist' and

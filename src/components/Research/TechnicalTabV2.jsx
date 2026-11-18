@@ -17,7 +17,7 @@ import { priceText, priceDecimals } from './priceFormat';
  * `sessionDate` is the current trading session's date (YYYY-MM-DD: ET for
  * stocks, UTC for crypto — useResearchData's sessionDateOf).
  */
-const TechnicalTabV2 = ({ asset, dailyData, indicators, levels, sessionDate, onLevelHighlight }) => {
+const TechnicalTabV2 = ({ asset, dailyData, indicators, levels, sessionDate, onLevelHighlight, levelsNote = null }) => {
   const price = asset?.price || 0;
   // One precision for the asset's prices: its shown price's (without one, each
   // price prints by its own size).
@@ -25,7 +25,7 @@ const TechnicalTabV2 = ({ asset, dailyData, indicators, levels, sessionDate, onL
 
   return (
     <div>
-      <PriceLevelsSection levels={levels} price={price} decimals={decimals} onLevelHighlight={onLevelHighlight} />
+      <PriceLevelsSection levels={levels} price={price} decimals={decimals} onLevelHighlight={onLevelHighlight} levelsNote={levelsNote} />
       <MomentumSection indicators={indicators} price={price} />
       <VolumeRangeSection dailyData={dailyData} price={price} decimals={decimals} sessionDate={sessionDate} />
       <SectorContextSection asset={asset} />
@@ -76,7 +76,9 @@ const describeMacd = (macd, histogram, dates) => {
 // rows below are sided and measured from the price the "Current" row shows
 // (BUILD_RULES §9) — the same helper sides the chart's S/R lines. Without a
 // shown price there is nothing to measure from.
-const PriceLevelsSection = ({ levels, price, decimals, onLevelHighlight }) => {
+// levelsNote (the Chart view's read; round 6): one line saying these levels are their own calculation, not the
+// rule's 20-session high and low. Absent (every caller but the read's), nothing is added.
+const PriceLevelsSection = ({ levels, price, decimals, onLevelHighlight, levelsNote = null }) => {
   const sided = sideLevelsAt(levels, price);
   const support = sided?.support || [];
   const resistance = sided?.resistance || [];
@@ -141,6 +143,11 @@ const PriceLevelsSection = ({ levels, price, decimals, onLevelHighlight }) => {
 
   return (
     <CollapsibleSection title="Price Levels" icon={<Target size={14} color="#00d9ff" />} defaultOpen>
+      {levelsNote && (
+        <div data-levels-note style={{ color: 'rgba(255,255,255,0.55)', fontSize: '11px', lineHeight: 1.45, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', padding: '0 0 8px' }}>
+          {levelsNote}
+        </div>
+      )}
       {support.length === 0 && resistance.length === 0 ? (
         <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '12px', padding: '8px 0' }}>
           Insufficient data for level detection

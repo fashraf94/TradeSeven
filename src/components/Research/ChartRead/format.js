@@ -43,17 +43,26 @@ export function formatRatio(v) {
   return decimalString(v, 1);
 }
 
-/** A share count, short: 4,123,456 → "4.12M"; 812,000 → "812K"; 950 → "950". Null when not a number. */
+const VOLUME_UNITS = Object.freeze([[1e9, 'B'], [1e6, 'M'], [1e3, 'K'], [1, '']]);
+/** At most three significant figures; trailing zeros dropped only after a decimal point (review L1-1: 150K, never 15K). */
+const shortFigure = (n) => {
+  const s = decimalString(n, n >= 100 ? 0 : n >= 10 ? 1 : 2);
+  return s.includes('.') ? s.replace(/\.?0+$/, '') : s;
+};
+/**
+ * A share count, short: 4,123,456 → "4.12M"; 150,000 → "150K"; 950 → "950". The unit follows the rounding
+ * (999,600 → "1M", never "1000K"). Null when not a number.
+ */
 export function formatVolume(v) {
   if (!isNum(v) || v < 0) return null;
-  const at = (n, unit) => {
-    const s = decimalString(n, n >= 100 ? 0 : n >= 10 ? 1 : 2).replace(/\.?0+$/, '');
+  for (let i = 0; i < VOLUME_UNITS.length; i++) {
+    const [size, unit] = VOLUME_UNITS[i];
+    if (v < size && size > 1) continue;
+    const s = shortFigure(v / size);
+    if (Number(s) >= 1000 && i > 0) return `${shortFigure(v / VOLUME_UNITS[i - 1][0])}${VOLUME_UNITS[i - 1][1]}`;
     return `${s}${unit}`;
-  };
-  if (v >= 1e9) return at(v / 1e9, 'B');
-  if (v >= 1e6) return at(v / 1e6, 'M');
-  if (v >= 1e3) return at(v / 1e3, 'K');
-  return decimalString(v, 0);
+  }
+  return null;
 }
 
 const parts = (date, opts) => {

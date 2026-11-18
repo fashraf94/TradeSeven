@@ -11,6 +11,7 @@ import { STATE_ROWS, bodyFor, previousFor } from './__fixtures__/chartReadRecord
 import { readLineOf, readStateOf, sheetOf, changeOf, uptrendRows, CHANGE_TABLE, READ_STATES, SHEET_STATES } from './chartRead.js';
 import { CHART_READ_COPY as C, RULE_SET_COPY, REFUSAL_WORDS, REFUSAL_FALLBACK } from './chartReadCopy.js';
 import { ADAPTER_REFUSALS } from '../../../../api/_utils/setupEvaluator/dailyBarsAdapter.js';
+import { formatVolume } from './format.js';
 
 const SESSION = '2026-11-17'; // a Tuesday
 const PREV_SESSION = '2026-11-16'; // the Monday before
@@ -109,6 +110,7 @@ describe('the eight states of §5, each from an evaluator-made record', () => {
       VALID_PULLBACK: 'valid_pullback', VALID_BREAKOUT: 'valid_breakout', NO_SETUP: 'no_setup', EXTENDED: 'extended', UNKNOWN_V: 'unknown',
       NO_ADJUSTMENT: 'valid_pullback', SPLIT: 'refused', REGIME_A: 'regime', REGIME_B: 'regime', REGIME_C: 'regime', REGIME_AB: 'regime',
       REGIME_AC: 'regime', REGIME_BC: 'regime', REGIME_ABC_FLAT: 'regime', DOWNTREND: 'regime',
+      PULLBACK_NO_V: 'valid_pullback', EXTENDED_BREAKOUT: 'extended',
     });
     for (const s of Object.values(seen)) expect(READ_STATES).toContain(s);
     expect(SHEET_STATES).toEqual(['valid_pullback', 'valid_breakout', 'regime', 'no_setup', 'extended']);
@@ -226,11 +228,16 @@ describe('every number printed equals the record\'s, to the cent (RD-6, BUILD_RU
     expect(rows.find((x) => x.key === 'fastAboveSlow').sides[0][0]).toBe(sma);
     expect(cents(l.marks.find((m) => m.n === 1).value)).toBe(sma);
   });
-  it('a half-cent value rounds half up from its decimal, never by the double\'s binary (141.105 → $141.11)', () => {
+  it('a half-cent value rounds half up from its decimal, never by the double\'s binary (195.605 → $195.61)', () => {
     const b = clone(B.VALID_PULLBACK);
-    b.read.facts.SMA_fast = 141.105;
-    expect(text(readLineOf(b))).toContain('($141.11)');
-    expect((141.105).toFixed(2)).toBe('141.10'); // the trap avoided
+    // every copy of the 20-day the record carries (they must agree — review L2-10)
+    b.read.facts.SMA_fast = 195.605;
+    for (const c of b.read.checks) {
+      if (c.id === 'pullback_close' || c.id === 'pullback_touch') c.rhs = 195.605;
+      if (c.id === 'regime_stack') { c.lhs[1] = 195.605; c.rhs[0] = 195.605; }
+    }
+    expect(text(readLineOf(b))).toContain('($195.61)');
+    expect((195.605).toFixed(2)).toBe('195.60'); // the trap avoided
   });
 });
 
@@ -332,6 +339,79 @@ describe('what changed (CR-6): the fixed table, row by row; every unlisted pair 
     expect(changeOf(B.VALID_PULLBACK.read, null)).toBeNull();
     expect(readLineOf(B.VALID_PULLBACK).change).toBeNull();
     expect(readLineOf({ ...B.VALID_PULLBACK, previous: PREV.RN }).change).toBe(LINES.P);
+  });
+});
+
+describe('the review (docs/audits/20261118_BUILD_CHART_READ.md §4, lens 1): each row failed before its fix', () => {
+  it('L1-2: every sheet state fails closed when the uptrend rows do not agree with the recorded chain — no sheet, no marks', () => {
+    for (const k of ['VALID_PULLBACK', 'VALID_BREAKOUT', 'NO_SETUP', 'EXTENDED', 'REGIME_A']) {
+      const b = clone(B[k]);
+      b.read.checks.find((c) => c.id === 'pullback_close').rhs = 1;
+      expect(readLineOf(b), k).toMatchObject({ state: 'unshown', opensSheet: false, marks: [], shown: [] });
+      expect(sheetOf(b), k).toBeNull();
+    }
+  });
+  it('L1-8: row 1 must be the chain\'s first pair with the chain\'s own operator', () => {
+    const b = clone(B.VALID_PULLBACK);
+    b.read.checks.find((c) => c.id === 'pullback_close').op = '>=';
+    expect(uptrendRows(b.read)).toBeNull();
+  });
+  it('L1-3: an UNTESTABLE other pattern is never "not present": its rows show their own results', () => {
+    const { read } = B.PULLBACK_NO_V;
+    expect([read.verdict, read.pattern, read.patterns.breakout]).toEqual(['valid', 'pullback_resume', 'untestable']);
+    const g = sheetOf(B.PULLBACK_NO_V).groups.find((x) => x.key === 'breakout');
+    expect(g.quiet).toBe(false);
+    expect(g.count).not.toBe('not present');
+    expect(g.rows.map((r) => r.result)).toEqual(['pass', 'unknown']);
+    // a FAILED other pattern still reads "not present" in quiet ink
+    expect(sheetOf(B.VALID_PULLBACK).groups.find((x) => x.key === 'breakout')).toMatchObject({ quiet: true, count: 'not present' });
+  });
+  it('L1-8: a valid breakout whose pullback is satisfied too shows the pullback group as it is, not quiet', () => {
+    const b = clone(B.VALID_BREAKOUT);
+    b.read.patterns.pullback_resume = 'satisfied';
+    b.read.patternsSatisfied = ['breakout', 'pullback_resume'];
+    const g = sheetOf(b).groups.find((x) => x.key === 'pullback_resume');
+    expect(g.quiet).toBe(false);
+    expect(g.count).not.toBe('not present');
+  });
+  it('L1-5: "the other pattern" labels the pattern the record did NOT name (a stretched breakout)', () => {
+    const { read } = B.EXTENDED_BREAKOUT;
+    expect([read.verdict, read.reason, read.patternsSatisfied]).toEqual(['invalid', 'extended', ['breakout']]);
+    expect(readLineOf(B.EXTENDED_BREAKOUT).lead).toBe('Trend Breakout pattern present, but stretched');
+    const sh = sheetOf(B.EXTENDED_BREAKOUT);
+    expect(sh.groups.find((x) => x.key === 'pullback_resume').sub).toBe('the other pattern');
+    expect(sh.groups.find((x) => x.key === 'breakout').sub ?? null).toBeNull();
+    expect(sheetOf(B.EXTENDED).groups.find((x) => x.key === 'breakout').sub).toBe('the other pattern');
+  });
+  it('L1-1 / L1-8: the volume floor row prints the record\'s volume, its floor and its average, each from its own field', () => {
+    const r = B.VALID_PULLBACK.read;
+    const vol = r.checks.find((c) => c.id === 'breakout_volume');
+    const row = sheetOf(B.VALID_PULLBACK).groups.find((x) => x.key === 'breakout').rows.find((x) => x.key === 'volumeFloor');
+    expect(row.sides).toEqual([[formatVolume(vol.lhs), 'volume'], [formatVolume(vol.rhs), `1.5 × the ${formatVolume(r.facts.V_avg)} average`]]);
+    const b = clone(B.VALID_PULLBACK);
+    b.read.facts.V_avg = 150_000;
+    b.read.checks.find((c) => c.id === 'breakout_volume').rhs = 225_000;
+    b.read.checks.find((c) => c.id === 'breakout_volume').lhs = 150_000;
+    const r2 = sheetOf(b).groups.find((x) => x.key === 'breakout').rows.find((x) => x.key === 'volumeFloor');
+    expect(r2.sides).toEqual([['150K', 'volume'], ['225K', '1.5 × the 150K average']]);
+  });
+  it('L2-10: a record whose copies of one number disagree is not shown (the mark and the words would print two)', () => {
+    for (const [fld, mut] of [['swingHigh.value', (r) => { r.swingHigh.value += 0.01; }], ['breakout_close.rhs', (r) => { r.checks.find((c) => c.id === 'breakout_close').rhs = 1; }], ['facts.SMA_fast', (r) => { r.facts.SMA_fast += 0.0001; }], ['swingLow.value', (r) => { r.swingLow.value = 1; }]]) {
+      const b = clone(B.VALID_BREAKOUT);
+      mut(b.read);
+      expect(readLineOf(b).state, fld).toBe('unshown');
+    }
+    expect(readLineOf(B.VALID_BREAKOUT).state).toBe('valid_breakout');
+  });
+  it('L1-9: a record on another basis is never drawn on the raw candles: not shown', () => {
+    const b = clone(B.VALID_PULLBACK);
+    b.read.basis = 'adjusted';
+    expect(readLineOf(b)).toMatchObject({ state: 'unshown', opensSheet: false, marks: [] });
+  });
+  it('L1-6: what separates the not-in-an-uptrend reading names the three uptrend checks, true whichever failed', () => {
+    for (const k of ['REGIME_A', 'REGIME_B', 'REGIME_C']) {
+      expect(sheetOf(B[k]).other[1].text).toBe('The three uptrend checks: a close above the 20-day, the 20-day above the 50-day, and the 50-day rising. Marks 1 and 2 are Tue’s; mark 3 is the 50-day five sessions earlier.');
+    }
   });
 });
 

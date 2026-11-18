@@ -163,7 +163,7 @@ export const RULE_SET_COPY = Object.freeze({
     other: Object.freeze({
       valid_pullback: Object.freeze({ reading: 'A failed bounce in a weakening trend.', separates: (weekday) => `The next close against that session’s own 20-day. That number doesn’t exist yet; mark 1 is ${weekday}’s.` }),
       valid_breakout: Object.freeze({ reading: 'A breakout that slips back under the high it cleared.', separates: (weekday) => `The next closes against the 20-session high it cleared. Mark 5 is the high before ${weekday}; each session has its own.` }),
-      regime: Object.freeze({ reading: 'A dip inside a trend that hasn’t turned.', separates: (weekday) => `Closes back above the 20-day, and the 50-day turning up. Marks 1 and 2 are ${weekday}’s; mark 3 is the 50-day five sessions earlier.` }),
+      regime: Object.freeze({ reading: 'A dip inside a trend that hasn’t turned.', separates: (weekday) => `The three uptrend checks: a close above the 20-day, the 20-day above the 50-day, and the 50-day rising. Marks 1 and 2 are ${weekday}’s; mark 3 is the 50-day five sessions earlier.` }),
       no_setup: Object.freeze({ reading: 'A trend that is tiring, not pausing.', separates: () => 'A low that reaches the 20-day (mark 1), or a close at or above the 20-session high (mark 5) on 1.5× average volume.' }),
       extended: Object.freeze({ reading: 'Strength that keeps going without a pullback.', separates: (weekday) => `The close coming back within the stretch limit while the pattern still holds. Mark 7 is ${weekday}’s limit; each session has its own.` }),
     }),
