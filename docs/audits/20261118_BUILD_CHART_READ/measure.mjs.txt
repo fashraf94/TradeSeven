@@ -1,0 +1,151 @@
+// The Chart view's read in a real browser (headless Edge): round 6 A, C, D, F1 and the sheet at 390 and 320;
+// no sideways scroll; the marks on their bars after pan, zoom and rotation; tap targets; reduced motion.
+// node measure.mjs <shots dir>  → prints a JSON report and writes PNGs.
+import { chromium } from 'file:///C:/Users/fashr/portfolio-duel/node_modules/playwright-core/index.mjs';
+import fs from 'node:fs';
+const OUT = process.argv[2];
+const BASE = 'http://127.0.0.1:5199';
+const browser = await chromium.launch({ headless: true, channel: 'msedge' });
+const report = { rows: [], fails: [] };
+const ok = (name, pass, detail) => { report.rows.push({ name, pass, detail }); if (!pass) report.fails.push(name); };
+
+async function open(code, { w, h, reduced = false } = {}) {
+  const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, reducedMotion: reduced ? 'reduce' : 'no-preference' });
+  const page = await ctx.newPage();
+  await page.goto(`${BASE}/?chartReadFixture=${code}`, { waitUntil: 'domcontentloaded', timeout: 120000 });
+  await page.waitForSelector('[data-shell-view]', { timeout: 120000 });
+  await page.waitForTimeout(600);
+  await page.locator('[data-shell-pill="chart"]').click();
+  await page.waitForSelector('[data-chart-read]', { timeout: 30000 });
+  await page.waitForTimeout(1500);
+  return { ctx, page };
+}
+const layout = (page) => page.evaluate(() => {
+  const box = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height, right: r.right, bottom: r.bottom }; };
+  const q = (s) => document.querySelector(s);
+  const view = q('[data-shell-scroll="chart"]');
+  const ohlc = [...document.querySelectorAll('[data-shell-scroll="chart"] div')].find((d) => /^O\s/.test(d.innerText || '') && d.style.position === 'absolute');
+  return {
+    iw: innerWidth, sw: document.documentElement.scrollWidth, viewSW: view?.scrollWidth, viewCW: view?.clientWidth,
+    band: box(q('[data-chart-read]')), rule: box(q('[data-rule-pill]')), note: box(q('[data-basis-note]')), ohlc: box(ohlc),
+    chips: box(q('[data-shell-record-days]')), technical: box(q('[data-shell-technical]')),
+    overflowing: [...(view?.querySelectorAll('*') || [])].filter((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && (r.right > innerWidth + 2 || r.left < -2); }).slice(0, 5).map((e) => `${e.tagName}.${[...e.attributes].map((a) => a.name).join(',')}`),
+  };
+});
+// The probe: every draw records each mark's x / y; compare with the chart's coordinates NOW.
+const alignment = (page) => page.evaluate(() => {
+  const p = window.__probe;
+  if (!p || !window.__lastDraw) return { ok: false, why: 'no draw' };
+  const ts = p.chart.timeScale();
+  const rows = window.__lastDraw.map((m) => ({ n: m.n, dx: Math.abs((ts.timeToCoordinate(m.time) ?? NaN) - m.x), dy: Math.abs((p.series.priceToCoordinate(m.value) ?? NaN) - m.y) }));
+  return { ok: rows.length > 0 && rows.every((r) => r.dx < 0.01 && r.dy < 0.01), rows, draws: window.__draws };
+});
+
+for (const [w, h] of [[390, 844], [320, 640]]) {
+  for (const code of ['A', 'C', 'D']) {
+    const { ctx, page } = await open(code, { w, h });
+    const L = await layout(page);
+    await page.screenshot({ path: `${OUT}/${code}-${w}.png` });
+    ok(`${code}@${w}: no sideways scroll`, L.sw <= L.iw && L.viewSW <= L.viewCW + 1 && L.overflowing.length === 0, { sw: L.sw, iw: L.iw, viewSW: L.viewSW, viewCW: L.viewCW, overflowing: L.overflowing });
+    ok(`${code}@${w}: the band is a 44 px+ tap target`, L.band.h >= 44, L.band);
+    ok(`${code}@${w}: the Rule chip's tap target is 44 px+`, L.rule && L.rule.h >= 44, L.rule);
+    ok(`${code}@${w}: "prices unadjusted" sits clear of the OHLC row, left of the price scale`, L.note && L.ohlc && L.note.y >= L.ohlc.bottom - 0.5 && L.note.right <= L.iw - 56, { note: L.note, ohlc: L.ohlc });
+    ok(`${code}@${w}: the read sits under the plot and above the Technical content`, L.band.y < L.technical.y, { band: L.band, technical: L.technical });
+    const a0 = await alignment(page);
+    ok(`${code}@${w}: the marks drawn where the chart puts their bars`, a0.ok, a0);
+    await ctx.close();
+  }
+}
+
+// Pan, zoom and rotation (A at 390): the marks re-drawn on their bars.
+{
+  const { ctx, page } = await open('A', { w: 390, h: 844 });
+  const canvas = page.locator('[data-shell-scroll="chart"] canvas').first();
+  const cb = await canvas.boundingBox();
+  const d0 = (await alignment(page)).draws;
+  await page.mouse.move(cb.x + cb.width * 0.5, cb.y + cb.height * 0.4);
+  await page.mouse.down();
+  await page.mouse.move(cb.x + cb.width * 0.3, cb.y + cb.height * 0.4, { steps: 8 });
+  await page.mouse.up();
+  await page.waitForTimeout(400);
+  const aPan = await alignment(page);
+  ok('A: after a pan the marks are re-drawn on their bars', aPan.ok && aPan.draws > d0, { draws: [d0, aPan.draws], rows: aPan.rows });
+  await page.mouse.move(cb.x + cb.width * 0.6, cb.y + cb.height * 0.4);
+  await page.mouse.wheel(0, -600);
+  await page.waitForTimeout(400);
+  const aZoom = await alignment(page);
+  ok('A: after a zoom the marks are re-drawn on their bars', aZoom.ok && aZoom.draws > aPan.draws, { draws: aZoom.draws, rows: aZoom.rows });
+  await page.screenshot({ path: `${OUT}/A-390-zoomed.png` });
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.waitForTimeout(800);
+  const aRot = await alignment(page);
+  const Lr = await layout(page);
+  ok('A: after rotation (844×390) the marks are re-drawn on their bars, no sideways scroll', aRot.ok && aRot.draws > aZoom.draws && Lr.sw <= Lr.iw, { draws: aRot.draws, sw: Lr.sw, iw: Lr.iw });
+  await page.screenshot({ path: `${OUT}/A-rotated.png` });
+  await ctx.close();
+}
+
+// The sheet (from A) at 390 and 320: it rises to the plot's lower edge, scrolls inside, tap lights, Escape closes.
+for (const [w, h] of [[390, 844], [320, 640]]) {
+  const { ctx, page } = await open('A', { w, h });
+  const plotBefore = await page.evaluate(() => document.querySelector('[data-basis-note]')?.parentElement?.getBoundingClientRect().bottom ?? null);
+  await page.locator('[data-chart-read]').click();
+  await page.waitForSelector('[data-chart-read-sheet]');
+  await page.waitForTimeout(800);
+  const plotBottom = await page.evaluate(() => document.querySelector('[data-basis-note]')?.parentElement?.getBoundingClientRect().bottom ?? null);
+  report.rows.push({ name: `sheet@${w}: plot bottom closed → open`, pass: true, detail: { plotBefore, plotBottom } });
+  await page.locator('[data-check-row="touch"]').click();
+  await page.waitForTimeout(300);
+  const S = await page.evaluate(() => {
+    const sh = document.querySelector('[data-chart-read-sheet]');
+    const r = sh.getBoundingClientRect();
+    const rows = [...sh.querySelectorAll('button')].map((b) => b.getBoundingClientRect().height);
+    const view = document.querySelector('[data-shell-scroll="chart"]');
+    return { top: r.top, bottom: r.bottom, h: r.height, scrollable: sh.scrollHeight > sh.clientHeight, minTap: Math.min(...rows), sw: document.documentElement.scrollWidth, iw: innerWidth, viewScrollTop: view.scrollTop, lit: window.__lastDraw.filter((m) => m).map((m) => m.n), pressed: sh.querySelector('[data-check-row="touch"]').getAttribute('aria-pressed') };
+  });
+  await page.screenshot({ path: `${OUT}/sheet-${w}.png` });
+  ok(`sheet@${w}: rises to the plot's lower edge`, plotBottom != null && Math.abs(S.top - plotBottom) <= 2, { top: S.top, plotBottom });
+  ok(`sheet@${w}: fills the view below the plot and scrolls inside itself`, S.scrollable && S.bottom <= h + 1, S);
+  ok(`sheet@${w}: every control 44 px+`, S.minTap >= 44, { minTap: S.minTap });
+  ok(`sheet@${w}: no sideways scroll; the view stands still`, S.sw <= S.iw && S.viewScrollTop === 0, S);
+  ok(`sheet@${w}: a tap lights the touch's marks (all seven drawn)`, S.pressed === 'true' && S.lit.length === 7, S);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(300);
+  const after = await page.evaluate(() => ({ sheet: !!document.querySelector('[data-chart-read-sheet]'), focus: document.activeElement?.hasAttribute('data-chart-read') }));
+  ok(`sheet@${w}: Escape closes it; focus back on the read`, !after.sheet && after.focus, after);
+  await ctx.close();
+}
+
+// Reduced motion: the sheet appears in place, no rise.
+for (const reduced of [false, true]) {
+  const { ctx, page } = await open('A', { w: 390, h: 844, reduced });
+  await page.evaluate(() => { window.__frames = []; const tick = () => { const s = document.querySelector('[data-chart-read-sheet]'); if (s) window.__frames.push(getComputedStyle(s).transform); if (window.__frames.length < 6) requestAnimationFrame(tick); }; requestAnimationFrame(tick); document.querySelector('[data-chart-read]').click(); });
+  await page.waitForTimeout(600);
+  const frames = await page.evaluate(() => window.__frames);
+  const moved = frames.some((t) => t && t !== 'none' && t !== 'matrix(1, 0, 0, 1, 0, 0)');
+  ok(`reduced motion ${reduced ? 'on' : 'off'}: the sheet ${reduced ? 'appears in place' : 'rises'}`, reduced ? !moved : moved, { frames });
+  await ctx.close();
+}
+
+// F1: in a battle, held, 1D — the day chips stay with the plot; the read follows them.
+for (const [w, h] of [[390, 844], [320, 640]]) {
+  const { ctx, page } = await open('F1', { w, h });
+  const L = await layout(page);
+  await page.screenshot({ path: `${OUT}/F1-${w}.png` });
+  ok(`F1@${w}: the read follows the record-day chips`, !!L.chips && L.band.y >= L.chips.bottom - 0.5, { chips: L.chips, band: L.band });
+  ok(`F1@${w}: no sideways scroll`, L.sw <= L.iw && L.overflowing.length === 0, { sw: L.sw, overflowing: L.overflowing });
+  const a = await alignment(page);
+  ok(`F1@${w}: the marks drawn where the chart puts their bars`, a.ok, a);
+  // F2: the Battle chart — no daily mark, one 20-day stub, no Rule chip, the read says where its marks are.
+  await page.locator('[data-chart-pill="battle"]').click();
+  await page.waitForTimeout(2000);
+  const F2 = await page.evaluate(() => ({ rule: !!document.querySelector('[data-rule-pill]'), scene: window.__probe?.prim?.scene ?? null, note: [...document.querySelectorAll('[data-chart-read-note]')].map((n) => n.textContent), second: document.querySelector('[data-chart-read-second]')?.textContent ?? null, sw: document.documentElement.scrollWidth, iw: innerWidth }));
+  await page.screenshot({ path: `${OUT}/F2-${w}.png` });
+  ok(`F2@${w}: Battle — no Rule chip, no daily mark, the one stub; the read's battle note`, !F2.rule && F2.scene && F2.scene.items.length === 0 && F2.scene.stub && /^20-day · daily · [A-Z][a-z]{2} close$/.test(F2.scene.stub.label) && F2.note[0] === 'Daily marks are on 1D and 1W, not on these 30-minute bars.' && F2.second === null && F2.sw <= F2.iw, F2);
+  await ctx.close();
+}
+
+await browser.close();
+fs.writeFileSync(`${OUT}/report.json`, JSON.stringify(report, null, 1));
+console.log(JSON.stringify({ total: report.rows.length, fails: report.fails }, null, 1));
+for (const r of report.rows) if (!r.pass) console.log('FAIL', r.name, JSON.stringify(r.detail).slice(0, 600));
