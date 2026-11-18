@@ -42,7 +42,7 @@ import {
 import { PracticeFieldError } from './errors.js';
 import { modelledSaleProceeds, isCostTier, costTierOf } from './fills.js';
 import { fundOf, frictionForSymbol } from './symbols.js';
-import { unsettledConflicts, heldActionRecords, basisSuspicionRecords, unsettledRedates } from './ledger.js';
+import { unsettledConflicts, heldActionRecords, basisSuspicionRecords, unsettledRedates, openAmbiguities, openRulingRevisions } from './ledger.js';
 const SHARE_BASIS_TYPES = new Set(['split', 'reverse_split', 'stock_distribution']);
 import { coverageGapIdOf } from './dailyCoverage.js';
 import { toCents, fromCents } from './money.js';
@@ -202,12 +202,11 @@ export function ledgerEndpoint(ledger, valuation, { coverageGaps = null } = {}) 
   // (fix round 3, T2A-D01): the value is in doubt by it.
   // …and (T1a-2b-3, Amendment F-1) every open coverage gap of a symbol this ledger holds: the session's data did not
   // cover it, so what it is owed cannot be known.
-  // …and (Amendment F-7; review D2, D3) every SHARE-BASIS row recorded as a possible re-date and not settled: the count
-  // is in doubt by it, as the close and the sale already hold. (A cash dividend's re-date holds nothing — F-7 — and is
-  // named, not counted: ledgerDoubts.)
+  // …and (Amendment F rev 1, S-2) EVERY OPEN AMBIGUITY — a conflict (one the holding was not entitled to included), a
+  // possible re-date of any kind (a dividend's is a payment that waits for the founder), a ruled id revised since: until
+  // the founder rules, the value is in doubt by it. The same predicate as the row's quality (close.js).
   const unsettledActions = [
-    ...unsettledConflicts(ledger).map((r) => r.actionId), ...heldActionRecords(ledger).map((r) => r.actionId), ...basisSuspicionRecords(ledger).map((r) => r.actionId),
-    ...unsettledRedates(ledger).filter((r) => SHARE_BASIS_TYPES.has(r.type)).map((r) => r.actionId),
+    ...openAmbiguities(ledger).map((r) => r.actionId), ...heldActionRecords(ledger).map((r) => r.actionId), ...basisSuspicionRecords(ledger).map((r) => r.actionId),
     ...Object.keys(ledger.holdings || {}).sort().filter((sym) => coverageGaps?.[sym]).map((sym) => coverageGapIdOf(sym, coverageGaps[sym].since)),
   ];
   let marksFullQuality = true;
@@ -274,6 +273,8 @@ export function ledgerDoubts(ledger, { coverageGaps = null } = {}) {
       // F-7 (review D2, D4): a row recorded as a possible re-date and not settled — a split's puts the count in doubt; a
       // dividend's is one not paid, waiting for the founder. Both are named.
       ...redates.filter((r) => upper(r.ticker) === sym).map((r) => ({ kind: 'possible_redate', actionId: r.actionId, type: r.type ?? null, redateOf: r.redateOf ?? null })),
+      // Rev 1, S-2: a ruled id the feed has since listed with a payload the ruling did not see.
+      ...openRulingRevisions(ledger).filter((r) => upper(r.ticker) === sym).map((r) => ({ kind: 'revised_after_ruling', actionId: r.actionId, type: r.type ?? null, ruling: r.ruling ?? null })),
     ];
     if (reasons.length === 0) continue;
     const heldDividends = [

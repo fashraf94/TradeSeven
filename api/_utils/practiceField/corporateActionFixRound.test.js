@@ -195,8 +195,11 @@ describe('T2D-02 — a 20-session catch-up applies the backfill it fetched, what
 
 // ── T2D-06: one id is never both declined and paid ────────────────────────────────────────────────────────────────────
 
-describe('T2D-06 — a conflict whose old row is still listed beside a matching row under a new date stays open', () => {
-  it('the $1/$2 conflict, then the $1 row on the old date and the $2 row on the next: only the new row is paid, the conflict stays open', async () => {
+// Amendment F rev 1 re-pins both rows: the row under the new date is a POSSIBLE RE-DATE of the open conflict (S-1 ③), so
+// it waits for the founder too — before rev 1 it was paid at once (the same under both readings, it was argued), and with
+// the old id no longer listed it settled the conflict (RF-A2, withdrawn).
+describe('T2D-06 — a conflict whose old row is still listed beside a matching row under a new date stays open (rev 1: the new row waits too)', () => {
+  it('the $1/$2 conflict, then the $1 row on the old date and the $2 row on the next: nothing is paid — the conflict and the possible re-date each wait for the founder', async () => {
     const c = await start();
     await close(c, 0);
     await close(c, 1, 100, [div(1, 1), div(1, 2)]);
@@ -205,31 +208,32 @@ describe('T2D-06 — a conflict whose old row is still listed beside a matching 
       await close(c, i, 100, [div(1, 1), div(2, 2)]);
       const idea = ideaOf(c);
       expect(appliedAndDeclined(idea)).toEqual([]);
-      expect(idea.ledger.dividendsUsd).toBe(199.94);
-      expect(idea.comparisonLedger.dividendsUsd).toBe(199.94);
+      expect([idea.ledger.dividendsUsd, idea.comparisonLedger.dividendsUsd]).toEqual([0, 0]);
       expect(unsettledConflicts(idea.ledger).map((r) => r.actionId)).toEqual([`cash_dividend_AAPL_${S[1]}`]);
+      expect(idea.ledger.corporateActionReceipts.find((r) => r.reason === 'possible_redate')).toMatchObject({ actionId: `cash_dividend_AAPL_${S[2]}`, redateOf: `cash_dividend_AAPL_${S[1]}` });
       expect(rowOf(c, i).fullQuality).toBe(false);
     }
-    // The founder settles it: `none` declines the old id once; nothing more is paid.
-    const ruled = await rule(c, { kind: 'conflict', recordId: `cash_dividend_AAPL_${S[1]}`, decision: 'none' });
-    expect(ruled.status).toBe(200);
+    // The founder settles both: `none` declines the old id once, the new one's two dollars are paid once.
+    expect((await rule(c, { kind: 'conflict', recordId: `cash_dividend_AAPL_${S[1]}`, decision: 'none' })).status).toBe(200);
+    expect((await rule(c, { kind: 'conflict', recordId: `cash_dividend_AAPL_${S[2]}`, decision: 'payload', payload: { amount: 2 } }, 'founder-r2')).status).toBe(200);
     await close(c, 4, 100, [div(1, 1), div(2, 2)]);
     const idea = ideaOf(c);
     expect(appliedAndDeclined(idea)).toEqual([]);
-    expect(idea.ledger.dividendsUsd).toBe(199.94);
+    expect([idea.ledger.dividendsUsd, idea.comparisonLedger.dividendsUsd]).toEqual([199.94, 199.94]);
     expect(rowOf(c, 4).fullQuality).toBe(true);
   });
 
-  it('the old id no longer listed: the matching row under the new date still settles the conflict (RF-A2), once', async () => {
+  it('RF-A2 WITHDRAWN: the old id no longer listed, the matching row under the new date settles nothing — it is recorded a possible re-date', async () => {
     const c = await start();
     await close(c, 0);
     await close(c, 1, 100, [div(1, 1), div(1, 2)]);
     await close(c, 2, 100, [div(2, 2)]);
     const idea = ideaOf(c);
     expect(appliedAndDeclined(idea)).toEqual([]);
-    expect(idea.ledger.dividendsUsd).toBe(199.94);
-    expect(idea.ledger.corporateActionReceipts.find((r) => r.reason === 'settled_by_redate')).toMatchObject({ actionId: `cash_dividend_AAPL_${S[1]}`, settledBy: `cash_dividend_AAPL_${S[2]}` });
-    expect(rowOf(c, 2).fullQuality).toBe(true);
+    expect(idea.ledger.dividendsUsd).toBe(0);
+    expect(idea.ledger.corporateActionReceipts.filter((r) => r.reason === 'settled_by_redate')).toEqual([]);
+    expect(idea.ledger.corporateActionReceipts.find((r) => r.reason === 'possible_redate')).toMatchObject({ actionId: `cash_dividend_AAPL_${S[2]}`, redateOf: `cash_dividend_AAPL_${S[1]}` });
+    expect(rowOf(c, 2).fullQuality).toBe(false);
   });
 });
 
@@ -573,6 +577,9 @@ describe('AR1-RF-01 — the founder\'s ruling on a conflict T2D-06 left open is 
     await close(c, 2, 100, [div(1, 1), div(2, 2)]);
     expect((await rule(c, { kind: 'conflict', recordId: `cash_dividend_AAPL_${S[1]}`, decision: 'payload', payload: { amount: 1 } })).status).toBe(200);
     await close(c, 3, 100, [div(1, 1), div(2, 2)]);
+    // (Amendment F rev 1: the two-dollar row under the new date is a possible re-date — it waits for its own ruling.)
+    expect([ideaOf(c).ledger.dividendsUsd, ideaOf(c).comparisonLedger.dividendsUsd]).toEqual([99.97, 99.97]);
+    expect((await rule(c, { kind: 'conflict', recordId: `cash_dividend_AAPL_${S[2]}`, decision: 'payload', payload: { amount: 2 } }, 'founder-r2')).status).toBe(200);
     await close(c, 4);
     const idea = ideaOf(c);
     expect(appliedAndDeclined(idea)).toEqual([]);
@@ -598,10 +605,12 @@ describe('AR1-RF-01 — the founder\'s ruling on a conflict T2D-06 left open is 
     await close(c, 1, 100, [div(1, 1), div(1, 2)]);
     await close(c, 2, 100, [div(1, 1), div(2, 2)]);
     for (let i = 3; i <= 5; i += 1) await close(c, i, 100, [div(1, 1)]);
-    expect(ideaOf(c).ledger.dividendsUsd).toBe(199.94);
+    // (Amendment F rev 1: the two-dollar row under S[2] waits as a possible re-date too.)
+    expect(ideaOf(c).ledger.dividendsUsd).toBe(0);
     expect(unsettledConflicts(ideaOf(c).ledger).map((r) => r.actionId)).toEqual([`cash_dividend_AAPL_${S[1]}`]);
     expect(rowOf(c, 5).fullQuality).toBe(false);
     expect((await rule(c, { kind: 'conflict', recordId: `cash_dividend_AAPL_${S[1]}`, decision: 'none' })).status).toBe(200);
+    expect((await rule(c, { kind: 'conflict', recordId: `cash_dividend_AAPL_${S[2]}`, decision: 'payload', payload: { amount: 2 } }, 'founder-r2')).status).toBe(200);
     await close(c, 6, 100, [div(1, 1)]);
     expect(ideaOf(c).ledger.dividendsUsd).toBe(199.94);
     expect(rowOf(c, 6).fullQuality).toBe(true);
@@ -630,8 +639,10 @@ describe('AR1-RF-02 — an ex-date action the feed listed two ways is a decline 
   });
 });
 
-describe('AR1-RF-03 — a conflict id\'s own row held at an uncovered close replays as the covered close would have applied it', () => {
-  it.each([[false], [true]])('S2 uncovered: %s — the same money either way; the old id applied, never settled under the new date', async (uncovered) => {
+// Amendment F rev 1: the conflict id's own row, held or listed, no longer replays or settles it (R-21 and RF-A2 are
+// replaced) — both arms wait for the founder, and the same rulings give the same money in both.
+describe('AR1-RF-03 — a conflict id\'s own row at an uncovered close: the same state, and the same money after the same rulings, either way', () => {
+  it.each([[false], [true]])('S2 uncovered: %s — nothing is paid until the founder rules; then the same money either way', async (uncovered) => {
     const c = await start();
     await close(c, 0);
     await close(c, 1, 100, [div(1, 1), div(1, 2)]);
@@ -645,10 +656,19 @@ describe('AR1-RF-03 — a conflict id\'s own row held at an uncovered close repl
     }
     await close(c, 3, 100, [div(3, 2)]);
     await close(c, 4, 100, [div(3, 2)]);
-    const idea = ideaOf(c);
+    let idea = ideaOf(c);
+    expect([idea.ledger.dividendsUsd, idea.comparisonLedger.dividendsUsd]).toEqual([0, 0]);
+    expect(unsettledConflicts(idea.ledger).map((r) => r.actionId)).toEqual([`cash_dividend_AAPL_${S[1]}`]);
+    expect(idea.ledger.corporateActionReceipts.find((r) => r.reason === 'possible_redate')).toMatchObject({ actionId: `cash_dividend_AAPL_${S[3]}`, redateOf: `cash_dividend_AAPL_${S[1]}` });
+    expect(heldActionRecords(idea.ledger)).toEqual([]);
+    expect(rowOf(c, 4).fullQuality).toBe(false);
+    expect((await rule(c, { kind: 'conflict', recordId: `cash_dividend_AAPL_${S[1]}`, decision: 'payload', payload: { amount: 1 } })).status).toBe(200);
+    expect((await rule(c, { kind: 'conflict', recordId: `cash_dividend_AAPL_${S[3]}`, decision: 'payload', payload: { amount: 2 } }, 'founder-r2')).status).toBe(200);
+    await close(c, 5, 100, [div(3, 2)]);
+    idea = ideaOf(c);
     expect([idea.ledger.dividendsUsd, idea.comparisonLedger.dividendsUsd]).toEqual([299.91, 299.91]);
     expect(unsettledConflicts(idea.ledger)).toEqual([]);
-    expect(rowOf(c, 4).fullQuality).toBe(true);
+    expect(rowOf(c, 5).fullQuality).toBe(true);
     expect(idea.ledger.corporateActionReceipts.filter((r) => r.actionId === `cash_dividend_AAPL_${S[1]}` && r.reason !== 'conflicting_action').map((r) => r.reason ?? 'applied')).toEqual(['applied']);
   });
 });
@@ -731,7 +751,7 @@ describe('T2D-08 — with no split-shaped step, the move from the raise to the l
 });
 
 describe('T2D-06 — a matching row HELD at an uncovered close counts as one the conflict met: the same money either way', () => {
-  it.each([[false], [true]])('S2 uncovered: %s — the old row beside a matching new-date row, then the old row alone: the conflict stays open', async (uncovered) => {
+  it.each([[false], [true]])('S2 uncovered: %s — the old row beside a matching new-date row, then the old row alone: the conflict stays open, and (rev 1) the new row waits as its possible re-date', async (uncovered) => {
     const c = await start();
     await close(c, 0);
     await close(c, 1, 100, [div(1, 1), div(1, 2)]);
@@ -747,8 +767,9 @@ describe('T2D-06 — a matching row HELD at an uncovered close counts as one the
     await close(c, 4, 100, [div(1, 1)]);
     const idea = ideaOf(c);
     expect(appliedAndDeclined(idea)).toEqual([]);
-    expect([idea.ledger.dividendsUsd, idea.comparisonLedger.dividendsUsd]).toEqual([199.94, 199.94]);
+    expect([idea.ledger.dividendsUsd, idea.comparisonLedger.dividendsUsd]).toEqual([0, 0]);
     expect(unsettledConflicts(idea.ledger).map((r) => r.actionId)).toEqual([`cash_dividend_AAPL_${S[1]}`]);
+    expect(idea.ledger.corporateActionReceipts.find((r) => r.reason === 'possible_redate')).toMatchObject({ actionId: `cash_dividend_AAPL_${S[2]}`, redateOf: `cash_dividend_AAPL_${S[1]}` });
     expect(rowOf(c, 4).fullQuality).toBe(false);
   });
 });

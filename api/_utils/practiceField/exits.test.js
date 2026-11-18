@@ -26,7 +26,7 @@ import { roundUsd, roundShares } from '../mandateRounding.js';
 import {
   seedBook, admitAndEnter, closeOn, windowAt, storeTickSnapshot, storeCloseSnapshot, contractOf, getBook, getIdea, getRow, tickOf, tickSnapshot,
   slotNowOf, slotOpenIso, closeNowOf, etIso, ADMIT_ISO, takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, countResults, moneyStoreBytes,
-  withoutWindowAlerts, admitAllThenEnter, coverHeldNames,
+  withoutWindowAlerts, admitAllThenEnter, coverHeldNames, founderRules,
 } from './__testsupport__/fixtures.js';
 
 // A short idea admitted on Friday 13 Nov 2026 starts on Monday the 16th (session 0) and is due ten sessions later.
@@ -265,7 +265,9 @@ describe('E6, continued — what else is not a full-quality close', () => {
     expect(ideaOf(ctx).status).toBe('holding');
     expect(lineOf(ctx, 'AAPL').breach).toBeUndefined();
     expect(ideaOf(ctx).unobservedLineSessions).toEqual({ AAPL: [S[1], S[2]] });
-    // A consistent row settles it: the dividend is paid once, and the next close below the line is recognised.
+    // Amendment F rev 1: a consistent row no longer settles it — the founder's ruling does. Paid once, and the next close
+    // below the line is recognised.
+    await founderRules(ctx.db, ctx.bookId, ctx.ideaId, { kind: 'conflict', recordId: `cash_dividend_AAPL_${S[1]}`, decision: 'payload', payload: { amount: 0.26 } });
     await closeDay(ctx, S[3], { AAPL: { price: below(level), corporateActions: [dividend(0.26)] } });
     expect(ideaOf(ctx).ledger.appliedActionIds).toEqual([`cash_dividend_AAPL_${S[1]}`]);
     expect(ideaOf(ctx).status).toBe('line_hit_exit_pending');

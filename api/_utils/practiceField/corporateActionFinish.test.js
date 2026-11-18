@@ -24,7 +24,7 @@ import { backfillNeeds, ensureCoverageBackfills } from './caBackfill.js';
 import {
   seedBook, admitAndEnter, closeOn, windowAt, contractOf, getBook, getIdea, getRow, closeNowOf, etIso,
   tickSnapshot, closeSnapshot, storeTickSnapshot, storeCloseSnapshot, takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults,
-  withoutWindowAlerts, moneyStoreBytes,
+  withoutWindowAlerts, moneyStoreBytes, founderRules,
 } from './__testsupport__/fixtures.js';
 
 const S = ['2026-11-16', '2026-11-17', '2026-11-18', '2026-11-19', '2026-11-20', '2026-11-23', '2026-11-24', '2026-11-25', '2026-11-27', '2026-11-30', '2026-12-01', '2026-12-02', '2026-12-03', '2026-12-04', '2026-12-07'];
@@ -633,7 +633,7 @@ describe('Amendment F-7 — re-dated and late actions; F-8 — the receipt link'
     expect(rowOf(ctx, S[3]).marks.AAPL.quality).toBe('carried_forward');
   });
 
-  it('RF-A2: a CONFLICT the vendor settles under a MOVED date — a new id, one session later, whose payload is one of the conflict\'s — applies ONCE and records the old id as settled by it; the rows are full quality again', async () => {
+  it('RF-A2 WITHDRAWN (Amendment F rev 1, S-2): a row under a MOVED date whose payload is one of an open conflict\'s settles nothing — it is a possible re-date, both ids wait for the founder, and each ruling then pays once', async () => {
     const ctx = await setup();
     const shares = sharesOf(ctx);
     await closeDay(ctx, S[1], { AAPL: { price: BASE.AAPL, corporateActions: [dividend(0.24, S[1]), dividend(0.26, S[1])] } });
@@ -642,15 +642,27 @@ describe('Amendment F-7 — re-dated and late actions; F-8 — the receipt link'
     await closeDay(ctx, S[2], { AAPL: { price: BASE.AAPL, corporateActions: [dividend(0.26, S[2])] } });
     for (const f of ['ledger', 'comparisonLedger']) {
       const l = ideaOf(ctx)[f];
+      expect(paid(l), f).toEqual([]);
+      expect(l.declinedActionIds, f).toEqual([]);
+      expect(l.corporateActionReceipts.filter((r) => r.reason === 'settled_by_redate'), f).toEqual([]);
+      expect(l.corporateActionReceipts.find((r) => r.reason === 'possible_redate'), f).toMatchObject({ actionId: `cash_dividend_AAPL_${S[2]}`, redateOf: `cash_dividend_AAPL_${S[1]}` });
+    }
+    expect(rowOf(ctx, S[2]).fullQuality).toBe(false);
+    // The founder reads it as one dividend moved: the old id `none`, the new one paid.
+    await founderRules(ctx.db, ctx.bookId, ctx.ideaId, { kind: 'conflict', recordId: `cash_dividend_AAPL_${S[1]}`, decision: 'none' });
+    await founderRules(ctx.db, ctx.bookId, ctx.ideaId, { kind: 'conflict', recordId: `cash_dividend_AAPL_${S[2]}`, decision: 'payload', payload: { amount: 0.26 } });
+    await closeDay(ctx, S[3], { AAPL: { price: BASE.AAPL, corporateActions: [dividend(0.26, S[2])] } });
+    for (const f of ['ledger', 'comparisonLedger']) {
+      const l = ideaOf(ctx)[f];
       expect(paid(l).map((r) => [r.actionId, r.amount]), f).toEqual([[`cash_dividend_AAPL_${S[2]}`, 0.26]]);
       expect(l.dividendsUsd, f).toBe(Math.round(shares * 0.26 * 100) / 100);
-      expect(l.declinedActionIds, f).toContain(`cash_dividend_AAPL_${S[1]}`);
-      expect(l.corporateActionReceipts.find((r) => r.reason === 'settled_by_redate'), f).toMatchObject({ actionId: `cash_dividend_AAPL_${S[1]}`, settledBy: `cash_dividend_AAPL_${S[2]}` });
+      expect(l.declinedActionIds, f).toEqual([`cash_dividend_AAPL_${S[1]}`]);
     }
-    expect(rowOf(ctx, S[2]).fullQuality).toBe(true);
-    // Listed again later, nothing more is paid.
-    await closeDay(ctx, S[3], { AAPL: { price: BASE.AAPL, corporateActions: [dividend(0.24, S[1]), dividend(0.26, S[1]), dividend(0.26, S[2])] } });
+    expect(rowOf(ctx, S[3]).fullQuality).toBe(true);
+    // Listed again later — every payload the rulings saw — nothing more is paid, and nothing reopens.
+    await closeDay(ctx, S[4], { AAPL: { price: BASE.AAPL, corporateActions: [dividend(0.24, S[1]), dividend(0.26, S[1]), dividend(0.26, S[2])] } });
     expect(paid(ideaOf(ctx).ledger)).toHaveLength(1);
+    expect(rowOf(ctx, S[4]).fullQuality).toBe(true);
   });
 
   it('C-16: a dividend dated BEFORE a split already applied, first listed AFTER it, is paid on the count the holding had on its own ex-date — on the idea, its comparison and the book, once', async () => {
@@ -1157,7 +1169,7 @@ describe('the review\'s fix round — re-dated and late actions (lens C); covera
     }
   });
 
-  it('C2: the founder applies a re-date of a HELD dividend — when the hold clears, the original is recorded `possible_redate` and its held record goes: paid once, nothing holds the sale for good, and `none` then declines it', async () => {
+  it('C2: the founder applies a re-date of a HELD dividend — the original is recorded `possible_redate` at once (Amendment F rev 1, S-1 ③: the row it may repeat is ambiguous too) and its held record goes: paid once, nothing holds the sale for good, and `none` then declines it', async () => {
     const ctx = await setup();
     const conflict = [split(2, S[1]), split(3, S[1])];
     await closeDay(ctx, S[1], { AAPL: { price: 115.74, corporateActions: [...conflict, dividend(0.24, S[1])] } });
@@ -1167,6 +1179,8 @@ describe('the review\'s fix round — re-dated and late actions (lens C); covera
     await closeDay(ctx, S[3], { AAPL: { price: 115.74, corporateActions: conflict } });
     // Held behind the conflict, the founder's action keeps its ruling on its held record.
     for (const f of ['ledger', 'comparisonLedger']) expect(ideaOf(ctx)[f].holdings.AAPL.heldActions.find((r) => r.actionId === `cash_dividend_AAPL_${S[2]}`), f).toMatchObject({ founderRuling: expect.objectContaining({ requestKey: 'rule-1' }) });
+    // (Amendment F rev 1: the split conflict is settled by the founder's ruling — the feed's one row alone no longer does.)
+    expect((await resolve(ctx, { kind: 'conflict', recordId: `split_AAPL_${S[1]}`, decision: 'payload', payload: { ratio: 2 } }, 'rule-split', etIso(S[4], 8, 0))).status).toBe(200);
     await closeDay(ctx, S[4], { AAPL: { price: 115.74, corporateActions: [split(2, S[1])] } }); // the conflict settles: ×2
     for (const f of ['ledger', 'comparisonLedger']) {
       const l = ideaOf(ctx)[f];
@@ -1213,15 +1227,18 @@ describe('the review\'s fix round — re-dated and late actions (lens C); covera
     expect(out.ledger.corporateActionReceipts.at(-1)).toMatchObject({ entitledShares: 15, entitledSharesFrom: `split_AAPL_${S[5]}`, entitledSharesAlsoFrom: [`split_AAPL_${S[2]}`] });
   });
 
-  it('RF-A2 (pure): one row settles ONE conflict — a second unsettled conflict it could also match waits for the founder', () => {
+  it('RF-A2 WITHDRAWN (pure; Amendment F rev 1): a row matching two open conflicts\' payloads settles neither — it is a possible re-date of the first, and all three wait for the founder', () => {
     const conflictOf = (date) => ({
       actionId: `cash_dividend_AAPL_${date}`, type: 'cash_dividend', ticker: 'AAPL', effectiveDate: date, applied: false, reason: 'conflicting_action', entitled: true,
       rows: [{ ratio: null, amount: 0.24, source: 'eodhd_dividends' }, { ratio: null, amount: 0.26, source: 'eodhd_dividends' }], seenOn: date,
     });
     const ledger = plain({ holdings: { AAPL: { shares: 10, costBasisTotal: 1000, avgCost: 100, lastMark: 100, openedAt: S[0] } }, corporateActionReceipts: [conflictOf(S[1]), conflictOf(S[2])] });
     const out = applyLedgerActions(ledger, { AAPL: [dividend(0.26, S[3])] }, { date: S[3] });
-    expect(out.ledger.corporateActionReceipts.filter((r) => r.reason === 'settled_by_redate').map((r) => r.actionId)).toEqual([`cash_dividend_AAPL_${S[1]}`]);
-    expect(out.ledger.declinedActionIds).toEqual([`cash_dividend_AAPL_${S[1]}`]);
+    expect(out.ledger.corporateActionReceipts.filter((r) => r.reason === 'settled_by_redate')).toEqual([]);
+    expect(out.ledger.declinedActionIds).toEqual([]);
+    expect(out.ledger.appliedActionIds).toEqual([]);
+    expect(out.ledger.corporateActionReceipts.filter((r) => r.reason === 'possible_redate').map((r) => [r.actionId, r.redateOf])).toEqual([[`cash_dividend_AAPL_${S[3]}`, `cash_dividend_AAPL_${S[1]}`]]);
+    expect(out.ledger.dividendsUsd).toBe(0);
   });
 
   it('RF-A2 (pure): a row that is itself a possible re-date of a dividend already paid does not settle a conflict — the conflict stays for the founder, and the row is recorded, not applied', () => {
@@ -1500,7 +1517,7 @@ describe('the review\'s fix round — the founder\'s split, the move it covers, 
     expect(rule(`cash_dividend_AAPL_${S[5]}`)).toEqual({ error: 'row_not_recorded', status: 422 });
   });
 
-  it('D2 / D3 / D4 (pure): at the endpoint a SHARE-BASIS possible re-date is an unsettled action (the value is in doubt by it) and is named; a dividend\'s re-date is named, with the dividend not paid, and not counted (F-7: it holds nothing)', () => {
+  it('D2 / D3 / D4 (pure): at the endpoint a SHARE-BASIS possible re-date is an unsettled action (the value is in doubt by it) and is named; a dividend\'s re-date is named, with the dividend not paid — and (Amendment F rev 1) counted too: it waits for the founder, so the value is in doubt by it', () => {
     const ledger = {
       kind: 'spy', reservedCapitalUsd: 5000, cash: 0, costsPaidUsd: 0, dividendsUsd: 0, realizedPnlUsd: 0, saleReceipts: [], declinedActionIds: [], appliedActionIds: [],
       holdings: { SPY: { shares: 10, costBasisTotal: 5000, avgCost: 500, lastMark: 500, openedAt: S[0], exitCostTier: 'tier1' } },
@@ -1510,7 +1527,7 @@ describe('the review\'s fix round — the founder\'s split, the move it covers, 
       ],
     };
     const v = valueLedger(ledger, closeSnapshot(S[4], { SPY: 500 }), { sessionDate: S[4] });
-    expect(ledgerEndpoint(ledger, v).unsettledActions).toEqual([`split_SPY_${S[2]}`]);
+    expect(ledgerEndpoint(ledger, v).unsettledActions).toEqual([`split_SPY_${S[2]}`, `cash_dividend_SPY_${S[3]}`]);
     expect(ledgerDoubts(ledger)).toEqual([{
       symbol: 'SPY',
       reasons: [

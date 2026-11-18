@@ -19,7 +19,7 @@ import { roundUsd } from '../mandateRounding.js';
 import {
   seedBook, admitAndEnter, closeOn, windowAt, contractOf, getBook, getIdea, getRow, closeNowOf, countDocs,
   takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, etIso as etIsoOf, tickSnapshot, closeSnapshot as closeSnapshotOf,
-  withoutWindowAlerts, admitAllThenEnter, storeTickSnapshot, coverHeldNames,
+  withoutWindowAlerts, admitAllThenEnter, storeTickSnapshot, coverHeldNames, founderRules,
 } from './__testsupport__/fixtures.js';
 import { ledgerEndpoint } from './settlement.js';
 
@@ -42,6 +42,8 @@ const bookOf = (ctx) => getBook(ctx.db, ctx.bookId);
 const rowOf = (ctx, date) => getRow(ctx.db, ctx.bookId, ctx.ideaId, date);
 const coverageOf = (ctx) => ctx.db._get('practiceFieldCoverage/current').symbols;
 const recon = (ctx) => { const book = bookOf(ctx); return assertReconciled(book, book.openIdeaIds.map((id) => getIdea(ctx.db, ctx.bookId, id))); };
+/** Amendment F rev 1: the founder's `payload` ruling on a conflict — the only thing that settles one now. */
+const ruleConflict = (ctx, recordId, payload) => founderRules(ctx.db, ctx.bookId, ctx.ideaId, { kind: 'conflict', recordId, decision: 'payload', payload });
 const closeDay = async (ctx, date, over = {}) => { const out = await closeOn(ctx.db, ctx.bookId, date, quotes(over)); recon(ctx); return out; };
 const win = async (ctx, date, slot = 'open30', over = {}) => { const out = await windowAt(ctx.db, ctx.bookId, { date, slot, quotes: quotes(over) }); recon(ctx); return out; };
 async function setup(contract = {}) {
@@ -519,11 +521,13 @@ describe('Astra T2A-01 — a ticker change waits while the holding\'s share basi
     });
 
     for (const listed of [true, false]) {
-      it(`${type}: when the feed then presents ONE consistent row, the action applies, then the rename (${listed ? 'its row still listed' : 'from the record, its row dropped'}), and the sale fills on the adjusted share count`, async () => {
+      it(`${type}: when the founder rules the consistent payload and the feed presents ONE consistent row, the action applies, then the rename (${listed ? 'its row still listed' : 'from the record, its row dropped'}), and the sale fills on the adjusted share count`, async () => {
         const ctx = await setupOne();
         const oldShares = ideaOf(ctx).ledger.holdings.AAPL.shares;
         const price = roundUsd(DOWN / ratio);
         await conflictAndRename(ctx, type, ratio, alt, price);
+        // Amendment F rev 1: the feed's one consistent row no longer settles a conflict — the founder's ruling does.
+        await ruleConflict(ctx, `${type}_AAPL_${S[1]}`, { ratio });
         const out = await closeDay(ctx, S[2], {
           AAPL: { price, corporateActions: [basisRow(type, ratio), ...(listed ? [rename('AAPL', 'AAPLX')] : [])] }, AAPLX: price,
         });
@@ -600,6 +604,8 @@ describe('Astra T2A-01 — a ticker change waits while the holding\'s share basi
     expect(rowOf(ctx, S[2]).marks.AAPL.quality).toBe('carried_forward');
     expect(rowOf(ctx, S[2]).comparisonMarks.AAPL.quality).toBe('carried_forward');
     expect(rowOf(ctx, S[2]).markedGapUsd).toBe(0);
+    // Amendment F rev 1: the feed's one consistent row no longer settles a conflict — the founder's ruling does.
+    await ruleConflict(ctx, `split_AAPL_${S[1]}`, { ratio: 1.5 });
     await closeDay(ctx, S[3], { AAPL: { price, corporateActions: [basisRow('split', 1.5)] }, AAPLX: price });
     expect(Object.keys(tied().ledger.holdings)).toEqual(['AAPLX']);
     expect(rowOf(ctx, S[3]).markedGapUsd).toBe(0);
@@ -693,6 +699,8 @@ describe('Astra T2A-01 — a ticker change waits while the holding\'s share basi
     const out = await closeDay(ctx, S[2], { AAPL: undefined, MSFT: { price: BASE.MSFT, corporateActions: [rename('MSFT', 'AMD', S[2])] } });
     expect(Object.keys(getIdea(ctx.db, ctx.bookId, other.ideaId).ledger.holdings)).toEqual(['MSFT']);
     expect(out.alerts.some((a) => a.startsWith(`PRACTICE_FIELD_RENAME_BLOCKED ${other.ideaId} idea MSFT`))).toBe(true);
+    // Amendment F rev 1: the feed's one consistent row no longer settles a conflict — the founder's ruling does.
+    await ruleConflict(ctx, `split_AAPL_${S[1]}`, { ratio: 1.5 });
     await closeDay(ctx, S[3], { AAPL: { price, corporateActions: [basisRow('split', 1.5)] }, AMD: price });
     expect(Object.keys(ideaOf(ctx).ledger.holdings)).toEqual(['AMD']);
     expect(Object.keys(bookOf(ctx).portfolio.positions).sort()).toEqual(['AMD', 'MSFT']);
@@ -713,6 +721,8 @@ describe('Astra T2A-01 — a ticker change waits while the holding\'s share basi
       expect.objectContaining({ code: 'ticker_held_by_other_idea', symbol: 'NVDA' }),
     ]);
     // The basis settles; the corrected row is dropped: the record renames to NVDA, not to the stale AMD.
+    // Amendment F rev 1: the feed's one consistent row no longer settles a conflict — the founder's ruling does.
+    await ruleConflict(ctx, `split_AAPL_${S[1]}`, { ratio: 1.5 });
     await closeDay(ctx, S[3], { AAPL: { price, corporateActions: [basisRow('split', 1.5)] }, NVDA: price });
     expect(Object.keys(ideaOf(ctx).ledger.holdings)).toEqual(['NVDA']);
   });
@@ -736,6 +746,8 @@ describe('Astra T2A-01 — a ticker change waits while the holding\'s share basi
     expect(ideaOf(ctx).ledger.holdings.AAPL.deferredRename).toMatchObject({ to: 'NVDA', deferredOn: S[1] });
     expect(ideaOf(ctx).comparisonLedger.holdings.AAPL.deferredRename).toMatchObject({ to: 'NVDA' });
     // The basis settles while the row is still listed (screened): not applied, blocked.
+    // Amendment F rev 1: the feed's one consistent row no longer settles a conflict — the founder's ruling does.
+    await ruleConflict(ctx, `split_AAPL_${S[1]}`, { ratio: 1.5 });
     const listed = await closeDay(ctx, S[3], { AAPL: { price, corporateActions: [basisRow('split', 1.5), rename('AAPL', 'NVDA')] } });
     expect(Object.keys(ideaOf(ctx).ledger.holdings)).toEqual(['AAPL']);
     expect(listed.alerts.some((x) => x.startsWith(`PRACTICE_FIELD_RENAME_BLOCKED ${ctx.ideaId} idea AAPL`))).toBe(true);
@@ -907,11 +919,13 @@ describe('Fix round 2 — Astra T2A-C01 and the share-basis class: a count-depen
       });
 
       for (const listed of [true, false]) {
-        it(`${label}: when ONE consistent basis row then arrives (${listed ? 'the delisting row still listed' : 'the delisting row dropped — from its record'}), the cash is credited ONCE, on the adjusted count, on every ledger and the book — Astra's control figure`, async () => {
+        it(`${label}: when the founder rules the consistent basis payload and ONE consistent row then arrives (${listed ? 'the delisting row still listed' : 'the delisting row dropped — from its record'}), the cash is credited ONCE, on the adjusted count, on every ledger and the book — Astra's control figure`, async () => {
           const ctx = await conflicted(type, ratio, withRename);
           const oldShares = ideaOf(ctx).ledger.holdings.AAPL.shares;
           await closeQ(ctx, S[2], { ...Q, AAPL: { price: 60, corporateActions: [cashDelisting()] }, AAPLX: 90 / ratio });
           const bookBefore = bookOf(ctx);
+          // Amendment F rev 1: the feed's one consistent row no longer settles a conflict — the founder's ruling does.
+          await ruleConflict(ctx, `${type}_AAPL_${S[1]}`, { ratio });
           await closeQ(ctx, S[3], { ...Q, AAPL: { price: 60, corporateActions: [basis(type, ratio), ...(listed ? [cashDelisting()] : [])] }, AAPLX: 60 });
           const adjusted = Math.round(oldShares * ratio * 1e6) / 1e6;
           const idea = ideaOf(ctx);
@@ -937,8 +951,10 @@ describe('Fix round 2 — Astra T2A-C01 and the share-basis class: a count-depen
       }
     }
 
-    it(`${type}: the resolved-basis control (Astra's) — the consistent basis row and the cash delisting in ONE close pay the adjusted count at once`, async () => {
+    it(`${type}: the resolved-basis control (Astra's) — the founder's ruling, the consistent basis row and the cash delisting in ONE close pay the adjusted count at once`, async () => {
       const ctx = await conflicted(type, ratio);
+      // Amendment F rev 1: the feed's one consistent row no longer settles a conflict — the founder's ruling does.
+      await ruleConflict(ctx, `${type}_AAPL_${S[1]}`, { ratio });
       await closeQ(ctx, S[2], { ...Q, AAPL: { price: 60, corporateActions: [basis(type, ratio), cashDelisting()] }, AAPLX: 60 });
       const idea = ideaOf(ctx);
       expect(idea.status).toBe('resulted');
@@ -965,6 +981,8 @@ describe('Fix round 2 — Astra T2A-C01 and the share-basis class: a count-depen
       expect(bookOf(ctx).slots.short).toBe(ctx.ideaId);
     }
     errors.mockRestore();
+    // Amendment F rev 1: the feed's one consistent row no longer settles a conflict — the founder's ruling does.
+    await ruleConflict(ctx, `split_AAPL_${S[1]}`, { ratio: 1.5 });
     await closeQ(ctx, S[9], { ...Q, AAPL: { price: 60, corporateActions: [basis('split', 1.5)] } });
     expect(ideaOf(ctx).status).toBe('resulted');
     expect(ideaOf(ctx).liquidation.returnedToTreasuryUsd).toBe(CONTROL.split);
@@ -974,6 +992,8 @@ describe('Fix round 2 — Astra T2A-C01 and the share-basis class: a count-depen
   it('a held action whose OWN id the feed then lists two ways is a conflict, not a hold: the record is dropped, the conflict\'s receipt governs, nothing is paid', async () => {
     const ctx = await conflicted('split', 1.5, false);
     await closeQ(ctx, S[2], { ...Q, AAPL: { price: 60, corporateActions: [cashDelisting()] } });
+    // Amendment F rev 1: the feed's one consistent row no longer settles a conflict — the founder's ruling does.
+    await ruleConflict(ctx, `split_AAPL_${S[1]}`, { ratio: 1.5 });
     await closeQ(ctx, S[3], { ...Q, AAPL: { price: 60, corporateActions: [basis('split', 1.5), cashDelisting(), { ...cashDelisting(), cashPerShare: 61 }] } });
     const idea = ideaOf(ctx);
     expect(idea.ledger.holdings.AAPL.heldActions).toBeUndefined();
@@ -993,6 +1013,8 @@ describe('Fix round 2 — Astra T2A-C01 and the share-basis class: a count-depen
     expect(ideaOf(ctx).ledger.cash).toBe(cash0);
     expect(ideaOf(ctx).ledger.holdings.AAPL.heldActions).toEqual([expect.objectContaining({ actionId: `cash_dividend_AAPL_${S[2]}`, amount: 0.26, heldOn: S[2] })]);
     expect(ideaOf(ctx).comparisonLedger.holdings.AAPL.heldActions).toHaveLength(1);
+    // Amendment F rev 1: the feed's one consistent row no longer settles a conflict — the founder's ruling does.
+    await ruleConflict(ctx, `split_AAPL_${S[1]}`, { ratio: 1.5 });
     await closeQ(ctx, S[3], { ...Q, AAPL: { price: 60, corporateActions: [basis('split', 1.5)] } }); // the dividend row dropped
     const adjusted = Math.round(oldShares * 1.5 * 1e6) / 1e6;
     for (const ledger of [ideaOf(ctx).ledger, ideaOf(ctx).comparisonLedger]) {
@@ -1026,6 +1048,8 @@ describe('Fix round 2 — Astra T2A-C01 and the share-basis class: a count-depen
     await closeQ(ctx, S[2], { ...Q, AAPL: { price: 50, corporateActions: [basis('stock_distribution', 1.2, S[2])] } });
     expect(ideaOf(ctx).ledger.holdings.AAPL.shares).toBe(oldShares);
     expect(ideaOf(ctx).ledger.holdings.AAPL.heldActions).toEqual([expect.objectContaining({ actionId: `stock_distribution_AAPL_${S[2]}`, ratio: 1.2 })]);
+    // Amendment F rev 1: the feed's one consistent row no longer settles a conflict — the founder's ruling does.
+    await ruleConflict(ctx, `split_AAPL_${S[1]}`, { ratio: 1.5 });
     await closeQ(ctx, S[3], { ...Q, AAPL: { price: 50, corporateActions: [basis('split', 1.5)] } }); // the distribution's row dropped
     const step = Math.round(oldShares * 1.5 * 1e6) / 1e6;
     const want = Math.round(step * 1.2 * 1e6) / 1e6;
@@ -1196,6 +1220,8 @@ describe('Fix round 2 — Astra T2A-C01 and the share-basis class: a count-depen
     await closeQ(ctx, S[2], { ...Q, AAPL: { price: 60, corporateActions: [dividend] } });
     expect(ideaOf(ctx).ledger.dividendsUsd).toBe(0);
     expect(ideaOf(ctx).ledger.holdings.AAPL.heldActions).toEqual([expect.objectContaining({ actionId: `cash_dividend_AAPL_${S[1]}` })]);
+    // Amendment F rev 1: the feed's one consistent row no longer settles a conflict — the founder's ruling does.
+    await ruleConflict(ctx, `split_AAPL_${S[1]}`, { ratio: 1.5 });
     await closeQ(ctx, S[3], { ...Q, AAPL: { price: 60, corporateActions: [basis('split', 1.5), dividend] } });
     expect(ideaOf(ctx).ledger.dividendsUsd).toBe(roundUsd(Math.round(oldShares * 1.5 * 1e6) / 1e6 * 0.26));
   });
@@ -1286,6 +1312,8 @@ describe('Fix round 2 — Astra T2A-C01 and the share-basis class: a count-depen
       const h = ideaOf(ctx).ledger.holdings.AAPL;
       expect(h.exitPending).toMatchObject({ reason: 'delisting', actionId: `delisting_AAPL_${S[1]}` });
       expect(h.deferredRename).toMatchObject({ from: 'AAPL', to: 'AAPLX' });
+      // Amendment F rev 1: the feed's one consistent row no longer settles a conflict — the founder's ruling does.
+      await ruleConflict(ctx, `split_AAPL_${S[1]}`, { ratio: 1.5 });
       await closeQ(ctx, S[2], { ...Q, AAPL: { price: 66, corporateActions: [a] }, AAPLX: 66 });
       const after = ideaOf(ctx).ledger.holdings;
       expect(Object.keys(after)).toEqual(['AAPLX']);
@@ -1319,6 +1347,8 @@ describe('Fix round 3 — Astra T2A-D02: a share-basis action waits behind an un
     const b = basisRow('stock_distribution', 1.2);
     await closeQ(ctx, S[1], { ...Q, AAPL: { price: PX, corporateActions: [a, ...(conflict ? [{ ...a, ratio: 0.02 }] : []), b] } });
     const whileUnresolved = ideaOf(ctx);
+    // (Amendment F rev 1: with the conflict, the founder's ruling settles it — the feed's one row alone no longer does.)
+    if (conflict) await ruleConflict(ctx, RS, { ratio: 0.01 });
     await closeQ(ctx, S[2], { ...Q, AAPL: { price: PX, corporateActions: [a] } }); // resolved to 0.01; the distribution's row gone
     const resolved = ideaOf(ctx);
     const resolvedBook = bookOf(ctx);

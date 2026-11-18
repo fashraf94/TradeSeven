@@ -14,7 +14,7 @@ import { roundUsd } from '../mandateRounding.js';
 import {
   seedBook, admitAndEnter, closeOn, contractOf, getBook, getIdea, getRow, closeSnapshot, tickSnapshot, tickOf, slotOpenIso, etIso, DAYS, ADMIT_ISO,
   countDocs, makeMandateFakeDb, takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, SALE_WORD_KEYS, storeCloseSnapshot, enterIdeaWith,
-  withoutWindowAlerts, catchUpAt,
+  withoutWindowAlerts, catchUpAt, founderRules,
 } from './__testsupport__/fixtures.js';
 
 const CAP = { AAPL: 3.4e12, MSFT: 3.1e12, NVDA: 3.5e12, LLY: 7.5e11, AMD: 2.6e11, AVGO: 8.2e11 };
@@ -454,7 +454,7 @@ describe('Astra T1A-01 — an action the feed lists twice is applied once per le
     }
   });
 
-  it('two rows with ONE id and DIFFERENT payloads are a conflict: neither is applied on any ledger, each ledger records one `conflicting_action` receipt, the symbol is a carried mark, and a corrected feed later applies it once', async () => {
+  it('two rows with ONE id and DIFFERENT payloads are a conflict: neither is applied on any ledger, each ledger records one `conflicting_action` receipt, the symbol is a carried mark — and (Amendment F rev 1) a corrected feed alone settles nothing: a ruling by the founder applies it once', async () => {
     const { db, bookId } = await seedBook();
     const r = await admitAndEnter(db, bookId, { contract: contractOf(), quotes: QUOTES });
     await closeOn(db, bookId, DAYS.d1, { AAPL: 100.13, SPY: 500 });
@@ -474,6 +474,7 @@ describe('Astra T1A-01 — an action the feed lists twice is applied once per le
         expect(receiptsFor(ledger, DIV_ID)).toEqual([{
           actionId: DIV_ID, type: 'cash_dividend', ticker: 'AAPL', effectiveDate: DAYS.d2, applied: false, reason: 'conflicting_action', entitled: true,
           rows: [{ ratio: null, amount: 1, source: 'eodhd_dividends' }, { ratio: null, amount: 1.5, source: 'founder' }], seenOn: DAYS.d2,
+          kinds: ['conflict'],
         }]);
       }
       expect(idea.spyLedger.corporateActionReceipts).toEqual([]); // SPY's ledger does not hold AAPL
@@ -490,14 +491,23 @@ describe('Astra T1A-01 — an action the feed lists twice is applied once per le
       expect(getBook(db, bookId).portfolio.positions.AAPL).toMatchObject({ lastMark: 100.13, lastMarkSource: 'carry_over' });
       expect(countDocs(db, `mandates/${bookId}/corporateActions/`)).toBe(0);
     }
-    // The vendor corrects its feed: one consistent row. Applied once, on both ledgers and the book.
+    // The vendor corrects its feed: one consistent row. Amendment F rev 1 (it replaces R-21): the id is ambiguous, so the
+    // row alone settles NOTHING — not applied, the conflict still open, the row still not full quality.
     await closeOn(db, bookId, DAYS.d4, { AAPL: { price: 99.41, corporateActions: [div] }, SPY: 500 });
+    const waiting = getIdea(db, bookId, r.ideaId);
+    expect([waiting.ledger.dividendsUsd, waiting.comparisonLedger.dividendsUsd]).toEqual([0, 0]);
+    expect(waiting.ledger.appliedActionIds).toEqual([]);
+    expect(getRow(db, bookId, r.ideaId, DAYS.d4).fullQuality).toBe(false);
+    expect(getBook(db, bookId).portfolio.cash).toBe(bookBefore.portfolio.cash);
+    // The founder rules the one-dollar payload: applied once, on both ledgers and the book.
+    await founderRules(db, bookId, r.ideaId, { kind: 'conflict', recordId: DIV_ID, decision: 'payload', payload: { amount: 1 } });
+    await closeOn(db, bookId, DAYS.d5, { AAPL: { price: 99.41, corporateActions: [div] }, SPY: 500 });
     const idea = getIdea(db, bookId, r.ideaId);
     expect(idea.ledger.dividendsUsd).toBe(199.94);
     expect(idea.comparisonLedger.dividendsUsd).toBe(199.94);
     expect(idea.ledger.appliedActionIds).toEqual([DIV_ID]);
     expect(cents(getBook(db, bookId).portfolio.cash)).toBe(cents(bookBefore.portfolio.cash) + 19994);
-    expect(getRow(db, bookId, r.ideaId, DAYS.d4).fullQuality).toBe(true);
+    expect(getRow(db, bookId, r.ideaId, DAYS.d5).fullQuality).toBe(true);
     expect(() => assertReconciled(getBook(db, bookId), [idea])).not.toThrow();
   });
 
@@ -532,7 +542,7 @@ describe('Astra T1A-01 — an action the feed lists twice is applied once per le
     expect(getIdea(db, bookId, r.ideaId).ledger.dividendsUsd).toBe(0);
   });
 
-  it('a conflict on an action the holding is NOT entitled to is held the same way — no decline, one receipt, a carried mark (the letter of the ruling; a reading)', async () => {
+  it('a conflict on an action the holding is NOT entitled to is held the same way — no decline, one receipt, a carried mark — and (Amendment F rev 1) stays open until the founder rules', async () => {
     const { db, bookId } = await seedBook();
     const r = await admitAndEnter(db, bookId, { contract: contractOf(), quotes: QUOTES });
     const sameDay = { ...div, effectiveDate: DAYS.d1 };
@@ -545,14 +555,22 @@ describe('Astra T1A-01 — an action the feed lists twice is applied once per le
     expect(getRow(db, bookId, r.ideaId, DAYS.d1)).toMatchObject({ fullQuality: false, marks: { AAPL: { mark: 100, quality: 'carried_forward' } } });
     expect(out.alerts.some((a) => a.startsWith('PRACTICE_FIELD_CORPORATE_ACTION_CONFLICT'))).toBe(true);
     expect(receiptsFor(idea.ledger, `cash_dividend_AAPL_${DAYS.d1}`)[0].entitled).toBe(false);
-    // …but it owed nothing whatever its payload, so once the feed stops presenting it the rows are clean again and no
-    // "unsettled" alert fires (refuter RF-A1: it must not taint the idea's rows for the rest of its life).
+    // Amendment F rev 1 (S-1, S-2): it is AMBIGUOUS like any conflict — its payloads are what a later re-date is matched
+    // against (Astra T2D-C01) — so the feed no longer listing it releases nothing (RF-A1's release is withdrawn): the rows
+    // stay below full quality, alerting, until the founder rules. It owed nothing, and moved nothing, throughout.
     for (const date of [DAYS.d2, DAYS.d3]) {
       const later = await closeOn(db, bookId, date, { AAPL: 100.41, SPY: 500 });
-      expect(getRow(db, bookId, r.ideaId, date).fullQuality, date).toBe(true);
-      expect(db._get(`mandates/${bookId}/dailyRows/${date}`).fullQuality).toBe(true);
-      expect(withoutWindowAlerts(later.alerts)).toEqual([]);
+      expect(getRow(db, bookId, r.ideaId, date).fullQuality, date).toBe(false);
+      expect(withoutWindowAlerts(later.alerts).filter((a) => a.startsWith(`PRACTICE_FIELD_CORPORATE_ACTION_UNSETTLED ${r.ideaId} idea cash_dividend_AAPL_${DAYS.d1}`))).toHaveLength(1);
+      expect(getIdea(db, bookId, r.ideaId).ledger.dividendsUsd).toBe(0);
     }
+    // The founder rules `none`: declined, and the rows are clean again with no alert.
+    await founderRules(db, bookId, r.ideaId, { kind: 'conflict', recordId: `cash_dividend_AAPL_${DAYS.d1}`, decision: 'none' });
+    const ruled = await closeOn(db, bookId, DAYS.d4, { AAPL: 100.41, SPY: 500 });
+    expect(getRow(db, bookId, r.ideaId, DAYS.d4).fullQuality).toBe(true);
+    expect(db._get(`mandates/${bookId}/dailyRows/${DAYS.d4}`).fullQuality).toBe(true);
+    expect(withoutWindowAlerts(ruled.alerts)).toEqual([]);
+    expect(getIdea(db, bookId, r.ideaId).ledger.declinedActionIds).toEqual([`cash_dividend_AAPL_${DAYS.d1}`]);
   });
 
   it('a conflict whose first row writes the ticker in lower case still holds the holding\'s mark back (review FR-A4)', async () => {

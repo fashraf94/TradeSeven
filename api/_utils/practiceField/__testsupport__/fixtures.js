@@ -487,6 +487,26 @@ export async function windDownBook(db, { uid = 'owner-1', requestKey = 'wind-dow
   }
 }
 
+/**
+ * The founder's `resolve_hold` (Amendment F-5), as the endpoint runs it, for one idea — with MANDATE_FOUNDER_UIDS set
+ * for the call and restored after. Amendment F rev 1: it is the ONLY way an ambiguous id settles, so a row that once
+ * relied on the feed correcting itself rules here instead. `nowIso` defaults to 18:00 ET of the book's last close.
+ * Returns the endpoint's answer; with `expectOk` (the default) a refusal throws.
+ */
+export async function founderRules(db, bookId, ideaId, body, { uid = 'owner-1', requestKey = `rule-${body?.recordId}-${body?.decision}`, nowIso = null, expectOk = true } = {}) {
+  const prev = process.env.MANDATE_FOUNDER_UIDS;
+  process.env.MANDATE_FOUNDER_UIDS = uid;
+  try {
+    const at = nowIso ?? etIso(getBook(db, bookId).execState.lastCloseKey, 18, 0);
+    const out = await runFounderAction(db, { uid, body: { action: 'resolve_hold', requestKey, ideaId, ...body }, nowIso: at });
+    if (expectOk && out.status !== 200) throw new Error(`founderRules: ${JSON.stringify(out)}`);
+    return out;
+  } finally {
+    if (prev === undefined) delete process.env.MANDATE_FOUNDER_UIDS;
+    else process.env.MANDATE_FOUNDER_UIDS = prev;
+  }
+}
+
 /** Read helpers. */
 export const getBook = (db, bookId) => db._get(`mandates/${bookId}`);
 export const getIdea = (db, bookId, ideaId) => db._get(`mandates/${bookId}/ideas/${ideaId}`);

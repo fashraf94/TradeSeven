@@ -39,6 +39,7 @@
 
 import {
   cloneLedger, suspicionIdOf, ratioMatchesMove, residualMoveOf, priceMoveReference, CONFLICTING_ACTION, POSSIBLE_REDATE, actionIdOf as deriveActionId,
+  recordedPayloadsOf, openRulingRevisions, REVISED_AFTER_RULING,
 } from './ledger.js';
 import { coverageGapIdOf } from './dailyCoverage.js';
 import { roundShares } from '../mandateRounding.js';
@@ -71,7 +72,11 @@ function unrepresentableOn(idea, fields, sym, ratio) {
   });
 }
 
-/** The ledgers of an idea whose OPEN conflict or possible re-date record is `recordId`: [field, receipt]. */
+/**
+ * The ledgers of an idea whose OPEN conflict or possible re-date record is `recordId`: [field, receipt]. Amendment F
+ * rev 1: a conflict on an action the holding was not entitled to is ambiguous like any other — only a ruling settles it
+ * (a `payload` ruling on it is then declined as not entitled by the applier; `none` declines it).
+ */
 function openActionRecords(idea, recordId) {
   const out = [];
   for (const f of LEDGERS) {
@@ -80,11 +85,23 @@ function openActionRecords(idea, recordId) {
     const settled = settledIdsOf(l);
     for (const r of l.corporateActionReceipts || []) {
       if (r?.actionId !== recordId || (r.reason !== CONFLICTING_ACTION && r.reason !== POSSIBLE_REDATE)) continue;
-      if (r.reason === CONFLICTING_ACTION && r.entitled === false) continue;
       if (!settled.has(recordId)) out.push([f, r]);
     }
   }
   return out;
+}
+
+/**
+ * Amendment F rev 1, S-2: WHAT A RULING SETTLED on a ledger for `recordId` — `'none'` (declined by the founder), or the
+ * payload it applied (or chose and the applier declined as not entitled) — or null when no conflict ruling settled it.
+ */
+function ruledOutcomeOn(ledger, recordId) {
+  for (const r of ledger?.corporateActionReceipts || []) {
+    if (r?.actionId !== recordId || r.founderRuling?.kind !== 'conflict') continue;
+    if (r.reason === 'founder_ruled_none') return 'none';
+    if (r.applied === true || r.reason === 'not_entitled') return { ratio: r.ratio ?? null, amount: r.amount ?? null };
+  }
+  return null;
 }
 
 /**
@@ -133,14 +150,34 @@ export function planHoldRuling(idea, { kind, recordId, decision, ratio, payload,
   if (kind === 'conflict') {
     const open = openActionRecords(idea, recordId);
     if (open.length === 0) {
-      const ever = LEDGERS.some((f) => (idea?.[f]?.corporateActionReceipts || []).some((r) => r?.actionId === recordId && (r.reason === CONFLICTING_ACTION || r.reason === POSSIBLE_REDATE)));
+      // Rev 1, S-2: A RULED ID REVISED SINCE — the feed listed a payload the ruling did not see. The founder answers it with
+      // the ruled outcome again (it closes the record; nothing moves). Any other answer would undo money the ruling moved —
+      // an adjustment, which is T1a-2b-4's — and is refused.
+      const revised = LEDGERS.flatMap((f) => openRulingRevisions(idea?.[f]).filter((x) => x.actionId === recordId).map((x) => [f, x]));
+      if (revised.length > 0) {
+        const fields = [...new Set(revised.map(([f]) => f))];
+        for (const f of fields) {
+          const ruled = ruledOutcomeOn(idea[f], recordId);
+          const same = decision === 'none' ? ruled === 'none' : (ruled !== null && ruled !== 'none' && isPlain(payload) && samePayload(ruled, payload));
+          if (!same) return { error: 'ruling_needs_adjustment', status: 422 };
+        }
+        const [, x] = revised[0];
+        return {
+          ruling: {
+            ...base, symbol: upper(x.ticker), type: x.type, effectiveDate: x.effectiveDate, recordReason: REVISED_AFTER_RULING, ledgers: fields, confirms: true,
+            ...(decision === 'payload' ? { payload: payloadOf(payload) } : {}),
+          },
+        };
+      }
+      const ever = LEDGERS.some((f) => (idea?.[f]?.corporateActionReceipts || []).some((r) => r?.actionId === recordId && (r.reason === CONFLICTING_ACTION || r.reason === POSSIBLE_REDATE || r.reason === REVISED_AFTER_RULING)));
       return ever ? { error: 'record_already_resolved', status: 409 } : { error: 'record_not_found', status: 404 };
     }
     const [, r] = open[0];
     // Astra T2D-09: the ruling names the ledgers whose record it covers — and only those: at the close it is checked
     // again on each, and its action reaches no other (a ledger that never carried the record keeps its own feed rows).
     const ledgers = [...new Set(open.map(([f]) => f))];
-    const recorded = r.reason === CONFLICTING_ACTION ? (r.rows || []).map(payloadOf) : [payloadOf(r)];
+    // Rev 1 (Astra T2D-C01): every payload ANY open record of the id has seen, on every ledger it names.
+    const recorded = open.flatMap(([, rec]) => recordedPayloadsOf(rec).map(payloadOf));
     let chosen = null;
     if (decision === 'payload') {
       if (!isPlain(payload)) return { error: 'payload_invalid', status: 400 };
@@ -252,6 +289,18 @@ export function applyFounderRulings(idea, { date }) {
       continue;
     }
 
+    if (r.kind === 'conflict' && r.confirms === true) {
+      // Rev 1, S-2: the founder's answer to a ruled id revised since — the ruled outcome again. It closes the open revision
+      // records on the ledgers it names; nothing is applied or replaced.
+      for (const f of namedLedgers(r)) {
+        const l = next[f];
+        if (!l) continue;
+        l.corporateActionReceipts = l.corporateActionReceipts.map((x) => (x?.reason === REVISED_AFTER_RULING && x.actionId === r.recordId && x.closedBy == null
+          ? { ...x, closedBy: receiptOf(r), closedOn: date } : x));
+      }
+      appliedNow.add(r.requestKey);
+      continue;
+    }
     if (r.kind === 'conflict') {
       // Astra T2D-09: revalidated on each ledger the ruling names — the record must still be open there — and applied,
       // replaced and completed only there. A ledger that never carried the record keeps its own feed rows of the id.

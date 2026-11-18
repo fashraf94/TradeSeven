@@ -71,7 +71,7 @@ import {
 import { PracticeFieldError } from './errors.js';
 import { practiceFieldLive } from './mode.js';
 import {
-  applyLedgerActions, valueLedger, withCloseMarks, suspectedActionSymbols, markedEquityCents, unsettledConflicts, cloneLedger, REDATE_WINDOW_SESSIONS,
+  applyLedgerActions, valueLedger, withCloseMarks, suspectedActionSymbols, markedEquityCents, openAmbiguities, cloneLedger, REDATE_WINDOW_SESSIONS,
   shareBasisHolds, heldActionRecords, withBasisSuspicions, basisSuspicionRecords, delistingWaitingSymbols,
   markProvenance, MARK_PROVENANCE_SOURCE,
 } from './ledger.js';
@@ -190,7 +190,7 @@ const marksOf = (valuation, ledger) => Object.fromEntries(Object.entries(valuati
 /** What applyLedgerActions answers when there is nothing to apply: the session has no stored snapshot, so no feed. */
 const noActions = (ledger) => ({
   ledger, applied: [], declined: [], unresolved: new Set(), conflicts: [], shareBasisChanges: [], renames: [], renamesDeferred: [], renamesBlocked: [],
-  held: [], closedByCash: [], delistedWaiting: [], redates: [],
+  held: [], closedByCash: [], delistedWaiting: [], redates: [], ambiguities: [],
 });
 
 /** A valuation of a session nobody observed: every mark is the carried one, and says so (E12). */
@@ -243,15 +243,14 @@ function closeFilledIdea(idea, {
       // The rows of a SUCCESSFUL backfill the close read join this idea's rows for the symbol — when it covers the gap,
       // and (Astra T2D-02) at every catch-up close it serves, beside valid archived entries. Each is applied only through
       // the session being valued (the engine's onOrBefore), and once (the ledger's settled ids).
+      // Amendment F rev 1 (S-1 ④, S-5; Astra T2D-C02, C05): every row joins, TAGGED as the backfill's, and each LEDGER
+      // decides: a row of an id ambiguous on that ledger is recorded there (a payload the daily layer did not list is an
+      // archive/backfill disagreement) and settles nothing; a genuine row of an id that ledger holds no open record of is
+      // applied there as any row is. (The idea-wide filter here — AR1-RF-05 — dropped a genuine row from the comparison
+      // because the idea disputed its id, and let a re-listed backfill payload settle the idea's own conflict.)
       const rows = input.backfillRows ?? (r.viaBackfill ? input.backfill?.actions : null);
-      // (Fix-round refuter AR1-RF-05: a backfill row NEVER SETTLES A CONFLICT it took part in. A row of an id this idea
-      // holds an unsettled conflict on joins only while the session's own rows list that id too — so the conflict stays
-      // listed — and is left out once they do not: the conflict then stands for the founder, instead of the backfill's
-      // payload, which outlives the archived row's window, settling it alone.)
-      const conflicted = new Set(LEDGER_FIELDS.flatMap((f) => unsettledConflicts(idea[f]).map((x) => x.actionId)));
-      const listedBySession = new Set((sessionActions?.[sym] || []).map((a) => deriveActionId(a)));
-      const usable = Array.isArray(rows) ? rows.filter((a) => !conflicted.has(deriveActionId(a)) || listedBySession.has(deriveActionId(a))) : [];
-      if (usable.length > 0) feedActions = unionActionsBySymbol(feedActions, { [sym]: usable });
+      const tagged = Array.isArray(rows) ? rows.filter((a) => a && typeof a === 'object').map((a) => ({ ...a, feedOrigin: 'backfill' })) : [];
+      if (tagged.length > 0) feedActions = unionActionsBySymbol(feedActions, { [sym]: tagged });
     }
   }
 
@@ -307,16 +306,19 @@ function closeFilledIdea(idea, {
     return [f, unionActionsBySymbol(kept, ruled.extraActionsByLedger[f])];
   }));
   const delistingWaiting = delistingWaitingSymbols(idea.ledger);
-  const screen = (ledger, f) => (observed ? withBasisSuspicions(ledger, closeSnapshot, actionsOf[f], { sinceDate, date, delistingWaiting, skip: uncovered, ruledIds: ruledIdsOf(f), pricesUsable: dailyRefOk }).ledger : ledger);
-  const ledgers = LEDGER_FIELDS.map((f) => screen(idea[f], f));
-  const holds = observed ? shareBasisHolds(ledgers, LEDGER_FIELDS.map((f) => actionsOf[f]), { date, ruledIds: LEDGER_FIELDS.map(ruledIdsOf) }) : null;
   // F-1: a symbol the session's data does not cover holds every count-dependent action of it dated after the last
-  // session its data covered, on every ledger of the idea — and its rename (deferRenames, below).
-  for (const sym of uncovered) {
+  // session its data covered, on every ledger of the idea — and its rename (deferRenames, below). Amendment F rev 1
+  // (S-4; Astra T2D-C04): the SAME holds are handed to both dry runs — the gap screen's and the hold set's — so a split
+  // coverage keeps from applying is not simulated there either (simulated, it retired the record the real holding still
+  // stood under, and the next halving seen while it stood was never recorded).
+  const coverageHolds = new Map([...uncovered].map((sym) => {
     const c = coverage.get(sym);
-    const item = { actionId: coverageGapIdOf(sym, c.coveredThrough), type: CA_COVERAGE_GAP, effectiveDate: c.coveredThrough, since: c.coveredThrough, ledger: 'idea' };
-    holds.set(sym, [...(holds.get(sym) || []), item]);
-  }
+    return [sym, [{ actionId: coverageGapIdOf(sym, c.coveredThrough), type: CA_COVERAGE_GAP, effectiveDate: c.coveredThrough, since: c.coveredThrough, ledger: 'idea' }]];
+  }));
+  const screen = (ledger, f) => (observed ? withBasisSuspicions(ledger, closeSnapshot, actionsOf[f], { sinceDate, date, delistingWaiting, skip: uncovered, ruledIds: ruledIdsOf(f), pricesUsable: dailyRefOk, holds: coverageHolds }).ledger : ledger);
+  const ledgers = LEDGER_FIELDS.map((f) => screen(idea[f], f));
+  const holds = observed ? shareBasisHolds(ledgers, LEDGER_FIELDS.map((f) => actionsOf[f]), { date, ruledIds: LEDGER_FIELDS.map(ruledIdsOf), holds: coverageHolds }) : null;
+  for (const [sym, items] of coverageHolds) holds.set(sym, [...(holds.get(sym) || []), ...items]);
   const deferRenames = holds ? new Set(holds.keys()) : null;
   const opts = (f) => ({ date, holds, deferRenames, renameTargetsTaken: heldByOthers, renameIdsScreened, ruledIds: ruledIdsOf(f) });
   const own = observed ? applyLedgerActions(ledgers[0], actionsOf.ledger, opts('ledger')) : noActions(ledgers[0]);
@@ -339,9 +341,10 @@ function closeFilledIdea(idea, {
       const on = (r.heldBecause || []).map((c) => `${c.actionId}@${c.ledger}`).join(', ');
       alerts.push(`PRACTICE_FIELD_CORPORATE_ACTION_HELD ${idea.ideaId} ${name} ${r.symbol} ${r.actionId} — the holding's share basis is unresolved (${on}); not applied, nothing credited or released (held since ${r.heldOn})`);
     }
-    // Astra T2D-06: a conflict left open because its own row is still listed beside a matching row under another date.
-    for (const id of out.ambiguousConflicts || []) {
-      alerts.push(`PRACTICE_FIELD_CORPORATE_ACTION_AMBIGUOUS ${idea.ideaId} ${name} ${id} — the conflict's own row is still listed beside a matching row under another date: two readings remain, so the conflict stays open and its row is not applied — the founder may rule (resolve_hold, conflict)`);
+    // Amendment F rev 1: what this close learned about ambiguity on this ledger — a conflict, a revision, a payload an open
+    // record had not seen, a ruled id revised since — each waits for the founder (resolve_hold, conflict).
+    for (const a of out.ambiguities || []) {
+      alerts.push(`PRACTICE_FIELD_CORPORATE_ACTION_AMBIGUOUS ${idea.ideaId} ${name} ${a.ticker} ${a.actionId} — ${a.how}${a.redateOf ? ` of ${a.redateOf}` : ''} (${a.payloads} payload${a.payloads === 1 ? '' : 's'} recorded): ambiguous, so only the founder's ruling settles it — nothing is applied, declined or replayed for it meanwhile (resolve_hold, conflict)`);
     }
     // F-7: a row this close did not apply because it may be one already applied or held, under a moved date.
     for (const r of out.redates || []) {
@@ -398,7 +401,8 @@ function closeFilledIdea(idea, {
   const cmpV = value(cmp.ledger, cmp.unresolved, 'comparisonLedger');
   const spyV = value(spy.ledger, spy.unresolved, 'spyLedger');
   // Conflicts recorded on a ledger and not settled since (neither applied nor declined), this close's included.
-  const openConflicts = [['idea', ownLedger], ['comparison', cmp.ledger], ['spy', spy.ledger]].flatMap(([name, ledger]) => unsettledConflicts(ledger).map((r) => ({ name, actionId: r.actionId })));
+  // Amendment F rev 1: every open ambiguity — a conflict, a possible re-date, a ruled id revised since — on any ledger.
+  const openConflicts = [['idea', ownLedger], ['comparison', cmp.ledger], ['spy', spy.ledger]].flatMap(([name, ledger]) => openAmbiguities(ledger).map((r) => ({ name, actionId: r.actionId, reason: r.reason })));
 
   // An unobserved session changes no ledger: there is nothing to write a mark from.
   let next = {
@@ -530,7 +534,7 @@ function closeFilledIdea(idea, {
     }
   }
   for (const c of openConflicts) {
-    if (!seenToday.has(`${c.name} ${c.actionId}`)) alerts.push(`PRACTICE_FIELD_CORPORATE_ACTION_UNSETTLED ${idea.ideaId} ${c.name} ${c.actionId} — a conflicting action the feed no longer presents was never applied; the row is not full quality`);
+    if (!seenToday.has(`${c.name} ${c.actionId}`)) alerts.push(`PRACTICE_FIELD_CORPORATE_ACTION_UNSETTLED ${idea.ideaId} ${c.name} ${c.actionId} — an ambiguous action (${c.reason}) waits for the founder's ruling (resolve_hold, conflict); nothing is applied for it and the row is not full quality`);
   }
 
   // The running record the result is built from: every close while the idea runs, the endpoint's own included.
