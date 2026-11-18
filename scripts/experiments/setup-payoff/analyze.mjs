@@ -48,7 +48,10 @@ const CITED = [
   { key: 'bwPercentile', file: 'api/cron/compute-index-intelligence.js', text: 'Math.round((idx / (bwValues.length - 1)) * 100)' },
   { key: 'bbCall', file: 'api/cron/compute-index-intelligence.js', text: 'const bbResult = calculateBollingerBands(closes, 20, 2);' },
   { key: 'extensionGuard', file: 'api/_utils/setupEvaluator/tfSetupV1.js', text: 'const guard = isNum(SMA_fast) && isNum(ATR) ? toNumber(addDecimal(toDecimal(SMA_fast), multiplyDecimal(toDecimal(T.extensionGuardAtrMultiple), toDecimal(ATR)))) : null;' },
-  { key: 'calendarMissing', file: 'api/_utils/setupEvaluator/dailyBarsAdapter.js', text: "reason: 'calendar_missing'" },
+  { key: 'calendarMissing', file: 'api/_utils/setupEvaluator/dailyBarsAdapter.js', text: "return { ok: false, reason: 'calendar_missing'" },
+  { key: 'adjacencySkipped', file: 'api/_utils/setupEvaluator/dailyBarsAdapter.js', text: 'if (!MAINTAINED_HOLIDAY_YEARS.includes(yearOf(newer)) || !MAINTAINED_HOLIDAY_YEARS.includes(yearOf(older))) { adjacencyAvailable = false; continue; }' },
+  { key: 'maintainedYears', file: 'src/utils/marketCalendar.js', text: 'export const MAINTAINED_HOLIDAY_YEARS = [2026, 2027];' },
+  { key: 'bandWidthFunction', file: 'api/_utils/technicalCalculations.js', text: 'export function calculateBollingerBands(closes, period = 20, stdDev = 2)' },
 ];
 function citeLines() {
   const out = {};
@@ -309,6 +312,22 @@ async function main() {
   const refusals = {};
   for (const sym of U) for (const s of early) { const c = recF(sym, s); if (!c.ok) refusals[c.rf || 'unknown'] = (refusals[c.rf || 'unknown'] || 0) + 1; }
   summary.longWindow = { sessions: L.length, first: L[0], last: L.at(-1), fetchedSessions: early.length, refusalsBeforeOverlap: refusals, sessionsWhoseBarsReach2025: L.filter((s) => (recF(MARKET_SYMBOL, s)?.n55 ?? '9999') < '2026-01-01').length };
+  // Added after the first results (a disclosure, not a definition): the adapter's missing-bar check is not available for
+  // rows dated 2025 (outside the maintained years), so a gap there would not be refused. Each universe series is compared
+  // date by date with SPY's over the 2025 rows the long window's 55-bar windows read.
+  {
+    const oldest = L.map((s) => recF(MARKET_SYMBOL, s)?.n55).filter(Boolean).sort()[0];
+    const spyDates = Object.keys(BARS.fetched.rows[MARKET_SYMBOL]).filter((d) => d >= oldest && d < '2026-01-01');
+    let missing = 0; let extra = 0; const symbolsWithGap = [];
+    for (const sym of U) {
+      const own = Object.keys(BARS.fetched.rows[sym]).filter((d) => d >= oldest && d < '2026-01-01');
+      const miss = spyDates.filter((d) => !BARS.fetched.rows[sym][d]).length;
+      const ext = own.filter((d) => !BARS.fetched.rows[MARKET_SYMBOL][d]).length;
+      missing += miss; extra += ext;
+      if (miss + ext > 0) symbolsWithGap.push(sym);
+    }
+    summary.longWindow.gaps2025 = { from: oldest, to: '2025-12-31', spyRows: spyDates.length, missingAgainstSpy: missing, extraAgainstSpy: extra, symbolsWithGap };
+  }
 
   // ---- Windows ----
   const NEXT = {};
@@ -386,6 +405,21 @@ async function main() {
       A.splits[sp.id] = { group: sp.group, counts, vsG2: compareAll(W, ARM.validFirst, ARM.G2, { pred }), vsG1: compareAll(W, ARM.validFirst, ARM.G1, { pred }) };
     }
     summary.partA[W.name] = A;
+  }
+  // POST HOC (added after the first results were seen; not one of the fixed labels): the long window's sessions before
+  // the short window, 2 Jan – 28 May, the only stretch the fetch adds. Same arms, same test, same words.
+  {
+    const W = WS.long;
+    const pre = W.sessions.filter((s) => s < S[0]);
+    const out = { sessions: pre.length, first: pre[0], last: pre.at(-1), tests: {}, measures: { validFirst: measure(W, pre, ARM.validFirst), G1: null, G2: null } };
+    const eventSessions = pre.filter((t) => W.members[t].some((x) => ARM.validFirst(x, t)));
+    out.measures.G1 = measure(W, eventSessions, ARM.G1);
+    out.measures.G2 = measure(W, eventSessions, ARM.G2);
+    for (const g of ['G1', 'G2', 'G3']) {
+      out.tests[`validFirst_vs_${g}`] = {};
+      for (const h of H) for (const kind of ['u', 'p']) out.tests[`validFirst_vs_${g}`][`${h}${kind}`] = compare(W, pre, ARM.validFirst, ARM[g], h, kind);
+    }
+    summary.postHocJanToMay = out;
   }
 
   // ---- Part B ----
@@ -505,8 +539,16 @@ async function main() {
     for (const p of PERIODS) { const ss = sessionsOfPeriod(W, p); const rows = full.filter((r) => ss.includes(r.session)); byPeriod[p] = { sessions: rows.length, ...spread(rows.map((r) => r.flagged)) }; }
     return { source: src, sessionsWithFullHistory: full.length, sessionsWithoutFullHistory: perSession.length - full.length, eligibleRange: [Math.min(...perSession.map((r) => r.eligible)), Math.max(...perSession.map((r) => r.eligible))], byPeriod, weekly: Object.entries(weeks).map(([week, xs]) => ({ week, sessions: xs.length, median: median(xs), min: Math.min(...xs), max: Math.max(...xs) })), perSession };
   }
-  summary.partD = { label: 'a precondition only', short: squeezeFor(WS.short, 'stored'), long: squeezeFor(WS.long, 'fetched'), longOnShortSessions: null };
-  { const rows = summary.partD.long.perSession.filter((r) => S.includes(r.session) && r.eligible === U.length); summary.partD.longOnShortSessions = { sessions: rows.length, ...spread(rows.map((r) => r.flagged)) }; }
+  summary.partD = { label: 'a precondition only', short: squeezeFor(WS.short, 'stored'), long: squeezeFor(WS.long, 'fetched') };
+  // The two sources on the SAME sessions: those the short window counts (changed after the first results, which put the
+  // long source's 120 sessions beside the short source's 90).
+  {
+    const counted = summary.partD.short.perSession.filter((r) => r.eligible === U.length);
+    const longBy = {};
+    for (const r of summary.partD.long.perSession) longBy[r.session] = r.flagged;
+    const diffs = counted.map((r) => longBy[r.session] - r.flagged);
+    summary.partD.sameSessions = { sessions: counted.length, stored: spread(counted.map((r) => r.flagged)), fetched: spread(counted.map((r) => longBy[r.session])), sessionsDiffering: diffs.filter((d) => d !== 0).length, largestDifference: Math.max(...diffs.map(Math.abs)) };
+  }
 
   // ---- Part E ----
   const fundClose = { stored: {}, fetched: {} };

@@ -58,10 +58,20 @@ function partA(A, name) {
       return [label, ...P.map((p) => cell(T[p][`${h}${kind}`], kind)), T.whole[`${h}${kind}`].sessions, `${T.whole[`${h}${kind}`].nA} / ${T.whole[`${h}${kind}`].nB}`];
     })));
   }
-  out.push('\n**Splits against G2** (three-session units, then one-session units; "small" where an arm has fewer than 100).\n');
-  out.push(table(['Split', 'Events entered (dev / conf / whole)', ...P.map((p) => `3-day · ${PN[p]}`), '1-day · whole', '3-day vs G1 · whole'], Object.entries(A.splits).map(([id, s]) => [
-    `${s.group}: ${id}`, P.map((p) => s.counts[p].events).join(' / '), ...P.map((p) => cell(s.vsG2[p]['3u'], 'u')), cell(s.vsG2.whole['1u'], 'u'), cell(s.vsG1.whole['3u'], 'u'),
-  ])));
+  out.push('\n**Splits** (units; "small" where an arm has fewer than 100 observations; "sessions" = paired sessions behind the three-session result against G2, dev / conf / whole).\n');
+  const splitRows = (key, hk) => Object.entries(A.splits).map(([id, s]) => [`${s.group}: ${id}`, P.map((p) => s.counts[p].events).join(' / '), P.map((p) => s.vsG2[p]['3u'].sessions).join(' / '), ...P.map((p) => cell(s[key][p][hk], 'u'))]);
+  for (const [key, hk, title] of [['vsG2', '3u', 'three sessions against G2'], ['vsG2', '1u', 'one session against G2'], ['vsG1', '3u', 'three sessions against G1'], ['vsG1', '1u', 'one session against G1']]) {
+    out.push(`\n*${title}*\n`);
+    out.push(table(['Split', 'Events entered (dev / conf / whole)', 'Sessions', ...P.map((p) => PN[p])], splitRows(key, hk)));
+  }
+  return out.join('\n');
+}
+
+function postHoc(X) {
+  const out = [`### Post hoc — the long window before the short window (${X.sessions} sessions, ${X.first} → ${X.last})`, '\nAdded after the first results were seen. Not one of the fixed labels; the same arms, test and words.\n'];
+  out.push(table(['Comparison', '3-day units', '3-day %', '1-day units', '1-day %', 'n event / n group (3-day)'], Object.entries(X.tests).map(([k, t]) => [k.replace('validFirst_vs_', 'Event vs '), cell(t['3u'], 'u'), cell(t['3p'], 'p'), cell(t['1u'], 'u'), cell(t['1p'], 'p'), `${t['3u'].nA} / ${t['3u'].nB}`])));
+  const m = X.measures;
+  out.push(`\nMeans, three sessions (units / %): event ${sg(m.validFirst.h[3].meanUnits, 3)} / ${sg(m.validFirst.h[3].meanPct)} (n ${m.validFirst.h[3].n}); G1 ${sg(m.G1.h[3].meanUnits, 3)} / ${sg(m.G1.h[3].meanPct)}; G2 ${sg(m.G2.h[3].meanUnits, 3)} / ${sg(m.G2.h[3].meanPct)}.`);
   return out.join('\n');
 }
 
@@ -74,6 +84,14 @@ function partB(B, name) {
     return [id, pm('dev'), pm('conf'), pm('whole'), `${m.events} / ${m.entered} / ${m.removedByEntry}`, cell(c.vsG2.dev['3u'], 'u'), cell(c.vsG2.conf['3u'], 'u'), cell(c.vsG2.whole['3u'], 'u'), cell(c.vsG2.whole['1u'], 'u'), cell(c.vsG1.whole['3u'], 'u'), `${sg(m.h[3].meanUnits, 3)} / ${pc(m.h[3].atOrAbovePlus1)} / ${pc(m.h[3].atOrBelowMinus1)}`];
   })));
   out.push(`\nTightness order (development stock-days): ${B.tightness.join(' < ')}. Recommendation (estimate reading): **${B.recommendation.estimateReading ?? 'none'}**; interval reading: ${B.recommendation.intervalReading ?? 'none'}.`);
+  out.push('\n<details><summary>Every candidate by period: tests and measurements</summary>\n');
+  for (const [key, hk, title] of [['vsG2', '1u', 'one session against G2, units'], ['vsG1', '3u', 'three sessions against G1, units'], ['vsG1', '1u', 'one session against G1, units'], ['vsG2', '3p', 'three sessions against G2, percent']]) {
+    out.push(`\n*${title}*\n`);
+    out.push(table(['Candidate', ...P.map((p) => PN[p])], Object.entries(B.candidates).map(([id, c]) => [id, ...P.map((p) => cell(c[key][p][hk], hk.endsWith('u') ? 'u' : 'p'))])));
+  }
+  out.push('\n*Measurements (events / entered / removed by entry; 3-day mean units; 3-day ≥+1u / ≤−1u; 3-day barrier up / down / neither)*\n');
+  out.push(table(['Candidate', ...P.map((p) => PN[p])], Object.entries(B.candidates).map(([id, c]) => [id, ...P.map((p) => { const m = c.measures[p]; const h3 = m.h[3]; return `${m.events} / ${m.entered} / ${m.removedByEntry}; ${sg(h3.meanUnits, 3)}; ${pc(h3.atOrAbovePlus1)} / ${pc(h3.atOrBelowMinus1)}; ${pc(h3.upFirst)} / ${pc(h3.downFirst)} / ${pc(h3.neither)}`; })])));
+  out.push('\n</details>');
   return out.join('\n');
 }
 
@@ -97,7 +115,8 @@ function partD(Dd) {
     out.push('');
     out.push(table(['Week of', 'Sessions', 'Median', 'Range'], x.weekly.map((w) => [w.week, w.sessions, w.median, `${w.min}–${w.max}`])));
   }
-  out.push(`\nLong-window figures on the short window's sessions: ${Dd.longOnShortSessions.sessions} sessions, median ${Dd.longOnShortSessions.median}, ${Dd.longOnShortSessions.min}–${Dd.longOnShortSessions.max}.`);
+  const z = Dd.sameSessions;
+  out.push(`\nThe two sources on the same ${z.sessions} sessions: stored median ${z.stored.median} (${z.stored.min}–${z.stored.max}), fetched median ${z.fetched.median} (${z.fetched.min}–${z.fetched.max}); ${z.sessionsDiffering} sessions differ, by at most ${z.largestDifference} names.`);
   return out.join('\n');
 }
 
@@ -127,9 +146,10 @@ function main() {
     `\nOverlap (long-window replay on the fetched bars vs the stored run, ${s.overlap.compared} stock-days, all 241 symbols): verdict fields differ on ${s.overlap.verdictFieldsDiffer} (universe ${s.overlap.universeDiffs}); facts differ on ${s.overlap.factsDiffer}; limit differs on ${s.overlap.limitDiffer}.`,
     s.overlap.diffs.length ? table(['Symbol', 'Session', 'Fields', 'Stored', 'Fetched'], s.overlap.diffs.map((d) => [d.symbol, d.session, d.differing.join(', '), `${d.stored.v} ${d.stored.r ?? ''} ${d.stored.p ?? ''} ${d.stored.rf ?? ''}`, `${d.fetched.v} ${d.fetched.r ?? ''} ${d.fetched.p ?? ''} ${d.fetched.rf ?? ''}`])) : '',
     `\nLong window: ${s.longWindow.sessions} sessions ${s.longWindow.first} → ${s.longWindow.last}; ${s.longWindow.fetchedSessions} from the fetch; refusals before the overlap: ${JSON.stringify(s.longWindow.refusalsBeforeOverlap)}; sessions whose 55-bar window reaches 2025 bars: ${s.longWindow.sessionsWhoseBarsReach2025}.`,
+    `\n2025 rows (no missing-bar check there): ${s.longWindow.gaps2025.from} → ${s.longWindow.gaps2025.to}, ${s.longWindow.gaps2025.spyRows} SPY rows; universe rows missing against SPY ${s.longWindow.gaps2025.missingAgainstSpy}, extra ${s.longWindow.gaps2025.extraAgainstSpy}; symbols with a gap: ${s.longWindow.gaps2025.symbolsWithGap.join(', ') || 'none'}.`,
     `\nRequests: ${s.requests.made} of ${s.requests.cap}, failed ${s.requests.failed}; ${s.requests.first} → ${s.requests.last}; ${JSON.stringify(s.requests.rowCounts)}.`,
     `\nCited at HEAD: ${Object.entries(s.cites).map(([k, v]) => `${k} ${v}`).join('; ')}.`,
-    '\n## Part A', partA(s.partA.short, 'short'), partA(s.partA.long, 'long'),
+    '\n## Part A', partA(s.partA.short, 'short'), partA(s.partA.long, 'long'), postHoc(s.postHocJanToMay),
     '\n## Part B', partB(s.partB.short, 'short'), partB(s.partB.long, 'long'),
     '\n## Part C', partC(s.partC, ['short', 'long']),
     '\n## Part D', partD(s.partD),
