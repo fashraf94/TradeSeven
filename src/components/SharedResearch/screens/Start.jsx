@@ -6,6 +6,10 @@
 // · Use a SignalDrop. Browsing writes nothing; the only request is GET ?list=open.
 // Gated (the prop, or the server's 404 disabled): the stories stay readable, the
 // gated line shows, and nothing here can start an investigation.
+//
+// The thesis builder (B4 build prompt K-3): with `builder` (the switch, read once by the body at render) own words are
+// opened at once as a builder — no framing, so the framing ceiling does not hold it back; the day's investigation
+// ceiling does. With it off, this screen is exactly as before.
 
 import React, { useRef, useState } from 'react';
 import { SR_COPY as COPY } from '../sharedResearchCopy';
@@ -30,7 +34,7 @@ function StoryCard({ story, onPick }) {
   );
 }
 
-export default function Start({ sr, stories, gated, phone, prefill, onPickStory, onFrame, onUseDrop, onContinue, onClose }) {
+export default function Start({ sr, stories, gated, phone, prefill, onPickStory, onFrame, onUseDrop, onContinue, onClose, builder = false }) {
   const [text, setText] = useState(prefill || '');
   const [prompt, setPrompt] = useState(null);
   const [more, setMore] = useState(false);
@@ -42,10 +46,11 @@ export default function Start({ sr, stories, gated, phone, prefill, onPickStory,
   const p = COPY.prompts.find((x) => x.id === prompt) ?? null;
   const busy = sr.pending !== null;
   const framing = sr.pending?.kind === 'frame';
-  const frameRefusal = sr.failure?.action === 'frame' && !sr.frameState ? sr.failure : null;
+  const opening = builder && sr.pending?.kind === 'open';
+  const frameRefusal = sr.failure?.action === 'frame' && !sr.frameState ? sr.failure : builder && sr.failure?.action === 'open' ? sr.failure : null;
   // A Continue row that did not open: the server's line, or ours when no answer came (review b5).
   const readFailure = sr.failure?.action === 'read' ? sr.failure : null;
-  const canFrame = Boolean(text.trim()) && !gated && !quota.framingLimit && !busy && !sr.waiting;
+  const canFrame = Boolean(text.trim()) && !gated && !(builder ? quota.dailyLimit : quota.framingLimit) && !busy && !sr.waiting;
 
   return (
     <div data-screen-label="Start" style={S.col}>
@@ -101,15 +106,16 @@ export default function Start({ sr, stories, gated, phone, prefill, onPickStory,
           ))}
         </div>
         <Field id="sr-own" label={COPY.ownLabel} help={p ? p.help : COPY.ownHelp}>
-          <textarea ref={boxRef} id="sr-own" value={text} onChange={(e) => setText(e.target.value)} rows={3} maxLength={500} disabled={gated || framing}
+          <textarea ref={boxRef} id="sr-own" value={text} onChange={(e) => setText(e.target.value)} rows={3} maxLength={500} disabled={gated || framing || opening}
             placeholder={p ? p.example : COPY.ownExample} style={{ ...S.input, minHeight: 92, resize: 'vertical' }} />
         </Field>
         <p style={S.small}>{COPY.obsNote}</p>
-        {!gated && quota.framingLimit && <Notice role="status" tone="gold" attrs={{ 'data-sr-limit': 'framing_limit' }}>{COPY.server.framing_limit}</Notice>}
+        {!builder && !gated && quota.framingLimit && <Notice role="status" tone="gold" attrs={{ 'data-sr-limit': 'framing_limit' }}>{COPY.server.framing_limit}</Notice>}
         {frameRefusal && <Notice role="alert" attrs={{ 'data-sr-refusal': frameRefusal.code }}>{frameRefusal.message}</Notice>}
         {framing && <Running>{COPY.framing}</Running>}
+        {opening && <Running>{COPY.opening}</Running>}
         <div style={S.actions}>
-          <Button kind="primary" full={phone} disabled={!canFrame} onClick={() => onFrame(text.trim())} attrs={{ 'data-sr-frame': '' }}>{COPY.frame}</Button>
+          <Button kind="primary" full={phone} disabled={!canFrame} onClick={() => onFrame(text.trim())} attrs={builder ? { 'data-sr-start-thesis': '' } : { 'data-sr-frame': '' }}>{builder ? COPY.builder.start : COPY.frame}</Button>
           <Button kind="ghost" onClick={onClose}>{COPY.cancel}</Button>
         </div>
       </section>
