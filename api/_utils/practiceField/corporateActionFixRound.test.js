@@ -16,7 +16,7 @@ import { applyLedgerActions, unsettledConflicts, saleHeldBackBy, heldActionRecor
 import { planHoldRuling, applyFounderRulings, markRulingsApplied } from './holdRulings.js';
 import { nextSessionDate } from './windows.js';
 import {
-  seedBook, admitAndEnter, closeOn, windowAt, contractOf, getBook, getIdea, getRow, closeNowOf, etIso, storeCloseSnapshot,
+  seedBook, admitAndEnter, closeOn, windowAt, contractOf, getBook, getIdea, getRow, closeNowOf, etIso, storeCloseSnapshot, placeSnapshot, closeSnapshot,
   takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults,
 } from './__testsupport__/fixtures.js';
 
@@ -695,5 +695,20 @@ describe('AR1-RF-05 — a backfill row never settles a conflict it took part in'
     await close(c, 23, 80);
     idea = ideaOf(c);
     expect([idea.ledger.holdings.AAPL.shares, bookOf(c).portfolio.positions.AAPL.shares]).toEqual([124.96251, 124.96251]);
+  });
+});
+
+describe('AR1-RF-04 (its edge) — a snapshot that names another day\'s layer is not used: a move in its prices is no transition', () => {
+  it('the record at $50, then a $25 snapshot naming no daily layer: no transition, no last quote kept', async () => {
+    const c = await start();
+    await close(c, 0);
+    await close(c, 1, 50);
+    placeSnapshot(c.db, closeSnapshot(S[2], q(25), { dailyRef: null }));
+    await raw(c, 2);
+    recon(c);
+    const record = ideaOf(c).ledger.holdings.AAPL.basisSuspicion;
+    expect(record.transitions ?? []).toEqual([]);
+    expect(record.lastQuote ?? null).toBe(null);
+    expect(record.lastSeen.session).toBe(S[1]);
   });
 });
