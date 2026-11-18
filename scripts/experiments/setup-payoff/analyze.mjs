@@ -27,12 +27,14 @@ import { calculateBollingerBands } from '../../../api/_utils/technicalCalculatio
 import { addDecimal, multiplyDecimal, toDecimal, toNumber } from '../../../api/_utils/setupEvaluator/evidenceValues.js';
 import { classOf } from '../setup-frequency/analyze.mjs';
 import {
-  bootstrapMean, DEFINITIONS as D, die, FREQ_RUN, FUND_SECTOR, labelOf, MARKET_SYMBOL, mean, median, nextSessionOf, percentile,
+  bootstrapMean, DEFINITIONS as D, die, mulberry32, FREQ_RUN, FUND_SECTOR, labelOf, MARKET_SYMBOL, mean, median, nextSessionOf, percentile,
   periodsOf, PROJECT_ROOT, readJson, runDirOf, SECTOR_FUNDS, sessionsBack, share, spread, UNIVERSE_SECTOR, uniq, writeJson, writeVerbGrep,
 } from './lib.mjs';
 import { readFileSync } from 'node:fs';
 
 const U = ALL_TICKERS;
+/** The compact record's fields, as enrich.mjs compares them with the frequency run's replay.json. */
+const COMPACT_FIELDS = ['v', 'r', 'p', 'ps', 'rg', 'm', 'ok', 'rf', 'rfDate', 'd', 'dr', 'C', 'extLimit', 'dropped'];
 const H = D.horizons;
 const isValid = (cls) => cls.startsWith('valid_');
 const fin = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -196,6 +198,7 @@ function measure(W, sessions, arm, { filter = true, pred = null } = {}) {
 
 function compare(W, sessions, armA, armB, h, kind, { filter = true, exclDiv = false, pred = null } = {}) {
   const diffs = [];
+  const sessMeanA = []; const sessMeanB = [];
   let nA = 0; let nB = 0;
   for (const t of sessions) {
     const a = []; const b = [];
@@ -209,9 +212,40 @@ function compare(W, sessions, armA, armB, h, kind, { filter = true, exclDiv = fa
     if (a.length === 0 || b.length === 0) continue;
     nA += a.length; nB += b.length;
     diffs.push(mean(a) - mean(b));
+    sessMeanA.push(mean(a)); sessMeanB.push(mean(b));
   }
   const bs = bootstrapMean(diffs);
-  return { sessions: bs.n, nA, nB, est: bs.est, lo: bs.lo, hi: bs.hi, label: labelOf(bs), small: nA < D.splits.small || nB < D.splits.small };
+  // Added after the review (SP-L1-3, SP-L3-2): the two arms' means on the paired sessions, each session weighted
+  // equally, so the estimate reads as their difference. Not a label; the fixed fields above are unchanged.
+  const out = { sessions: bs.n, nA, nB, est: bs.est, lo: bs.lo, hi: bs.hi, label: labelOf(bs), small: nA < D.splits.small || nB < D.splits.small, sessionMeanA: mean(sessMeanA), sessionMeanB: mean(sessMeanB) };
+  Object.defineProperty(out, 'diffs', { value: diffs, enumerable: false });
+  return out;
+}
+
+/**
+ * POST REVIEW (SP-L1-1), a sensitivity, not a label: a moving-block bootstrap of the per-session differences, so the
+ * overlap of adjacent three-session windows is allowed for. Blocks of `block` consecutive sessions, wrapping at the
+ * end (a circular block bootstrap); the same 2,000 resamples, seed and nearest-rank 5th / 95th as the fixed test.
+ */
+function blockInterval(values, block) {
+  const n = values.length;
+  if (n < block) return { block, lo: null, hi: null };
+  const rnd = mulberry32(D.seed);
+  const means = [];
+  for (let r = 0; r < D.resamples; r++) {
+    let sum = 0; let k = 0;
+    while (k < n) { const start = Math.floor(rnd() * n); for (let j = 0; j < block && k < n; j++, k++) sum += values[(start + j) % n]; }
+    means.push(sum / n);
+  }
+  means.sort((a, b) => a - b);
+  const at = (p) => means[Math.min(means.length, Math.max(1, Math.ceil((p / 100) * means.length))) - 1];
+  return { block, lo: at(D.interval[0]), hi: at(D.interval[1]) };
+}
+function lag1(values) {
+  const n = values.length; if (n < 3) return null;
+  const m = mean(values); let num = 0; let den = 0;
+  for (let i = 0; i < n; i++) { den += (values[i] - m) ** 2; if (i > 0) num += (values[i] - m) * (values[i - 1] - m); }
+  return den > 0 ? num / den : null;
 }
 
 const PERIODS = ['dev', 'conf', 'whole'];
@@ -252,19 +286,24 @@ async function main() {
   const exp = readJson(path.join(FREQ_RUN, 'export.json'));
   const repro = readJson(path.join(FREQ_RUN, 'reproduction.json'));
   const plan = readJson(path.join(FREQ_RUN, 'plan.json'));
-  const requests = readJson(path.join(runDir, 'requests.json'));
-  const ENR = { stored: loadEnriched(runDir, 'stored'), fetched: loadEnriched(runDir, 'fetched') };
-  for (const src of ['stored', 'fetched']) {
-    const missing = plan.all.filter((s) => !ENR[src].bySymbol[s]);
-    if (missing.length > 0) die(`${src}: ${missing.length} symbols have no enriched shard (first ${missing[0]})`);
-  }
-  const BARS = { stored: loadBars(path.join(FREQ_RUN, 'bars'), plan.all), fetched: loadBars(path.join(runDir, 'bars'), plan.all) };
-  const S = ENR.stored.sessions;
-  const L = ENR.fetched.sessions;
-  const summary = { definitions: D, cites, runDir, requests: { made: requests.made, cap: requests.cap, from: requests.from, to: requests.to, failed: requests.log.filter((e) => !e.outcome.startsWith('rows:')).length, first: requests.log[0]?.requestedAt, last: requests.log.at(-1)?.requestedAt, rowCounts: tally(requests.log.map((e) => e.outcome)) } };
+  const summary = { definitions: D, cites, runDir };
 
-  // ---- Step 0: reproduce the frequency count from the re-run ----
-  const recS = (sym, s) => ENR.stored.bySymbol[sym]?.[s];
+  // ---- Step 0: reproduce the frequency count from the re-run, BEFORE anything the fetch produced is read (review
+  // SP-L2-1). Every compact record is compared here with the frequency run's own replay.json, field for field, rather
+  // than trusting each shard's self-report (review SP-L2-2). ----
+  const stored = loadEnriched(runDir, 'stored');
+  const S = stored.sessions;
+  const freqReplay = readJson(path.join(FREQ_RUN, 'replay.json'));
+  if (JSON.stringify(freqReplay.window.sessions) !== JSON.stringify(S)) die('the stored re-run and replay.json disagree on the window');
+  let compactCompared = 0; let compactMismatches = 0;
+  for (const sym of plan.all) {
+    for (const s of S) {
+      compactCompared += 1;
+      const a = stored.bySymbol[sym]?.[s]; const b = freqReplay.bySymbol[sym]?.[s];
+      if (!a || !b || COMPACT_FIELDS.some((k) => JSON.stringify(a[k] ?? null) !== JSON.stringify(b[k] ?? null))) compactMismatches += 1;
+    }
+  }
+  const recS = (sym, s) => stored.bySymbol[sym]?.[s];
   const validPerSession = S.map((s) => U.filter((sym) => isValid(classOf(recS(sym, s)))).length);
   let validBreakout = 0;
   for (const sym of U) for (const s of S) { const c = recS(sym, s); if (isValid(classOf(c)) && c.ps.includes('breakout')) validBreakout += 1; }
@@ -280,17 +319,28 @@ async function main() {
     sessions: S.length, first: S[0], last: S.at(-1),
     medianValid: median(validPerSession), validBreakout, stockDays: U.length * S.length,
     storedRecords: exp.records.length, storedMatched, storedDiffs,
-    compactEqual: { compared: ENR.stored.compared, mismatches: ENR.stored.mismatches },
+    compactEqual: { compared: compactCompared, mismatches: compactMismatches, shardsSelfReport: { compared: stored.compared, mismatches: stored.mismatches } },
     frequencyRunReproduction: { compared: repro.compared, matched: repro.matched },
   };
   step0.pass = step0.medianValid === D.reproduce.medianValid && validBreakout === D.reproduce.validBreakout && step0.stockDays === D.reproduce.stockDays
-    && storedMatched === D.reproduce.storedRecords && step0.storedRecords === D.reproduce.storedRecords && ENR.stored.mismatches === 0 && ENR.stored.compared === plan.all.length * S.length;
+    && storedMatched === D.reproduce.storedRecords && step0.storedRecords === D.reproduce.storedRecords
+    && compactMismatches === 0 && compactCompared === plan.all.length * S.length && stored.mismatches === 0;
   summary.step0 = step0;
   if (!step0.pass) {
     writeJson(path.join(runDir, 'summary.json'), summary);
     die(`STEP 0 DOES NOT REPRODUCE — STOP. ${JSON.stringify({ ...step0, storedDiffs: storedDiffs.length })}`);
   }
-  console.log(`step 0 reproduced: median ${step0.medianValid}, valid breakouts ${validBreakout} of ${step0.stockDays}, stored ${storedMatched} of ${exp.records.length}, compact ${ENR.stored.compared - ENR.stored.mismatches} of ${ENR.stored.compared}`);
+  console.log(`step 0 reproduced: median ${step0.medianValid}, valid breakouts ${validBreakout} of ${step0.stockDays}, stored ${storedMatched} of ${exp.records.length}, compact ${compactCompared - compactMismatches} of ${compactCompared}`);
+
+  // ---- Only now: the fetch's outputs. Every plan symbol must have a fetched record at every long-window session. ----
+  const requests = readJson(path.join(runDir, 'requests.json'));
+  summary.requests = { made: requests.made, cap: requests.cap, from: requests.from, to: requests.to, failed: requests.log.filter((e) => !e.outcome.startsWith('rows:')).length, first: requests.log[0]?.requestedAt, last: requests.log.at(-1)?.requestedAt, rowCounts: tally(requests.log.map((e) => e.outcome)) };
+  const ENR = { stored, fetched: loadEnriched(runDir, 'fetched') };
+  const L = ENR.fetched.sessions;
+  if (JSON.stringify(L) !== JSON.stringify(sessionsBack(D.window.lastSession, D.window.longMax))) die('the fetched re-run is not the long window');
+  const uncovered = plan.all.reduce((n, sym) => n + L.filter((s) => !ENR.fetched.bySymbol[sym]?.[s]).length, 0);
+  if (uncovered > 0) die(`the fetched re-run lacks ${uncovered} of ${plan.all.length * L.length} records`);
+  const BARS = { stored: loadBars(path.join(FREQ_RUN, 'bars'), plan.all), fetched: loadBars(path.join(runDir, 'bars'), plan.all) };
 
   // ---- The long window's overlap check ----
   const recF = (sym, s) => ENR.fetched.bySymbol[sym]?.[s];
@@ -421,6 +471,19 @@ async function main() {
     }
     summary.postHocJanToMay = out;
   }
+  // POST REVIEW (SP-L1-1): the overlap sensitivity for the headline comparisons and the post-hoc row.
+  {
+    const rows = [];
+    const add = (label, t) => rows.push({ label, est: t.est, wholeSession: [t.lo, t.hi], label90: t.label, lag1: lag1(t.diffs), block3: blockInterval(t.diffs, 3), block5: blockInterval(t.diffs, 5) });
+    for (const [wn, W] of Object.entries(WS)) for (const p of PERIODS) {
+      add(`${wn} ${p} event vs G2, 3-session units`, compare(W, sessionsOfPeriod(W, p), ARM.validFirst, ARM.G2, 3, 'u'));
+      add(`${wn} ${p} event vs G1, 1-session units`, compare(W, sessionsOfPeriod(W, p), ARM.validFirst, ARM.G1, 1, 'u'));
+    }
+    const pre = WS.long.sessions.filter((s) => s < S[0]);
+    add('post hoc Jan-May event vs G2, 3-session units', compare(WS.long, pre, ARM.validFirst, ARM.G2, 3, 'u'));
+    add('post hoc Jan-May event vs G2, 3-session percent', compare(WS.long, pre, ARM.validFirst, ARM.G2, 3, 'p'));
+    summary.overlapSensitivity = rows;
+  }
 
   // ---- Part B ----
   summary.partB = {};
@@ -437,6 +500,8 @@ async function main() {
     let anyRegimeBreakout = 0;
     for (const t of W.sessions) for (const x of W.members[t]) if (x.rec?.ok && x.rec.pb === 'satisfied') anyRegimeBreakout += 1;
     B.base = { uptrendBreakoutSatisfied: B.l0Check.base, breakoutSatisfiedAnyRegime: anyRegimeBreakout };
+    // Added after the review (SP-L3-14): the base by period.
+    B.baseByPeriod = Object.fromEntries(PERIODS.map((p) => [p, sessionsOfPeriod(W, p).reduce((n, t) => n + W.members[t].filter((x) => breakoutBase(x.rec)).length, 0)]));
     for (const c of D.candidates) {
       // Each record's verdict and limit under the candidate, computed once.
       const cv = {};

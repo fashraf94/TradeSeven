@@ -13,7 +13,7 @@
 // guard list). No file in this folder names the store's folder or its collections as a path segment, so the guard
 // needs no new entry (prompt rule 2).
 
-import { readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getSessionForDate } from '../../../api/_utils/marketSchedule.js';
@@ -126,11 +126,17 @@ export function die(msg) {
 
 export const argOf = (argv, flag) => { const i = argv.indexOf(flag); return i >= 0 ? argv[i + 1] : null; };
 
-/** `--run <dir>` (default DEFAULT_RUN_DIR), refused inside the repository or inside the frequency run's folder. */
+/**
+ * `--run <dir>` (default DEFAULT_RUN_DIR): an absolute path, refused inside the repository or inside the frequency
+ * run's folder (compared through real paths where they exist; review SP-L2-9), created only once it passes.
+ */
 export function runDirOf(argv) {
-  const dir = path.resolve(argOf(argv, '--run') || DEFAULT_RUN_DIR);
-  if (insideAny(dir, repoRoots(PROJECT_ROOT))) die(`the run folder must be outside the repository: ${dir}`);
-  if (insideAny(dir, [path.resolve(FREQ_RUN)])) die(`the frequency run's folder is read only: ${dir}`);
+  const given = argOf(argv, '--run');
+  if (given && !path.isAbsolute(given)) die(`--run must be an absolute path: ${given}`);
+  const dir = path.resolve(given || DEFAULT_RUN_DIR);
+  const real = (p) => { try { return realpathSync.native(p); } catch { return p; } };
+  if (insideAny(dir, repoRoots(PROJECT_ROOT)) || insideAny(real(dir), repoRoots(PROJECT_ROOT))) die(`the run folder must be outside the repository: ${dir}`);
+  if (insideAny(dir, [path.resolve(FREQ_RUN)]) || insideAny(real(dir), [real(path.resolve(FREQ_RUN))])) die(`the frequency run's folder is read only: ${dir}`);
   mkdirSync(dir, { recursive: true });
   return dir;
 }
@@ -142,18 +148,26 @@ export function writeJson(file, value) {
 }
 
 const WRITE_VERB_RE = /\.(set|update|create|delete|add|commit|batch|runTransaction|bulkWriter|recursiveDelete)\s*\(/g;
-const ADMIN_SDK_RE = /['"`]firebase-admin/;
+const ADMIN_SDK_RE = /['"`](?:firebase-admin|@google-cloud\/)/;
 const PROVIDER_RE = /['"`/]eodhdDailyWindow/;
+const NETWORK_RE = /\bfetch\s*\(|fetchDaily[O]HLCV|\bhttps?:\/\//; // a raw request, the cache's own fetcher, a URL (spelled so it cannot match itself)
 const STORE_NAME_RE = /['"`/]setup[E]vidence(?:Claims)?['"`/]/; // the import guard's own pattern, spelled so it cannot match itself
+const CODE_RE = /\.(js|jsx|mjs|cjs|mts|cts|ts|tsx)$/; // the import guard's extension set
 
-/** Every .mjs here, as text: no Firestore write verb, no Admin SDK, the provider only in fetchLong.mjs, no store path. */
+/**
+ * Every code file here, as text: no Firestore write verb, no Admin SDK or Google Cloud client, no raw request or URL,
+ * the provider only in fetchLong.mjs, no store path. A TRIPWIRE against accidents, not a proof (review SP-L2-4): it
+ * reads this folder's own text only, so it cannot see inside imported modules (the bar mapper's module loads the
+ * Admin SDK, though nothing here calls it), and it does not see bracket access or names built at run time.
+ */
 export function writeVerbGrep() {
-  const files = readdirSync(HERE).filter((f) => f.endsWith('.mjs')).sort();
+  const files = readdirSync(HERE).filter((f) => CODE_RE.test(f)).sort();
   const hits = [];
   for (const file of files) {
     const text = readFileSync(path.join(HERE, file), 'utf8');
     for (const m of text.matchAll(WRITE_VERB_RE)) hits.push(`${file}: write verb ${m[0]}`);
-    if (ADMIN_SDK_RE.test(text)) hits.push(`${file}: imports the Admin SDK`);
+    if (ADMIN_SDK_RE.test(text)) hits.push(`${file}: imports the Admin SDK or a Google Cloud client`);
+    if (NETWORK_RE.test(text)) hits.push(`${file}: a raw request, a cache fetcher or a URL`);
     if (file !== 'fetchLong.mjs' && PROVIDER_RE.test(text)) hits.push(`${file}: imports the provider request`);
     if (STORE_NAME_RE.test(text)) hits.push(`${file}: names the store as a path segment (the import guard would count it)`);
   }

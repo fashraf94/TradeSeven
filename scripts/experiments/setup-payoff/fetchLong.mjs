@@ -7,14 +7,15 @@
 // fetchDailyPayload, newest first). Range DEFINITIONS.fetch: 2024-11-01 to 2026-11-17, so the long window (every
 // 2026 session the calendar can evaluate) has the store's 130-day request window and Part D its 120 trailing sessions.
 //
-// HARD CAP 260 requests, counted in this run's own requests.json, each place written to disk BEFORE its request. A
-// failure is counted and not retried here. A symbol already on disk costs nothing. Refuses to start inside a trading
-// session's hours and checks the hours before every request. One fetch per run folder (an exclusive lock). The key is
+// HARD CAP 260 requests across the whole check (every run folder under the check's root), each place written to disk
+// BEFORE its request. A failure is counted and not retried here. A symbol already on disk costs nothing. Refuses to
+// start inside a trading session's hours and checks the hours before every request. One fetch at a time across the
+// check (an exclusive lock at the root, taken before the counter is read). The key is
 // parsed in place from the main checkout's .env.local into this process only, never printed.
 //
 // USAGE: node scripts/experiments/setup-payoff/fetchLong.mjs [--run <dir>] [--env <.env.local>] [--plan-only]
 
-import { closeSync, existsSync, openSync, unlinkSync } from 'node:fs';
+import { closeSync, existsSync, openSync, readdirSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseEnvFile } from '../../calibration/export-agent-battles.js';
@@ -40,21 +41,30 @@ async function main() {
   if (insideMarketHours(Date.now())) die('inside a trading session\'s hours: run outside market hours');
   const plan = readJson(path.join(FREQ_RUN, 'plan.json'));
   const symbols = plan.all;
+  const planOnly = argv.includes('--plan-only');
+
+  // Hardened after the run (review SP-L2-3): the lock is taken BEFORE the counter is read, and it sits at the check's
+  // root, so one fetch runs at a time across every run folder; the cap counts every run folder's requests, so a fresh
+  // folder never buys a fresh cap. The run of 18 Nov used the version at 30954dc2 (per-folder lock and counter).
+  const root = path.dirname(runDir);
+  const lockFile = path.join(root, 'requests.lock');
+  let lock = null;
+  if (!planOnly) { try { lock = openSync(lockFile, 'wx'); } catch { die(`another fetch holds ${lockFile}`); } }
+  const release = () => { if (lock !== null) { closeSync(lock); unlinkSync(lockFile); lock = null; } };
   const counterFile = path.join(runDir, 'requests.json');
   const counter = existsSync(counterFile) ? readJson(counterFile) : { cap: CAP, made: 0, from: FROM, to: TO, symbols: symbols.length, log: [] };
-  if (counter.from !== FROM || counter.to !== TO) die(`the counter is for ${counter.from}..${counter.to}, this run asks ${FROM}..${TO}`);
+  if (counter.from !== FROM || counter.to !== TO) { release(); die(`the counter is for ${counter.from}..${counter.to}, this run asks ${FROM}..${TO}`); }
+  const elsewhere = readdirSync(root, { withFileTypes: true })
+    .filter((e) => e.isDirectory() && path.join(root, e.name) !== runDir && existsSync(path.join(root, e.name, 'requests.json')))
+    .reduce((n, e) => n + (readJson(path.join(root, e.name, 'requests.json')).made || 0), 0);
   const todo = symbols.filter((s) => !existsSync(path.join(runDir, 'bars', `${s}.json`)));
-  console.log(`plan: ${symbols.length} symbols (the frequency run's plan); on disk ${symbols.length - todo.length}; to fetch ${todo.length}; made so far ${counter.made} of ${CAP}; range ${FROM}..${TO}`);
-  if (counter.made + todo.length > CAP) die(`the plan needs ${counter.made + todo.length} requests, above the cap of ${CAP}`);
-  if (argv.includes('--plan-only')) return;
+  console.log(`plan: ${symbols.length} symbols (the frequency run's plan); on disk ${symbols.length - todo.length}; to fetch ${todo.length}; made so far ${counter.made} here and ${elsewhere} in other run folders, of ${CAP}; range ${FROM}..${TO}`);
+  if (elsewhere + counter.made + todo.length > CAP) { release(); die(`the plan needs ${elsewhere + counter.made + todo.length} requests across the check, above the cap of ${CAP}`); }
+  if (planOnly) return;
 
   const env = parseEnvFile(argOf(argv, '--env') || DEFAULT_ENV);
-  if (!env.EODHD_API_KEY) die('EODHD_API_KEY is not in the env file');
+  if (!env.EODHD_API_KEY) { release(); die('EODHD_API_KEY is not in the env file'); }
   process.env.EODHD_API_KEY = env.EODHD_API_KEY;
-
-  const lockFile = path.join(runDir, 'requests.lock');
-  let lock;
-  try { lock = openSync(lockFile, 'wx'); } catch { die(`another fetch holds ${lockFile}`); }
   let next = 0;
   let stoppedForHours = false;
   const worker = async () => {
@@ -81,8 +91,7 @@ async function main() {
   try {
     await Promise.all(Array.from({ length: CONCURRENCY }, worker));
   } finally {
-    closeSync(lock);
-    unlinkSync(lockFile);
+    release();
   }
   const failed = counter.log.filter((e) => e.outcome.startsWith('failed') || e.outcome === 'non_array').length;
   console.log(`requests made: ${counter.made} of ${CAP}; failed or non-array: ${failed}${stoppedForHours ? '; stopped: the session opened' : ''}`);

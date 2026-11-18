@@ -23,6 +23,8 @@ const SHORT = { 'better than the comparison': 'better', worse: 'worse', 'no clea
 function cell(t, kind) {
   if (!t || t.est === null) return 'no data';
   const d = kind === 'u' ? 3 : 2;
+  // One paired session has no interval: its fixed label is shown as no evidence (review SP-L1-2).
+  if (t.sessions < 2) return `one paired session, no interval: ${sg(t.est, d)}`;
   return `${SHORT[t.label]}${t.small ? ' · small' : ''}: ${sg(t.est, d)} [${sg(t.lo, d)}, ${sg(t.hi, d)}]`;
 }
 
@@ -58,8 +60,8 @@ function partA(A, name) {
       return [label, ...P.map((p) => cell(T[p][`${h}${kind}`], kind)), T.whole[`${h}${kind}`].sessions, `${T.whole[`${h}${kind}`].nA} / ${T.whole[`${h}${kind}`].nB}`];
     })));
   }
-  out.push('\n**Splits** (units; "small" where an arm has fewer than 100 observations; "sessions" = paired sessions behind the three-session result against G2, dev / conf / whole).\n');
-  const splitRows = (key, hk) => Object.entries(A.splits).map(([id, s]) => [`${s.group}: ${id}`, P.map((p) => s.counts[p].events).join(' / '), P.map((p) => s.vsG2[p]['3u'].sessions).join(' / '), ...P.map((p) => cell(s[key][p][hk], 'u'))]);
+  out.push('\n**Splits** (units; "small" where an arm has fewer than 100 observations; "sessions" = the paired sessions behind each table\'s own comparison, dev / conf / whole; archetype rules use today\'s scores, approximate).\n');
+  const splitRows = (key, hk) => Object.entries(A.splits).map(([id, s]) => [`${s.group}: ${id}`, P.map((p) => s.counts[p].events).join(' / '), P.map((p) => s[key][p][hk].sessions).join(' / '), ...P.map((p) => cell(s[key][p][hk], 'u'))]);
   for (const [key, hk, title] of [['vsG2', '3u', 'three sessions against G2'], ['vsG2', '1u', 'one session against G2'], ['vsG1', '3u', 'three sessions against G1'], ['vsG1', '1u', 'one session against G1']]) {
     out.push(`\n*${title}*\n`);
     out.push(table(['Split', 'Events entered (dev / conf / whole)', 'Sessions', ...P.map((p) => PN[p])], splitRows(key, hk)));
@@ -75,9 +77,15 @@ function postHoc(X) {
   return out.join('\n');
 }
 
+function sensitivity(rows) {
+  const out = ['### Post review — the overlap sensitivity', '\nAdjacent sessions\' three-session windows overlap, so resampling whole sessions can understate the interval. This re-draws the same per-session differences in blocks of 3 and 5 consecutive sessions (a circular block bootstrap, same seed and count). A sensitivity, not a label.\n'];
+  out.push(table(['Comparison', 'Estimate', 'Whole-session interval (the test)', 'Label', 'Lag-1 correlation', 'Blocks of 3', 'Blocks of 5'], rows.map((r) => [r.label, sg(r.est, 3), `[${sg(r.wholeSession[0], 3)}, ${sg(r.wholeSession[1], 3)}]`, SHORT[r.label90], f(r.lag1), `[${sg(r.block3.lo, 3)}, ${sg(r.block3.hi, 3)}]`, `[${sg(r.block5.lo, 3)}, ${sg(r.block5.hi, 3)}]`])));
+  return out.join('\n');
+}
+
 function partB(B, name) {
   const out = [`### Part B — ${name} window`];
-  out.push(`\nBase: ${B.base.uptrendBreakoutSatisfied} stock-days with the breakout pattern satisfied in an uptrend (${B.base.breakoutSatisfiedAnyRegime} in any regime). L0 check: agrees with the record's own extension result on ${B.l0Check.agree} of ${B.l0Check.base}; limit equal on ${B.l0Check.limitEqual}; valid under L0: ${B.l0Check.validUnderL0}.\n`);
+  out.push(`\nBase: ${B.base.uptrendBreakoutSatisfied} stock-days (development ${B.baseByPeriod.dev}, confirmation ${B.baseByPeriod.conf}) with the breakout pattern satisfied in an uptrend (${B.base.breakoutSatisfiedAnyRegime} in any regime). L0 check: agrees with the record's own extension result on ${B.l0Check.agree} of ${B.l0Check.base}; limit equal on ${B.l0Check.limitEqual}; valid under L0: ${B.l0Check.validUnderL0}.\n`);
   out.push(table(['Candidate', 'Per morning · dev (median, p10–p90, none)', 'Per morning · conf', 'Per morning · whole', 'Events (whole) / entered / removed', '3-day vs G2 · dev', '3-day vs G2 · conf', '3-day vs G2 · whole', '1-day vs G2 · whole', '3-day vs G1 · whole', '3-day mean units / ≥+1u / ≤−1u (whole)'], Object.entries(B.candidates).map(([id, c]) => {
     const pm = (p) => `${c.perMorning[p].median}, ${c.perMorning[p].p10}–${c.perMorning[p].p90}, ${pc(c.perMorning[p].noneShare)}`;
     const m = c.measures.whole;
@@ -85,11 +93,13 @@ function partB(B, name) {
   })));
   out.push(`\nTightness order (development stock-days): ${B.tightness.join(' < ')}. Recommendation (estimate reading): **${B.recommendation.estimateReading ?? 'none'}**; interval reading: ${B.recommendation.intervalReading ?? 'none'}.`);
   out.push('\n<details><summary>Every candidate by period: tests and measurements</summary>\n');
-  for (const [key, hk, title] of [['vsG2', '1u', 'one session against G2, units'], ['vsG1', '3u', 'three sessions against G1, units'], ['vsG1', '1u', 'one session against G1, units'], ['vsG2', '3p', 'three sessions against G2, percent']]) {
+  for (const [key, hk, title] of [['vsG2', '1u', 'one session against G2, units'], ['vsG1', '3u', 'three sessions against G1, units'], ['vsG1', '1u', 'one session against G1, units'], ['vsG2', '3p', 'three sessions against G2, percent'], ['vsG2', '1p', 'one session against G2, percent'], ['vsG1', '3p', 'three sessions against G1, percent'], ['vsG1', '1p', 'one session against G1, percent']]) {
     out.push(`\n*${title}*\n`);
     out.push(table(['Candidate', ...P.map((p) => PN[p])], Object.entries(B.candidates).map(([id, c]) => [id, ...P.map((p) => cell(c[key][p][hk], hk.endsWith('u') ? 'u' : 'p'))])));
   }
-  out.push('\n*Measurements (events / entered / removed by entry; 3-day mean units; 3-day ≥+1u / ≤−1u; 3-day barrier up / down / neither)*\n');
+  out.push('\n*Measurements, one session (mean units / mean %; ≥+1u / ≤−1u; barrier up / down / neither)*\n');
+  out.push(table(['Candidate', ...P.map((p) => PN[p])], Object.entries(B.candidates).map(([id, c]) => [id, ...P.map((p) => { const h1 = c.measures[p].h[1]; return `${sg(h1.meanUnits, 3)} / ${sg(h1.meanPct)}; ${pc(h1.atOrAbovePlus1)} / ${pc(h1.atOrBelowMinus1)}; ${pc(h1.upFirst)} / ${pc(h1.downFirst)} / ${pc(h1.neither)}`; })])));
+  out.push('\n*Measurements, three sessions (events / entered / removed by entry; mean units; ≥+1u / ≤−1u; barrier up / down / neither)*\n');
   out.push(table(['Candidate', ...P.map((p) => PN[p])], Object.entries(B.candidates).map(([id, c]) => [id, ...P.map((p) => { const m = c.measures[p]; const h3 = m.h[3]; return `${m.events} / ${m.entered} / ${m.removedByEntry}; ${sg(h3.meanUnits, 3)}; ${pc(h3.atOrAbovePlus1)} / ${pc(h3.atOrBelowMinus1)}; ${pc(h3.upFirst)} / ${pc(h3.downFirst)} / ${pc(h3.neither)}`; })])));
   out.push('\n</details>');
   return out.join('\n');
@@ -149,7 +159,7 @@ function main() {
     `\n2025 rows (no missing-bar check there): ${s.longWindow.gaps2025.from} → ${s.longWindow.gaps2025.to}, ${s.longWindow.gaps2025.spyRows} SPY rows; universe rows missing against SPY ${s.longWindow.gaps2025.missingAgainstSpy}, extra ${s.longWindow.gaps2025.extraAgainstSpy}; symbols with a gap: ${s.longWindow.gaps2025.symbolsWithGap.join(', ') || 'none'}.`,
     `\nRequests: ${s.requests.made} of ${s.requests.cap}, failed ${s.requests.failed}; ${s.requests.first} → ${s.requests.last}; ${JSON.stringify(s.requests.rowCounts)}.`,
     `\nCited at HEAD: ${Object.entries(s.cites).map(([k, v]) => `${k} ${v}`).join('; ')}.`,
-    '\n## Part A', partA(s.partA.short, 'short'), partA(s.partA.long, 'long'), postHoc(s.postHocJanToMay),
+    '\n## Part A', partA(s.partA.short, 'short'), partA(s.partA.long, 'long'), postHoc(s.postHocJanToMay), sensitivity(s.overlapSensitivity),
     '\n## Part B', partB(s.partB.short, 'short'), partB(s.partB.long, 'long'),
     '\n## Part C', partC(s.partC, ['short', 'long']),
     '\n## Part D', partD(s.partD),
