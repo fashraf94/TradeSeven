@@ -22,7 +22,8 @@ import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vite
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { readRecordSet } from '../_utils/setupRead/__fixtures__/readRecords.js';
-import { SETUP_READ_BODY_KEYS, SETUP_READ_FIELDS } from '../../src/components/Research/Sheet/setupReadContract.js';
+import { SETUP_READ_BODY_KEYS, SETUP_READ_FIELDS, SETUP_READ_PREVIOUS_FIELDS, SETUP_READ_PREVIOUS_CHECK_FIELDS } from '../../src/components/Research/Sheet/setupReadContract.js';
+import { projectSetupRecord } from '../_utils/setupRead/projection.js';
 
 const state = vi.hoisted(() => ({ uid: 'player-uid-1', authFails: false, mode: 'on', allow: ['player-uid-1'], middlewareHandles: false, docs: {}, reads: [], touches: [], throwOnRead: false }));
 vi.mock('../_utils/security.js', () => ({ applySecurityMiddleware: (_q, _r, opts) => { state.secOpts = opts; return state.middlewareHandles; } }));
@@ -69,22 +70,27 @@ vi.mock('../_utils/firebaseAdmin.js', () => {
 });
 
 const route = await import('./setup-read.js');
-const { default: handler, resetSetupReadState, SETUP_READ_CACHE_MS, SETUP_READ_USER_RATE_LIMIT, symbolOf, sessionsToTry } = route;
+const { default: handler, resetSetupReadState, SETUP_READ_CACHE_MS, SETUP_READ_USER_RATE_LIMIT, symbolOf, sessionsToTry, sessionBefore } = route;
 
 // Mon 16 Nov 2026, 5:00 PM ET: Monday's session has closed.
 const AFTER_CLOSE = Date.parse('2026-11-16T22:00:00.000Z');
 const LATEST = '2026-11-16';
 const PRIOR = '2026-11-13'; // the Friday before
+const EARLIER = '2026-11-12'; // the Thursday before that: `previous` of a `behind` read (RD-1)
 const SYMBOL = 'BRK-B';
 const ROUTE_SRC = readFileSync(fileURLToPath(new URL('./setup-read.js', import.meta.url)), 'utf8');
 
 let latest;
 let prior;
+let earlier;
 let other;
+let otherPrior;
 beforeAll(async () => {
   latest = await readRecordSet({ session: LATEST, symbol: SYMBOL, fetchedAt: '2026-11-16T22:31:00.000Z' });
   prior = await readRecordSet({ session: PRIOR, symbol: SYMBOL, fetchedAt: '2026-11-13T22:31:00.000Z' });
+  earlier = await readRecordSet({ session: EARLIER, symbol: SYMBOL, fetchedAt: '2026-11-12T22:31:00.000Z' });
   other = await readRecordSet({ session: LATEST, symbol: 'AAPL', fetchedAt: '2026-11-16T22:31:00.000Z' });
+  otherPrior = await readRecordSet({ session: PRIOR, symbol: 'AAPL', fetchedAt: '2026-11-13T22:31:00.000Z' });
 });
 
 const put = ({ id, record }) => { state.docs[`setupEvidence/${id}`] = record; };
@@ -205,7 +211,8 @@ describe('the symbol (RR-3)', () => {
       state.reads = [];
       const r = await call({ query: { symbol } });
       expect([r.statusCode, r.body.symbol, r.body.answer]).toEqual([200, 'BRK-B', 'measured']);
-      expect(state.reads).toEqual([`setupEvidence/${latest.VALID_PULLBACK.id}`]);
+      // `read`, then `previous`'s one more read (RD-3) — both in the store's form.
+      expect(state.reads).toEqual([`setupEvidence/${latest.VALID_PULLBACK.id}`, `setupEvidence/${prior.VALID_PULLBACK.id}`]);
     }
   });
   it('symbolOf, pure', () => {
@@ -218,16 +225,17 @@ describe('the symbol (RR-3)', () => {
 });
 
 describe('the session is the server\'s (RR-4) and the three answers (RR-5)', () => {
-  it('measured: the last completed session\'s record, one read, behind false', async () => {
+  it('measured: the last completed session\'s record, behind false; the session before is read once more, as `previous` (RD-3)', async () => {
     put(latest.VALID_PULLBACK);
-    put(prior.SPLIT); // never reached
+    put(prior.SPLIT); // never `read` — only `previous` (RD-1)
     const r = await call();
     expect(r.statusCode).toBe(200);
     expect(Object.keys(r.body)).toEqual([...SETUP_READ_BODY_KEYS]);
     expect(r.body).toMatchObject({ answer: 'measured', symbol: SYMBOL, servedAt: AFTER_CLOSE, sessionsTried: [LATEST] });
     expect(Object.keys(r.body.read)).toEqual([...SETUP_READ_FIELDS]);
     expect(r.body.read).toMatchObject({ session: LATEST, asOf: LATEST, behind: false, verdict: 'valid', pattern: 'pullback_resume' });
-    expect(state.reads).toEqual([`setupEvidence/${latest.VALID_PULLBACK.id}`]);
+    expect(r.body.previous).toMatchObject({ session: PRIOR, verdict: 'unknown', reason: 'basis_discontinuity' });
+    expect(state.reads).toEqual([`setupEvidence/${latest.VALID_PULLBACK.id}`, `setupEvidence/${prior.SPLIT.id}`]);
   });
   it('refused: a record that says the evidence could not be used, with its reason', async () => {
     put(latest.SPLIT);
@@ -240,18 +248,20 @@ describe('the session is the server\'s (RR-4) and the three answers (RR-5)', () 
     const r = await call();
     expect(r.body).toMatchObject({ answer: 'measured', read: { verdict: 'unknown', reason: 'missing_fact', missing: ['V'] } });
   });
-  it('behind: only the session before has a record → that one, behind true, two reads in order', async () => {
+  it('behind: only the session before has a record → that one, behind true, two reads in order, then `previous`\'s third (RD-3)', async () => {
     put(prior.EXTENDED);
     const r = await call();
     expect(r.body).toMatchObject({ answer: 'measured', sessionsTried: [LATEST, PRIOR] });
     expect(r.body.read).toMatchObject({ session: PRIOR, asOf: PRIOR, behind: true, verdict: 'invalid', reason: 'extended', patternsSatisfied: ['pullback_resume'] });
-    expect(state.reads).toEqual([`setupEvidence/${latest.EXTENDED.id}`, `setupEvidence/${prior.EXTENDED.id}`]);
+    expect(r.body.previous).toBeNull(); // the session before PRIOR has no record
+    expect(state.reads).toEqual([`setupEvidence/${latest.EXTENDED.id}`, `setupEvidence/${prior.EXTENDED.id}`, `setupEvidence/${earlier.EXTENDED.id}`]);
   });
-  it('absent: no record for either session → read null, exactly two reads', async () => {
+  it('absent: no record for either session → read null, previous null, exactly two reads (no third)', async () => {
     put(other.VALID_PULLBACK); // another symbol's record is not this one's
+    put(earlier.VALID_PULLBACK); // a record two sessions back is never `previous` of nothing (RD-1)
     const r = await call();
     expect(r.statusCode).toBe(200);
-    expect(r.body).toEqual({ answer: 'absent', symbol: SYMBOL, servedAt: AFTER_CLOSE, sessionsTried: [LATEST, PRIOR], read: null });
+    expect(r.body).toEqual({ answer: 'absent', symbol: SYMBOL, servedAt: AFTER_CLOSE, sessionsTried: [LATEST, PRIOR], read: null, previous: null });
     expect(state.reads).toHaveLength(2);
   });
   it('a client `session` (and any other query key) is ignored: the server picks the session', async () => {
@@ -335,16 +345,18 @@ describe('review lens 2 (docs/audits/20261116_BUILD_CHART_EVIDENCE.md §4): rows
 describe('the cache (RR-8): per instance, keyed by symbol and session, at most 60 seconds', () => {
   it('a second call inside 60 s reads nothing; at 60 s it reads again', async () => {
     put(latest.VALID_PULLBACK);
+    put(prior.EXTENDED);
     expect((await call()).body.answer).toBe('measured');
-    expect(state.reads).toHaveLength(1);
+    expect(state.reads).toHaveLength(2); // `read` and `previous`
     vi.setSystemTime(new Date(AFTER_CLOSE + SETUP_READ_CACHE_MS - 1));
     const second = await call();
     expect(second.body.answer).toBe('measured');
+    expect(second.body.previous).toMatchObject({ session: PRIOR, reason: 'extended' }); // `previous` comes from the cache too
     expect(second.body.servedAt).toBe(AFTER_CLOSE + SETUP_READ_CACHE_MS - 1);
-    expect(state.reads).toHaveLength(1);
+    expect(state.reads).toHaveLength(2);
     vi.setSystemTime(new Date(AFTER_CLOSE + SETUP_READ_CACHE_MS));
     await call();
-    expect(state.reads).toHaveLength(2);
+    expect(state.reads).toHaveLength(4);
   });
   it('an absent answer expires too: a record written meanwhile is read within 60 s', async () => {
     expect((await call()).body.answer).toBe('absent');
@@ -358,13 +370,13 @@ describe('the cache (RR-8): per instance, keyed by symbol and session, at most 6
     put(other.VALID_PULLBACK);
     await call();
     await call({ query: { symbol: 'AAPL' } });
-    expect(state.reads).toEqual([`setupEvidence/${latest.VALID_PULLBACK.id}`, `setupEvidence/${other.VALID_PULLBACK.id}`]);
+    expect(state.reads).toEqual([`setupEvidence/${latest.VALID_PULLBACK.id}`, `setupEvidence/${prior.VALID_PULLBACK.id}`, `setupEvidence/${other.VALID_PULLBACK.id}`, `setupEvidence/${otherPrior.VALID_PULLBACK.id}`]);
     // Tuesday after the close: the last completed session moves on, so the cached Monday answer is not used.
     vi.setSystemTime(new Date('2026-11-17T22:00:30.000Z'));
     state.reads = [];
     const r = await call();
     expect(r.body.sessionsTried).toEqual(['2026-11-17', LATEST]);
-    expect(state.reads).toHaveLength(2);
+    expect(state.reads).toHaveLength(3); // Tuesday (none), Monday (behind), and Monday's `previous`
   });
   it('a cached body is a copy: changing one answer changes nothing in the next', async () => {
     put(latest.VALID_PULLBACK);
@@ -372,6 +384,88 @@ describe('the cache (RR-8): per instance, keyed by symbol and session, at most 6
     first.body.sessionsTried.push('x');
     const second = await call();
     expect(second.body.sessionsTried).toEqual([LATEST]);
+  });
+});
+
+describe('previous (the Chart view\'s read build, RD-1 – RD-5; docs/specs/CHART_READ_SPEC_V1.md)', () => {
+  it('present: the session before `read`\'s, its exact closed list of fields, every value the record\'s own copy', async () => {
+    put(latest.VALID_PULLBACK);
+    put(prior.EXTENDED);
+    const r = await call();
+    expect(Object.keys(r.body)).toEqual([...SETUP_READ_BODY_KEYS]);
+    expect(Object.keys(r.body.previous)).toEqual([...SETUP_READ_PREVIOUS_FIELDS]);
+    for (const c of r.body.previous.checks) expect(Object.keys(c)).toEqual([...SETUP_READ_PREVIOUS_CHECK_FIELDS]);
+    const full = projectSetupRecord(prior.EXTENDED.record, { session: PRIOR, symbol: SYMBOL, behind: false });
+    expect(r.body.previous).toEqual({
+      session: PRIOR, verdict: full.verdict, reason: full.reason, pattern: full.pattern, regime: full.regime,
+      patternsSatisfied: full.patternsSatisfied, checks: full.checks.map((c) => ({ id: c.id, result: c.result })),
+    });
+    expect(r.body.previous).toMatchObject({ verdict: 'invalid', reason: 'extended', pattern: null, regime: 'uptrend', patternsSatisfied: ['pullback_resume'] });
+    expect(r.body.previous.checks).toHaveLength(9);
+  });
+  it('no facts and no prices leave in `previous`: no number anywhere in it, no side, no facts', async () => {
+    put(latest.VALID_PULLBACK);
+    put(prior.VALID_PULLBACK);
+    const r = await call();
+    const walk = (v) => (Array.isArray(v) ? v.flatMap(walk) : v && typeof v === 'object' ? Object.entries(v).flatMap(([k, x]) => [k, ...walk(x)]) : [v]);
+    const leaves = walk(r.body.previous);
+    expect(leaves.filter((x) => typeof x === 'number')).toEqual([]);
+    expect(leaves).not.toContain('facts');
+    expect(leaves).not.toContain('lhs');
+    expect(leaves).not.toContain('rhs');
+  });
+  it('null when the session before has no record, and null when `read` is null', async () => {
+    put(latest.VALID_PULLBACK);
+    expect((await call()).body.previous).toBeNull();
+    resetSetupReadState();
+    state.docs = {};
+    put(earlier.VALID_PULLBACK);
+    const r = await call();
+    expect([r.body.answer, r.body.read, r.body.previous]).toEqual(['absent', null, null]);
+  });
+  it('a `behind` read: `previous` is the session before ITS session, the third read', async () => {
+    put(prior.VALID_PULLBACK);
+    put(earlier.EXTENDED);
+    const r = await call();
+    expect(r.body.read).toMatchObject({ session: PRIOR, behind: true });
+    expect(r.body.previous).toMatchObject({ session: EARLIER, verdict: 'invalid', reason: 'extended' });
+    expect(state.reads).toEqual([`setupEvidence/${latest.VALID_PULLBACK.id}`, `setupEvidence/${prior.VALID_PULLBACK.id}`, `setupEvidence/${earlier.EXTENDED.id}`]);
+  });
+  it('a refused `read` still carries the session before\'s record (RD-1 names only a null read)', async () => {
+    put(latest.SPLIT);
+    put(prior.VALID_PULLBACK);
+    const r = await call();
+    expect(r.body.answer).toBe('refused');
+    expect(r.body.previous).toMatchObject({ session: PRIOR, verdict: 'valid', pattern: 'pullback_resume' });
+  });
+  it('an unknown field planted at every level of the earlier record never leaves', async () => {
+    const MARK = 'PLANTED-previous-7731';
+    const rec = structuredClone(prior.VALID_PULLBACK.record);
+    rec.planted = MARK;
+    rec.key.planted = MARK;
+    rec.entry.planted = MARK;
+    rec.entry.checks = rec.entry.checks.map((c) => ({ ...c, planted: MARK }));
+    rec.entry.factsUsed.C.planted = MARK;
+    rec.entry.evidence.planted = MARK;
+    put(latest.VALID_PULLBACK);
+    put({ id: prior.VALID_PULLBACK.id, record: rec });
+    const r = await call();
+    expect(r.statusCode).toBe(200);
+    expect(JSON.stringify(r.body.previous)).not.toContain(MARK);
+    expect(JSON.stringify(r.body)).not.toContain(MARK);
+  });
+  it('an earlier record the projection cannot read → 500, never a null `previous` and never part of one', async () => {
+    put(latest.VALID_PULLBACK);
+    put({ id: prior.VALID_PULLBACK.id, record: { ...prior.VALID_PULLBACK.record, schemaVersion: 99 } });
+    const r = await call();
+    expect(r.statusCode).toBe(500);
+    expect(r.body).toEqual({ error: 'Could not read the record.' });
+  });
+  it('sessionBefore, pure: the session before a session; null outside the calendar', () => {
+    expect(sessionBefore(LATEST)).toBe(PRIOR);
+    expect(sessionBefore(PRIOR)).toBe(EARLIER);
+    expect(sessionBefore('2026-11-27')).toBe('2026-11-25'); // the day after Thanksgiving: Thursday is a holiday
+    expect(sessionBefore('2026-01-02')).toBeNull(); // 2025 is outside the maintained calendar
   });
 });
 
