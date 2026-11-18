@@ -26,7 +26,8 @@ export function chartReadProps({ line, timeframe, battle, ruleOn, sheetOpen, lit
   if (timeframe !== '1D' && timeframe !== '1W') return null;
   const out = timeframe === '1D' ? { candleBasis: 'raw', basisNote: C.basisNote } : {};
   if (line.marks.length > 0) {
-    out.ruleChip = { on: ruleOn === true, label: C.ruleChip };
+    // With the sheet open every mark shows, so the chip reads pressed and cannot turn them off (review L3-7).
+    out.ruleChip = { on: ruleOn === true || sheetOpen === true, label: C.ruleChip, disabled: sheetOpen === true };
     if (ruleOn === true || sheetOpen === true) {
       out.ruleMarks = { marks: line.marks, shown: sheetOpen ? line.marks.map((m) => m.n) : line.shown, lit: Array.isArray(lit) ? lit : [], dailyDates: Array.isArray(dailyDates) ? dailyDates : [] };
     }

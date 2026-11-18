@@ -290,8 +290,8 @@ describe('the sheet (§6, SH-1 – SH-5)', () => {
     expect(watch()).toBe(true);
     await click($('[data-chart-read]'));
     expect(watch()).toBe(false);
-    expect(parseFloat(plotH())).toBeLessThan(parseFloat(closedH) + 0.001);
-    expect(parseFloat(plotH())).toBeGreaterThanOrEqual(180);
+    // review L3-4: strictly smaller (jsdom's view is 0 px tall: the shell's 240 px plot, 180 px under the sheet)
+    expect([closedH, plotH()]).toEqual(['240px', '180px']);
     await click($('[data-chart-read-close]'));
     expect(watch()).toBe(true);
     expect(plotH()).toBe(closedH);
@@ -359,6 +359,77 @@ describe('the sheet (§6, SH-1 – SH-5)', () => {
     expect(prim().priceAxisViews()).toEqual([]); // nothing lit yet
     await click($('[data-check-row="closeAboveFast"]'));
     expect(prim().priceAxisViews().map((v) => `$${v.text()}`)).toEqual([sma]);
+  });
+});
+
+describe('the review (lens 3): each row failed before its fix', () => {
+  it('L3-1: with focus OUTSIDE the sheet (the Rule chip, the body), Escape still closes only the sheet; Tab comes back in', async () => {
+    const heard = vi.fn();
+    document.addEventListener('keydown', heard);
+    window.addEventListener('keydown', heard);
+    try {
+      await browse();
+      await toChart();
+      await click($('[data-chart-read]'));
+      $('[data-rule-pill]').focus();
+      await key($('[data-rule-pill]'), 'Escape');
+      expect($('[data-chart-read-sheet]')).toBeNull();
+      expect(heard).not.toHaveBeenCalled();
+      await click($('[data-chart-read]'));
+      document.activeElement?.blur?.();
+      await key(document.body, 'Escape');
+      expect($('[data-chart-read-sheet]')).toBeNull();
+      expect(heard).not.toHaveBeenCalled();
+      await click($('[data-chart-read]'));
+      $('[data-rule-pill]').focus();
+      await key($('[data-rule-pill]'), 'Tab');
+      expect($('[data-chart-read-sheet]').contains(document.activeElement)).toBe(true);
+    } finally {
+      document.removeEventListener('keydown', heard);
+      window.removeEventListener('keydown', heard);
+    }
+  });
+  it.each([[401, 'Unauthorized'], [429, 'Too many requests'], [0, null]])("L3-2: 'allowlist' — a %s before admission is known shows nothing (no failed line to a player who may not be admitted)", async (status, error) => {
+    FLAG.read = 'allowlist';
+    net.read = status === 0 ? () => { throw new TypeError('Failed to fetch'); } : answer(status, { error });
+    await browse();
+    await toChart();
+    expect(readCalls()).toHaveLength(1);
+    expect($('[data-chart-read]')).toBeNull();
+  });
+  it.each([[500], [503]])("L3-2: 'allowlist' — a %s comes after admission: the quiet failed line", async (status) => {
+    FLAG.read = 'allowlist';
+    net.read = answer(status, { error: 'x' });
+    await browse();
+    await toChart();
+    expect($('[data-chart-read="failed"]')).toBeTruthy();
+  });
+  it("L3-2: 'on' — every player is admitted, so a 401 is a failed read", async () => {
+    net.read = answer(401, { error: 'Unauthorized' });
+    await browse();
+    await toChart();
+    expect($('[data-chart-read="failed"]')).toBeTruthy();
+  });
+  it('L3-6: a row with no mark is not a button and carries no pressed state', async () => {
+    await browse();
+    await toChart();
+    await click($('[data-chart-read]'));
+    const row = $('[data-check-row="volumeFloor"]');
+    expect(row.tagName).toBe('DIV');
+    expect(row.hasAttribute('aria-pressed')).toBe(false);
+  });
+  it('L3-7: while the sheet is open the Rule chip reads pressed and cannot be turned off (every mark shows)', async () => {
+    await browse();
+    await toChart();
+    await click($('[data-rule-pill]'));
+    expect($('[data-rule-pill]').getAttribute('aria-pressed')).toBe('false');
+    await click($('[data-chart-read]'));
+    expect($('[data-rule-pill]').getAttribute('aria-pressed')).toBe('true');
+    expect($('[data-rule-pill]').disabled).toBe(true);
+    expect(scene().items.map((i) => i.n)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    await click($('[data-chart-read-close]'));
+    expect($('[data-rule-pill]').getAttribute('aria-pressed')).toBe('false');
+    expect($('[data-rule-pill]').disabled).toBe(false);
   });
 });
 

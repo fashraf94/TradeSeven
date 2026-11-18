@@ -19,7 +19,7 @@ const at = (over) => ({ line: L.VALID_PULLBACK, timeframe: '1D', battle: false, 
 describe('chartReadProps', () => {
   it('1D: the raw candles and their note, the Rule chip on, the default marks', () => {
     const p = chartReadProps(at());
-    expect(p).toEqual({ candleBasis: 'raw', basisNote: 'prices unadjusted', ruleChip: { on: true, label: 'Rule' }, ruleMarks: { marks: L.VALID_PULLBACK.marks, shown: [1, 4, 5, 6], lit: [], dailyDates: ['2026-11-17'] } });
+    expect(p).toEqual({ candleBasis: 'raw', basisNote: 'prices unadjusted', ruleChip: { on: true, label: 'Rule', disabled: false }, ruleMarks: { marks: L.VALID_PULLBACK.marks, shown: [1, 4, 5, 6], lit: [], dailyDates: ['2026-11-17'] } });
   });
   it('1W: the chip and the marks; no basis and no note (1W bars are raw already, UC-5)', () => {
     const p = chartReadProps(at({ timeframe: '1W' }));
@@ -28,8 +28,9 @@ describe('chartReadProps', () => {
     expect(p.ruleMarks.shown).toEqual([1, 4, 5, 6]);
   });
   it('the Rule chip off: the chip stays, the marks go — unless the sheet is open (then every mark that exists)', () => {
-    expect(chartReadProps(at({ ruleOn: false }))).toEqual({ candleBasis: 'raw', basisNote: 'prices unadjusted', ruleChip: { on: false, label: 'Rule' } });
+    expect(chartReadProps(at({ ruleOn: false }))).toEqual({ candleBasis: 'raw', basisNote: 'prices unadjusted', ruleChip: { on: false, label: 'Rule', disabled: false } });
     expect(chartReadProps(at({ ruleOn: false, sheetOpen: true, lit: [4, 1] })).ruleMarks).toMatchObject({ shown: [1, 2, 3, 4, 5, 6, 7], lit: [4, 1] });
+    expect(chartReadProps(at({ ruleOn: false, sheetOpen: true })).ruleChip).toEqual({ on: true, label: 'Rule', disabled: true });
   });
   it('the Battle chart: one 20-day stub, labelled with the record\'s day — no chip, no marks, no basis (MK-5, MK-7, UC-5)', () => {
     const p = chartReadProps(at({ battle: true, timeframe: '1D' }));

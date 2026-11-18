@@ -144,6 +144,18 @@ describe('the control bar with the Rule chip wraps on a phone; without it, as to
   });
 });
 
+describe('review L3-3 / L3-7: the Rule chip is a real 44 × 44 target, its label the size of SMA · S/R, disabled on request', () => {
+  it('no negative margin; at least 44 px each way; the label inherits the buttons\' size; the row centres its pills', () => {
+    render({ ruleChip: { on: true, onToggle: () => {}, label: 'Rule' } });
+    const b = container.querySelector('[data-rule-pill]');
+    expect([b.style.minHeight, b.style.minWidth, b.style.margin]).toEqual(['44px', '44px', '']);
+    expect(b.querySelector('span').style.fontSize).toBe('inherit');
+    expect(b.parentElement.style.alignItems).toBe('center');
+    render({ ruleChip: { on: true, onToggle: () => {}, label: 'Rule', disabled: true } });
+    expect(container.querySelector('[data-rule-pill]').disabled).toBe(true);
+  });
+});
+
 describe('the Rule chip (CR-5, MK-7)', () => {
   it('beside SMA · S/R; its pressed state; a tap calls the caller', () => {
     const onToggle = vi.fn();

@@ -110,17 +110,29 @@ export default function ChartReadSheet({ body, symbol, litKey, onRow, expanded, 
   // Focus moves into the layer.
   useEffect(() => { closeRef.current?.focus?.({ preventScroll: true }); }, []);
 
-  const onKeyDown = (e) => {
-    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onClose(); return; }
-    if (e.key !== 'Tab' || !rootRef.current) return;
-    const f = [...rootRef.current.querySelectorAll('button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])')];
-    if (!f.length) return;
-    const first = f[0];
-    const last = f[f.length - 1];
-    const a = document.activeElement;
-    const inside = rootRef.current.contains(a);
-    if (e.shiftKey && (a === first || !inside)) { e.preventDefault(); last.focus(); } else if (!e.shiftKey && (a === last || !inside)) { e.preventDefault(); first.focus(); }
-  };
+  // The layer's keys, wherever focus is (review L3-1): a document CAPTURE listener, so Escape closes only the sheet
+  // even after a tap outside it (the Rule chip, a pill, the plot, the body) and no screen beneath hears it — the
+  // battle screen's suspended cockpit closes the whole research modal on a document Escape — and Tab from outside
+  // comes back in.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  useEffect(() => {
+    const onKey = (e) => {
+      const root = rootRef.current;
+      if (!root) return;
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onCloseRef.current(); return; }
+      if (e.key !== 'Tab') return;
+      const f = [...root.querySelectorAll('button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])')];
+      if (!f.length) return;
+      const first = f[0];
+      const last = f[f.length - 1];
+      const a = document.activeElement;
+      const inside = root.contains(a);
+      if (e.shiftKey && (a === first || !inside)) { e.preventDefault(); last.focus(); } else if (!e.shiftKey && (a === last || !inside)) { e.preventDefault(); first.focus(); }
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, []);
 
   if (!model) return null;
   return (
@@ -130,7 +142,6 @@ export default function ChartReadSheet({ body, symbol, litKey, onRow, expanded, 
       aria-modal="true"
       aria-label={C.sheetLabel}
       data-chart-read-sheet={model.state}
-      onKeyDown={onKeyDown}
       initial={reducedMotion ? false : { opacity: 0, y: 24 }}
       animate={{ opacity: 1, y: 0 }}
       transition={motionToken('smooth', { reducedMotion })}

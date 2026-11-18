@@ -1154,7 +1154,7 @@ const StockChart = ({
 
         {/* Overlay toggles - hidden in bomb view */}
         {!isBombView && (
-          <div style={ruleChip ? { display: 'flex', gap: '4px', marginLeft: 'auto' } : { display: 'flex', gap: '4px' }}>
+          <div style={ruleChip ? { display: 'flex', gap: '4px', marginLeft: 'auto', alignItems: 'center' } : { display: 'flex', gap: '4px' }}>
             <button onClick={() => setShowSMA(v => !v)} style={pillStyle(showSMA)}>
               SMA
             </button>
@@ -1167,9 +1167,10 @@ const StockChart = ({
               </button>
             )}
             {ruleChip && typeof ruleChip.onToggle === 'function' && (
-              // A phone's tap target (44 px tall) around the same pill as SMA · S/R; the bar keeps its height (negative margin).
-              <button type="button" data-rule-pill={ruleChip.on ? 'on' : 'off'} aria-pressed={!!ruleChip.on} onClick={ruleChip.onToggle} style={{ all: 'unset', boxSizing: 'border-box', cursor: 'pointer', minHeight: 44, margin: '-11px 0', display: 'inline-flex', alignItems: 'center' }}>
-                <span style={pillStyle(!!ruleChip.on)}>
+              // A phone's tap target, 44 × 44 at least, around the same pill as SMA · S/R (its label the buttons' size); the
+              // bar grows to hold it (review L3-3). Disabled while the read's sheet is open: every mark shows then (L3-7).
+              <button type="button" data-rule-pill={ruleChip.on ? 'on' : 'off'} aria-pressed={!!ruleChip.on} disabled={!!ruleChip.disabled} onClick={ruleChip.onToggle} style={{ all: 'unset', boxSizing: 'border-box', cursor: ruleChip.disabled ? 'default' : 'pointer', minHeight: 44, minWidth: 44, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                <span style={{ ...pillStyle(!!ruleChip.on), fontSize: 'inherit' }}>
                 {ruleChip.label}</span>
               </button>
             )}

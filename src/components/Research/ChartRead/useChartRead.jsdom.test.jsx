@@ -44,6 +44,12 @@ describe('useChartRead', () => {
     expect(seen.status).toBe(want);
     expect(seen.body).toBeNull();
   });
+  it.each([[401, 'hidden'], [429, 'hidden'], [0, 'hidden'], [404, 'hidden'], [400, 'hidden'], [500, 'failed'], [503, 'failed'], [200, 'failed']])("review L3-2: 'allowlist' — a rejection with status %s → %s (only an answer after admission is a failed read)", async (status, want) => {
+    FLAG.read = 'allowlist';
+    net.next = () => Promise.reject({ status, error: 'x' });
+    await render({ symbol: 'CEG', enabled: true });
+    expect(seen.status).toBe(want);
+  });
   it('retry asks once more', async () => {
     net.next = () => Promise.reject({ status: 500, error: 'x' });
     await render({ symbol: 'CEG', enabled: true });
