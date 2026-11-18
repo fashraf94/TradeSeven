@@ -178,16 +178,17 @@ export function planHoldRuling(idea, { kind, recordId, decision, ratio, payload,
 /**
  * APPLY THE PENDING RULINGS of an idea at an OBSERVED close of `date` (see the header). Pure. Returns the idea with
  * what the rulings change before the close's actions — retired suspicions and their screen references, declines — and
- * what the close must add: action rows by symbol (each with its `founderRuling`), their ids (`ruledIds`: not
- * re-date-screened), the feed ids they replace, and coverage overrides.
+ * what the close must add, LEDGER BY LEDGER (Astra T2D-09): action rows by symbol (each with its `founderRuling`;
+ * `extraActionsByLedger`), their ids (`ruledIdsByLedger`: not re-date-screened on that ledger), the feed ids they replace
+ * there (`replacedIdsByLedger`) — and the coverage overrides, which are the idea's.
  */
 export function applyFounderRulings(idea, { date }) {
   const pending = pendingRulings(idea);
   const perLedger = (make) => Object.fromEntries(LEDGERS.map((f) => [f, make()]));
   const out = {
-    idea, extraActions: {}, ruledIds: new Set(), replacedIds: new Set(),
-    // Astra T2D-09: what a ruling adds or replaces, LEDGER BY LEDGER — the close hands each ledger its own. (The three
-    // fields above are their unions, for a reader that wants every one.)
+    idea,
+    // Astra T2D-09: what a ruling adds or replaces, LEDGER BY LEDGER — the close hands each ledger its own. There is no
+    // map for "every ledger": a ruling's action belongs to the ledgers whose record it covers.
     extraActionsByLedger: perLedger(() => ({})), ruledIdsByLedger: perLedger(() => new Set()), replacedIdsByLedger: perLedger(() => new Set()),
     coveredThroughOverrides: new Map(), applied: [], alerts: [],
   };
@@ -199,15 +200,12 @@ export function applyFounderRulings(idea, { date }) {
   const addAction = (sym, action, r, fields) => {
     const a = { ...action, ticker: sym, source: 'founder_ruling', founderRuling: receiptOf(r) };
     const id = a.actionId ?? deriveActionId(a);
-    (out.extraActions[sym] = out.extraActions[sym] || []).push(a);
-    out.ruledIds.add(id);
     for (const f of fields) {
       (out.extraActionsByLedger[f][sym] = out.extraActionsByLedger[f][sym] || []).push(a);
       out.ruledIdsByLedger[f].add(id);
     }
   };
   const replace = (id, fields) => {
-    out.replacedIds.add(id);
     for (const f of fields) out.replacedIdsByLedger[f].add(id);
   };
   /** The ledgers a ruling names (`ledgers`, recorded when it was made); a ruling recorded without them names all three. */
