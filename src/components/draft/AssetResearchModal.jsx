@@ -984,7 +984,9 @@ const AssetResearchModal = ({
                 levels={chartLevels}
                 smaData={battleShown ? null : researchData.smaData}
                 activeHighlight={chartHighlight}
-                height={shellChartH}
+                // The Chart view's read: while its sheet is open the plot gives the sheet room (round 6 B — a 300 px plot
+                // over an 844 px screen, about 42 % of the view); closed, the shell's own height.
+                height={readSheetOpen ? Math.min(shellChartH, Math.max(180, Math.round(shellBodyHeight * 0.42))) : shellChartH}
                 // 💣 is a view of its own here (the header's pill), never a pill inside the chart;
                 // with Bomb mode rolled back the legacy bomb chart keeps its pill (bombData).
                 bombData={bombOn || bombHidden ? null : bombData}
@@ -1914,7 +1916,8 @@ const AssetResearchModal = ({
         {/* Action Button Section - Flexible Configuration. Under the shell in battle, Build C's
             action row (the Ask with its cost, → Cockpit — SB-10, R-29), pinned under every view;
             in browse, the mount's own action below, unchanged. */}
-        {shellOn && sheetView ? <SheetActionRow view={sheetActionView} onAnalysis={shownView === 'analysis'} /> : showActionButton && (
+        {/* The Chart view's read: while its sheet is open the action row gives way to it (round 6 B). */}
+        {readSheetOpen ? null : shellOn && sheetView ? <SheetActionRow view={sheetActionView} onAnalysis={shownView === 'analysis'} /> : showActionButton && (
           <div
             style={{
               padding: '16px 20px',

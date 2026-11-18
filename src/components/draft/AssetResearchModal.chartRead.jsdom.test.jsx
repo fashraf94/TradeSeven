@@ -281,6 +281,21 @@ describe('the sheet (§6, SH-1 – SH-5)', () => {
     expect(net.calls.filter((c) => c[0] === 'getDoc').map((c) => c[1])).toEqual(['stockTechnicalScores/CEG']);
     expect(document.activeElement).toBe($('[data-chart-read-close]'));
   });
+  it('round 6 B: while it is open the action row gives way and the plot yields height; both come back on close', async () => {
+    await browse();
+    await toChart();
+    const watch = () => [...document.body.querySelectorAll('button')].some((b) => /Add to Watchlist/i.test(b.textContent));
+    const plotH = () => $('[data-basis-note]').parentElement.style.height;
+    const closedH = plotH();
+    expect(watch()).toBe(true);
+    await click($('[data-chart-read]'));
+    expect(watch()).toBe(false);
+    expect(parseFloat(plotH())).toBeLessThan(parseFloat(closedH) + 0.001);
+    expect(parseFloat(plotH())).toBeGreaterThanOrEqual(180);
+    await click($('[data-chart-read-close]'));
+    expect(watch()).toBe(true);
+    expect(plotH()).toBe(closedH);
+  });
   it('a tap lights the row\'s marks and scrolls nothing; a second tap clears them', async () => {
     await browse();
     await toChart();

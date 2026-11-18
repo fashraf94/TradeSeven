@@ -1126,6 +1126,9 @@ const StockChart = ({
         padding: '6px 12px',
         background: HOLO_COLORS.bgCard,
         borderBottom: `1px solid ${isBombView ? 'rgba(245, 158, 11, 0.1)' : 'rgba(0, 255, 255, 0.05)'}`,
+        // The Chart view's read: with the Rule chip a phone's bar can hold seven pills (1D 1W Battle · SMA S/R Idea
+        // Rule) — it wraps rather than scroll sideways. Without the chip, the bar as today.
+        ...(ruleChip ? { flexWrap: 'wrap', rowGap: '6px' } : {}),
       }}>
         {/* Timeframe pills */}
         <div style={{ display: 'flex', gap: '4px' }}>
@@ -1151,7 +1154,7 @@ const StockChart = ({
 
         {/* Overlay toggles - hidden in bomb view */}
         {!isBombView && (
-          <div style={{ display: 'flex', gap: '4px' }}>
+          <div style={ruleChip ? { display: 'flex', gap: '4px', marginLeft: 'auto' } : { display: 'flex', gap: '4px' }}>
             <button onClick={() => setShowSMA(v => !v)} style={pillStyle(showSMA)}>
               SMA
             </button>
@@ -1164,8 +1167,10 @@ const StockChart = ({
               </button>
             )}
             {ruleChip && typeof ruleChip.onToggle === 'function' && (
-              <button type="button" data-rule-pill={ruleChip.on ? 'on' : 'off'} aria-pressed={!!ruleChip.on} onClick={ruleChip.onToggle} style={pillStyle(!!ruleChip.on)}>
-                {ruleChip.label}
+              // A phone's tap target (44 px tall) around the same pill as SMA · S/R; the bar keeps its height (negative margin).
+              <button type="button" data-rule-pill={ruleChip.on ? 'on' : 'off'} aria-pressed={!!ruleChip.on} onClick={ruleChip.onToggle} style={{ all: 'unset', boxSizing: 'border-box', cursor: 'pointer', minHeight: 44, margin: '-11px 0', display: 'inline-flex', alignItems: 'center' }}>
+                <span style={pillStyle(!!ruleChip.on)}>
+                {ruleChip.label}</span>
               </button>
             )}
           </div>
@@ -1184,9 +1189,10 @@ const StockChart = ({
         {/* OHLC overlay — hidden in spectate view (back button uses same position) */}
         {!isSpectateView && <OHLCDisplay data={displayOhlc} showUnavailable={controlled} />}
 
-        {/* The Chart view's read (UC-3): the candles' basis, once, at the right of the OHLC row, left of the price scale */}
+        {/* The Chart view's read (UC-3): the candles' basis, once, right-aligned under the OHLC row (a phone's OHLC row fills
+            its width), left of the price scale */}
         {basisNote && (
-          <div data-basis-note style={{ position: 'absolute', top: 8, right: 64, zIndex: 2, pointerEvents: 'none', fontSize: 10, lineHeight: 1.3, color: HOLO_COLORS.textSecondary, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' }}>
+          <div data-basis-note style={{ position: 'absolute', top: 26, right: 64, zIndex: 2, pointerEvents: 'none', fontSize: 10, lineHeight: '14px', height: 14, padding: '0 4px', borderRadius: 4, background: HOLO_COLORS.bgDeep, color: HOLO_COLORS.textSecondary, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', whiteSpace: 'nowrap' }}>
             {basisNote}
           </div>
         )}

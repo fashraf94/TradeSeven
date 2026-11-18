@@ -24,6 +24,8 @@ const eyebrow = (color) => ({ fontFamily: MONO, fontSize: 10, letterSpacing: '0.
 const mono = (size, color) => ({ fontFamily: MONO, fontSize: size, color, lineHeight: 1.45 });
 const bare = { all: 'unset', boxSizing: 'border-box' };
 const GLYPH = { pass: ['✓', ST.green], fail: ['✗', ST.ink2], unknown: ['–', ST.ink3], quiet: ['·', ST.ink3] };
+/** The least share of the view the sheet takes (a short screen: it rises over the plot's lower part). */
+export const SHEET_MIN_SHARE = 0.45;
 
 const msOf = (v) => {
   if (typeof v === 'number' && Number.isFinite(v)) return v;
@@ -78,18 +80,30 @@ export default function ChartReadSheet({ body, symbol, litKey, onRow, expanded, 
   const model = sheetOf(body, { sector: sectorOf(data), expanded });
   const rootRef = useRef(null);
   const closeRef = useRef(null);
-  const [height, setHeight] = useState(null);
+  const fitRef = useRef(null);
+  const [fit, setFit] = useState(null); // { height, rise }
 
-  // It rises to the plot's lower edge: its height is the view's, less its own offset under the plot.
+  // It rises to the plot's lower edge: its height is the view's, less its own offset under the plot. On a short
+  // screen (a phone on its side) that would leave too little sheet, so it takes at least SHEET_MIN_SHARE of the
+  // view and rises that much over the plot's lower part.
   useLayoutEffect(() => {
     const view = viewRef?.current;
     const el = rootRef.current;
     if (!view || !el) return undefined;
-    const fit = () => setHeight(Math.max(160, view.clientHeight - el.offsetTop));
-    fit();
+    const measure = () => {
+      // Where the sheet would start with no rise, inside the view (rects: the view is not its offset parent).
+      const top = el.getBoundingClientRect().top + (fitRef.current?.rise ?? 0) - view.getBoundingClientRect().top + view.scrollTop;
+      const under = view.clientHeight - top;
+      const least = Math.round(view.clientHeight * SHEET_MIN_SHARE);
+      const next = under >= least ? { height: under, rise: 0 } : { height: least, rise: least - under };
+      fitRef.current = next;
+      setFit(next);
+    };
+    measure();
     if (typeof ResizeObserver !== 'function') return undefined;
-    const ro = new ResizeObserver(fit);
+    const ro = new ResizeObserver(measure);
     ro.observe(view);
+    if (el.previousElementSibling) ro.observe(el.previousElementSibling); // the plot above it (it yields height while the sheet is open)
     return () => ro.disconnect();
   }, [viewRef]);
 
@@ -120,7 +134,7 @@ export default function ChartReadSheet({ body, symbol, litKey, onRow, expanded, 
       initial={reducedMotion ? false : { opacity: 0, y: 24 }}
       animate={{ opacity: 1, y: 0 }}
       transition={motionToken('smooth', { reducedMotion })}
-      style={{ height: height ?? undefined, overflowY: 'auto', overscrollBehavior: 'contain', background: ST.surface, borderRadius: '18px 18px 0 0', borderTop: `1px solid ${ST.hair}`, padding: '8px 16px 24px', display: 'flex', flexDirection: 'column', gap: 16, boxSizing: 'border-box' }}
+      style={{ position: 'relative', zIndex: 3, height: fit?.height ?? undefined, marginTop: fit?.rise ? -fit.rise : undefined, overflowY: 'auto', overscrollBehavior: 'contain', background: ST.surface, borderRadius: '18px 18px 0 0', borderTop: `1px solid ${ST.hair}`, padding: '8px 16px 24px', display: 'flex', flexDirection: 'column', gap: 16, boxSizing: 'border-box' }}
     >
       <span aria-hidden="true" style={{ alignSelf: 'center', width: 36, height: 4, borderRadius: 2, background: ST.hair, flexShrink: 0 }} />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: -6 }}>

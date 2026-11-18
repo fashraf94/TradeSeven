@@ -133,6 +133,17 @@ describe('ruleMarks (MK-4 – MK-6)', () => {
   });
 });
 
+describe('the control bar with the Rule chip wraps on a phone; without it, as today', () => {
+  it('flexWrap only with the chip', () => {
+    render({});
+    const bar = () => container.querySelector('[data-rule-pill]')?.closest('div')?.parentElement ?? container.querySelector('button').closest('div').parentElement;
+    expect(bar().style.flexWrap).toBe('');
+    render({ ruleChip: { on: true, onToggle: () => {}, label: 'Rule' } });
+    expect(bar().style.flexWrap).toBe('wrap');
+    expect(container.querySelector('[data-rule-pill]').parentElement.style.marginLeft).toBe('auto');
+  });
+});
+
 describe('the Rule chip (CR-5, MK-7)', () => {
   it('beside SMA · S/R; its pressed state; a tap calls the caller', () => {
     const onToggle = vi.fn();
