@@ -75,8 +75,10 @@ export const openInvestigation = (body) => post({ action: 'open', ...body });
 export const takeStep = (body) => post({ action: 'step', ...body });
 /** POST close — `{ sessionId, reason: 'concluded' | 'abandoned' }`. */
 export const closeInvestigation = (body) => post({ action: 'close', ...body });
-/** POST adopt — the idea, with the preview's `previewRev` exactly as the server sent it. */
+/** POST adopt — the idea, with the preview's `previewRev` exactly as the server sent it (a thesis builder's: `{ sessionId, rev, statement? }`). */
 export const adoptIdea = (body) => post({ action: 'adopt', ...body });
+/** POST card — the thesis builder's free action (Amendment B §B4.3): `{ sessionId, opId, rev, op, part, value? }`. */
+export const applyCardOp = (body) => post({ action: 'card', ...body });
 
 /**
  * "Use it in my next game" (K-9; spec §6.6): the existing ready transition, then

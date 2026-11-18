@@ -23,6 +23,20 @@
 //     step or frame) shows the server's line held in SR_COPY.server (ruling P-5).
 //   - A 429 shows its line and holds every action until Retry-After has passed.
 //   - 404 disabled → gated, whatever the hub passed (K-3).
+//
+// THE THESIS BUILDER (B4 build prompt K-3, K-12, K-15, K-16) adds four actions,
+// each through the same single `run` — a free tap included, never batched or
+// queued (W-7: free taps share the 10-a-minute limit):
+//   - openOwnWords: own words opened at once as a builder (DR-6), its requestId
+//     kept for a retry of the same words;
+//   - buildStep: `{ intent: 'build', goal, part?, direction? }`; Try again re-sends
+//     the same stepId, goal and part;
+//   - cardOp: one entry of `thesis.choices.free`, sent with the `rev` the player
+//     saw; a 409 card_stale puts the fresh card on screen and is NEVER re-sent;
+//   - adoptThesis: `{ sessionId, rev, statement? }`, with the uncertain save above.
+// A retried tap after a lost answer (no answer, or a 5xx) re-sends the same opId
+// or stepId with the same body. Every builder answer's `thesis` replaces the one
+// held; a ledger answer has none, so a ledger investigation holds `thesis: null`.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as service from '../../services/sharedResearchService';
@@ -50,7 +64,12 @@ const investigationOf = (body, prior) => ({
   adoptPreview: body.adoptPreview !== undefined ? body.adoptPreview : null,
   storedRows: body.storedRows ?? body.opening?.storedRows ?? prior?.storedRows ?? [],
   previous: body.previous !== undefined ? body.previous : prior?.previous ?? null,
+  // the thesis builder's card (B4): every builder answer carries it; a ledger answer never does
+  thesis: body.thesis !== undefined ? body.thesis : prior?.thesis ?? null,
 });
+
+/** A request that may have reached the server without its answer reaching us: none came, or a 5xx. */
+const lostAnswer = (answer) => Boolean(answer) && (answer.network === true || answer.status >= 500);
 
 export default function useSharedResearch({ gated: gatedProp = false } = {}) {
   const [serverGated, setServerGated] = useState(false);
@@ -79,6 +98,14 @@ export default function useSharedResearch({ gated: gatedProp = false } = {}) {
   // sessionId → the input of a save whose outcome is not known (K-8): it stays until "Check the record" answers, through
   // any navigation, so no Save can be sent for that investigation before the check.
   const uncertainRef = useRef(new Map());
+  // The thesis builder (B4): each tap whose answer was lost, keyed by what it was (session, op or goal, part, value) —
+  // its exact body, so tapping the same choice again re-sends the same opId or stepId (K-15). One entry per tap: another
+  // request's answer never drops it (review 4B-1). And the own-words open being attempted: its words and its requestId,
+  // apart from the previews' (review 4B-6).
+  const lostRef = useRef(new Map());
+  // investigations whose findings on screen are known stale (a step landed unheard) until a read answers (refuter 2)
+  const unreadRef = useRef(new Set());
+  const ownWordsRef = useRef(null);
   useEffect(() => {
     live.current = true; // StrictMode replays effects in development: the replay must not leave the sheet deaf (review b8)
     return () => { live.current = false; if (timerRef.current) clearTimeout(timerRef.current); };
@@ -350,6 +377,160 @@ export default function useSharedResearch({ gated: gatedProp = false } = {}) {
     return answer;
   }, [inv, run]);
 
+  // ── the thesis builder (B4; Amendment B §B4) ─────────────────────────────────
+
+  /**
+   * A read through `run` (the refuter's R4): one request at a time, so no tap goes out while it is in flight and no
+   * older answer can land over a newer card. What the server holds now is put on screen; a read that fails says so
+   * (the work view draws a `read` failure; refuter 2).
+   */
+  const readInRun = useCallback(async (sessionId) => {
+    const answer = await run({ kind: 'read', sessionId }, () => service.readInvestigation(sessionId));
+    if (!answer || !live.current) return answer;
+    if (answer.ok) setInv(investigationOf(answer.body, null));
+    else setFailure({ ...failureOf(answer), action: 'read', sessionId });
+    return answer;
+  }, [run]);
+
+  /**
+   * Own words, opened at once as a thesis builder (DR-6; K-3): `{ entry: { kind: 'observation', observation }, requestId }`.
+   * The same words tried again re-send the same requestId (the server answers the session it made); new words, a new one.
+   * The answer is returned as received: a 400 invalid_entry (the mode rolled back, W-4) is the caller's to fall back on.
+   */
+  const openOwnWords = useCallback(async (observation) => {
+    const held = ownWordsRef.current;
+    const requestId = held && held.words === observation ? held.id : service.newRequestId();
+    ownWordsRef.current = { words: observation, id: requestId };
+    const answer = settleOpen(await run({ kind: 'open' }, () => service.openInvestigation({ entry: { kind: 'observation', observation }, requestId })));
+    if (answer?.ok && answer.body?.session) ownWordsRef.current = null; // opened: the next start is a new investigation
+    return answer;
+  }, [run, settleOpen]);
+
+  /**
+   * One research step (§B4.2): `{ sessionId, stepId, intent: 'build', goal, part?, direction? }` — a goal the server
+   * offered in `thesis.choices.research`, sent as offered. Try again passes the failed attempt's `stepId`; tapping the
+   * same choice after a lost answer re-sends the same one (K-15).
+   */
+  const buildStep = useCallback(async ({ goal, part = null, direction = null, stepId = null }) => {
+    const sessionId = inv?.session?.sessionId;
+    if (!sessionId) return null;
+    const key = JSON.stringify(['step', sessionId, goal, part, direction]);
+    const lost = lostRef.current.get(key);
+    // a lost step that has since landed on screen (its partner exchange is held) is done: a new tap is a new step
+    const landed = Boolean(lost) && (inv?.session?.exchanges ?? []).some((e) => e?.who === 'partner' && e.stepId === lost.id);
+    const id = stepId ?? (lost && !landed ? lost.id : service.newRequestId());
+    const body = { sessionId, stepId: id, intent: 'build', goal, ...(part ? { part } : {}), ...(direction ? { direction } : {}) };
+    const attempt = { builder: true, stepId: id, goal, part, direction };
+    const answer = await run({ kind: 'step', sessionId, stepId: id, intent: 'build', goal, part }, () => service.takeStep(body));
+    if (!answer) return null;
+    const b = answer.body ?? {};
+    if (answer.ok && b.session && !b.error) {
+      lostRef.current.delete(key);
+      setInv((prior) => investigationOf(b, prior));
+      setStepOutcome({ stepId: id, summaryWithheld: false, cardChanged: b.changed?.card === true });
+    } else {
+      // a failed step answers the card as it stands (nothing landed); a refusal carries none
+      if (b.session) setInv((prior) => ({ ...prior, session: b.session, ...(b.thesis !== undefined ? { thesis: b.thesis } : {}) }));
+      // a lost answer, or 409 step_in_flight (this step may still be the one running), keeps the id for the same tap
+      // (review 4B-2: B2 offers Try again on step_in_flight with the same stepId)
+      if (lostAnswer(answer) || b.error === 'step_in_flight') lostRef.current.set(key, { id });
+      else lostRef.current.delete(key);
+      setFailure({ ...failureOf(answer), action: 'step', attempt });
+    }
+    return answer;
+  }, [inv, run]);
+
+  /**
+   * One free tap (§B4.3): one entry of `thesis.choices.free`, sent back as offered — `{ op, part, value? }` — with the
+   * card's `rev` the player saw and a fresh opId; `value` is the player's own input where the choice asks for one (the
+   * ticked names, their words, the kept reasons, the price lines). A 409 card_stale draws the fresh card from the
+   * answer with the server's line and sends nothing more (K-15). After a lost answer, the same tap re-sends the very
+   * same body (opId and rev) only while the card on screen is still at that rev (the refuters' R1): the server checks an
+   * applied opId first, then the rev, and revs only grow — so once the screen shows a later card, the lost tap has
+   * either landed (its effect is on screen) or can never land, and the tap is a new one: a fresh opId, the rev now.
+   */
+  const cardOp = useCallback(async (choice, input) => {
+    const sessionId = inv?.session?.sessionId;
+    const rev = inv?.thesis?.rev;
+    if (!sessionId || !choice || !Number.isSafeInteger(rev)) return null;
+    const value = input !== undefined ? input : choice.value;
+    const key = JSON.stringify(['card', sessionId, choice.op, choice.part, value ?? null]);
+    const lost = lostRef.current.get(key);
+    const body = lost && lost.body.rev === rev ? lost.body : {
+      sessionId, opId: service.newRequestId(), rev, op: choice.op, part: choice.part, ...(value !== undefined && value !== null ? { value } : {}),
+    };
+    const answer = await run({ kind: 'card', sessionId, op: choice.op, part: choice.part }, () => service.applyCardOp(body));
+    if (!answer) return null;
+    const b = answer.body ?? {};
+    if (answer.ok && b.thesis) {
+      lostRef.current.delete(key);
+      const held = inv?.session ?? null;
+      setInv((prior) => ({ ...prior, session: b.session ?? prior?.session ?? null, thesis: b.thesis }));
+      setStepOutcome(null);
+      // A card answer carries no record (§4.3). When it shows a step landed that this page never heard back from (a lost
+      // step answer), the findings on screen are stale: read the investigation again, through `run` (review 4B-7; R4).
+      // A read that fails keeps the investigation marked, so the next card answer reads again (refuter 2).
+      const now = b.session ?? null;
+      const landedUnheard = Boolean(now && held && (now.stepsUsed !== held.stepsUsed || now.lastStep?.stepId !== held.lastStep?.stepId));
+      if (landedUnheard || unreadRef.current.has(sessionId)) {
+        unreadRef.current.add(sessionId);
+        const fresh = await readInRun(sessionId);
+        if (fresh?.ok) unreadRef.current.delete(sessionId);
+      }
+    } else if (b.error === 'card_stale' && b.thesis) {
+      lostRef.current.delete(key);
+      setInv((prior) => ({ ...prior, thesis: b.thesis }));
+      setFailure({ ...failureOf(answer), action: 'card', stale: true });
+    } else {
+      if (lostAnswer(answer)) lostRef.current.set(key, { body });
+      else lostRef.current.delete(key);
+      setFailure({ ...failureOf(answer), action: 'card', attempt: { choice, input } });
+    }
+    return answer;
+  }, [inv, run, readInRun]);
+
+  /**
+   * Save thesis (§B4.5): `{ sessionId, rev, statement? }` — the `rev` the player saw; `statement` only when the player
+   * edited the sentence. The save's honest states are the ledger's (K-12): saving · saved · failed (the server's line;
+   * `not_ready` with its blockers) · stale (the fresh card) · UNCERTAIN — then only "Check the record" (checkSave).
+   */
+  const adoptThesis = useCallback(async ({ statement = null } = {}) => {
+    const sessionId = inv?.session?.sessionId;
+    const rev = inv?.thesis?.rev;
+    if (!sessionId || !Number.isSafeInteger(rev)) return null;
+    if (uncertainRef.current.has(sessionId) || saveRef.current.status === 'uncertain' || saveRef.current.status === 'checking') return null;
+    const input = { statement, rev };
+    const body = { sessionId, rev, ...(typeof statement === 'string' ? { statement } : {}) };
+    setSave({ status: 'saving', input, sessionId });
+    const answer = await run({ kind: 'adopt', sessionId }, () => service.adoptIdea(body));
+    if (!answer) { setSave({ status: 'idle' }); return null; }
+    const b = answer.body ?? {};
+    if (answer.ok && typeof b.watchlistId === 'string') {
+      setSave({ status: 'saved', input, sessionId, outcome: { watchlistId: b.watchlistId, idempotent: b.idempotent === true } });
+      if (b.thesis) setInv((prior) => ({ ...prior, thesis: b.thesis }));
+      await readInRun(sessionId); // through `run`: nothing else (equip) goes out while it is in flight (refuter 2)
+      return answer;
+    }
+    if (lostAnswer(answer)) {
+      uncertainRef.current.set(sessionId, input);
+      setSave({ status: 'uncertain', input, sessionId });
+      return answer;
+    }
+    // A refusal speaks of one card: `atRev` is the rev the server judged, and the screen shows the refusal only while
+    // that card is the one on screen (the refuter's R3) — a later change of the card retires it.
+    if (b.error === 'card_stale' && b.thesis) {
+      setInv((prior) => ({ ...prior, thesis: b.thesis }));
+      setSave({ status: 'stale', input, sessionId, message: failureOf(answer).message, atRev: b.thesis.rev });
+      return answer;
+    }
+    setSave({ status: 'failed', input, sessionId, message: failureOf(answer).message, code: b.error ?? null, blockers: Array.isArray(b.blockers) ? b.blockers : null, atRev: rev });
+    // not_ready carries no card: read it (through `run`), so the card on screen is the one the server judged (review
+    // 4B-3) — the server checks the rev before readiness, so that read holds the same rev. A read that finds a later
+    // card (another writer) leaves the refusal unshown: the server never judged that card (refuter 2).
+    if (b.error === 'not_ready') await readInRun(sessionId);
+    return answer;
+  }, [inv, run, readInRun]);
+
   // ── equip (K-9) ─────────────────────────────────────────────────────────────
 
   const declineEquip = useCallback(() => setEquip({ status: 'declined' }), []);
@@ -377,5 +558,6 @@ export default function useSharedResearch({ gated: gatedProp = false } = {}) {
     running: pending?.kind === 'step' && pending.sessionId === inv?.session?.sessionId,
     loadList, loadSession, frame, retryFrame, editWords, beginPreview, openItem, openDrop, openFramed, acceptExisting,
     step, canRetry, close, adopt, checkSave, resetSave, equipNow, declineEquip, clearFailure,
+    openOwnWords, buildStep, cardOp, adoptThesis,
   };
 }
