@@ -23,6 +23,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mapDailyRows } from '../../../api/_utils/marketDataCache.js';
 import { getSessionForDate } from '../../../api/_utils/marketSchedule.js';
+import { describeRuleSet } from '../../../api/_utils/setupEvaluator/thresholds.js';
 import { ALL_TICKERS } from '../../../api/_utils/rankingConfig.js';
 import { bump, die, exists, FUND_SECTOR, MARKET_SYMBOL, median, nextSessionOf, PROJECT_ROOT, readJson, runDirOf, SECTOR_FUNDS, share, spread, UNIVERSE_SECTOR, uniq, writeJson, writeVerbGrep } from './lib.mjs';
 
@@ -197,6 +198,9 @@ async function main() {
       }
     }
     summary.chainCheck = { against: 'the first replay, through acquireOnce', compared, identical };
+  } else {
+    // Said, never silently omitted (review SF-L1-2): the file is replay.mjs's replay.json from commit fe15255a, renamed.
+    summary.chainCheck = { skipped: 'no replay.acquireOnce.json (replay.mjs + storeReplay.mjs at fe15255a produce it as replay.json)' };
   }
 
   // Raw opens and the funds' closes, from the long series.
@@ -254,7 +258,8 @@ async function main() {
   summary.byMarket = {};
   for (const state of uniq(sessions.map((s) => marketRegime[s])).sort()) {
     const f = (s) => marketRegime[s] === state;
-    summary.byMarket[state] = { sessions: sessions.filter(f).length, valid: bandOf(series('valid', f)), breakout: bandOf(series('breakout', f)), pullback: bandOf(series('pullback', f)), sectorsMedian: median(series('sectors', f)), uptrendShareMedian: median(sessions.filter(f).map((s) => share(perSession[s].uptrend, U.length))) };
+    const ss = sessions.filter(f);
+    summary.byMarket[state] = { sessions: ss.length, valid: bandOf(series('valid', f)), breakout: bandOf(series('breakout', f)), pullback: bandOf(series('pullback', f)), both: spread(series('both', f)), sectorsMedian: median(series('sectors', f)), uptrendShareMedian: median(ss.map((s) => share(perSession[s].uptrend, U.length))), classMedians: Object.fromEntries(allClasses.map((k) => [k, median(ss.map((s) => perSession[s].classes[k] || 0))])) };
   }
 
   // Weekly table.
@@ -340,8 +345,21 @@ async function main() {
   summary.reproduction.providerDrift = drift;
 
   // ---- Contemporaneous: the sweep's stored records alone ----
+  // Only records under the current rule set whose bars were contemporaneous count here; anything else is counted apart
+  // (review SF-L1-3). The store keys one record per (session, symbol, rule set), so the filter leaves one per pair.
+  const ruleSet = describeRuleSet();
+  const sameRule = (r) => r.ruleSet?.setupVersion === ruleSet.setupVersion && r.ruleSet?.thresholdsHash === ruleSet.thresholdsHash && r.ruleSet?.semanticsId === ruleSet.semanticsId;
   const stored = {};
-  for (const r of exp.records) { stored[r.session] = stored[r.session] || {}; stored[r.session][r.symbol] = r; }
+  const setApart = { outsideWindow: 0, otherRuleSet: 0, otherBarsClass: 0 };
+  for (const r of exp.records) {
+    if (!sessions.includes(r.session)) { setApart.outsideWindow += 1; continue; }
+    if (!sameRule(r)) { setApart.otherRuleSet += 1; continue; }
+    if (r.barsClass !== 'contemporaneous') { setApart.otherBarsClass += 1; continue; }
+    stored[r.session] = stored[r.session] || {};
+    if (stored[r.session][r.symbol]) die(`two stored records for ${r.session} ${r.symbol} under one rule set`);
+    stored[r.session][r.symbol] = r;
+  }
+  summary.contemporaneousSetApart = setApart;
   summary.contemporaneous = {};
   for (const s of Object.keys(stored).sort()) {
     const recs = Object.values(stored[s]);
@@ -352,21 +370,37 @@ async function main() {
       barsClass: uniq(recs.map((r) => r.barsClass)), writers: uniq(recs.map((r) => r.writer)),
       sweep: state ? { providerRequests: state.providerRequests, runs: state.runs, completedAt: state.completedAt } : null,
       valid: t.valid, breakout: t.breakout, pullback: t.pullback, both: t.both, sectors: t.sectors, uptrend: t.uptrend, classes: t.classes,
-      spy: marketRegime[s] ?? null,
+      spyReconstructed: marketRegime[s] ?? null, // SPY is not a ranked stock: the sweep stores no record for it
     };
   }
+  // From stored records alone: the record's own limit against the next session's open as the NEXT record's own bar 0
+  // stored it (review SF-L2-5). A valid record with no next record (the last stored session) is excluded and counted.
   const storedSessions = Object.keys(stored).sort();
-  summary.enterableContemporaneous = { class: 'contemporaneous (limit) + run-day bars (next open)', label: 'approximate: the open price against the record\'s own limit, not a new verdict', ...enter((sym, s) => (stored[s]?.[sym] ? compactOfRecord(stored[s][sym]) : null), storedSessions) };
+  const ec = { names: 0, enterable: 0, excludedNoNextRecord: 0 };
+  for (const s of storedSessions) {
+    const next = nextSessionOf(s);
+    for (const sym of U) {
+      const rec = stored[s][sym];
+      if (!rec || !isValid(classOf(compactOfRecord(rec)))) continue;
+      const bar0 = stored[next]?.[sym]?.bars?.[0];
+      if (!bar0 || bar0.date !== next || !Number.isFinite(bar0.open) || !Number.isFinite(rec.extLimit)) { ec.excludedNoNextRecord += 1; continue; }
+      ec.names += 1;
+      if (bar0.open <= rec.extLimit) ec.enterable += 1;
+    }
+  }
+  summary.enterableContemporaneous = { class: 'contemporaneous', label: 'approximate: the open price against the record\'s own limit, not a new verdict', ...ec, share: share(ec.enterable, ec.names) };
 
   // ---- Step 3: battle lists (non-League, created since the prompt's date) ----
   const nonLeague = exp.battles.filter((b) => !b.league);
-  // The session the list is read at: the completed session before its first trading day (never after use); the
-  // creation instant's last completed session is recorded beside it, and any disagreement counted.
+  // The session the list is read at: the store's own activation-to-session rule at the creation instant
+  // (lastCompletedSessionAt, sessionAt.js:27, exported as b.session), the last session completed when the list was
+  // formed and first used — never after use. The session before the first trading day is counted beside it: it reads
+  // one session early for a battle created after the close for that day's evening (review SF-L2-3).
   let sessionDisagreements = 0;
   const battleRows = nonLeague.map((b) => {
     const list = battleListOf(b);
     const beforeFirstDay = b.firstDay ? getSessionForDate(b.firstDay)?.previousEtDate ?? null : null;
-    const session = beforeFirstDay || b.session;
+    const session = b.session;
     if (beforeFirstDay && beforeFirstDay !== b.session) sessionDisagreements += 1;
     const inWindow = sessions.includes(session);
     const k = battleCountsOf(list, (sym) => (inWindow ? R[sym]?.[session] : null));
@@ -388,10 +422,11 @@ async function main() {
   };
 
   // ---- Step 3: equipped lists, at every session ----
+  // Every name counts: one with no replay is not valid and is counted as not evaluated, never dropped (review SF-L2-10).
   summary.equipped = exp.equipped.map((l) => {
-    const names = uniq(l.symbols.filter((s) => R[s]));
+    const names = uniq(l.symbols);
     const perS = sessions.map((s) => names.filter((sym) => isValid(classOf(R[sym]?.[s]))).length);
-    return { n: l.n, owners: l.owners, loadouts: l.loadouts, size: l.symbols.length, evaluated: names.length, offUniverse: names.filter((s) => !U.includes(s)).length, medianValid: median(perS), maxValid: Math.max(...perS), under7: share(perS.filter((v) => v < 7).length, perS.length), zero: share(perS.filter((v) => v === 0).length, perS.length) };
+    return { n: l.n, owners: l.owners, loadouts: l.loadouts, size: names.length, evaluated: names.filter((s) => R[s]).length, offUniverse: names.filter((s) => !U.includes(s)).length, medianValid: median(perS), maxValid: Math.max(...perS), under7: share(perS.filter((v) => v < 7).length, perS.length), zero: share(perS.filter((v) => v === 0).length, perS.length) };
   });
 
   // ---- Step 4: archetype overlays (today's scores applied to past sessions, approximate) ----

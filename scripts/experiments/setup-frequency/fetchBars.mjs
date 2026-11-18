@@ -9,7 +9,10 @@
 // every non-crypto name on a stored record, a battle list (book, bench, the trades' names) or an equipped list. A plan
 // above the hard cap (400) is refused. Each request takes its place in the run's counter (requests.json), written to
 // disk BEFORE the request is made; a failure is counted and not retried here (a re-run retries it, counted again).
-// A symbol whose series is already on disk costs nothing. It refuses to run inside a trading session's hours.
+// A symbol whose series is already on disk costs nothing. It refuses to start inside a trading session's hours and
+// stops admitting requests if a session opens. One fetch per run folder holds an exclusive lock; the count is per run
+// folder, so never point a second run at a fresh folder to get a fresh count (review SF-L3-6, SF-L3-9). The run of
+// 17 Nov ran before these two guards were added (one process, 20 seconds at 7:10 PM ET).
 //
 // THE RANGE: from 160 calendar days before the window's first session (the store reads 130; the rest is slack) to
 // the window's last session. The key is parsed in place from the main checkout's .env.local (--env) into this
@@ -17,7 +20,7 @@
 //
 // USAGE: node scripts/experiments/setup-frequency/fetchBars.mjs [--run <dir>] [--env <.env.local>] [--plan-only]
 
-import { existsSync } from 'node:fs';
+import { closeSync, existsSync, openSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseEnvFile } from '../../calibration/export-agent-battles.js';
@@ -49,10 +52,10 @@ export function planSymbols(exp) {
   return { fixed, others, all: uniq([...fixed, ...others]) };
 }
 
-function assertOutsideMarketHours(nowMs) {
-  const etDate = toEtParts(new Date(nowMs)).dateStr;
-  const day = getSessionForDate(etDate);
-  if (day?.isTradingDay && nowMs >= day.openMs && nowMs < day.closeMs) die(`inside the ${etDate} session's hours: run outside market hours`);
+/** Is the instant inside a trading session's hours, on the calendar of record? */
+function insideMarketHours(nowMs) {
+  const day = getSessionForDate(toEtParts(new Date(nowMs)).dateStr);
+  return Boolean(day?.isTradingDay && nowMs >= day.openMs && nowMs < day.closeMs);
 }
 
 async function main() {
@@ -60,7 +63,7 @@ async function main() {
   const argv = process.argv;
   const runDir = runDirOf(argv);
   const nowMs = Date.now();
-  assertOutsideMarketHours(nowMs);
+  if (insideMarketHours(nowMs)) die('inside a trading session\'s hours: run outside market hours');
   const last = lastCompletedSessionAt(nowMs);
   if (!last.ok) die('the calendar cannot name the last completed session');
   const sessions = windowSessions(last.session);
@@ -83,9 +86,15 @@ async function main() {
   if (!env.EODHD_API_KEY) die('EODHD_API_KEY is not in the env file');
   process.env.EODHD_API_KEY = env.EODHD_API_KEY;
 
+  // One fetch per run folder at a time: an exclusive lock file, released at the end (review SF-L3-6).
+  const lockFile = path.join(runDir, 'requests.lock');
+  let lock;
+  try { lock = openSync(lockFile, 'wx'); } catch { die(`another fetch holds ${lockFile} (remove it only if no fetch is running)`); }
   let next = 0;
+  let stoppedForHours = false;
   const worker = async () => {
     while (next < todo.length) {
+      if (insideMarketHours(Date.now())) { stoppedForHours = true; return; } // checked before every request (review SF-L3-9)
       const symbol = todo[next];
       next += 1;
       if (counter.made >= REQUEST_CAP) return;
@@ -97,16 +106,22 @@ async function main() {
         const payload = await fetchDailyPayload(symbol, { from, to, order: 'd', timeoutMs: TIMEOUT_MS });
         const receivedAt = new Date().toISOString();
         entry.outcome = Array.isArray(payload) ? `rows:${payload.length}` : 'non_array';
-        writeJson(path.join(runDir, 'bars', `${symbol}.json`), { symbol, from, to, requestedAt: entry.requestedAt, receivedAt, payload });
+        // Only a usable series is kept: a non-array answer leaves no file, so the next run retries it (review SF-L3-5).
+        if (Array.isArray(payload)) writeJson(path.join(runDir, 'bars', `${symbol}.json`), { symbol, from, to, requestedAt: entry.requestedAt, receivedAt, payload });
       } catch (err) {
         entry.outcome = `failed:${String(err?.message || 'error').slice(0, 60)}`;
       }
       writeJson(counterFile, counter);
     }
   };
-  await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+  try {
+    await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+  } finally {
+    closeSync(lock);
+    unlinkSync(lockFile);
+  }
   const failed = counter.log.filter((e) => e.outcome.startsWith('failed') || e.outcome === 'non_array').length;
-  console.log(`requests made: ${counter.made} of ${REQUEST_CAP}; failed or non-array: ${failed}`);
+  console.log(`requests made: ${counter.made} of ${REQUEST_CAP}; failed or non-array: ${failed}${stoppedForHours ? '; stopped: the session opened' : ''}`);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {

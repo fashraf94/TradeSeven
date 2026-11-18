@@ -1,6 +1,6 @@
 # Setup frequency count — tf-setup-v1 across the universe and real lists (read-only)
 
-**Date:** Tuesday 17 Nov 2026 (the run began 7:09 PM ET, after the close) · **Run by:** Claude Code (Opus), local session · **Prompt:** *Experiment prompt — how often the two setups occur (read-only count)*, V1.1 (Fable, architecture review chat, 17 Nov 2026) · **Branch:** `claude/setup-frequency-count`, cut from `origin/main` at `abcdfcb7` · **Scripts:** `scripts/experiments/setup-frequency/` · **Out-of-tree copy:** `C:/Users/fashr/Documents/FantasyTrades/SetupFrequency/20261117_SETUP_FREQUENCY_COUNT.md` (BUILD_RULES §3).
+**Date:** Tuesday 17 Nov 2026 (the run began 7:09 PM ET, after the close) · **Run by:** Claude Code (Opus), local session · **Prompt:** *Experiment prompt — how often the two setups occur (read-only count)*, V1.1 (Fable, architecture review chat, 17 Nov 2026) · **Branch:** `claude/setup-frequency-count`, cut from `origin/main` at `abcdfcb7` · **Scripts:** `scripts/experiments/setup-frequency/` · **Review:** `docs/audits/20261117_SETUP_FREQUENCY_COUNT_REVIEW.md` · **Out-of-tree copy:** `C:/Users/fashr/Documents/FantasyTrades/SetupFrequency/20261117_SETUP_FREQUENCY_COUNT.md` (BUILD_RULES §3).
 
 This count says how many names are in a valid setup. It does not say whether a setup makes money: no outcome, return or points figure appears below. The one price move it uses is the sector funds' one-day change, needed to name "today's top sectors" (§4).
 
@@ -11,29 +11,35 @@ This count says how many names are in a valid setup. It does not say whether a s
 - **The market's own trend barely changes the count:** 21 when SPY is in an uptrend (56 mornings), 17 when it has no trend (55), 20 in its downtrend (9 mornings, all in November). *Reconstructed.*
 - **On a list an agent actually picks from, it is 1.** Every battle list holds 9 stocks; the median list had 1 valid name, every one of the 40 had fewer than seven, about 45% had none. The 8 equipped watchlists show 0 or 1 on a typical day and never seven. *Reconstructed.*
 - **A valid setup lasts 2 sessions at the median:** 43% last one session, 38% last three or more. **97% are still enterable at the next open** (approximate: the open price against the record's own limit, not a new verdict).
-- **Archetype overlays** (today's scores applied to past sessions, approximate): Trend Follower 6 a morning (fewer than seven on 54% of mornings), Speculator 4, Capital Preserver 1, Fundamental Investor 0 (only 2 stocks pass its score bar today). The Diversifier's valid names span 8 sectors at the median, 7 or more on 69% of mornings.
+- **Archetype overlays:** Trend Follower 6 a morning (fewer than seven on 54% of mornings), Speculator 4, Capital Preserver 1, Fundamental Investor 0 on 101 of 120 mornings and 1 on the rest (only 2 stocks pass its score bar today). The last three apply today's scores to past sessions (approximate). The Diversifier's valid names span 8 sectors at the median, 7 or more on 69% of mornings.
 - **The replay reproduces the store exactly:** all 456 records the sweep wrote (16 and 17 Nov) give the same verdict, reason, pattern and patterns satisfied. On those two days the stored records alone say 14 and 12 valid. *Contemporaneous.*
-- **The provider revised its data within hours** of the sweep reading it (1,250 of 24,970 stored bars, mostly volume). No verdict changed, but every figure before 16 Nov rests on bars as served on the run day.
+- **The provider revised its data within hours** of the sweep reading it: 9.5% of the bars in the 16 Nov records (read 12 hours before the run) and 0.5% of those in the 17 Nov records (read 2 hours before), mostly volume. No verdict changed, but every figure before 16 Nov rests on bars as served on the run day.
 
 | Item | Verdict |
 |---|---|
 | Reproduction check (§1) | **456 of 456 match.** No STOP. Later provider revisions moved underlying facts on 259 records; no verdict moved. |
 | Universe (§2) | Median 18 valid of 228; fewer than 7 on 2.5% of sessions; Pullback and Resume carries the count. |
 | Agent lists (§3) | Median 1 valid per battle list of 9; 100% of battles below seven. A list-size limit as much as a setup limit. |
-| Overlays (§4) | Below seven on most mornings for every overlaid archetype; Fundamental Investor 0. |
+| Overlays (§4) | Below seven names on most mornings for the four name filters (Trend Follower 54%, Speculator 87%, Fundamental Investor and Capital Preserver 100%); the Diversifier's valid names span 7+ sectors on 69%. |
 | Requests | **241 EODHD requests** of the 400 cap; 0 failed. No model call. |
-| Production | Read only (`count`, field-masked `select().get()`, one batched `getAll`). No write. |
+| Production | Read only (`count`, field-masked `select().get()`, batched `getAll`). No write. |
+| Rule readings for the founder | **R-1** (one guard listing) and **R-2** (a first replay through `acquireOnce`), Preamble. |
+| Review (BUILD_RULES §2) | 3 lenses, 3 refuters: 24 findings, 13 confirmed, 10 partly confirmed, 1 refuted. Every confirmed part is fixed, or put to the founder (R-1, R-2). No headline number moved; two claims were corrected (the Fundamental Investor's "0 every morning", the overlay verdict row) and three battle rows were re-read at their creation session. Record: `…_REVIEW.md`. |
 
 ## Preamble
 
-**In plain terms.** This section says what the session started from, what it changed and what it touched. It changed nothing in the product: six new scripts, this report, and two lines in one test's allowlist that the prompt sanctions.
+**In plain terms.** This section says what the session started from, what it changed and what it touched. It changed nothing in the product: six new scripts, this report and its review record, and two lines in one test's allowlist that the prompt sanctions. Two places where the work stepped outside the prompt's letter are put to the founder as readings.
 
 - **Session opening (BUILD_RULES §2, §3).** `git fetch origin` ran first. Its first attempt failed on a DNS error (`getaddrinfo`); the retry succeeded with nothing compared before it. `origin/main` = `abcdfcb7`. Branch `claude/setup-frequency-count` cut from it, HEAD `abcdfcb7`, tree clean. Before the push `main` had moved to `2e069d42` (#1086, Shared Research B4: no file this count imports, the guard and the lockfile untouched); it was merged in, and the final checks ran on the merged tree.
-- **New files only:** six scripts and this report. **One test edit**, the prompt's rule 2: `api/_utils/setupEvidence/setupEvidenceImportGuard.test.js` lists `storeReplay.mjs` and `exportProduction.mjs` by exact filename, in the same commit as the scripts. They are the only two files that name the store. No evaluator, threshold, golden, store, sweep, flag, rule or fenced file changed.
-- **A reading for the founder (R-1):** the rule's exception speaks of a script that *imports* a store module. `storeReplay.mjs` does. `exportProduction.mjs` imports none; it is listed because it *reads* the store's collection by name, which the reproduction check needs and which the guard also counts. Listed under the exception's intent; say if it should have been a STOP.
+- **New files only:** six scripts, this report and its review record. **One test edit**, the prompt's rule 2: `api/_utils/setupEvidence/setupEvidenceImportGuard.test.js` lists `storeReplay.mjs` and `exportProduction.mjs` by exact filename, in the same commit as the scripts. They are the only two files the guard counts. No evaluator, threshold, golden, store, sweep, flag, rule or fenced file changed.
+- **Reading R-1 (rule 2).** The exception speaks of a script that *imports* a store module. `storeReplay.mjs` does. `exportProduction.mjs` is counted by the guard for a different reason: it *reads* the store's collection by name, which the reproduction check needs. (Its only store import, `lastCompletedSessionAt`, comes through `storeReplay.mjs`'s re-export, which the guard does not see.) It is listed under the exception's intent; say if it should have been a STOP.
+- **Reading R-2 (rule 5, "never call … any acquire path").** The first replay of this run, at commit `fe15255a`, called the store's `acquireOnce` 28,920 times (`storeReplay.mjs:40` at `fe15255a`).
+  - Each call had a local slice of the fetched series injected as its provider. So no call could reach the provider, and `acquireOnce` reads and writes no store (`acquire.js:5`).
+  - The advisor read rule 5 as forbidding it, so the replay of record was rebuilt on the store's pure functions (§1). It gives identical results on all 28,920 symbol-sessions.
+  - It is a deviation from the rule's letter with no effect on any figure or on production. Say if the first run should have been a STOP.
 - **Fenced functions:** none called, none edited. `api/_utils/archetypeScoring.js` (§1-fenced) is **read as text**, never imported: `analyze.mjs` asserts each cited constraint is still on its line.
 - **Markers.** Every `file:line` here is VERIFIED: read at `abcdfcb7` in this session. MEASURED marks a production read or provider fetch made in this session.
-- **Owners** are "founder", "FT_QA" (the two uids read in memory from the archived week-1 dump, never written) or an ordinal (`owner-NN`, in the order the export met them). Battles and lists are ordinals. No account id, document id, list name or player text is in any output; the export is scanned for every id it read, and for account-shaped tokens, before and after it is written (0 and 0).
+- **Owners** are "founder", "FT_QA" (the two uids read in memory from the archived week-1 dump, never written) or an ordinal (`owner-NN`, in the order the export met them). Battles and lists are ordinals. No account, agent, battle or list id, list name or player text is in any output. The export is scanned for every owner, agent, battle and list id it read, and for account-shaped tokens, before and after it is written (0 and 0).
 
 ## 1. Step 1 — the window and the reproduction check
 
@@ -41,17 +47,23 @@ This count says how many names are in a valid setup. It does not say whether a s
 
 - **Window:** 120 completed sessions, **29 May 2026 → 17 Nov 2026** (the last completed session at the run; the calendar of record, `api/_utils/marketSchedule.js`). History fetched from 20 Dec 2025, so every session has the store's 130-calendar-day request window (`acquire.js:43`, `:56`) and more than the 55 bars the evaluator needs.
 - **Local bars considered first:** the 3-day threshold experiment's inputs were not found on this machine; the October exports and the 28 Oct tf-setup replay runs (29 symbols) end before November. So every series was fetched.
-- **The replay, through the store's own pure functions** (`storeReplay.mjs`). No acquire path is called: neither `getOrAcquireSnapshot` nor `acquireOnce`. The chain is the one `acquireOnce` runs (`acquire.js:95–130`), then the one `getOrAcquireSnapshot` classifies with (`index.js:70`), in order:
+- **The replay of record calls no acquire path** (`storeReplay.mjs`). It uses the store's own pure functions, in the order `acquireOnce` runs them (`acquire.js:95–130`), then the classifier `getOrAcquireSnapshot` uses (`index.js:70`):
   1. `requestWindowOf` (`acquire.js:56`)
   2. `mapDailyRows` (`marketDataCache.js:317`), newest first
   3. `attachAdjustedClose`, then `buildDailyEvidence` with `MIN_COMPLETED_BARS` (`dailyBarsAdapter.js:116`, `:139`)
   4. `evaluateTfEntry` (`tfSetupV1.js:360`)
   5. `classifyEvidence` (`classify.js:68`): the disposition, the split refusal included.
 
-  Only the provider is replaced, by a slice of the symbol's one long series. **The clock is injected per session** (the session's own close), and the bars class is stated as `later_reconstruction`. `acquireOnce`'s one unexported step, refusing a payload whose mapper dropped a malformed row, is not copied. Instead, every slice's drop count is kept: **0 rows dropped** in 28,920 slices.
-- **A cross-check:** a first replay of the same data went through `acquireOnce` itself. All **28,920 of 28,920** symbol-sessions give identical verdict fields, regimes, refusals, dispositions and extension limits on both routes.
-- **Records compared: 456. Matching: 456.** That is every stored `setupEvidence` record: all inside the window, all under `tf-setup-v1.26f3f411b566.tf-setup-v1~sem-1`, all written by the sweep, all `evidenceClass.bars = contemporaneous`. 228 are for 16 Nov and 228 for 17 Nov. Fields compared: `verdict`, `reason`, `pattern`, `patternsSatisfied`. MEASURED.
-- **Provider revisions, shown although no verdict changed.** The facts under the verdict differ on 259 of the 456 records (V on 256, V_avg 90, ATR 65, a handful of averages and swing extremes, C on 1). Bar by bar, 1,250 of the 24,970 bars the records stored differ from the same bars served at the run:
+  What differs from a live acquisition, none of which changes a verdict here:
+  - **The provider:** replaced by a slice of the symbol's one long series.
+  - **The clock:** injected per session (the session's own close).
+  - **The bars class:** set to `later_reconstruction`, the prompt's class for the replay. The store's `barsClassOf` under the injected clock would say `contemporaneous` for every session.
+  - **Two unexported steps of `acquireOnce`:** a payload whose mapper dropped a malformed row, and one that throws while parsing. These would become `malformed_payload`; here they would stop the run. Every slice's drop count is kept: **0 rows dropped** in 28,920 slices.
+  - **`getOrAcquireSnapshot`'s pre-gates:** the crypto exclusion and the session gate refuse none of these symbols or sessions.
+
+  The first replay, through `acquireOnce` (reading R-2), gives identical verdict fields, regimes, refusals, dispositions and extension limits on all **28,920 of 28,920** symbol-sessions.
+- **Records compared: 456. Matching: 456.** That is every stored `setupEvidence` record: all inside the window, all under `tf-setup-v1.26f3f411b566.tf-setup-v1~sem-1`, all written by the sweep, all `evidenceClass.bars = contemporaneous`. 228 are for 16 Nov and 228 for 17 Nov. Fields compared: `verdict`, `reason`, `pattern`, `patternsSatisfied`. MEASURED. A reviewer also re-ran each of the 454 measured records from its own stored bars through the same chain: all nine facts and every check matched.
+- **Provider revisions, shown although no verdict changed.** The facts under the verdict differ on 259 of the 456 records (V on 256, V_avg 90, ATR 65, a handful of averages and swing extremes, C on 1). Through ATR and the 20-day average, the extension limit moved on 66 records, by at most 0.006%, and no next-open result changes. Bar by bar:
 
 | Field | Bars differing | Size of change |
 |---|---|---|
@@ -60,14 +72,19 @@ This count says how many names are in a valid setup. It does not say whether a s
 | close | 12 | at most 0.007% |
 | adjusted close | 71 | at most 0.51% (a dividend adjustment applied after capture) |
 
-1,191 of the differing bars sit in the 16 Nov records (captured 12:30 UTC on 17 Nov) and 59 in the 17 Nov records (captured 22:30 UTC); 722 are six or more sessions old. The provider revises old bars, not only the newest one. No verdict moved on these 456, so the check passes; the limit this sets on older sessions is in §6.
+The rate tracks how long before the run a record was captured:
+- **16 Nov records:** 1,191 of their 12,485 bars differ (9.5%). They were captured at 12:30 UTC on 17 Nov, about 12 hours before the run fetch.
+- **17 Nov records:** 59 of 12,485 differ (0.5%). They were captured at 22:30 UTC, about 2 hours before.
+- **Age of the bars:** 722 of the differing bars are six or more sessions old. The provider revises old bars, not only the newest one.
 
-**Two evidence classes.** Every figure below is labelled **reconstructed** (the replay over bars fetched on the run day) or **contemporaneous** (the sweep's stored records). The sweep covers two sessions, both completely (`setupEvidenceSweepState`: 228 provider requests each; 16 Nov in 1 run, finished 12:31 UTC on 17 Nov; 17 Nov in 2 runs, finished 22:31 UTC). From stored records alone:
+No verdict moved on these 456, so the check passes; the limit this sets on older sessions is in §6.
 
-| Session (contemporaneous) | Valid | of which pullback | breakout | Invalid · regime | · no setup | · extended | Refused | Distinct sectors | Uptrend | SPY |
+**Two evidence classes.** Every figure below is labelled **reconstructed** (the replay over bars fetched on the run day) or **contemporaneous** (the sweep's stored records). The sweep covers two sessions, both completely (`setupEvidenceSweepState`: 228 provider requests each; 16 Nov in 1 run, finished 12:31 UTC on 17 Nov; 17 Nov in 2 runs, finished 22:31 UTC). From stored records alone (SPY is not a ranked stock, so its column is reconstructed):
+
+| Session (contemporaneous) | Valid | of which pullback | breakout | Invalid · regime | · no setup | · extended | Refused | Distinct sectors | Uptrend (of 228) | SPY (reconstructed) |
 |---|---|---|---|---|---|---|---|---|---|---|
-| 16 Nov | 14 | 14 | 0 | 140 | 72 | 1 | 1 (CTVA, spin-off 1 Oct) | 6 | 87 | downtrend |
-| 17 Nov | 12 | 12 | 0 | 157 | 57 | 1 | 1 (CTVA) | 7 | 70 | downtrend |
+| 16 Nov | 14 | 14 | 0 | 140 | 72 | 1 | 1 (CTVA, spin-off 1 Oct) | 6 | 87 (38.2%) | downtrend |
+| 17 Nov | 12 | 12 | 0 | 157 | 57 | 1 | 1 (CTVA) | 7 | 70 (30.7%) | downtrend |
 
 ## 2. Step 2 — the universe, per session (reconstructed)
 
@@ -82,7 +99,7 @@ This count says how many names are in a valid setup. It does not say whether a s
 | Invalid · no setup | 40.5 | 4,870 |
 | Invalid · extended | 1 | 271 (breakout 112, pullback 113, both 46) |
 | Unknown, by what is missing | 0 | 0 (no fact was missing on any record) |
-| Refused · `basis_discontinuity` (a split inside the window) | 2 | 266 across six stocks, each refused while the event sits in its 55-bar window: CRWD, DD, FDX and KLAC 54 sessions each; CTVA 34; BKNG 16 |
+| Refused · `basis_discontinuity` (the split heuristic, an event inside the 55-bar window) | 2 | 266 across six stocks: CRWD, DD, FDX and KLAC 54 sessions each; CTVA 34 (a spin-off); BKNG 16 (an April event, inside its 55-bar window on the first 16 sessions) |
 
 Every record's disposition under the store's classifier is `final` (27,360 of 27,360).
 
@@ -101,15 +118,24 @@ Every record's disposition under the store's classifier is `final` (27,360 of 27
   | Runs (share) | 423 (43%) | 188 | 211 | 116 | 43 | 2 |
 
   Median 2, mean 2.31; 37.8% last three sessions or more.
-- **Still enterable at the next open.** *Approximate: the open price against the record's own limit, not a new verdict.* For each name valid at a close, the next session's raw open (EODHD `open`) is compared with the record's own extension limit (its `extension` check's `rhs`, `tfSetupV1.js:252`). 2,318 names qualify: 12 on 17 Nov are excluded (no next open yet), and none straddles a split. **2,249 are enterable, 97.0%.** By pattern: pullback 97.4% (2,227 of 2,287), both 73.1% (19 of 26), breakout only 3 of 5. Contemporaneous: the 14 names valid on 16 Nov, against their stored limits and the 17 Nov open, 14 of 14.
+- **Still enterable at the next open.** *Approximate: the open price against the record's own limit, not a new verdict.*
+  - **Method:** for each name valid at a close, the next session's raw open (EODHD `open`) is compared with the record's own extension limit (its `extension` check's `rhs`, `tfSetupV1.js:252`).
+  - **Reconstructed:** 2,318 names qualify (12 on 17 Nov are excluded, having no next open yet; none straddles a split). **2,249 are enterable, 97.0%.** By pattern: pullback 97.4% (2,227 of 2,287), both 73.1% (19 of 26), breakout only 3 of 5.
+  - **Contemporaneous (stored records alone):** the 14 names valid on 16 Nov, against their stored limits and the 17 Nov open as the 17 Nov records stored it: 14 of 14.
 
 **By market state.** SPY under the same regime test (`deriveRegime`, `tfSetupV1.js:259`): uptrend on 56 sessions, no trend on 55, downtrend on 9 (every session from 5 Nov). On 17 Nov, for example, the close (732.44) is below the 20-day average (755.86), which is below the 50-day (763.15), and the 50-day was 765.00 five sessions earlier. MEASURED. Persistence is split by the regime of the session a run started; enterability by the regime of the valid session.
 
-| SPY | Sessions | Valid median | 10th–90th | Min | < 7 | < 3 | Sectors | Uptrend share | Runs closed: median, 1 session, 3+ | Enterable next open |
-|---|---|---|---|---|---|---|---|---|---|---|
-| uptrend | 56 | 21 | 12–28 | 7 | 0% | 0% | 9 | 30.3% | 479: 2, 40.1%, 37.0% | 97.2% of 1,146 |
-| no trend | 55 | 17 | 8–31 | 4 | 5.5% | 0% | 7 | 25.0% | 441: 2, 47.2%, 38.5% | 96.5% of 990 |
-| downtrend | 9 | 20 | 12–36 | 12 | 0% | 0% | 8 | 38.6% | 63: 2, 36.5%, 39.7% | 98.9% of 182 |
+| SPY | Sessions | Valid: median, 10th–90th, min–max | < 7 | < 3 | Breakout: median, max, < 3 | Pullback: median, min–max, < 7 | Sectors | Uptrend share |
+|---|---|---|---|---|---|---|---|---|
+| uptrend | 56 | 21, 12–28, 7–37 | 0% | 0% | 0, 3, 98.2% | 20.5, 6–37, 1.8% | 9 | 30.3% |
+| no trend | 55 | 17, 8–31, 4–45 | 5.5% | 0% | 0, 2, 100% | 17, 4–45, 5.5% | 7 | 25.0% |
+| downtrend | 9 | 20, 12–36, 12–36 | 0% | 0% | 0, 0, 100% | 20, 12–36, 0% | 8 | 38.6% |
+
+| SPY | Class medians: regime / no setup / extended / refused / both | Runs closed: median, 1 session, 3+ | Enterable next open |
+|---|---|---|---|
+| uptrend | 155.5 / 42 / 1 / 3 / 0 | 479: 2, 40.1%, 37.0% | 97.2% of 1,146 |
+| no trend | 169 / 37 / 2 / 2 / 0 | 441: 2, 47.2%, 38.5% | 96.5% of 990 |
+| downtrend | 139 / 63 / 0 / 1 / 0 | 63: 2, 36.5%, 39.7% | 98.9% of 182 |
 
 **Weekly (median valid names), reconstructed.** Setups cluster: a July–August high, a late-September to October trough, a November rebound.
 
@@ -132,7 +158,7 @@ Every record's disposition under the store's classifier is `final` (27,360 of 27
 
 ## 3. Step 3 — the lists an agent actually picks from (reconstructed)
 
-**In plain terms.** An agent does not choose from all 228. Its battle list is nine stocks, and on the session before the battle typically one of them was in a setup; nearly half the lists had none. Players' equipped watchlists are no better. *The battle lists were ranked by today's rules, which trader v1 will change.*
+**In plain terms.** An agent does not choose from all 228. Its battle list is nine stocks, and at the session before the battle typically one of them was in a setup; nearly half the lists had none. Players' equipped watchlists are no better. *The battle lists were ranked by today's rules, which trader v1 will change.*
 
 **The fields (VERIFIED).**
 - **The starting book** is `agentContext.initialPortfolio` (star, core, support), frozen at creation (`agentBattleService.js:256`). It holds six stocks once the support crypto is set aside.
@@ -141,8 +167,8 @@ Every record's disposition under the store's classifier is `final` (27,360 of 27
   - a final-bench name that no swap touched was there from the start;
   - when those make three, the bench is **identified**, and any name swapped in came from elsewhere (the hot bench or a synthetic candidate);
   - when fewer, the open places were filled by names later swapped in. When more such names exist than places, the battle is **bounded**: its count is given as a range, lowest to highest.
-- **Result:** 14 battles have no swaps (exact), 16 are identified, 10 are bounded, each by one name at most. No trade history was truncated by the 50-trade cap (`trades.length` = `scoreState.tradeCount` on all 40). Every list is 9 stocks; the support and bench crypto (2 per battle) are excluded.
-- **When each list is read:** at the completed session before the battle's first trading day (`timing.tradingDays[0]`), never after the list was used. For 37 of 40 this is also the last completed session at creation. The other 3 (battle-023, -067, -144) were created after the close, for that same day's session; they are read at the session before it.
+- **Result:** 14 battles have no swaps (exact), 16 are identified, 10 are bounded, each by one name at most. No trade history was truncated by the 50-trade cap (`trades.length` = `scoreState.tradeCount` on all 40). Every list is 9 stocks; the support and bench crypto (2 per battle) are excluded. A reviewer ran the bench forward through the swaps and it agrees on all 40.
+- **When each list is read:** at the last session completed when the list was formed and first used. That is the store's own activation-to-session rule (`lastCompletedSessionAt`, `sessionAt.js:27`) applied to `createdAt`, so the reading is never after use. The session before the first trading day (`timing.tradingDays[0]`) agrees on 37 of 40. The other 3 (battle-023, -067, -144) were created after the close, for that same evening, before the 25 Oct change to how a battle's day is set; they never traded (0 swaps).
 
 **Battle lists:** 184 battles were created since 15 Sep 2026 (`createdAt` is a string; a Timestamp query found 0). 144 are League (103 of them CPU) and are excluded, leaving **40 non-League** (`baggerbomb_agent`).
 
@@ -150,12 +176,12 @@ Every record's disposition under the store's classifier is `final` (27,360 of 27
 |---|---|---|
 | Valid names per battle (median) | **1** | 1–1 |
 | Battles with 0 valid | 43.3% | 45.0–47.5% |
-| Battles with fewer than 7 / fewer than 3 | **100% / 90.0%** | 100% / 87.5–92.5% |
-| Valid share of the list (median) | 11.1% (the universe at the same sessions: 6.1%) | |
+| Battles with fewer than 7 / fewer than 3 | **100% / 86.7%** | 100% / 85.0–90.0% |
+| Valid share of the list (median) | 11.1% (the universe at the same sessions: 5.9%) | |
 | Unknown names | median 0; 7 in all, every one a split refusal (CRWD, CTVA) | |
 | Distinct sectors among the valid (median) | 1 | |
 
-By archetype (battles; median valid, lowest–highest): Trend Follower 17, 0–1 · Diversifier 8, 1.5 · Contrarian 7, 1 · Fundamental Investor 4, 0 · Speculator 3, 1 · Capital Preserver 1, 0.
+By archetype (battles; median valid, lowest–highest): Trend Follower 17, 0–1 · Diversifier 8, 1.5 · Contrarian 7, 1 · Fundamental Investor 4, 0 · Speculator 3, 1–2 · Capital Preserver 1, 0.
 
 <details><summary>Per battle (40 rows)</summary>
 
@@ -167,11 +193,11 @@ By archetype (battles; median valid, lowest–highest): Trend Follower 17, 0–1
 | battle-008 | founder | Contrarian | 18 Sep | identified | 1 | 0 | 1 | 13 |
 | battle-009 | founder | Trend Follower | 21 Sep | bounded | 2–3 | 0 | — | 12 |
 | battle-010 | founder | Trend Follower | 22 Sep | bounded | 0–1 | 0 | — | 15 |
-| battle-023 | owner-01 | Contrarian | 25 Sep | exact | 2 | 0 | 1 | 14 |
+| battle-023 | owner-01 | Contrarian | 28 Sep | exact | 2 | 0 | 1 | 12 |
 | battle-032 | owner-01 | Contrarian | 28 Sep | bounded | 2–3 | 0 | — | 12 |
 | battle-033 | founder | Trend Follower | 28 Sep | exact | 1 | 0 | 1 | 12 |
 | battle-054 | founder | Trend Follower | 2 Oct | exact | 2 | 0 | 1 | 14 |
-| battle-067 | FT_QA | Diversifier | 2 Oct | exact | 2 | 0 | 1 | 14 |
+| battle-067 | FT_QA | Diversifier | 5 Oct | exact | 3 | 0 | 2 | 18 |
 | battle-080 | founder | Trend Follower | 5 Oct | identified | 2 | 0 | 1 | 18 |
 | battle-081 | FT_QA | Diversifier | 5 Oct | identified | 2 | 1 | 1 | 18 |
 | battle-094 | founder | Trend Follower | 6 Oct | exact | 3 | 0 | 2 | 14 |
@@ -188,7 +214,7 @@ By archetype (battles; median valid, lowest–highest): Trend Follower 17, 0–1
 | battle-133 | founder | Fundamental Investor | 16 Oct | bounded | 0 | 0 | — | 5 |
 | battle-138 | FT_QA | Trend Follower | 19 Oct | exact | 0 | 0 | 0 | 4 |
 | battle-143 | founder | Fundamental Investor | 20 Oct | bounded | 0 | 0 | — | 4 |
-| battle-144 | owner-01 | Speculator | 20 Oct | exact | 1 | 0 | 1 | 4 |
+| battle-144 | owner-01 | Speculator | 21 Oct | exact | 2 | 0 | 2 | 10 |
 | battle-149 | founder | Fundamental Investor | 21 Oct | identified | 1 | 0 | 1 | 10 |
 | battle-154 | founder | Trend Follower | 22 Oct | bounded | 0 | 0 | — | 8 |
 | battle-155 | FT_QA | Trend Follower | 22 Oct | identified | 0 | 0 | 0 | 8 |
@@ -205,7 +231,7 @@ By archetype (battles; median valid, lowest–highest): Trend Follower 17, 0–1
 Ordinals number all 184 battles since 15 Sep in creation order, so the non-League ones have gaps. Statuses: 39 completed, 1 active. A bounded battle's sectors are not given: which name fills its open place is unknown.
 </details>
 
-**Equipped lists.** 104 agents, 22 human (CPU agents carry `isCpu` and a `cpu-` owner, `tournamentCpu.js:61`). Both loadouts are read (`leagueLoadoutOf`, `baggerbombLoadoutOf`, `src/constants/perGameLoadout.js:59`, `:83`): **8 distinct lists**, all committed, none deleted. Names only. Each is evaluated at all 120 sessions.
+**Equipped lists.** 104 agents, 22 human (CPU agents carry `isCpu` and a `cpu-` owner, `tournamentCpu.js:61`). Both loadouts are read (`leagueLoadoutOf`, `baggerbombLoadoutOf`, `src/constants/perGameLoadout.js:59`, `:83`): **8 distinct lists**, all committed, none deleted. Names only. Each is evaluated at all 120 sessions; every name was evaluated (a name with no replay would count as not valid, never dropped).
 
 | List | Owner | Loadouts | Names | Median valid | Most valid | Sessions < 7 | Sessions with 0 |
 |---|---|---|---|---|---|---|---|
@@ -218,9 +244,9 @@ Ordinals number all 184 battles since 15 Sep in creation order, so the non-Leagu
 | list-07 | owner-25 | both | 3 | 0 | 1 | 100% | 65.0% |
 | list-08 | owner-26 | both | 3 | 0 | 2 | 100% | 61.7% |
 
-## 4. Step 4 — the archetype overlays (reconstructed; today's scores applied to past sessions, approximate)
+## 4. Step 4 — the archetype overlays (reconstructed)
 
-**In plain terms.** Each archetype's deploy step already narrows its shortlist. Narrowed that way, the valid names drop to a handful: six for the Trend Follower, four for the Speculator, one for the Capital Preserver, none for the Fundamental Investor. Only the Trend Follower's filter changes from day to day here; the others apply today's scores to every past day.
+**In plain terms.** Each archetype's deploy step already narrows its shortlist. Narrowed that way, the valid names drop to a handful: six for the Trend Follower, four for the Speculator, one for the Capital Preserver, and none on most mornings for the Fundamental Investor. The Speculator, Fundamental Investor and Capital Preserver apply today's scores to every past day; the Trend Follower and the Diversifier use no scores.
 
 **The constraints, as the code states them.** `ARCHETYPE_CONSTRAINTS`, `api/_utils/archetypeScoring.js:81`: prompt text for the deploy model, read here as text. Display names: `src/data/archetypeDisplay.js:19–24`.
 
@@ -228,18 +254,18 @@ Ordinals number all 184 battles since 15 Sep in creation order, so the non-Leagu
 |---|---|---|
 | Trend Follower | "top 3 performing sectors … Avoid sectors down more than 1% today" (`:83`) | valid names in the session's top 3 sectors, any down more than 1% dropped |
 | Speculator | "ATR percentile above 0.80" (`:89`) | `atrPercentile > 0.80` (45 of 228 today) |
-| Fundamental Investor | "fundamentalScore above 70 … below 40" (`:91`) | `fundamentalScore > 70` (**2 of 228 today**) |
+| Fundamental Investor | "fundamentalScore above 70 … below 40" (`:91`) | `fundamentalScore > 70` (**2 of 228 today**: MU 81, NEM 78) |
 | Capital Preserver | "fundamentalScore above 60 … ATR percentile above 0.75" (`:93`) | `fundamentalScore > 60` and `atrPercentile ≤ 0.75` (16 of 228 today) |
 | Diversifier | "at least 7 different sectors" (`:87`) | distinct sectors among valid names |
 
-- **Scores:** `indexIntelligence/stockRankings`, the one document the deploy step reads (`api/agent/decide.js:344`), computed 20:01 UTC on 17 Nov (an intraday run); all 228 matched. **No dated snapshot exists:** `rankingSnapshots` holds 0 documents (its ops toggle is `ops/rankingSnapshots`, `rankingSnapshots.js:6`), so every past session uses today's scores.
+- **Scores** (Speculator, Fundamental Investor, Capital Preserver: *today's scores applied to past sessions, approximate*). They come from `indexIntelligence/stockRankings`, the one document the deploy step reads (`api/agent/decide.js:344`), computed 20:01 UTC on 17 Nov (an intraday run); all 228 matched. **No dated snapshot exists:** `rankingSnapshots` holds 0 documents (its ops toggle is `ops/rankingSnapshots`, `rankingSnapshots.js:6`).
 - **"Today's top 3 performing sectors" has no code behind it:** the model reads it off its prompt. This count stands in **the three sector funds** (XLK … XLC, the universe's own grouping, `rankingConfig.js` `STOCK_UNIVERSE`) with the highest one-day move at the session. Founder question 3.
 
 | Overlay | Median | 10th–90th | Max | Sessions < 7 | Sessions < 3 |
 |---|---|---|---|---|---|
 | Trend Follower | 6 | 2–12 | 18 | 54.2% | 11.7% |
 | Speculator | 4 | 1–7 | 11 | 86.7% | 33.3% |
-| Fundamental Investor | 0 | 0–1 | 1 | 100% | 100% |
+| Fundamental Investor | 0 (1 on 19 sessions) | 0–1 | 1 | 100% | 100% |
 | Capital Preserver | 1 | 0–3 | 5 | 100% | 86.7% |
 | Diversifier (distinct sectors) | 8 | 5–10 | 11 (min 3) | 7 or more on 69.2% | |
 
@@ -263,8 +289,8 @@ Results per session:
 
 **In plain terms.** The count stayed well inside its budget and never wrote to production. Its main weakness is that everything before 16 Nov is rebuilt from today's data, which the provider had already revised slightly.
 
-- **EODHD: 241 requests of the 400 cap, 0 failed** (MEASURED, `requests.json`; each place written to disk before its request). One long daily series per symbol, 20 Dec 2025 → 17 Nov 2026, 228 rows each, through the store's own `fetchDailyPayload`, at 00:10 UTC on 18 Nov (7:10 PM ET, outside market hours). Symbols: the 228, SPY, the 11 sector funds, and 1 name from a list. The fetch script refuses to run inside a session's hours and refuses a plan above the cap.
-- **Production (read only, MEASURED).** Each read is field-masked and goes through a restricted reader (`exportProduction.mjs`, which passed the write-verb grep; each of 13 planted write forms was caught by it):
+- **EODHD: 241 requests of the 400 cap, 0 failed** (MEASURED, `requests.json`; each place written to disk before its request). One long daily series per symbol, 20 Dec 2025 → 17 Nov 2026, 228 rows each, through the store's own `fetchDailyPayload`, at 00:10 UTC on 18 Nov (7:10 PM ET, outside market hours). Symbols: the 228, SPY, the 11 sector funds, and 1 name from a list. The fetch script refuses a plan above the cap and refuses to start inside a session's hours. The run was one process. After the review, the script also checks the hours before every request, takes an exclusive lock on its run folder, and leaves no file for a non-array answer, so it is retried.
+- **Production (read only, MEASURED).** Each read is field-masked and goes through a restricted reader (`exportProduction.mjs`). Before running, every script passes `lib.mjs`'s write-verb grep. The grep is a lexical check of the folder's own `.mjs` files: dotted write-verb calls, and imports of the Admin SDK or the provider request module outside the two scripts that may use them. 13 planted forms were caught in a scratch check. It cannot see indirect calls, or anything inside imported modules: the store's pure modules do load the provider module and the Admin SDK, though no call in this folder reaches either. The restricted reader is the structural guard.
 
   | Read | Result |
   |---|---|
@@ -272,15 +298,15 @@ Results per session:
   | `setupEvidenceSweepState` | 2 |
   | `agentBattles` | count 646; a 5-document type probe; 184 by the string query, 0 by the Timestamp query |
   | `agents` | 104 |
-  | `watchlists` | 8, one batched `getAll` (tickers, `deletedAt`, `status` only) |
-  | `indexIntelligence/stockRankings` | 1 |
+  | `watchlists` | 8, in one batched `getAll` (tickers, `deletedAt`, `status` only) |
+  | `indexIntelligence/stockRankings` | 1, a second batched `getAll` |
   | `rankingSnapshots` | 0 |
 
-  The export ran twice (00:09:05 and 00:09:50 UTC). The first missed the rankings document, which lives in `indexIntelligence`, not in a `stockRankings` collection. The second is the frozen read; the records were the same 456. Credentials were parsed in place from the main checkout's `.env.local`, never printed or copied. **No model call.**
+  The export ran twice (00:09:05 and 00:09:50 UTC). The first missed the rankings document, which lives in `indexIntelligence`, not in a `stockRankings` collection. The second is the frozen read; the records were the same 456. `getAll` is a batched `get`, not on rule 4's literal list. Credentials were parsed in place from the main checkout's `.env.local`, never printed or copied. **No model call.**
 - **Limits of the count:**
   - **Reconstruction.** Every figure before 16 Nov comes from bars fetched on 17 Nov, and the provider revises bars for days, old ones included (§1). A revision moved no verdict on the 456 records that could be checked, but a boundary case on an older session could read differently from what the sweep would have said then.
   - **Two contemporaneous days.** The sweep started on 16 Nov, and both of its days are SPY-downtrend days.
-  - **Today's scores.** Every overlay but the Trend Follower's uses one set of scores for all 120 sessions, so a name's June fundamental score or volatility rank is taken to be today's.
+  - **Today's scores.** The Speculator, Fundamental Investor and Capital Preserver overlays use one set of scores for all 120 sessions, so a name's June fundamental score or volatility rank is taken to be today's.
   - **The sector stand-in.** The Trend Follower overlay rests on a chosen definition of "top sectors" (§4).
   - **The window's market.** The window covers one summer and one autumn, with no prolonged downtrend (9 sessions). A long bear market is not in it.
   - **The battle bench.** 10 of 40 benches are bounded by one name each, shown as ranges.
@@ -292,18 +318,18 @@ Results per session:
 1. **Trend Breakout is almost never valid.** There are 31 breakout-valid records in 27,360 (5 breakout only, 26 both): a median of 0 a morning, at most 3. Of the 189 breakouts found in uptrending names, 158 failed the extension limit (C ≤ SMA20 + 2 × ATR, `tfSetupV1.js:252`). A close at a 20-day high on heavy volume is usually already more than two ATRs above its 20-day average.
 2. **The squeeze alarm cannot vary.** It flags exactly 47 of 228 every day, so it says nothing about how compressed the market is.
 3. **The Fundamental Investor's own constraint cannot be met.** It asks for at least 5 stocks scoring above 70; today 2 of 228 do (median 50, top 81).
-4. **The provider revises old bars within hours:** 722 of the 1,250 revised bars were six or more sessions old.
-5. **Setups did not dry up when the market fell.** In SPY's nine downtrend sessions the median was 20, as many as in its uptrend.
+4. **The provider revises old bars within hours:** 9.5% of the bars in records read 12 hours before the run had changed, and 722 of the 1,250 revised bars were six or more sessions old.
+5. **Setups did not dry up when the market fell.** In SPY's nine downtrend sessions the median was 20, about as many as in its uptrend (21).
 6. **Agent lists are the bottleneck, not setups.** The universe has 18 valid names on a typical morning; a battle list of nine holds 1, and its valid names fall in a single sector.
 
 ## 8. Founder questions (only where a number forces a choice)
 
-**In plain terms.** Four choices that these numbers force, each answerable in a line. Reading R-1 in the Preamble is a fifth, smaller one.
+**In plain terms.** Four choices that these numbers force, each answerable in a line. Readings R-1 and R-2 in the Preamble are two smaller ones.
 
 1. **Trend Breakout.** Under `tf-setup-v1` it qualifies on 0 names on a typical morning, because 84% of breakouts are blocked by the extension limit. Should Trend Breakout keep the same extension limit as Pullback and Resume (and so be rarely available), or get its own limit (a new `SETUP_VERSION`, a founder PR)?
 2. **What an agent chooses from.** A match opens seven positions. The universe offers 18 valid names a morning, but a battle list offers 1, and about 45% of lists offer none. Should trader v1's list be built from valid setups (or include them), or should most entries be allowed to carry "no setup"?
 3. **"Today's top sectors."** No code defines it. Is the stand-in used here (the three sector funds with the best one-day move) the definition you want the Trend Follower's setups filtered by, or a different one (for example a multi-day move)?
-4. **The Fundamental Investor.** With either detector it would have 0 names on every morning, because its score bar admits 2 stocks today. Should it keep a setup detector at all, or should its constraint change (a fenced file)?
+4. **The Fundamental Investor.** With either detector it would have 0 names on 101 of 120 mornings and 1 on the other 19 (MU or NEM, the only two above its score bar today), against a constraint that asks for 5. Should it keep a setup detector at all, or should its constraint change (a fenced file)?
 
 ## 9. Files
 
@@ -318,6 +344,7 @@ Results per session:
 | `scripts/experiments/setup-frequency/replay.mjs` | Every symbol × session; the compression inputs; the reproduction check |
 | `scripts/experiments/setup-frequency/analyze.mjs` | Steps 2–5; asserts the cited constraint text on its lines |
 | `api/_utils/setupEvidence/setupEvidenceImportGuard.test.js` | +2 listings (the prompt's one sanctioned test edit) |
+| `docs/audits/20261117_SETUP_FREQUENCY_COUNT_REVIEW.md` | The BUILD_RULES §2 review record |
 
 **Re-running** (from the repo root; the run folder defaults to `C:/Users/fashr/Documents/FantasyTrades/SetupFrequency/run-20261117`):
 1. `exportProduction.mjs`
@@ -325,3 +352,5 @@ Results per session:
 3. `fetchBars.mjs`
 4. `replay.mjs` (about 19 minutes)
 5. `analyze.mjs`
+
+The cross-check against the first replay reads `replay.acquireOnce.json`: the `replay.json` that `replay.mjs` and `storeReplay.mjs` at `fe15255a` write, renamed. Without it, `analyze.mjs` records the check as skipped.

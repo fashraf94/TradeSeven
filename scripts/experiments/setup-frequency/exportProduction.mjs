@@ -1,9 +1,13 @@
 #!/usr/bin/env node
 // scripts/experiments/setup-frequency/exportProduction.mjs
 //
-// Setup frequency count — THE PRODUCTION READ (prompt §1 rules 4 and 8). READ-ONLY BY CONSTRUCTION: the export
-// receives a RESTRICTED READER (count, a field-masked query, a field-masked getAll), never the database handle, which
-// exists only inside main(). There is no write call in this folder (lib.mjs writeVerbGrep runs first).
+// Setup frequency count — THE PRODUCTION READ (prompt §1 rules 4 and 8). READ-ONLY BY CONSTRUCTION: exportAll
+// receives a RESTRICTED READER (count, a field-masked query, a field-masked getAll), never the database handle; main()
+// creates the handle and passes it only to restrictedReader. The handle is the process's one Admin app, so other
+// modules loaded here (marketDataCache.js, through the store's pure modules) have write functions on it; nothing in
+// this folder calls one. lib.mjs writeVerbGrep runs first: a lexical check of this folder's own files for the plain
+// write-call forms, not a proof (it cannot see bracket or indirect calls, or writes inside imported modules) — the
+// restricted reader is the structural guard (review SF-L3-3, SF-L3-4).
 //
 // What it reads, each field-masked:
 //   setupEvidence/*                 every stored record (the reproduction check, §2; the contemporaneous class)
@@ -15,9 +19,11 @@
 //   rankingSnapshots/*              which dated snapshots exist, and the field names their per-stock entries carry
 //
 // NO ACCOUNT IDS, NO PLAYER TEXT, NO LIST NAMES LEAVE THIS SCRIPT. Owners are "founder", "FT_QA" (the two uids read
-// in memory from the archived week-1 dump, --labels) or an ordinal; battles and lists are ordinals; no document id is
-// written. A watchlist's name, thesis and notes are never selected. After writing, the file is scanned for every id
-// read and for any token shaped like an account id; a hit deletes the file and fails the run.
+// in memory from the archived week-1 dump, --labels) or an ordinal; battles and lists are ordinals; no account, agent,
+// battle or watchlist id is written (a record's key and a ranking snapshot's id, `{etDate}_{runLabel}`, are dates and
+// symbols). A watchlist's name, thesis and notes are never selected. Before and after writing, the text is scanned for
+// every owner, agent, battle and watchlist id read (8 characters or more) and for any 28-character token shaped like an
+// account id; a hit deletes the file and fails the run (review SF-L3-7: the scan's reach, stated).
 //
 // CREDENTIALS: FIREBASE_ADMIN_CREDENTIALS parsed in place from the main checkout's .env.local (--env), never printed.
 //
