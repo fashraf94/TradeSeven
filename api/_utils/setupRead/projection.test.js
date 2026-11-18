@@ -8,13 +8,14 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { answerOf, CHECK_COUNT, projectSetupRecord, RECORD_SCHEMA_VERSION, SetupRecordUnreadable, VERDICTS } from './projection.js';
+import { answerOf, CHECK_COUNT, projectSetupRecord, projectPreviousRecord, RECORD_SCHEMA_VERSION, SetupRecordUnreadable, VERDICTS } from './projection.js';
 import { readRecordSet } from './__fixtures__/readRecords.js';
 import { SNAPSHOT_SCHEMA_VERSION } from '../setupEvidence/acquire.js';
 import { FACT_NAMES, PATTERN_ORDER, entryChecks } from '../setupEvaluator/tfSetupV1.js';
 import { SETUP_VERDICTS } from '../setupMenuLabels/constants.js';
 import {
   SETUP_READ_ANSWERS, SETUP_READ_CHECK_FIELDS, SETUP_READ_FACTS, SETUP_READ_FIELDS, SETUP_READ_PATTERNS, SETUP_READ_RULE_SET_FIELDS,
+  SETUP_READ_PREVIOUS_FIELDS, SETUP_READ_PREVIOUS_CHECK_FIELDS,
 } from '../../../src/components/Research/Sheet/setupReadContract.js';
 
 const SESSION = '2026-11-13';
@@ -192,6 +193,29 @@ describe('what never leaves the server', () => {
     const json = JSON.stringify(project(r));
     expect(json).not.toContain(S);
     expect(json).not.toContain('extra');
+  });
+});
+
+// The Chart view's read build (RD-1, RD-2; docs/specs/CHART_READ_SPEC_V1.md): `previous` — the earlier session's record
+// as a small summary through the same projection, so the same refusals hold.
+describe('previous (RD-2): the closed list, copied, no facts and no prices', () => {
+  const prev = (record) => projectPreviousRecord(record, { session: SESSION, symbol: SYMBOL });
+  it('exactly its fields, in order, each the projection\'s own value', () => {
+    expect(SETUP_READ_PREVIOUS_FIELDS).toEqual(['session', 'verdict', 'reason', 'pattern', 'regime', 'patternsSatisfied', 'checks']);
+    expect(SETUP_READ_PREVIOUS_CHECK_FIELDS).toEqual(['id', 'result']);
+    for (const { record } of Object.values(set)) {
+      const p = prev(record);
+      const full = project(record);
+      expect(Object.keys(p)).toEqual([...SETUP_READ_PREVIOUS_FIELDS]);
+      expect(p.checks).toHaveLength(CHECK_COUNT);
+      for (const c of p.checks) expect(Object.keys(c)).toEqual([...SETUP_READ_PREVIOUS_CHECK_FIELDS]);
+      expect(p).toEqual({ session: full.session, verdict: full.verdict, reason: full.reason, pattern: full.pattern, regime: full.regime, patternsSatisfied: full.patternsSatisfied, checks: full.checks.map((c) => ({ id: c.id, result: c.result })) });
+    }
+  });
+  it('a record the projection cannot read throws — never a null, never a part', () => {
+    expect(() => prev({ ...set.VALID_PULLBACK.record, schemaVersion: 2 })).toThrow(SetupRecordUnreadable);
+    expect(() => projectPreviousRecord(set.VALID_PULLBACK.record, { session: '2026-11-12', symbol: SYMBOL })).toThrow(SetupRecordUnreadable);
+    expect(() => prev({ ...set.VALID_PULLBACK.record, status: 'pending' })).toThrow(SetupRecordUnreadable);
   });
 });
 

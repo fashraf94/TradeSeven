@@ -101,3 +101,25 @@ export function projectSetupRecord(record, { session, symbol, behind }) {
     adjustmentMetadata: scalar(isObject(evidence.adjustment) ? evidence.adjustment.metadata : null),
   };
 }
+
+/**
+ * `previous` (the Chart view's read, RD-1 – RD-2; docs/specs/CHART_READ_SPEC_V1.md): the record of the
+ * session before `read`'s, as a small summary — the session, the verdict, its reason, the pattern, the
+ * regime, the satisfied patterns, and each check's id and result. No facts and no prices. Every value is
+ * the projection's own copy (so the same checks hold: a record this module cannot read throws, and the
+ * route answers 500 — never null, never in part).
+ * @param {object} record the stored document
+ * @param {{ session: string, symbol: string }} at
+ */
+export function projectPreviousRecord(record, { session, symbol }) {
+  const full = projectSetupRecord(record, { session, symbol, behind: false });
+  return {
+    session: full.session,
+    verdict: full.verdict,
+    reason: full.reason,
+    pattern: full.pattern,
+    regime: full.regime,
+    patternsSatisfied: full.patternsSatisfied,
+    checks: full.checks.map((c) => ({ id: c.id, result: c.result })),
+  };
+}
