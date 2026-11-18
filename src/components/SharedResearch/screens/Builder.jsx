@@ -25,11 +25,11 @@ import { SR_COPY as COPY } from '../sharedResearchCopy';
 import { T, S, wash } from '../sharedResearchStyle';
 import { directionOfStep, evidenceOf, findingsById, formatDay, remainingOf, stateOf } from '../sharedResearchView';
 import {
-  footOf, panelOf, conversationOf, hasSuggestedPart, partOfGoal, directionOffered, revisedWhyChoiceOf, horizonLabelOf,
+  footOf, panelOf, conversationOf, hasSuggestedPart, partOfGoal, directionOffered, revisedWhyChoiceOf, horizonLabelOf, themeLineOf,
 } from '../thesisView';
 import {
   CardHead, CardLine, CHOICES, ClearConfirm, Composer, Count, Cover, EvidenceList, FOOT, FreeButton, KeepReasons, Mark, Mine, MoreActions, NamesPick, PartPanel,
-  PriceLines, Rail, ResearchButton, Said, Sentence, Strip, WhyBlock, WhyProposal, WRAP, basisTagOf, freeLabelOf, researchLabelOf, usePanelInView,
+  PriceLines, Rail, ResearchButton, Said, Sentence, Strip, ThemeLine, WhyBlock, WhyProposal, WRAP, basisTagOf, freeLabelOf, researchLabelOf, usePanelInView,
   scrollParentOf, STRIP_ROOM, useFootRoom, useFocusKept, useWideEnough,
 } from '../builderParts';
 import { Button, LinkButton, Notice, Running, Tag } from '../parts';
@@ -124,6 +124,7 @@ function BuilderWork({ sr, agentName, phone, wide, open, viewingEarlier, onBackT
   const last = session.lastStep ?? null;
   const textChoice = deadEnd ? null : foot.text;
   const hasComposer = open && Boolean(textChoice || directionOffered(thesis));
+  const themeLine = open ? themeLineOf(thesis) : null; // §B13 T-6: a suggested theme's line, at the top of the choices
 
   // K-7: in one column the card folds to its strip once the sheet has scrolled it away (P-1: the sheet's real width).
   useEffect(() => {
@@ -285,6 +286,10 @@ function BuilderWork({ sr, agentName, phone, wide, open, viewingEarlier, onBackT
   const choices = open ? (
     <div data-sr-choices={foot.part ?? 'none'} style={CHOICES}>
       {running && <Running attrs={{ 'data-sr-working': '' }}>{B.workingLine(agentName)}</Running>}
+      {!running && themeLine && (
+        <ThemeLine confirm={themeLine.confirm} disabled={busy} onConfirm={() => onFreeInChoices(themeLine.confirm)}
+          onWriteOwn={themeLine.text ? () => setTapped('theme') : null} />
+      )}
       {!running && staleRunning && (
         <Notice role="status" tone="gold" attrs={{ 'data-sr-was-running': '' }}>
           <span>{COPY.wasRunning}</span> <span aria-hidden="true">·</span> <LinkButton disabled={busy} onClick={() => sr.loadSession(session.sessionId)} attrs={{ 'data-sr-check-again': '' }}>{B.checkAgain}</LinkButton>

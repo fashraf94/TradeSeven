@@ -4,7 +4,8 @@
 // Drawn while `thesis.ready` is true and the investigation is open: the SERVER'S
 // sentence (as received; its set parts tappable where they stand), "Edit the
 // sentence · it's yours" (an edit goes as `statement`), the names, the why, and
-// "How it will be judged" — the time frame, the wrong-if "in your words" and the
+// "How it will be judged" — the time frame, the wrong-if "in your words" (or "in
+// words" when the player did not write it: §B13 T-8) and the
 // price line "optional · add your own" (W-2: the idea book does not read saved
 // theses yet, so nothing here says it is watched or held).
 //
@@ -141,7 +142,8 @@ export default function ThesisReady({ sr, agentName, phone, edit, setEdit, onKee
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 11, borderTop: `1px solid ${T.hair}` }} data-sr-judged="">
           <span style={S.eyebrow}>{B.judged}</span>
           <JudgedRow label={B.parts.timeFrame}>{thesis.parts.timeFrame.label}</JudgedRow>
-          <JudgedRow label={B.parts.wrongIf}>{thesis.parts.wrongIf.text} <span style={{ display: 'inline-flex', verticalAlign: 'middle' }}><Tag dim>{B.inYourWords}</Tag></span></JudgedRow>
+          {/* §B13 T-8 (b): "in your words" only when the player wrote it; otherwise "in words" — never "watched" (W-2) */}
+          <JudgedRow label={B.parts.wrongIf}>{thesis.parts.wrongIf.text} <span style={{ display: 'inline-flex', verticalAlign: 'middle' }} data-sr-wrongif-tag={thesis.parts.wrongIf.by ?? ''}><Tag dim>{thesis.parts.wrongIf.by === 'player_wrote' ? B.inYourWords : B.inWords}</Tag></span></JudgedRow>
           <JudgedRow label={B.priceLine}>
             {lines.length > 0 && lines.map((l) => <span key={l.symbol} style={{ display: 'block' }} data-sr-price-line={l.symbol}>{B.priceSet(l.symbol, l.level)}</span>)}
             {priceChoice && (

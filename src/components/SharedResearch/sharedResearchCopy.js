@@ -110,6 +110,9 @@ const BUILDER = Object.freeze({
   sourceCount: (n) => `${n} ${plural(n, 'source', 'sources')}`,
   confirmValue: (value) => `Confirm ${value}`,
   themeConfirm: (value) => `Use “${value}” as the theme`,
+  // §B13 T-6: the suggested theme's line at the top of the choices — its confirm (· free) and "write your own"
+  themeLineLabel: 'Theme',
+  writeOwnTheme: 'Write your own',
   skipSegment: 'Skip the segment',
   namesHelp: (min, max) => `Tick ${min} to ${max}. Only a company with a sourced connection can be picked.`,
   // the names step (the phone round, P-4): the tick button names what it builds; the pick has its own button
@@ -163,6 +166,8 @@ const BUILDER = Object.freeze({
   nNames: (n) => `${n} names`,
   judged: 'How it will be judged',
   inYourWords: 'in your words',
+  // §B13 T-8 (b): a wrong-if the player did not write (an option, the agent's pick) — still never "watched" (W-2)
+  inWords: 'in words',
   priceLine: 'Price line',
   priceOptional: 'optional · add your own',
   priceLevel: (symbol) => `${symbol} · a daily close below $`,

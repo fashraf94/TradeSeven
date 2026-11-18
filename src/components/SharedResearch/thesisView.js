@@ -32,14 +32,28 @@ export const PARTLESS_GOALS = Object.freeze(['verify_source', 'map_segments', 'f
 
 /**
  * K-4: the part in front — the first stale part in `blockers` order, else the first part (in the sentence's order)
- * whose state is not `set`; null when every part is set.
+ * whose state is not `set`; null when every part is set. A theme whose state is `suggested` is skipped (§B13 T-6): it
+ * holds nothing up, so the next part takes the front, and the theme's confirm and "write your own" sit as one line at
+ * the top of the choices (themeLineOf). An unset theme with no suggestion stays in front, as before.
  */
 export function frontPartOf(thesis) {
   const parts = thesis?.parts;
   if (!parts) return null;
   const stale = (Array.isArray(thesis.blockers) ? thesis.blockers : []).find((b) => b?.state === 'stale' && THESIS_PARTS.includes(b.part));
   if (stale) return stale.part;
-  return THESIS_PARTS.find((p) => parts[p]?.state !== 'set') ?? null;
+  return THESIS_PARTS.find((p) => parts[p]?.state !== 'set' && !(p === 'theme' && parts[p]?.state === 'suggested')) ?? null;
+}
+
+/**
+ * §B13 T-6: the theme's line while its state is `suggested` — the server's confirm for the theme and its text box
+ * ("write your own"), each exactly as offered; null when the theme is not suggested or the server offers no confirm.
+ * @returns {{ confirm: object, text: object|null } | null}
+ */
+export function themeLineOf(thesis) {
+  if (thesis?.parts?.theme?.state !== 'suggested') return null;
+  const free = Array.isArray(thesis?.choices?.free) ? thesis.choices.free : [];
+  const confirm = free.find((c) => c.op === 'confirm' && c.part === 'theme') ?? null;
+  return confirm ? { confirm, text: free.find((c) => c.part === 'theme' && c.input === 'text') ?? null } : null;
 }
 
 const sameValue = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
@@ -199,25 +213,34 @@ export function slotOf(thesis, part) {
 const bare = (s) => String(s ?? '').trim().replace(/[\s.!?;:,]+$/u, '');
 /**
  * The server's finished sentence cut into runs, so each part that holds a value (set, or stale) can be tapped where it
- * stands (K-7) and a stale one marked there: each part's own text is FOUND in the sentence, in order; nothing is added or
- * reworded, and the runs join back to the sentence exactly (pinned by a table row). A part whose text is not found is
- * simply not tappable there.
+ * stands (K-7) and a stale one marked there: each part's own text is FOUND in the sentence; nothing is added or
+ * reworded, and the runs join back to the sentence exactly (pinned by a table row). The parts are found in the order
+ * they STAND in the sentence — the earliest found from where the last one ended, a tie going to the sentence's own part
+ * order — because the server's order is not fixed: with no theme it opens "Built on {names}, through {segment}, …"
+ * (§B13 T-2). A part whose text is not found is simply not tappable there.
  * @returns {{ text: string, part: string|null, state?: string }[]}
  */
 export function sentenceRunsOf(sentence, thesis) {
   const s = typeof sentence === 'string' ? sentence : '';
+  let left = THESIS_PARTS.map((part) => {
+    const slot = slotOf(thesis, part);
+    if ((slot.state !== 'set' && slot.state !== 'stale') || !slot.text) return null;
+    const needle = part === 'timeFrame' ? slot.text : bare(slot.text);
+    return needle ? { part, state: slot.state, needle } : null;
+  }).filter(Boolean);
   const runs = [];
   let at = 0;
-  for (const part of THESIS_PARTS) {
-    const slot = slotOf(thesis, part);
-    if ((slot.state !== 'set' && slot.state !== 'stale') || !slot.text) continue;
-    const needle = part === 'timeFrame' ? slot.text : bare(slot.text);
-    if (!needle) continue;
-    const i = s.indexOf(needle, at);
-    if (i < 0) continue;
-    if (i > at) runs.push({ text: s.slice(at, i), part: null });
-    runs.push({ text: needle, part, state: slot.state });
-    at = i + needle.length;
+  while (left.length > 0) {
+    let next = null;
+    for (const w of left) {
+      const i = s.indexOf(w.needle, at);
+      if (i >= 0 && (next === null || i < next.i)) next = { ...w, i };
+    }
+    if (next === null) break;
+    if (next.i > at) runs.push({ text: s.slice(at, next.i), part: null });
+    runs.push({ text: next.needle, part: next.part, state: next.state });
+    at = next.i + next.needle.length;
+    left = left.filter((w) => w.part !== next.part);
   }
   if (at < s.length) runs.push({ text: s.slice(at), part: null });
   return runs;

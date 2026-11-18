@@ -241,10 +241,34 @@ export function freeLabelOf(choice, thesis, agentName) {
       return { label, mark: B.suggestedTag(agentName), reason: s?.reason ?? null, reasonTag: s?.reason ? { tone: 'gold', text: B.reasoningTag(agentName) } : null };
     }
     if (mark === 'pick') return { label, mark: B.pickTag(agentName), reason: pick.reason, reasonTag: reasoning };
-    if (mark === 'asked') return { label: B.confirmValue(label), strong: true };
+    // §B13 T-5: the confirm says whose answer it carries — "{agent} suggested" (above) or "{agent}'s pick"
+    if (mark === 'asked') return { label: B.confirmValue(label), mark: B.pickTag(agentName), strong: true };
     return { label };
   }
   return { label: String(value ?? '') };
+}
+
+/**
+ * §B13 T-6: a suggested theme does not hold the front. Its confirm and its "write your own" sit as one small line at the
+ * top of the choices — "Use “{suggestion}” as the theme · free", and Write your own, which opens the theme's part (its
+ * text box is there). The confirm is the server's free choice, sent as offered.
+ */
+export function ThemeLine({ confirm, onConfirm, onWriteOwn = null, disabled = false }) {
+  const off = disabled ? { opacity: 0.5, cursor: 'not-allowed' } : {};
+  return (
+    <div role="group" aria-label={B.themeLineLabel} data-sr-theme-line="" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', columnGap: 12, minWidth: 0 }}>
+      <button type="button" onClick={disabled ? undefined : onConfirm} disabled={disabled} data-sr-free="confirm:theme" data-sr-free-value={confirm.value}
+        style={{ ...linkStyle, ...off, textDecoration: 'none', gap: 6, fontSize: 13.5, minWidth: 0, flexWrap: 'wrap' }}>
+        <span style={{ textDecoration: 'underline', textUnderlineOffset: 3, overflowWrap: 'break-word', minWidth: 0 }}>{B.themeConfirm(confirm.value)}</span>
+        <span aria-hidden="true" style={{ color: T.ink3 }}>·</span>
+        <Mark attrs={{ 'data-sr-cost': 'free' }}>{B.free}</Mark>
+      </button>
+      {onWriteOwn && (
+        <button type="button" onClick={disabled ? undefined : onWriteOwn} disabled={disabled} data-sr-theme-own=""
+          style={{ ...linkStyle, ...off, fontSize: 13.5, color: T.ink2 }}>{B.writeOwnTheme}</button>
+      )}
+    </div>
+  );
 }
 
 /** A research choice's words (K-5): the goal's label; strengthen names its part. */

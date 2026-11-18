@@ -35,7 +35,7 @@ import { validateBuildTurn, turnShapeOf, builderFallbackReplyOf } from '../../..
 import { baseRecord } from '../../../../api/_utils/sharedResearch/__fixtures__/records.js';
 import { frontPartOf, valueChoicesOf, textChoiceOf, horizonLabelOf, joinNames } from '../thesisView.js';
 import { walkRouteOf } from './walkRoute.js';
-import { builderProbes, PROBE_B_READ_AT } from '../../../../api/_utils/sharedResearch/__fixtures__/probeBuilder.js';
+import { builderProbes, b5Probes, PROBE_B_READ_AT } from '../../../../api/_utils/sharedResearch/__fixtures__/probeBuilder.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT = resolve(HERE, 'thesisAnswers.json');
@@ -43,6 +43,9 @@ const WALK_OUT = resolve(HERE, 'thesisWalk.json');
 const RECORDED = (key) => JSON.parse(readFileSync(resolve(HERE, `../../../../test/fixtures/sharedResearch/build.${key}.recorded.json`), 'utf8')).output;
 const PROBES = builderProbes();
 const probeOf = (key) => PROBES.find((p) => p.key === key);
+/** §B13 T-7: the walk's map is the B5 recorded map_segments answer, made on the T-1 card (a real theme suggestion). */
+const B5_MAP = b5Probes()[0];
+const WALK_MAP = () => RECORDED('b5.map_segments');
 
 const UID = 'u-sr-1';
 const ATTRIBUTION = { agentId: 'agent-fixture-1', archetypeCodeId: 'diversifier', baggerbombArchetypeCodeId: 'diversifier', identityVersion: 2, at: '2026-11-10T14:00:00.000Z' };
@@ -244,6 +247,8 @@ const incompleteWhy = (rel) => ({
 // ── the scenarios ─────────────────────────────────────────────────────────────
 
 let STASH = null; // build()'s investigations the walk tree continues from (never serialised)
+/** The player's own theme in the walk (§B13 T-6 "write your own"): one sample phrase, as the wrong-if has one. */
+const SAMPLE_THEME = 'AI chips and data centers';
 
 function build() {
   n = 0;
@@ -263,11 +268,19 @@ function build() {
   A.walkOpen = { status: 200, body: openAnswerOf(inv) };
   A.walkGetOpen = { status: 200, body: getAnswerOf(inv) };
 
-  const map = step(inv, { goal: 'map_segments', output: RECORDED('map_segments'), items: probeOf('map_segments').items, nowIso: at(1) });
+  const map = step(inv, { goal: 'map_segments', output: WALK_MAP(), items: B5_MAP.items, nowIso: at(1) });
   inv = map.inv;
   A.walkMap = map.answer;
   A.walkGetMap = { status: 200, body: getAnswerOf(inv) };
   const afterMap = inv;
+  // §B13 T-1 / T-6: the map's theme suggestion, confirmed (free) or replaced by the player's own phrase (free). The
+  // linear walk below goes on without either — the theme gates nothing (T-2); the walk TREE has both branches.
+  const themeConfirmed = tap(afterMap, { op: 'confirm', part: 'theme', nowIso: at(2) });
+  A.walkThemeConfirm = themeConfirmed.answer;
+  A.walkGetThemeConfirm = { status: 200, body: getAnswerOf(themeConfirmed.inv) };
+  const themeOwn = tap(afterMap, { op: 'set', part: 'theme', value: { text: SAMPLE_THEME }, nowIso: at(2) });
+  A.walkThemeOwn = themeOwn.answer;
+  A.walkGetThemeOwn = { status: 200, body: getAnswerOf(themeOwn.inv) };
 
   const seg = tap(inv, { op: 'confirm', part: 'segment', nowIso: at(2) });
   inv = seg.inv;
@@ -325,7 +338,7 @@ function build() {
     sessionId: walkSid, question, nowIso: t0, exchanges: [player], card: openingCardOf({ entryKind: 'observation', observation: OBS }),
     entry: { kind: 'observation', itemRef: null, direction: null, observation: OBS, topic: null, names: [] },
     findings: built(openingFindingsOf({ entryKind: 'observation', playerExchange: player, frame: null, names: [], stored: {}, nowIso: t0 }).filter((f) => f.kind !== 'next_action'), t0),
-  }), { goal: 'direction', direction: 'start with the chips', output: RECORDED('map_segments'), items: probeOf('map_segments').items, nowIso: at(1) });
+  }), { goal: 'direction', direction: 'start with the chips', output: WALK_MAP(), items: B5_MAP.items, nowIso: at(1) });
   A.walkDirection = dirStart.answer;
   A.getAfterNamesAgain = { status: 200, body: getAnswerOf(afterNames) };
 
@@ -382,7 +395,7 @@ function build() {
   A.getProposalCorrected = { status: 200, body: getAnswerOf({ ...afterWhyStep, record: supersede(afterWhyStep, proposalRef, 11) }) };
 
   // the dead end (T9): the power segment, and a names step that finds no listed company
-  const power = tap(afterMap, { op: 'set', part: 'segment', value: 'Data-center power', nowIso: at(2) });
+  const power = tap(afterMap, { op: 'set', part: 'segment', value: 'Power and grid', nowIso: at(2) }); // the B5 map's power segment (§B13 T-7)
   const dead = step(power.inv, { goal: 'find_names', output: FIND_NAMES_DEAD_END, items: POWER_ITEMS, nowIso: at(3) });
   A.deadEnd = dead.answer;
   A.getDeadEnd = { status: 200, body: getAnswerOf(dead.inv) };
@@ -504,7 +517,7 @@ function build() {
   many = tap(many, { op: 'set', part: 'wrongIf', value: { text: 'the large cloud buyers stop ordering Nvidia accelerators' }, nowIso: at(8) }).inv;
   many = tap(many, { op: 'set', part: 'timeFrame', value: 'positional', nowIso: at(9) }).inv;
   A.getTooManyRefs = { status: 200, body: getAnswerOf(many) };
-  STASH = { afterNames, walkGetMap: A.walkGetMap };
+  STASH = { afterMap, afterNames, walkGetMap: A.walkGetMap };
 
   // ── the refuters' second round: each sequence as a server would answer it ──
   // not_ready on the ready card the screen holds: a correction made its why stale with no card op (the rev unchanged)
@@ -536,6 +549,30 @@ function build() {
   const namesUnswung = tap(namesSwing.inv, { op: 'clear', part: 'timeFrame', nowIso: at(13) });
   A.namesTimeFrameCleared = namesUnswung.answer;
   A.getNamesTimeFrameCleared = { status: 200, body: getAnswerOf(namesUnswung.inv) };
+
+  // §B13 T-2: the sentence in each of its shapes — the walk's ready card (no theme, a segment) with the theme confirmed,
+  // and a walk on a SKIPPED segment, with and without the theme — so the screen's runs are pinned for every shape
+  A.getReadyThemed = { status: 200, body: getAnswerOf(tap(ready, { op: 'confirm', part: 'theme', nowIso: at(12) }).inv) };
+  let sk = tap(afterMap, { op: 'set', part: 'segment', value: 'skip', nowIso: at(12) }).inv;
+  sk = step(sk, { goal: 'find_names', output: FIND_NAMES_WALK, items: NAMES_ITEMS, nowIso: at(13) }).inv;
+  sk = tap(sk, { op: 'set', part: 'names', value: ['NVDA'], nowIso: at(14) }).inv;
+  sk = step(sk, { goal: 'build_why', output: RECORDED('build_why'), items: WHY_ITEMS, nowIso: at(15) }).inv;
+  sk = tap(sk, { op: 'confirm', part: 'why', nowIso: at(16) }).inv;
+  sk = tap(sk, { op: 'set', part: 'wrongIf', value: { text: SAMPLE_WRONG_IF }, nowIso: at(17) }).inv;
+  sk = tap(sk, { op: 'set', part: 'timeFrame', value: 'longterm', nowIso: at(18) }).inv;
+  A.getReadySkipped = { status: 200, body: getAnswerOf(sk) };
+  A.getReadyThemedSkipped = { status: 200, body: getAnswerOf(tap(sk, { op: 'set', part: 'theme', value: { text: SAMPLE_THEME }, nowIso: at(19) }).inv) };
+
+  // §B13 T-5: "You pick, and tell me why" on the time frame after the why step suggested one — the asked pick lands and
+  // the older suggestion goes; the confirm carries the pick
+  const tfPicked = step(afterWrongIf, {
+    goal: 'pick', part: 'timeFrame', items: [], nowIso: at(12),
+    output: {
+      reply: 'I would take the longer frame. The spending plans the why rests on run past next year.',
+      pick: { value: 'longterm', reason: 'The spending plans the why rests on run past next year.', reasons: [{ text: 'The spending plans run past next year.', refs: [] }, { text: 'The point against takes time to show up.', refs: [] }] },
+    },
+  });
+  A.getTimeFramePicked = { status: 200, body: getAnswerOf(tfPicked.inv) };
   return A;
 }
 
@@ -584,8 +621,7 @@ const cardMatch = (c, value = c.value) => ({ action: 'card', op: c.op, part: c.p
 
 function buildWalk() {
   const A = build();
-  const { afterNames, walkGetMap } = STASH;
-  const rel = Object.fromEntries(['NVDA', 'AMD', 'AVGO'].map((sym) => [sym, afterNames.record.findings.find((x) => x.kind === 'relationship' && x.symbol === sym).findingId]));
+  const { afterMap, walkGetMap } = STASH;
   const nodes = {};
   let k = 0;
   const node = (accepts, extra = {}) => { const id = `w${k++}`; nodes[id] = { accepts, ...extra }; return id; };
@@ -628,24 +664,50 @@ function buildWalk() {
   };
 
   // the names point: the agent's pick (a confirm), and every other one to three of the options (a set)
-  const t3 = thesisOf(afterNames);
-  const setNames = t3.choices.free.find((c) => c.op === 'set' && c.part === 'names');
-  const pick = t3.choices.free.find((c) => c.op === 'confirm' && c.part === 'names');
-  const picked = tap(afterNames, { op: 'confirm', part: 'names', value: pick.value, nowIso: at(24) });
-  const namesAccepts = [{ match: cardMatch(pick), say: `your agent's pick (${joinNames(pick.value)})`, answer: picked.answer, next: whyNode(picked.inv, whyFor(pick.value, rel)) }];
-  for (const sub of subsetsOf(setNames.options)) {
-    if (sameSet(sub, pick.value)) continue; // ticking exactly the pick sends the pick's confirm (P-4)
-    const r = tap(afterNames, { op: 'set', part: 'names', value: sub, nowIso: at(24) });
-    const recorded = sub.length === 1 && sub[0] === 'NVDA'; // the founder's walk keeps its recorded why
-    namesAccepts.push({ match: { action: 'card', op: 'set', part: 'names', value: sub }, say: `Build it on ${joinNames(sub)}`, answer: r.answer, next: whyNode(r.inv, recorded ? RECORDED('build_why') : whyFor(sub, rel)) });
-  }
-  const namesNode = node(namesAccepts);
-  const findNode = node([{ match: { action: 'step', goal: 'find_names' }, say: 'Find the listed companies', answer: A.walkNames, next: namesNode }]);
+  const namesNodeOf = (afterNames) => {
+    const rel = Object.fromEntries(['NVDA', 'AMD', 'AVGO'].map((sym) => [sym, afterNames.record.findings.find((x) => x.kind === 'relationship' && x.symbol === sym).findingId]));
+    const t3 = thesisOf(afterNames);
+    const setNames = t3.choices.free.find((c) => c.op === 'set' && c.part === 'names');
+    const pick = t3.choices.free.find((c) => c.op === 'confirm' && c.part === 'names');
+    const picked = tap(afterNames, { op: 'confirm', part: 'names', value: pick.value, nowIso: at(24) });
+    const namesAccepts = [{ match: cardMatch(pick), say: `your agent's pick (${joinNames(pick.value)})`, answer: picked.answer, next: whyNode(picked.inv, whyFor(pick.value, rel)) }];
+    for (const sub of subsetsOf(setNames.options)) {
+      if (sameSet(sub, pick.value)) continue; // ticking exactly the pick sends the pick's confirm (P-4)
+      const r = tap(afterNames, { op: 'set', part: 'names', value: sub, nowIso: at(24) });
+      const recorded = sub.length === 1 && sub[0] === 'NVDA'; // the founder's walk keeps its recorded why
+      namesAccepts.push({ match: { action: 'card', op: 'set', part: 'names', value: sub }, say: `Build it on ${joinNames(sub)}`, answer: r.answer, next: whyNode(r.inv, recorded ? RECORDED('build_why') : whyFor(sub, rel)) });
+    }
+    return node(namesAccepts);
+  };
+  /** From a set segment: the names step (find_names, the theme set or only suggested — T-2), then the names point on. */
+  const findNodeOf = (afterSegment) => {
+    front(afterSegment, 'names');
+    const found = step(afterSegment, { goal: 'find_names', output: FIND_NAMES_WALK, items: NAMES_ITEMS, nowIso: at(23) });
+    return node([{ match: { action: 'step', goal: 'find_names' }, say: 'Find the listed companies', answer: found.answer, next: namesNodeOf(found.inv) }]);
+  };
+  /** The segment point (T-6: in front once the map lands, the theme suggested or set): the agent's pick, confirmed. */
   const segPick = walkGetMap.body.thesis.choices.free.find((c) => c.op === 'confirm' && c.part === 'segment');
-  const segNode = node([{ match: cardMatch(segPick), say: `your agent's pick (${segPick.value})`, answer: A.walkSegment, next: findNode }]);
-  const mapNode = node([{ match: { action: 'step', goal: 'map_segments' }, say: 'Map the segments', answer: A.walkMap, next: segNode }]);
+  const segNodeOf = (inv) => {
+    front(inv, 'segment');
+    const seg = tap(inv, { op: 'confirm', part: 'segment', value: segPick.value, nowIso: at(22) });
+    return { match: cardMatch(segPick), say: `your agent's pick (${segPick.value})`, answer: seg.answer, next: findNodeOf(seg.inv) };
+  };
+  // §B13 T-6: after the map, the theme's line (its suggestion confirmed, or the player's own phrase — one sample) sits
+  // above the segment choices; the segment may also be picked first, the theme left suggested (T-2: it gates nothing)
+  const tm = thesisOf(afterMap);
+  const themeConfirm = tm.choices.free.find((c) => c.op === 'confirm' && c.part === 'theme');
+  const themeText = tm.choices.free.find((c) => c.part === 'theme' && c.input === 'text');
+  if (!themeConfirm || !themeText) throw new Error('walk: the map left no theme choices');
+  const themed = tap(afterMap, { op: 'confirm', part: 'theme', value: themeConfirm.value, nowIso: at(21) });
+  const own = tap(afterMap, { op: 'set', part: 'theme', value: { text: SAMPLE_THEME }, nowIso: at(21) });
+  const themePoint = node([
+    { match: cardMatch(themeConfirm), say: `“${themeConfirm.value}” as the theme`, answer: themed.answer, next: node([segNodeOf(themed.inv)]) },
+    { match: cardMatch(themeText, { text: { $text: SAMPLE_THEME } }), say: `your own theme, typed as: “${SAMPLE_THEME}”`, answer: own.answer, next: node([segNodeOf(own.inv)]) },
+    segNodeOf(afterMap),
+  ]);
+  const mapNode = node([{ match: { action: 'step', goal: 'map_segments' }, say: 'Map the segments', answer: A.walkMap, next: themePoint }]);
   const start = node([{ match: { action: 'open', entry: { kind: 'observation', observation: { $text: 'I want to play AI' } } }, say: '“I want to play AI”, then Start my thesis', answer: A.walkOpen, next: mapNode }]);
-  return { start, sample: SAMPLE_WRONG_IF, leaves, nodes };
+  return { start, sample: SAMPLE_WRONG_IF, sampleTheme: SAMPLE_THEME, leaves, nodes };
 }
 
 describe('the walk as a tree (the phone round, P-8): every tap a person will try is answered, every leaf saved', () => {
@@ -664,8 +726,15 @@ describe('the walk as a tree (the phone round, P-8): every tap a person will try
     expect(walkFrom(W.start)).toBe(W.leaves);
     const names = Object.values(W.nodes).find((nd) => nd.accepts.some((a) => a.match.part === 'names'));
     expect(names.accepts.map((a) => (a.match.op === 'confirm' ? 'pick' : a.match.value.join('+')))).toEqual(['pick', 'NVDA', 'AMD', 'AVGO', 'NVDA+AVGO', 'AMD+AVGO', 'NVDA+AMD+AVGO']);
+    // §B13 T-6 (moved from 7): the theme point after the map has three ways on — the suggestion confirmed, the player's
+    // own phrase, or the segment first — and each carries the whole walk after it
+    const themePoint = Object.values(W.nodes).find((nd) => nd.accepts.some((a) => a.match.part === 'theme'));
+    expect(themePoint.accepts.map((a) => `${a.match.op}:${a.match.part}`)).toEqual(['confirm:theme', 'set:theme', 'confirm:segment']);
+    expect(themePoint.accepts[0].answer.body.thesis.parts.theme).toMatchObject({ state: 'set', by: 'partner_suggested_confirmed' });
+    expect(themePoint.accepts[1].answer.body.thesis.parts.theme).toMatchObject({ state: 'set', value: W.sampleTheme, by: 'player_wrote' });
+    expect(themePoint.accepts[2].answer.body.thesis.parts.theme.state).toBe('suggested');
     const wrongIfPoints = Object.values(W.nodes).filter((nd) => nd.accepts.some((a) => a.match.part === 'wrongIf'));
-    expect(wrongIfPoints).toHaveLength(7);
+    expect(wrongIfPoints).toHaveLength(21);
     for (const nd of wrongIfPoints) expect(nd.accepts.at(-1).match.value).toEqual({ text: { $text: SAMPLE_WRONG_IF } });
     const timePoints = Object.values(W.nodes).filter((nd) => nd.accepts.some((a) => a.match.part === 'timeFrame'));
     expect(timePoints.length).toBeGreaterThan(7);
@@ -689,6 +758,9 @@ describe('the walk\'s route (P-8): the founder\'s paths, as the client sends the
     const card = (c, value = c.value) => send('card', { sessionId: SID, opId: 'x', rev: thesis.rev, op: c.op, part: c.part, ...(value !== undefined && value !== null ? { value } : {}) });
     send('open', { entry: { kind: 'observation', observation: 'I want to play AI' }, requestId: 'r' });
     send('step', { sessionId: SID, stepId: 's1', intent: 'build', goal: 'map_segments' });
+    // §B13 T-6: the theme's line, as the client sends it — the suggestion's confirm, or the theme's own text box
+    if (picks.theme === 'confirm') card(thesis.choices.free.find((c) => c.op === 'confirm' && c.part === 'theme'));
+    if (picks.theme === 'own') card(textChoiceOf(thesis, 'theme'), { text: picks.themeText });
     card(valueChoicesOf(thesis, 'segment').find((c) => c.op === 'confirm'));
     send('step', { sessionId: SID, stepId: 's2', intent: 'build', goal: 'find_names' });
     if (picks.names === 'pick') card(thesis.choices.free.find((c) => c.op === 'confirm' && c.part === 'names'));
@@ -705,11 +777,25 @@ describe('the walk\'s route (P-8): the founder\'s paths, as the client sends the
     ['the founder\'s path: AMD and AVGO, the first wrong-if, Longterm', { names: ['AMD', 'AVGO'], wrongIf: 0, timeFrame: 'longterm' }, ['AMD', 'AVGO']],
     ['the agent\'s pick, the second wrong-if, Swing', { names: 'pick', wrongIf: 1, timeFrame: 'swing' }, ['NVDA', 'AMD']],
     ['NVDA alone, a typed wrong-if (loosely typed), Positional', { names: ['NVDA'], wrongIf: 'typed', typed: '  The large cloud buyers STOP raising their AI data-center spending ', timeFrame: 'positional' }, ['NVDA']],
+    // §B13 T-6 / the B5 checklist: the theme confirmed, or typed, before the segment
+    ['the B5 checklist: the theme confirmed, NVDA alone, the first wrong-if, Positional', { theme: 'confirm', names: ['NVDA'], wrongIf: 0, timeFrame: 'positional' }, ['NVDA']],
+    ['the theme typed (loosely), the agent\'s pick, the first wrong-if, Swing', { theme: 'own', themeText: ' ai chips and DATA centers ', names: 'pick', wrongIf: 0, timeFrame: 'swing' }, ['NVDA', 'AMD']],
   ])('%s', (_label, picks, names) => {
     const saved = drive(picks);
     expect(saved.session.adoption).toBeTruthy();
     expect(saved.thesis.parts.names.value).toEqual(names);
     expect(saved.thesis.parts.timeFrame.value).toBe(picks.timeFrame);
+    const theme = saved.thesis.parts.theme;
+    if (picks.theme) expect(theme.state).toBe('set');
+    else expect(theme.state).toBe('suggested'); // the segment first: the theme left suggested, never set by a step (T-2)
+  });
+  it('the B5 checklist\'s sentence opens with the confirmed theme; with the theme left suggested it opens at the names', () => {
+    const suggestion = RECORDED('b5.map_segments').themeSuggestion;
+    const themed = drive({ theme: 'confirm', names: ['NVDA'], wrongIf: 0, timeFrame: 'positional' });
+    expect(themed.thesis.sentence.startsWith(`My theme is ${suggestion}, through Accelerator chips, built on NVDA, because `)).toBe(true);
+    expect(themed.thesis.parts.wrongIf.by).not.toBe('player_wrote'); // an option: the ready screen tags it "in words" (T-8)
+    const plain = drive({ names: ['NVDA'], wrongIf: 0, timeFrame: 'positional' });
+    expect(plain.thesis.sentence.startsWith('Built on NVDA, through Accelerator chips, because ')).toBe(true);
   });
   it('a tap the walk does not cover answers a line naming the taps it does — at the names point, NVDA and AMD by set (the client sends the pick\'s confirm)', () => {
     const route = walkRouteOf(W);
@@ -751,11 +837,19 @@ describe('the thesis builder\'s client fixtures are the server\'s answers (B4 Te
     const A = build();
     const t = (k) => A[k].body.thesis;
     expect(A.walkOpen.body.session.shape).toBe('builder');
-    expect(t('walkOpen').filled).toBe(1);
-    expect(t('walkOpen').parts.theme).toMatchObject({ state: 'set', value: 'I want to play AI', by: 'player_wrote' });
+    // §B13 T-1 (moved from filled 1 and the theme set to the player's words): the open leaves the theme unset
+    expect(t('walkOpen').filled).toBe(0);
+    expect(t('walkOpen').parts.theme).toMatchObject({ state: 'unset', value: null, by: null, suggestion: null });
+    expect(A.walkOpen.body.session.exchanges).toEqual([expect.objectContaining({ who: 'player', kind: 'observation', text: 'I want to play AI' })]);
     expect(t('walkOpen').choices.research.map((g) => g.goal)).toContain('map_segments');
     expect(t('walkMap').parts.segment.map).toHaveLength(4);
     expect(t('walkMap').pick).toMatchObject({ part: 'segment', value: 'Accelerator chips', asked: false, basis: 'reasoning' });
+    // §B13 T-1/T-7: the recorded B5 map suggests a theme; confirming it or writing one's own is free
+    expect(t('walkMap').parts.theme).toMatchObject({ state: 'suggested', value: null, suggestion: RECORDED('b5.map_segments').themeSuggestion });
+    expect(t('walkThemeConfirm').parts.theme).toMatchObject({ state: 'set', value: RECORDED('b5.map_segments').themeSuggestion, by: 'partner_suggested_confirmed' });
+    expect(t('walkThemeOwn').parts.theme).toMatchObject({ state: 'set', value: SAMPLE_THEME, by: 'player_wrote' });
+    expect(A.walkThemeConfirm.body.session.stepsUsed).toBe(A.walkMap.body.session.stepsUsed);
+    expect(t('walkTimeFrame').sentence).toMatch(/^Built on NVDA, through Accelerator chips, because /); // the linear walk leaves the theme suggested (T-2)
     expect(t('walkSegment').parts.segment).toMatchObject({ state: 'set', value: 'Accelerator chips', by: 'partner_suggested_confirmed' });
     expect(A.walkNames.body.companies.supported.map((c) => c.symbol)).toEqual(['NVDA', 'AMD', 'AVGO']);
     expect(A.walkNames.body.companies.leads.map((l) => l.name)).toContain('Orrin Compute');
@@ -768,7 +862,7 @@ describe('the thesis builder\'s client fixtures are the server\'s answers (B4 Te
     expect(t('walkWhy').choices.free).toContainEqual({ op: 'confirm', part: 'why' });
     expect(t('walkConfirmWhy').parts.why).toMatchObject({ state: 'set', by: 'partner_suggested_confirmed' });
     expect(t('walkWrongIf').parts.wrongIf.state).toBe('set');
-    expect(t('walkTimeFrame')).toMatchObject({ ready: true, filled: 6, saveIssue: null });
+    expect(t('walkTimeFrame')).toMatchObject({ ready: true, filled: 5, saveIssue: null }); // §B13 T-1 (moved from 6): the theme is left suggested
     expect(typeof t('walkTimeFrame').sentence).toBe('string');
     expect(A.walkSaved.body).toMatchObject({ watchlistId: 'wl-thesis-1', version: 1, idempotent: false });
     expect(A.walkGetSaved.body.session.adoption.at).toBe('2026-11-17T14:09:00.000Z');
@@ -812,7 +906,7 @@ describe('the thesis builder\'s client fixtures are the server\'s answers (B4 Te
     expect(t('getDeadEnd').parts.names.blocked).toBe('no_listed_company');
     expect(t('getDeadEnd').choices.free).toContainEqual({ op: 'clear', part: 'segment', clears: ['names', 'why'] });
     expect(t('getDeadEnd').choices.research.map((g) => g.goal)).not.toContain('find_names');
-    expect(t('getGroupReady')).toMatchObject({ ready: true, filled: 6 });
+    expect(t('getGroupReady')).toMatchObject({ ready: true, filled: 5 }); // §B13 T-1 (moved from 6): the theme is left suggested
     expect(t('getGroupReady').parts.names.value).toEqual(['NVDA', 'AMD', 'AVGO']);
     expect(t('getGroupReady').parts.why.reasons.map((r) => r.symbol)).toEqual(['NVDA', 'AMD', 'AVGO']);
     expect(t('getIncompleteWhy').parts.why.proposal.incomplete).toEqual(['AMD']);
@@ -826,5 +920,18 @@ describe('the thesis builder\'s client fixtures are the server\'s answers (B4 Te
     expect(t('storyOpen').choices.research).toEqual([{ goal: 'verify_source' }, { goal: 'direction' }]);
     expect(t('storyVerified').parts.theme).toMatchObject({ state: 'suggested', suggestion: 'Cloud AI data-center spending' });
     expect(A.walkDirection.body.session.exchanges.map((e) => e.kind)).toEqual(['observation', 'direction', 'step']);
+    // §B13 T-2: the sentence's four shapes, each ready
+    const suggestion = RECORDED('b5.map_segments').themeSuggestion;
+    expect(t('walkTimeFrame').sentence).toMatch(/^Built on NVDA, through Accelerator chips, because /);
+    expect(t('getReadyThemed').sentence.startsWith(`My theme is ${suggestion}, through Accelerator chips, built on NVDA, because `)).toBe(true);
+    expect(t('getReadySkipped').sentence).toMatch(/^Built on NVDA, because /);
+    expect(t('getReadyThemedSkipped').sentence.startsWith(`My theme is ${SAMPLE_THEME}, built on NVDA, because `)).toBe(true);
+    for (const k of ['walkTimeFrame', 'getReadyThemed', 'getReadySkipped', 'getReadyThemedSkipped']) expect(t(k), k).toMatchObject({ ready: true, saveIssue: null });
+    expect(t('getReadySkipped').parts.wrongIf.by).toBe('player_wrote');
+    // §B13 T-5: the asked time-frame pick replaced the why step's suggestion; the confirm carries the pick
+    expect(t('walkWrongIf').parts.timeFrame.suggestion).toMatchObject({ value: 'positional' });
+    expect(t('getTimeFramePicked').parts.timeFrame).toMatchObject({ state: 'suggested', suggestion: null });
+    expect(t('getTimeFramePicked').pick).toMatchObject({ part: 'timeFrame', value: 'longterm', asked: true });
+    expect(t('getTimeFramePicked').choices.free).toContainEqual({ op: 'confirm', part: 'timeFrame', value: 'longterm' });
   });
 });
