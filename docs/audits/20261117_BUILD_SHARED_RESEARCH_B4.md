@@ -1,6 +1,8 @@
 # Build report — Shared Research "Work an idea" B4, the thesis builder's screen (dark)
 
-**Smoke preview:** https://trade-seven-4ycujqtnq-fais-projects-bc179554.vercel.app — `?srFixture=index` lists every scenario; **`?srFixture=walk`** plays the founder's walk. Branch `claude/shared-research-b4-smoke` (never merged), commit `d72814d5` = `2c30f34e` (this report's first commit) + the three smoke files. Checked on the deployed preview: the real-browser rows 32 / 32 and the scripted walk 22 / 22.
+**Smoke preview, current (the phone round, §15):** https://trade-seven-me2booxh5-fais-projects-bc179554.vercel.app — opens with no Vercel login; `?srFixture=walk` plays the walk as a tree.
+
+**B4's first smoke preview:** https://trade-seven-4ycujqtnq-fais-projects-bc179554.vercel.app — `?srFixture=index` lists every scenario; **`?srFixture=walk`** plays the founder's walk. Branch `claude/shared-research-b4-smoke` (never merged), commit `d72814d5` = `2c30f34e` (this report's first commit) + the three smoke files. Checked on the deployed preview: the real-browser rows 32 / 32 and the scripted walk 22 / 22.
 
 **Date:** Nov 17, 2026 · **Session:** local Claude Code (Opus 5.5), own worktree · **Branch:** `claude/shared-research-b4` · **PR:** [#1086](https://github.com/fashraf94/TradeSeven/pull/1086) (draft) · **Pushed head:** the commit that adds this line (docs only; the code is `20d776e5`)
 
@@ -430,9 +432,9 @@ On the smoke preview, iPhone, `?srFixture=walk` unless named:
 
 ## 15. The phone round
 
-**Smoke preview (new):** NEW_SMOKE_URL — `?srFixture=index`; **`?srFixture=walk`** plays the walk as a tree (below). PHONE_ACCESS_LINE
+**Smoke preview (new):** https://trade-seven-me2booxh5-fais-projects-bc179554.vercel.app — `?srFixture=index`; **`?srFixture=walk`** plays the walk as a tree (below). It opens with no Vercel login: a cookieless request answers 200 with no redirect, and a fresh headless 393×852 context with no cookies plays the walk to "Thesis saved" (§15.7). Branch `claude/shared-research-b4-smoke` (never merged), commit `7fbc094c` = `6c9fed49` (this section's first commit) + the three smoke files.
 
-**Date:** Nov 17, 2026 · **Prompt:** "Fix prompt — Shared Research B4: the phone round" (P-1 to P-8) · **Head:** HEAD_LINE · `origin/main` `abcdfcb7` merged first (Practice Field only; no file of this round).
+**Date:** Nov 17, 2026 · **Prompt:** "Fix prompt — Shared Research B4: the phone round" (P-1 to P-8) · **Head:** the commit that adds this line (docs only; the code is `25810710`) · `origin/main` `abcdfcb7` merged first (Practice Field only; no file of this round).
 
 The founder's four screenshots were not in this session; this round worked from the prompt's description of them. Screenshot 1 was reproduced on the previous preview (`…4ycujqtnq…`): loaded at 1280, walked to the names step, narrowed to 393 — the builder still drew `desktop` two columns and broke "Corporatio·n", "accelerato·r". Before and after are in `phone-round/` (below).
 
@@ -553,11 +555,32 @@ Lens (c), accessibility and phone, read the round at `bc839d11` on a read-only s
 
 ### 15.6 The checks (on the final tree, merged with `origin/main` `abcdfcb7`)
 
-CHECKS_TABLE_15
+Every check ran on `6c9fed49` (the code at `25810710` plus this report); the pushed head after it adds only this section's URL and results.
+
+| Check | Where | Result |
+|---|---|---|
+| Full suite | WSL, `flock /tmp/pd-suite.lock`, `TZ=UTC`, `--maxWorkers=8`, JSON report read directly | **exit 0** · 1,573 files, 0 failed · 35,636 tests: **35,463 passed, 0 failed**, 173 skipped |
+| `lint:gate` | WSL | **exit 0** |
+| `test:rules` | WSL, Firestore emulator, under the suite lock | **exit 0** · 46 files · 839 passed |
+| Minified build | WSL `vite build` | **exit 0** |
+| The ledger | the five files unedited since `4feb6b8e` (`git diff --stat` empty) | `flows` 37 · `review` 34 · `states` 38 · `sharedResearchView` 19 · `uncertain` 2 |
+| The dark guarantee | 4D's ledger differential (base `a6b7baa0` body, hook and Start vs this head; 28 ledger scenarios × 5 flag values; Discard's new internal flag included) | **142 / 142** |
+| Fences | `git diff --name-only abcdfcb7 HEAD` | nothing under `api/`, `src/components/CommandCenter/`, `src/config/`, no rule or index |
+| Bundle vs `main` (`abcdfcb7`) | both built in WSL; hash-masked; aliases normalised | 113 files each, none new or gone; **only the lazy Shared Research chunk changes** (77,753 → 146,168 bytes); the entry's export list re-lettered over the same locals (its body identical); its 53 importers identical after alias normalisation; **CSS byte-identical**; `index.html` only in hash names |
+| Real browser on the harness | headless Edge | **49 / 49** (`thesisBuilder` 38, `sheetLayer` 11) |
+| Real browser on the deployed preview | `SR_LAYER_URL` = the new smoke | **49 / 49** |
+| Scripted walks on the deployed preview (393×852) | the founder's AMD-and-AVGO path; the agent's pick; NVDA alone with a typed wrong-if | **3 / 3 reach "Thesis saved"** |
+
+This build's own files in the suite: `SharedResearchSheetBody.builder.jsdom.test.jsx` 137 · `thesisView.test.js` 134 · `__fixtures__/thesisAnswers.test.js` 10 (the walk tree and its route included) · `sharedResearch.boundary.test.js` 55 · `sharedResearchCopy.guard.test.js` 28 · `thesisBuilder.browser.test.js` 38 (skipped without the page).
 
 ### 15.7 The phone without a Vercel login
 
-PHONE_ACCESS_15
+**It opens on a phone that is not signed in to Vercel** — checked without a phone, the closest this session can come:
+
+- `curl -L` with no cookies on `/?srFixture=walk`: **HTTP 200, no redirect**, the final host the preview's own, no Vercel login or SSO marker in the page; the served bundle carries the smoke page's own marker.
+- A fresh headless Edge context at 393×852 (mobile emulation, no cookies, no stored state), once per scripted walk: each loaded the page and played its walk to **"Thesis saved"**.
+
+Not checked: a real iPhone, and Safari itself (line-clamp and the sticky strip on WebKit) — items 4, 9 and 11 of the checklist above cover them.
 
 ### 15.8 Renders
 
