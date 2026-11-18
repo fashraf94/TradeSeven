@@ -1449,6 +1449,8 @@ describe('Fix round 3 — Astra T2A-D01: a gap-screen suspicion is recorded and 
         expect(ledger.holdings.AAPL.basisSuspicion, ledger.kind).toEqual({
           symbol: 'AAPL', suspectedOn: S[1], since: S[0], ratio: 0.5, shape: { kind: 'split', n: 2 }, frozenMark: 100,
           frozenMarkAsOf: before.ledger.holdings.AAPL.lastMarkAsOf, resolvedBy: null, resolvedAt: null,
+          // T1a-2b-3 (F-5): the last price observed while the record stands — here, the one that raised it.
+          lastSeen: { session: S[1], price: 50, snapshotKey: `${S[1]}_close`, quality: 'vendor_time', vendorTimeIso: expect.any(String) },
         });
       }
       expect(raisedAlerts.filter((a) => a.startsWith('PRACTICE_FIELD_BASIS_SUSPECTED')).map((a) => a.split(' ').slice(0, 5).join(' '))).toEqual([
@@ -1600,46 +1602,13 @@ describe('Fix round 3 — Astra T2A-D01: a gap-screen suspicion is recorded and 
     }
   });
 
-  it('the FOUNDER\'s resolution (T5 writes `resolvedBy` and `resolvedAt`; no endpoint here): the held dividend is paid once on the current count, the mark goes fresh, the same move raises no new record, and the sale is free', async () => {
-    const { ctx } = await suspected('cash_dividend');
-    const idea = ideaOf(ctx);
-    const resolve = (ledger) => ({ ...ledger, holdings: { ...ledger.holdings, AAPL: { ...ledger.holdings.AAPL, basisSuspicion: { ...ledger.holdings.AAPL.basisSuspicion, resolvedBy: 'founder', resolvedAt: '2026-11-19T15:00:00.000Z' } } } });
-    await ctx.bookRef.collection('ideas').doc(ctx.ideaId).set({ ...idea, ledger: resolve(idea.ledger), comparisonLedger: resolve(idea.comparisonLedger) });
-    const out = await closeQ(ctx, S[3], { ...Q, AAPL: 50 });
-    let after = ideaOf(ctx);
-    for (const key of ['ledger', 'comparisonLedger']) {
-      expect(paidOn(after[key], 'cash_dividend').map(cashOf), key).toEqual([199.94]);
-      expect(after[key].holdings.AAPL.heldActions).toBeUndefined();
-      expect(after[key].holdings.AAPL.basisSuspicion).toMatchObject({ suspectedOn: S[1], resolvedBy: 'founder' });
-    }
-    expect(rowOf(ctx, S[3]).marks.AAPL).toMatchObject({ mark: 50, quality: 'vendor_time' });
-    expect(out.alerts.some((a) => a.startsWith('PRACTICE_FIELD_BASIS_SUSPECTED'))).toBe(false);
-    expect(saleHeldBackBy(after.ledger, 'AAPL', tickSnapshot(S[4], 'open30', { ...Q, AAPL: 50 }), { sinceDate: S[3], date: S[4] })).toBe(null);
-    await closeQ(ctx, S[4], { ...Q, AAPL: 50 });
-    after = ideaOf(ctx);
-    expect(paidOn(after.ledger, 'cash_dividend')).toHaveLength(1);
-    expect(after.ledger.holdings.AAPL.basisSuspicion.resolvedBy).toBe('founder');
-  });
+  // (T1a-2b-3, Amendment F-5: the row that stood here tested the provisional founder reader — a record's `resolvedBy` /
+  // `resolvedAt` read by the screen against the frozen mark — which is gone. Its case is a resolve_hold row now, in
+  // corporateActionFinish.test.js "Amendment F-5".)
 
-  it('review F1: the founder\'s ruling is SPENT once a fresh mark is written — a later unfed split-shaped move against a fresh mark that happens to equal the old frozen one is a new suspicion: the cash delisting is held, not paid on the current count', async () => {
-    const ctx = await entered();
-    await closeQ(ctx, S[1], { ...Q, AAPL: 50 });
-    await closeQ(ctx, S[2], { ...Q, AAPL: 100 });
-    const idea = ideaOf(ctx);
-    const resolve = (ledger) => ({ ...ledger, holdings: { ...ledger.holdings, AAPL: { ...ledger.holdings.AAPL, basisSuspicion: { ...ledger.holdings.AAPL.basisSuspicion, resolvedBy: 'founder', resolvedAt: '2026-11-18T23:00:00.000Z' } } } });
-    await ctx.bookRef.collection('ideas').doc(ctx.ideaId).set({ ...idea, ledger: resolve(idea.ledger), comparisonLedger: resolve(idea.comparisonLedger) });
-    await closeQ(ctx, S[3], { ...Q, AAPL: 100 });
-    expect(rowOf(ctx, S[3]).marks.AAPL).toMatchObject({ mark: 100, quality: 'vendor_time' });
-    expect(saleHeldBackBy(ideaOf(ctx).ledger, 'AAPL', tickSnapshot(S[4], 'open30', { ...Q, AAPL: 50 }), { sinceDate: S[3], date: S[4] })).toBe('suspected_corporate_action');
-    await closeQ(ctx, S[4], { ...Q, AAPL: { price: 50, corporateActions: [cashAction('delisting', S[4])] } });
-    for (const key of ['ledger', 'comparisonLedger']) {
-      const ledger = ideaOf(ctx)[key];
-      expect(paidOn(ledger, 'delisting'), key).toEqual([]);
-      expect(ledger.holdings.AAPL.basisSuspicion).toMatchObject({ suspectedOn: S[4], since: S[3], resolvedBy: null, resolvedAt: null });
-      expect(ledger.holdings.AAPL.heldActions).toEqual([expect.objectContaining({ actionId: ACTION_ID('delisting', S[4]) })]);
-    }
-    expect(bookOf(ctx).openIdeaIds).toEqual([ctx.ideaId]);
-  });
+  // (T1a-2b-3, Amendment F-5: the row that stood here tested the provisional founder reader — a record's `resolvedBy` /
+  // `resolvedAt` read by the screen against the frozen mark — which is gone. Its case is a resolve_hold row now, in
+  // corporateActionFinish.test.js "Amendment F-5".)
 
   it('review F2: a special dividend that explained its own drop and was PAID raises no suspicion at a later close either (the screen is asked again with the paid dividends) — a later ordinary dividend is paid', async () => {
     const ctx = await entered();
@@ -1654,46 +1623,13 @@ describe('Fix round 3 — Astra T2A-D01: a gap-screen suspicion is recorded and 
     }
   });
 
-  it('refuter D1: the founder\'s ruling covers the move it ruled on, not a FURTHER one against the same carried mark — a second unfed halving (×0.25 of the frozen mark) is a new suspicion and the cash delisting waits; the ruled move itself (×0.5) is paid on the current count', async () => {
-    for (const [price, held] of [[25, true], [50, false]]) {
-      const ctx = await entered();
-      await closeQ(ctx, S[1], { ...Q, AAPL: 50 });
-      const idea = ideaOf(ctx);
-      const resolve = (ledger) => ({ ...ledger, holdings: { ...ledger.holdings, AAPL: { ...ledger.holdings.AAPL, basisSuspicion: { ...ledger.holdings.AAPL.basisSuspicion, resolvedBy: 'founder', resolvedAt: '2026-11-17T23:00:00.000Z' } } } });
-      await ctx.bookRef.collection('ideas').doc(ctx.ideaId).set({ ...idea, ledger: resolve(idea.ledger), comparisonLedger: resolve(idea.comparisonLedger) });
-      expect(saleHeldBackBy(ideaOf(ctx).ledger, 'AAPL', tickSnapshot(S[2], 'open30', { ...Q, AAPL: price }), { sinceDate: S[1], date: S[2] })).toBe(held ? 'suspected_corporate_action' : null);
-      await closeQ(ctx, S[2], { ...Q, AAPL: { price, corporateActions: [{ type: 'delisting', ticker: 'AAPL', cashPerShare: 30, effectiveDate: S[2], source: 'founder_action' }] } });
-      for (const key of ['ledger', 'comparisonLedger']) {
-        const ledger = ideaOf(ctx)[key];
-        if (held) {
-          expect(paidOn(ledger, 'delisting'), key).toEqual([]);
-          expect(ledger.holdings.AAPL.basisSuspicion).toMatchObject({ suspectedOn: S[2], ratio: 0.25, resolvedBy: null });
-        } else {
-          expect(paidOn(ledger, 'delisting').map(cashOf), key).toEqual([5998.2]);
-        }
-      }
-      expect(bookOf(ctx).openIdeaIds).toEqual(held ? [ctx.ideaId] : []);
-    }
-  });
+  // (T1a-2b-3, Amendment F-5: the row that stood here tested the provisional founder reader — a record's `resolvedBy` /
+  // `resolvedAt` read by the screen against the frozen mark — which is gone. Its case is a resolve_hold row now, in
+  // corporateActionFinish.test.js "Amendment F-5".)
 
-  it('second refuter N2: a RECEIPT-TIME fresh mark (no vendor time, so `lastMarkAsOf` does not move) also spends the founder\'s ruling — a later halving is a new suspicion and the cash delisting waits', async () => {
-    const ctx = await entered();
-    await closeQ(ctx, S[1], { ...Q, AAPL: 50 });
-    const idea = ideaOf(ctx);
-    const resolve = (ledger) => ({ ...ledger, holdings: { ...ledger.holdings, AAPL: { ...ledger.holdings.AAPL, basisSuspicion: { ...ledger.holdings.AAPL.basisSuspicion, resolvedBy: 'founder', resolvedAt: '2026-11-17T23:00:00.000Z' } } } });
-    await ctx.bookRef.collection('ideas').doc(ctx.ideaId).set({ ...idea, ledger: resolve(idea.ledger), comparisonLedger: resolve(idea.comparisonLedger) });
-    await closeQ(ctx, S[2], { ...Q, AAPL: { price: 100, marketCap: 3e12, at: null } });
-    const spent = ideaOf(ctx).ledger.holdings.AAPL;
-    expect(spent.lastMarkAsOf).toBe(idea.ledger.holdings.AAPL.lastMarkAsOf);
-    expect(spent.basisSuspicion).toMatchObject({ resolvedBy: 'founder', spentOn: S[2] });
-    await closeQ(ctx, S[3], { ...Q, AAPL: { price: 50, marketCap: 3e12, corporateActions: [{ type: 'delisting', ticker: 'AAPL', cashPerShare: 30, effectiveDate: S[3], source: 'founder_action' }] } });
-    for (const key of ['ledger', 'comparisonLedger']) {
-      const ledger = ideaOf(ctx)[key];
-      expect(paidOn(ledger, 'delisting'), key).toEqual([]);
-      expect(ledger.holdings.AAPL.basisSuspicion).toMatchObject({ suspectedOn: S[3], resolvedBy: null });
-    }
-    expect(bookOf(ctx).openIdeaIds).toEqual([ctx.ideaId]);
-  });
+  // (T1a-2b-3, Amendment F-5: the row that stood here tested the provisional founder reader — a record's `resolvedBy` /
+  // `resolvedAt` read by the screen against the frozen mark — which is gone. Its case is a resolve_hold row now, in
+  // corporateActionFinish.test.js "Amendment F-5".)
 
   it('second refuter N1: a dividend paid at an EARLIER close is never asked to explain a later move — even when a receipt-time mark left `lastMarkAsOf` behind — so an unfed 2-for-1 the next session is suspected and the cash delisting waits', async () => {
     const ctx = await entered();
@@ -1824,19 +1760,9 @@ describe('Fix round 3 — Astra T2A-D01: a gap-screen suspicion is recorded and 
     expect(withBasisSuspicions(waiting, closeSnapshotOf(S[2], { AAPL: 50 }), {}, { sinceDate: S[1], date: S[2] }).raised).toEqual([]);
   });
 
-  it('…and the founder\'s resolution frees the SALE at once, before the next close writes a fresh mark: the same signature against the same frozen mark is no longer suspected', async () => {
-    const ctx = await entered();
-    await closeQ(ctx, S[1], { ...Q, AAPL: 50 });
-    const idea = ideaOf(ctx);
-    const snap = tickSnapshot(S[2], 'open30', { ...Q, AAPL: 50 });
-    expect(saleHeldBackBy(idea.ledger, 'AAPL', snap, { sinceDate: S[1], date: S[2] })).toBe('suspected_corporate_action');
-    const h = idea.ledger.holdings.AAPL;
-    const resolved = { ...idea.ledger, holdings: { AAPL: { ...h, basisSuspicion: { ...h.basisSuspicion, resolvedBy: 'founder', resolvedAt: '2026-11-18T14:00:00.000Z' } } } };
-    expect(saleHeldBackBy(resolved, 'AAPL', snap, { sinceDate: S[1], date: S[2] })).toBe(null);
-    // A resolution needs both fields.
-    const half = { ...idea.ledger, holdings: { AAPL: { ...h, basisSuspicion: { ...h.basisSuspicion, resolvedBy: 'founder' } } } };
-    expect(saleHeldBackBy(half, 'AAPL', snap, { sinceDate: S[1], date: S[2] })).toBe('suspected_corporate_action');
-  });
+  // (T1a-2b-3, Amendment F-5: the row that stood here tested the provisional founder reader — a record's `resolvedBy` /
+  // `resolvedAt` read by the screen against the frozen mark — which is gone. Its case is a resolve_hold row now, in
+  // corporateActionFinish.test.js "Amendment F-5".)
 
   it('at the ENDPOINT an open suspicion leaves the value in doubt, by name', () => {
     // The holding carries the tier it entered with, as every real holding does (C-9: no fallback tier any more).
@@ -1896,6 +1822,7 @@ describe('Final fix — Astra T2A-E01: a late split explains the old note while 
         expect(ledger.holdings.AAPL.basisSuspicion, key).toEqual({
           symbol: 'AAPL', suspectedOn: S[2], since: S[0], ratio: 0.5, shape: { kind: 'split', n: 2 }, frozenMark: 50,
           frozenMarkAsOf: ledger.holdings.AAPL.lastMarkAsOf, resolvedBy: null, resolvedAt: null,
+          lastSeen: { session: S[2], price: 25, snapshotKey: `${S[2]}_close`, quality: 'vendor_time', vendorTimeIso: expect.any(String) }, // (F-5)
         });
         expect(ledger.holdings.AAPL.heldActions.map((r) => r.actionId), key).toEqual([DIV]);
       }
@@ -1956,7 +1883,8 @@ describe('Final fix — Astra T2A-E01: a late split explains the old note while 
     // No row today: the old note is still open after the (empty) dry run, and is kept.
     const kept = withBasisSuspicions(ledger, closeSnapshotOf(S[2], { AAPL: 25 }), {}, { sinceDate: S[1], date: S[2] });
     expect(kept.raised).toEqual([]);
-    expect(kept.ledger.holdings.AAPL.basisSuspicion).toBe(holding.basisSuspicion);
+    // Kept — only the last price observed while it stands is refreshed (T1a-2b-3, F-5: what a price_move ruling would use).
+    expect(kept.ledger.holdings.AAPL.basisSuspicion).toEqual({ ...holding.basisSuspicion, lastSeen: expect.objectContaining({ session: S[2], price: 25 }) });
   });
 });
 

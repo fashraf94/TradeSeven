@@ -15,6 +15,14 @@
 //   wind_down      the book `draining` (contract §3.2, §11; E13) with `windDown: { requestedAt, … }`, and the owner's
 //                  claim's status with it, in one transaction: no new admission and no new entry; every code duty
 //                  continues. The close that finds no open idea left closes the book (close.js, step 9).
+//   resolve_hold   (T1a-2b-3, Amendment F-5) the founder's ruling on a corporate-action hold the data will never clear,
+//                  on one open idea of the caller's OWN open book: `{ ideaId, kind, recordId, decision, ratio?, payload?,
+//                  actionId? }` names the EXACT record — a gap-screen suspicion, a conflict or possible re-date, or a
+//                  coverage gap — and the ruling (holdRulings.js planHoldRuling checks both). The ruling is written on the
+//                  idea (`founderRulings`), with who, when, the request key and the record, in the transaction that
+//                  records the request; the idea book's next observed close applies it once (holdRulings.js). Refused:
+//                  a record that does not exist, one already resolved, one on a closed book. A stuck sale with no quote
+//                  is not in scope (T5).
 //
 // AUTHORIZATION (as api/mandate/create.js): the uid is the verified token's, never the body's. BOTH are required:
 //   1. PRACTICE_FIELD_MODE is not 'off' (mode.js, read at call time);
@@ -44,9 +52,10 @@ import { practiceFieldMode } from './mode.js';
 import { isIdeaBook } from '../mandateBookKind.js';
 import { isCloneAgentId } from '../../../src/constants/leagueTournament.js';
 import { canonicalContentHash } from '../canonicalHash.js';
+import { planHoldRuling } from './holdRulings.js';
 
 /** The actions, in the build prompt's order. */
-export const FOUNDER_ACTIONS = Object.freeze(['create_book', 'admit_fixture', 'pause', 'resume', 'wind_down']);
+export const FOUNDER_ACTIONS = Object.freeze(['create_book', 'admit_fixture', 'pause', 'resume', 'wind_down', 'resolve_hold']);
 /** A fixture's origin, forced on every admitted contract (Amendment C §6: `founder_fixture` needs no source). */
 export const FOUNDER_FIXTURE_ORIGIN = Object.freeze({ kind: 'founder_fixture', initiatedBy: 'agent' });
 /** A request key: also a document id (under the owner's claim), so a safe, bounded token. */
@@ -102,6 +111,65 @@ export function founderRequestFingerprint(action, body) {
     action,
     agentId: action === 'create_book' ? (body?.agentId ?? null) : null,
     contract: action === 'admit_fixture' ? (body?.contract ?? null) : null,
+    // resolve_hold (F-5): what it rules on and how — only for that action, so every other action's fingerprint is as it was.
+    ...(action === 'resolve_hold' ? { resolve: resolveFieldsOf(body) } : {}),
+  });
+}
+
+/** The fields of a resolve_hold body the ruling reads (and its fingerprint covers). */
+function resolveFieldsOf(body) {
+  return {
+    ideaId: body?.ideaId ?? null, kind: body?.kind ?? null, recordId: body?.recordId ?? null, decision: body?.decision ?? null,
+    ratio: body?.ratio ?? null, payload: body?.payload ?? null, actionId: body?.actionId ?? null,
+  };
+}
+
+/**
+ * resolve_hold (Amendment F-5): the request recorded, and the ruling written on the idea, in ONE transaction — every
+ * read before any write. Refusals write nothing.
+ */
+async function applyResolveHold(db, { uid, requestKey, body, nowIso, fingerprint }) {
+  const opRef = founderOpRefOf(db, uid, requestKey);
+  const claimRef = db.collection('practiceFieldBooks').doc(uid);
+  const fields = resolveFieldsOf(body);
+  if (typeof fields.ideaId !== 'string' || fields.ideaId.length === 0 || fields.ideaId.length > 200 || fields.ideaId.includes('/')) return reply(400, { ok: false, error: 'idea_id_invalid' });
+  return db.runTransaction(async (tx) => {
+    const opSnap = await tx.get(opRef);
+    if (opSnap.exists) return answerRecorded(opSnap.data(), { action: 'resolve_hold', fingerprint }) ?? reply(409, { ok: false, error: 'request_key_conflict', action: opSnap.data().action });
+    const claimSnap = await tx.get(claimRef);
+    const claim = claimSnap.exists ? claimSnap.data() : null;
+    if (!claim || typeof claim.bookId !== 'string' || claim.bookId.length === 0) return reply(404, { error: 'no_open_book' });
+    const bookId = claim.bookId;
+    const bookRef = db.collection('mandates').doc(bookId);
+    const bookSnap = await tx.get(bookRef);
+    const book = bookSnap.exists ? bookSnap.data() : null;
+    if (!book || !isIdeaBook(book) || book.userId !== uid) return reply(404, { error: 'no_open_book' });
+    if (book.status === 'closed') return reply(409, { ok: false, error: 'book_closed', status: 'closed' });
+    const ideaRef = bookRef.collection('ideas').doc(fields.ideaId);
+    const ideaSnap = await tx.get(ideaRef);
+    const idea = ideaSnap.exists ? ideaSnap.data() : null;
+    if (!idea || !(book.openIdeaIds || []).includes(fields.ideaId)) return reply(404, { ok: false, error: 'record_not_found' });
+    // A coverage-gap ruling that picks a backfill row reads THE stored backfill of the symbol (by its literal name).
+    let backfill = null;
+    if (fields.kind === 'coverage_gap' && fields.decision === 'row' && typeof fields.recordId === 'string') {
+      const sym = fields.recordId.split('_').slice(-2, -1)[0];
+      if (sym) {
+        const snap = await tx.get(db.collection('practiceFieldCaBackfill').doc(sym));
+        backfill = snap.exists ? snap.data() : null;
+      }
+    }
+    const plan = planHoldRuling(idea, fields, { uid, requestKey, nowIso, backfill });
+    if (plan.error) return reply(plan.status, { ok: false, error: plan.error });
+    const response = reply(200, {
+      ok: true, action: 'resolve_hold', bookId, ideaId: fields.ideaId, kind: plan.ruling.kind, recordId: plan.ruling.recordId,
+      decision: plan.ruling.decision, appliesAt: 'next_observed_close', idempotentReplay: false,
+    });
+    tx.create(opRef, {
+      action: 'resolve_hold', requestKey, uid, fingerprint, state: 'done', target: { bookId, ideaId: fields.ideaId }, createdAt: nowIso, completedAt: nowIso,
+      outcome: 'ruling_recorded', ruling: plan.ruling, response,
+    });
+    tx.update(ideaRef, { founderRulings: [...(idea.founderRulings || []), plan.ruling] });
+    return response;
   });
 }
 
@@ -242,7 +310,7 @@ async function applyControl(db, { uid, action, requestKey, nowIso, fingerprint }
 /**
  * Run one founder action for an AUTHORIZED caller (the endpoint checks isPracticeFieldFounder first; this checks it
  * again, so no path reaches a write without it). `uid` is the verified token's; `body` is the request body, from
- * which only `action`, `requestKey`, `agentId` and `contract` are read.
+ * which only `action`, `requestKey`, `agentId`, `contract` and resolve_hold's fields (resolveFieldsOf) are read.
  *
  * @returns {Promise<{ status: number, body: object }>}
  */
@@ -255,5 +323,6 @@ export async function runFounderAction(db, { uid, body = {}, nowIso }) {
   const fingerprint = founderRequestFingerprint(action, body);
   if (action === 'create_book') return createBook(db, { uid, requestKey, body, nowIso, fingerprint });
   if (action === 'admit_fixture') return admitFixture(db, { uid, requestKey, body, nowIso, fingerprint });
+  if (action === 'resolve_hold') return applyResolveHold(db, { uid, requestKey, body, nowIso, fingerprint });
   return applyControl(db, { uid, action, requestKey, nowIso, fingerprint });
 }

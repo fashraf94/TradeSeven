@@ -1,7 +1,8 @@
 // api/practice-field/founder.js
 //
 // Practice Field T1a-2b-1 — THE FOUNDER'S ONE ENDPOINT (build prompt §6). POST { action, requestKey, … }, dispatched
-// by `action` (api/_utils/practiceField/founderControls.js): create_book, admit_fixture, pause, resume, wind_down.
+// by `action` (api/_utils/practiceField/founderControls.js): create_book, admit_fixture, pause, resume, wind_down, and
+// (T1a-2b-3, Amendment F-5) resolve_hold.
 //
 // AUTH CONTRACT (the api/mandate/create.js pattern):
 //   • Firebase ID token verified server-side; the uid comes FROM THE TOKEN, never the request body — a body's `uid`

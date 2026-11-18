@@ -75,7 +75,7 @@ describe('api/practice-field/founder — authorization', () => {
 
   it('A NON-FOUNDER: 403, whatever the action; the caller is not told which condition failed', async () => {
     const before = dumpStore(state.db);
-    for (const action of ['create_book', 'admit_fixture', 'pause', 'resume', 'wind_down']) {
+    for (const action of ['create_book', 'admit_fixture', 'pause', 'resume', 'wind_down', 'resolve_hold']) { // (resolve_hold: T1a-2b-3, F-5)
       expect(await call({ uid: 'someone', body: { action, requestKey: 'k' } }), action).toEqual({ status: 403, body: { error: 'forbidden' } });
     }
     expect(dumpStore(state.db)).toBe(before);

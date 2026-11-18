@@ -93,6 +93,7 @@ import {
   coverageGapIdOf, CA_COVERAGE_GAP, backfillIdOf, successfulBackfill, shiftCalendarDate, heldSymbolsOf,
 } from './dailyCoverage.js';
 import { ensureCoverageBackfills } from './caBackfill.js';
+import { applyFounderRulings, markRulingsApplied } from './holdRulings.js';
 
 /** From this many sessions of doubt about a symbol's corporate-action coverage, the close alerts (Amendment F-1). */
 export const CA_COVERAGE_GAP_ALERT_SESSIONS = 5;
@@ -196,6 +197,10 @@ function closeFilledIdea(idea, {
 }) {
   // `heldByOthers`: the symbols another idea of the book holds, or would hold had its waiting rename applied (R-36).
   const observed = closeSnapshot !== null;
+  // Amendment F-5: THE FOUNDER'S PENDING RULINGS (resolve_hold), applied first, once, at an observed close
+  // (holdRulings.js): a retired suspicion and its reference mark, a declined record, the action a ruling supplies.
+  const ruled = observed ? applyFounderRulings(idea, { date }) : null;
+  if (ruled) idea = ruled.idea; // eslint-disable-line no-param-reassign
   const running = RUNNING_IDEA_STATUSES.includes(idea.status);
   const dueSession = idea.contract.schedule.dueSession;
   const alerts = [];
@@ -209,10 +214,21 @@ function closeFilledIdea(idea, {
   const coverage = new Map();
   const uncovered = new Set();
   let feedActions = sessionActions;
+  if (ruled) {
+    // A ruling's action replaces whatever rows of its id the feed lists, for this idea (F-5).
+    if (ruled.replacedIds.size > 0) {
+      feedActions = Object.fromEntries(Object.entries(feedActions || {}).map(([sym, list]) => [sym, (list || []).filter((a) => !ruled.replacedIds.has(deriveActionId(a)))]));
+    }
+    feedActions = unionActionsBySymbol(feedActions, ruled.extraActions);
+    alerts.push(...ruled.alerts);
+  }
+  const ruledIds = ruled?.ruledIds ?? null;
   if (observed) {
     for (const [sym, input] of coverageInputs) {
-      const r = sessionCoverage({ symbol: sym, session: date, coveredThrough: input.coveredThrough, daily, dailyRefOk, backfill: input.backfill });
-      coverage.set(sym, { ...r, coveredThrough: input.coveredThrough });
+      // F-5: a coverage-gap ruling counts the symbol's data as covered through the gap's last session.
+      const coveredThrough = ruled?.coveredThroughOverrides.get(sym) ?? input.coveredThrough;
+      const r = sessionCoverage({ symbol: sym, session: date, coveredThrough, daily, dailyRefOk, backfill: input.backfill });
+      coverage.set(sym, { ...r, coveredThrough });
       if (!r.covered) uncovered.add(sym);
       if (r.covered && r.viaBackfill) feedActions = unionActionsBySymbol(feedActions, { [sym]: input.backfill.actions });
     }
@@ -260,9 +276,9 @@ function closeFilledIdea(idea, {
   //    founder resolves it.
   //    A holding the idea is waiting to sell on a delisting is screened on no ledger (R-32).
   const delistingWaiting = delistingWaitingSymbols(idea.ledger);
-  const screen = (ledger) => (observed ? withBasisSuspicions(ledger, closeSnapshot, actionsBySymbol, { sinceDate, date, delistingWaiting, skip: uncovered }).ledger : ledger);
+  const screen = (ledger) => (observed ? withBasisSuspicions(ledger, closeSnapshot, actionsBySymbol, { sinceDate, date, delistingWaiting, skip: uncovered, ruledIds }).ledger : ledger);
   const ledgers = [screen(idea.ledger), screen(idea.comparisonLedger), screen(idea.spyLedger)];
-  const holds = observed ? shareBasisHolds(ledgers, actionsBySymbol, { date }) : null;
+  const holds = observed ? shareBasisHolds(ledgers, actionsBySymbol, { date, ruledIds }) : null;
   // F-1: a symbol the session's data does not cover holds every count-dependent action of it dated after the last
   // session its data covered, on every ledger of the idea — and its rename (deferRenames, below).
   for (const sym of uncovered) {
@@ -271,7 +287,7 @@ function closeFilledIdea(idea, {
     holds.set(sym, [...(holds.get(sym) || []), item]);
   }
   const deferRenames = holds ? new Set(holds.keys()) : null;
-  const opts = { date, holds, deferRenames, renameTargetsTaken: heldByOthers, renameIdsScreened };
+  const opts = { date, holds, deferRenames, renameTargetsTaken: heldByOthers, renameIdsScreened, ruledIds };
   const own = observed ? applyLedgerActions(ledgers[0], actionsBySymbol, opts) : noActions(ledgers[0]);
   const cmp = observed ? applyLedgerActions(ledgers[1], actionsBySymbol, opts) : noActions(ledgers[1]);
   const spy = observed ? applyLedgerActions(ledgers[2], actionsBySymbol, opts) : noActions(ledgers[2]);
@@ -361,6 +377,8 @@ function closeFilledIdea(idea, {
     revision: (idea.revision || 0) + 1,
   };
   if (Object.keys(unobservedLineSessions).length > 0 || idea.unobservedLineSessions) next.unobservedLineSessions = unobservedLineSessions;
+  // F-5: a ruling whose action is now settled on every ledger that holds its symbol is applied.
+  if (ruled) next = markRulingsApplied(next, { date });
   // F-1: the coverage record, after this close (coverageAfterClose).
   {
     const after = coverageAfterClose(idea, next, { date, observed, coverage, renames: [...own.renames, ...cmp.renames, ...spy.renames] });
@@ -523,10 +541,10 @@ function closeFilledIdea(idea, {
       statusHistory: [...(next.statusHistory || []), { status: IDEA_STATUS.RESULTED, at: nowIso }],
       ledger: { ...next.ledger, cash: 0 },
     };
-    return { nextIdea: next, row, endpointRow, returnedCents: done.returnedCents, resolved: true, ownApplied: own.applied, ownFrozen: ownV.frozen, alerts, coverageChanged: false };
+    return { nextIdea: next, row, endpointRow, returnedCents: done.returnedCents, resolved: true, ownApplied: own.applied, ownFrozen: ownV.frozen, alerts, coverageChanged: false, referenceMarks: ruled?.referenceMarks ?? new Map() };
   }
   const coverageChanged = own.renames.length + cmp.renames.length + spy.renames.length > 0;
-  return { nextIdea: next, row, endpointRow, returnedCents: 0, resolved: false, ownApplied: own.applied, ownFrozen: ownV.frozen, alerts, coverageChanged };
+  return { nextIdea: next, row, endpointRow, returnedCents: 0, resolved: false, ownApplied: own.applied, ownFrozen: ownV.frozen, alerts, coverageChanged, referenceMarks: ruled?.referenceMarks ?? new Map() };
 }
 
 /**
@@ -686,6 +704,11 @@ async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false, w
       });
       nextIdeas.set(idea.ideaId, out.nextIdea);
       ideaRows[idea.ideaId] = out.row;
+      // F-5: a `price_move` ruling set the idea's reference mark on its own holding: the book's position, which mirrors
+      // it, takes the same mark and provenance before the book is marked (the two are reconciled).
+      for (const [sym, ref] of out.referenceMarks) {
+        if (positions[sym]?.ideaId === idea.ideaId) positions = { ...positions, [sym]: { ...positions[sym], ...ref } };
+      }
       alerts.push(...out.alerts);
       if (!out.row.fullQuality) allFullQuality = false;
       for (const sym of out.ownFrozen) frozenBookSymbols.add(sym);
