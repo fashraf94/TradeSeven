@@ -117,7 +117,9 @@ describe('THE WALK: "I want to play AI" to a saved thesis, every request body ch
     // §B13 T-6: the theme suggestion sits as one line at the top of the choices, the segment's choices under it
     const line = $('[data-sr-choices="segment"] > [data-sr-theme-line]');
     expect(line).not.toBeNull();
-    expect(line.textContent).toContain(B.themeConfirm(thesisOf('walkMap').parts.theme.suggestion));
+    // §B14 Watch 10 (moved from the one-link line): "{agent} suggests a theme", the suggestion on its own line, two buttons
+    expect(line.querySelector('[data-sr-theme-suggests]').textContent).toBe(B.themeSuggests('Atlas'));
+    expect(line.querySelector('[data-sr-theme-suggestion]').textContent).toBe(thesisOf('walkMap').parts.theme.suggestion);
     expect($('[data-sr-choices="segment"]').firstElementChild).toBe(line);
     expect($('[data-sr-slot="theme"]').dataset.srSlotState).toBe('suggested');
     // the agent's pick, marked on its free choice; the part stays unset
@@ -282,8 +284,10 @@ describe('every state, from the server\'s answers', () => {
     await openOn(TA.getStoryVerified);
     expect($('[data-sr-slot="theme"]').dataset.srSlotState).toBe('suggested');
     expect($('[data-sr-slot="theme"] [data-sr-suggested-mark]').textContent).toBe(B.suggested);
+    // §B14 Watch 10 (moved from "Use “…” as the theme" on one link): the block names the suggestion on its own line
+    expect($('[data-sr-theme-line] [data-sr-theme-suggestion]').textContent).toBe('Cloud AI data-center spending');
     const c = $('[data-sr-theme-line] [data-sr-free="confirm:theme"]');
-    expect(c.textContent).toContain(B.themeConfirm('Cloud AI data-center spending'));
+    expect(c.textContent).toContain(B.useIt);
     expect(c.querySelector('[data-sr-cost="free"]').textContent).toBe(B.free);
     expect($('[data-sr-choices]').dataset.srChoices).toBe('segment');
     expect($('[data-sr-research="map_segments"]')).not.toBeNull();
@@ -1472,5 +1476,67 @@ describe('B5 — before the switch (§B13): the screen', () => {
     expect(picked[0].textContent).toContain(B.confirmValue('Longterm · about 60 sessions'));
     await tap('[data-sr-choices="timeFrame"] [data-sr-free="confirm:timeFrame"]');
     expect(last('card')).toMatchObject({ op: 'confirm', part: 'timeFrame', value: 'longterm' });
+  });
+});
+
+describe('§B14 (Nov 18): the theme block, the ready view, the surviving time-frame answer', () => {
+  it('Watch 10: "{agent} suggests a theme", the suggestion on its own line, then two buttons side by side — "Use it · free" and "Write your own"', async () => {
+    await openOn(TA.walkGetMap);
+    const block = $('[data-sr-theme-line]');
+    expect(block.getAttribute('aria-label')).toBe(B.themeSuggests('Atlas'));
+    expect(block.querySelector('[data-sr-theme-suggests]').textContent).toBe('Atlas suggests a theme');
+    const suggestion = block.querySelector('[data-sr-theme-suggestion]');
+    expect(suggestion.textContent).toBe(thesisOf('walkGetMap').parts.theme.suggestion);
+    const buttons = [...block.querySelectorAll('[data-sr-theme-buttons] > button')];
+    expect(buttons.map((b) => b.textContent)).toEqual([`${B.useIt}·${B.free}`, B.writeOwnTheme]);
+    expect(buttons[0].getAttribute('aria-describedby')).toBe(suggestion.id);
+    expect(buttons[0].dataset.srFree).toBe('confirm:theme');
+    expect(buttons[1].hasAttribute('data-sr-theme-own')).toBe(true);
+  });
+  it('Q-4: a ready card whose theme is only suggested draws the block on the ready view; Use it confirms it, and the sentence opens with it', async () => {
+    await openOn(TA.walkGetReady, {}, { card: TA.readyThemeConfirm });
+    expect($('[data-sr-ready]')).not.toBeNull();
+    expect(thesisOf('walkGetReady').parts.theme.state).toBe('suggested');
+    expect($('[data-sr-ready] [data-sr-theme-line]')).not.toBeNull();
+    expect($('[data-sr-sentence]').textContent.startsWith('Built on NVDA')).toBe(true);
+    await tap('[data-sr-ready] [data-sr-theme-line] [data-sr-free="confirm:theme"]');
+    expect(last('card')).toEqual({ action: 'card', sessionId: SID, opId: expect.stringMatching(UUID), rev: thesisOf('walkGetReady').rev, op: 'confirm', part: 'theme', value: thesisOf('walkGetReady').parts.theme.suggestion });
+    expect($('[data-sr-theme-line]')).toBeNull();
+    expect($('[data-sr-sentence]').textContent).toBe(thesisOf('readyThemeConfirm').sentence);
+    expect($('[data-sr-sentence]').textContent.startsWith('My theme is ')).toBe(true);
+    expect($('[data-sr-ready]')).not.toBeNull(); // still ready
+  });
+  it('Q-4: on the ready view, Write your own opens the theme\'s part with its text box; the phrase goes as the player\'s own; closing returns focus to the opener', async () => {
+    await openOn(TA.walkGetReady, {}, { card: TA.readyThemeOwn });
+    const own = $('[data-sr-ready] [data-sr-theme-own]');
+    expect(own.getAttribute('aria-expanded')).toBe('false');
+    await tap('[data-sr-ready] [data-sr-theme-own]');
+    const panel = $('[data-sr-panel="theme"]');
+    expect(own.getAttribute('aria-expanded')).toBe('true');
+    expect(own.getAttribute('aria-controls')).toBe(panel.id);
+    await act(async () => { own.focus(); });
+    await tap('[data-sr-panel-close="theme"]');
+    await act(async () => { await new Promise((r) => { setTimeout(r, 5); }); });
+    expect(document.activeElement).toBe($('[data-sr-ready] [data-sr-theme-own]'));
+    await tap('[data-sr-ready] [data-sr-theme-own]');
+    const phrase = thesisOf('readyThemeOwn').parts.theme.value;
+    typeInto($('[data-sr-panel="theme"] [data-sr-composer-input]'), phrase);
+    await tap('[data-sr-panel="theme"] [data-sr-composer-send="free"]');
+    expect(last('card')).toEqual({ action: 'card', sessionId: SID, opId: expect.stringMatching(UUID), rev: thesisOf('walkGetReady').rev, op: 'set', part: 'theme', value: { text: phrase } });
+    expect($('[data-sr-sentence]').textContent.startsWith(`My theme is ${phrase}`)).toBe(true);
+    expect($('[data-sr-theme-line]')).toBeNull();
+  });
+  it('Q-4: a ready card with its theme set draws no block', async () => {
+    await openOn(TA.getReadyThemed);
+    expect($('[data-sr-ready]')).not.toBeNull();
+    expect($('[data-sr-theme-line]')).toBeNull();
+  });
+  it('Q-1 (b): after a later step the asked pick\'s value is still offered, now as "{agent} suggested"', async () => {
+    await openOn(TA.getTimeFrameAfterPick, {}, { card: TA.walkTimeFrame });
+    expect(thesisOf('getTimeFrameAfterPick').pick).toBeNull();
+    const c = $$('[data-sr-choices="timeFrame"] [data-sr-free="confirm:timeFrame"]');
+    expect(c).toHaveLength(1);
+    expect(c[0].dataset.srFreeValue).toBe('longterm');
+    expect(c[0].querySelector('[data-sr-mark]').textContent).toBe(B.suggestedTag('Atlas'));
   });
 });

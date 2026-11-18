@@ -337,7 +337,8 @@ const cleanWords = (raw, max) => {
 /**
  * The time frame a free `confirm` carries (§B13 T-5): the newer of the two answers on the card. A time-frame pick is
  * always the latest step's (applyProposals replaces the pick on every step), so it wins over a suggestion an earlier
- * step left; an asked pick landing also clears that suggestion, so a card normally holds one or the other.
+ * step left. An asked pick landing replaces that suggestion with itself (§B14 Q-1): while the pick stands both carry its
+ * value, and after the next step the suggestion still does.
  */
 const timeFrameConfirmOf = (card) => (card.pick?.part === 'timeFrame' ? card.pick.value : card.timeFrame.suggestion?.value ?? null);
 
@@ -614,8 +615,9 @@ export function applyProposals(card, p, ctx) {
   if (Array.isArray(p.wrongIfOptions) && p.wrongIfOptions.length > 0) next.wrongIf.options = p.wrongIfOptions.map((o) => ({ ...o, findingIds: [...o.findingIds] }));
   if (p.timeFrame && next.timeFrame.state !== SET) next.timeFrame.suggestion = { value: p.timeFrame.value, reason: p.timeFrame.reason };
   next.pick = p.pick && pickStillValid(next, p.pick, ctx) ? structuredClone(p.pick) : null;
-  // §B13 T-5: an asked time-frame pick that lands is the newer answer — the older suggestion goes, so the confirm carries it
-  if (next.pick?.part === 'timeFrame') next.timeFrame.suggestion = null;
+  // §B13 T-5: an asked time-frame pick that lands is the newer answer — the older suggestion goes, so the confirm carries
+  // it; §B14 Q-1 (b): it lands as the suggestion too, so the newest answer survives the next step (which replaces the pick)
+  if (next.pick?.part === 'timeFrame') next.timeFrame.suggestion = { value: next.pick.value, reason: next.pick.reason };
   if (p.goal === 'find_names' && next.names.state !== SET) next.names.blocked = ctx.supported.length === 0 ? 'no_listed_company' : null;
   next.rev = card.rev + 1;
   return next;

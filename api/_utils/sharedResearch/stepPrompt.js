@@ -180,7 +180,8 @@ export function renderStepUser({
 // ── the thesis builder (Amendment B §B5) ───────────────────────────────────────
 //
 // The builder's system prompt = the partner's identity + rulebook §4 WITHOUT its
-// line (7) ("one next action, aimed at the weakest link") + rulebook §6 (the
+// lines (1) ("your observation"; §B14 Q-2 — §6 says how a reply names the player's
+// words) and (7) ("one next action, aimed at the weakest link") + rulebook §6 (the
 // frame, THESIS_BUILDER_RULES, byte for byte) + the method block as today
 // (Amendment A — the method still weighs the evidence) + the builder's output
 // contract. The user turn = the card as it stands, the goal for this step, the
@@ -189,7 +190,7 @@ export function renderStepUser({
 
 /** Rulebook §6 "The thesis builder", byte for byte (prompt.builder.test.js pins the two equal). */
 export const THESIS_BUILDER_RULES = [
-  "A thesis builder session works toward one thesis card, one goal per step. These lines take the place of §4's line 7 there; the rest of §4 still holds, and the method still decides how evidence is weighed. Where the method proposes its own next step, these lines win.",
+  "A thesis builder session works toward one thesis card, one goal per step. These lines take the place of §4's lines 1 and 7 there; the rest of §4 still holds, and the method still decides how evidence is weighed. Where the method proposes its own next step, these lines win.",
   '',
   'The six parts of the card:',
   "- Theme: the player's idea in a phrase. It is the player's; suggest one only when the card has none.",
@@ -203,15 +204,19 @@ export const THESIS_BUILDER_RULES = [
   '- You propose; the player decides. Never set a part yourself, and never fill one to finish the card.',
   '- Each step works on the goal it was given and on nothing else.',
   '- A reply is at most two short sentences, about 280 characters: first what this step found, then what it proposes for the card. Do not repeat what the card or the choices already show. Speak to the player as a partner; never "your observation", "the retrieved items" or "the record".',
+  "- The player's words are theirs: call them 'what you wrote', and never restate them as true.",
+  "- Use plain words a player would use; no trading jargon such as 'exit'.",
   '- A thesis says what a company earns from, is exposed to or depends on, and what would prove that wrong. Never call a stock a good purchase, a great play or a winner, and never say where its price is headed.',
   '- When no listed company has a sourced connection, say so plainly: that is an honest ending, and no company is picked to finish the card.',
   '- Never say the thesis will be watched, tracked, tested or held by you, the agent or any part of the app.',
 ].join('\n');
 
-/** The index of §4's line (7) in WRITTEN_OPENING_RULES — the one line the builder's frame replaces (§B5). */
+/** The index of §4's line (7) in WRITTEN_OPENING_RULES — a line the builder's frame replaces (§B5). */
 export const WEAKEST_LINK_RULE_INDEX = 6;
-/** §4's lines without line (7), in order. */
-export const BUILDER_OPENING_RULES = Object.freeze(WRITTEN_OPENING_RULES.filter((_, i) => i !== WEAKEST_LINK_RULE_INDEX));
+/** The index of §4's line (1), "your observation" — the builder's frame replaces it too (§B14 Q-2 (b)); the ledger keeps it. */
+export const PLAYER_WORDS_RULE_INDEX = 0;
+/** §4's lines without lines (1) and (7), in order (the builder prompt only; the ledger's prompts carry §4 whole). */
+export const BUILDER_OPENING_RULES = Object.freeze(WRITTEN_OPENING_RULES.filter((_, i) => i !== WEAKEST_LINK_RULE_INDEX && i !== PLAYER_WORDS_RULE_INDEX));
 
 /** The builder turn's system prompt. `method`: the turn's effective method (KB-1); the baseline when omitted. */
 export function buildBuildSystemPrompt({ partnerName, method = null } = {}) {

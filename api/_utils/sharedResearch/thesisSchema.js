@@ -207,6 +207,26 @@ const FIELD_SHAPES = Object.freeze({
   pick: (v) => v !== null && typeof v === 'object' && !Array.isArray(v),
 });
 
+/**
+ * The model's reply as the server keeps it (§B13 T-3; §B14 Q-3), never cut inside a sentence: whole when it fits in
+ * `max`; else its first and its last sentence; else its first; else none fits — `runOn`, and the server's plain line
+ * replaces it (review A2).
+ * @returns {{ text: string, runOn: boolean }}
+ */
+export function keptReplyOf(text, max = MODEL_REPLY_MAX) {
+  const t = String(text ?? '');
+  if (t.length <= max) return { text: t, runOn: false };
+  const s = sentencesOf(t);
+  const first = s[0] ?? '';
+  const last = s.length > 1 ? s[s.length - 1] : null;
+  if (last !== null && first.length + 1 + last.length <= max) return { text: `${first} ${last}`, runOn: false };
+  if (first.length <= max) return { text: first, runOn: false };
+  return { text: '', runOn: true };
+}
+
+/** A map's theme suggestion is a short noun phrase (§B14 Q-5): at most six words, and it does not end like a sentence. */
+export const MAP_THEME_WORDS_MAX = 6;
+
 /** The same words, read loosely: case, spacing and closing punctuation aside (a theme suggestion against the player's words). */
 const wordsOf = (s) => clean(s).toLowerCase().replace(/[\s.!?;:,]+$/u, '');
 const sameWords = (a, b) => wordsOf(a) !== '' && wordsOf(a) === wordsOf(b);
@@ -254,10 +274,12 @@ export function validateBuildTurn(output, ctx) {
   const companies = (holds('companies') && Array.isArray(output.companies) ? output.companies : []).map((c) => (c && typeof c === 'object' && !Array.isArray(c) ? { ...c, openRef: null, claim: null } : c));
 
   // 1. B1's validator on the reply, the findings and the companies — its rules alone can fail the step. The model's reply
-  //    is cut to MODEL_REPLY_MAX (§B13 T-3: 320) at a sentence's end FIRST, so B1's number check reads the text that is
-  //    kept (RB-7).
+  //    is kept within MODEL_REPLY_MAX (§B13 T-3: 320; §B14 Q-3: its first and last sentence, else its first) FIRST, so
+  //    B1's number check reads the text that is kept (RB-7). A reply none of whose sentences fits is replaced below.
+  const said = clean(output.reply);
+  const kept = keptReplyOf(said, MODEL_REPLY_MAX);
   const b1 = validateStepTurn({
-    reply: cutAtSentence(clean(output.reply), MODEL_REPLY_MAX), findings: rawFindings, companies,
+    reply: kept.runOn ? cutAtSentence(said, MODEL_REPLY_MAX) : kept.text, findings: rawFindings, companies,
     summary: null, lines: { support: null, complication: null, missing: null }, nextAction: null,
   }, ctx);
   if (!b1.ok) return b1;
@@ -312,8 +334,13 @@ export function validateBuildTurn(output, ctx) {
   if (takes('themeSuggestion')) {
     const t = lineOf(output.themeSuggestion, L.theme);
     const suggested = typeof card.theme.suggestion === 'string' && card.theme.suggestion !== '';
+    // §B14 Q-5, the map only (verify_source's suggestion is unchanged): a short noun phrase — at most six words, and not
+    // ending like a sentence
+    const map = shape.goal === 'map_segments';
     const why = card.theme.state === 'set' ? 'theme_set' : suggested ? 'theme_suggested' : !t ? 'length'
-      : recordCurrent.some((f) => f.kind === 'observation' && sameWords(f.fact, t)) ? 'player_words' : lineFail(t, recordVerified);
+      : recordCurrent.some((f) => f.kind === 'observation' && sameWords(f.fact, t)) ? 'player_words'
+        : map && t.split(/\s+/).filter(Boolean).length > MAP_THEME_WORDS_MAX ? 'too_many_words'
+          : map && /[.?!]$/.test(t) ? 'sentence' : lineFail(t, recordVerified);
     if (why) drop('themeSuggestion', why);
     else proposals.themeSuggestion = t;
   }
@@ -479,10 +506,9 @@ export function validateBuildTurn(output, ctx) {
   const main = goal === 'direction' ? (asked && given(MAIN_FIELD[asked]) ? asked : null) : mainOf(goal, part);
   const offered = accepts.filter((f) => given(f));
   const deadEnd = (goal === 'find_names' || (goal === 'direction' && shape.goal === 'find_names')) && card.names.state !== 'set' && supportedAfterOf().length === 0;
-  // §B13 T-3: a reply whose first sentence alone runs past MODEL_REPLY_MAX cannot be cut at a sentence's end; the cut
-  // would end mid-sentence (cutAtSentence's last-space fallback), so the server's plain line replaces it
-  const said = clean(output.reply);
-  const runOn = said.length > MODEL_REPLY_MAX && (sentencesOf(said)[0] ?? '').length > MODEL_REPLY_MAX;
+  // §B13 T-3 (review A2): a reply whose first sentence alone runs past MODEL_REPLY_MAX cannot be kept at a sentence's
+  // end; the server's plain line replaces it, never a mid-sentence cut
+  const { runOn } = kept;
   const replaceFor = notes.some((n) => n.startsWith('reply_replaced:')) ? 'unsupported_number'
     : runOn ? 'too_long'
     : reply && promisesService(reply, partnerName) ? 'service_promise'

@@ -110,8 +110,10 @@ const BUILDER = Object.freeze({
   sourceCount: (n) => `${n} ${plural(n, 'source', 'sources')}`,
   confirmValue: (value) => `Confirm ${value}`,
   themeConfirm: (value) => `Use “${value}” as the theme`,
-  // §B13 T-6: the suggested theme's line at the top of the choices — its confirm (· free) and "write your own"
-  themeLineLabel: 'Theme',
+  // §B13 T-6, drawn as §B14 Watch 10 rules: the suggested theme's block at the top of the choices (and on the ready view,
+  // §B14 Q-4) — who suggests it, the suggestion, then "Use it · free" and "Write your own" side by side
+  themeSuggests: (name) => `${cap(name)} suggests a theme`,
+  useIt: 'Use it',
   writeOwnTheme: 'Write your own',
   skipSegment: 'Skip the segment',
   namesHelp: (min, max) => `Tick ${min} to ${max}. Only a company with a sourced connection can be picked.`,

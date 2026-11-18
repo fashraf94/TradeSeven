@@ -295,7 +295,7 @@ function BuilderWork({ sr, agentName, phone, wide, open, viewingEarlier, onBackT
     <div data-sr-choices={foot.part ?? 'none'} style={CHOICES}>
       {running && <Running attrs={{ 'data-sr-working': '' }}>{B.workingLine(agentName)}</Running>}
       {!running && themeLine && (
-        <ThemeLine confirm={themeLine.confirm} disabled={busy} onConfirm={() => onFreeInChoices(themeLine.confirm)}
+        <ThemeLine confirm={themeLine.confirm} agentName={agentName} disabled={busy} onConfirm={() => onFreeInChoices(themeLine.confirm)}
           onWriteOwn={themeLine.text ? (e) => { openerRef.current = e?.currentTarget ?? null; setTapped('theme'); } : null}
           expanded={tapped === 'theme'} controls={panelId} />
       )}

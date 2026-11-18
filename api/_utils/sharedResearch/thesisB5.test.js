@@ -15,9 +15,9 @@ import {
   sentenceOf, readinessOf, saveIssueOf, savedCardOf, blockedNow, thesisViewOf,
 } from './thesis.js';
 import {
-  validateBuildTurn, turnShapeOf, cutAtSentence, MODEL_REPLY_MAX, BUILD_SCHEMAS, DEAD_END_LINE, unsourcedLineOf,
+  validateBuildTurn, turnShapeOf, cutAtSentence, MODEL_REPLY_MAX, BUILD_SCHEMAS, DEAD_END_LINE, unsourcedLineOf, keptReplyOf, MAP_THEME_WORDS_MAX,
 } from './thesisSchema.js';
-import { THESIS_BUILDER_RULES, buildBuildSystemPrompt, renderBuildUser } from './stepPrompt.js';
+import { THESIS_BUILDER_RULES, WRITTEN_OPENING_RULES, BUILDER_OPENING_RULES, buildBuildSystemPrompt, buildStepSystemPrompt, renderBuildUser } from './stepPrompt.js';
 import { companiesOf } from './companies.js';
 import { THESIS_LIMITS } from '../../../src/constants/sharedResearch.js';
 
@@ -244,9 +244,9 @@ describe('§B13 T-3 — two short sentences', () => {
     const v = validate(base({ reply: a, segments: MAP.map((m) => ({ label: m.label, line: m.line, refs: [] })), pick: null }), { goal: 'map_segments', card: openingCardOf({ entryKind: 'observation', observation: OBS }) });
     expect(v.ok, JSON.stringify(v)).toBe(true);
     expect(v.reply.length).toBeLessThanOrEqual(320);
-    expect(v.reply).toBe(cutAtSentence(a, 320));
+    // §B14 Q-3 (moved from the leading sentences that fit): the first and the last sentence
+    expect(v.reply).toBe('Nvidia sells most of the accelerators data centers buy, and its data-center segment is most of its revenue now. I would build on Nvidia alone for now.');
     expect(v.reply).toMatch(/[.!?]$/);
-    expect(a.startsWith(v.reply)).toBe(true);
     // a reply already inside 320 stands whole
     const short = 'The idea splits into chips and power. I would stand on the chips.';
     expect(validate(base({ reply: short, segments: MAP.map((m) => ({ label: m.label, line: m.line, refs: [] })) }), { goal: 'map_segments', card: openingCardOf({ entryKind: 'observation', observation: OBS }) }).reply).toBe(short);
@@ -302,7 +302,8 @@ describe('§B13 T-5 — the newer time-frame answer wins', () => {
     c = applyProposals(c, PROPOSALS({ goal: 'build_why', part: null, timeFrame: { value: 'positional', reason: 'Spending plans run for quarters.' } }), ctxOf());
     expect(confirmOf(c)).toEqual([{ op: 'confirm', part: 'timeFrame', value: 'positional' }]);
     c = applyProposals(c, PROPOSALS({ pick: askedPick('longterm') }), ctxOf());
-    expect(c.timeFrame.suggestion).toBeNull();
+    // §B14 Q-1 (moved from null): the older suggestion goes because the pick lands as the suggestion itself
+    expect(c.timeFrame.suggestion).toEqual({ value: 'longterm', reason: 'It fits the why.' });
     expect(c.pick).toMatchObject({ part: 'timeFrame', value: 'longterm', asked: true });
     expect(partStatesOf(c, ctxOf()).timeFrame).toBe('suggested');
     expect(confirmOf(c)).toEqual([{ op: 'confirm', part: 'timeFrame', value: 'longterm' }]);
@@ -391,10 +392,103 @@ describe('review A2 (T-3): a reply that cannot be cut at a sentence\'s end withi
     expect(v.reply).toBe('This step added 0 findings. The card shows what it proposes.');
     expect(runOn.startsWith(v.reply)).toBe(false);
   });
-  it('a long reply whose sentences fit is cut at a sentence\'s end, not replaced', () => {
+  // §B14 Q-3 (moved from the leading sentences that fit): the first and the last sentence are kept
+  it('a long reply whose sentences fit is kept at sentence ends (its first and its last), not replaced', () => {
     const fits = `${'The idea splits into chips, power and the networks between them. '.repeat(5)}I would stand on the chips.`;
     const v = validate(mapOut({ reply: fits, themeSuggestion: 'AI chips and data centers' }), { goal: 'map_segments', card: openCard() });
     expect(v.notes).not.toContain('reply_replaced:too_long');
-    expect(v.reply).toBe(cutAtSentence(fits, 320));
+    expect(v.reply).toBe('The idea splits into chips, power and the networks between them. I would stand on the chips.');
+  });
+});
+
+// ── §B14 (Nov 18): the B5 report's rulings ──────────────────────────────────────
+
+describe('§B14 Q-1 (b): an asked time-frame pick lands as the suggestion too — the newest answer survives a later step', () => {
+  it('a pick after the why\'s suggestion, then a step with no time-frame answer: the pick\'s value is still on the card and confirmable', () => {
+    let c = whyCard();
+    c = applyProposals(c, PROPOSALS({ goal: 'build_why', part: null, timeFrame: { value: 'positional', reason: 'Spending plans run for quarters.' } }), ctxOf());
+    c = applyProposals(c, PROPOSALS({ pick: askedPick('longterm') }), ctxOf());
+    expect(c.timeFrame.suggestion).toEqual({ value: 'longterm', reason: 'It fits the why.' });
+    c = applyProposals(c, PROPOSALS({ goal: 'strengthen', part: 'why' }), ctxOf()); // a later step: no pick, no time-frame answer
+    expect(c.pick).toBeNull();
+    expect(c.timeFrame.suggestion).toEqual({ value: 'longterm', reason: 'It fits the why.' });
+    expect(partStatesOf(c, ctxOf()).timeFrame).toBe('suggested');
+    expect(confirmOf(c)).toEqual([{ op: 'confirm', part: 'timeFrame', value: 'longterm' }]);
+    expect(applyCardOp(c, { op: 'confirm', part: 'timeFrame' }, ctxOf()).card.timeFrame).toEqual({ state: 'set', by: 'partner_suggested_confirmed', value: 'longterm', suggestion: null });
+  });
+  it('a newer suggestion still replaces it', () => {
+    let c = applyProposals(whyCard(), PROPOSALS({ pick: askedPick('swing') }), ctxOf());
+    c = applyProposals(c, PROPOSALS({ goal: 'strengthen', part: 'why', timeFrame: { value: 'positional', reason: 'Spending plans run for quarters.' } }), ctxOf());
+    expect(c.timeFrame.suggestion).toEqual({ value: 'positional', reason: 'Spending plans run for quarters.' });
+    expect(confirmOf(c)).toEqual([{ op: 'confirm', part: 'timeFrame', value: 'positional' }]);
+  });
+});
+
+describe('§B14 Q-2 (b)+(c): §4 (1) leaves the builder prompt only; §6 says how a reply names the player\'s words, in plain words', () => {
+  const builder = buildBuildSystemPrompt({ partnerName: 'Atlas' });
+  it('the builder prompt carries neither §4 (1) nor (7); the ledger\'s step prompt still carries §4 (1) whole', () => {
+    expect(builder).not.toContain(WRITTEN_OPENING_RULES[0]);
+    expect(builder).not.toContain(WRITTEN_OPENING_RULES[6]);
+    expect(BUILDER_OPENING_RULES).toHaveLength(WRITTEN_OPENING_RULES.length - 2);
+    expect(buildStepSystemPrompt({ partnerName: 'Atlas' })).toContain(`1. ${WRITTEN_OPENING_RULES[0]}`);
+  });
+  it('§6 holds the two lines, and its first paragraph says which of §4\'s lines it replaces', () => {
+    const lines = THESIS_BUILDER_RULES.split('\n');
+    expect(lines).toContain("- The player's words are theirs: call them 'what you wrote', and never restate them as true.");
+    expect(lines).toContain("- Use plain words a player would use; no trading jargon such as 'exit'.");
+    expect(lines[0]).toContain("These lines take the place of §4's lines 1 and 7 there");
+    expect(builder).toContain(`The thesis builder:\n${THESIS_BUILDER_RULES}`);
+  });
+});
+
+describe('§B14 Q-3 (b): a reply that does not fit keeps its first and its last sentence, else its first, else the plain line', () => {
+  const S = (n, len) => `${String.fromCharCode(64 + n)}${'x'.repeat(len - 2)}.`;
+  it.each([
+    ['fits whole', [S(1, 100), S(2, 100), S(3, 100)], 'whole'],
+    ['three sentences: the first and the last', [S(1, 150), S(2, 150), S(3, 150)], 'first+last'],
+    ['two that do not fit together: the first', [S(1, 200), S(2, 200)], 'first'],
+    ['first and last too long together: the first', [S(1, 200), S(2, 50), S(3, 200)], 'first'],
+    ['the first alone does not fit: none (the plain line)', [S(1, 330), S(2, 50)], 'runOn'],
+  ])('%s', (_, parts, want) => {
+    const text = parts.join(' ');
+    const k = keptReplyOf(text, 320);
+    if (want === 'whole') expect(k).toEqual({ text, runOn: false });
+    if (want === 'first+last') expect(k).toEqual({ text: `${parts[0]} ${parts.at(-1)}`, runOn: false });
+    if (want === 'first') expect(k).toEqual({ text: parts[0], runOn: false });
+    if (want === 'runOn') expect(k).toEqual({ text: '', runOn: true });
+    expect(k.text.length).toBeLessThanOrEqual(320);
+  });
+  it('through the validator: the middle sentence goes, the proposal stays (the run-on case is review A2\'s rows above)', () => {
+    const r = 'The idea splits into four parts, from the chips themselves to the power that runs them, and the grid behind the power. Two of the parts have no listed company tied to them yet in any of the sources, and the networking part has only one weak source behind it so far, which is a trade article from earlier this month. I would stand on the accelerator chips.';
+    expect(r.length).toBeGreaterThan(320);
+    const v = validate(mapOut({ reply: r, themeSuggestion: 'AI chips and data centers' }), { goal: 'map_segments', card: openCard() });
+    expect(v.reply).toBe('The idea splits into four parts, from the chips themselves to the power that runs them, and the grid behind the power. I would stand on the accelerator chips.');
+  });
+});
+
+describe('§B14 Q-5: the map\'s theme suggestion is dropped past six words or at sentence punctuation; verify_source\'s is unchanged', () => {
+  const story = SESSION({ entry: { kind: 'item' } });
+  it.each([
+    ['seven words', 'AI chips and data centers for cloud', 'too_many_words'],
+    ['ends with a period', 'AI data-center buildout.', 'sentence'],
+    ['ends with a question mark', 'Who builds AI data centers?', 'sentence'],
+    ['ends with an exclamation mark', 'AI chips!', 'sentence'],
+  ])('map: %s → dropped (%s)', (_, t, rule) => {
+    const v = validate(mapOut({ themeSuggestion: t }), { goal: 'map_segments', card: openCard() });
+    expect(v.notes).toContain(`dropped:themeSuggestion:${rule}`);
+    expect(v.proposals.themeSuggestion).toBeNull();
+    expect(v.proposals.map).not.toBeNull();
+  });
+  it(`map: exactly ${MAP_THEME_WORDS_MAX} words, no closing punctuation → lands`, () => {
+    const v = validate(mapOut({ themeSuggestion: 'AI chips for the cloud buildout' }), { goal: 'map_segments', card: openCard() });
+    expect(v.proposals.themeSuggestion).toBe('AI chips for the cloud buildout');
+  });
+  it('verify_source: a long or punctuated suggestion still lands, as before', () => {
+    for (const t of ['Cloud companies keep raising their AI data-center spending', 'Cloud AI spending.']) {
+      const v = validate({ reply: 'The story matches its source.', findings: [], companies: [], themeSuggestion: t }, { goal: 'verify_source', card: emptyCard(), record: { ...RECORD, findings: [] } });
+      expect(v.ok, JSON.stringify(v)).toBe(true);
+      expect(v.proposals.themeSuggestion, t).toBe(t);
+    }
+    expect(offeredGoalsOf(emptyCard(), ctxOf(RECORD, story)).map((g) => g.goal)).toContain('verify_source');
   });
 });

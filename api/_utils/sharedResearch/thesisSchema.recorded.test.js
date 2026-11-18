@@ -12,7 +12,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve, dirname } from 'node:path';
 import { describe, it, expect } from 'vitest';
-import { validateBuildTurn, BUILD_SCHEMAS, buildSchemaOf, acceptsOf, cutAtSentence, MODEL_REPLY_MAX } from './thesisSchema.js';
+import { validateBuildTurn, BUILD_SCHEMAS, buildSchemaOf, acceptsOf, keptReplyOf, MODEL_REPLY_MAX } from './thesisSchema.js';
 import { applyProposals, cardContextOf, reasonHolds } from './thesis.js';
 import { companiesOf } from './companies.js';
 import { costUsd, MODELS, MAX_OUTPUT_TOKENS } from './modelTurn.js';
@@ -130,8 +130,8 @@ describe('what the probes proposed', () => {
     for (const key of ['strengthen:names', 'strengthen:timeFrame']) {
       const { v } = of(key);
       expect(v.notes.filter((x) => x.startsWith('reply_replaced')), key).toEqual([]);
-      expect(v.reply, key).toBe(cutAtSentence(recorded(key).output.reply, MODEL_REPLY_MAX));
-      expect(recorded(key).output.reply.startsWith(v.reply), key).toBe(true);
+      // §B14 Q-3 (moved from the leading sentences that fit): the first and the last sentence, else the first
+      expect(v.reply, key).toBe(keptReplyOf(recorded(key).output.reply.replace(/\s+/g, ' ').trim(), MODEL_REPLY_MAX).text);
       expect(v.reply.length, key).toBeLessThanOrEqual(320);
     }
   });

@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve, dirname } from 'node:path';
 import { describe, it, expect } from 'vitest';
-import { buildSchemaOf, acceptsOf, MODEL_REPLY_MAX } from './thesisSchema.js';
+import { buildSchemaOf, acceptsOf, MODEL_REPLY_MAX, keptReplyOf } from './thesisSchema.js';
 import { applyProposals, cardContextOf, partStatesOf, reasonHolds } from './thesis.js';
 import { companiesOf } from './companies.js';
 import { costUsd, MODELS, MAX_OUTPUT_TOKENS } from './modelTurn.js';
@@ -71,7 +71,8 @@ for (const key of PROBE_B5_KEYS) {
       expect(strayTickersOf(JSON.stringify(rec.output))).toEqual([]);
       expect(v.reply.length).toBeLessThanOrEqual(MODEL_REPLY_MAX);
       expect(v.reply).toMatch(/[.!?]$/);
-      expect(rec.output.reply.startsWith(v.reply)).toBe(true);
+      // §B14 Q-3 (moved from a prefix of the reply): the kept reply is the reply's own sentences, as keptReplyOf keeps them
+      expect(v.reply).toBe(keptReplyOf(rec.output.reply.replace(/\s+/g, ' ').trim()).text);
     });
     it('lands only what its goal may land, and sets no part (V2-4)', () => {
       const { p, v } = of(key);
@@ -100,13 +101,14 @@ describe('what the B5 probes say (T-1, T-2, T-3)', () => {
     expect(v.proposals.map.length).toBeGreaterThanOrEqual(2);
     expect(v.proposals.map.map((m) => m.label)).toContain(v.proposals.pick.value);
   });
-  it('(2) find_names with the segment set and the theme only suggested: on offer (T-2); the model wrote 327 characters, the cut kept two sentences', () => {
+  it('(2) find_names with the segment set and the theme only suggested: on offer (T-2); the model wrote 327 characters; the server keeps its first and its last sentence (§B14 Q-3, moved from the first two)', () => {
     const { p, rec, v } = of('b5:find_names');
     expect(p.card.theme.state).toBe('unset');
     expect(partStatesOf(p.card, cardContextOf({ record: p.record, supported: p.supported })).theme).toBe('suggested');
     expect(p.card.segment).toMatchObject({ state: 'set', by: 'partner_suggested_confirmed' });
     expect(rec.output.reply.length).toBeGreaterThan(320);
     expect(v.reply.length).toBeLessThan(rec.output.reply.length);
+    expect(v.reply.endsWith('I would build on Nvidia and AMD, with Broadcom as a third name.')).toBe(true); // the proposal stays
     const after = { ...p.record, findings: [...p.record.findings, ...v.findings] };
     expect(companiesOf(after).supported.map((c) => c.symbol)).toEqual(['NVDA', 'AMD', 'AVGO']);
     expect(v.proposals.pick).toMatchObject({ part: 'names', asked: false });

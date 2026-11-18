@@ -248,26 +248,37 @@ export function freeLabelOf(choice, thesis, agentName) {
   return { label: String(value ?? '') };
 }
 
+/** The theme block's two buttons, side by side on one row (§B14 Watch 10): each half the row, 44 px, a single-line label. */
+const THEME_BUTTON = { flex: '1 1 0', minWidth: 0, minHeight: 44, padding: '6px 8px', gap: 6, whiteSpace: 'nowrap' };
+
 /**
- * §B13 T-6: a suggested theme does not hold the front. Its confirm and its "write your own" sit as one small line at the
- * top of the choices — "Use “{suggestion}” as the theme · free", and Write your own, which opens the theme's part (its
- * text box is there). The confirm is the server's free choice, sent as offered.
+ * §B13 T-6, as §B14 Watch 10 draws it: a suggested theme does not hold the front. It sits as a small block at the top of
+ * the choices — "{agent} suggests a theme", the suggestion on its own line, then two buttons side by side: "Use it ·
+ * free" (the server's confirm, sent as offered) and "Write your own", which opens the theme's part (its text box is
+ * there). The ready view draws the same block (§B14 Q-4).
  */
-export function ThemeLine({ confirm, onConfirm, onWriteOwn = null, expanded = false, controls = undefined, disabled = false }) {
-  const off = disabled ? { opacity: 0.5, cursor: 'not-allowed' } : {};
+export function ThemeLine({ confirm, agentName, onConfirm, onWriteOwn = null, expanded = false, controls = undefined, disabled = false }) {
+  const suggestionId = `sr-theme-suggestion${useId()}`;
   return (
-    <div role="group" aria-label={B.themeLineLabel} data-sr-theme-line="" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', columnGap: 12, minWidth: 0 }}>
-      <button type="button" onClick={disabled ? undefined : onConfirm} disabled={disabled} data-sr-free="confirm:theme" data-sr-free-value={confirm.value}
-        style={{ ...linkStyle, ...off, textDecoration: 'none', gap: 6, fontSize: 13.5, minWidth: 0, flexWrap: 'wrap' }}>
-        <span style={{ textDecoration: 'underline', textUnderlineOffset: 3, overflowWrap: 'break-word', minWidth: 0 }}>{B.themeConfirm(confirm.value)}</span>
-        <span aria-hidden="true" style={{ color: T.ink3 }}>·</span>
-        <Mark attrs={{ 'data-sr-cost': 'free' }}>{B.free}</Mark>
-      </button>
-      {onWriteOwn && (
-        // it opens the theme's part (its text box) in the card, as a slot does: the same disclosure semantics (review B6)
-        <button type="button" onClick={disabled ? undefined : onWriteOwn} disabled={disabled} data-sr-theme-own="" aria-expanded={expanded} aria-controls={controls}
-          style={{ ...linkStyle, ...off, fontSize: 13.5, color: T.ink2 }}>{B.writeOwnTheme}</button>
-      )}
+    <div role="group" aria-label={B.themeSuggests(agentName)} data-sr-theme-line=""
+      style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0, borderLeft: `2px solid ${wash('teal', 0.6)}`, paddingLeft: 10 }}>
+      <span style={{ ...S.eyebrow, color: T.teal }} data-sr-theme-suggests="">{B.themeSuggests(agentName)}</span>
+      <span id={suggestionId} style={{ fontSize: 15, fontWeight: 700, color: T.ink, lineHeight: 1.35, ...WRAP }} data-sr-theme-suggestion="">{confirm.value}</span>
+      <div style={{ display: 'flex', gap: 8, minWidth: 0 }} data-sr-theme-buttons="">
+        <button type="button" onClick={disabled ? undefined : onConfirm} disabled={disabled} data-sr-free="confirm:theme" data-sr-free-value={confirm.value}
+          aria-describedby={suggestionId} style={{ ...buttonStyle('secondary', { disabled }), ...THEME_BUTTON, borderColor: wash('teal', 0.5) }}>
+          <span style={{ fontSize: 14 }}>{B.useIt}</span>
+          <span aria-hidden="true" style={{ color: T.ink3, fontSize: 14 }}>·</span>
+          <Mark attrs={{ 'data-sr-cost': 'free' }}>{B.free}</Mark>
+        </button>
+        {onWriteOwn && (
+          // it opens the theme's part (its text box), as a slot does: the same disclosure semantics (review B6)
+          <button type="button" onClick={disabled ? undefined : onWriteOwn} disabled={disabled} data-sr-theme-own="" aria-expanded={expanded} aria-controls={controls}
+            style={{ ...buttonStyle('secondary', { disabled }), ...THEME_BUTTON }}>
+            <span style={{ fontSize: 14 }}>{B.writeOwnTheme}</span>
+          </button>
+        )}
+      </div>
     </div>
   );
 }

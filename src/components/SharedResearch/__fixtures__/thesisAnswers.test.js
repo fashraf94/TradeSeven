@@ -552,7 +552,11 @@ function build() {
 
   // §B13 T-2: the sentence in each of its shapes — the walk's ready card (no theme, a segment) with the theme confirmed,
   // and a walk on a SKIPPED segment, with and without the theme — so the screen's runs are pinned for every shape
-  A.getReadyThemed = { status: 200, body: getAnswerOf(tap(ready, { op: 'confirm', part: 'theme', nowIso: at(12) }).inv) };
+  const readyThemed = tap(ready, { op: 'confirm', part: 'theme', nowIso: at(12) });
+  A.getReadyThemed = { status: 200, body: getAnswerOf(readyThemed.inv) };
+  // §B14 Q-4: the ready view's theme block — its confirm, and the player's own phrase — as the card route answers them
+  A.readyThemeConfirm = readyThemed.answer;
+  A.readyThemeOwn = tap(ready, { op: 'set', part: 'theme', value: { text: SAMPLE_THEME }, nowIso: at(12) }).answer;
   let sk = tap(afterMap, { op: 'set', part: 'segment', value: 'skip', nowIso: at(12) }).inv;
   sk = step(sk, { goal: 'find_names', output: FIND_NAMES_WALK, items: NAMES_ITEMS, nowIso: at(13) }).inv;
   sk = tap(sk, { op: 'set', part: 'names', value: ['NVDA'], nowIso: at(14) }).inv;
@@ -573,6 +577,10 @@ function build() {
     },
   });
   A.getTimeFramePicked = { status: 200, body: getAnswerOf(tfPicked.inv) };
+  // §B14 Q-1 (b): a later step with no time-frame answer (Keep researching on the why) replaces the pick; the pick's value
+  // survives as the suggestion, and its confirm now reads "{agent} suggested"
+  const later = step(tfPicked.inv, { goal: 'strengthen', part: 'why', items: WHY_ITEMS, nowIso: at(13), output: { reply: 'Nothing new changes the why.', findings: [], why: null } });
+  A.getTimeFrameAfterPick = { status: 200, body: getAnswerOf(later.inv) };
   return A;
 }
 
@@ -930,7 +938,11 @@ describe('the thesis builder\'s client fixtures are the server\'s answers (B4 Te
     expect(t('getReadySkipped').parts.wrongIf.by).toBe('player_wrote');
     // §B13 T-5: the asked time-frame pick replaced the why step's suggestion; the confirm carries the pick
     expect(t('walkWrongIf').parts.timeFrame.suggestion).toMatchObject({ value: 'positional' });
-    expect(t('getTimeFramePicked').parts.timeFrame).toMatchObject({ state: 'suggested', suggestion: null });
+    // §B14 Q-1 (moved from suggestion: null): the asked pick lands as the suggestion too, and survives the next step
+    expect(t('getTimeFramePicked').parts.timeFrame).toMatchObject({ state: 'suggested', suggestion: { value: 'longterm' } });
+    expect(t('getTimeFrameAfterPick').pick).toBeNull();
+    expect(t('getTimeFrameAfterPick').parts.timeFrame).toMatchObject({ state: 'suggested', suggestion: { value: 'longterm' } });
+    expect(t('getTimeFrameAfterPick').choices.free).toContainEqual({ op: 'confirm', part: 'timeFrame', value: 'longterm' });
     expect(t('getTimeFramePicked').pick).toMatchObject({ part: 'timeFrame', value: 'longterm', asked: true });
     expect(t('getTimeFramePicked').choices.free).toContainEqual({ op: 'confirm', part: 'timeFrame', value: 'longterm' });
   });
