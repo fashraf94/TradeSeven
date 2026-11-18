@@ -25,6 +25,7 @@ import { getSessionForDate } from '../../../api/_utils/marketSchedule.js';
 import { ALL_TICKERS } from '../../../api/_utils/rankingConfig.js';
 import { calculateBollingerBands } from '../../../api/_utils/technicalCalculations.js';
 import { addDecimal, multiplyDecimal, toDecimal, toNumber } from '../../../api/_utils/setupEvaluator/evidenceValues.js';
+import { TF_SETUP_V1_THRESHOLDS } from '../../../api/_utils/setupEvaluator/thresholds.js';
 import { classOf } from '../setup-frequency/analyze.mjs';
 import {
   bootstrapMean, DEFINITIONS as D, die, mulberry32, FREQ_RUN, FUND_SECTOR, labelOf, MARKET_SYMBOL, mean, median, nextSessionOf, percentile,
@@ -74,12 +75,32 @@ function loadEnriched(runDir, source) {
   const out = { bySymbol: {}, compared: 0, mismatches: 0, sessions: null, shards: files.length };
   for (const f of files) {
     const j = readJson(path.join(dir, f));
+    // Strict merging (review SP-L2-2): every shard has the same sessions, and no symbol appears in two shards.
+    if (out.sessions !== null && JSON.stringify(out.sessions) !== JSON.stringify(j.sessions)) die(`${source}: ${f} has different sessions from the other shards`);
     out.sessions = j.sessions;
+    for (const sym of Object.keys(j.bySymbol)) if (out.bySymbol[sym]) die(`${source}: ${sym} appears in two shards (${f})`);
     out.compared += j.compared;
     out.mismatches += j.mismatches.length;
     Object.assign(out.bySymbol, j.bySymbol);
   }
   return out;
+}
+
+/**
+ * Each record's stored extension limit must equal SMA_fast + multiple × ATR rebuilt from its own facts, in exact decimal
+ * as the evaluator builds it (review SP-L2-2): this ties ATR and SMA_fast, which replay.json does not carry, to a value
+ * it does. Returns the count of records checked and of records that disagree.
+ */
+function limitIdentity(bySymbol) {
+  let checked = 0; let differ = 0;
+  for (const bySession of Object.values(bySymbol)) {
+    for (const r of Object.values(bySession)) {
+      if (!fin(r.F) || !fin(r.A) || !fin(r.extLimit)) continue;
+      checked += 1;
+      if (decimalLimit(r.F, TF_SETUP_V1_THRESHOLDS.extensionGuardAtrMultiple, r.A) !== r.extLimit) differ += 1;
+    }
+  }
+  return { checked, differ };
 }
 
 function loadBars(dir, symbols) {
@@ -320,11 +341,12 @@ async function main() {
     medianValid: median(validPerSession), validBreakout, stockDays: U.length * S.length,
     storedRecords: exp.records.length, storedMatched, storedDiffs,
     compactEqual: { compared: compactCompared, mismatches: compactMismatches, shardsSelfReport: { compared: stored.compared, mismatches: stored.mismatches } },
+    limitIdentity: limitIdentity(stored.bySymbol),
     frequencyRunReproduction: { compared: repro.compared, matched: repro.matched },
   };
   step0.pass = step0.medianValid === D.reproduce.medianValid && validBreakout === D.reproduce.validBreakout && step0.stockDays === D.reproduce.stockDays
     && storedMatched === D.reproduce.storedRecords && step0.storedRecords === D.reproduce.storedRecords
-    && compactMismatches === 0 && compactCompared === plan.all.length * S.length && stored.mismatches === 0;
+    && compactMismatches === 0 && compactCompared === plan.all.length * S.length && stored.mismatches === 0 && step0.limitIdentity.differ === 0;
   summary.step0 = step0;
   if (!step0.pass) {
     writeJson(path.join(runDir, 'summary.json'), summary);
@@ -340,6 +362,8 @@ async function main() {
   if (JSON.stringify(L) !== JSON.stringify(sessionsBack(D.window.lastSession, D.window.longMax))) die('the fetched re-run is not the long window');
   const uncovered = plan.all.reduce((n, sym) => n + L.filter((s) => !ENR.fetched.bySymbol[sym]?.[s]).length, 0);
   if (uncovered > 0) die(`the fetched re-run lacks ${uncovered} of ${plan.all.length * L.length} records`);
+  summary.fetchedLimitIdentity = limitIdentity(ENR.fetched.bySymbol);
+  if (summary.fetchedLimitIdentity.differ > 0) die(`the fetched re-run: ${summary.fetchedLimitIdentity.differ} records whose extension limit is not SMA_fast + 2 x ATR`);
   const BARS = { stored: loadBars(path.join(FREQ_RUN, 'bars'), plan.all), fetched: loadBars(path.join(runDir, 'bars'), plan.all) };
 
   // ---- The long window's overlap check ----
@@ -643,6 +667,7 @@ async function main() {
     const fills = {};
     for (const rd of Object.keys(D.slotReadings)) { fills[rd] = {}; for (const g of GATES_E) fills[rd][g.id] = []; }
     const morningPeriod = [];
+    const quota = { speculator: [], fundamental: [], preserver: [] };
     for (let i = 3; i < W.sessions.length - 1; i++) {
       const t = W.sessions[i];
       E.mornings += 1;
@@ -657,6 +682,27 @@ async function main() {
       for (const rd of Object.keys(sets)) for (const g of GATES_E) {
         const names = sets[rd].filter((sym) => g.test(sym, t, ctx));
         fills[rd][g.id].push(g.fill ? g.fill(names) : Math.min(D.slots, names.length));
+      }
+      // POST REVIEW (SP-L3-4), a second reading, not a fixed figure: the code's levels read as quotas over the seven
+      // slots ("at least N stocks with …", archetypeScoring.js:89, :91, :93) instead of a gate on every slot. A name
+      // must pass the per-name rule (the Fundamental Investor's "exclude below 40", the Capital Preserver's "avoid ATR
+      // percentile above 0.75"); when fewer than N valid names meet the quota level, the missing ones must be names with
+      // no setup, so valid setups fill at most 7 - (N - met). The Capital Preserver's sector rule is not applied here.
+      const quotaFill = (perName, meets, quota) => {
+        const pn = sets.literal.filter(perName);
+        const met = pn.filter(meets).length;
+        return met >= quota ? Math.min(D.slots, pn.length) : Math.min(pn.length, D.slots - (quota - met));
+      };
+      quota.speculator.push(quotaFill(() => true, (s) => score[s]?.atrPercentile > D.speculatorAtr, 3));
+      quota.fundamental.push(quotaFill((s) => score[s]?.fundamentalScore >= 40, (s) => score[s]?.fundamentalScore > D.fundamentalTop, 5));
+      quota.preserver.push(quotaFill((s) => score[s]?.atrPercentile <= D.preserverAtrMax, (s) => score[s]?.fundamentalScore > D.preserverScore, 5));
+    }
+    E.quotaReading = {};
+    for (const [k, xs0] of Object.entries(quota)) {
+      E.quotaReading[k] = {};
+      for (const p of PERIODS) {
+        const xs = xs0.filter((_, j) => p === 'whole' || morningPeriod[j] === p);
+        E.quotaReading[k][p] = { mornings: xs.length, median: median(xs), all7: share(xs.filter((v) => v >= D.slots).length, xs.length), atLeast4: share(xs.filter((v) => v >= 4).length, xs.length), none: share(xs.filter((v) => v === 0).length, xs.length) };
       }
     }
     for (const rd of Object.keys(fills)) {

@@ -23,8 +23,8 @@ const SHORT = { 'better than the comparison': 'better', worse: 'worse', 'no clea
 function cell(t, kind) {
   if (!t || t.est === null) return 'no data';
   const d = kind === 'u' ? 3 : 2;
-  // One paired session has no interval: its fixed label is shown as no evidence (review SP-L1-2).
-  if (t.sessions < 2) return `one paired session, no interval: ${sg(t.est, d)}`;
+  // Fewer than five paired sessions: the fixed label is shown as no evidence (review SP-L1-2; summary.json keeps it).
+  if (t.sessions < 5) return `too few sessions (${t.sessions}): ${sg(t.est, d)}`;
   return `${SHORT[t.label]}${t.small ? ' · small' : ''}: ${sg(t.est, d)} [${sg(t.lo, d)}, ${sg(t.hi, d)}]`;
 }
 
@@ -136,6 +136,8 @@ function partE(E, name) {
     out.push(`\n**${title}.** Slots of seven a valid, enterable setup could fill: median; share of mornings filling all seven, at least four, none.\n`);
     out.push(table(['Archetype (gate)', ...P.map((p) => PN[p])], Object.entries(E.readings[rd]).map(([g, x]) => [g, ...P.map((p) => `${x[p].median} · ${pc(x[p].all7)} · ${pc(x[p].atLeast4)} · ${pc(x[p].none)}`)])));
   }
+  out.push('\n**Post review — the code\'s levels read as quotas over the seven slots** (literal reading; not a fixed figure; median · all seven · at least four · none).\n');
+  out.push(table(['Archetype (quota)', ...P.map((p) => PN[p])], [['Speculator (at least 3 with ATR percentile > 0.80)', 'speculator'], ['Fundamental Investor (at least 5 > 70, none < 40)', 'fundamental'], ['Capital Preserver (at least 5 > 60, none with ATR percentile > 0.75; sectors not applied)', 'preserver']].map(([label, k]) => [label, ...P.map((p) => { const x = E.quotaReading[k][p]; return `${x.median} · ${pc(x.all7)} · ${pc(x.atLeast4)} · ${pc(x.none)}`; })])));
   out.push('\nContrarian: not applicable (no detector).');
   return out.join('\n');
 }
