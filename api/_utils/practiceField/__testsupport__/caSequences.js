@@ -308,7 +308,11 @@ function oracle(initialHolding, feed, sym = 'AAPL') {
 /** Run one history through the real close; check every invariant as it goes. */
 export async function run(plan) {
   let c = null;
-  try { return await runInner(plan, (ctx) => { c = ctx; }); } catch (e) { if (e && typeof e === 'object') e.sequenceContext = c; throw e; }
+  try { return await runInner(plan, (ctx) => { c = ctx; }); } catch (e) {
+    // (Not enumerable: the fake store is circular, and a test runner serializing the error would choke on it.)
+    if (e && typeof e === 'object') Object.defineProperty(e, 'sequenceContext', { value: c, enumerable: false });
+    throw e;
+  }
 }
 async function runInner(plan, expose) {
   const ctx = await seedBook();
@@ -452,7 +456,7 @@ const WIDE_SYMS = ['AAPL', 'SPY'];
 const WIDE_BASE = { AAPL: 100, SPY: 500 };
 /** The event kinds the wide generator writes (the coverage table counts each, and each pair). */
 export const WIDE_KINDS = ['purchase_on_ex_date', 'dividend', 'split', 'conflict', 'revision', 'redate', 'split_shaped_move', 'coverage_failure',
-  'backfill_agrees', 'backfill_disagrees', 'founder_ruling', 'c04_chain'];
+  'backfill_agrees', 'backfill_disagrees', 'backfill_empty', 'founder_ruling', 'c04_chain'];
 
 export function generateWide(seed, { trace = null } = {}) {
   const r = rng(seed);
@@ -544,18 +548,27 @@ export function generateWide(seed, { trace = null } = {}) {
     }
     if (!clean && i > 1 && i < n - 1 && i !== c04At && i !== c04At + 1 && r.chance(0.12)) {
       const listed = [...rowsBySym.AAPL, ...rowsBySym.SPY];
+      // (Whether the stored backfill is EMPTY is drawn first: a disagreement in a backfill that is then emptied never reaches
+      // a ledger, so the oracle must not mark it — wide seed 1184872765.)
       const mode = listed.length > 0 && r.chance(0.6) ? 'disagree' : 'agree';
       const backfillBySym = { AAPL: rowsBySym.AAPL.map((a) => ({ ...a })), SPY: rowsBySym.SPY.map((a) => ({ ...a })) };
+      let disagreed = null;
       if (mode === 'disagree') {
         const syms = WIDE_SYMS.filter((x) => backfillBySym[x].length > 0);
         const sym = r.pick(syms);
         const k = r.int(backfillBySym[sym].length);
         const a = backfillBySym[sym][k];
         backfillBySym[sym][k] = a.type === 'cash_dividend' ? { ...a, amount: AMOUNTS.find((x) => x !== a.amount) } : { ...a, ratio: ratioOf(RATIOS.find((x) => ratioOf(x) !== a.ratio)) };
-        if (feed.get(deriveActionId(a))?.createdAt === i || deriveActionId(a) in ambiguousSince) markAmbiguous(deriveActionId(a), i);
-        tag('backfill_disagrees', sym);
+        disagreed = { id: deriveActionId(a), sym };
+      }
+      // (A backfill emptied after it was written never reaches a ledger: its disagreement is not marked — wide seed
+      // 1184872765, an oracle error. The draws keep their order, so every seed writes the history it always wrote.)
+      const emptied = r.chance(0.3);
+      if (emptied) { backfillBySym.AAPL = []; backfillBySym.SPY = []; kinds.add('backfill_empty'); }
+      else if (disagreed) {
+        if (feed.get(disagreed.id)?.createdAt === i || disagreed.id in ambiguousSince) markAmbiguous(disagreed.id, i);
+        tag('backfill_disagrees', disagreed.sym);
       } else kinds.add('backfill_agrees');
-      if (r.chance(0.3)) { backfillBySym.AAPL = []; backfillBySym.SPY = []; }
       steps.push({ kind: 'catchup', i, prices, rowsBySym, backfillBySym, mode });
       continue;
     }
