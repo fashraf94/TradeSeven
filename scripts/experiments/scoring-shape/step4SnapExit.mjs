@@ -317,7 +317,12 @@ for (const su of SHAPE_UNITS) {
       const b = bootstrap(list, base.shape, tier, { ...opts, check: k });
       return [k, { seenShare: e.seenShare, means: e.means, winner: e.winner, sellMargin: e.sellMargin, sellMinusHold: e.means.SELL - e.means.HOLD, boot: b }];
     }));
-    results.push({ label: label(su), tier, ...main, byDay, variants, boot, penaltiesAtClose, checked });
+    // The gap-at-open variant's own margin and bootstrap (advisor, post-review): how much of the check-priced lead comes
+    // from gap-throughs sold at the open rather than from the check's overshoot past the line.
+    const gapShape = su.s.startsWith('S5') ? su.s : base.shape;
+    const gapEval = evaluate(list, gapShape, tier, { ...opts, open: true });
+    const gapAtOpen = { winner: gapEval.winner, sellMargin: gapEval.sellMargin, sellMinusHold: gapEval.means.SELL - gapEval.means.HOLD, boot: bootstrap(list, gapShape, tier, { ...opts, open: true }) };
+    results.push({ label: label(su), tier, ...main, byDay, variants, boot, penaltiesAtClose, checked, gapAtOpen });
   }
 }
 writeJson(path.join(out, `step4-snap-exit${SUFFIX}.json`), { recommendedUnit: REC, counts, tape: { shortfallSessions: SHORTFALL.length, overshootMean: OVERSHOOT, overshootSessions: TAPE.checkOvershootUnits.n }, results });
