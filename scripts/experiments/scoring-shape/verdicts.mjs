@@ -25,6 +25,7 @@ import path from 'node:path';
 import { fx, mdTable, outDirOf, readJson, writeJson } from './lib.mjs';
 
 const RULE = { loss: 0.05, win: 0.95 };
+const VIEWS = ['primary', 'gapAtOpen', 'checkPriced', 'intraday', 'intradayChecked', 'penaltiesAtClose'];
 const ALTERNATES = [{ loss: 0.03, win: 0.97 }, { loss: 0.10, win: 0.90 }];
 
 /** One window's reading of one row (a primary row, or a variant's { boot, sellMargin }). */
@@ -59,6 +60,12 @@ function main() {
       gapAtOpen: r.gapAtOpen && l.gapAtOpen ? [r.gapAtOpen, l.gapAtOpen] : null,
       // Check-priced (review B1): visibility-weighted, sold past the line, gap-throughs at the open. Not defined for S5.
       checkPriced: r.checked && l.checked ? [r.checked.checkPriced, l.checked.checkPriced] : null,
+      // Decomposition (final refuter F1): lines crossed DURING a session only (no gap-through), sold at the line, and the
+      // same cases check-priced.
+      intraday: r.nonGap && l.nonGap && r.nonGap.n && l.nonGap.n ? [r.nonGap, l.nonGap] : null,
+      intradayChecked: r.nonGap?.checked && l.nonGap?.checked ? [r.nonGap.checked, l.nonGap.checked] : null,
+      // The penalty reading (review A3, final refuter F3): penalties bank by the shape's own bonus rule.
+      penaltiesAtClose: r.penaltiesAtClose && l.penaltiesAtClose ? [r.penaltiesAtClose, l.penaltiesAtClose] : null,
     };
     const row = { label: r.label, tier: r.tier, winners: [r.winner, l.winner], gapFlip };
     for (const [k, pair] of Object.entries(views)) {
@@ -68,7 +75,7 @@ function main() {
     }
     rows.push(row);
   }
-  const flips = rows.flatMap((x) => Object.entries(x).filter(([k, v]) => ['primary', 'gapAtOpen', 'checkPriced'].includes(k) && v)
+  const flips = rows.flatMap((x) => Object.entries(x).filter(([k, v]) => VIEWS.includes(k) && v)
     .flatMap(([k, v]) => v.alternates.filter((a) => a.verdict !== v.verdict).map((a) => ({ label: x.label, tier: x.tier, view: k, at: `${a.rule.loss * 100}%/${a.rule.win * 100}%`, from: v.verdict, to: a.verdict }))));
   writeJson(path.join(out, 'verdicts.json'), { rule: RULE, alternates: ALTERNATES, rows, thresholdFlips: flips });
 
@@ -77,12 +84,16 @@ function main() {
   for (const tier of ['support', 'star']) {
     console.log(`\n## Snap-exit verdicts, ${tier}\n`);
     console.log(mdTable(['Shape-unit', 'V2: SELL − next best [90%] · SELL best', 'Long: SELL − next best [90%] · SELL best', 'Best on average (V2 / long)', 'Verdict',
-      'Gap-throughs at the open: V2 / long → verdict', 'Check-priced: V2 / long → verdict'],
+      'Gap-throughs at the open: V2 / long → verdict', 'Check-priced: V2 / long → verdict', 'Intraday crossings only: V2 / long → verdict', 'Intraday, check-priced: V2 / long → verdict', 'Penalties at the close: V2 / long → verdict'],
       rows.filter((x) => x.tier === tier).map((x) => [x.label, `${fx(x.primary.v2.margin, 1)} [${fx(x.primary.v2.next[0], 1)}, ${fx(x.primary.v2.next[1], 1)}] · ${P(x.primary.v2.share)}`,
         `${fx(x.primary.long.margin, 1)} [${fx(x.primary.long.next[0], 1)}, ${fx(x.primary.long.next[1], 1)}] · ${P(x.primary.long.share)}`, x.winners.join(' / '),
-        x.primary.verdict + (x.gapFlip ? '†' : ''), cell(x.gapAtOpen), cell(x.checkPriced)])));
+        x.primary.verdict + (x.gapFlip ? '†' : ''), cell(x.gapAtOpen), cell(x.checkPriced), cell(x.intraday), cell(x.intradayChecked), cell(x.penaltiesAtClose)])));
   }
+  const byKey = {};
+  for (const fl of flips) { const k = `${fl.view} · ${fl.tier} · ${fl.at}`; byKey[k] = (byKey[k] || 0) + 1; }
   console.log(`\n## The rule at 3%/97% and 10%/90% (post-hoc check): ${flips.length} cell-views change\n`);
+  console.log(mdTable(['View · tier · rule', 'Cells that change'], Object.entries(byKey).sort().map(([k, n]) => [k, String(n)])));
+  console.log('');
   if (flips.length) console.log(mdTable(['Shape-unit', 'Tier', 'View', 'Rule', 'At 5%/95%', 'There'], flips.map((f) => [f.label, f.tier, f.view, f.at, f.from, f.to])));
 }
 

@@ -322,7 +322,17 @@ for (const su of SHAPE_UNITS) {
     const gapShape = su.s.startsWith('S5') ? su.s : base.shape;
     const gapEval = evaluate(list, gapShape, tier, { ...opts, open: true });
     const gapAtOpen = { winner: gapEval.winner, sellMargin: gapEval.sellMargin, sellMinusHold: gapEval.means.SELL - gapEval.means.HOLD, boot: bootstrap(list, gapShape, tier, { ...opts, open: true }) };
-    results.push({ label: label(su), tier, ...main, byDay, variants, boot, penaltiesAtClose, checked, gapAtOpen });
+    // Decomposition (final refuter F1): the holds whose line was crossed DURING a session (no gap through it), alone, and
+    // the gap-throughs alone sold at the open — where SELL's edge under exit-only actually comes from.
+    const nonGapList = list.filter((cs) => !cs.gapThrough);
+    const ngEval = evaluate(nonGapList, gapShape, tier, opts);
+    const nonGap = { n: nonGapList.length, winner: ngEval.winner, sellMargin: ngEval.sellMargin, sellMinusHold: ngEval.means.SELL - ngEval.means.HOLD, boot: bootstrap(nonGapList, gapShape, tier, opts) };
+    const nonGapChecked = su.s.startsWith('S5') ? null : (() => { const e = evaluate(nonGapList, gapShape, tier, { ...opts, check: 'checkPriced' }); return { winner: e.winner, sellMargin: e.sellMargin, boot: bootstrap(nonGapList, gapShape, tier, { ...opts, check: 'checkPriced' }) }; })();
+    nonGap.checked = nonGapChecked;
+    const gapList = list.filter((cs) => cs.gapThrough);
+    const gEval = gapList.length ? evaluate(gapList, gapShape, tier, { ...opts, open: true }) : null;
+    const gapOnlyAtOpen = gEval ? { n: gapList.length, sellMinusHold: gEval.means.SELL - gEval.means.HOLD, sellMinusHoldAtLine: evaluate(gapList, gapShape, tier, opts).means.SELL - gEval.means.HOLD } : null;
+    results.push({ label: label(su), tier, ...main, byDay, variants, boot, penaltiesAtClose, checked, gapAtOpen, nonGap, gapOnlyAtOpen });
   }
 }
 writeJson(path.join(out, `step4-snap-exit${SUFFIX}.json`), { recommendedUnit: REC, counts, tape: { shortfallSessions: SHORTFALL.length, overshootMean: OVERSHOOT, overshootSessions: TAPE.checkOvershootUnits.n }, results });

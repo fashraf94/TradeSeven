@@ -6,12 +6,12 @@
 
 | Item | Result |
 |---|---|
-| Why a review | The branch adds 12 files and about 2,700 lines (ten scripts, the report, this record), past both of BUILD_RULES §2's thresholds |
-| Shape of the review | 3 independent lenses; every finding handed to a refuter told to refute it with a concrete repro; 16 refuters |
-| Findings | **22**: 11 CONFIRMED, 10 PARTLY CONFIRMED, 1 REFUTED |
-| Severity | 1 high (B1), 7 medium, 14 low or low-medium |
-| Did a headline change? | **Yes, one.** The snap-exit answer under exit-only is now **sensitive to how a sale at a 15-minute check is priced**, not "even" (B1, refuter R8). The one-day exit-only "SELL clearly wins" fell to a lean. The unit recommendation (×2 from the open, about ×√3 from the prior close) and every shape count stood |
-| Code fixes | step4SnapExit (S5 day-1 pricing, block bootstrap, strict-best and tie shares, by-day table, the penalty and check-priced variants, the n = 0 winner), step3Shapes (under-water price, give-backs with carries, scored penalty sensitivity, base percentiles), touchGap (no "bound", intervals, shortfall and overshoot), buildHolds and lib (comments), and a new `verdicts.mjs` that applies one stated rule |
+| Why a review | The branch adds 12 files and about 2,500 lines (ten scripts, the report, this record), past both of BUILD_RULES §2's thresholds |
+| Shape of the review | 3 independent lenses; every finding handed to a refuter told to refute it with a concrete repro; 16 refuters; then one final refuter on the final code and the rewritten report (F1–F10, below) |
+| Findings | **22** from the lenses: 11 CONFIRMED, 10 PARTLY CONFIRMED, 1 REFUTED. **10** more from the final refuter (F1–F10), all acted on |
+| Severity | Lenses: 1 high (B1), 6 medium (A1, A2, B2, B3, C1, C2), 15 low or low-medium. Final refuter: 1 high (F1), 2 medium (F2, F3), 7 low |
+| Did a headline change? | **Yes, the snap exit.** Under exit-only on the scaled units, selling at the line beats holding on intraday crossings (SELL wins on U4 and U5; starred when priced as a check would sell). The primary reads "even" only because, following the prompt, it sells gap-throughs at a line they never traded at (final refuter F1, after B1 and R8). The one-day exit-only game reads SELL wins\* at the line and even when check-priced. The unit recommendation (×2 from the open, about ×√3 from the prior close) and every shape count stood |
+| Code fixes | step4SnapExit (S5 day-1 pricing, block bootstrap, strict-best and tie shares, by-day table, the penalty and check-priced variants, the gap-at-open view, the intraday-only decomposition, the n = 0 winner), step3Shapes (under-water price, give-backs with carries, scored penalty sensitivity, base percentiles), touchGap (no "bound", intervals, shortfall and overshoot), buildHolds and lib (comments), and a new `verdicts.mjs` that applies one stated rule to six views and re-applies it at 3%/97% and 10%/90% |
 | Mutation check | Not applicable: no test was added |
 | Build, lint, suite | `vite build`, `npm run lint:gate` and the full Linux suite (`TZ=UTC`, 8 workers, `flock`) run on the pushed head; results in the PR |
 
@@ -47,7 +47,7 @@
 
 | Id | Sev. | Finding | Verdict (refuter) | Disposition |
 |---|---|---|---|---|
-| B1 | **high** | The snap-exit sample is chosen by daily highs and SELL fills exactly at the line, which flatters SELL. Weighted by the chance a 15-minute check sees the line, the V2-window lean toward SELL reverses | PARTLY CONFIRMED (R8). The mechanism is real (agents sell only at a check, at its quote) and the weights calibrate on the tape (22.4 predicted against 23 seen). But the reviewer counted only the check's cost, not its gain: a check sale sits a mean 0.123 one-day units past the line, and a gap-through can only fill at the open. Priced that way, exit-only **leans toward SELL** on the scaled units (U5 clearly on the long window). The one-day exit-only "clear win" falls to a lean (+1.4 to +2.0, intervals spanning zero) | Fixed: `touchGap.mjs` records the tape's shortfall and overshoot; `step4SnapExit.mjs` adds the check-priced sensitivity; `verdicts.mjs` gives its verdict beside the primary; the report states that the snap-exit sign under exit-only depends on execution pricing, and drops "100%" and "clearly wins" for the one-day game |
+| B1 | **high** | The snap-exit sample is chosen by daily highs and SELL fills exactly at the line, which flatters SELL. Weighted by the chance a 15-minute check sees the line, the V2-window lean toward SELL reverses | PARTLY CONFIRMED (R8). The mechanism is real (agents sell only at a check, at its quote) and the weights calibrate on the tape (22.4 predicted against 23 seen, in-sample). But the reviewer counted only the check's cost, not its gain: a check sale sits a mean 0.123 one-day units past the line, and a gap-through can only fill at the open. Priced that way, exit-only **leans toward SELL** on the scaled units. In the final run, U5 check-priced is "SELL wins\*" (97.8% V2, 92.7% long). The one-day exit-only "clear win" falls to even when check-priced (−1.4 / +1.4) | Fixed: `touchGap.mjs` records the tape's shortfall and overshoot; `step4SnapExit.mjs` adds the check-priced sensitivity; `verdicts.mjs` gives its verdict beside the primary; the report states that the snap-exit sign under exit-only depends on execution pricing, and drops "100%" and "clearly wins" for the one-day game |
 | B2 | med | The one-day baseline's snap-exit result was computed but left out | REFUTED (R1): already in the report at `67f43cea`, numbers matching a byte-identical re-run | None needed |
 | B3 | med | §10 overstated the effective sample of three-session figures (overlapping holds) | PARTLY CONFIRMED (R7). Three-session levels carry roughly 15–25 independent sessions' information in V2's window (60–100 of 174 long). The unit choice is not affected: the gap it compares is not autocorrelated, and U5 is picked in 92–98% of block resamples (exact multiple ×1.86–2.21 V2, ×1.90–2.05 long; √3 outside both) | Fixed: report §10 wording; the block bootstrap in Step 4 |
 | B4 | low | The touch-gap estimate is less precise than stated; the 10-minute sample is not a bound | CONFIRMED (R9). The checks sit on a different grid; 23 of 27 is the same on both samplers where they overlap; intervals 0.76–0.93 (checks) and 0.76–0.88 (10-minute closes); the larger sample spans 26 sessions, not 11 | Fixed: `touchGap.mjs` prints both session-resampled intervals and calls the second sample a second estimate; report §4 and §10 |
@@ -67,6 +67,32 @@
 | C6 | low-med | No out-of-tree copy yet; no by-day table; baseline missing from three tables; §10 omitted the S5 open-fill flip | CONFIRMED (R15), all four | Fixed: the copies are written from `git show HEAD:` at the end and hash-checked; by-day table; baseline rows; §10 |
 | C7 | low | Provenance and wording (the scorer-only claim, a misquote at `:211`, missing line numbers, the unmerged Phase 0 doc, figures in no output, overstated wording in FQ-3/FQ-5 and §5) | PARTLY CONFIRMED (R16): all wording; no number moves; the S1–S3 crossed-set override changes nothing (0 differences in 26,676 checks per unit); "H1 cited" refuted | Fixed: report wording, citations with lines, the Phase 0 doc marked unmerged, step3 prints base percentiles |
 
+## After the review: the advisor's checks and the final refuter
+
+**Added after the 16 refuters** (on the advisor's prompt):
+- the setup payoff quote's provenance: rows identical at `7133ec29` and the branch head `b2270519`;
+- a check that no cited file changed on `main` between `bd841257` and `f1ef6290`: none did;
+- the gap-at-open view's own margin and bootstrap;
+- the rule re-applied at 3%/97% and 10%/90%;
+- a disclosure that the verdict rule and the block bootstrap were fixed after the first results.
+
+**The final refuter** re-checked the final code (`a99b2844`) and the rewritten report: every number against the final JSONs, and the new code's logic. Its findings:
+
+| Id | Sev. | Finding | Disposition |
+|---|---|---|---|
+| F1 | **high** | The report's new framing ("the snap-exit risk comes mainly from overnight gap-ups; intraday crossings are about even") was backwards. On intraday crossings alone, exit-only on U4 and U5 is a clear SELL win; the primary's "even" comes from gap-throughs priced at a line they never traded at (−9 to −31 per gap case); sold at the open, gap cases add little | CONFIRMED and fixed. Step 4 now stores the intraday-only view (`nonGap`, with its check-priced version) and the per-gap-case margins (`gapOnlyAtOpen`). `verdicts.mjs` reads both. The report's summary brackets, plain terms, §6 decomposition table and answer, FQ-4 and FQ-10 are rewritten from them |
+| F2 | med | "Clearly loses, however the sale is priced" overstated the carry and the unscaled unit | CONFIRMED; the carry is restated by size and by view; "every view tested" now lists only the cells that lose in every view |
+| F3 | med | The penalties-at-close reading does change one verdict (S5 at each close: even → SELL loses\*); `verdicts.mjs` never applied the rule to it | CONFIRMED; the view was added; §6 and FQ-1 corrected |
+| F4 | low-med | This record was stale against the final report (B1's disposition, the one-day "lean") and omitted the post-review additions | CONFIRMED; fixed here |
+| F5 | low | Severity counts (6 medium, not 7) and the size line were off | CONFIRMED; fixed |
+| F6 | low | Threshold paragraph: Star primary also changes; 6 of 37 flips were primary; "no win↔loss" holds by construction | CONFIRMED; the paragraph gives per-view counts and says the direction check is not evidence on its own |
+| F7 | low | "Gives back 0.3–1.3 points" held for S2 only | CONFIRMED; the sentence was removed with the old framing |
+| F8 | low | The Star paragraph missed three differences | CONFIRMED; listed |
+| F9 | low | Check-priced modelling: gap cases weight 1 against a modelled 91–94%; the mean overshoot hides a 0.62 tail; the calibration is in-sample | CONFIRMED; stated in the report's limits (worth about +0.3 on the one-day margin; no verdict changes) |
+| F10 | low | Some figures come from refuters' runs, not the final run | CONFIRMED; each is marked "(review …)" or "(refuter …)", and the preamble says so |
+
+The intraday decomposition and the six-view verdicts were re-run after F1 and checked against `verdicts.json` before the final commit. No reviewer reviewed them after that. This record says so rather than claiming otherwise.
+
 ## What changed in the numbers
 
 - **Step 4 (the snap-exit test).**
@@ -79,4 +105,4 @@
   - S4's give-back share now counts carries.
   - The penalty sensitivity is scored.
 - **Steps 1, 2 and 5:** no figure moved.
-- **The setup payoff check.** It was found after the first draft, in another session's local branch (`claude/setup-payoff-check` at `7133ec29`, not pushed). The report quotes it marked unmerged.
+- **The setup payoff check.** It was found after the first draft, in another session's local branch (`claude/setup-payoff-check`, quoted from its head `b2270519`; the rows are identical at `7133ec29`; not pushed). The report quotes it marked unmerged.
