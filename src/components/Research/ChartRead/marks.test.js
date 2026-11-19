@@ -94,20 +94,20 @@ describe('MK-1: each value is the record\'s own field, and a mark exists only wh
   });
 });
 
-describe('MK-3: which marks show by default; with the sheet open, all that exist', () => {
+describe('MK-3: which marks show by default; with the chart compact, all that exist (PG-3)', () => {
   it('the defaults, pinned per state', () => {
     expect(DEFAULT_MARKS).toEqual({ valid_pullback: [1, 4, 5, 6], valid_breakout: [1, 5], regime: [1, 2, 3], no_setup: [1, 4, 5], extended: [1, 7] });
     const marks = marksOf(VP.read);
     expect(shownMarkNumbers('valid_pullback', marks)).toEqual([1, 4, 5, 6]);
     expect(shownMarkNumbers('extended', marks)).toEqual([1, 7]);
     expect(shownMarkNumbers('unknown', marks)).toEqual([]);
-    expect(shownMarkNumbers('valid_pullback', marks, { sheetOpen: true })).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(shownMarkNumbers('valid_pullback', marks, { compact: true })).toEqual([1, 2, 3, 4, 5, 6, 7]);
   });
   it('a default whose mark does not exist is simply not shown', () => {
     const r = clone(VP.read);
     r.swingLow.value = null;
     expect(shownMarkNumbers('valid_pullback', marksOf(r))).toEqual([1, 4, 5]);
-    expect(shownMarkNumbers('valid_pullback', marksOf(r), { sheetOpen: true })).toEqual([1, 2, 3, 4, 5, 7]);
+    expect(shownMarkNumbers('valid_pullback', marksOf(r), { compact: true })).toEqual([1, 2, 3, 4, 5, 7]);
   });
 });
 

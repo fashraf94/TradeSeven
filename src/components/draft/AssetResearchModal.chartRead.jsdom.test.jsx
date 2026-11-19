@@ -1,22 +1,25 @@
 // @vitest-environment jsdom
 //
-// THE CHART VIEW'S READ in the real modal (build prompt §5 – §8; spec docs/specs/CHART_READ_SPEC_V1.md): the real
-// modal, the real StockChart and the real read (useChartRead → the client read), on the shell's browse mount. The
-// network and the chart library are faked and recorded; GET /api/research/setup-read answers bodies made by the
-// store's own evaluator (ChartRead/__fixtures__/chartReadRecords.js). CHART_READ_MODE and the shell's mode are
-// mocked per row.
+// THE CHART VIEW'S READ in the real modal (spec docs/specs/CHART_READ_SPEC_V1.md V1.1; the 18 Nov build §5 – §8 and the
+// 19 Nov build CP-1 – CP-3): the real modal, the real StockChart and the real read (useChartRead → the client read), on
+// the shell's browse mount. The network and the chart library are faked and recorded; GET /api/research/setup-read
+// answers bodies made by the store's own evaluator (ChartRead/__fixtures__/chartReadRecords.js). CHART_READ_MODE, the
+// shell's mode and the opening view (RESEARCH_MODAL_OPENING_VIEW, 'chart' as shipped) are mocked per row.
 //
-//   flag off            no request; no band, no chip, no primitive; today's adjusted candles; no levels note
-//   flag on             one request; the read's line; raw 1D candles with the live price last; the note; the
-//                       Rule chip; the marks through the primitive; the sheet (groups, tap to light, Escape, focus);
-//                       1W; a failed read; not admitted; crypto, an index and a fund (no slot, no request)
+//   flag off            no request; no band, no checks, no pin, no chip, no primitive; today's adjusted candles; opens
+//                       on Analysis (OV-5)
+//   flag on             one request; the read's line and today so far (CP-3); the checks on the page under a pinned
+//                       chart (CP-1, PG-1 – PG-10) with its two heights (PG-2); raw 1D candles with the live price last;
+//                       the note; the Rule chip; the marks through the primitive; 1W; FX-4; the opening view (CP-2);
+//                       a failed read; not admitted; crypto, an index and a fund (no slot, no request)
+
 
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 
 vi.hoisted(() => { process.env.TZ = 'UTC'; });
-const FLAG = vi.hoisted(() => ({ sheet: 'on', bomb: 'on', read: 'on' }));
+const FLAG = vi.hoisted(() => ({ sheet: 'on', bomb: 'on', read: 'on', open: 'chart' }));
 const FLAGS = vi.hoisted(() => ({
   get RESEARCH_MODAL_SHEET_MODE() { return FLAG.sheet; },
   RESEARCH_MODAL_SHEET_MODES: Object.freeze(['off', 'allowlist', 'on']),
@@ -24,6 +27,8 @@ const FLAGS = vi.hoisted(() => ({
   RESEARCH_MODAL_BOMB_MODES: Object.freeze(['off', 'allowlist', 'on']),
   get CHART_READ_MODE() { return FLAG.read; },
   CHART_READ_MODES: Object.freeze(['off', 'allowlist', 'on']),
+  get RESEARCH_MODAL_OPENING_VIEW() { return FLAG.open; },
+  RESEARCH_MODAL_OPENING_VIEWS: Object.freeze(['analysis', 'chart']),
 }));
 vi.mock('../../config/researchModalFlags', () => FLAGS);
 vi.mock('../../config/researchModalFlags.js', () => FLAGS);
@@ -131,7 +136,7 @@ beforeEach(() => {
   container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
   net.calls.length = 0; net.daily = dailyFor('VALID_PULLBACK'); net.weekly = null; net.weeklyGate = null; net.read = answer(200, B.VALID_PULLBACK); net.score = { factors: { sectorRSPercentile: 73 }, updatedAt: '2026-11-18T18:30:00.000Z' };
   for (const k of Object.keys(rec)) rec[k].length = 0;
-  FLAG.sheet = 'on'; FLAG.bomb = 'on'; FLAG.read = 'on';
+  FLAG.sheet = 'on'; FLAG.bomb = 'on'; FLAG.read = 'on'; FLAG.open = 'chart';
   Element.prototype.scrollIntoView = vi.fn();
   try { localStorage.clear(); } catch { /* none */ }
   vi.spyOn(console, 'log').mockImplementation(() => {}); vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -154,15 +159,42 @@ const browse = async ({ symbol = 'CEG', name = 'Constellation Energy', price = P
 };
 const toChart = async () => { await click($('[data-shell-pill="chart"]')); await flush(); };
 const bandText = () => $('[data-chart-read-lead]')?.textContent ?? null;
+// The read's line as the modal builds it: today (Wed 1:44 PM ET, the session open) and the header's printed price.
+const CTX = { todayEt: '2026-11-18', todayIsSession: true, sessionOpened: true, headerPrice: PRICE.toFixed(2) };
+// What the chart draws: the scene of the primitive attached to the CURRENT candle series (nothing to show detaches it; a
+// rebuilt chart leaves the old one behind on the removed series).
+const live = () => { const e = rec.prims.at(-1); return e && e.series === candle() && !rec.detached.includes(e.primitive) ? e.primitive : null; };
+const drawn = () => live()?.scene.items.map((i) => i.n) ?? [];
+const litNow = () => live()?.scene.items.filter((i) => i.lit).map((i) => i.n).sort() ?? [];
+const plotH = () => $('[data-basis-note]').parentElement.style.height;
+const candles = () => rec.series.filter((s) => s.kind === 'Candlestick').length;
+/** Scroll the Chart view to `top`, the checks' top edge at `checksTop` and the pinned chart's lower edge at `pinBottom` (jsdom has no layout). */
+const scrollView = async (top, { checksTop = 400, pinBottom = 284 } = {}) => {
+  const view = $('[data-shell-scroll="chart"]');
+  Object.defineProperty(view, 'scrollTop', { configurable: true, writable: true, value: top });
+  const checks = $('[data-chart-read-checks]');
+  const pin = $('[data-chart-pin]');
+  if (checks) checks.getBoundingClientRect = () => ({ top: checksTop, bottom: checksTop + 600, left: 0, right: 390, width: 390, height: 600, x: 0, y: checksTop });
+  if (pin) pin.getBoundingClientRect = () => ({ top: 0, bottom: pinBottom, left: 0, right: 390, width: 390, height: pinBottom, x: 0, y: 0 });
+  await act(async () => { view.dispatchEvent(new Event('scroll')); });
+  await flush();
+};
+const intoChecks = () => scrollView(260, { checksTop: 270, pinBottom: 284 });
+// The header's price as the header prints it: the one leaf outside the views reading $d.dd.
+const headerPrice = () => $$('span, div').filter((s) => s.children.length === 0 && /^\$\d+\.\d{2}$/.test(s.textContent.trim()) && !s.closest('[data-shell-scroll]')).map((s) => s.textContent.trim())[0] ?? null;
 
 describe('flag off: the Chart view is today\'s, and no request is made', () => {
   it.each([['off'], ['yes'], [undefined]])('CHART_READ_MODE %s', async (mode) => {
     FLAG.read = mode;
     await browse();
+    expect($('[data-shell-view]').dataset.shellView).toBe('analysis'); // OV-5: opens as today, whatever the opening view says
     await toChart();
     expect($('[data-shell-scroll="chart"]')).toBeTruthy();
     expect(readCalls()).toEqual([]);
     expect($('[data-chart-read]')).toBeNull();
+    expect($('[data-chart-read-checks]')).toBeNull();
+    expect($('[data-chart-pin]')).toBeNull(); // no wrapper: today's markup
+    expect($('[data-chart-read-page]')).toBeNull();
     expect($('[data-rule-pill]')).toBeNull();
     expect($('[data-basis-note]')).toBeNull();
     expect(rec.prims).toEqual([]);
@@ -175,26 +207,33 @@ describe('flag off: the Chart view is today\'s, and no request is made', () => {
 });
 
 describe('flag on: the read under the plot (§5)', () => {
-  it('one request on the Chart view, none before it; the line, its date, its second line, its footnote', async () => {
+  it('one request on the Chart view, none before it; the line, its date, its second line, today so far — and it opens nothing (PG-5)', async () => {
+    FLAG.open = 'analysis';
     await browse();
     expect(readCalls()).toEqual([]); // the Analysis view opens first: nothing asked yet
     await toChart();
     expect(readCalls()).toEqual([['fetchWithAuth', '/api/research/setup-read?symbol=CEG']]);
-    const line = readLineOf(B.VALID_PULLBACK, { todayEt: '2026-11-18', todayIsSession: true });
+    const line = readLineOf(B.VALID_PULLBACK, CTX);
     expect(bandText()).toBe(`${line.lead}${line.rest}`);
     expect(bandText()).toBe(`Pullback and Resume · present — touched its 20-day (${formatPrice(B.VALID_PULLBACK.read.facts.SMA_fast)}) and closed back above it.`);
     expect($('[data-chart-read-asof]').textContent).toBe('as of Tue Nov 17 close');
     expect($('[data-chart-read-second]').textContent).toBe('Volume isn’t part of this pattern; participation is unconfirmed.');
-    expect($$('[data-chart-read-note]').map((n) => n.textContent)).toEqual(['Tuesday’s close. Today’s session is read after it ends.']);
-    expect($('[data-chart-read]').tagName).toBe('BUTTON');
+    // CP-3: today so far, which replaces RD-8's footnote (TD-4)
+    expect($('[data-chart-read-today]').textContent).toBe(line.today);
+    expect(line.today.startsWith(`Today so far: $${PRICE.toFixed(2)} — `)).toBe(true);
+    expect($$('[data-chart-read-note]')).toEqual([]);
+    // PG-5: the read is no longer a button; nothing says open or close
+    expect($('[data-chart-read]').tagName).toBe('DIV');
+    expect($('[data-chart-read]').hasAttribute('aria-haspopup')).toBe(false);
+    expect(document.body.textContent).not.toMatch(/Open the checks|Close the checks/);
     expect($('[data-chart-read-change]')).toBeNull();
   });
-  it('the band follows the plot and comes before the Technical content (round 6 F)', async () => {
+  it('the order of the page: the chart, the read, the checks, the Technical content (§4 of the build)', async () => {
     await browse();
     await toChart();
     const view = $('[data-shell-scroll="chart"]');
-    const order = [...view.querySelectorAll('[data-chart-read], [data-shell-technical]')].map((e) => (e.hasAttribute('data-chart-read') ? 'read' : 'technical'));
-    expect(order).toEqual(['read', 'technical']);
+    const order = [...view.querySelectorAll('[data-chart-pin], [data-chart-read], [data-chart-read-checks], [data-shell-technical]')].map((e) => (e.hasAttribute('data-chart-pin') ? 'chart' : e.hasAttribute('data-chart-read') ? 'read' : e.hasAttribute('data-chart-read-checks') ? 'checks' : 'technical'));
+    expect(order).toEqual(['chart', 'read', 'checks', 'technical']);
     expect(rec.technical.at(-1).levelsNote).toBe('Support and resistance · its own calculation · not the rule’s 20-session high and low');
   });
   it('switching Analysis ↔ Chart asks nothing again', async () => {
@@ -205,17 +244,21 @@ describe('flag on: the read under the plot (§5)', () => {
     expect(readCalls()).toHaveLength(1);
     expect(bandText()).toContain('Pullback and Resume');
   });
-  it.each(['VALID_BREAKOUT', 'REGIME_B', 'NO_SETUP', 'EXTENDED', 'UNKNOWN_V', 'SPLIT', 'ABSENT', 'NO_ADJUSTMENT', 'CHANGED'])('%s: its line, its second line, its notes; a sheet only where it opens one', async (k) => {
+  it.each(['VALID_BREAKOUT', 'REGIME_B', 'NO_SETUP', 'EXTENDED', 'UNKNOWN_V', 'SPLIT', 'ABSENT', 'NO_ADJUSTMENT', 'CHANGED'])('%s: its line, its second line, today so far, its notes; the checks only where it has them', async (k) => {
     net.read = answer(200, B[k]);
     await browse();
     await toChart();
-    const line = readLineOf(B[k], { todayEt: '2026-11-18', todayIsSession: true });
+    const line = readLineOf(B[k], CTX);
     expect(bandText()).toBe(`${line.lead ?? ''}${line.rest}`);
     expect($('[data-chart-read-second]')?.textContent ?? null).toBe(line.second);
+    expect($('[data-chart-read-today]')?.textContent ?? null).toBe(line.today);
     expect($$('[data-chart-read-note]').map((n) => n.textContent)).toEqual(line.notes);
     expect($('[data-chart-read-change]')?.textContent ?? null).toBe(line.change);
-    expect($('[data-chart-read]').tagName).toBe(line.opensSheet ? 'BUTTON' : 'DIV');
+    expect($('[data-chart-read]').tagName).toBe('DIV');
     expect($('[data-chart-read]').dataset.chartRead).toBe(line.state);
+    expect(!!$('[data-chart-read-checks]')).toBe(line.hasChecks);
+    // PG-7: a quiet state is one line — no checks, and the chart never pinned
+    expect($('[data-chart-pin]').dataset.chartPin).toBe(line.hasChecks ? 'full' : 'none');
     if (k === 'CHANGED') expect(line.change).toBe('New since Mon: touched the 20-day and closed back above it.');
   });
 });
@@ -260,17 +303,16 @@ describe('flag on: the candles and the marks (§4, §7)', () => {
     net.weekly = [{ date: '2026-11-16', open: 199, high: 202, low: 197, close: 200.37, volume: 1 }, { date: '2026-11-09', open: 197, high: 200, low: 195, close: 198.1, volume: 1 }, { date: '2026-11-02', open: 195, high: 198, low: 193, close: 196.3, volume: 1 }, { date: '2026-10-26', open: 193, high: 196, low: 191, close: 194.4, volume: 1 }, { date: '2026-10-19', open: 191, high: 194, low: 189, close: 192.2, volume: 1 }];
     await browse();
     await toChart();
-    // what is drawn: the attached primitive's scene (nothing to show detaches it)
-    const drawn = () => { const p = rec.prims.at(-1)?.primitive; return p && !rec.detached.includes(p) ? p.scene.items.map((i) => i.n) : []; };
     await click(chartBtn('1W'));
     expect(drawn()).toEqual([1, 2, 3]);
+    expect($('[data-chart-read-weekly-note]')).toBeNull();
     await click(chartBtn('SMA'));
     expect(drawn()).toEqual([]);
-    await click($('[data-chart-read]'));
-    expect($('[data-chart-read-weekly-note]').textContent).toBe('On 1W the drawn averages are weekly; marks 1 to 3 are on 1D.');
-    expect(drawn().some((n) => n <= 3)).toBe(false);
-    // a row still lists its mark numbers
+    expect($('[data-chart-read-checks] [data-chart-read-weekly-note]').textContent).toBe('On 1W the drawn averages are weekly; marks 1 to 3 are on 1D.');
+    // a row still lists its mark numbers; tapping it lights nothing 1 – 3 on this chart
     expect($('[data-check-row="fastAboveSlow"] [data-mark-number="2"]')).toBeTruthy();
+    await click($('[data-check-row="fastAboveSlow"]'));
+    expect(drawn().some((n) => n <= 3)).toBe(false);
     await click(chartBtn('SMA'));
     expect($('[data-chart-read-weekly-note]')).toBeNull();
     expect(drawn()).toEqual(expect.arrayContaining([1, 2, 3]));
@@ -284,19 +326,17 @@ describe('flag on: the candles and the marks (§4, §7)', () => {
     let release;
     net.weekly = null;
     const weekly = [{ date: '2026-11-16', open: 199, high: 202, low: 197, close: 200.37, volume: 1 }, { date: '2026-11-09', open: 197, high: 200, low: 195, close: 198.1, volume: 1 }, { date: '2026-11-02', open: 195, high: 198, low: 193, close: 196.3, volume: 1 }, { date: '2026-10-26', open: 193, high: 196, low: 191, close: 194.4, volume: 1 }];
+    net.weeklyGate = new Promise((r) => { release = r; });
     await browse();
     await toChart();
     expect(scene().items.length).toBeGreaterThan(0);
-    const { fetchHistoricalOHLCV } = await import('../../services/eodhdAPI');
-    void fetchHistoricalOHLCV; // the mock's 1w answer is held below
-    net.weeklyGate = new Promise((r) => { release = r; });
     await click(chartBtn('1W'));
-    // Whatever primitive sits on the CURRENT candle series (the chart rebuilt for 1W) draws nothing on these daily bars.
-    const onCurrent = rec.prims.filter((p) => p.series === candle()).flatMap((p) => p.primitive.scene.items);
-    expect(onCurrent).toEqual([]);
+    // the hook is on 1W but still holds the daily bars: the read draws nothing on them
+    const onCandle = rec.prims.filter((p) => p.series === candle() && !rec.detached.includes(p.primitive));
+    expect(onCandle.flatMap((p) => p.primitive.scene.items)).toEqual([]);
     expect($('[data-basis-note]')).toBeNull();
     net.weekly = weekly;
-    release();
+    await act(async () => { release(); });
     await flush();
     expect(rec.prims.filter((p) => p.series === candle()).flatMap((p) => p.primitive.scene.items).length).toBeGreaterThan(0);
   });
@@ -309,33 +349,38 @@ describe('flag on: the candles and the marks (§4, §7)', () => {
     const point = sma20.data.find((p) => p.time === t);
     expect(Math.abs(point.value - B.VALID_PULLBACK.read.facts.SMA_fast)).toBeLessThanOrEqual(0.005 + 1e-9);
   });
-  it('review L2-3: the open sheet and its lit check never follow the modal to another stock', async () => {
+  it('PG-4 (review L2-3): a tapped check never follows the modal to another stock; its patterns collapse again and the chart is full again', async () => {
+    net.read = answer(200, B.REGIME_B);
     await browse();
     await toChart();
-    await click($('[data-chart-read]'));
-    await click($('[data-check-row="touch"]'));
-    expect(scene().items.filter((i) => i.lit).length).toBe(2);
+    await click($('[data-check-group="patterns"]'));
+    await click($('[data-check-row="slowRising"]'));
+    expect(litNow()).toEqual([2, 3]);
+    await intoChecks();
+    expect($('[data-chart-pin]').dataset.chartPin).toBe('compact');
     await act(async () => { root.render(<AssetResearchModal asset={{ symbol: 'VST', name: 'Vistra', price: PRICE, percentChange: 0.2 }} onClose={() => {}} version={2} actionConfig={{ label: 'Add to Watchlist', onClick: () => {}, variant: 'primary' }} />); });
     await flush();
     await act(async () => { root.render(<AssetResearchModal asset={{ symbol: 'CEG', name: 'Constellation Energy', price: PRICE, percentChange: 0.6 }} onClose={() => {}} version={2} actionConfig={{ label: 'Add to Watchlist', onClick: () => {}, variant: 'primary' }} />); });
     await flush();
     if (!$('[data-shell-scroll="chart"]')) await toChart();
-    expect($('[data-chart-read-sheet]')).toBeNull();
-    expect((scene()?.items ?? []).filter((i) => i.lit)).toEqual([]);
+    expect(litNow()).toEqual([]);
+    expect($('[data-check-row][aria-pressed="true"]')).toBeNull();
+    expect($('[data-check-group="patterns"]')?.hasAttribute('data-collapsed')).toBe(true);
+    expect($('[data-chart-pin]').dataset.chartPin).toBe('full');
   });
-  it('review L2-3 (mutant Y7): leaving the Chart view closes the sheet, and back on it no mark is left lit', async () => {
+  it('review L2-3 (mutant Y7): leaving the Chart view clears the tapped check; back on it no mark is lit and the chart is full height', async () => {
     await browse();
     await toChart();
-    await click($('[data-chart-read]'));
     await click($('[data-check-row="touch"]'));
-    expect(scene().items.filter((i) => i.lit).length).toBe(2);
+    expect(litNow()).toEqual([1, 4]);
+    await intoChecks();
     await click($('[data-shell-pill="analysis"]'));
     await toChart();
-    expect($('[data-chart-read-sheet]')).toBeNull();
-    expect(scene().items.filter((i) => i.lit)).toEqual([]);
+    expect(litNow()).toEqual([]);
     expect(prim().priceAxisViews()).toEqual([]);
+    expect($('[data-chart-pin]').dataset.chartPin).toBe('full');
   });
-  it('a read that opens no sheet: no chip, no marks; the 1D candles still unadjusted under it', async () => {
+  it('a read that shows no checks: no chip, no marks; the 1D candles still unadjusted under it', async () => {
     net.read = answer(200, B.SPLIT);
     await browse();
     await toChart();
@@ -345,131 +390,266 @@ describe('flag on: the candles and the marks (§4, §7)', () => {
   });
 });
 
-describe('the sheet (§6, SH-1 – SH-5)', () => {
-  it('opens from the read; the groups by purpose with their counts; every mark that exists shows; the band and the Technical content give way', async () => {
+describe('CP-1: the checks on the page (PG-1 – PG-10)', () => {
+  it('in the order of §6, with their counts; the hint above them; no layer anywhere in the Chart view (PG-1, PG-5)', async () => {
     await browse();
     await toChart();
-    await click($('[data-chart-read]'));
-    const sheet = $('[role="dialog"][data-chart-read-sheet]');
-    expect(sheet).toBeTruthy();
-    expect(sheet.getAttribute('aria-modal')).toBe('true');
     expect($$('[data-check-group]').map((g) => g.dataset.checkGroup)).toEqual(['uptrend', 'pullback_resume', 'stretch', 'breakout', 'context']);
     expect($$('[data-check-count]').map((c) => c.textContent)).toEqual(['3 of 3', '2 of 2', 'not present']);
-    expect(scene().items.map((i) => i.n)).toEqual([1, 2, 3, 4, 5, 6, 7]);
-    expect($('[data-chart-read]')).toBeNull();
-    expect($('[data-shell-technical]')).toBeNull();
-    expect($('[data-sector-rank]').textContent).toBe('73 of 100 within its sector · 20 sessions · 0 is weakest · read Wed 1:30 PM ET; may include today’s unfinished session');
-    expect(net.calls.filter((c) => c[0] === 'getDoc').map((c) => c[1])).toEqual(['stockTechnicalScores/CEG']);
-    expect(document.activeElement).toBe($('[data-chart-read-close]'));
-  });
-  it('round 6 B: while it is open the action row gives way and the plot yields height; both come back on close', async () => {
-    await browse();
-    await toChart();
-    const watch = () => [...document.body.querySelectorAll('button')].some((b) => /Add to Watchlist/i.test(b.textContent));
-    const plotH = () => $('[data-basis-note]').parentElement.style.height;
-    const closedH = plotH();
-    expect(watch()).toBe(true);
-    await click($('[data-chart-read]'));
-    expect(watch()).toBe(false);
-    // review L3-4: strictly smaller (jsdom's view is 0 px tall: the shell's 240 px plot, 180 px under the sheet)
-    expect([closedH, plotH()]).toEqual(['240px', '180px']);
-    await click($('[data-chart-read-close]'));
-    expect(watch()).toBe(true);
-    expect(plotH()).toBe(closedH);
-  });
-  it('a tap lights the row\'s marks and scrolls nothing; a second tap clears them', async () => {
-    await browse();
-    await toChart();
-    await click($('[data-chart-read]'));
+    expect($$('[data-chart-read-hint]').map((h) => h.textContent)).toEqual(['tap a check to light its mark']);
+    expect($$('[data-other-reading]').length).toBe(2);
+    expect($('[data-chart-read-foot]')).toBeTruthy();
     const view = $('[data-shell-scroll="chart"]');
-    const before = view.scrollTop;
+    expect(view.querySelector('[role="dialog"], [aria-modal]')).toBeNull();
+    expect(view.querySelector('[data-chart-read-checks]').tagName).toBe('SECTION');
+    expect(view.querySelector('[data-chart-read-checks]').getAttribute('aria-label')).toBe('The checks');
+  });
+  it('no focus trap and no Escape of its own: a key on the last row reaches the page as on any button (PG-1)', async () => {
+    const heard = vi.fn();
+    window.addEventListener('keydown', heard);
+    try {
+      await browse();
+      await toChart();
+      const rows = $$('[data-chart-read-checks] button');
+      const last = rows.at(-1);
+      last.focus();
+      const tab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true });
+      await act(async () => { last.dispatchEvent(tab); });
+      expect(tab.defaultPrevented).toBe(false);
+      expect(document.activeElement).toBe(last); // nothing moved focus for it (jsdom does not tab natively)
+      const esc = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+      await act(async () => { last.dispatchEvent(esc); });
+      expect(heard).toHaveBeenCalledTimes(2); // both keys reached the window: nothing stopped them
+      expect($('[data-chart-read-checks]')).toBeTruthy();
+    } finally {
+      window.removeEventListener('keydown', heard);
+    }
+  });
+  it('PG-1: nothing gives way — the action row and the Technical content stay while the checks show', async () => {
+    await browse();
+    await toChart();
+    expect($('[data-chart-read-checks]')).toBeTruthy();
+    expect([...document.body.querySelectorAll('button')].some((b) => /Add to Watchlist/i.test(b.textContent))).toBe(true);
+    expect($('[data-shell-technical]')).toBeTruthy();
+  });
+  it('PG-9: the sector rank is read once, when the checks render — not on a tap', async () => {
+    await browse();
+    await toChart();
+    expect(net.calls.filter((c) => c[0] === 'getDoc').map((c) => c[1])).toEqual(['stockTechnicalScores/CEG']);
+    expect($('[data-sector-rank]').textContent).toBe('73 of 100 within its sector · 20 sessions · 0 is weakest · read Wed 1:30 PM ET; may include today’s unfinished session');
+    await click($('[data-check-row="touch"]'));
+    await click($('[data-check-row="touch"]'));
+    expect(net.calls.filter((c) => c[0] === 'getDoc')).toHaveLength(1);
+  });
+  it('PG-4: a tap lights the row\'s marks and scrolls nothing; a second tap clears them', async () => {
+    await browse();
+    await toChart();
+    const view = $('[data-shell-scroll="chart"]');
+    Object.defineProperty(view, 'scrollTop', { configurable: true, writable: true, value: 137 });
     await click($('[data-check-row="touch"]'));
     expect($('[data-check-row="touch"]').getAttribute('aria-pressed')).toBe('true');
-    expect(scene().items.filter((i) => i.lit).map((i) => i.n).sort()).toEqual([1, 4]);
-    expect(view.scrollTop).toBe(before);
+    expect(litNow()).toEqual([1, 4]);
+    expect(view.scrollTop).toBe(137);
     await click($('[data-check-row="touch"]'));
     expect($('[data-check-row="touch"]').getAttribute('aria-pressed')).toBe('false');
-    expect(scene().items.filter((i) => i.lit)).toEqual([]);
+    expect(litNow()).toEqual([]);
   });
-  it('SH-3: when the uptrend fails the patterns collapse to one line; a tap expands them', async () => {
+  it('PG-3: a tapped check\'s marks always show, lit — outside the default set, and with the Rule chip off', async () => {
+    await browse();
+    await toChart();
+    expect(drawn()).toEqual([1, 4, 5, 6]);
+    await click($('[data-check-row="slowRising"]')); // marks 2 and 3: not in valid · Pullback's default set
+    expect(drawn()).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(litNow()).toEqual([2, 3]);
+    await click($('[data-rule-pill]'));
+    expect($('[data-rule-pill]').dataset.rulePill).toBe('off');
+    expect(drawn()).toEqual([2, 3]);
+    await click($('[data-check-row="slowRising"]'));
+    expect(drawn()).toEqual([]);
+  });
+  it('PG-6 (SH-3): when the uptrend fails the patterns collapse to one line; a tap expands them', async () => {
     net.read = answer(200, B.REGIME_B);
     await browse();
     await toChart();
-    await click($('[data-chart-read]'));
     expect($$('[data-check-group]').map((g) => g.dataset.checkGroup)).toEqual(['uptrend', 'patterns', 'context']);
     expect($('[data-check-group="patterns"]').textContent).toContain('Entry patterns are read only in an uptrend.');
     await click($('[data-check-group="patterns"]'));
     expect($$('[data-check-group]').map((g) => g.dataset.checkGroup)).toEqual(['uptrend', 'pullback_resume', 'stretch', 'breakout', 'context']);
   });
-  it('SH-4: Escape closes only the sheet — nothing under it hears that key — and focus goes back to the read', async () => {
-    const heard = vi.fn();
-    window.addEventListener('keydown', heard);
-    try {
-      await browse();
-      await toChart();
-      await click($('[data-chart-read]'));
-      await key($('[data-chart-read-close]'), 'Escape');
-      expect($('[data-chart-read-sheet]')).toBeNull();
-      expect(heard).not.toHaveBeenCalled();
-      expect(document.activeElement).toBe($('[data-chart-read]'));
-      expect($('[data-shell-technical]')).toBeTruthy();
-      await key($('[data-chart-read]'), 'Escape'); // the next Escape is the screen's again
-      expect(heard).toHaveBeenCalledTimes(1);
-    } finally {
-      window.removeEventListener('keydown', heard);
-    }
-  });
-  it('Tab stays inside the sheet', async () => {
-    await browse();
-    await toChart();
-    await click($('[data-chart-read]'));
-    const f = [...$('[data-chart-read-sheet]').querySelectorAll('button')];
-    f.at(-1).focus();
-    await key(f.at(-1), 'Tab');
-    expect(document.activeElement).toBe(f[0]);
-    await act(async () => { f[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true })); });
-    expect(document.activeElement).toBe(f.at(-1));
-  });
-  it('display agreement: mark 1\'s value, the lead\'s 20-day and the sheet\'s rows print one string', async () => {
+  it('display agreement: mark 1\'s value, the lead\'s 20-day, the checks\' rows and the lit label print one string', async () => {
     await browse();
     await toChart();
     const sma = formatPrice(scene().items.find((i) => i.n === 1).value);
     expect(bandText()).toContain(`(${sma})`);
-    await click($('[data-chart-read]'));
     for (const row of ['closeAboveFast', 'touch', 'pullbackClose']) expect($(`[data-check-row="${row}"]`).textContent).toContain(`${sma} 20-day`);
     expect(prim().priceAxisViews()).toEqual([]); // nothing lit yet
     await click($('[data-check-row="closeAboveFast"]'));
     expect(prim().priceAxisViews().map((v) => `$${v.text()}`)).toEqual([sma]);
   });
+  it('L3-6: a row with no mark is not a button and carries no pressed state', async () => {
+    await browse();
+    await toChart();
+    const row = $('[data-check-row="volumeFloor"]');
+    expect(row.tagName).toBe('DIV');
+    expect(row.hasAttribute('aria-pressed')).toBe(false);
+  });
+  it('PG-8: on the Battle chart the checks stay on the page; no mark but the one stub', async () => {
+    // the shell's browse mount has no Battle pill: the Battle chart's read is the line model's own (chartRead.test.js)
+    // and its marks chartProps' (the stub only); here, the checks render with any chart above them
+    await browse();
+    await toChart();
+    expect($('[data-chart-read-checks]')).toBeTruthy();
+  });
 });
 
-describe('the review (lens 3): each row failed before its fix', () => {
-  it('L3-1: with focus OUTSIDE the sheet (the Rule chip, the body), Escape still closes only the sheet; Tab comes back in', async () => {
-    const heard = vi.fn();
-    document.addEventListener('keydown', heard);
-    window.addEventListener('keydown', heard);
-    try {
+describe('PG-2: the chart pinned, two heights', () => {
+  it('pinned at the top at the shell\'s height; compact once scrolled into the checks; full again at the top', async () => {
+    await browse();
+    await toChart();
+    const pin = $('[data-chart-pin]');
+    expect(pin.style.position).toBe('sticky');
+    expect(pin.style.top).toBe('0px');
+    expect(pin.dataset.chartPin).toBe('full');
+    expect(plotH()).toBe('240px'); // jsdom's view is 0 px tall: the shell's 240 px floor
+    await scrollView(40, { checksTop: 420, pinBottom: 284 }); // the read scrolls under the chart: not into the checks yet
+    expect(pin.dataset.chartPin).toBe('full');
+    await intoChecks();
+    expect(pin.dataset.chartPin).toBe('compact');
+    expect(plotH()).toBe('180px'); // a third of the view, never under 180 px
+    await scrollView(120, { checksTop: 300, pinBottom: 224 });
+    expect(pin.dataset.chartPin).toBe('compact'); // still in the page: stays compact
+    await scrollView(0);
+    expect(pin.dataset.chartPin).toBe('full');
+    expect(plotH()).toBe('240px');
+  });
+  it('one change of height, not a resize per scroll frame: one rebuild into compact, none while it stays, one back', async () => {
+    await browse();
+    await toChart();
+    const before = candles();
+    await intoChecks();
+    expect(candles()).toBe(before + 1);
+    for (const top of [300, 420, 610, 333]) await scrollView(top, { checksTop: 100, pinBottom: 224 });
+    expect(candles()).toBe(before + 1);
+    await scrollView(0);
+    expect(candles()).toBe(before + 2);
+  });
+  it('PG-3: compact draws every mark that exists; the Rule chip reads pressed and cannot turn them off; full again, the default set', async () => {
+    await browse();
+    await toChart();
+    await click($('[data-rule-pill]'));
+    expect($('[data-rule-pill]').getAttribute('aria-pressed')).toBe('false');
+    await intoChecks();
+    expect(drawn()).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect($('[data-rule-pill]').getAttribute('aria-pressed')).toBe('true');
+    expect($('[data-rule-pill]').disabled).toBe(true);
+    await scrollView(0);
+    expect($('[data-rule-pill]').getAttribute('aria-pressed')).toBe('false');
+    expect($('[data-rule-pill]').disabled).toBe(false);
+    expect(drawn()).toEqual([]);
+  });
+  it('PG-7: never compact in a quiet state — no pin, scrolling changes nothing', async () => {
+    for (const k of ['UNKNOWN_V', 'SPLIT', 'ABSENT']) {
+      net.read = answer(200, B[k]);
       await browse();
       await toChart();
-      await click($('[data-chart-read]'));
-      $('[data-rule-pill]').focus();
-      await key($('[data-rule-pill]'), 'Escape');
-      expect($('[data-chart-read-sheet]')).toBeNull();
-      expect(heard).not.toHaveBeenCalled();
-      await click($('[data-chart-read]'));
-      document.activeElement?.blur?.();
-      await key(document.body, 'Escape');
-      expect($('[data-chart-read-sheet]')).toBeNull();
-      expect(heard).not.toHaveBeenCalled();
-      await click($('[data-chart-read]'));
-      $('[data-rule-pill]').focus();
-      await key($('[data-rule-pill]'), 'Tab');
-      expect($('[data-chart-read-sheet]').contains(document.activeElement)).toBe(true);
-    } finally {
-      document.removeEventListener('keydown', heard);
-      window.removeEventListener('keydown', heard);
+      expect($('[data-chart-pin]').dataset.chartPin, k).toBe('none');
+      expect($('[data-chart-pin]').style.position, k).toBe('');
+      await scrollView(500, { checksTop: 0, pinBottom: 284 });
+      expect($('[data-chart-pin]').dataset.chartPin, k).toBe('none');
+      expect(plotH(), k).toBe('240px');
+      act(() => root.unmount()); container.remove(); container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
     }
   });
+  it('focus order: a row Tab reaches is kept clear of the pinned chart (its scroll margin is the pinned height)', async () => {
+    await browse();
+    await toChart();
+    const margins = () => [...new Set($$('[data-chart-read-checks] button').map((b) => b.style.scrollMarginTop))];
+    expect(margins()).toEqual(['292px']); // 44 + 240 + 8
+    await intoChecks();
+    expect(margins()).toEqual(['232px']); // 44 + 180 + 8
+  });
+});
+
+describe('CP-2: a stock opens on the Chart view (OV-1 – OV-5)', () => {
+  it('OV-1 / OV-3: on the shell, with the read not off, a stock opens on Chart at 1D, its read asked at once', async () => {
+    await browse();
+    expect($('[data-shell-view]').dataset.shellView).toBe('chart');
+    expect(net.calls.filter((c) => c[0] === 'history').map((c) => c[2])).toEqual(['1d']);
+    expect(readCalls()).toHaveLength(1);
+    expect($('[data-chart-read-checks]')).toBeTruthy();
+  });
+  it('OV-4: the one constant at \'analysis\' opens on Analysis', async () => {
+    FLAG.open = 'analysis';
+    await browse();
+    expect($('[data-shell-view]').dataset.shellView).toBe('analysis');
+    expect(readCalls()).toEqual([]);
+  });
+  it('OV-5: CHART_READ_MODE off opens on Analysis, whatever the constant says', async () => {
+    FLAG.read = 'off';
+    await browse();
+    expect($('[data-shell-view]').dataset.shellView).toBe('analysis');
+  });
+  it('OV-2: a door that asks for 💣 by name still opens on 💣 (its 30-minute series, not 1D)', async () => {
+    await act(async () => { root.render(<AssetResearchModal asset={{ symbol: 'CEG', name: 'Constellation Energy', price: PRICE, percentChange: 0.6 }} onClose={() => {}} version={2} bombContext={{ kind: 'bench' }} opensOnBomb />); });
+    await flush();
+    expect(net.calls.filter((c) => c[0] === 'history').map((c) => c[2])).toEqual(['30m', '1d']);
+    expect($('[data-shell-view]').dataset.shellView).not.toBe('chart');
+    expect(readCalls()).toEqual([]);
+  });
+  it('OV-2: crypto, an index and a sector fund are not in the shell and do not change', async () => {
+    for (const [symbol, name] of [['BTC', 'Bitcoin'], ['SPY', 'S&P 500'], ['XLK', 'Technology Select Sector SPDR']]) {
+      await browse({ symbol, name, price: 100 });
+      expect($('[data-shell-view]'), symbol).toBeNull();
+      expect(readCalls(), symbol).toEqual([]);
+    }
+  });
+});
+
+describe('CP-3: today so far, in the modal', () => {
+  it('display agreement (TD-2): its price is the header\'s own string, and it follows the header (the live price moving)', async () => {
+    const at = (wsPrice) => act(async () => { root.render(<AssetResearchModal asset={{ symbol: 'CEG', name: 'Constellation Energy', price: PRICE, percentChange: 0.6 }} wsPrice={wsPrice} onClose={() => {}} version={2} actionConfig={{ label: 'Add to Watchlist', onClick: () => {}, variant: 'primary' }} />); });
+    await at(200.91);
+    await flush();
+    expect(headerPrice()).toBe('$200.91');
+    expect($('[data-chart-read-today]').textContent.startsWith(`Today so far: ${headerPrice()} — `)).toBe(true);
+    await at(207.13);
+    await flush();
+    expect(headerPrice()).toBe('$207.13');
+    expect($('[data-chart-read-today]').textContent.startsWith('Today so far: $207.13 — ')).toBe(true);
+    // the header's own rounding, never the raw live price: 207.135 prints as the header prints it
+    await at(207.135);
+    await flush();
+    expect($('[data-chart-read-today]').textContent.startsWith(`Today so far: ${headerPrice()} — `)).toBe(true);
+  });
+  it('every mark it names carries the read\'s own printed price: at the 20-day exactly when the header prints the 20-day', async () => {
+    const sma = formatPrice(B.VALID_PULLBACK.read.facts.SMA_fast);
+    await browse({ price: Number(sma.slice(1)) });
+    await toChart();
+    expect(headerPrice()).toBe(sma);
+    expect($('[data-chart-read-today]').textContent).toContain(' — at Tue’s 20-day (1),');
+    expect($('[data-check-row="closeAboveFast"]').textContent).toContain(`${sma} 20-day`);
+  });
+  it('TD-1: before the open — no line, and RD-8\'s footnote is back', async () => {
+    vi.setSystemTime(new Date('2026-11-18T14:00:00.000Z')); // Wed 9:00 AM ET
+    await browse();
+    await toChart();
+    expect($('[data-chart-read-today]')).toBeNull();
+    expect($$('[data-chart-read-note]').map((n) => n.textContent)).toEqual(['Tuesday’s close. Today’s session is read after it ends.']);
+  });
+  it('TD-1: on a Saturday — no line', async () => {
+    vi.setSystemTime(new Date('2026-11-21T17:00:00.000Z'));
+    await browse();
+    await toChart();
+    expect($('[data-chart-read-today]')).toBeNull();
+  });
+  it('TD-1: the header has no price — no line', async () => {
+    await browse({ price: 0 });
+    await toChart();
+    expect($('[data-chart-read-today]')).toBeNull();
+  });
+});
+
+describe('the review (lens 3) rows that still apply', () => {
   it.each([[401, 'Unauthorized'], [429, 'Too many requests'], [0, null]])("L3-2: 'allowlist' — a %s before admission is known shows nothing (no failed line to a player who may not be admitted)", async (status, error) => {
     FLAG.read = 'allowlist';
     net.read = status === 0 ? () => { throw new TypeError('Failed to fetch'); } : answer(status, { error });
@@ -477,6 +657,7 @@ describe('the review (lens 3): each row failed before its fix', () => {
     await toChart();
     expect(readCalls()).toHaveLength(1);
     expect($('[data-chart-read]')).toBeNull();
+    expect($('[data-chart-pin]').dataset.chartPin).toBe('none');
   });
   it.each([[500], [503]])("L3-2: 'allowlist' — a %s comes after admission: the quiet failed line", async (status) => {
     FLAG.read = 'allowlist';
@@ -490,27 +671,6 @@ describe('the review (lens 3): each row failed before its fix', () => {
     await browse();
     await toChart();
     expect($('[data-chart-read="failed"]')).toBeTruthy();
-  });
-  it('L3-6: a row with no mark is not a button and carries no pressed state', async () => {
-    await browse();
-    await toChart();
-    await click($('[data-chart-read]'));
-    const row = $('[data-check-row="volumeFloor"]');
-    expect(row.tagName).toBe('DIV');
-    expect(row.hasAttribute('aria-pressed')).toBe(false);
-  });
-  it('L3-7: while the sheet is open the Rule chip reads pressed and cannot be turned off (every mark shows)', async () => {
-    await browse();
-    await toChart();
-    await click($('[data-rule-pill]'));
-    expect($('[data-rule-pill]').getAttribute('aria-pressed')).toBe('false');
-    await click($('[data-chart-read]'));
-    expect($('[data-rule-pill]').getAttribute('aria-pressed')).toBe('true');
-    expect($('[data-rule-pill]').disabled).toBe(true);
-    expect(scene().items.map((i) => i.n)).toEqual([1, 2, 3, 4, 5, 6, 7]);
-    await click($('[data-chart-read-close]'));
-    expect($('[data-rule-pill]').getAttribute('aria-pressed')).toBe('false');
-    expect($('[data-rule-pill]').disabled).toBe(false);
   });
 });
 

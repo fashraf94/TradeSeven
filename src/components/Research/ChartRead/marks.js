@@ -30,7 +30,7 @@ export const MARK_TABLES = Object.freeze({
   ]),
 });
 
-/** MK-3: the marks shown by default, by the read's state (chartRead.js readStateOf). With the sheet open, all that exist. */
+/** MK-3: the marks shown by default, by the read's state (chartRead.js readStateOf). With the chart compact, all that exist (PG-3). */
 export const DEFAULT_MARKS = Object.freeze({
   valid_pullback: Object.freeze([1, 4, 5, 6]),
   valid_breakout: Object.freeze([1, 5]),
@@ -98,9 +98,9 @@ export function marksOf(read) {
 /** A mark's citation (spec §12): "tf-setup-v1 · 2026-11-17 · touch_low". */
 export const markCitation = (mark) => `${mark.ruleSet} · ${mark.session} · ${mark.id}`;
 
-/** MK-3: the numbers shown by default for a state; with the sheet open, every number that exists. */
-export function shownMarkNumbers(state, marks, { sheetOpen = false } = {}) {
+/** MK-3: the numbers shown by default for a state; with the chart compact (PG-3), every number that exists. */
+export function shownMarkNumbers(state, marks, { compact = false } = {}) {
   const exist = new Set(marks.map((m) => m.n));
-  if (sheetOpen) return [...exist].sort((a, b) => a - b);
+  if (compact) return [...exist].sort((a, b) => a - b);
   return (DEFAULT_MARKS[state] || []).filter((n) => exist.has(n));
 }

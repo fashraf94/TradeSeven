@@ -1,12 +1,14 @@
 // src/components/Research/ChartRead/chartRead.js
 //
-// The Chart view's read — THE WORDING, THE SHEET AND WHAT CHANGED, as pure functions of the route's body
-// (build prompt §5, §6, CR-3, CR-6, CR-8; spec docs/specs/CHART_READ_SPEC_V1.md). The read shows a stored
-// record: every word is chartReadCopy.js's, every number is the record's own field printed by format.js, and
-// nothing is decided here — the state is the record's own verdict, reason, pattern and regime (RD-6).
+// The Chart view's read — THE WORDING, THE CHECKS, WHAT CHANGED AND TODAY SO FAR, as pure functions of the route's
+// body (build prompt §5, §6, CR-3, CR-6, CR-8; the 19 Nov build CP-1, CP-3; spec docs/specs/CHART_READ_SPEC_V1.md
+// V1.1). The read shows a stored record: every word is chartReadCopy.js's, every number is the record's own field
+// printed by format.js, and nothing is decided here — the state is the record's own verdict, reason, pattern and
+// regime (RD-6). The one line that is not the record's — "Today so far" (CP-3) — compares the header's own printed
+// price with the record's printed marks and is never counted as part of the check (TD-5).
 //
 // ONE DERIVATION, NAMED: the record's uptrend is two checks, not three. `regime_stack` chains two comparisons
-// ([C, SMA_fast] > [SMA_fast, SMA_slow]) and records one result. The sheet's three uptrend rows and RD-7's
+// ([C, SMA_fast] > [SMA_fast, SMA_slow]) and records one result. The checks' three uptrend rows and RD-7's
 // words read each pair from that check's OWN recorded sides with its OWN operator — the evaluator's comparison
 // (strict IEEE, no tolerance; thresholds.js SEMANTICS_NOTES) on the evaluator's numbers. Row 1 IS the recorded
 // `pullback_close` check (the same sides). The pairs must AND to the recorded result, or the record is never
@@ -18,9 +20,10 @@ import { CHART_READ_COPY as C, RULE_SET_COPY, REFUSAL_WORDS, REFUSAL_FALLBACK, j
 import { marksOf, ruleSetOf, hasMarkTable, shownMarkNumbers } from './marks.js';
 import { formatPrice, formatRatio, formatVolume, dayLabel, weekdayShort, weekdayLong, monthDay, decimalString, etTimeLabel } from './format.js';
 
-/** Every state the read can be in. The first five open the sheet and draw marks. */
+/** Every state the read can be in. The first five show the checks and draw marks. */
 export const READ_STATES = Object.freeze(['valid_pullback', 'valid_breakout', 'regime', 'no_setup', 'extended', 'unknown', 'refused', 'absent', 'unknown_rule_set', 'unshown']);
-export const SHEET_STATES = Object.freeze(['valid_pullback', 'valid_breakout', 'regime', 'no_setup', 'extended']);
+/** The states whose checks sit on the page (CP-1); every other state is one quiet line (PG-7). */
+export const CHECK_STATES = Object.freeze(['valid_pullback', 'valid_breakout', 'regime', 'no_setup', 'extended']);
 
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 const checkOf = (read, id) => (Array.isArray(read?.checks) ? read.checks.find((c) => c && c.id === id) : undefined);
@@ -138,7 +141,7 @@ function regimeParts(rows, words) {
   return parts.length ? parts : null;
 }
 
-/** FX-2: the second line's nouns — what the record would need — for the same failed rows, in the sheet's order. */
+/** FX-2: the second line's nouns — what the record would need — for the same failed rows, in the checks' order. */
 function regimeChangeParts(rows, words) {
   const N = words.regimeChange;
   const [close, fast, slow] = rows;
@@ -155,9 +158,59 @@ function unknownWhy(read, words) {
   return REFUSAL_WORDS.missing_fact;
 }
 
-const lineOf = (state, fields) => ({ state, glyph: 'none', lead: null, rest: '', second: null, opensSheet: false, ...fields });
+const lineOf = (state, fields) => ({ state, glyph: 'none', lead: null, rest: '', second: null, today: null, hasChecks: false, ...fields });
 
-/** The lead, its rest and the second line for a state the sheet opens in; null when a number it prints is missing. */
+// ---------------------------------------------------------------- today so far (CP-3)
+
+const DECIMAL_RE = /^\d+(\.\d+)?$/;
+/** Two printed decimals compared exactly ('361.78' vs '366.70'): -1, 0, 1; null when either is not a plain decimal. */
+function comparePrinted(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string' || !DECIMAL_RE.test(a) || !DECIMAL_RE.test(b)) return null;
+  const [ai, af = ''] = a.split('.');
+  const [bi, bf = ''] = b.split('.');
+  const places = Math.max(af.length, bf.length);
+  const x = BigInt(ai + af.padEnd(places, '0'));
+  const y = BigInt(bi + bf.padEnd(places, '0'));
+  return x === y ? 0 : x > y ? 1 : -1;
+}
+
+/**
+ * CP-3, TD-1 – TD-5: "Today so far: {price} — above / below / at {Wed}'s 20-day (1), … Today's own numbers are read
+ * after the close." — or null. The header's price as the header prints it (`headerPrice`, the header's own formatter,
+ * BUILD_RULES §9) against each mark as the read prints it (format.js), compared exactly as printed: "at" is equal to the
+ * cent. Shown only when the read shows its checks, today (ET) is a session later than the record's, today's regular
+ * session has opened, and the header has a price (TD-1); a mark that does not exist drops its clause, and with neither
+ * mark 1 nor mark 2 there is no line (TD-3). Never a result: no glyph, no count, nothing about the check (TD-5).
+ * @param {{ state: string, marks: object[], session: string }} line  the read's line (its state, marks and session)
+ * @param {{ todayEt?: string|null, todayIsSession?: boolean, sessionOpened?: boolean, headerPrice?: string|null }} ctx
+ *   `headerPrice`: the digits the header prints, without the "$" (priceFormat.js priceText)
+ */
+export function todayLineOf(line, { todayEt = null, todayIsSession = false, sessionOpened = false, headerPrice = null } = {}) {
+  if (!line || !CHECK_STATES.includes(line.state)) return null;
+  if (todayIsSession !== true || sessionOpened !== true || typeof todayEt !== 'string' || typeof line.session !== 'string' || !(line.session < todayEt)) return null;
+  if (typeof headerPrice !== 'string' || !DECIMAL_RE.test(headerPrice)) return null;
+  const T = C.today;
+  const day = weekdayShort(line.session);
+  const mark = (n) => line.marks.find((m) => m.n === n) ?? null;
+  const sideOf = (m) => {
+    const c = comparePrinted(headerPrice, decimalString(m.value, 2));
+    return c === null ? null : c > 0 ? T.above : c < 0 ? T.below : T.at;
+  };
+  const parts = [];
+  for (const [n, words] of [[1, T.fast], [2, T.slow]]) {
+    const m = mark(n);
+    const side = m && sideOf(m);
+    if (side) parts.push(words(side, day));
+  }
+  if (!parts.length) return null;
+  const high = mark(5);
+  if (high && sideOf(high) === T.above) parts.push(T.high(day));
+  const low = mark(6);
+  if (low && sideOf(low) === T.below) parts.push(T.low(day));
+  return `${T.lead(`$${headerPrice}`)}${parts.join(', ')}${T.tail}`;
+}
+
+/** The lead, its rest and the second line for a state that shows its checks; null when a number it prints is missing. */
 function leadOf(state, read, words) {
   const f = read.facts || {};
   if (state === 'valid_pullback') {
@@ -192,10 +245,11 @@ function leadOf(state, read, words) {
 /**
  * The read's line (§5): { state, eyebrow, asOf, change, glyph, lead, rest, second, notes[], opensSheet, marks, shown }.
  * @param {object} body the route's answer
- * @param {{ todayEt?: string, todayIsSession?: boolean, battle?: boolean }} ctx  today's ET date and whether it is a
- *   trading session (src/utils/marketCalendar.js getSessionForDate), and whether the Battle chart shows
+ * @param {{ todayEt?: string, todayIsSession?: boolean, battle?: boolean, sessionOpened?: boolean, headerPrice?: string }} ctx
+ *   today's ET date and whether it is a trading session (src/utils/marketCalendar.js getSessionForDate), whether the
+ *   Battle chart shows, whether today's regular session has opened, and the header's printed price (CP-3)
  */
-export function readLineOf(body, { todayEt = null, todayIsSession = false, battle = false } = {}) {
+export function readLineOf(body, { todayEt = null, todayIsSession = false, battle = false, sessionOpened = false, headerPrice = null } = {}) {
   let state = readStateOf(body);
   if (!state) return null;
   const read = body.read || null;
@@ -213,21 +267,25 @@ export function readLineOf(body, { todayEt = null, todayIsSession = false, battl
   if (read.adjustmentMetadata === 'absent') notes.push(C.adjustmentNote);
   if (state === 'unknown') return lineOf(state, { ...base, lead: C.unknownLead, rest: C.unknownRest(unknownWhy(read, words)), notes });
   if (state === 'unshown') return lineOf(state, { ...base, rest: C.unshown });
-  // Fail closed for every state that opens a sheet (review L1-2, L1-9): a record whose uptrend rows disagree with
+  // Fail closed for every state that shows its checks (review L1-2, L1-9): a record whose uptrend rows disagree with
   // its recorded chain, or one measured on another basis than the raw candles it would be drawn on, is never shown
   // in part.
   const lead = read.basis === 'raw' && uptrendRows(read) && copiesAgree(read) ? leadOf(state, read, words) : null;
   if (!lead) { state = 'unshown'; return lineOf(state, { ...base, rest: C.unshown }); }
   const marks = marksOf(read);
+  // CP-3: today so far, on the Battle chart too (TD-6); it replaces RD-8's footnote whenever it shows (TD-4).
+  const today = todayLineOf({ state, marks, session: read.session }, { todayEt, todayIsSession, sessionOpened, headerPrice });
   return {
     ...base, state, ...lead,
     second: battle ? null : lead.second,
+    today,
     change: changeOf(read, body.previous ?? null),
-    notes, opensSheet: true, marks, shown: shownMarkNumbers(state, marks),
+    notes: today && sessionNoteDue && !battle ? notes.filter((n) => n !== C.sessionNote(weekdayLong(read.session))) : notes,
+    hasChecks: true, marks, shown: shownMarkNumbers(state, marks),
   };
 }
 
-// ---------------------------------------------------------------- the sheet
+// ---------------------------------------------------------------- the checks (CP-1)
 
 const RESULT = (r) => (r === true ? 'pass' : r === false ? 'fail' : 'unknown');
 const price = (v) => formatPrice(v) ?? '—';
@@ -244,13 +302,13 @@ function row(key, spec, { lhs, rhs, lhsLabel, rhsLabel, result, marks }, exist, 
 }
 
 /**
- * The sheet (§6, CR-3, SH-1 – SH-5), for a state the sheet opens in; null otherwise.
+ * The checks (§6, CR-3, SH-1 – SH-5; on the page under the chart since CP-1), for a state that shows them; null otherwise.
  * @param {object} body the route's answer
  * @param {{ sector?: { percentile: number, updatedAtMs: number } | null, expanded?: boolean }} ctx
  */
-export function sheetOf(body, { sector = null, expanded = false } = {}) {
+export function checksOf(body, { sector = null, expanded = false } = {}) {
   const line = readLineOf(body);
-  if (!line || !SHEET_STATES.includes(line.state)) return null;
+  if (!line || !CHECK_STATES.includes(line.state)) return null;
   const { state } = line;
   const read = body.read;
   const words = RULE_SET_COPY[ruleSetOf(read)];
@@ -308,8 +366,7 @@ export function sheetOf(body, { sector = null, expanded = false } = {}) {
   const otherReading = words.other[state === 'regime' && read.regime === 'downtrend' ? 'regime_downtrend' : state];
   return {
     state,
-    lead: `${line.lead}${line.rest}`,
-    hint: C.sheetHint(line.asOf),
+    hint: C.checksHint,
     groups,
     collapsed,
     context,

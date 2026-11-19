@@ -7,9 +7,11 @@
 //   1W with the read      the Rule chip and the marks (1W bars are raw already, UC-5: no basis, no note)
 //   Battle with the read  one stub for the 20-day at the right edge, nothing else (MK-5; no chip, MK-7)
 //   no read (off, loading, hidden, failed, a quiet state)  nothing at all — today's chart
-// The marks follow the Rule chip (on by default); with the sheet open every mark that exists shows (MK-3).
+// The marks follow the Rule chip (on by default); with the chart compact every mark that exists shows (PG-3), and a tapped
+// check's marks always show, lit — with the Rule chip off too (PG-3).
 
 import { CHART_READ_COPY as C } from './chartReadCopy.js';
+import { shownMarkNumbers } from './marks.js';
 import { weekdayShort } from './format.js';
 
 /** FX-4 (founder Q-4): the marks the weekly averages would contradict — the 20-day, the 50-day, the 50-day five sessions ago. */
@@ -21,13 +23,14 @@ export const WEEKLY_AVERAGES_HIDE = Object.freeze([1, 2, 3]);
 export const weeklyAveragesHideMarks = ({ timeframe, smaOn }) => timeframe === '1W' && smaOn === true;
 
 /**
- * @param {{ line: object|null, timeframe: string, battle: boolean, ruleOn: boolean, sheetOpen: boolean,
+ * @param {{ line: object|null, timeframe: string, battle: boolean, ruleOn: boolean, compact: boolean,
  *   lit: number[], dailyDates: string[], smaOn?: boolean }} p   `line` is readLineOf's, or null when there is no read
- *   to show; `smaOn` the chart's SMA pill as it reports it (FX-4)
+ *   to show; `compact` the pinned chart's compact height (PG-2); `lit` the tapped check's marks; `smaOn` the chart's
+ *   SMA pill as it reports it (FX-4)
  * @returns {object|null} StockChart's read props, or null
  */
-export function chartReadProps({ line, timeframe, battle, ruleOn, sheetOpen, lit, dailyDates, smaOn = false }) {
-  if (!line || line.opensSheet !== true) return line ? rawOnly(line, timeframe, battle) : null;
+export function chartReadProps({ line, timeframe, battle, ruleOn, compact, lit, dailyDates, smaOn = false }) {
+  if (!line || line.hasChecks !== true) return line ? rawOnly(line, timeframe, battle) : null;
   if (battle) {
     const m1 = line.marks.find((m) => m.n === 1);
     return m1 ? { dailyStub: { value: m1.value, label: C.dailyStub(weekdayShort(m1.session)) } } : null;
@@ -35,12 +38,17 @@ export function chartReadProps({ line, timeframe, battle, ruleOn, sheetOpen, lit
   if (timeframe !== '1D' && timeframe !== '1W') return null;
   const out = timeframe === '1D' ? { candleBasis: 'raw', basisNote: C.basisNote } : {};
   if (line.marks.length > 0) {
-    // With the sheet open every mark shows, so the chip reads pressed and cannot turn them off (review L3-7).
-    out.ruleChip = { on: ruleOn === true || sheetOpen === true, label: C.ruleChip, disabled: sheetOpen === true };
-    if (ruleOn === true || sheetOpen === true) {
-      const keep = weeklyAveragesHideMarks({ timeframe, smaOn }) ? (n) => !WEEKLY_AVERAGES_HIDE.includes(n) : () => true;
-      const shown = sheetOpen ? line.marks.map((m) => m.n) : line.shown;
-      out.ruleMarks = { marks: line.marks, shown: shown.filter(keep), lit: (Array.isArray(lit) ? lit : []).filter(keep), dailyDates: Array.isArray(dailyDates) ? dailyDates : [] };
+    // Compact, every mark shows, so the chip reads pressed and cannot turn them off (review L3-7's rule, PG-3).
+    out.ruleChip = { on: ruleOn === true || compact === true, label: C.ruleChip, disabled: compact === true };
+    const exist = new Set(line.marks.map((m) => m.n));
+    const tapped = (Array.isArray(lit) ? lit : []).filter((n) => exist.has(n));
+    // PG-3: compact — every mark that exists; full height — the state's default set with the Rule chip on, none with it
+    // off; and a tapped check's marks always, lit.
+    const base = compact === true ? shownMarkNumbers(line.state, line.marks, { compact: true }) : ruleOn === true ? line.shown : [];
+    const keep = weeklyAveragesHideMarks({ timeframe, smaOn }) ? (n) => !WEEKLY_AVERAGES_HIDE.includes(n) : () => true;
+    const shown = [...new Set([...base, ...tapped])].sort((a, b) => a - b).filter(keep);
+    if (base.length > 0 || tapped.length > 0) {
+      out.ruleMarks = { marks: line.marks, shown, lit: tapped.filter(keep), dailyDates: Array.isArray(dailyDates) ? dailyDates : [] };
     }
   }
   return out;
@@ -61,7 +69,7 @@ export function barsMatchTimeframe(bars, timeframe) {
   return timeframe === '1D' ? median <= 4 : median >= 5;
 }
 
-/** A read that opens no sheet (unknown, refused, absent, …) still shows: the 1D candles are unadjusted under it (CR-7). */
+/** A read that shows no checks (unknown, refused, absent, …) still shows: the 1D candles are unadjusted under it (CR-7). */
 function rawOnly(line, timeframe, battle) {
   return !battle && timeframe === '1D' ? { candleBasis: 'raw', basisNote: C.basisNote } : null;
 }

@@ -7,7 +7,7 @@
 //
 // TWO PARTS:
 //   CHART_READ_COPY   the read's frame, shared by every rule set: the eyebrow, the date, the quiet states,
-//                     the footnotes, the sheet's frame, the chart's chip and notes.
+//                     the footnotes, the checks' frame, today so far, the chart's chip and notes.
 //   RULE_SET_COPY     per rule set (CR-9): the words of one detector — its leads, its check rows and their
 //                     plain definitions, its marks' names, its other readings. A new detector adds an entry;
 //                     it changes no existing one. Today one entry: tf-setup-v1, the Trend Follower's setup
@@ -31,7 +31,7 @@ export const CHART_READ_COPY = Object.freeze({
   adjustmentNote: 'The split check couldn’t run on this record.',
   // Round 6 F: on the Battle chart the read stays as text and says where its marks are.
   battleNote: 'Daily marks are on 1D and 1W, not on these 30-minute bars.',
-  // The quiet states (§5): one line, no sheet.
+  // The quiet states (§5): one line, no checks (PG-7).
   absent: 'Measured after each close; no read yet for this stock.',
   // FX-3 (founder Q-3): no "today" — the refused lead can sit beside an earlier date.
   refusedLead: 'No read for this stock',
@@ -45,13 +45,22 @@ export const CHART_READ_COPY = Object.freeze({
   // RD-12: a failed read.
   failed: 'Couldn’t load the setup check',
   retry: 'Try again',
-  // The read opens the sheet.
-  openLabel: 'Open the checks',
-  // The sheet's frame (§6).
-  sheetLabel: 'The checks',
-  sheetEyebrow: 'The checks · setup check',
-  sheetHint: (asOf) => `${asOf} · tap a check to light its mark`,
-  closeLabel: 'Close the checks',
+  // The checks' frame (§6), on the page under the chart (CP-1): one hint above them (PG-5).
+  checksLabel: 'The checks',
+  checksHint: 'tap a check to light its mark',
+  // CP-3 (TD-3): today so far — the header's price against the record's marks, never counted as part of the check
+  // (TD-5: no glyph, no count, nothing that reads as a result). "at" is equal to the cent.
+  today: Object.freeze({
+    lead: (price) => `Today so far: ${price} — `,
+    above: 'above',
+    below: 'below',
+    at: 'at',
+    fast: (side, day) => `${side} ${day}’s 20-day (1)`,
+    slow: (side, day) => `${side} ${day}’s 50-day (2)`,
+    high: (day) => `above ${day}’s 20-session high (5)`,
+    low: (day) => `below ${day}’s 20-session low (6)`,
+    tail: '. Today’s own numbers are read after the close.',
+  }),
   groupCount: (n, of) => `${n} of ${of}`,
   notPresent: 'not present',
   theOtherPattern: 'the other pattern',
@@ -111,7 +120,7 @@ export const REFUSAL_FALLBACK = 'the evidence couldn’t be used';
 
 export const RULE_SET_COPY = Object.freeze({
   'tf-setup-v1': Object.freeze({
-    // CR-8: the sheet's footer names the rule set.
+    // CR-8: the checks' footer names the rule set.
     footRuleSet: 'Rule set tf-setup-v1 · built as Trend Follower’s setup check',
     patterns: Object.freeze({ pullback_resume: 'Pullback and Resume', breakout: 'Trend Breakout' }),
     // The leads (§5).
@@ -131,7 +140,7 @@ export const RULE_SET_COPY = Object.freeze({
       slowFalling: 'the 50-day is falling',
       slowFlat: 'the 50-day is flat over five sessions',
     }),
-    // FX-2 (founder Q-2): the second line is built from the checks that failed, in the sheet's order, as nouns;
+    // FX-2 (founder Q-2): the second line is built from the checks that failed, in the checks' order, as nouns;
     // "This is not a downtrend call." follows unless the record's regime is downtrend.
     regimeSecond: (parts) => `It changes with ${joinNouns(parts)}.`,
     regimeChange: Object.freeze({
@@ -153,7 +162,7 @@ export const RULE_SET_COPY = Object.freeze({
     missingOne: (fact) => `${fact} is missing`,
     missingMany: (facts) => `${facts} are missing`,
     missingLow: 'a low of the last three sessions is missing',
-    // The sheet's groups (§6, CR-3).
+    // The checks' groups (§6, CR-3).
     groups: Object.freeze({ uptrend: 'The uptrend', pullback_resume: 'Pullback and Resume', stretch: 'The stretch guard', breakout: 'Trend Breakout' }),
     // The check rows: name, the two sides' labels, the plain definition (SH-1; round 6's accepted definitions).
     rows: Object.freeze({
@@ -171,7 +180,7 @@ export const RULE_SET_COPY = Object.freeze({
       sma_fast: '20-day', sma_slow: '50-day', sma_slow_5ago: '50-day, 5 sessions ago', touch_low: 'the touch',
       swing_high: '20-session high', swing_low: '20-session low', extension_limit: 'stretch limit',
     }),
-    // SH-5: the other reading and what separates them, per state the sheet opens in. Round 6's wording where it
+    // SH-5: the other reading and what separates them, per state that shows its checks. Round 6's wording where it
     // has it (valid · Pullback and Resume); the rest as the founder ruled them (FX-6, Q-6 of the 18 Nov report):
     // two kept as built, three amended — the breakout's and no pattern's separates, and the downtrend's reading.
     other: Object.freeze({
