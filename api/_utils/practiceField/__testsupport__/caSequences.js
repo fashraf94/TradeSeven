@@ -13,6 +13,7 @@ import { parseSplitsPayload, parseDividendsPayload, applyCorporateAction, derive
 import { openAmbiguities, CONFLICTING_ACTION, POSSIBLE_REDATE } from '../ledger.js';
 import { addUsd } from '../money.js';
 import { nextSessionDate } from '../windows.js';
+import { InputOracle } from './caOracle.js';
 import {
   seedBook, admitAndEnter, contractOf, getBook, getIdea, getRow, closeNowOf, storeCloseSnapshot, founderRules, takeSeededDbs,
 } from './fixtures.js';
@@ -216,7 +217,7 @@ export function pathsReached(idea, into = reached) {
 function tallyReached(idea) { pathsReached(idea, reached); }
 
 /** Every invariant that holds after every close (I-1, I-2, I-3). `oracle`: the generator's own record of ambiguous ids. */
-function checkAfterClose(c, date, oracleSince = null, tied = true) {
+function checkAfterClose(c, date, oracleSince = null, tied = true, inputs = null, initialOf = null, label = '') {
   const idea = getIdea(c.db, c.bookId, c.ideaId);
   const book = getBook(c.db, c.bookId);
   // I-3: the book reconciles to its ideas, and the same-stock comparison is tied to the idea (no fill is ever made here).
@@ -239,15 +240,18 @@ function checkAfterClose(c, date, oracleSince = null, tied = true) {
     }
   }
   if (LEDGERS.some((f) => openAmbiguities(idea[f]).length > 0)) expect(getRow(c.db, c.bookId, c.ideaId, date).fullQuality, `${date} I-2 quality`).toBe(false);
-  // I-2 against the ORACLE (not the product's own predicate): an id the feed made ambiguous at session s is applied at a
-  // close on or after s only by the founder's ruling.
+  // I-2 against the ORACLE (not the product's own predicate): an id the feed made ambiguous at session s moves cash or
+  // shares at a close on or after s only by an ACCEPTED CONFLICT ruling the harness made for it, choosing the moved payload
+  // (final fix, Astra round 2: before, any truthy `founderRuling` — a `suspicion` one included — passed).
   for (const [id, since] of Object.entries(oracleSince || {})) {
     for (const f of LEDGERS) {
       for (const x of idea[f].corporateActionReceipts.filter((r) => r.actionId === id && r.applied === true && r.appliedOn >= S[since])) {
-        expect(x.founderRuling, `${date} I-2 oracle ${f} ${id} (ambiguous since ${S[since]}) applied without a ruling`).toBeTruthy();
+        expect(inputs?.authorizing(id, JSON.stringify([x.ratio ?? null, x.amount ?? null])) ?? null, `${date} I-2 oracle ${f} ${id} (ambiguous since ${S[since]}) moved without an accepted conflict ruling choosing its payload`).not.toBeNull();
       }
     }
   }
+  // …and the INDEPENDENT oracle: ambiguity derived from the emitted inputs alone, movement attributed by conservation.
+  if (inputs) inputs.check(idea, date, label, initialOf);
 }
 
 /** Put a document in the fake store directly (a new one, or a new version of one): the harness plants state; no product write. */
@@ -273,7 +277,7 @@ async function rerunAdds(c, date, previous) {
 }
 
 /** The founder rules on one open record, chosen by `pick`, with a payload it holds (or `none`) chosen by `decision`. */
-async function ruleSomething(c, pick, decision) {
+async function ruleSomething(c, pick, decision, splitOk = false) {
   const idea = getIdea(c.db, c.bookId, c.ideaId);
   const open = [...new Map(LEDGERS.flatMap((f) => openAmbiguities(idea[f])).map((r) => [r.actionId, r])).values()];
   // (A suspicion on any ledger's holding — the idea's AAPL, or the SPY line's SPY in a wide history.)
@@ -281,13 +285,20 @@ async function ruleSomething(c, pick, decision) {
   const suspicion = suspicions[0] ?? null;
   if (open.length === 0 && !suspicion) return null;
   if (open.length === 0 || (suspicion && pick < 0.2)) {
-    return founderRules(c.db, c.bookId, c.ideaId, { kind: 'suspicion', recordId: `suspected_split_${suspicion.sym}_${suspicion.s.suspectedOn}`, decision: 'price_move' }, { requestKey: `seq-${Math.round(pick * 1e9)}`, expectOk: false });
+    // (`splitOk`, the ordered generator's rulings: a founder `split` at the record's own ratio half the time — D02's class.)
+    const body = splitOk && decision < 0.5 && Number(suspicion.s.ratio) > 0
+      ? { kind: 'suspicion', recordId: `suspected_split_${suspicion.sym}_${suspicion.s.suspectedOn}`, decision: 'split', ratio: Math.round((1 / Number(suspicion.s.ratio)) * 1e6) / 1e6 }
+      : { kind: 'suspicion', recordId: `suspected_split_${suspicion.sym}_${suspicion.s.suspectedOn}`, decision: 'price_move' };
+    const requestKey = `seq-${Math.round(pick * 1e9)}`;
+    return { body, requestKey, out: await founderRules(c.db, c.bookId, c.ideaId, body, { requestKey, expectOk: false }) };
   }
   const r = open[Math.floor(pick * open.length)];
   const rows = Array.isArray(r.rows) && r.rows.length > 0 ? r.rows : [{ ratio: r.ratio ?? null, amount: r.amount ?? null }];
   const choice = r.reason === 'revised_after_ruling' ? null : rows[Math.floor(decision * (rows.length + 1))];
   const body = choice ? { decision: 'payload', payload: { ...(choice.ratio != null ? { ratio: choice.ratio } : {}), ...(choice.amount != null ? { amount: choice.amount } : {}) } } : { decision: 'none' };
-  return founderRules(c.db, c.bookId, c.ideaId, { kind: 'conflict', recordId: r.actionId, ...body }, { requestKey: `seq-${Math.round(pick * 1e9)}`, expectOk: false });
+  const ask = { kind: 'conflict', recordId: r.actionId, ...body };
+  const requestKey = `seq-${Math.round(pick * 1e9)}`;
+  return { body: ask, requestKey, out: await founderRules(c.db, c.bookId, c.ideaId, ask, { requestKey, expectOk: false }) };
 }
 
 /** I-4's oracle: the engine's own applier over the history's final rows, in date order, with entitlement. */
@@ -330,18 +341,48 @@ async function runInner(plan, expose) {
   const initial = { ...entered.ledger.holdings.AAPL };
   const initialOf = { ledger: { ...entered.ledger.holdings.AAPL }, comparisonLedger: { ...entered.comparisonLedger.holdings.AAPL }, spyLedger: { ...entered.spyLedger.holdings.SPY } };
   const tied = (plan.comparison?.type ?? 'same_stock_held') === 'same_stock_held';
+  // The independent oracle (caOracle.js): fed the rows each close lists and the founder requests the harness makes.
+  const inputs = new InputOracle(S);
+  const entryOf = Object.fromEntries(LEDGERS.map((f) => [f, Object.fromEntries(Object.entries(entered[f].holdings).map(([s, h]) => [s, { shares: h.shares }]))]));
+  const nextCloseOf = (n) => plan.steps.slice(n).find((s) => s.kind === 'close' || s.kind === 'catchup')?.i ?? null;
   let closes = 0;
   let previous = getBook(c.db, c.bookId).execState?.lastCloseKey ?? null;
   for (const [n, step] of plan.steps.entries()) {
     // (A fixed case's assertion on the stored idea at that point of its history.)
     if (step.kind === 'expectIdea') { step.fn(getIdea(c.db, c.bookId, c.ideaId), getBook(c.db, c.bookId), `${plan.seed} step ${n}`); continue; }
-    if (step.kind === 'rule') { await ruleSomething(c, step.pick, step.decision); continue; }
-    if (step.kind === 'ruleExact') {
+    if (step.kind === 'rule') {
+      const asked = await ruleSomething(c, step.pick, step.decision, step.splitOk === true);
+      if (asked) inputs.ruling(asked.body, asked.out, asked.requestKey, nextCloseOf(n));
+      continue;
+    }
+    if (step.kind === 'ruleExact' || step.kind === 'ruleTry') {
       const out = await founderRules(c.db, c.bookId, c.ideaId, step.body, { requestKey: `fixed-${n}`, expectOk: false });
-      expect(out.status, `${plan.seed} ruling ${n}`).toBe(step.status ?? 200);
+      inputs.ruling(step.body, out, `fixed-${n}`, nextCloseOf(n));
+      if (step.kind === 'ruleExact') expect(out.status, `${plan.seed} ruling ${n}`).toBe(step.status ?? 200);
       continue;
     }
     const date = S[step.i];
+    // What the inputs show at this close: the rows listed (a catch-up's backfill joined), and the founder's split rulings
+    // still pending (each one more account of its id; bounded by the stored ruling's closing — test support reads it only
+    // to stop counting an account the product no longer supplies).
+    {
+      const archived = step.rowsBySym ? Object.values(step.rowsBySym).flat() : (step.rows || []);
+      const backfilled = step.kind === 'catchup' ? (step.backfillBySym ? Object.values(step.backfillBySym).flat() : (step.backfill || [])) : [];
+      const keys = (rows) => { const m = new Map(); for (const a of rows) { const id = deriveActionId(a); m.set(id, [...(m.get(id) || []), JSON.stringify([a.ratio ?? null, a.amount ?? null])]); } return new Map([...m].map(([id, ks]) => [id, [...new Set(ks)].sort().join('|')])); };
+      const ak = keys(archived); const bk = keys(backfilled);
+      const disagreeIds = new Set([...bk.keys()].filter((id) => ak.has(id) && ak.get(id) !== bk.get(id)));
+      const stored = getIdea(c.db, c.bookId, c.ideaId).founderRulings || [];
+      const pendingSplits = new Map();
+      for (const r of inputs.rulings) {
+        if (r.status !== 200 || r.body?.kind !== 'suspicion' || r.body.decision !== 'split') continue;
+        const doc = stored.find((x) => x.requestKey === r.requestKey);
+        if (doc && doc.appliedOn != null && doc.appliedOn < date) continue;
+        const id = inputs.splitIdOf(r.body);
+        if (id) pendingSplits.set(id, Number(r.body.ratio));
+      }
+      const uncoveredSyms = step.kind === 'catchup' ? [] : (step.uncoveredSyms ?? (step.uncovered ? ['AAPL'] : []));
+      inputs.close(step.i, [...archived, ...backfilled], { pendingSplits, uncoveredSyms, disagreeIds });
+    }
     await storeCloseSnapshot(c.db, date, quotesOf(step));
     if (step.kind === 'catchup') {
       const bySym = step.backfillBySym ?? { AAPL: step.backfill };
@@ -361,9 +402,9 @@ async function runInner(plan, expose) {
     }
     expect(getBook(c.db, c.bookId).execState.lastCloseKey, `seed ${plan.seed} closed ${date}`).toBe(date);
     closes += 1;
-    checkAfterClose(c, date, plan.ambiguousSince, tied);
+    checkAfterClose(c, date, plan.ambiguousSince, tied, inputs, entryOf, plan.seed);
     if (previous !== null) { await rerunAdds(c, date, previous); closes += 1; }
-    checkAfterClose(c, date, plan.ambiguousSince, tied);
+    checkAfterClose(c, date, plan.ambiguousSince, tied, inputs, entryOf, plan.seed);
     previous = date;
   }
   const idea = getIdea(c.db, c.bookId, c.ideaId);
@@ -393,7 +434,7 @@ async function runInner(plan, expose) {
     expect([idea.ledger.dividendsUsd, idea.comparisonLedger.dividendsUsd], `${plan.seed} dividends`).toEqual([plan.end.dividends, plan.end.dividends]);
     expect([idea.ledger.holdings.AAPL.shares, idea.comparisonLedger.holdings.AAPL.shares, getBook(c.db, c.bookId).portfolio.positions.AAPL.shares], `${plan.seed} shares`).toEqual([plan.end.shares, plan.end.shares, plan.end.shares]);
   }
-  return { idea, closes };
+  return { idea, closes, inputs };
 }
 
 // ── EVERY REPRODUCTION FROM ASTRA'S REVIEWS, AS A FIXED CASE THROUGH THE SAME CHECKS (rev 1, S-6) ───────────────────────
@@ -448,6 +489,7 @@ const d01 = {
     cl(3, 100, [d(1, 3), d(3, 3)])],
   end: { dividends: 0, shares: 99.970008 },
 };
+
 const d02 = {
   seed: 'Astra-R2-D02',
   ambiguousSince: { [splitId]: 2 },
@@ -457,10 +499,11 @@ const d02 = {
     cl(2, 50, [sp(1, '3/2'), sp(1, '5/4')], true), cl(3, 50)],
   end: { dividends: 0, shares: 99.970008 },
 };
-// The regressions around them. Each runs through I-1 to I-5 after every close.
+
+// The regressions around them. Each runs through I-1 to I-5 and the independent oracle (caOracle.js) after every close.
 const at = (fn) => ({ kind: 'expectIdea', fn });
-const recordOf = (idea, id, reason) => idea.ledger.corporateActionReceipts.find((r) => r.actionId === id && r.reason === reason) ?? null;
 const sharesOf = (idea, book) => [idea.ledger.holdings.AAPL.shares, idea.comparisonLedger.holdings.AAPL.shares, book.portfolio.positions.AAPL.shares];
+const recordOf = (idea, id, reason) => idea.ledger.corporateActionReceipts.find((r) => r.actionId === id && r.reason === reason) ?? null;
 const rulingOf = (idea, kind) => (idea.founderRulings || []).find((r) => r.kind === kind) ?? null;
 const SH2 = 199.940016;
 const SH15 = 149.955012;
@@ -486,7 +529,8 @@ const D01_ROWS = [
     conflictRuling('split_AAPL_' + S[3], 'none'), cl(4, 100)], end: { dividends: 0, shares: SH } },
   // Control (Astra's): the correction one close before its re-date — paid nothing then, and still nothing.
   { seed: 'Astra-R2-D01-control-correction-first', steps: [cl(0, 100), cl(1, 100, [d(1, 1), d(1, 2)]), conflictRuling(oldDividend, 'none'), cl(2, 100), cl(3, 100, [d(1, 3)]), cl(4, 100, [d(4, 3)]), conflictRuling('cash_dividend_AAPL_' + S[4], 'none'), cl(5, 100)], end: { dividends: 0, shares: SH } },
-];/** T2D-D02, fix 2. */
+];
+/** T2D-D02, fix 2. */
 const D02_ROWS = [
   // Her history, then the founder rules the conflict: the reported 3:2 is accepted (it answered 404) and applied once.
   { seed: 'Astra-R2-D02-conflict-ruled-three-for-two', steps: [...d02.steps,
@@ -516,7 +560,39 @@ const D02_ROWS = [
   { seed: 'Astra-R2-D02-control-unruled', steps: [cl(0, 100), cl(1, 50), cl(2, 50, [sp(1, '3/2'), sp(1, '5/4')], true), cl(3, 50),
     at((idea, book) => expect(sharesOf(idea, book)).toEqual([SH, SH, SH])),
     conflictRuling(splitId, 'payload', { ratio: 1.25 }), cl(4, 50)], end: { dividends: 0, shares: 124.96251 } },
-];export const ASTRA_R2 = [d01, d02, ...D01_ROWS, ...D02_ROWS];
+];
+export const ASTRA_R2 = [d01, d02, ...D01_ROWS, ...D02_ROWS];
+
+/**
+ * ASTRA'S INDEPENDENT GENERATOR, REBUILT FROM HER DESCRIPTION (round 2, Run:100 — her harness was not attached): seeds
+ * 19112000–19112031. Even seeds write the correction/re-date (D01's class), odd seeds the pending suspicion (D02's).
+ * Residues 0 and 1 modulo 4 are challenges, 2 and 3 controls. Bits 2–3 choose the cash history's unseen amount ($3, $3.25,
+ * $4, $4.50) — and, in the rebuild, the split history's vendor ratios. Bit 4 reverses the order of the rows in the close.
+ * The D01 control is her own: the correction one close before its re-date. The D02 controls are her two: an agreeing 2:1
+ * (bits 2–3 even) and the same disagreeing ratios with no founder split (odd). Every one ends with the money the rulings in
+ * force allow, and the founder's later answer to the moved or disputed id is accepted (200).
+ */
+export function generateAstraR2(seed) {
+  const control = seed % 4 >= 2;
+  const bits = (seed >> 2) & 3;
+  const reversed = ((seed >> 4) & 1) === 1;
+  const order = (rows) => (reversed ? [...rows].reverse() : rows);
+  if (seed % 2 === 0) {
+    const amount = [3, 3.25, 4, 4.5][bits];
+    const head = [cl(0, 100), cl(1, 100, order([d(1, 1), d(1, 2)])), conflictRuling(oldDividend, 'none'), cl(2, 100)];
+    const tail = control
+      ? [cl(3, 100, [d(1, amount)]), cl(4, 100, [d(3, amount)])]
+      : [cl(3, 100, order([d(1, amount), d(3, amount)]))];
+    return { seed: `astra-r2-gen-${seed}-cash-${control ? 'control' : 'challenge'}`, steps: [...head, ...tail, conflictRuling(movedDividend, 'none'), cl(control ? 5 : 4, 100)], end: { dividends: 0, shares: SH } };
+  }
+  const pair = [['3/2', '5/4'], ['3/2', '3/1'], ['5/4', '3/1'], ['3/1', '3/2']][bits];
+  if (!control) {
+    return { seed: `astra-r2-gen-${seed}-split-challenge`, steps: [cl(0, 100), cl(1, 50), splitRuling(2), cl(2, 50, order(pair.map((v) => sp(1, v))), true), cl(3, 50),
+      conflictRuling(splitId, 'none'), cl(4, 50)], end: { dividends: 0, shares: SH } };
+  }
+  if (bits % 2 === 0) return { seed: `astra-r2-gen-${seed}-split-control-agreeing`, steps: [cl(0, 100), cl(1, 50), splitRuling(2), cl(2, 50, [sp(1, '2/1')], true), cl(3, 50)], end: { dividends: 0, shares: SH2 } };
+  return { seed: `astra-r2-gen-${seed}-split-control-unruled`, steps: [cl(0, 100), cl(1, 50), cl(2, 50, order(pair.map((v) => sp(1, v))), true), cl(3, 50), conflictRuling(splitId, 'none'), cl(4, 50)], end: { dividends: 0, shares: SH } };
+}
 
 
 /** The hooks every S-6 file installs: mode on, a fresh fake store, no vendor key, a fetch that refuses. */
@@ -550,9 +626,68 @@ const WIDE_SYMS = ['AAPL', 'SPY'];
 const WIDE_BASE = { AAPL: 100, SPY: 500 };
 /** The event kinds the wide generator writes (the coverage table counts each, and each pair). */
 export const WIDE_KINDS = ['purchase_on_ex_date', 'dividend', 'split', 'conflict', 'revision', 'redate', 'split_shaped_move', 'coverage_failure',
-  'backfill_agrees', 'backfill_disagrees', 'backfill_empty', 'founder_ruling', 'c04_chain'];
+  'backfill_agrees', 'backfill_disagrees', 'backfill_empty', 'founder_ruling', 'c04_chain', 'chain_c03', 'chain_d01', 'chain_d02'];
 
-export function generateWide(seed, { trace = null } = {}) {
+/**
+ * ORDERED SHAPES ON ONE ID (final fix, Astra's round 2): her finding — the pair counts measured two kind labels anywhere in
+ * a plan, not ordered events on one id and one ledger, and the generator never wrote C03's order. With `ordered`, a wide
+ * history carries ONE chain of ordered events on one AAPL id (and its re-date), drawn from a SECOND random stream `o`:
+ *   c03 — an ex-date conflict; then the old id overlapping its re-date; then the new row only; then the old row only (the
+ *         overlap close uncovered half the time); then, sometimes, the founder's ruling on the old id.
+ *   d01 — a conflict the founder settles (`none`, or a payload); then, in ONE close, a payload of it not seen and that
+ *         payload re-dated (rows in either order) — or, as a control, the correction one close before its re-date.
+ *   d02 — a halving no row explains; the founder's split for it; then same-id vendor split rows — two that disagree, one
+ *         that disagrees, one that agrees, or none — on a close whose data fails for AAPL more often than not.
+ * Returns where to inject: rows by session, a price factor, uncovered sessions, and founder requests after a session.
+ */
+function orderedChain(o, n) {
+  const kinds = ['c03', 'd01', 'd02'].filter((k) => (k === 'c03' ? n >= 6 : n >= 5));
+  if (kinds.length === 0) return null;
+  const kind = o.pick(kinds.flatMap((k) => (k === 'd02' ? [k, k] : [k]))); // (D02 needs the most to line up: weighted twice)
+  const span = kind === 'c03' ? 4 : 3;
+  const a = 1 + o.int(Math.max(1, n - span - 1));
+  const rowsAt = new Map(); const uncoveredAt = new Set(); const rulesAfter = new Map();
+  const put = (i, rows) => { if (i < n) rowsAt.set(i, [...(rowsAt.get(i) || []), ...rows]); };
+  const rule = (i, body) => { if (i < n) rulesAfter.set(i, [...(rulesAfter.get(i) || []), { kind: 'ruleTry', body }]); };
+  const two = () => { const p1 = o.pick(AMOUNTS); const p2 = o.pick(AMOUNTS.filter((x) => x !== p1)); return [p1, p2, o.pick(AMOUNTS.filter((x) => x !== p1 && x !== p2))]; };
+  const div = (i, v) => rowOf('cash_dividend', S[i], v);
+  const old = `cash_dividend_AAPL_${S[a]}`;
+  if (kind === 'c03') {
+    const [p1, p2] = two();
+    put(a, [div(a, p1), div(a, p2)]);
+    put(a + 1, [div(a, p1), div(a + 1, p2)]);
+    if (o.chance(0.5)) uncoveredAt.add(a + 1);
+    put(a + 2, [div(a + 1, p2)]);
+    put(a + 3, [div(a, p1)]);
+    if (o.chance(0.6)) rule(a + 3, { kind: 'conflict', recordId: old, decision: 'payload', payload: { amount: p1 } });
+    return { kind, a, rowsAt, uncoveredAt, rulesAfter, shapeAt: -1 };
+  }
+  if (kind === 'd01') {
+    const [p1, p2, p3] = two();
+    put(a, [div(a, p1), div(a, p2)]);
+    rule(a, o.chance(0.5) ? { kind: 'conflict', recordId: old, decision: 'none' } : { kind: 'conflict', recordId: old, decision: 'payload', payload: { amount: p1 } });
+    if (o.chance(0.5)) put(a + 1, [div(a, p1), div(a, p2)]);
+    if (o.chance(0.75)) {
+      const rows = [div(a, p3), div(a + 2, p3)];
+      put(a + 2, o.chance(0.5) ? rows : rows.reverse());
+      if (o.chance(0.5)) put(a + 3, rows);
+    } else {
+      put(a + 2, [div(a, p3)]);
+      put(a + 3, [div(a + 3, p3)]);
+    }
+    return { kind, a, rowsAt, uncoveredAt, rulesAfter, shapeAt: -1 };
+  }
+  rule(a, { kind: 'suspicion', recordId: `suspected_split_AAPL_${S[a]}`, decision: 'split', ratio: 2 });
+  const variant = o.pick(['two', 'two', 'one', 'agree', 'none']);
+  const sp = (v) => rowOf('split', S[a], v);
+  if (variant === 'two') { const q1 = o.pick(['3/2', '5/4', '3/1']); put(a + 1, [sp(q1), sp(o.pick(['3/2', '5/4', '3/1'].filter((x) => x !== q1)))]); }
+  if (variant === 'one') put(a + 1, [sp(o.pick(['3/2', '5/4', '3/1']))]);
+  if (variant === 'agree') put(a + 1, [sp('2/1')]);
+  if (o.chance(0.8)) uncoveredAt.add(a + 1);
+  return { kind, a, rowsAt, uncoveredAt, rulesAfter, shapeAt: a, variant };
+}
+
+export function generateWide(seed, { trace = null, ordered = false } = {}) {
   const r = rng(seed);
   const clean = r.chance(0.3);
   const n = 6 + r.int(10); // 6 to 15 sessions
@@ -589,6 +724,10 @@ export function generateWide(seed, { trace = null } = {}) {
     if (!clean && r.chance(0.5)) { add(sym, type, 0, type === 'cash_dividend' ? r.pick(AMOUNTS) : r.pick(RATIOS)); tag('conflict', sym); }
   }
   const c04At = !clean && r.chance(0.2) ? 1 + r.int(Math.max(1, n - 3)) : -1;
+  // (Final fix: the ordered chain, from its own stream — without `ordered` nothing below changes a single draw of `r`.)
+  const chain = ordered && !clean ? orderedChain(rng((seed ^ 0x5bd1e995) >>> 0), n) : null;
+  if (chain) tag(`chain_${chain.kind}`, 'AAPL');
+  const chainRules = (i) => { for (const st of chain?.rulesAfter.get(i) || []) steps.push(st); };
   for (let i = 0; i < n; i += 1) {
     at = i;
     for (const sym of WIDE_SYMS) {
@@ -630,11 +769,14 @@ export function generateWide(seed, { trace = null } = {}) {
         }
       }
     }
+    if (chain?.shapeAt === i) shape.AAPL *= 0.5;
     const prices = { AAPL: priceAt('AAPL', i), SPY: priceAt('SPY', i) };
     if (c04At >= 0 && i === c04At) { prices.AAPL = Math.round(priceAt('AAPL', i) * 0.5 * 100) / 100; tag('c04_chain', 'AAPL'); }
     if (c04At >= 0 && i === c04At + 1) { add('AAPL', 'split', c04At, '2/1'); add('AAPL', 'cash_dividend', i, 1.5); prices.AAPL = Math.round(priceAt('AAPL', i) * 0.5 * 100) / 100; }
     const uncoveredSyms = WIDE_SYMS.filter((sym) => (!clean && i > 0 && r.chance(0.12)) || (sym === 'AAPL' && c04At >= 0 && i === c04At + 1));
+    if (chain?.uncoveredAt.has(i) && !uncoveredSyms.includes('AAPL')) uncoveredSyms.push('AAPL');
     for (const sym of uncoveredSyms) tag('coverage_failure', sym);
+    const chainRows = chain?.rowsAt.get(i) || [];
     const rowsBySym = { AAPL: [], SPY: [] };
     for (const [, e] of feed) {
       if (!(i - e.date >= 0 && i - e.date <= WINDOW)) continue;
@@ -663,11 +805,16 @@ export function generateWide(seed, { trace = null } = {}) {
         if (feed.get(disagreed.id)?.createdAt === i || disagreed.id in ambiguousSince) markAmbiguous(disagreed.id, i);
         tag('backfill_disagrees', disagreed.sym);
       } else kinds.add('backfill_agrees');
+      // (A chain's rows join the archive — and the backfill, unless it was emptied — after the backfill's own draws.)
+      if (chainRows.length > 0) { rowsBySym.AAPL.push(...chainRows); if (!emptied) backfillBySym.AAPL.push(...chainRows.map((a) => ({ ...a }))); }
       steps.push({ kind: 'catchup', i, prices, rowsBySym, backfillBySym, mode });
+      chainRules(i);
       continue;
     }
+    rowsBySym.AAPL.push(...chainRows);
     steps.push({ kind: 'close', i, prices, rowsBySym, uncoveredSyms });
-    if (!clean && r.chance(0.35)) { steps.push({ kind: 'rule', pick: r.next(), decision: r.next() }); kinds.add('founder_ruling'); }
+    if (!clean && r.chance(0.35)) { steps.push({ kind: 'rule', pick: r.next(), decision: r.next(), ...(ordered ? { splitOk: true } : {}) }); kinds.add('founder_ruling'); }
+    chainRules(i);
   }
-  return { seed, wide: true, clean, comparison, steps, kinds: [...kinds], feed, ambiguousSince };
+  return { seed, wide: true, clean, comparison, steps, kinds: [...kinds], feed, ambiguousSince, ...(chain ? { chain: { kind: chain.kind, a: chain.a, ...(chain.variant ? { variant: chain.variant } : {}) } } : {}) };
 }

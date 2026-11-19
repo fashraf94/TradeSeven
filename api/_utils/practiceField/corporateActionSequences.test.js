@@ -8,6 +8,9 @@
 //   I-1  no id is both applied and declined on a ledger;
 //   I-2  an id that ever became ambiguous has moved no cash and no shares except by the founder's ruling, holds no
 //        replayable record, and while any record stays open the row is below full quality;
+//        AND (final fix, Astra round 2) by the INDEPENDENT oracle (__testsupport__/caOracle.js): an id ambiguous by the
+//        emitted inputs alone moves cash or shares only under an accepted CONFLICT ruling the harness made for it choosing
+//        that payload, and every movement is accounted for by its receipt (dividends, share chain, income);
 //   I-3  the book reconciles to its ideas (reconcile.js), and the same-stock comparison stays tied to the idea;
 //   I-5  re-running the close (the book's cursor put back one session) adds nothing — no cash, no shares, no id settled.
 // And at the end of a history with complete coverage and no ambiguity:

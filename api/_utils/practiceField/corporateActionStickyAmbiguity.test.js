@@ -751,6 +751,52 @@ describe('the battery\'s rows (AR2-M05, -M06, -M07, -M13, -M31, -M34)', () => {
 });
 const ID_DIV1 = `cash_dividend_AAPL_${S[1]}`;
 
+// ── Astra's round 2 (docs/audits/20261119_ASTRA_CONFIRMATION_T1A2B3_ROUND2.md, Run:101): the battery's three "equivalent"
+// survivors are not equivalent. Each history below is ordinary entries, parsed rows and real closes; each assertion passes on
+// the shipped source and fails only under its mutant (AR2-M07, AR2-M11, AR2-M34 in the battery).
+
+describe('Astra round 2 — the distinguishing histories of AR2-M07, AR2-M11 and AR2-M34', () => {
+  it('AR2-M07: a dividend held at an uncovered close meets a new conflict and a not-entitled row of its payload — its re-date receipt links the not-entitled row (the audit link), and nothing is paid', async () => {
+    const c = await start();
+    await close(c, 0);
+    await uncoveredClose(c, 1, 100, [div(1, 1)]);
+    expect(heldActionRecords(ideaOf(c).ledger).map((r) => r.actionId)).toEqual([ID_DIV1]);
+    // Nov 18: a dividend listed two ways ($1/$2), and the $1 under the purchase day (not entitled).
+    await close(c, 2, 100, [div(2, 1), div(2, 2), div(0, 1)]);
+    const idea = ideaOf(c);
+    expect(divs(idea)).toEqual([0, 0]);
+    const held = idea.ledger.corporateActionReceipts.find((r) => r.actionId === ID_DIV1 && r.reason === 'possible_redate');
+    expect(held?.redateOf, 'the held Nov 17 row is paired with the row that found it (Nov 16), not with the Nov 18 conflict').toBe(`cash_dividend_AAPL_${S[0]}`);
+  });
+
+  it('AR2-M11: a dividend held into an uncovered close where a 2:1 split of its date first appears — its hold names the gap and the split on BOTH the idea and the comparison', async () => {
+    const c = await start();
+    await close(c, 0);
+    await uncoveredClose(c, 1, 100, [div(1, 1)]);
+    await uncoveredClose(c, 2, 50, [div(1, 1), spl(1, '2/1')]);
+    const idea = ideaOf(c);
+    expect(divs(idea)).toEqual([0, 0]);
+    for (const f of ['ledger', 'comparisonLedger']) {
+      const rec = idea[f].holdings.AAPL.heldActions.find((r) => r.actionId === ID_DIV1);
+      const causes = rec.heldBecause.map((i) => `${i.type}:${i.ledger}`).sort();
+      expect(causes, f).toEqual(expect.arrayContaining(['ca_coverage_gap:idea', 'split:idea', 'split:comparison']));
+    }
+  });
+
+  it('AR2-M34: a live $1 held at a failed fetch, a backfill row of $2 under its id chosen by a coverage-gap ruling — a revision; nothing is paid until a conflict ruling', async () => {
+    const c = await start();
+    await close(c, 0);
+    await uncoveredClose(c, 1, 100, [div(1, 1)]);
+    await c.db.doc('practiceFieldCaBackfill/AAPL').set({ schemaVersion: 1, symbol: 'AAPL', from: S[1], to: S[1], failed: true, actions: [div(1, 2)], calls: 2, fetchedAt: '2026-11-18T23:00:00.000Z', source: 'idea_book_backfill' });
+    await rule(c, { kind: 'coverage_gap', recordId: `ca_coverage_gap_AAPL_${S[0]}`, decision: 'row', actionId: ID_DIV1 }, 'r2-m34');
+    await close(c, 2, 100, []);
+    const idea = ideaOf(c);
+    expect(divs(idea), 'the founder chose a row through a coverage-gap ruling, not a conflict ruling').toEqual([0, 0]);
+    expect(unsettledConflicts(idea.ledger).find((r) => r.actionId === ID_DIV1)?.rows.map((r) => r.amount)).toEqual([1, 2]);
+    expect(bookOf(c).portfolio.cash).toBe(80000);
+  });
+});
+
 // ── Rows the S-6 soak found (the founder's 5,000-sequence run), each with the outcome rev 1 gives ─────────────────────────
 
 describe('the S-6 soak\'s findings', () => {
