@@ -12,6 +12,12 @@
 // costUsd; thesisSchema.recorded.test.js validates them.
 //
 //   node --env-file=<parent checkout>/.env.local scripts/sharedResearch/probeBuilder.mjs [key ...] [--force]
+//   node --env-file=<parent checkout>/.env.local scripts/sharedResearch/probeBuilder.mjs --b5 b5:map_segments
+//
+// --b5 (Amendment B §B13 T-7): the B5 round's three probes (b5Probes: map_segments on the T-1 card, find_names with
+// the segment set and the theme unset, build_why on one name), one key per run — each card is built from the answer
+// recorded before it. Their own ledger, test/fixtures/sharedResearch/build.b5.probes.ledger.json, holds at most 3
+// calls and $0.10; B3's ledger and its sixteen recordings are never touched.
 //
 // No key named: every probe without a recorded fixture, in the fixtures' order.
 // The key: CLAUDE_API_KEY, loaded into THIS process only; it is never printed,
@@ -38,27 +44,30 @@ import { buildBuildSystemPrompt, renderBuildUser } from '../../api/_utils/shared
 import { buildSchemaOf, validateBuildTurn } from '../../api/_utils/sharedResearch/thesisSchema.js';
 import { BASELINE } from '../../api/_utils/sharedResearch/method.js';
 import { currentFindingsOf } from '../../api/_utils/researchRecords/model.js';
-import { builderProbes, PROBE_B_READ_AT, PROBE_B_NOW, PROBE_B_EXCHANGE_ID, PROBE_B_NAMES } from '../../api/_utils/sharedResearch/__fixtures__/probeBuilder.js';
+import { builderProbes, PROBE_B_READ_AT, PROBE_B_NOW, PROBE_B_EXCHANGE_ID, PROBE_B_NAMES, b5Probes, validateB5, PROBE_B5_KEYS, PROBE_B5_READ_AT } from '../../api/_utils/sharedResearch/__fixtures__/probeBuilder.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = resolve(HERE, '../../test/fixtures/sharedResearch');
 const fileOf = (key) => `build.${key.replace(':', '.')}.recorded.json`;
-const LEDGER = resolve(FIXTURES, 'build.probes.ledger.json');
-const CALLS_MAX = 16;
-const COST_MAX_USD = 0.5;
-
 const args = process.argv.slice(2);
+const B5 = args.includes('--b5');
+const LEDGER = resolve(FIXTURES, B5 ? 'build.b5.probes.ledger.json' : 'build.probes.ledger.json');
+const CALLS_MAX = B5 ? 3 : 16;
+const COST_MAX_USD = B5 ? 0.1 : 0.5;
+const RULING = B5 ? '§B13 T-7 (Nov 17): at most 3 calls and $0.10 in total' : 'S-4 (Nov 17): up to 16 calls and $0.50 in total';
+
 const force = args.includes('--force');
 const wanted = args.filter((a) => !a.startsWith('--'));
-const all = builderProbes();
+const all = B5 ? b5Probes() : builderProbes();
 const unknown = wanted.filter((k) => !all.some((p) => p.key === k));
+if (B5 && unknown.some((k) => PROBE_B5_KEYS.includes(k))) { console.error(`probeBuilder: ${unknown.join(', ')} needs the probe before it recorded first (${PROBE_B5_KEYS.join(' → ')})`); process.exit(2); }
 if (unknown.length) { console.error(`probeBuilder: no probe ${unknown.join(', ')}`); process.exit(2); }
 const probes = wanted.length ? wanted.map((k) => all.find((p) => p.key === k)) : all.filter((p) => !existsSync(resolve(FIXTURES, fileOf(p.key))));
 const blocked = probes.filter((p) => existsSync(resolve(FIXTURES, fileOf(p.key))));
 if (blocked.length && !force) { console.error(`probeBuilder: recorded already (${blocked.map((p) => p.key).join(', ')}); pass --force to replace on purpose.`); process.exit(2); }
 if (!process.env.CLAUDE_API_KEY) { console.error('probeBuilder: CLAUDE_API_KEY is not set in this process (load it with --env-file); nothing was called.'); process.exit(2); }
 
-const ledger = existsSync(LEDGER) ? JSON.parse(readFileSync(LEDGER, 'utf8')) : { ruling: "S-4 (Nov 17): up to 16 calls and $0.50 in total", callsMax: CALLS_MAX, costMaxUsd: COST_MAX_USD, calls: [] };
+const ledger = existsSync(LEDGER) ? JSON.parse(readFileSync(LEDGER, 'utf8')) : { ruling: RULING, callsMax: CALLS_MAX, costMaxUsd: COST_MAX_USD, calls: [] };
 const spent = () => ledger.calls.reduce((s, c) => s + (c.costUsd ?? 0), 0);
 
 /** The key, if it ever appears in an error's text, is replaced — it is never written. */
@@ -108,14 +117,21 @@ for (const p of probes) {
     ok: turn.ok, reason: turn.reason ?? null, stopReason: turn.stopReason, category: turn.category ?? null,
     apiError: turn.ok ? null : apiError,
     attempts: turn.attempts, elapsedMs: turn.elapsedMs, usage: turn.usage, costUsd: turn.costUsd,
-    readAt: PROBE_B_READ_AT,
+    readAt: B5 ? PROBE_B5_READ_AT : PROBE_B_READ_AT,
     output: turn.output ?? null,
   };
   ledger.calls.push({ at: recorded.recordedAt, key: p.key, ok: recorded.ok, reason: recorded.reason, apiError: recorded.apiError, usage: recorded.usage, costUsd: recorded.costUsd, elapsedMs: recorded.elapsedMs, attempts: recorded.attempts });
   writeFileSync(LEDGER, `${JSON.stringify(ledger, null, 2)}\n`);
   writeFileSync(resolve(FIXTURES, fileOf(p.key)), `${JSON.stringify(recorded, null, 2)}\n`);
   let validation = null;
-  if (turn.ok) {
+  if (turn.ok && B5) {
+    const v = validateB5(p, turn.output);
+    const t = typeof turn.output?.themeSuggestion === 'string' ? turn.output.themeSuggestion.trim() : '';
+    validation = v.ok
+      ? { ok: true, findings: v.findings.length, notes: v.notes, landed: Object.entries(v.proposals).filter(([k, x]) => !['goal', 'part'].includes(k) && x).map(([k]) => k), reply: v.reply, replyChars: v.reply.length }
+      : { ok: false, rule: v.rule, detail: v.detail };
+    validation.t7 = { modelReplyChars: String(turn.output?.reply ?? '').length, themeSuggestion: t || null, themeWords: t ? t.split(/\s+/).length : 0 };
+  } else if (turn.ok) {
     let n = 0;
     const v = validateBuildTurn(turn.output, {
       record: p.record, items: p.items, readAt: PROBE_B_READ_AT, partnerExchangeId: PROBE_B_EXCHANGE_ID, partnerAt: PROBE_B_NOW, nowIso: PROBE_B_NOW,

@@ -4,7 +4,8 @@
 // Drawn while `thesis.ready` is true and the investigation is open: the SERVER'S
 // sentence (as received; its set parts tappable where they stand), "Edit the
 // sentence · it's yours" (an edit goes as `statement`), the names, the why, and
-// "How it will be judged" — the time frame, the wrong-if "in your words" and the
+// "How it will be judged" — the time frame, the wrong-if "in your words" (or "in
+// words" when the player did not write it: §B13 T-8) and the
 // price line "optional · add your own" (W-2: the idea book does not read saved
 // theses yet, so nothing here says it is watched or held).
 //
@@ -18,9 +19,9 @@ import React, { useEffect, useId, useRef, useState } from 'react';
 import { SR_COPY as COPY } from '../sharedResearchCopy';
 import { T, S } from '../sharedResearchStyle';
 import { findingsById, remainingOf, STATEMENT_MAX } from '../sharedResearchView';
-import { partFindingIdsOf, panelOf, revisedWhyChoiceOf } from '../thesisView';
+import { partFindingIdsOf, panelOf, revisedWhyChoiceOf, themeLineOf } from '../thesisView';
 import {
-  CardHead, ClearConfirm, Count, Cover, FOOT, FreeButton, PartPanel, PriceLines, Rail, ResearchButton, Sentence, WhyBlock, WhyProposal, freeLabelOf, researchLabelOf, usePanelInView,
+  CardHead, ClearConfirm, Composer, Count, Cover, FOOT, FreeButton, PartPanel, PriceLines, Rail, ResearchButton, Sentence, ThemeLine, WhyBlock, WhyProposal, freeLabelOf, researchLabelOf, usePanelInView,
   scrollParentOf, useFootRoom, WRAP,
 } from '../builderParts';
 import { Button, LinkButton, Notice, Running, Tag } from '../parts';
@@ -60,12 +61,22 @@ export default function ThesisReady({ sr, agentName, phone, edit, setEdit, onKee
   usePanelInView(tapped, panelId, footRef);
   useFootRoom(footRef);
   const issueId = `sr-save-issue${useId()}`;
-  // the panel's close puts focus back on its part (review 4C-1)
+  // the panel's close puts focus back on what opened it (review 4C-1): its part, or the theme block's "Write your own"
+  // (§B14 Q-4 — a theme only suggested has no slot in the server's sentence)
+  const openerRef = useRef(null);
+  const tapPart = (part) => { openerRef.current = null; setTapped(part); };
   const closePanel = () => {
     const part = tapped;
+    const opener = openerRef.current;
+    openerRef.current = null;
     setTapped(null);
-    setTimeout(() => sentenceRef.current?.querySelector(`[data-sr-slot="${part}"]`)?.focus({ preventScroll: true }), 0);
+    setTimeout(() => {
+      const back = opener?.isConnected ? opener : sentenceRef.current?.querySelector(`[data-sr-slot="${part}"]`);
+      back?.focus({ preventScroll: true });
+    }, 0);
   };
+  // §B14 Q-4: a ready card whose theme is only suggested draws the theme's block here too (the work view's, §B13 T-6)
+  const themeLine = themeLineOf(thesis);
   const byId = findingsById(record);
   const stepsLeft = remainingOf(session);
   const status = sr.save.sessionId === session.sessionId ? sr.save.status : 'idle';
@@ -112,13 +123,22 @@ export default function ThesisReady({ sr, agentName, phone, edit, setEdit, onKee
           </div>
         ) : (
           <div ref={sentenceRef} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <Sentence thesis={thesis} tapped={tapped} onTap={setTapped} panelId={panelId} agentName={agentName} size={phone ? 16 : 16.5} />
+            <Sentence thesis={thesis} tapped={tapped} onTap={tapPart} panelId={panelId} agentName={agentName} size={phone ? 16 : 16.5} />
             <div><LinkButton disabled={busy} onClick={() => setEditing(true)} attrs={{ 'data-sr-edit': '' }}>{B.edit}</LinkButton></div>
           </div>
+        )}
+        {themeLine && !editing && (
+          <ThemeLine confirm={themeLine.confirm} agentName={agentName} disabled={busy} onConfirm={() => sr.cardOp(themeLine.confirm)}
+            onWriteOwn={themeLine.text ? (e) => { openerRef.current = e?.currentTarget ?? null; setTapped('theme'); } : null}
+            expanded={tapped === 'theme'} controls={panelId} />
         )}
         {panel && !editing && (
           <PartPanel id={panelId} part={tapped} thesis={thesis} companies={companies} byId={byId} agentName={agentName} onClose={closePanel}
             change={panel.change} onChange={() => onFree(panel.change)}>
+            {/* §B14 Q-4: "Write your own" opens the theme's part with its text box (the player's own phrase, free) */}
+            {tapped === 'theme' && panel.text && (
+              <Composer textChoice={panel.text} directionOn={false} agentName={agentName} disabled={busy} onFree={(c, words) => sr.cardOp(c, { text: words })} onDirection={() => null} />
+            )}
             {panel.revised && (
               <>
                 <WhyProposal proposal={thesis.parts.why.proposal} agentName={agentName} title={B.revised} attrs={{ 'data-sr-revised-proposal': '' }} />
@@ -137,11 +157,12 @@ export default function ThesisReady({ sr, agentName, phone, edit, setEdit, onKee
           <Count n={partFindingIdsOf(thesis, 'names', companies).length} />
         </div>
         <WhyBlock thesis={thesis} agentName={agentName} />
-        {revisedWhyChoiceOf(thesis) && tapped !== 'why' && <div><LinkButton disabled={busy} onClick={() => setTapped('why')} attrs={{ 'data-sr-revised-waiting': '' }}>{B.revisedWaiting}</LinkButton></div>}
+        {revisedWhyChoiceOf(thesis) && tapped !== 'why' && <div><LinkButton disabled={busy} onClick={() => tapPart('why')} attrs={{ 'data-sr-revised-waiting': '' }}>{B.revisedWaiting}</LinkButton></div>}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 11, borderTop: `1px solid ${T.hair}` }} data-sr-judged="">
           <span style={S.eyebrow}>{B.judged}</span>
           <JudgedRow label={B.parts.timeFrame}>{thesis.parts.timeFrame.label}</JudgedRow>
-          <JudgedRow label={B.parts.wrongIf}>{thesis.parts.wrongIf.text} <span style={{ display: 'inline-flex', verticalAlign: 'middle' }}><Tag dim>{B.inYourWords}</Tag></span></JudgedRow>
+          {/* §B13 T-8 (b): "in your words" only when the player wrote it; otherwise "in words" — never "watched" (W-2) */}
+          <JudgedRow label={B.parts.wrongIf}>{thesis.parts.wrongIf.text} <span style={{ display: 'inline-flex', verticalAlign: 'middle' }} data-sr-wrongif-tag={thesis.parts.wrongIf.by ?? ''}><Tag dim>{thesis.parts.wrongIf.by === 'player_wrote' ? B.inYourWords : B.inWords}</Tag></span></JudgedRow>
           <JudgedRow label={B.priceLine}>
             {lines.length > 0 && lines.map((l) => <span key={l.symbol} style={{ display: 'block' }} data-sr-price-line={l.symbol}>{B.priceSet(l.symbol, l.level)}</span>)}
             {priceChoice && (

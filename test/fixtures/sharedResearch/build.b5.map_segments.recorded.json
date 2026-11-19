@@ -1,0 +1,130 @@
+{
+  "recordedAt": "2026-11-18T17:11:17.169Z",
+  "key": "b5:map_segments",
+  "goal": "map_segments",
+  "part": null,
+  "shape": {
+    "goal": "map_segments",
+    "part": null
+  },
+  "model": "claude-sonnet-5-5",
+  "modelIds": {
+    "step": "claude-sonnet-5-5",
+    "frame": "claude-haiku-5-5"
+  },
+  "ok": true,
+  "reason": null,
+  "stopReason": "end_turn",
+  "category": null,
+  "apiError": null,
+  "attempts": 1,
+  "elapsedMs": 7923,
+  "usage": {
+    "input": 6127,
+    "output": 830
+  },
+  "costUsd": 0.020554,
+  "readAt": "2026-11-17T15:00:00.000Z",
+  "output": {
+    "reply": "The idea splits into four parts, from the chips themselves to the power that runs them. I'd stand on accelerator chips, since cloud spending is aimed mostly at them, though no listed company is tied to it yet.",
+    "findings": [
+      {
+        "tempId": "t1",
+        "kind": "coverage",
+        "fact": "The largest cloud companies said they would keep raising spending on AI data centers next year, most of it on accelerator chips.",
+        "symbolCandidate": null,
+        "companyName": null,
+        "support": {
+          "kind": "retrieval",
+          "index": 0,
+          "from": [],
+          "reason": null
+        },
+        "at": "2026-11-10",
+        "supersedes": null
+      },
+      {
+        "tempId": "t2",
+        "kind": "coverage",
+        "fact": "Executives named chip supply, power and networking as the limits on how fast new AI data-center capacity comes online.",
+        "symbolCandidate": null,
+        "companyName": null,
+        "support": {
+          "kind": "retrieval",
+          "index": 0,
+          "from": [],
+          "reason": null
+        },
+        "at": "2026-11-10",
+        "supersedes": null
+      },
+      {
+        "tempId": "t3",
+        "kind": "coverage",
+        "fact": "Utilities said data-center projects now make up a large share of requests for new grid connections.",
+        "symbolCandidate": null,
+        "companyName": null,
+        "support": {
+          "kind": "retrieval",
+          "index": 1,
+          "from": [],
+          "reason": null
+        },
+        "at": "2026-11-04",
+        "supersedes": null
+      },
+      {
+        "tempId": "t4",
+        "kind": "coverage",
+        "fact": "AI training clusters need high-speed networking between thousands of accelerators, a market several chip and equipment makers serve.",
+        "symbolCandidate": null,
+        "companyName": null,
+        "support": {
+          "kind": "retrieval",
+          "index": 2,
+          "from": [],
+          "reason": null
+        },
+        "at": null,
+        "supersedes": null
+      }
+    ],
+    "companies": [],
+    "themeSuggestion": "AI data-center buildout",
+    "segments": [
+      {
+        "label": "Accelerator chips",
+        "line": "The processors that train and run AI models, where most data-center spending is aimed.",
+        "refs": [
+          "t1"
+        ]
+      },
+      {
+        "label": "Networking",
+        "line": "High-speed links that tie thousands of accelerators into one training cluster.",
+        "refs": [
+          "t4"
+        ]
+      },
+      {
+        "label": "Power and grid",
+        "line": "Electricity supply and grid connections that data centers need to come online.",
+        "refs": [
+          "t2",
+          "t3"
+        ]
+      },
+      {
+        "label": "Cloud spenders",
+        "line": "The large cloud companies paying for the buildout, whose spending plans set demand.",
+        "refs": [
+          "t1"
+        ]
+      }
+    ],
+    "pick": {
+      "value": "Accelerator chips",
+      "reason": "Cloud spending is aimed mostly at them, and chip supply is named as a limit."
+    }
+  }
+}

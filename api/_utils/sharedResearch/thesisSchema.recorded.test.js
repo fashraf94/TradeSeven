@@ -12,7 +12,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve, dirname } from 'node:path';
 import { describe, it, expect } from 'vitest';
-import { validateBuildTurn, BUILD_SCHEMAS, buildSchemaOf, acceptsOf } from './thesisSchema.js';
+import { validateBuildTurn, BUILD_SCHEMAS, buildSchemaOf, acceptsOf, keptReplyOf, MODEL_REPLY_MAX } from './thesisSchema.js';
 import { applyProposals, cardContextOf, reasonHolds } from './thesis.js';
 import { companiesOf } from './companies.js';
 import { costUsd, MODELS, MAX_OUTPUT_TOKENS } from './modelTurn.js';
@@ -124,15 +124,23 @@ describe('what the probes proposed', () => {
     expect(nvda.some((f) => f.symbol === 'NVDA') && nvda.some((f) => f.symbol !== 'NVDA')).toBe(true); // the case W-10 rules
     expect(reasonHolds(ctx, v.proposals.why.reasons[0])).toBe(true);
   });
-  it('strengthen:names and strengthen:timeFrame: the model\'s own reply stands (§B12 Q-1)', () => {
+  // §B13 T-3 (moved from "the reply stands" verbatim): the model's reply now stands cut at 320 at a sentence's end —
+  // both recorded replies run longer (414 and 365 characters)
+  it('strengthen:names and strengthen:timeFrame: the model\'s own reply stands (§B12 Q-1), cut at 320 at a sentence\'s end (§B13 T-3)', () => {
     for (const key of ['strengthen:names', 'strengthen:timeFrame']) {
       const { v } = of(key);
       expect(v.notes.filter((x) => x.startsWith('reply_replaced')), key).toEqual([]);
-      expect(v.reply, key).toBe(recorded(key).output.reply);
+      // §B14 Q-3 (moved from the leading sentences that fit): the first and the last sentence, else the first
+      expect(v.reply, key).toBe(keptReplyOf(recorded(key).output.reply.replace(/\s+/g, ' ').trim(), MODEL_REPLY_MAX).text);
+      expect(v.reply.length, key).toBeLessThanOrEqual(320);
     }
   });
-  it('direction with nothing else on offer: findings only, nothing proposed for the card', () => {
-    const { v } = of('direction');
+  // §B13 T-2 (retitled from "direction with nothing else on offer"): replayed in the shape B3 recorded it in; today its
+  // card offers the map, so the same step would be asked as map_segments
+  it('direction, replayed in its recorded shape: findings only, nothing proposed for the card; today the card asks it as map_segments (§B13 T-2)', () => {
+    const { p, v } = of('direction');
     expect(Object.values({ ...v.proposals, goal: null, part: null }).every((x) => x === null)).toBe(true);
+    expect(recorded('direction').shape).toEqual({ goal: 'direction', part: null });
+    expect(p.asNow).toEqual({ goal: 'map_segments', part: null });
   });
 });

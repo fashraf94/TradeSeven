@@ -500,3 +500,47 @@ describe.skipIf(!BASE)('lens (c) on the phone round, in a real browser', () => {
     } finally { await ctx.close(); }
   }, ROW_TIMEOUT);
 });
+
+// §B14 Watch 10 (and Q-4): the theme block's two buttons, "Use it · free" and "Write your own", on ONE row, each 44 px tall,
+// each label on one line inside its button, each the element under its own tap — in the work view after the map
+// (builder-map) and on the ready view (builder-ready), at 320, 393 and 1280.
+describe.skipIf(!BASE)('§B14 the theme block in a real browser', () => {
+  beforeAll(async () => {
+    if (browser) return;
+    const { chromium } = await import('playwright-core');
+    browser = await chromium.launch({ headless: true, ...(CHANNEL ? { channel: CHANNEL } : {}) });
+  }, ROW_TIMEOUT);
+  afterAll(async () => { await browser?.close(); browser = null; }, ROW_TIMEOUT);
+
+  for (const scenario of ['builder-map', 'builder-ready']) {
+    for (const [w, h] of [[320, 568], [393, 852], [1280, 800]]) {
+      it(`${w}×${h} ${scenario}: the two buttons sit side by side on one row, 44 px, one line each, each under its own tap`, async () => {
+        const { ctx, page } = await pageAt(w, h, scenario);
+        try {
+          await page.waitForSelector('[data-sr-theme-line] [data-sr-theme-own]', { timeout: ROW_TIMEOUT });
+          await page.$eval('[data-sr-theme-buttons]', (e) => e.scrollIntoView({ block: 'center' }));
+          await page.waitForTimeout(250);
+          const m = await page.evaluate(() => {
+            const row = document.querySelector('[data-sr-theme-buttons]');
+            const [use, own] = [...row.querySelectorAll(':scope > button')];
+            const box = (e) => { const r = e.getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), left: Math.round(r.left), right: Math.round(r.right), h: Math.round(r.height) }; };
+            const lines = (b) => { const s = b.querySelector('span'); const r = s.getBoundingClientRect(); return Math.round(r.height / parseFloat(getComputedStyle(s).lineHeight || '20')); };
+            const under = (e) => { const r = e.getBoundingClientRect(); const t = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return Boolean(t && (t === e || e.contains(t))); };
+            const fits = (b) => b.scrollWidth <= b.clientWidth + 1;
+            const block = document.querySelector('[data-sr-theme-line]').getBoundingClientRect();
+            return { use: box(use), own: box(own), useLines: lines(use), ownLines: lines(own), underUse: under(use), underOwn: under(own), fitsUse: fits(use), fitsOwn: fits(own), blockRight: Math.round(block.right), vw: innerWidth };
+          });
+          const d = JSON.stringify(m);
+          expect(m.use.top, d).toBe(m.own.top); // one row
+          expect(m.use.right, d).toBeLessThanOrEqual(m.own.left); // side by side, in that order
+          expect(m.use.h, d).toBeGreaterThanOrEqual(44);
+          expect(m.own.h, d).toBeGreaterThanOrEqual(44);
+          expect([m.useLines, m.ownLines], d).toEqual([1, 1]);
+          expect(m.fitsUse && m.fitsOwn, d).toBe(true); // no label clipped
+          expect(m.own.right, d).toBeLessThanOrEqual(Math.min(m.blockRight, m.vw));
+          expect(m.underUse && m.underOwn, d).toBe(true);
+        } finally { await ctx.close(); }
+      }, ROW_TIMEOUT);
+    }
+  }
+});
