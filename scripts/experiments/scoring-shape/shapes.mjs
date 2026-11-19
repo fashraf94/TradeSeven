@@ -105,7 +105,9 @@ export function dailyPoints(F, u1, price, dayBankedSets) {
   }));
 }
 
-/** Cross-check: the legacy scorer's own nightly badges for S5t, day by day (agent-daily-scores.js path). */
+/** Cross-check: the fenced scorer's legacy branch, given each day's high/low as extremes, awards S5t's tiers day by day.
+ *  This is arithmetic agreement on the same inputs, not a replay of the nightly path, which passes {} extremes and reads
+ *  a check-sampled history (api/cron/agent-daily-scores.js:144–150) and anchors session 1 at the entry (review A7). */
 export function legacyAgrees(s5) {
   return s5.days.every((d) => {
     const r = legacyDay({ fill: s5.F, baseline: d.B, unitPct: s5.u1.scoringPct, conviction: 'support', close: d.C, high: d.H, low: d.L });

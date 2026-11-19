@@ -8,8 +8,10 @@
 //   - Entry rule (V2's anchor, "validated_position_entry_or_swap_fill"): the fill is the OPEN of entry session t.
 //     The one-day unit comes from the 15 bars ending at t−1 (the last completed session at commit; V2 policy
 //     "sourceSession": independently_latest_completed_exchange_session_at_each_position_commit).
-//   - Prices: the V2 normalizer's fully adjusted series (each row × adjusted_close/close), so an ex-dividend drop
-//     inside a hold cannot fake a Bust and a split cannot fake anything.
+//   - Prices: the V2 normalizer's adjusted series (each row × adjusted_close/close), the series V2 measures on. A share
+//     split is exact. An ex-dividend drop inside a hold is removed, though the game's live price shows it. A spin-off is
+//     not exact: one provider factor cannot keep the ex-date's open and close both continuous (CTVA 1 Oct 2026, booked
+//     by the provider as a 1333:200 split, shows a +24% adjusted opening gap; review B6).
 //   - Eligible: rows t−45 … t+2 are consecutive sessions on the pinned calendar (U6 needs 45 sessions back; the
 //     three-session hold needs t+1 and t+2). Every eligible entry gets BOTH a one-session hold (session t) and a
 //     three-session hold (t … t+2) from the same fill.

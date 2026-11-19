@@ -18,8 +18,8 @@
 import path from 'node:path';
 import { readdirSync } from 'node:fs';
 import { getSessionForDate } from '../../../src/utils/marketCalendar.js';
-import { admitted, argOf, crossed, DEFAULT_BARS_RUN, DEFAULT_TAPE_DIR, DEFAULT_V2_DIR, loadSeries, mdTable, median, oneDayUnitAt, outDirOf,
-  quantile, readJson, TIER_KEYS, TIER_LABEL, v2Universe, writeJson } from './lib.mjs';
+import { admitted, argOf, crossed, levelsOf, DEFAULT_BARS_RUN, DEFAULT_TAPE_DIR, DEFAULT_V2_DIR, loadSeries, mdTable, median, mulberry32, oneDayUnitAt, outDirOf,
+  quantile, readJson, RNG_SEED, TIER_KEYS, TIER_LABEL, v2Universe, writeJson } from './lib.mjs';
 
 const argv = process.argv;
 const tapeDir = argOf(argv, '--tape', DEFAULT_TAPE_DIR);
@@ -67,7 +67,9 @@ for (const s of series.values()) {
 
 const tierCount = () => Object.fromEntries(TIER_KEYS.map((k) => [k, 0]));
 const daily = tierCount(), atChecks = tierCount();
-const hiGap = [], loGap = [], lastCheckMin = [], closeGapUnits = [];
+const hiGap = [], loGap = [], lastCheckMin = [], closeGapUnits = [], hiShortUnits = [], loShortUnits = [];
+const overshootUnits = [];
+const bySessionA = new Map(); // etDate → { d, c }: +1.0 touches on daily bars and at checks, for the session-resampled interval
 let plusDisagree = 0, minusDisagree = 0, plusCloseClears = 0, minusCloseClears = 0;
 for (const k of kept) {
   const F = k.eod.open;
@@ -77,7 +79,21 @@ for (const k of kept) {
   for (const t of crossed(F, k.unit, { high: k.eod.high, low: k.eod.low, price: k.eod.close })) daily[t]++;
   const cp = k.checks.map((c) => c.price);
   const last = cp.at(-1);
-  for (const t of crossed(F, k.unit, { high: Math.max(...cp), low: Math.min(...cp), price: last })) atChecks[t]++;
+  const seenAtChecks = crossed(F, k.unit, { high: Math.max(...cp), low: Math.min(...cp), price: last });
+  for (const t of seenAtChecks) atChecks[t]++;
+  const sa = bySessionA.get(k.s.etDate) || { d: 0, c: 0 };
+  if (crossed(F, k.unit, { high: k.eod.high, low: k.eod.low, price: k.eod.close }).includes('bagger')) sa.d++;
+  if (seenAtChecks.includes('bagger')) sa.c++;
+  bySessionA.set(k.s.etDate, sa);
+  // How far the day's extremes sit beyond the checks' extremes, in one-day units (for the check-visibility variant of
+  // the snap-exit test, review B1): the daily high minus the highest check price, and the lowest check minus the low.
+  hiShortUnits.push(Math.max(0, k.eod.high - Math.max(...cp)) / F * 100 / k.unit.scoringPct);
+  // Where a check-based seller would have sold: the first check at or beyond the +1.0 line, in one-day units past it
+  // (review B1: a sale at a check fills past the line, not on it).
+  const T1 = levelsOf(F, k.unit).bagger;
+  const firstBeyond = cp.find((p) => p >= T1);
+  if (k.eod.high >= T1 && firstBeyond != null) overshootUnits.push((firstBeyond - T1) / F * 100 / k.unit.scoringPct);
+  loShortUnits.push(Math.max(0, Math.min(...cp) - k.eod.low) / F * 100 / k.unit.scoringPct);
   lastCheckMin.push((k.sess.closeMs - k.checks.at(-1).ms) / 60_000);
   closeGapUnits.push(Math.abs(last - k.eod.close) / F * 100 / k.unit.scoringPct);
   const atClose = crossed(F, k.unit, { high: k.eod.close, low: k.eod.close, price: k.eod.close });
@@ -89,8 +105,10 @@ for (const k of kept) {
 }
 
 // Secondary, larger sample: every universe symbol-session whose 10-minute bars span the session, sampled at the
-// bars' CLOSES (every 10 minutes — denser than the 15-minute checks, so its ratio sits ABOVE the check ratio).
+// bars' CLOSES. Every 10 minutes, but on a grid offset from the checks (most checks land at :01/:16/:31/:46), so it is a
+// second estimate, NOT a bound on the check ratio (review B4, C3).
 const dailyB = tierCount(), atBarCloses = tierCount();
+const bySessionB = new Map();
 let nB = 0;
 for (const s of series.values()) {
   if (!symbols.includes(s.symbol) || s.interval !== '10m' || !Array.isArray(s.bars) || !s.bars.length) continue;
@@ -107,17 +125,37 @@ for (const s of series.values()) {
   const e = b.rows[i].raw;
   const F = Number(e.open);
   nB++;
-  for (const t of crossed(F, unit, { high: Number(e.high), low: Number(e.low), price: Number(e.close) })) dailyB[t]++;
+  const onDaily = crossed(F, unit, { high: Number(e.high), low: Number(e.low), price: Number(e.close) });
+  for (const t of onDaily) dailyB[t]++;
   const cl = s.bars.map((x) => x.c);
-  for (const t of crossed(F, unit, { high: Math.max(...cl), low: Math.min(...cl), price: cl.at(-1) })) atBarCloses[t]++;
+  const onCloses = crossed(F, unit, { high: Math.max(...cl), low: Math.min(...cl), price: cl.at(-1) });
+  for (const t of onCloses) atBarCloses[t]++;
+  const sb = bySessionB.get(s.etDate) || { d: 0, c: 0 };
+  if (onDaily.includes('bagger')) sb.d++;
+  if (onCloses.includes('bagger')) sb.c++;
+  bySessionB.set(s.etDate, sb);
 }
 
+/** +1.0 ratio with a 90% interval from resampling whole sessions (2,000 seeded draws). */
+function sessionInterval(bySession) {
+  const sess = [...bySession.keys()].sort().map((k) => bySession.get(k));
+  const rng = mulberry32(RNG_SEED + 2);
+  const draws = [];
+  for (let i = 0; i < 2000; i++) {
+    let d = 0, c = 0;
+    for (let j = 0; j < sess.length; j++) { const s = sess[Math.floor(rng() * sess.length)]; d += s.d; c += s.c; }
+    if (d) draws.push(c / d);
+  }
+  return { sessions: sess.length, plus1: [quantile(draws, 0.05), quantile(draws, 0.95)] };
+}
 const n = kept.length;
 const ratio = Object.fromEntries(TIER_KEYS.map((t) => [t, daily[t] ? atChecks[t] / daily[t] : null]));
 const ratioB = Object.fromEntries(TIER_KEYS.map((t) => [t, dailyB[t] ? atBarCloses[t] / dailyB[t] : null]));
 const result = { tapeSeries: raw, distinctSymbolSessions: series.size, kept: n, dropped: drop, symbols: new Set(kept.map((k) => k.s.symbol)).size, sessions: new Set(kept.map((k) => k.s.etDate)).size,
   agreement: { highGapPct: { median: median(hiGap), p05: quantile(hiGap, 0.05), min: Math.min(...hiGap) }, lowGapPct: { median: median(loGap), p95: quantile(loGap, 0.95), max: Math.max(...loGap) } },
-  touch: { daily, atChecks, ratio }, barCloses: { symbolSessions: nB, daily: dailyB, atBarCloses, ratio: ratioB },
+  touch: { daily, atChecks, ratio, interval: sessionInterval(bySessionA) }, barCloses: { symbolSessions: nB, daily: dailyB, atBarCloses, ratio: ratioB, interval: sessionInterval(bySessionB) },
+  shortfallUnits: { high: [...hiShortUnits].sort((a, b) => a - b), low: [...loShortUnits].sort((a, b) => a - b) },
+  checkOvershootUnits: { n: overshootUnits.length, mean: overshootUnits.reduce((a, b) => a + b, 0) / overshootUnits.length, median: median(overshootUnits) },
   close: { lastCheckMinutesBeforeClose: { median: median(lastCheckMin), max: Math.max(...lastCheckMin) }, gapUnits: { median: median(closeGapUnits), p90: quantile(closeGapUnits, 0.9) },
     plus1: { closeClears: plusCloseClears, verdictDiffers: plusDisagree }, minus1: { closeClears: minusCloseClears, verdictDiffers: minusDisagree } } };
 writeJson(path.join(out, 'touch-gap.json'), result);
@@ -127,8 +165,12 @@ console.log(`${raw} tape series → ${series.size} distinct symbol-sessions → 
 console.log(`10-minute bars vs EOD: highs median ${result.agreement.highGapPct.median.toFixed(4)}% (5th pct ${result.agreement.highGapPct.p05.toFixed(4)}%); lows median ${result.agreement.lowGapPct.median.toFixed(4)}% (95th pct ${result.agreement.lowGapPct.p95.toFixed(4)}%).\n`);
 console.log(mdTable(['Tier', 'Touched on EOD high/low', 'Touched at a 15-min check', 'Check / daily'],
   TIER_KEYS.map((t) => [TIER_LABEL[t], String(daily[t]), String(atChecks[t]), ratio[t] == null ? '—' : ratio[t].toFixed(2)])));
-console.log(`\nSecondary sample (${nB} symbol-sessions, sampled at 10-minute bar closes — denser than the checks):\n`);
+console.log(`\n+1.0 at checks, resampling whole sessions: 90% interval [${result.touch.interval.plus1.map((x) => x.toFixed(2)).join(', ')}] over ${result.touch.interval.sessions} sessions.`);
+console.log(`Day high above the highest check, in one-day units: median ${median(hiShortUnits).toFixed(3)}, 90th pct ${quantile(hiShortUnits, 0.9).toFixed(3)}.`);
+console.log(`First check at or beyond the +1.0 line, in one-day units past it: mean ${result.checkOvershootUnits.mean.toFixed(3)}, median ${result.checkOvershootUnits.median.toFixed(3)} (${result.checkOvershootUnits.n} sessions).`);
+console.log(`\nSecond estimate (${nB} symbol-sessions over ${result.barCloses.interval.sessions} sessions, sampled at 10-minute bar closes — a different grid from the checks, not a bound):\n`);
 console.log(mdTable(['Tier', 'Touched on EOD high/low', 'Touched at a 10-min close', 'Close / daily'],
   TIER_KEYS.map((t) => [TIER_LABEL[t], String(dailyB[t]), String(atBarCloses[t]), ratioB[t] == null ? '—' : ratioB[t].toFixed(2)])));
+console.log(`\n+1.0 at 10-minute closes, resampling whole sessions: 90% interval [${result.barCloses.interval.plus1.map((x) => x.toFixed(2)).join(', ')}].`);
 console.log(`\nLast check: median ${result.close.lastCheckMinutesBeforeClose.median.toFixed(0)} min before the close (max ${result.close.lastCheckMinutesBeforeClose.max.toFixed(0)}). |last check − close|: median ${result.close.gapUnits.median.toFixed(3)} units, 90th pct ${result.close.gapUnits.p90.toFixed(3)}.`);
 console.log(`+1.0 cleared at the close: ${plusCloseClears}; the last check's verdict differs on ${plusDisagree}. −1.0: ${minusCloseClears}; differs on ${minusDisagree}.`);

@@ -241,7 +241,8 @@ export function points(fill, unit, conviction, price, crossedTiers) {
   return { total: s.totalPoints, base: s.basePoints, bonus: s.bonusPoints };
 }
 
-/** The legacy (dormant daily-reset) scorer path, for one day: the cross-check for S5 (api/cron/agent-daily-scores.js:144). */
+/** The fenced scorer's legacy branch for one day, given the day's high/low as extremes: the cross-check for S5. The nightly
+ *  path (api/cron/agent-daily-scores.js:144) passes {} and a check-sampled history instead (review A7). */
 export function legacyDay({ fill, baseline, unitPct, conviction, close, high, low }) {
   const priceChange = (close - fill) / fill * 100;
   const thresholdPriceChange = (close - baseline) / baseline * 100;
