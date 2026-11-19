@@ -74,9 +74,9 @@ describe('SHARED_RESEARCH_MODE — the pin (BUILD_RULES §2; spec §6.2, K-2)', 
 const BUILDER_ROLLBACK = 'move the literal back to \'off\' with its pin: new investigations open as ledgers; open builder sessions keep working';
 
 describe('SHARED_RESEARCH_BUILDER_MODE — the pin (BUILD_RULES §2; Amendment B §B2, K-2)', () => {
-  it("is 'off' — move the literal back to 'off' with its pin: new investigations open as ledgers; open builder sessions keep working", () => {
+  it("is 'on' — move the literal back to 'off' with its pin: new investigations open as ledgers; open builder sessions keep working", () => {
     // THE ROW THAT MOVES WITH THE FLIP ('off' → 'on'), in the founder's flip PR (§B9 step 3); a rollback moves it back.
-    expect(SHARED_RESEARCH_BUILDER_MODE).toBe('off');
+    expect(SHARED_RESEARCH_BUILDER_MODE).toBe('on');
   });
 
   it('the allowed values: exactly off · on, frozen, and the shipped value is one of them', () => {

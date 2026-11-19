@@ -15,6 +15,11 @@ const transitionHypothesis = vi.hoisted(() => vi.fn());
 vi.mock('../../services/hypothesisVersionService', () => ({ transitionHypothesis }));
 const equipLoadoutBook = vi.hoisted(() => vi.fn());
 vi.mock('../../services/loadoutService', () => ({ equipLoadoutBook }));
+// these rows describe the old-view start, which runs with the builder switch off (and on a rollback)
+vi.mock('../../config/sharedResearchFlags', async (importOriginal) => {
+  const real = await importOriginal();
+  return { ...real, SHARED_RESEARCH_BUILDER_MODE: 'off' };
+});
 
 const { default: Body } = await import('./SharedResearchSheetBody');
 const { SR_COPY: COPY } = await import('./sharedResearchCopy');
