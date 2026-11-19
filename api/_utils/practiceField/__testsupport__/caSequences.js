@@ -250,12 +250,19 @@ function checkAfterClose(c, date, oracleSince = null, tied = true) {
   }
 }
 
+/** Put a document in the fake store directly (a new one, or a new version of one): the harness plants state; no product write. */
+function plant(db, path, data) {
+  const prev = db._store.get(path);
+  db._store.set(path, { data, version: (prev?.version ?? 0) + 1 });
+}
+
 /** I-5: the book's cursor put back one session and the close run again on the state it left — nothing more moves. */
 async function rerunAdds(c, date, previous) {
   const before = money(c);
-  const ref = c.db.doc(`mandates/${c.bookId}`);
   const book = getBook(c.db, c.bookId);
-  await ref.set({ ...book, execState: { ...book.execState, lastCloseKey: previous } });
+  // (Written through the fake store's own map, as the fixtures' failed() does: test support adds no write site the
+  // protected-store scan must allowlist.)
+  plant(c.db, `mandates/${c.bookId}`, { ...book, execState: { ...book.execState, lastCloseKey: previous } });
   // (The close's window record is created once — T1a-2b-1's window ledger — so the re-run needs it gone; it holds no money.)
   for (const path of [...c.db._store.keys()]) if (path.startsWith(`mandates/${c.bookId}/windows/${date}`)) c.db._store.delete(path);
   const revision = getIdea(c.db, c.bookId, c.ideaId).revision;
@@ -337,7 +344,7 @@ async function runInner(plan, expose) {
     if (step.kind === 'catchup') {
       const bySym = step.backfillBySym ?? { AAPL: step.backfill };
       for (const [sym, rows] of Object.entries(bySym)) {
-        await c.db.doc(`practiceFieldCaBackfill/${sym}`).set({ schemaVersion: 1, symbol: sym, from: S[0], to: date, failed: false, actions: rows, calls: 2, fetchedAt: '2026-11-18T23:00:00.000Z', source: 'idea_book_backfill' });
+        plant(c.db, `practiceFieldCaBackfill/${sym}`, { schemaVersion: 1, symbol: sym, from: S[0], to: date, failed: false, actions: rows, calls: 2, fetchedAt: '2026-11-18T23:00:00.000Z', source: 'idea_book_backfill' });
       }
       const fetchCorporateActions = async (sym) => ({ failed: false, calls: 2, actions: bySym[sym] ?? [] });
       await catchUpIdeaBook(c.db, c.bookRef, { before: S[step.i + 1], now: closeNowOf(S[step.i + 1]), fetchCorporateActions });
