@@ -10,7 +10,12 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { bodyFor } from './__fixtures__/chartReadRecords.js';
 import { marksOf } from './marks.js';
 import { placeMarks, calendarDateOf, weekStartOf, sessionsBefore } from './placeMarks.js';
-import { layoutRuleMarks, axisLabels, RuleMarksPrimitive, TICK_BARS, LOW_TICK_BARS, LINE, STUB_LEN, BRACKET_DROP } from './ruleMarksPrimitive.js';
+import * as RMP from './ruleMarksPrimitive.js';
+import { layoutRuleMarks, axisLabels, RuleMarksPrimitive, TICK_BARS, LOW_TICK_BARS, LINE, STUB_LEN, BRACKET_DROP, SQUARE } from './ruleMarksPrimitive.js';
+
+// FX-8's additions, read through the namespace so this file loads before they exist (each row then fails, not the file).
+const { AXIS_LABEL_H, LEADER } = RMP;
+const leaderOps = (...a) => RMP.leaderOps(...a);
 import { formatTime } from '../chartUtils.js';
 import { formatPriceBare } from './format.js';
 
@@ -76,7 +81,7 @@ describe('layoutRuleMarks — the primitive\'s geometry (MK-4, CR-4)', () => {
     const ops = layoutRuleMarks(scene, at);
     expect(ops.filter((o) => o.op === 'line').map((o) => o.w)).toEqual([LINE.lit, LINE.plain]);
     expect(ops.filter((o) => o.op === 'square').map((o) => o.lit)).toEqual([true, false]);
-    expect(axisLabels(scene, { toY: at.toY, format: formatPriceBare })).toEqual([{ y: 1000 - 141.1, text: '141.10' }]);
+    expect(axisLabels(scene, { toY: at.toY, format: formatPriceBare })).toEqual([{ n: 1, y: 1000 - 141.1, labelY: 1000 - 141.1, text: '141.10' }]);
   });
   it('the touch: a short tick at the lowest low and a bracket under its three sessions', () => {
     const ops = layoutRuleMarks({ items: [{ n: 4, kind: 'bracket', time: 31, value: 140.7, lit: false, times: [30, 31, 32] }] }, at);
@@ -116,6 +121,98 @@ describe('review L2-8 / L2-5: coincident squares step aside; the scale takes in 
     expect(p.autoscaleInfo(70, 90)).toBeNull();
     p.setScene({ items: [], stub: { value: 100.75, label: 'x' } });
     expect(p.autoscaleInfo(0, 10)).toEqual({ priceRange: { minValue: 100.75, maxValue: 100.75 } });
+  });
+});
+
+// FX-8 — the three faults of the founder's PANW screenshot (19 Nov), each reproduced on a fixture first: the 50-day
+// ($366.70, mark 2, on the record's day) and the 50-day five sessions earlier ($367.81, mark 3) a few pixels apart and
+// lit together, and the touch bracket under the latest three bars.
+describe('FX-8: no tick through another mark\'s square; two close lit values both readable; nothing cut off', () => {
+  // 4 px a dollar: the two 50-days sit 4.4 px apart, as on the screenshot's scale ($366.70 at y 233.2, $367.81 at 228.76).
+  const at = { toX: (t) => t * 10, toY: (p) => 1700 - p * 4, spacing: 10, width: 400, height: 300 };
+  const rectOf = (s) => ({ x0: s.x, x1: s.x + SQUARE, y0: s.y - SQUARE / 2, y1: s.y + SQUARE / 2 });
+  const segsOf = (o) => (o.op === 'line'
+    ? [{ x0: o.x0, x1: o.x1, y0: o.y, y1: o.y, w: o.w }]
+    : o.points.slice(1).map(([x, y], i) => ({ x0: Math.min(x, o.points[i][0]), x1: Math.max(x, o.points[i][0]), y0: Math.min(y, o.points[i][1]), y1: Math.max(y, o.points[i][1]), w: o.w })));
+  const crosses = (seg, r) => seg.x0 - seg.w / 2 < r.x1 && seg.x1 + seg.w / 2 > r.x0 && seg.y0 - seg.w / 2 < r.y1 && seg.y1 + seg.w / 2 > r.y0;
+  /** Every pair (a mark's line, ANOTHER mark's square) that meets. */
+  const throughSquares = (ops) => {
+    const out = [];
+    for (const sq of ops.filter((o) => o.op === 'square')) {
+      for (const o of ops.filter((x) => (x.op === 'line' || x.op === 'path') && x.n !== sq.n)) {
+        if (segsOf(o).some((s) => crosses(s, rectOf(sq)))) out.push(`${o.n} through ${sq.n}`);
+      }
+    }
+    return out;
+  };
+  const PANW = { items: [
+    { n: 2, kind: 'tick', time: 30, value: 366.7, lit: true },
+    { n: 3, kind: 'tick', time: 25, value: 367.81, lit: true },
+  ] };
+  it('fault 1: mark 3\'s tick never runs through mark 2\'s square (the screenshot\'s pair, with room on the right)', () => {
+    expect(throughSquares(layoutRuleMarks(PANW, at))).toEqual([]);
+  });
+  it('fault 1: …and with the record\'s day at the right edge (no room right of mark 2): its square steps clear, still inside the pane', () => {
+    const edge = { ...at, width: 340 };
+    const ops = layoutRuleMarks(PANW, edge);
+    expect(throughSquares(ops)).toEqual([]);
+    for (const s of ops.filter((o) => o.op === 'square')) expect([s.n, s.x >= 0, s.x + SQUARE <= edge.width]).toEqual([s.n, true, true]);
+  });
+  it('fault 1: every square is drawn after every line, so no line is ever painted over a square', () => {
+    const ops = layoutRuleMarks({ items: [...PANW.items, { n: 1, kind: 'tick', time: 30, value: 360.1 }, { n: 4, kind: 'bracket', time: 31, value: 355.37, times: [29, 30, 31] }] }, at);
+    const lastLine = Math.max(...ops.map((o, i) => (o.op === 'line' || o.op === 'path' ? i : -1)));
+    const firstSquare = ops.findIndex((o) => o.op === 'square');
+    expect(firstSquare).toBeGreaterThan(lastLine);
+  });
+  it('fault 2: two lit values 4.4 px apart get two labels a full label apart, each with a leader from its own price', () => {
+    const labels = axisLabels(PANW, { toY: at.toY, format: formatPriceBare, height: at.height });
+    expect(labels.map((l) => l.text).sort()).toEqual(['366.70', '367.81']);
+    const [a, b] = [...labels].sort((p, q) => p.labelY - q.labelY);
+    expect(b.labelY - a.labelY).toBeGreaterThanOrEqual(AXIS_LABEL_H);
+    // each label still names its own price: its y is its value's coordinate, and the higher price sits higher
+    for (const l of labels) expect(l.y).toBe(at.toY(Number(l.text)));
+    expect(a.text).toBe('367.81');
+    const leaders = leaderOps(labels, at.width);
+    expect(leaders).toHaveLength(2);
+    for (const [l, p] of labels.map((x) => [x, leaders.find((o) => o.n === x.n)])) {
+      expect(p.points[0]).toEqual([at.width - LEADER, l.y]); // starts at its price
+      expect(p.points.at(-1)).toEqual([at.width, l.labelY]); // ends at its label
+    }
+  });
+  it('fault 2: labels far apart are not moved and need no leader; a label is never pushed off the pane', () => {
+    const apart = { items: [{ n: 1, kind: 'tick', time: 30, value: 360.13, lit: true }, { n: 2, kind: 'tick', time: 30, value: 366.7, lit: true }] };
+    const labels = axisLabels(apart, { toY: at.toY, format: formatPriceBare, height: at.height });
+    for (const l of labels) expect(l.labelY).toBe(l.y);
+    expect(leaderOps(labels, at.width)).toEqual([]);
+    const top = { items: [{ n: 2, kind: 'tick', time: 30, value: 423.75, lit: true }, { n: 3, kind: 'tick', time: 25, value: 424.13, lit: true }] }; // y 5 and 3.48
+    for (const l of axisLabels(top, { toY: at.toY, format: formatPriceBare, height: at.height })) expect(l.labelY).toBeGreaterThanOrEqual(AXIS_LABEL_H / 2);
+  });
+  it('fault 3: the touch bracket under the latest three bars keeps its square inside the pane, left of the price scale', () => {
+    const ops = layoutRuleMarks({ items: [{ n: 4, kind: 'bracket', time: 38, value: 360.37, lit: true, times: [37, 38, 39] }] }, at);
+    const sq = ops.find((o) => o.op === 'square');
+    expect(sq.x).toBeGreaterThanOrEqual(0);
+    expect(sq.x + SQUARE).toBeLessThanOrEqual(at.width);
+    const path = ops.find((o) => o.op === 'path');
+    for (const [x] of path.points) expect(x).toBeLessThanOrEqual(at.width);
+  });
+  it('fault 3: a tick at the left edge puts its square right of the tick, and a square never leaves the pane\'s height', () => {
+    const ops = layoutRuleMarks({ items: [{ n: 6, kind: 'tick', time: 2, value: 400.61 }, { n: 1, kind: 'tick', time: 20, value: 424.37 }] }, at);
+    for (const s of ops.filter((o) => o.op === 'square')) {
+      expect(s.x, `square ${s.n}`).toBeGreaterThanOrEqual(0);
+      expect(s.y - SQUARE / 2, `square ${s.n}`).toBeGreaterThanOrEqual(0);
+      expect(s.y + SQUARE / 2, `square ${s.n}`).toBeLessThanOrEqual(at.height);
+    }
+  });
+  it('the primitive hands the library fixed coordinates (so it never moves them again) and hides the tick of a moved label', () => {
+    const p = new RuleMarksPrimitive({ ink: 'white', paper: 'black', font: 'monospace', format: formatPriceBare });
+    p.attached({ chart: { timeScale: () => ({}), paneSize: () => ({ width: 400, height: 300 }) }, series: { priceToCoordinate: at.toY }, requestUpdate() {} });
+    p.setScene(PANW);
+    const views = p.priceAxisViews();
+    expect(views).toHaveLength(2);
+    const coords = views.map((v) => v.fixedCoordinate()).sort((x, y) => x - y);
+    expect(coords[1] - coords[0]).toBeGreaterThanOrEqual(AXIS_LABEL_H);
+    for (const v of views) expect(v.coordinate()).toBe(v.fixedCoordinate());
+    expect(views.filter((v) => v.tickVisible())).toHaveLength(0);
   });
 });
 
