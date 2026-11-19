@@ -6,7 +6,12 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { bodyFor } from './__fixtures__/chartReadRecords.js';
 import { readLineOf } from './chartRead.js';
+import * as CP from './chartProps.js';
 import { chartReadProps, barsMatchTimeframe } from './chartProps.js';
+import { CHART_READ_COPY } from './chartReadCopy.js';
+
+// FX-4's predicate, read through the namespace so the file loads before it exists (its rows then fail, not the file).
+const weeklyAveragesHideMarks = (...a) => CP.weeklyAveragesHideMarks(...a);
 
 const SESSION = '2026-11-17';
 const L = {};
@@ -66,5 +71,23 @@ describe('chartReadProps', () => {
   });
   it('regime: the marks 1, 2, 3', () => {
     expect(chartReadProps(at({ line: L.REGIME_A })).ruleMarks.shown).toEqual([1, 2, 3]);
+  });
+});
+
+describe('FX-4 (founder Q-4): on 1W with SMA on, marks 1, 2 and 3 are not drawn, lit or unlit', () => {
+  it('1W + SMA: 1 – 3 leave the shown and the lit lists; every other mark stays', () => {
+    expect(chartReadProps(at({ timeframe: '1W', smaOn: true })).ruleMarks).toMatchObject({ shown: [4, 5, 6], lit: [] });
+    expect(chartReadProps(at({ timeframe: '1W', smaOn: true, line: L.REGIME_A })).ruleMarks.shown).toEqual([]);
+    expect(chartReadProps(at({ timeframe: '1W', smaOn: true, sheetOpen: true, lit: [2, 3] })).ruleMarks).toMatchObject({ shown: [4, 5, 6, 7], lit: [] });
+    expect(chartReadProps(at({ timeframe: '1W', smaOn: true, sheetOpen: true, lit: [4, 1] })).ruleMarks.lit).toEqual([4]);
+  });
+  it('SMA off, or 1D: the marks come back', () => {
+    expect(chartReadProps(at({ timeframe: '1W', smaOn: false })).ruleMarks.shown).toEqual([1, 4, 5, 6]);
+    expect(chartReadProps(at({ timeframe: '1D', smaOn: true })).ruleMarks.shown).toEqual([1, 4, 5, 6]);
+    expect(chartReadProps(at({ timeframe: '1D', smaOn: true, sheetOpen: true, lit: [2, 3] })).ruleMarks).toMatchObject({ shown: [1, 2, 3, 4, 5, 6, 7], lit: [2, 3] });
+  });
+  it('the state that hides them is one named predicate, and its quiet line is the copy module\'s', () => {
+    expect([weeklyAveragesHideMarks({ timeframe: '1W', smaOn: true }), weeklyAveragesHideMarks({ timeframe: '1W', smaOn: false }), weeklyAveragesHideMarks({ timeframe: '1D', smaOn: true }), weeklyAveragesHideMarks({ timeframe: 'battle', smaOn: true })]).toEqual([true, false, false, false]);
+    expect(CHART_READ_COPY.weeklyAveragesNote).toBe('On 1W the drawn averages are weekly; marks 1 to 3 are on 1D.');
   });
 });

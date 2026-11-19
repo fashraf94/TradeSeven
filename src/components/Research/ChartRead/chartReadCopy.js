@@ -68,6 +68,8 @@ export const CHART_READ_COPY = Object.freeze({
   footBasis: (day) => `daily · completed sessions · prices unadjusted · as of ${day} close`,
   // Result glyphs' words for assistive tech.
   resultWords: Object.freeze({ pass: 'holds', fail: 'does not hold', unknown: 'not measured', quiet: 'not present' }),
+  // FX-4 (founder Q-4): the checks' head while 1W draws its weekly averages and marks 1 – 3 are not drawn.
+  weeklyAveragesNote: 'On 1W the drawn averages are weekly; marks 1 to 3 are on 1D.',
   // The chart (CR-5, CR-7, MK-5).
   ruleChip: 'Rule',
   basisNote: 'prices unadjusted',

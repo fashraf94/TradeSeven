@@ -73,9 +73,10 @@ function Row({ row, litKey, onRow, first }) {
 
 /**
  * @param {{ body: object, symbol: string, litKey: string|null, onRow: (row) => void, expanded: boolean, onExpand: () => void,
- *   onClose: () => void, viewRef: { current: HTMLElement|null }, reducedMotion?: boolean }} p
+ *   onClose: () => void, viewRef: { current: HTMLElement|null }, reducedMotion?: boolean, note?: string|null }} p
+ *   `note`: one quiet line under the hint (FX-4: on 1W with SMA on, where marks 1 – 3 went), the copy module's words
  */
-export default function ChartReadSheet({ body, symbol, litKey, onRow, expanded, onExpand, onClose, viewRef, reducedMotion = false }) {
+export default function ChartReadSheet({ body, symbol, litKey, onRow, expanded, onExpand, onClose, viewRef, reducedMotion = false, note = null }) {
   const { data } = useTechnicalScore(symbol);
   const model = sheetOf(body, { sector: sectorOf(data), expanded });
   const rootRef = useRef(null);
@@ -157,6 +158,7 @@ export default function ChartReadSheet({ body, symbol, litKey, onRow, expanded, 
         </div>
         <div data-chart-read-sheet-lead style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.35, color: ST.ink }}>{model.lead}</div>
         <div style={mono(10.5, ST.ink2)}>{model.hint}</div>
+        {note && <div data-chart-read-weekly-note style={mono(10.5, ST.ink3)}>{note}</div>}
       </div>
       {model.groups.map((g) => (g.collapsed ? (
         <button key={g.key} type="button" data-check-group="patterns" data-collapsed onClick={onExpand} aria-expanded="false" style={{ ...bare, cursor: 'pointer', minHeight: 44, display: 'flex', flexDirection: 'column', gap: 2, padding: '8px 0', borderTop: `1px solid ${ST.hair}` }}>

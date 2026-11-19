@@ -12,12 +12,21 @@
 import { CHART_READ_COPY as C } from './chartReadCopy.js';
 import { weekdayShort } from './format.js';
 
+/** FX-4 (founder Q-4): the marks the weekly averages would contradict — the 20-day, the 50-day, the 50-day five sessions ago. */
+export const WEEKLY_AVERAGES_HIDE = Object.freeze([1, 2, 3]);
+/**
+ * FX-4: on 1W with the SMA pill on, the chart draws 20- and 50-WEEK averages, which marks 1 – 3 (daily values) cannot
+ * sit on (CR-4) — so those three are not drawn, lit or unlit, and the checks' head says why. Pure.
+ */
+export const weeklyAveragesHideMarks = ({ timeframe, smaOn }) => timeframe === '1W' && smaOn === true;
+
 /**
  * @param {{ line: object|null, timeframe: string, battle: boolean, ruleOn: boolean, sheetOpen: boolean,
- *   lit: number[], dailyDates: string[] }} p   `line` is readLineOf's, or null when there is no read to show
+ *   lit: number[], dailyDates: string[], smaOn?: boolean }} p   `line` is readLineOf's, or null when there is no read
+ *   to show; `smaOn` the chart's SMA pill as it reports it (FX-4)
  * @returns {object|null} StockChart's read props, or null
  */
-export function chartReadProps({ line, timeframe, battle, ruleOn, sheetOpen, lit, dailyDates }) {
+export function chartReadProps({ line, timeframe, battle, ruleOn, sheetOpen, lit, dailyDates, smaOn = false }) {
   if (!line || line.opensSheet !== true) return line ? rawOnly(line, timeframe, battle) : null;
   if (battle) {
     const m1 = line.marks.find((m) => m.n === 1);
@@ -29,7 +38,9 @@ export function chartReadProps({ line, timeframe, battle, ruleOn, sheetOpen, lit
     // With the sheet open every mark shows, so the chip reads pressed and cannot turn them off (review L3-7).
     out.ruleChip = { on: ruleOn === true || sheetOpen === true, label: C.ruleChip, disabled: sheetOpen === true };
     if (ruleOn === true || sheetOpen === true) {
-      out.ruleMarks = { marks: line.marks, shown: sheetOpen ? line.marks.map((m) => m.n) : line.shown, lit: Array.isArray(lit) ? lit : [], dailyDates: Array.isArray(dailyDates) ? dailyDates : [] };
+      const keep = weeklyAveragesHideMarks({ timeframe, smaOn }) ? (n) => !WEEKLY_AVERAGES_HIDE.includes(n) : () => true;
+      const shown = sheetOpen ? line.marks.map((m) => m.n) : line.shown;
+      out.ruleMarks = { marks: line.marks, shown: shown.filter(keep), lit: (Array.isArray(lit) ? lit : []).filter(keep), dailyDates: Array.isArray(dailyDates) ? dailyDates : [] };
     }
   }
   return out;

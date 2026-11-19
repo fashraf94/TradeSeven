@@ -58,6 +58,7 @@ const StockChart = ({
   realtimeExtremes,  // Battle hook's real-time intraday high/low { high, low } (optional backup)
   controlledSession, // Optional { crypto }: controlled held research. Absent = legacy.
   onToggleSR,        // Optional (isOn) => void, called when the S/R pill flips
+  onToggleSMA,       // Optional (isOn) => void, called when the SMA pill flips (the Chart view's read, FX-4)
   // Research Modal Build A (spec docs/specs/RESEARCH_MODAL_BUILD_A_BOMB_MODE_SPEC_V1.md
   // §4.4): with Bomb mode on, the modal hands a plot (the Fuse or the red zone)
   // and the RED ZONE chip. On the bomb and spectate views the plot area is
@@ -1155,7 +1156,7 @@ const StockChart = ({
         {/* Overlay toggles - hidden in bomb view */}
         {!isBombView && (
           <div style={ruleChip ? { display: 'flex', gap: '4px', marginLeft: 'auto', alignItems: 'center' } : { display: 'flex', gap: '4px' }}>
-            <button onClick={() => setShowSMA(v => !v)} style={pillStyle(showSMA)}>
+            <button onClick={() => { setShowSMA(v => !v); onToggleSMA?.(!showSMA); }} style={pillStyle(showSMA)}>
               SMA
             </button>
             <button onClick={() => { setShowSR(v => !v); onToggleSR?.(!showSR); }} style={pillStyle(showSR)}>
