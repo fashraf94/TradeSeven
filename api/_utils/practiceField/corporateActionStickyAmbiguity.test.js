@@ -16,7 +16,7 @@ import { unsettledConflicts, unsettledRedates, openRulingRevisions, heldActionRe
 import { ledgerDoubts } from './settlement.js';
 import { nextSessionDate } from './windows.js';
 import {
-  seedBook, admitAndEnter, closeOn, contractOf, getBook, getIdea, getRow, closeNowOf, storeCloseSnapshot, founderRules,
+  seedBook, admitAndEnter, closeOn, contractOf, getBook, getIdea, getRow, closeNowOf, storeCloseSnapshot, founderRules, admitAllThenEnter,
   takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults,
 } from './__testsupport__/fixtures.js';
 
@@ -591,5 +591,85 @@ describe('AR2 — the review of fix round 2: each probe as a row', () => {
     await close(c, 3, 100, [div(1, 3)]);
     expect(await rule(c, { kind: 'conflict', recordId: ID1, decision: 'payload', payload: { amount: 3 } }, 'c3b', false)).toMatchObject({ status: 422, body: { error: 'ruling_needs_adjustment' } });
     expect((await rule(c, { kind: 'conflict', recordId: ID1, decision: 'none' }, 'c3c')).status).toBe(200);
+  });
+});
+
+// ── AR2-RF: the final refuter on the review's fixes — each probe as a row ──────────────────────────────────────────────
+
+describe('AR2-RF — the final refuter on the fixes: each probe as a row', () => {
+  const ren = (i, to) => ({ type: 'ticker_change', ticker: 'AAPL', renamedTo: to, effectiveDate: S[i], source: 'eodhd' });
+  const dl = (i, cash) => ({ type: 'delisting', ticker: 'AAPL', effectiveDate: S[i], cashPerShare: cash, source: 'eodhd' });
+  const qx = (p = 100, a = []) => ({ ...q(p, a), AAPX: { price: 100, marketCap: 3e12 }, AAPY: { price: 120, marketCap: 3e12 } });
+  const closeX = async (c, i, p = 100, a = []) => { const out = await closeOn(c.db, c.bookId, S[i], qx(p, a)); recon(c); return out; };
+  const backfill = (c, actions) => c.db.doc('practiceFieldCaBackfill/AAPL').set({ schemaVersion: 1, symbol: 'AAPL', from: S[1], to: S[1], failed: true, actions, calls: 2, fetchedAt: '2026-11-18T23:00:00.000Z', source: 'idea_book_backfill' });
+  const ID1 = `cash_dividend_AAPL_${S[1]}`;
+  const RID = `ticker_change_AAPL_${S[1]}`;
+
+  it.each([
+    ['cash: the founder\'s $1 row, the daily layer\'s $2', [div(1, 1)], ID1, (c) => close(c, 2, 100, [div(1, 2)]), [1, 2]],
+    ['a split: the founder\'s 3:2 row, the daily layer\'s 2:1', [spl(1, '3/2')], `split_AAPL_${S[1]}`, (c) => close(c, 2, 50, [spl(1, '2/1')]), [1.5, 2]],
+  ])('AR2-RF-1: a coverage-gap ROW and a different daily row under one id are a CONFLICT — %s: nothing applied, both payloads choosable', async (_name, bf, id, closeTwo, payloads) => {
+    const c = await start();
+    await close(c, 0);
+    await uncoveredClose(c, 1, 100, []);
+    await backfill(c, bf);
+    await rule(c, { kind: 'coverage_gap', recordId: `ca_coverage_gap_AAPL_${S[0]}`, decision: 'row', actionId: id }, 'rf1');
+    await closeTwo(c);
+    const idea = ideaOf(c);
+    expect(divs(idea)).toEqual([0, 0]);
+    expect(idea.ledger.holdings.AAPL.shares).toBe(SHARES);
+    const record = unsettledConflicts(idea.ledger).find((r) => r.actionId === id);
+    expect(record.rows.map((r) => r.ratio ?? r.amount).sort()).toEqual(payloads);
+    expect(rowOf(c, 2).fullQuality).toBe(false);
+    // The founder's own payload is choosable on the record (before: 422 payload_not_recorded once it was dropped).
+    const p = bf[0].ratio != null ? { ratio: bf[0].ratio } : { amount: bf[0].amount };
+    expect((await rule(c, { kind: 'conflict', recordId: id, decision: 'payload', payload: p }, 'rf1b')).status).toBe(200);
+  });
+
+  it('AR2-RF-2: a founder rename into a ticker another idea holds is refused at the close — the ruling closes with its reason and the record takes another', async () => {
+    const ctx = await seedBook();
+    const [a] = await admitAllThenEnter(ctx.db, ctx.bookId, [
+      { contract: contractOf({ names: ['AAPL'], capitalUsd: 20000 }), opId: 'idea-1', quotes: qx(), date: S[0] },
+      { contract: contractOf({ slot: 'medium', names: ['MSFT'], capitalUsd: 15000 }), opId: 'idea-2', quotes: qx(), date: S[0], slot: 'midday' },
+    ]);
+    const c = { ...ctx, ideaId: a.ideaId };
+    await closeX(c, 0);
+    await closeX(c, 1, 100, [ren(1, 'AAPX'), ren(1, 'MSFT')]);
+    await rule(c, { kind: 'conflict', recordId: RID, decision: 'payload', payload: { renamedTo: 'MSFT' } }, 'rf2');
+    const out = await closeX(c, 2);
+    expect(Object.keys(ideaOf(c).ledger.holdings)).toEqual(['AAPL']);
+    expect(ideaOf(c).founderRulings.find((r) => r.requestKey === 'rf2')).toMatchObject({ appliedOn: S[2], outcome: 'refused', refusedBecause: 'rename_target_taken' });
+    expect(out.alerts.some((x) => x.startsWith(`PRACTICE_FIELD_HOLD_RULING_REFUSED ${c.ideaId} ${RID}`))).toBe(true);
+    expect((await rule(c, { kind: 'conflict', recordId: RID, decision: 'payload', payload: { renamedTo: 'AAPX' } }, 'rf2b')).status).toBe(200);
+    await closeX(c, 3);
+    expect(Object.keys(ideaOf(c).ledger.holdings)).toEqual(['AAPX']);
+  });
+
+  it('AR2-RF-3: a rename target the vendor writes in lower case is the same target — the ruling that chose it is not reopened', async () => {
+    const c = await start();
+    await close(c, 0);
+    await closeX(c, 1, 100, [ren(1, 'aapx'), ren(1, 'aapy')]);
+    await rule(c, { kind: 'conflict', recordId: RID, decision: 'payload', payload: { renamedTo: 'AAPY' } }, 'rf3');
+    await closeX(c, 2, 100, [ren(1, 'aapx'), ren(1, 'aapy')]);
+    await closeX(c, 3, 100, [ren(1, 'aapx'), ren(1, 'aapy')]);
+    const idea = ideaOf(c);
+    expect(Object.keys(idea.ledger.holdings).sort()).toEqual(['AAPY', 'MSFT']);
+    expect(openRulingRevisions(idea.ledger)).toEqual([]);
+    expect([rowOf(c, 2).fullQuality, rowOf(c, 3).fullQuality]).toEqual([true, true]);
+  });
+
+  it('AR2-RF-4: a rename ruling whose holding a cash delisting closed first is MOOT (alerted), not "applied"; `none` then closes the record', async () => {
+    const c = await start();
+    await close(c, 0);
+    await closeX(c, 1, 100, [ren(1, 'AAPX'), ren(1, 'AAPY')]);
+    await rule(c, { kind: 'conflict', recordId: RID, decision: 'payload', payload: { renamedTo: 'AAPY' } }, 'rf4');
+    const out = await closeX(c, 2, 100, [dl(2, 12)]);
+    const idea = ideaOf(c);
+    expect(Object.keys(idea.ledger.holdings)).toEqual(['MSFT']);
+    expect(idea.founderRulings.find((r) => r.requestKey === 'rf4')).toMatchObject({ appliedOn: S[2], outcome: 'moot' });
+    expect(out.alerts.some((x) => x.startsWith(`PRACTICE_FIELD_HOLD_RULING_MOOT ${c.ideaId} ${RID}`))).toBe(true);
+    expect((await rule(c, { kind: 'conflict', recordId: RID, decision: 'none' }, 'rf4b')).status).toBe(200);
+    await closeX(c, 3);
+    expect(rowOf(c, 3).fullQuality).toBe(true);
   });
 });

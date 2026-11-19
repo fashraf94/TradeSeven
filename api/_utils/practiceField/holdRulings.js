@@ -410,6 +410,13 @@ export function markRulingsApplied(idea, { date, skips = new Set(), refusals = n
     if (id === null) return r;
     // (Completed on the ledgers it names — T2D-09.)
     const holders = fieldsOf(r).map((f) => idea[f]).filter((l) => l && Object.hasOwn(l.holdings || {}, r.symbol));
+    const settledOn = fieldsOf(r).filter((f) => settledIdsOf(idea[f]).has(id));
+    // (AR2-RF-4: no ledger it names holds the symbol any more — a delisting's cash closed it — and the id is settled
+    // nowhere: nothing was applied. Closed MOOT, with an alert; the record, still open, takes `none`.)
+    if (holders.length === 0 && settledOn.length === 0) {
+      alerts.push(`PRACTICE_FIELD_HOLD_RULING_MOOT ${idea.ideaId} ${r.recordId} — the founder's conflict ruling (${r.requestKey}) was applied on no ledger: no ledger it names holds ${r.symbol} any more; nothing was changed — the record, still open, takes \`none\``);
+      return { ...r, appliedOn: date, outcome: 'moot' };
+    }
     const settledEverywhere = holders.every((l) => settledIdsOf(l).has(id));
     return settledEverywhere ? { ...r, appliedOn: date } : r;
   });

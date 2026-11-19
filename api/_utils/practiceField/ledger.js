@@ -586,7 +586,8 @@ function quoteSeenOf(closeSnapshot, sym, date) {
 }
 
 /** What makes two feed rows of one id the same action. The id already fixes the type, ticker and effective date. */
-const actionPayloadOf = (row) => JSON.stringify([row.ratio ?? null, row.amount ?? null, row.renamedTo ?? null, row.cashPerShare ?? null]);
+// (A rename's target compares in upper case — AR2-RF-3: `aapx` and `AAPX` are one target, and a ruling that saw one saw both.)
+const actionPayloadOf = (row) => JSON.stringify([row.ratio ?? null, row.amount ?? null, row.renamedTo != null ? upper(row.renamedTo) : null, row.cashPerShare ?? null]);
 
 /**
  * The ids, among this call's due rows, that the feed lists more than once with different payloads.
@@ -997,7 +998,11 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
   // or a coverage-gap row under that id settled it with a payload its record never saw, and locked the record).
   const isRuled = (a) => isFounderAction(a) && a.founderRuling.kind === 'conflict';
   // The feed's due rows of this call (a founder's action is not a feed row: it is never part of a conflict or a revision).
-  const feedDue = [...pending, ...notEntitled, ...noEntitlementData, ...unrecognized].filter((a) => a.founderRuling == null);
+  // (AR2-RF-1: a founder's action of ANOTHER kind — a coverage-gap `row`, a founder split under the derived id — is one
+  // more account of its id: with a different payload from the feed's row of the same id it is a CONFLICT, as two vendor
+  // rows would be; before, the feed's row was applied first and the founder's dropped silently. A `conflict` ruling's
+  // action is the founder's answer to its record: it replaces the feed's rows of the id and is not one of them.)
+  const feedDue = [...pending, ...notEntitled, ...noEntitlementData, ...unrecognized].filter((a) => a.founderRuling?.kind !== 'conflict');
   // Every ambiguous id's OPEN record — its first unsettled conflict or possible re-date receipt — kept live through the call.
   const ambiguity = new Map();
   for (const r of [...unsettledConflicts(next), ...unsettledRedates(next)]) if (!ambiguity.has(r.actionId)) ambiguity.set(r.actionId, r);
@@ -1546,7 +1551,14 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
         continue;
       }
       // R-36, for a rename the close's own screen of the feed's rows could not see: one taken from a record.
-      if (renameTargetsTaken?.has(to)) { unresolved.add(from); renamesBlocked.push({ from, to, actionId: action.actionId }); continue; }
+      if (renameTargetsTaken?.has(to)) {
+        unresolved.add(from);
+        renamesBlocked.push({ from, to, actionId: action.actionId });
+        // (AR2-RF-2: the founder's rename into a target another idea of the book holds can never apply while it does — a
+        // refusal, as T2D-10's: the ruling closes with its reason and the record takes another ruling.)
+        if (action.founderRuling?.kind === 'conflict') founderRefusals.push({ actionId: action.actionId, recordId: action.founderRuling.recordId ?? null, requestKey: action.founderRuling.requestKey ?? null, ticker: from, reason: 'rename_target_taken' });
+        continue;
+      }
       const { deferredRename: waited = null, ...plain } = holding;
       const out = applyCorporateAction({ positions: { ...next.holdings, [from]: plain }, cash: next.cash }, action);
       if (!out.ok) { unresolved.add(from); continue; }
