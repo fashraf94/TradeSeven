@@ -16,7 +16,7 @@
 // The classes the seeds produce are counted, so a generator that never reaches an order cannot pass vacuously.
 
 import { describe, it, expect } from 'vitest';
-import { generate, run, FIXED, reached, installSequenceHooks } from './__testsupport__/caSequences.js';
+import { generate, run, FIXED, ASTRA_R2, reached, installSequenceHooks } from './__testsupport__/caSequences.js';
 
 installSequenceHooks();
 
@@ -39,6 +39,14 @@ describe('S-6 — the generator reaches every order it is meant to (no vacuous p
 
 describe('S-6 — every reproduction from Astra\'s reviews, as a fixed case: I-1 to I-5 after every close, and the money rev 1 gives', () => {
   it.each(FIXED.map((p) => [p.seed, p]))('%s', async (_seed, plan) => {
+    await run(plan);
+  }, 60_000);
+});
+
+// Final fix (Astra's round-2 confirmation, docs/audits/20261119_ASTRA_CONFIRMATION_T1A2B3_ROUND2.md): her two replay seeds
+// VERBATIM (T2D-D01, T2D-D02), and the regressions around each fix.
+describe('S-6 — Astra round 2: T2D-D01 and T2D-D02, her replay seeds verbatim and the rows around each fix', () => {
+  it.each(ASTRA_R2.map((p) => [p.seed, p]))('%s', async (_seed, plan) => {
     await run(plan);
   }, 60_000);
 });

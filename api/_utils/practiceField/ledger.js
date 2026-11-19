@@ -1126,6 +1126,11 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
       }
     }
   };
+  // (Astra T2D-D01, final fix: run ONCE HERE, before any new date is classified, for the ids the founder had settled
+  // before this call — so a payload of one listed now is recorded before `redateMatchOf` reads the pool. Run only at the
+  // end, the vendor's correction of a founder-settled id and its re-date listed in ONE close met an empty pool: the moved
+  // row was matched against nothing and paid. The end-of-call run stays, for a ruling this call settles.)
+  checkRulingRevisions();
 
   // THE SHARE-BASIS ACTIONS THIS LEDGER CANNOT SETTLE, kept as the call goes (fix round 2): its unsettled conflicts, the
   // rows it has no entitlement data for, the ones it holds and what they wait on — and, below, each one the applier

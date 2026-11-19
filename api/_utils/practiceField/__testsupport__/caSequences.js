@@ -333,6 +333,8 @@ async function runInner(plan, expose) {
   let closes = 0;
   let previous = getBook(c.db, c.bookId).execState?.lastCloseKey ?? null;
   for (const [n, step] of plan.steps.entries()) {
+    // (A fixed case's assertion on the stored idea at that point of its history.)
+    if (step.kind === 'expectIdea') { step.fn(getIdea(c.db, c.bookId, c.ideaId), getBook(c.db, c.bookId), `${plan.seed} step ${n}`); continue; }
     if (step.kind === 'rule') { await ruleSomething(c, step.pick, step.decision); continue; }
     if (step.kind === 'ruleExact') {
       const out = await founderRules(c.db, c.bookId, c.ideaId, step.body, { requestKey: `fixed-${n}`, expectOk: false });
@@ -430,6 +432,46 @@ export const FIXED = [
   { seed: 'astra-T2D-10-unrepresentable', steps: [cl(0, 100), cl(1, 100, [sp(1, '1/1000000000'), sp(1, '4/5')]),
     conflictRuling(`reverse_split_AAPL_${S[1]}`, 'payload', { ratio: 1e-9 }, 422), conflictRuling(`reverse_split_AAPL_${S[1]}`, 'payload', { ratio: 0.8 }), cl(2, 125), cl(3, 125, [sp(1, '4/5')])], end: { dividends: 0, shares: 79.976006 } },
 ];
+
+// ── ASTRA'S ROUND-2 REPLAY SEEDS (docs/audits/20261119_ASTRA_CONFIRMATION_T1A2B3_ROUND2.md, "Replay seeds for both fixes"),
+// VERBATIM. T2D-D01: a correction of a founder-settled id and its possible re-date first listed in one close.
+const oldDividend = 'cash_dividend_AAPL_' + S[1];
+const movedDividend = 'cash_dividend_AAPL_' + S[3];
+const splitId = 'split_AAPL_' + S[1];
+
+const d01 = {
+  seed: 'Astra-R2-D01',
+  ambiguousSince: { [movedDividend]: 3 },
+  steps: [cl(0, 100), cl(1, 100, [d(1, 1), d(1, 2)]),
+    conflictRuling(oldDividend, 'none'), cl(2, 100),
+    cl(3, 100, [d(1, 3), d(3, 3)])],
+  end: { dividends: 0, shares: 99.970008 },
+};
+// The regressions around them. Each runs through I-1 to I-5 after every close.
+const at = (fn) => ({ kind: 'expectIdea', fn });
+const recordOf = (idea, id, reason) => idea.ledger.corporateActionReceipts.find((r) => r.actionId === id && r.reason === reason) ?? null;
+/** T2D-D01, fix 1. */
+const D01_ROWS = [
+  // The same rows in the other order: the moved row first.
+  { seed: 'Astra-R2-D01-rows-reversed', steps: [cl(0, 100), cl(1, 100, [d(1, 1), d(1, 2)]), conflictRuling(oldDividend, 'none'), cl(2, 100), cl(3, 100, [d(3, 3), d(1, 3)])], end: { dividends: 0, shares: SH } },
+  // The moved id is a possible re-date the founder can rule (it answered 404 before: never recorded) — and her answer pays,
+  // once; the original id's revision is closed by reconfirming its `none` (FQ-6).
+  { seed: 'Astra-R2-D01-moved-id-ruled', steps: [...d01.steps,
+    at((idea) => {
+      expect(recordOf(idea, movedDividend, POSSIBLE_REDATE)?.redateOf, 'the moved id is a possible re-date of the original').toBe(oldDividend);
+      expect(recordOf(idea, oldDividend, 'revised_after_ruling')?.rows.map((r) => r.amount), 'the original id recorded the $3 it showed').toEqual([3]);
+    }),
+    conflictRuling(oldDividend, 'none'), conflictRuling(movedDividend, 'payload', { amount: 3 }), cl(4, 100),
+    at((idea) => expect(LEDGERS.flatMap((f) => openAmbiguities(idea[f])), 'nothing left open').toEqual([]))], end: { dividends: 299.91, shares: SH } },
+  // The founder chose the original $1: $99.97 is authorized, and that is all that is paid (it was $399.88).
+  { seed: 'Astra-R2-D01-original-one-dollar', steps: [cl(0, 100), cl(1, 100, [d(1, 1), d(1, 2)]), conflictRuling(oldDividend, 'payload', { amount: 1 }), cl(2, 100), cl(3, 100, [d(1, 3), d(3, 3)]), cl(4, 100)], end: { dividends: 99.97, shares: SH } },
+  // The split analogue: a ruled ex-date split conflict, then a ratio it did not see and that ratio re-dated, in one close.
+  { seed: 'Astra-R2-D01-split-analogue', steps: [cl(0, 100), cl(1, 100, [sp(1, '3/2'), sp(1, '5/4')]), conflictRuling(splitId, 'none'), cl(2, 100), cl(3, 100, [sp(1, '7/4'), sp(3, '7/4')]),
+    at((idea) => expect(recordOf(idea, 'split_AAPL_' + S[3], POSSIBLE_REDATE)?.redateOf, 'the moved split is a possible re-date').toBe(splitId)),
+    conflictRuling('split_AAPL_' + S[3], 'none'), cl(4, 100)], end: { dividends: 0, shares: SH } },
+  // Control (Astra's): the correction one close before its re-date — paid nothing then, and still nothing.
+  { seed: 'Astra-R2-D01-control-correction-first', steps: [cl(0, 100), cl(1, 100, [d(1, 1), d(1, 2)]), conflictRuling(oldDividend, 'none'), cl(2, 100), cl(3, 100, [d(1, 3)]), cl(4, 100, [d(4, 3)]), conflictRuling('cash_dividend_AAPL_' + S[4], 'none'), cl(5, 100)], end: { dividends: 0, shares: SH } },
+];export const ASTRA_R2 = [d01, ...D01_ROWS];
 
 
 /** The hooks every S-6 file installs: mode on, a fresh fake store, no vendor key, a fetch that refuses. */
