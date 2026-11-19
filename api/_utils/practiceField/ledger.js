@@ -997,6 +997,25 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
   // …but only a CONFLICT ruling (resolve_hold, `conflict`) settles an AMBIGUOUS id (S-2; AR2-A-1, AR2-C-2: a founder split
   // or a coverage-gap row under that id settled it with a payload its record never saw, and locked the record).
   const isRuled = (a) => isFounderAction(a) && a.founderRuling.kind === 'conflict';
+  // A pending founder SPLIT (a `suspicion` ruling's action) that this call finds AMBIGUOUS — its id listed by the vendor with
+  // a ratio that disagrees with it (Astra T2D-D02), or its payload possibly a re-date of another row (the final soak's
+  // SOAK-R3-1) — is REFUSED: the close closes its ruling with the reason, and only `resolve_hold(conflict)` settles the id.
+  // Left pending, it would come back every close under an ambiguous id.
+  const refuseFounderSplit = (a, reason) => {
+    if (!isFounderSplit(a) || !isFounderAction(a) || founderRefusals.some((x) => x.actionId === a.actionId)) return;
+    const sym = upper(a.ticker);
+    founderRefusals.push({ actionId: a.actionId, recordId: a.founderRuling.recordId ?? null, requestKey: a.founderRuling.requestKey ?? null, ticker: sym, reason });
+    if (next.holdings[sym]?.heldActions?.some((r) => r.actionId === a.actionId)) next.holdings = { ...next.holdings, [sym]: withoutHeld(next.holdings[sym], a.actionId) };
+  };
+  /** Whether `d` lies inside the gap of the record a founder split covers (after `since`, on or before `suspectedOn`): a row
+   *  dated there is an account of the SAME move — it explains the record first and the founder split goes moot (review B2,
+   *  D5, NF-1) — never a re-date of the founder's split. */
+  const inFounderGap = (a, d) => {
+    if (!isFounderSplit(a) || typeof d !== 'string') return false;
+    const s = openBasisSuspicion(next.holdings[upper(a.ticker)]);
+    if (!s || suspicionIdOf(upper(a.ticker), s) !== a.founderRuling?.recordId) return false;
+    return (typeof s.since !== 'string' || d > s.since) && d <= s.suspectedOn;
+  };
   // The feed's due rows of this call (a founder's action is not a feed row: it is never part of a conflict or a revision).
   // (AR2-RF-1: a founder's action of ANOTHER kind — a coverage-gap `row`, a founder split under the derived id — is one
   // more account of its id: with a different payload from the feed's row of the same id it is a CONFLICT, as two vendor
@@ -1067,14 +1086,9 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
     }, 'conflict');
     conflicts.push(receipt);
     // (Astra T2D-D02, final fix: a pending founder SPLIT among the id's accounts — the vendor lists its id with a ratio
-    // that disagrees with it — is REFUSED here, at the close the disagreement first shows, covered or not: the close
-    // closes its ruling with the reason, and the conflict, which carries the founder's ratio as one recorded payload, takes
-    // `resolve_hold(conflict)`. Left pending it would come back every close under an ambiguous id.)
-    for (const a of group) {
-      if (!isFounderSplit(a) || !isFounderAction(a) || founderRefusals.some((x) => x.actionId === a.actionId)) continue;
-      founderRefusals.push({ actionId: a.actionId, recordId: a.founderRuling.recordId ?? null, requestKey: a.founderRuling.requestKey ?? null, ticker: upper(a.ticker), reason: 'vendor_rows_disagree' });
-      if (next.holdings[upper(a.ticker)]?.heldActions?.some((r) => r.actionId === a.actionId)) next.holdings = { ...next.holdings, [upper(a.ticker)]: withoutHeld(next.holdings[upper(a.ticker)], a.actionId) };
-    }
+    // that disagrees with it — is refused here, at the close the disagreement first shows, covered or not; the conflict,
+    // which carries the founder's ratio as one recorded payload, takes `resolve_hold(conflict)`.)
+    for (const a of group) refuseFounderSplit(a, 'vendor_rows_disagree');
   }
   // S-1 ②: AN ID LISTED NOW WITH ONE PAYLOAD. An ambiguous one's record takes the payload if it is new (a revision of an
   // ambiguous id). One this ledger HOLDS a record of with a different payload — an action held behind a doubt, or one the
@@ -1171,7 +1185,9 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
   // the first match's id and every UNSETTLED held row it matches (rev 1, S-1 ③: the row it may repeat becomes ambiguous
   // too), or null. `unsettledOnly`: match only a row that is not settled (the not-entitled path below).
   const redateMatchOf = (action, sym, { unsettledOnly = false } = {}) => {
-    if (isFounderAction(action)) return null; // the founder applied it (resolve_hold): not a re-date
+    // The founder applied it (resolve_hold): not a re-date — except a founder SPLIT, which answered a price move, not the
+    // vendor's rows: its payload is matched as a feed row's is (the final soak's SOAK-R3-1, below).
+    if (isFounderAction(action) && !isFounderSplit(action)) return null;
     const settledNow = settledIdsOf(next);
     // (AR2-IR-6: a holding renamed from an older ticker owns that ticker's records too — a row the vendor re-lists under
     // the new ticker matches them; before, a dividend ambiguous under the old ticker was paid when re-listed under the new.)
@@ -1196,7 +1212,10 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
     const heldRows = (next.holdings[sym]?.heldActions || []).filter((r) => sameKind({ ...r, ticker: sym }) && !r.refused && r.founderRuling == null && !settledNow.has(r.actionId));
     for (const r of heldRows) pool.push({ actionId: r.actionId, effectiveDate: r.effectiveDate, ratio: r.ratio ?? null, amount: r.amount ?? null, cashPerShare: r.cashPerShare ?? null, open: true, held: r });
     const matches = pool.filter((r) => r.actionId !== action.actionId && samePayload(r, action) && withinSessions(r.effectiveDate, action.effectiveDate, REDATE_WINDOW_SESSIONS)
-      && (!unsettledOnly || r.open));
+      && !inFounderGap(action, r.effectiveDate)
+      // (A founder split meets only what is UNSETTLED — an open record's payload, a held row: a settled action explained a
+      // move of its own, and the founder answered a later one, not a re-date of it — fix-round row T2D-11.)
+      && (!(unsettledOnly || isFounderSplit(action)) || r.open));
     if (matches.length === 0) return null;
     return { redateOf: matches[0].actionId, heldMatches: [...new Map(matches.filter((m) => m.held).map((m) => [m.actionId, m.held])).values()] };
   };
@@ -1334,17 +1353,40 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
   // loop below, the earlier-dated one was applied first (a held row replaying once its doubt cleared) and only the later
   // one waited: which of the two was paid depended on the order the vendor's rows happened to reach the close.
   {
-    const open = candidates.filter((a) => !isRuled(a) && a.founderRuling == null && !ambiguity.has(a.actionId) && !conflicting.has(a.actionId)
+    // (A pending founder split is one of these rows — SOAK-R3-1 — while its record stands: refused if it pairs.)
+    const open = candidates.filter((a) => !isRuled(a) && (a.founderRuling == null || (isFounderSplit(a) && isFounderAction(a) && founderSplitMoot(next, upper(a.ticker), a, date) === null))
+      && !ambiguity.has(a.actionId) && !conflicting.has(a.actionId)
       && APPLICABLE_TYPES.has(a.type) && a.type !== 'ticker_change' && !(a.type === 'delisting' && delistingCashOf(a) === null));
     const paired = new Set();
     for (const a of open) {
       for (const b of open) {
         if (a === b || a.actionId === b.actionId || a.type !== b.type || upper(a.ticker) !== upper(b.ticker) || !samePayload(a, b)) continue;
         if (!withinSessions(a.effectiveDate, b.effectiveDate, REDATE_WINDOW_SESSIONS) || paired.has(a.actionId)) continue;
+        if (inFounderGap(a, b.effectiveDate) || inFounderGap(b, a.effectiveDate)) continue;
         paired.add(a.actionId);
         const sym = upper(a.ticker);
         if (next.holdings[sym]?.heldActions?.some((r) => r.actionId === a.actionId)) next.holdings = { ...next.holdings, [sym]: withoutHeld(next.holdings[sym], a.actionId) };
         recordRedate(sym, a, b.actionId);
+        refuseFounderSplit(a, 'possible_redate');
+      }
+    }
+    // (SOAK-R3-1: the vendor's own rows of a pending founder split's id, which AGREE with it and so are replaced by it
+    // (close.js), are still the vendor's account: one that may be a re-date of another unsettled row of this call — the same
+    // payload under another date — makes both ambiguous, and the founder's split is refused. Replaced, they were unseen.)
+    for (const f of open.filter((a) => isFounderSplit(a))) {
+      for (const v of replacedRowsById.get(f.actionId) || []) {
+        for (const b of open) {
+          if (b === f || b.actionId === f.actionId || b.type !== v.type || upper(b.ticker) !== upper(v.ticker) || !samePayload(b, v)) continue;
+          if (!withinSessions(v.effectiveDate, b.effectiveDate, REDATE_WINDOW_SESSIONS)) continue;
+          const sym = upper(b.ticker);
+          if (!paired.has(b.actionId)) {
+            paired.add(b.actionId);
+            if (next.holdings[sym]?.heldActions?.some((r) => r.actionId === b.actionId)) next.holdings = { ...next.holdings, [sym]: withoutHeld(next.holdings[sym], b.actionId) };
+            recordRedate(sym, b, f.actionId);
+          }
+          if (!paired.has(f.actionId)) { paired.add(f.actionId); recordRedate(sym, f, b.actionId); }
+          refuseFounderSplit(f, 'possible_redate');
+        }
       }
     }
   }
@@ -1386,9 +1428,23 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
     // applied, holds, or has seen in an ambiguity record is recorded, not applied; and (rev 1, S-1 ③) an unsettled held
     // row it may repeat becomes ambiguous with it. (A cashless delisting, above, applies nothing anyway.)
     {
-      const match = redateMatchOf(action, sym);
+      // (SOAK-R3-1: for a pending founder split, also the vendor's OWN rows of its id that it replaced — they agreed with it —
+      // checked as the feed rows they are, against everything this ledger has seen: a declined, applied or recorded payload
+      // under another date makes the id a possible re-date, as it would without the ruling.)
+      const vendorMatch = () => {
+        for (const v of (isFounderSplit(action) && isFounderAction(action) ? replacedRowsById.get(action.actionId) : null) || []) {
+          const m = redateMatchOf({ ...v, actionId: action.actionId }, sym);
+          if (m !== null) return m;
+        }
+        return null;
+      };
+      const match = redateMatchOf(action, sym) ?? vendorMatch();
       if (match !== null) {
         recordRedatePair(sym, action, match);
+        // (SOAK-R3-1, the final soak: a pending founder split whose payload may be a re-date of another row — the vendor's
+        // same split under another date — is ambiguous like any row: refused, and only a conflict ruling settles it. Before,
+        // a founder action was never matched, so the founder's 2:1 applied beside the vendor's re-dated 2:1.)
+        refuseFounderSplit(action, 'possible_redate');
         // A held action found to be a possible re-date is no longer a payload to pay later: its `possible_redate`
         // receipt governs it, and the founder may apply it (review C2 — the record would otherwise hold for good).
         if (next.holdings[sym]?.heldActions?.some((r) => r.actionId === action.actionId)) next.holdings = { ...next.holdings, [sym]: withoutHeld(next.holdings[sym], action.actionId) };

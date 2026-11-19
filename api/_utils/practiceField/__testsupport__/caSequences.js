@@ -564,6 +564,27 @@ const D02_ROWS = [
 export const ASTRA_R2 = [d01, d02, ...D01_ROWS, ...D02_ROWS];
 
 /**
+ * THE FINAL SOAK'S FINDINGS (6,000 ordered histories, seeds 1,911,200,000–1,911,205,999), each as a fixed case.
+ * SOAK-R3-1 (I-2, a sibling of T2D-D02): a pending founder split moved the count under an id the vendor's rows had made a
+ * POSSIBLE RE-DATE — the same 2:1 under another date, in an open conflict, or repeating a split declined as not entitled.
+ */
+export const SOAK_R3 = [
+  // R3-1: the vendor agrees with the founder's 2:1 under its id, and lists 2:1 again dated the next day inside a 3:2/2:1
+  // conflict — the founder's split is refused (a possible re-date), nothing moves; the founder then rules the record.
+  { seed: 'SOAK-R3-1-redate-in-a-next-day-conflict', steps: [cl(0, 100), cl(1, 50), splitRuling(2), cl(2, 50, [sp(1, '2/1'), sp(2, '3/2'), sp(2, '2/1')]),
+    at((idea, book) => {
+      expect(sharesOf(idea, book), 'nothing moved').toEqual([SH, SH, SH]);
+      expect(rulingOf(idea, 'suspicion')?.refusedBecause).toBe('possible_redate');
+      expect(recordOf(idea, splitId, POSSIBLE_REDATE), 'the founder split\'s id is a possible re-date').toBeTruthy();
+    }),
+    conflictRuling(splitId, 'payload', { ratio: 2 }), cl(3, 50)], end: { dividends: 0, shares: SH2 } },
+  // R3-1: a 2:1 dated the purchase day (declined, not entitled), the price halves the next session, the founder rules 2:1,
+  // and the vendor then lists that 2:1 under the next day — a possible re-date of the declined one (the agreed Q10).
+  { seed: 'SOAK-R3-1-redate-of-a-declined-split', steps: [cl(0, 100, [sp(0, '2/1')]), cl(1, 50, [sp(0, '2/1')]), splitRuling(2), cl(2, 50, [sp(0, '2/1'), sp(1, '2/1')]),
+    at((idea) => expect(rulingOf(idea, 'suspicion')?.refusedBecause).toBe('possible_redate')), cl(3, 50)], end: { dividends: 0, shares: SH } },
+];
+
+/**
  * ASTRA'S INDEPENDENT GENERATOR, REBUILT FROM HER DESCRIPTION (round 2, Run:100 — her harness was not attached): seeds
  * 19112000–19112031. Even seeds write the correction/re-date (D01's class), odd seeds the pending suspicion (D02's).
  * Residues 0 and 1 modulo 4 are challenges, 2 and 3 controls. Bits 2–3 choose the cash history's unseen amount ($3, $3.25,

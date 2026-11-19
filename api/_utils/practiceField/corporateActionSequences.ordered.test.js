@@ -21,6 +21,13 @@ describe('S-6 — Astra round 2: her independent generator (seeds 19112000–191
   }, 60_000);
 });
 
+// (The final soak's failing seeds, kept: SOAK-R3-1 — 1911201905, 1911200342.)
+describe('S-6 — the final soak\'s failing histories, as fixed seeds', () => {
+  it.each([1911201905, 1911200342])('ordered seed %i', async (seed) => {
+    await run(generateWide(seed, { ordered: true }));
+  }, 120_000);
+});
+
 const ORDERED = Array.from({ length: 60 }, (_, k) => 1911190000 + k);
 const shapes = { c03: 0, d01: 0, d02: 0 };
 describe('S-6 — the ordered generator: C03, D01 and D02 on one id, through every check', () => {
