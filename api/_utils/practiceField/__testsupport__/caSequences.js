@@ -434,7 +434,8 @@ export const FIXED = [
 ];
 
 // ── ASTRA'S ROUND-2 REPLAY SEEDS (docs/audits/20261119_ASTRA_CONFIRMATION_T1A2B3_ROUND2.md, "Replay seeds for both fixes"),
-// VERBATIM. T2D-D01: a correction of a founder-settled id and its possible re-date first listed in one close.
+// VERBATIM. T2D-D01: a correction of a founder-settled id and its possible re-date first listed in one close. T2D-D02: a
+// pending suspicion ruling's split id listed by the vendor with two ratios that disagree, on a partly covered close.
 const oldDividend = 'cash_dividend_AAPL_' + S[1];
 const movedDividend = 'cash_dividend_AAPL_' + S[3];
 const splitId = 'split_AAPL_' + S[1];
@@ -447,9 +448,23 @@ const d01 = {
     cl(3, 100, [d(1, 3), d(3, 3)])],
   end: { dividends: 0, shares: 99.970008 },
 };
+const d02 = {
+  seed: 'Astra-R2-D02',
+  ambiguousSince: { [splitId]: 2 },
+  steps: [cl(0, 100), cl(1, 50),
+    { kind: 'ruleExact', body: { kind: 'suspicion',
+      recordId: 'suspected_split_AAPL_' + S[1], decision: 'split', ratio: 2 } },
+    cl(2, 50, [sp(1, '3/2'), sp(1, '5/4')], true), cl(3, 50)],
+  end: { dividends: 0, shares: 99.970008 },
+};
 // The regressions around them. Each runs through I-1 to I-5 after every close.
 const at = (fn) => ({ kind: 'expectIdea', fn });
 const recordOf = (idea, id, reason) => idea.ledger.corporateActionReceipts.find((r) => r.actionId === id && r.reason === reason) ?? null;
+const sharesOf = (idea, book) => [idea.ledger.holdings.AAPL.shares, idea.comparisonLedger.holdings.AAPL.shares, book.portfolio.positions.AAPL.shares];
+const rulingOf = (idea, kind) => (idea.founderRulings || []).find((r) => r.kind === kind) ?? null;
+const SH2 = 199.940016;
+const SH15 = 149.955012;
+const splitRuling = (ratio, status) => ({ kind: 'ruleExact', status, body: { kind: 'suspicion', recordId: 'suspected_split_AAPL_' + S[1], decision: 'split', ratio } });
 /** T2D-D01, fix 1. */
 const D01_ROWS = [
   // The same rows in the other order: the moved row first.
@@ -471,7 +486,37 @@ const D01_ROWS = [
     conflictRuling('split_AAPL_' + S[3], 'none'), cl(4, 100)], end: { dividends: 0, shares: SH } },
   // Control (Astra's): the correction one close before its re-date — paid nothing then, and still nothing.
   { seed: 'Astra-R2-D01-control-correction-first', steps: [cl(0, 100), cl(1, 100, [d(1, 1), d(1, 2)]), conflictRuling(oldDividend, 'none'), cl(2, 100), cl(3, 100, [d(1, 3)]), cl(4, 100, [d(4, 3)]), conflictRuling('cash_dividend_AAPL_' + S[4], 'none'), cl(5, 100)], end: { dividends: 0, shares: SH } },
-];export const ASTRA_R2 = [d01, ...D01_ROWS];
+];/** T2D-D02, fix 2. */
+const D02_ROWS = [
+  // Her history, then the founder rules the conflict: the reported 3:2 is accepted (it answered 404) and applied once.
+  { seed: 'Astra-R2-D02-conflict-ruled-three-for-two', steps: [...d02.steps,
+    at((idea) => {
+      expect(recordOf(idea, splitId, CONFLICTING_ACTION)?.rows.map((r) => r.ratio).sort(), 'the vendor ratios and the founder\'s, recorded at the uncovered close').toEqual([1.25, 1.5, 2]);
+      expect(rulingOf(idea, 'suspicion')?.outcome, 'the founder split was refused, not left pending').toBe('refused');
+      expect(rulingOf(idea, 'suspicion')?.refusedBecause).toBe('vendor_rows_disagree');
+    }),
+    conflictRuling(splitId, 'payload', { ratio: 1.5 }), cl(4, 50),
+    // (3:2 does not explain a halving: the suspicion still stands, and the founder answers it on its own.)
+    at((idea) => expect(idea.ledger.holdings.AAPL.basisSuspicion, 'the halving is still unexplained').toBeTruthy())], end: { dividends: 0, shares: SH15 } },
+  // The COVERED variant: nothing applies while the vendor's ratios disagree with the founder's; 3:2 is then accepted
+  // through the conflict ruling (it answered 422 — the founder's 2:1 had applied and the ratios were a revision).
+  { seed: 'Astra-R2-D02-covered', steps: [cl(0, 100), cl(1, 50), splitRuling(2), cl(2, 50, [sp(1, '3/2'), sp(1, '5/4')]),
+    at((idea, book) => expect(sharesOf(idea, book), 'nothing applied on the covered close').toEqual([SH, SH, SH])),
+    conflictRuling(splitId, 'payload', { ratio: 1.5 }), cl(3, 50)], end: { dividends: 0, shares: SH15 } },
+  // One vendor ratio that disagrees with the founder's alone is a conflict too; the founder may then choose her own 2:1.
+  { seed: 'Astra-R2-D02-one-disagreeing-row', steps: [cl(0, 100), cl(1, 50), splitRuling(2), cl(2, 50, [sp(1, '3/2')]),
+    at((idea, book) => expect(sharesOf(idea, book)).toEqual([SH, SH, SH])),
+    conflictRuling(splitId, 'payload', { ratio: 2 }), cl(3, 50)], end: { dividends: 0, shares: SH2 } },
+  // Controls: an agreeing single 2:1 applies once (covered, and through a coverage failure)…
+  { seed: 'Astra-R2-D02-control-agreeing-covered', steps: [cl(0, 100), cl(1, 50), splitRuling(2), cl(2, 50, [sp(1, '2/1')]),
+    at((idea) => expect(rulingOf(idea, 'suspicion')?.outcome).toBe('applied')), cl(3, 50, [sp(1, '2/1')])], end: { dividends: 0, shares: SH2 } },
+  { seed: 'Astra-R2-D02-control-agreeing-uncovered', steps: [cl(0, 100), cl(1, 50), splitRuling(2), cl(2, 50, [sp(1, '2/1'), sp(1, '2/1')], true),
+    at((idea, book) => expect(sharesOf(idea, book), 'held while uncovered').toEqual([SH, SH, SH])), cl(3, 50)], end: { dividends: 0, shares: SH2 } },
+  // …and without a founder split, the same two ratios are a selectable conflict that moves nothing until ruled.
+  { seed: 'Astra-R2-D02-control-unruled', steps: [cl(0, 100), cl(1, 50), cl(2, 50, [sp(1, '3/2'), sp(1, '5/4')], true), cl(3, 50),
+    at((idea, book) => expect(sharesOf(idea, book)).toEqual([SH, SH, SH])),
+    conflictRuling(splitId, 'payload', { ratio: 1.25 }), cl(4, 50)], end: { dividends: 0, shares: 124.96251 } },
+];export const ASTRA_R2 = [d01, d02, ...D01_ROWS, ...D02_ROWS];
 
 
 /** The hooks every S-6 file installs: mode on, a fresh fake store, no vendor key, a fetch that refuses. */

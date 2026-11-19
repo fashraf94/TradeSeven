@@ -298,9 +298,35 @@ function closeFilledIdea(idea, {
   // F-5, Astra T2D-09: EACH LEDGER'S ROWS. A ruling's action, and the feed rows of its id it replaces, belong to the
   // ledgers whose record it covers: each ledger is handed the session's rows less what a ruling replaces ON IT, plus
   // what a ruling adds ON IT. A ledger that never carried the record keeps the feed's own rows of that id.
+  // Astra T2D-D02 (final fix): a pending founder SPLIT (a `suspicion` ruling) stands for the feed's rows of its id only when
+  // every one of them AGREES with it — an agreeing duplicate is still applied once, as the founder's. Rows that disagree with
+  // it, or with one another, are NOT replaced: they reach the ledger beside the founder's row, which is one more account of
+  // the id (AR2-RF-1), so the ledger records the CONFLICT — on a covered close or not — and refuses the founder's split
+  // (ledger.js, S-1 ①); only `resolve_hold(conflict)` settles the id. Replaced, they were only observed, and only into a
+  // record that already existed: none did, so the founder's ratio applied over two vendor ratios the founder never saw.
+  const disputedIdsOf = (f) => {
+    const out = new Set();
+    const replaced = ruled?.replacedIdsByLedger?.[f];
+    if (!replaced || replaced.size === 0) return out;
+    const same = (x, a) => (x?.ratio ?? null) === (a?.ratio ?? null) && (x?.amount ?? null) === (a?.amount ?? null) && (x?.cashPerShare ?? null) === (a?.cashPerShare ?? null);
+    for (const list of Object.values(ruled.extraActionsByLedger[f] || {})) {
+      for (const a of list || []) {
+        if (a?.founderRuling?.kind !== 'suspicion' || !replaced.has(a.actionId)) continue;
+        const vendor = Object.values(actionsBySymbol).flatMap((l) => l || []).filter((x) => x && deriveActionId(x) === a.actionId);
+        if (vendor.some((x) => !same(x, a))) out.add(a.actionId);
+      }
+    }
+    return out;
+  };
+  const disputedIds = Object.fromEntries(LEDGER_FIELDS.map((f) => [f, disputedIdsOf(f)]));
+  const replacedIdsOf = (f) => {
+    const all = ruled?.replacedIdsByLedger?.[f];
+    if (!all || disputedIds[f].size === 0) return all ?? null;
+    return new Set([...all].filter((id) => !disputedIds[f].has(id)));
+  };
   const actionsOf = Object.fromEntries(LEDGER_FIELDS.map((f) => {
     if (!ruled) return [f, actionsBySymbol];
-    const replaced = ruled.replacedIdsByLedger[f];
+    const replaced = replacedIdsOf(f);
     const kept = replaced.size === 0 ? actionsBySymbol
       : Object.fromEntries(Object.entries(actionsBySymbol).map(([sym, list]) => [sym, (list || []).filter((a) => !replaced.has(deriveActionId(a)))]));
     return [f, unionActionsBySymbol(kept, ruled.extraActionsByLedger[f])];
@@ -336,7 +362,7 @@ function closeFilledIdea(idea, {
   const deferRenames = holds ? new Set([...holds.keys(), ...ledgers.flatMap((l) => openAmbiguities(l).filter((r) => r.type !== 'ticker_change' && !LEDGER_FIELDS.some((g) => ruledIdsOf(g)?.has(r.actionId))).map((r) => String(r.ticker || '').trim().toUpperCase()))]) : null;
   // (AR2-C-1: the feed's rows a pending ruling replaces on a ledger reach its applier apart, to be OBSERVED only.)
   const replacedRowsOf = (f) => {
-    const replaced = ruled?.replacedIdsByLedger?.[f];
+    const replaced = replacedIdsOf(f);
     if (!replaced || replaced.size === 0) return null;
     return Object.fromEntries(Object.entries(actionsBySymbol).map(([sym, list]) => [sym, (list || []).filter((a) => replaced.has(deriveActionId(a)))]));
   };

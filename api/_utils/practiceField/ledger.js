@@ -1066,6 +1066,15 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
       kinds: kindsOf(null, firstRows, 'conflict'),
     }, 'conflict');
     conflicts.push(receipt);
+    // (Astra T2D-D02, final fix: a pending founder SPLIT among the id's accounts — the vendor lists its id with a ratio
+    // that disagrees with it — is REFUSED here, at the close the disagreement first shows, covered or not: the close
+    // closes its ruling with the reason, and the conflict, which carries the founder's ratio as one recorded payload, takes
+    // `resolve_hold(conflict)`. Left pending it would come back every close under an ambiguous id.)
+    for (const a of group) {
+      if (!isFounderSplit(a) || !isFounderAction(a) || founderRefusals.some((x) => x.actionId === a.actionId)) continue;
+      founderRefusals.push({ actionId: a.actionId, recordId: a.founderRuling.recordId ?? null, requestKey: a.founderRuling.requestKey ?? null, ticker: upper(a.ticker), reason: 'vendor_rows_disagree' });
+      if (next.holdings[upper(a.ticker)]?.heldActions?.some((r) => r.actionId === a.actionId)) next.holdings = { ...next.holdings, [upper(a.ticker)]: withoutHeld(next.holdings[upper(a.ticker)], a.actionId) };
+    }
   }
   // S-1 ②: AN ID LISTED NOW WITH ONE PAYLOAD. An ambiguous one's record takes the payload if it is new (a revision of an
   // ambiguous id). One this ledger HOLDS a record of with a different payload — an action held behind a doubt, or one the
