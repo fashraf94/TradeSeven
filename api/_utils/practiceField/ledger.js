@@ -1157,7 +1157,9 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
     for (const r of next.corporateActionReceipts || []) {
       if (!sameKind(r)) continue;
       if (r.applied === true || r.reason === NOT_ENTITLED) pool.push({ actionId: r.actionId, effectiveDate: r.effectiveDate, ratio: r.ratio ?? null, amount: r.amount ?? null, cashPerShare: r.cashPerShare ?? null, open: false });
-      if (r.reason === CONFLICTING_ACTION || r.reason === POSSIBLE_REDATE) {
+      // (…and every payload a ruled id showed since its ruling — a `revised_after_ruling` record's rows: the S-6 soak found a
+      // ruled split's later ratio, re-dated, applied as a fresh split.)
+      if (r.reason === CONFLICTING_ACTION || r.reason === POSSIBLE_REDATE || r.reason === REVISED_AFTER_RULING) {
         for (const p of recordedPayloadsOf(r)) pool.push({ actionId: r.actionId, effectiveDate: r.effectiveDate, ratio: p?.ratio ?? null, amount: p?.amount ?? null, cashPerShare: p?.cashPerShare ?? null, open: !settledNow.has(r.actionId) });
       }
     }

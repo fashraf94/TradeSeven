@@ -750,3 +750,23 @@ describe('the battery\'s rows (AR2-M05, -M06, -M07, -M13, -M31, -M34)', () => {
   });
 });
 const ID_DIV1 = `cash_dividend_AAPL_${S[1]}`;
+
+// ── Rows the S-6 soak found (the founder's 5,000-sequence run), each with the outcome rev 1 gives ─────────────────────────
+
+describe('the S-6 soak\'s findings', () => {
+  it('SOAK-1 (wide seed 26): a ratio a ruled split showed SINCE its ruling, re-dated under a new id, is a possible re-date — never applied as a fresh split', async () => {
+    const c = await start();
+    await close(c, 0);
+    await close(c, 1, 80, [spl(1, '5/4'), spl(1, '3/1')]);
+    await rule(c, { kind: 'conflict', recordId: `split_AAPL_${S[1]}`, decision: 'none' }, 'soak1');
+    await close(c, 2, 80, [spl(1, '5/4'), spl(1, '3/1')]);
+    await close(c, 3, 50, [spl(1, '2/1')]); // a ratio the ruling never saw: revised after the ruling
+    expect(openRulingRevisions(ideaOf(c).ledger).map((r) => r.rows.map((x) => x.ratio))).toEqual([[2]]);
+    await rule(c, { kind: 'conflict', recordId: `split_AAPL_${S[1]}`, decision: 'none' }, 'soak1b');
+    await close(c, 4, 50, [spl(4, '2/1')]); // the same 2:1 under a moved date
+    const idea = ideaOf(c);
+    expect([idea.ledger.holdings.AAPL.shares, idea.comparisonLedger.holdings.AAPL.shares, bookOf(c).portfolio.positions.AAPL.shares]).toEqual([SHARES, SHARES, SHARES]);
+    expect(unsettledRedates(idea.ledger).map((r) => [r.actionId, r.redateOf])).toEqual([[`split_AAPL_${S[4]}`, `split_AAPL_${S[1]}`]]);
+    expect(rowOf(c, 4).fullQuality).toBe(false);
+  });
+});
