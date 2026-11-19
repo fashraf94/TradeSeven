@@ -673,3 +673,80 @@ describe('AR2-RF — the final refuter on the fixes: each probe as a row', () =>
     expect(rowOf(c, 3).fullQuality).toBe(true);
   });
 });
+
+// ── Rows the round's mutation battery asked for (a survivor each), with the outcome rev 1 gives ──────────────────────────
+
+describe('the battery\'s rows (AR2-M05, -M06, -M07, -M13, -M31, -M34)', () => {
+  it('AR2-M05: a NOT-ENTITLED conflict re-listed with one payload is not declined by the feed — it stays open for the founder', async () => {
+    const c = await start();
+    await close(c, 0, 100, [div(0, 1), div(0, 2)]);
+    await close(c, 1, 100, [div(0, 1)]);
+    const idea = ideaOf(c);
+    expect(idea.ledger.declinedActionIds).toEqual([]);
+    expect(unsettledConflicts(idea.ledger).map((r) => [r.actionId, r.entitled])).toEqual([[`cash_dividend_AAPL_${S[0]}`, false]]);
+    expect(rowOf(c, 1).fullQuality).toBe(false);
+  });
+
+  it('AR2-M06 / -M07: a not-entitled row (dated the purchase day) repeating a dividend HELD at an uncovered close makes both ambiguous — neither is paid', async () => {
+    const c = await start();
+    await close(c, 0);
+    await uncoveredClose(c, 1, 100, [div(1, 1)]);
+    expect(heldActionRecords(ideaOf(c).ledger).map((r) => r.actionId)).toEqual([`cash_dividend_AAPL_${S[1]}`]);
+    // The vendor moves the dividend to the purchase day (the holding is not entitled to that one) and drops the old row.
+    await close(c, 2, 100, [div(0, 1)]);
+    const idea = ideaOf(c);
+    expect(divs(idea)).toEqual([0, 0]);
+    expect(idea.ledger.declinedActionIds).toEqual([]);
+    expect(unsettledRedates(idea.ledger).map((r) => [r.actionId, r.redateOf]).sort()).toEqual([
+      [`cash_dividend_AAPL_${S[0]}`, `cash_dividend_AAPL_${S[1]}`],
+      [`cash_dividend_AAPL_${S[1]}`, `cash_dividend_AAPL_${S[0]}`],
+    ]);
+    expect(heldActionRecords(idea.ledger)).toEqual([]);
+  });
+
+  it('AR2-M13: an AMBIGUOUS split that would explain a suspicion explains nothing — a dividend dated inside the gap, before the split, still waits', async () => {
+    const c = await start();
+    await close(c, 0);
+    await uncoveredClose(c, 1, 100, []);
+    await close(c, 2, 50);
+    expect(ideaOf(c).ledger.holdings.AAPL.basisSuspicion).toMatchObject({ suspectedOn: S[2], since: S[0] });
+    await close(c, 3, 50, [spl(2, '2/1'), spl(2, '3/1'), div(1, 1)]);
+    await close(c, 4, 50, [spl(2, '2/1'), div(1, 1)]);
+    const idea = ideaOf(c);
+    expect(idea.ledger.holdings.AAPL.shares).toBe(SHARES);
+    expect(divs(idea)).toEqual([0, 0]);
+    expect(rowOf(c, 4).fullQuality).toBe(false);
+  });
+
+  it('AR2-M31: a ruled split revised later holds the sale by itself (no other doubt on the holding)', async () => {
+    const c = await start();
+    await close(c, 0);
+    await close(c, 1, 100 / 1.5, [spl(1, '3/2'), spl(1, '5/4')]);
+    await rule(c, { kind: 'conflict', recordId: `split_AAPL_${S[1]}`, decision: 'payload', payload: { ratio: 1.5 } }, 'm31');
+    await close(c, 2, 100 / 1.5, [spl(1, '3/2')]);
+    await close(c, 3, 100 / 1.5, [spl(1, '7/4')]);
+    const idea = ideaOf(c);
+    expect(heldActionRecords(idea.ledger)).toEqual([]);
+    expect(openRulingRevisions(idea.ledger)).toHaveLength(1);
+    expect(saleHeldBackBy(idea.ledger, 'AAPL', { symbols: {} }, { date: S[4] })).toBe('corporate_action_unsettled');
+  });
+
+  it('AR2-M34: a founder coverage-gap row HELD behind another doubt, then a different feed payload under its id: a revision — neither paid until the founder rules', async () => {
+    const c = await start();
+    await close(c, 0);
+    await uncoveredClose(c, 1, 100 / 1.5, [spl(1, '3/2'), spl(1, '5/4')]);
+    await c.db.doc('practiceFieldCaBackfill/AAPL').set({ schemaVersion: 1, symbol: 'AAPL', from: S[1], to: S[1], failed: true, actions: [div(1, 1)], calls: 2, fetchedAt: '2026-11-18T23:00:00.000Z', source: 'idea_book_backfill' });
+    await rule(c, { kind: 'coverage_gap', recordId: `ca_coverage_gap_AAPL_${S[0]}`, decision: 'row', actionId: ID_DIV1 }, 'm34');
+    await close(c, 2, 100 / 1.5, [spl(1, '3/2'), spl(1, '5/4')]);
+    expect(heldActionRecords(ideaOf(c).ledger).map((r) => [r.actionId, r.amount])).toEqual([[ID_DIV1, 1]]);
+    await close(c, 3, 100 / 1.5, [spl(1, '3/2'), spl(1, '5/4'), div(1, 2)]);
+    expect(unsettledConflicts(ideaOf(c).ledger).find((r) => r.actionId === ID_DIV1)).toMatchObject({ kinds: ['revision'] });
+    await rule(c, { kind: 'conflict', recordId: `split_AAPL_${S[1]}`, decision: 'payload', payload: { ratio: 1.5 } }, 'm34-split');
+    await close(c, 4, 100 / 1.5, [div(1, 2)]);
+    const idea = ideaOf(c);
+    expect(idea.ledger.holdings.AAPL.shares).toBe(149.955012);
+    expect(divs(idea)).toEqual([0, 0]);
+    expect(unsettledConflicts(idea.ledger).find((r) => r.actionId === ID_DIV1).rows.map((r) => r.amount)).toEqual([1, 2]);
+  });
+});
+const ID_DIV1 = `cash_dividend_AAPL_${S[1]}`;

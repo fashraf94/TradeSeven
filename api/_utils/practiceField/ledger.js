@@ -1076,7 +1076,10 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
     if (open) { observe(open, [a]); continue; }
     // A held action's payload, or (AR2-A-3) a waiting rename's target — a revision of either is ambiguity.
     const deferred = a.type === 'ticker_change' && next.holdings[sym]?.deferredRename?.actionId === id ? next.holdings[sym].deferredRename : null;
-    const record = (next.holdings[sym]?.heldActions || []).find((r) => r.actionId === id && r.founderRuling == null)
+    // (A held action the founder supplied by a ruling of another kind — a coverage-gap row — is one more account of the id, as
+    // a feed row is: a different payload listed against it is a revision. Battery AR2-M34: a later feed payload silently
+    // replaced it. A `conflict` ruling's held action is the founder's answer, re-supplied until applied.)
+    const record = (next.holdings[sym]?.heldActions || []).find((r) => r.actionId === id && r.founderRuling?.kind !== 'conflict')
       ?? (deferred ? { renamedTo: deferred.to, source: null, heldOn: deferred.deferredOn ?? null } : null);
     if (record === null || (samePayload(record, a) && upper(record.renamedTo) === upper(a.renamedTo))) continue;
     unresolved.add(sym);
@@ -1210,7 +1213,7 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
   // ruling settles it (a held FOUNDER action stays: the ruling re-supplies it until it is applied).
   for (const [sym, h] of Object.entries(next.holdings)) {
     for (const r of h?.heldActions || []) {
-      if (r.founderRuling == null && ambiguity.has(r.actionId)) next.holdings = { ...next.holdings, [sym]: withoutHeld(next.holdings[sym], r.actionId) };
+      if (r.founderRuling?.kind !== 'conflict' && ambiguity.has(r.actionId)) next.holdings = { ...next.holdings, [sym]: withoutHeld(next.holdings[sym], r.actionId) };
     }
   }
 
