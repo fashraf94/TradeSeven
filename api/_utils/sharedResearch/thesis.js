@@ -78,17 +78,13 @@ export function emptyCard() {
 }
 
 /**
- * The card a builder investigation opens with (§B4.1). Own words: the theme is the player's words when they are
- * THEME_MAX characters or fewer (`player_wrote`); longer words leave it unset for the first step to suggest (SQ-2).
- * A story or a drop opens empty.
+ * The card a builder investigation opens with (§B4.1; §B13 T-1): every entry opens empty. Own words never become the
+ * theme — they stay on the record as the player's observation ("Your words"), and the first map suggests a theme in
+ * the agent's own words, which the player confirms or replaces for free (SQ-2's rule for long words now holds for all).
+ * A story or a drop opens empty, as before. Callers still name their entry (`{ entryKind, observation }`); none of it
+ * reaches the card.
  */
-export function openingCardOf({ entryKind, observation = null }) {
-  const card = emptyCard();
-  if (entryKind === 'observation' && isText(observation) && observation.length <= THESIS_LIMITS.theme) {
-    card.theme = { state: SET, value: observation, by: 'player_wrote', suggestion: null };
-  }
-  return card;
-}
+export const openingCardOf = () => emptyCard();
 
 /** The record question an own-words builder investigation is minted with (§B4.1), cut to the record's limit. */
 export const BUILDER_QUESTION_PREFIX = 'Build a thesis on: ';
@@ -205,17 +201,18 @@ export const timeFrameLabelOf = (h) => {
 /**
  * The thesis sentence, from the card by one pure function (§B3): "My theme is {theme}[, through {segment}], built
  * on {names}, because {why.shared}. It's wrong if {wrongIf.text}. Time frame: {label}." Null until the names, the
- * why, the wrong-if and the time frame hold values. A card with no theme set opens at "Built on …" (routine 21 —
- * the theme is not one of ready's parts); a skipped segment is left out.
+ * why, the wrong-if and the time frame hold values. A card with no theme set opens at the names (§B13 T-2): "Built on
+ * {names}[, through {segment}], because …" — the theme is not one of ready's parts; a skipped segment is left out.
  */
 export function sentenceOf(card) {
   const { theme, segment, names, why, wrongIf, timeFrame } = card;
   if (names.state !== SET || why.state !== SET || wrongIf.state !== SET || timeFrame.state !== SET) return null;
-  const head = [];
-  if (theme.state === SET && isText(theme.value)) head.push(`My theme is ${bare(theme.value)}`);
-  if (segment.state === SET && !segment.skipped && isText(segment.value)) head.push(`through ${bare(segment.value)}`);
-  head.push(`built on ${joinNames(names.value)}`);
-  const first = head.join(', ');
+  const through = segment.state === SET && !segment.skipped && isText(segment.value) ? `through ${bare(segment.value)}` : null;
+  const built = `built on ${joinNames(names.value)}`;
+  const head = theme.state === SET && isText(theme.value)
+    ? [`My theme is ${bare(theme.value)}`, through, built]
+    : [built, through];
+  const first = head.filter(Boolean).join(', ');
   return `${first[0].toUpperCase()}${first.slice(1)}, because ${bare(why.shared)}. It's wrong if ${bare(wrongIf.text)}. Time frame: ${timeFrameLabelOf(timeFrame.value)}.`;
 }
 
@@ -248,10 +245,9 @@ export function offeredGoalsOf(card, ctx) {
   if ((ctx.entryKind === 'item' || ctx.entryKind === 'signaldrop') && !ctx.verified) {
     out.push({ goal: 'verify_source' });
   } else {
-    // SQ-2: own words longer than the theme's limit leave the theme unset; the first map suggests one.
-    const themeReady = card.theme.state === SET || (ctx.entryKind === 'observation' && !isText(card.theme.suggestion));
-    if (themeReady && card.segment.state !== SET && card.names.state !== SET) out.push({ goal: 'map_segments' });
-    if (card.theme.state === SET && card.segment.state === SET && card.names.state !== SET && !blockedNow(card, ctx)) out.push({ goal: 'find_names' });
+    // §B13 T-2: the theme gates nothing — set, suggested or unset, no research goal waits for it.
+    if (card.segment.state !== SET && card.names.state !== SET) out.push({ goal: 'map_segments' });
+    if (card.segment.state === SET && card.names.state !== SET && !blockedNow(card, ctx)) out.push({ goal: 'find_names' });
     if (card.names.state === SET && card.why.state !== SET) out.push({ goal: 'build_why' });
     for (const part of THESIS_PARTS) if (card[part].state === SET) out.push({ goal: 'strengthen', part });
     for (const part of PICK_PARTS) if (pickableOf(card, part, ctx)) out.push({ goal: 'pick', part });
@@ -318,8 +314,10 @@ export function freeChoicesOf(card, ctx) {
   // time frame
   if (card.timeFrame.state !== SET) {
     for (const h of ADOPTABLE_HORIZONS) out.push({ op: 'set', part: 'timeFrame', value: h });
-    if (card.timeFrame.suggestion) out.push({ op: 'confirm', part: 'timeFrame', value: card.timeFrame.suggestion.value });
-    else if (card.pick?.part === 'timeFrame') out.push({ op: 'confirm', part: 'timeFrame', value: card.pick.value });
+    // §B13 T-5: the confirm carries the newer answer — a time-frame pick on the card is the latest step's (every step
+    // replaces the pick), so it comes before a suggestion an earlier step left
+    const confirmable = timeFrameConfirmOf(card);
+    if (confirmable) out.push({ op: 'confirm', part: 'timeFrame', value: confirmable });
   }
   // Change: any set part but the theme (a different theme is a new investigation).
   for (const part of THESIS_PARTS) if (part !== 'theme' && card[part].state === SET) out.push({ op: 'clear', part, clears: clearedBy(part).slice(1) });
@@ -335,6 +333,14 @@ const cleanWords = (raw, max) => {
   const s = raw.replace(/[<>{}]/g, '').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '').trim();
   return s.length > 0 && s.length <= max ? s : null;
 };
+
+/**
+ * The time frame a free `confirm` carries (§B13 T-5): the newer of the two answers on the card. A time-frame pick is
+ * always the latest step's (applyProposals replaces the pick on every step), so it wins over a suggestion an earlier
+ * step left. An asked pick landing replaces that suggestion with itself (§B14 Q-1): while the pick stands both carry its
+ * value, and after the next step the suggestion still does.
+ */
+const timeFrameConfirmOf = (card) => (card.pick?.part === 'timeFrame' ? card.pick.value : card.timeFrame.suggestion?.value ?? null);
 
 /** The parts a change of `part` clears (§B3), the part itself first. */
 const clearedBy = (part) => [part, ...(THESIS_DEPENDENTS[part] ?? []), ...(part === 'segment' ? THESIS_DEPENDENTS.names : [])].filter((p, i, a) => a.indexOf(p) === i);
@@ -564,7 +570,7 @@ export function applyCardOp(card, { op, part, value }, ctx) {
   } else if (part === 'timeFrame') {
     next = structuredClone(card);
     if (op === 'confirm') {
-      const v = card.timeFrame.suggestion?.value ?? (card.pick?.part === 'timeFrame' ? card.pick.value : null);
+      const v = timeFrameConfirmOf(card); // §B13 T-5: the newer answer — the pick, else the suggestion
       if (!ADOPTABLE_HORIZONS.includes(v)) return refusal('no_suggestion');
       next.timeFrame = { state: SET, by: 'partner_suggested_confirmed', value: v, suggestion: null };
     } else {
@@ -601,12 +607,17 @@ export function cardOpOf(card, { opId, op, part, value }, ctx) {
  */
 export function applyProposals(card, p, ctx) {
   const next = structuredClone(card);
-  if (isText(p.themeSuggestion) && next.theme.state !== SET) next.theme.suggestion = p.themeSuggestion;
+  // a theme suggestion lands only on a card with neither a theme nor a suggestion (§B13 T-1: the first map suggests one; a
+  // story keeps verify_source's) — a later step never replaces the one the player may be about to confirm
+  if (isText(p.themeSuggestion) && next.theme.state !== SET && !isText(next.theme.suggestion)) next.theme.suggestion = p.themeSuggestion;
   if (Array.isArray(p.map) && p.map.length >= THESIS_LIMITS.segmentsMin) next.segment.map = p.map.map((m) => ({ ...m, findingIds: [...m.findingIds] }));
   if (p.why && next.names.state === SET && sameNames(p.why.forNames, next.names.value)) next.why.proposal = structuredClone(p.why);
   if (Array.isArray(p.wrongIfOptions) && p.wrongIfOptions.length > 0) next.wrongIf.options = p.wrongIfOptions.map((o) => ({ ...o, findingIds: [...o.findingIds] }));
   if (p.timeFrame && next.timeFrame.state !== SET) next.timeFrame.suggestion = { value: p.timeFrame.value, reason: p.timeFrame.reason };
   next.pick = p.pick && pickStillValid(next, p.pick, ctx) ? structuredClone(p.pick) : null;
+  // §B13 T-5: an asked time-frame pick that lands is the newer answer — the older suggestion goes, so the confirm carries
+  // it; §B14 Q-1 (b): it lands as the suggestion too, so the newest answer survives the next step (which replaces the pick)
+  if (next.pick?.part === 'timeFrame') next.timeFrame.suggestion = { value: next.pick.value, reason: next.pick.reason };
   if (p.goal === 'find_names' && next.names.state !== SET) next.names.blocked = ctx.supported.length === 0 ? 'no_listed_company' : null;
   next.rev = card.rev + 1;
   return next;

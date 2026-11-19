@@ -1,0 +1,142 @@
+{
+  "recordedAt": "2026-11-18T17:11:51.373Z",
+  "key": "b5:build_why",
+  "goal": "build_why",
+  "part": null,
+  "shape": {
+    "goal": "build_why",
+    "part": null
+  },
+  "model": "claude-sonnet-5-5",
+  "modelIds": {
+    "step": "claude-sonnet-5-5",
+    "frame": "claude-haiku-5-5"
+  },
+  "ok": true,
+  "reason": null,
+  "stopReason": "end_turn",
+  "category": null,
+  "apiError": null,
+  "attempts": 1,
+  "elapsedMs": 9111,
+  "usage": {
+    "input": 7584,
+    "output": 1009
+  },
+  "costUsd": 0.025258,
+  "readAt": "2026-11-17T15:00:00.000Z",
+  "output": {
+    "reply": "Nvidia's own results show data centers are most of its revenue, and the cloud spenders that drive that demand plan to keep raising spending. The main risk is that big buyers also design their own chips; I propose a business-condition exit and a positional time frame.",
+    "findings": [
+      {
+        "tempId": "t1",
+        "kind": "earnings_fact",
+        "fact": "Nvidia said its data-center segment, which sells accelerators and systems to cloud companies, was the large majority of its revenue last quarter.",
+        "symbolCandidate": "NVDA",
+        "companyName": "NVIDIA Corporation",
+        "support": {
+          "kind": "retrieval",
+          "index": 0,
+          "from": [],
+          "reason": null
+        },
+        "at": null,
+        "supersedes": null
+      },
+      {
+        "tempId": "t2",
+        "kind": "relationship",
+        "fact": "Nvidia named its largest customers as the big cloud companies.",
+        "symbolCandidate": "NVDA",
+        "companyName": "NVIDIA Corporation",
+        "support": {
+          "kind": "retrieval",
+          "index": 0,
+          "from": [],
+          "reason": null
+        },
+        "at": null,
+        "supersedes": null
+      },
+      {
+        "tempId": "t3",
+        "kind": "coverage",
+        "fact": "Several of the largest cloud companies design their own AI chips and use them alongside the accelerators they buy.",
+        "symbolCandidate": null,
+        "companyName": null,
+        "support": {
+          "kind": "retrieval",
+          "index": 1,
+          "from": [],
+          "reason": null
+        },
+        "at": null,
+        "supersedes": null
+      },
+      {
+        "tempId": "t4",
+        "kind": "coverage",
+        "fact": "The largest cloud companies said they plan to keep raising AI data-center spending next year.",
+        "symbolCandidate": null,
+        "companyName": null,
+        "support": {
+          "kind": "retrieval",
+          "index": 2,
+          "from": [],
+          "reason": null
+        },
+        "at": null,
+        "supersedes": null
+      }
+    ],
+    "why": {
+      "shared": "cloud companies keep raising AI data-center spending, and most of it goes to accelerator chips",
+      "reasons": [
+        {
+          "companyName": "NVIDIA Corporation",
+          "symbolCandidate": "NVDA",
+          "text": "Data centers are most of its revenue, and its largest customers are the big cloud companies whose spending plans keep rising.",
+          "refs": [
+            "t1",
+            "t2",
+            "t4"
+          ]
+        }
+      ],
+      "against": {
+        "text": "Several large cloud buyers design their own AI chips and use them alongside bought accelerators, which could cut what they buy from Nvidia.",
+        "refs": [
+          "t3"
+        ]
+      }
+    },
+    "wrongIfOptions": [
+      {
+        "text": "the largest cloud companies cut their AI data-center spending plans",
+        "refs": [
+          "t4"
+        ]
+      },
+      {
+        "text": "cloud customers shift most of their AI chip purchases to chips they design themselves",
+        "refs": [
+          "t3"
+        ]
+      },
+      {
+        "text": "Nvidia's data-center segment stops being the large majority of its revenue",
+        "refs": [
+          "t1"
+        ]
+      }
+    ],
+    "timeFramePick": {
+      "horizon": "positional",
+      "reason": "Spending plans run through next year; this thesis needs a few quarters to show in results."
+    },
+    "pick": {
+      "value": "the largest cloud companies cut their AI data-center spending plans",
+      "reason": "It targets the demand your thesis rests on and is checkable in the buyers' own spending statements."
+    }
+  }
+}

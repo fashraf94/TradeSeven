@@ -100,6 +100,12 @@ describe('§9.1 copy table', () => {
       ...Object.entries(INTRADAY_REASON_COPY).filter(([code, p]) => p.length > 8 && p !== code).map(([, p]) => p),
       ...Object.values(INTRADAY_INDICATOR_LABELS),
     ];
+    // Another copy table may carry the same WORDS for its own concept — named here by file and phrase, each pair
+    // required to be found exactly once (a stale entry fails). The Chart view's read: an absent sector rank reads
+    // "no reading" (build prompt of 18 Nov 2026 §6, Claude Design round 6), in its own copy table, which
+    // src/components/Research/Sheet/sheetCopy.honesty.test.jsx holds to its own terms.
+    const ELSEWHERE = [['src/components/Research/ChartRead/chartReadCopy.js', 'no reading']];
+    const seen = [];
     const offenders = [];
     const walk = (dir) => {
       for (const ent of readdirSync(dir)) {
@@ -109,11 +115,17 @@ describe('§9.1 copy table', () => {
         if (!/\.(js|jsx)$/.test(ent) || /\.test\.(js|jsx)$/.test(ent)) continue;
         if (abs.endsWith('intradayDiagnosticCopy.js')) continue;
         const src = readFileSync(abs, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-        for (const p of phrases) if (src.includes(`'${p}'`) || src.includes(`"${p}"`) || src.includes(`\`${p}\``)) offenders.push(`${path.relative(REPO, abs)}: ${p}`);
+        const rel = path.relative(REPO, abs).split(path.sep).join('/');
+        for (const p of phrases) {
+          if (!(src.includes(`'${p}'`) || src.includes(`"${p}"`) || src.includes(`\`${p}\``))) continue;
+          if (ELSEWHERE.some(([f, q]) => f === rel && q === p)) { if (!seen.some(([f, q]) => f === rel && q === p)) seen.push([rel, p]); continue; }
+          offenders.push(`${rel}: ${p}`);
+        }
       }
     };
     walk(path.join(REPO, 'src'));
     walk(path.join(REPO, 'api'));
     expect(offenders).toEqual([]);
+    expect(seen).toEqual(ELSEWHERE); // every named exemption is still in use, and nothing else is exempt
   });
 });

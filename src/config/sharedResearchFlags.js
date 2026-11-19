@@ -70,7 +70,8 @@ export const SHARED_RESEARCH_BUILDER_MODES = Object.freeze(['off', 'on']);
  * RUNWAY: 'off' ships with B3 (the server, dark) and stays 'off' through B4 (the
  * client, dark); then one founder PR flips it to 'on' with its pin, after B4
  * merges (§B9). Never a build PR.
+ * 'on' from 2026-11-18 (this PR), after B3 #1083, B4 #1086 and B5 #1089. Rollback: back to 'off' with its pin.
  * ROLLBACK: move the literal back to 'off' with its pin: new investigations open as ledgers; open builder sessions keep working.
  */
 // Pinned by: sharedResearchFlags.test.js (the pin and this value move together — BUILD_RULES §2).
-export const SHARED_RESEARCH_BUILDER_MODE = 'off';
+export const SHARED_RESEARCH_BUILDER_MODE = 'on';
