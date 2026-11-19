@@ -1052,11 +1052,18 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
     // The holding's own key (upper case), whatever case a feed row carries — the id is normalised the same way.
     unresolved.add(upper(first.ticker));
     const open = ambiguity.get(id);
-    const receipt = open ? observe(open, group) : recordAmbiguity({
+    // (AR2-IR-3: a held record of this id — the feed's, or a founder's coverage row — is one more payload seen: kept, so
+    // the founder can still choose it. AR2-IR-5: each payload once.)
+    const heldOfId = (next.holdings[upper(first.ticker)]?.heldActions || []).filter((r) => r.actionId === id && r.founderRuling?.kind !== 'conflict');
+    const firstRows = [];
+    for (const row of [...heldOfId.map((r) => rowOfPayload(r, r.heldOn ?? null)), ...group.map((row) => rowOfPayload(row, null))]) {
+      if (!firstRows.some((x) => actionPayloadOf(x) === actionPayloadOf(row))) firstRows.push(row);
+    }
+    const receipt = open ? observe(open, [...heldOfId, ...group]) : recordAmbiguity({
       actionId: id, type: first.type, ticker: first.ticker, effectiveDate: first.effectiveDate, applied: false, reason: CONFLICTING_ACTION,
       entitled: !notEntitledIds.has(id),
-      rows: group.map((row) => rowOfPayload(row, null)), seenOn: date,
-      kinds: kindsOf(null, group.map((row) => rowOfPayload(row, null)), 'conflict'),
+      rows: firstRows, seenOn: date,
+      kinds: kindsOf(null, firstRows, 'conflict'),
     }, 'conflict');
     conflicts.push(receipt);
   }
@@ -1152,7 +1159,16 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
   const redateMatchOf = (action, sym, { unsettledOnly = false } = {}) => {
     if (isFounderAction(action)) return null; // the founder applied it (resolve_hold): not a re-date
     const settledNow = settledIdsOf(next);
-    const sameKind = (r) => r?.type === action.type && upper(r.ticker) === sym;
+    // (AR2-IR-6: a holding renamed from an older ticker owns that ticker's records too — a row the vendor re-lists under
+    // the new ticker matches them; before, a dividend ambiguous under the old ticker was paid when re-listed under the new.)
+    const aliases = new Set([sym]);
+    for (let grew = true; grew;) {
+      grew = false;
+      for (const x of next.corporateActionReceipts || []) {
+        if (x?.type === 'ticker_change' && x.applied === true && aliases.has(upper(x.renamedTo)) && !aliases.has(upper(x.ticker))) { aliases.add(upper(x.ticker)); grew = true; }
+      }
+    }
+    const sameKind = (r) => r?.type === action.type && aliases.has(upper(r.ticker));
     const pool = [];
     for (const r of next.corporateActionReceipts || []) {
       if (!sameKind(r)) continue;
@@ -1537,7 +1553,10 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
       candidates.push({ type: 'ticker_change', ticker: sym, renamedTo: record.to, effectiveDate: record.effectiveDate, actionId: record.actionId });
     }
     candidates.sort((a, b) => (a.effectiveDate + a.actionId).localeCompare(b.effectiveDate + b.actionId));
-    const wait = new Set([...(deferRenames || []), ...unsettledShareBasisSymbols(next, actionsBySymbol, { date })]);
+    // (AR2-IR-2: and while ITS SYMBOL has any open ambiguity on this ledger — a cash conflict too. Renamed first, the
+    // founder's ruling on the old symbol's record could reach no holding: closed `moot`, the money owed unpayable.)
+    const ambiguousSymbols = openAmbiguities(next).filter((r) => r.type !== 'ticker_change').map((r) => upper(r.ticker));
+    const wait = new Set([...(deferRenames || []), ...unsettledShareBasisSymbols(next, actionsBySymbol, { date }), ...ambiguousSymbols]);
     for (const action of candidates) {
       const from = upper(action.ticker);
       const to = upper(action.renamedTo);
@@ -1566,7 +1585,13 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
       }
       const { deferredRename: waited = null, ...plain } = holding;
       const out = applyCorporateAction({ positions: { ...next.holdings, [from]: plain }, cash: next.cash }, action);
-      if (!out.ok) { unresolved.add(from); continue; }
+      if (!out.ok) {
+        unresolved.add(from);
+        // (AR2-IR-1: the founder's rename the applier refuses — a target this ledger already holds — is a refusal as
+        // T2D-10's are: the ruling closes with its reason and the record takes another, never left pending for good.)
+        if (action.founderRuling?.kind === 'conflict') founderRefusals.push({ actionId: action.actionId, recordId: action.founderRuling.recordId ?? null, requestKey: action.founderRuling.requestKey ?? null, ticker: from, reason: out.reason ?? 'rename_refused' });
+        continue;
+      }
       next.holdings = out.positions;
       next.appliedActionIds.push(action.actionId);
       const deferral = waited && waited.actionId === action.actionId ? { deferred: true, deferredOn: waited.deferredOn } : {};

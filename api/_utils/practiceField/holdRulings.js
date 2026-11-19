@@ -205,6 +205,8 @@ export function planHoldRuling(idea, { kind, recordId, decision, ratio, payload,
       chosen = recorded.find((p) => samePayload(p, payloadOf(payload))) ?? null;
       if (chosen === null) return { error: 'payload_not_recorded', status: 422 };
       if (unrepresentableOn(idea, ledgers, upper(r.ticker), chosen.ratio)) return { error: 'ruling_unrepresentable', status: 422 };
+      // (AR2-IR-1: a rename into a ticker a ledger it names already holds can never apply — refused when it is made.)
+      if (chosen.renamedTo != null && ledgers.some((f) => Object.hasOwn(idea?.[f]?.holdings || {}, upper(chosen.renamedTo)))) return { error: 'ruling_unrepresentable', status: 422 };
     }
     return {
       ruling: {

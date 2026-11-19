@@ -770,3 +770,124 @@ describe('the S-6 soak\'s findings', () => {
     expect(rowOf(c, 4).fullQuality).toBe(false);
   });
 });
+
+// ── AR2-IR: the independent refuter over the fixes nothing had reviewed (e35434e0, b040987d, SOAK-1) — each probe a row ──
+
+describe('AR2-IR — the independent refuter on the unreviewed fixes: each probe as a row', () => {
+  const ren = (i, to) => ({ type: 'ticker_change', ticker: 'AAPL', renamedTo: to, effectiveDate: S[i], source: 'eodhd' });
+  const qxa = (p = 100, a = [], ax = []) => ({ ...q(p, a), AAPX: { price: p, marketCap: 3e12, corporateActions: ax }, AAPY: { price: 120, marketCap: 3e12 } });
+  const closeXA = async (c, i, p = 100, a = [], ax = []) => { const out = await closeOn(c.db, c.bookId, S[i], qxa(p, a, ax)); recon(c); return out; };
+  const ID1 = `cash_dividend_AAPL_${S[1]}`;
+  const RID = `ticker_change_AAPL_${S[1]}`;
+
+  it('AR2-IR-1: a rename ruling into a ticker a named ledger already holds is refused when it is made (422) — the record takes another', async () => {
+    const c = await start();
+    await close(c, 0);
+    await closeXA(c, 1, 100, [ren(1, 'AAPX'), ren(1, 'MSFT')]);
+    expect(await rule(c, { kind: 'conflict', recordId: RID, decision: 'payload', payload: { renamedTo: 'MSFT' } }, 'ir1', false)).toMatchObject({ status: 422, body: { error: 'ruling_unrepresentable' } });
+    expect((await rule(c, { kind: 'conflict', recordId: RID, decision: 'payload', payload: { renamedTo: 'AAPX' } }, 'ir1b')).status).toBe(200);
+    await closeXA(c, 2);
+    expect(Object.keys(ideaOf(c).ledger.holdings).sort()).toEqual(['AAPX', 'MSFT']);
+    expect(Object.keys(ideaOf(c).comparisonLedger.holdings).sort()).toEqual(['AAPX', 'MSFT']);
+  });
+
+  it('AR2-IR-2: a clean rename WAITS while its symbol has an open dividend conflict — the founder\'s ruling then pays the holding it was made for, and the rename follows', async () => {
+    const c = await start();
+    await close(c, 0);
+    await closeXA(c, 1, 100, [div(1, 1), div(1, 2)]);
+    await closeXA(c, 2, 100, [ren(2, 'AAPX')]);
+    expect(Object.keys(ideaOf(c).ledger.holdings).sort()).toEqual(['AAPL', 'MSFT']);
+    expect(ideaOf(c).ledger.holdings.AAPL.deferredRename).toMatchObject({ to: 'AAPX' });
+    expect((await rule(c, { kind: 'conflict', recordId: ID1, decision: 'payload', payload: { amount: 1 } }, 'ir2')).status).toBe(200);
+    await closeXA(c, 3);
+    const idea = ideaOf(c);
+    expect(divs(idea)).toEqual([99.97, 99.97]);
+    expect(Object.keys(idea.ledger.holdings).sort()).toEqual(['AAPX', 'MSFT']);
+    expect(idea.founderRulings.find((r) => r.requestKey === 'ir2')).toMatchObject({ appliedOn: S[3] });
+    expect(idea.founderRulings.find((r) => r.requestKey === 'ir2').outcome).toBeUndefined();
+  });
+
+  it('AR2-IR-3: a conflict formed in one close keeps the payload of a row the holding HOLDS of that id (the founder\'s coverage row) — the founder can still choose it', async () => {
+    const c = await start();
+    await close(c, 0);
+    await uncoveredClose(c, 1, 100 / 1.5, [spl(1, '3/2'), spl(1, '5/4')]);
+    await c.db.doc('practiceFieldCaBackfill/AAPL').set({ schemaVersion: 1, symbol: 'AAPL', from: S[1], to: S[1], failed: true, actions: [div(1, 1)], calls: 2, fetchedAt: '2026-11-18T23:00:00.000Z', source: 'idea_book_backfill' });
+    await rule(c, { kind: 'coverage_gap', recordId: `ca_coverage_gap_AAPL_${S[0]}`, decision: 'row', actionId: ID1 }, 'ir3');
+    await close(c, 2, 100 / 1.5, [spl(1, '3/2'), spl(1, '5/4')]);
+    await close(c, 3, 100 / 1.5, [spl(1, '3/2'), spl(1, '5/4'), div(1, 2), div(1, 3)]);
+    expect(unsettledConflicts(ideaOf(c).ledger).find((r) => r.actionId === ID1).rows.map((r) => r.amount)).toEqual([1, 2, 3]);
+    expect((await rule(c, { kind: 'conflict', recordId: ID1, decision: 'payload', payload: { amount: 1 } }, 'ir3b')).status).toBe(200);
+    await rule(c, { kind: 'conflict', recordId: `split_AAPL_${S[1]}`, decision: 'payload', payload: { ratio: 1.5 } }, 'ir3c');
+    await close(c, 4, 100 / 1.5);
+    expect(divs(ideaOf(c))).toEqual([149.96, 149.96]);
+  });
+
+  it('AR2-IR-4 (the stricter hold the founder accepted, FQ-8): a payload the founder dismissed by confirming the ruling, re-dated later, is a possible re-date — held, not paid', async () => {
+    const c = await start();
+    await close(c, 0);
+    await close(c, 1, 100, [div(1, 1), div(1, 2)]);
+    await rule(c, { kind: 'conflict', recordId: ID1, decision: 'payload', payload: { amount: 1 } }, 'ir4');
+    await close(c, 2, 100, [div(1, 1), div(1, 2)]);
+    await close(c, 3, 100, [div(1, 3)]);
+    await rule(c, { kind: 'conflict', recordId: ID1, decision: 'payload', payload: { amount: 1 } }, 'ir4b');
+    await close(c, 4);
+    expect(rowOf(c, 4).fullQuality).toBe(true);
+    await close(c, 5, 100, [div(5, 3)]);
+    const idea = ideaOf(c);
+    expect(divs(idea)).toEqual([99.97, 99.97]);
+    expect(unsettledRedates(idea.ledger).map((r) => [r.actionId, r.redateOf])).toEqual([[`cash_dividend_AAPL_${S[5]}`, ID1]]);
+    expect(rowOf(c, 5).fullQuality).toBe(false);
+  });
+
+  it('AR2-IR-5: a founder coverage row and the same payload from the feed are one payload on the record', async () => {
+    const c = await start();
+    await close(c, 0);
+    await uncoveredClose(c, 1, 100, []);
+    await c.db.doc('practiceFieldCaBackfill/AAPL').set({ schemaVersion: 1, symbol: 'AAPL', from: S[1], to: S[1], failed: true, actions: [div(1, 1)], calls: 2, fetchedAt: '2026-11-18T23:00:00.000Z', source: 'idea_book_backfill' });
+    await rule(c, { kind: 'coverage_gap', recordId: `ca_coverage_gap_AAPL_${S[0]}`, decision: 'row', actionId: ID1 }, 'ir5');
+    await close(c, 2, 100, [div(1, 1), div(1, 2)]);
+    expect(unsettledConflicts(ideaOf(c).ledger).find((r) => r.actionId === ID1).rows.map((r) => r.amount)).toEqual([1, 2]);
+  });
+
+  it('AR2-IR-6: a dividend re-listed under the RENAMED ticker is matched against the old ticker\'s records — never paid twice', async () => {
+    const c = await start();
+    await close(c, 0);
+    await closeXA(c, 1, 100, [div(1, 1)]);
+    await closeXA(c, 2, 100, [ren(2, 'AAPX')]);
+    expect(Object.keys(ideaOf(c).ledger.holdings).sort()).toEqual(['AAPX', 'MSFT']);
+    // The vendor re-lists the S[1] dividend under the new ticker (a new id: cash_dividend_AAPX_S[1]).
+    await closeXA(c, 3, 100, [], [div(1, 1, 'AAPX')]);
+    const idea = ideaOf(c);
+    expect(divs(idea)).toEqual([99.97, 99.97]);
+    expect(unsettledRedates(idea.ledger).map((r) => [r.actionId, r.redateOf])).toEqual([[`cash_dividend_AAPX_${S[1]}`, ID1]]);
+  });
+
+  it('AR2-IR-6 (its first case): an AMBIGUOUS dividend, the rename waiting on it, then the dividend re-listed under the new ticker after `none` — held, never settled', async () => {
+    const c = await start();
+    await close(c, 0);
+    await closeXA(c, 1, 100, [div(1, 1), div(1, 2)]);
+    await closeXA(c, 2, 100, [ren(2, 'AAPX')]);
+    await closeXA(c, 3, 100, [], [div(1, 2, 'AAPX')]);
+    expect(divs(ideaOf(c))).toEqual([0, 0]);
+    expect((await rule(c, { kind: 'conflict', recordId: ID1, decision: 'none' }, 'ir6')).status).toBe(200);
+    await closeXA(c, 4, 100, [], [div(1, 2, 'AAPX')]);
+    await closeXA(c, 5, 100, [], [div(1, 2, 'AAPX')]);
+    const idea = ideaOf(c);
+    expect(Object.keys(idea.ledger.holdings).sort()).toEqual(['AAPX', 'MSFT']);
+    expect(divs(idea)).toEqual([0, 0]);
+    expect(unsettledRedates(idea.ledger).map((r) => r.actionId)).toEqual([`cash_dividend_AAPX_${S[1]}`]);
+    expect(rowOf(c, 5).fullQuality).toBe(false);
+  });
+});
+
+describe('AR2-IR-2, in one close', () => {
+  it('a dividend conflict and a clean rename listed in the SAME close: the rename waits on the conflict formed in that call', async () => {
+    const c = await start();
+    await close(c, 0);
+    await closeOn(c.db, c.bookId, S[1], { ...q(100, [div(1, 1), div(1, 2), { type: 'ticker_change', ticker: 'AAPL', renamedTo: 'AAPX', effectiveDate: S[1], source: 'eodhd' }]), AAPX: { price: 100, marketCap: 3e12 } });
+    recon(c);
+    const idea = ideaOf(c);
+    expect(Object.keys(idea.ledger.holdings).sort()).toEqual(['AAPL', 'MSFT']);
+    expect(idea.ledger.holdings.AAPL.deferredRename).toMatchObject({ to: 'AAPX' });
+  });
+});

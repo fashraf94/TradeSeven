@@ -332,7 +332,8 @@ function closeFilledIdea(idea, {
   const ledgers = LEDGER_FIELDS.map((f) => screen(idea[f], f));
   const holds = observed ? shareBasisHolds(ledgers, LEDGER_FIELDS.map((f) => actionsOf[f]), { date, ruledIds: LEDGER_FIELDS.map(ruledIdsOf), holds: dryHolds }) : null;
   for (const [sym, items] of coverageHolds) holds.set(sym, [...(holds.get(sym) || []), ...items]);
-  const deferRenames = holds ? new Set(holds.keys()) : null;
+  // (AR2-IR-2: a rename waits idea-wide while its symbol has an open ambiguity on any ledger — a cash one too.)
+  const deferRenames = holds ? new Set([...holds.keys(), ...ledgers.flatMap((l) => openAmbiguities(l).filter((r) => r.type !== 'ticker_change' && !LEDGER_FIELDS.some((g) => ruledIdsOf(g)?.has(r.actionId))).map((r) => String(r.ticker || '').trim().toUpperCase()))]) : null;
   // (AR2-C-1: the feed's rows a pending ruling replaces on a ledger reach its applier apart, to be OBSERVED only.)
   const replacedRowsOf = (f) => {
     const replaced = ruled?.replacedIdsByLedger?.[f];
