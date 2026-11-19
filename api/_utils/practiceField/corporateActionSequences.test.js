@@ -67,14 +67,27 @@ export function generate(seed) {
   const steps = [];
   const kinds = new Set();
   let shapeFactor = 1; // split-shaped price moves no row explains
+  // THE ORACLE'S OWN RECORD (AR2-C test integrity): every id the FEED made ambiguous, and the session it did — two
+  // payloads under it, a revision, a re-date, a backfill disagreeing. Kept by the generator, not read from the product.
+  const ambiguousSince = {};
+  const markAmbiguous = (id, i) => { if (!(id in ambiguousSince)) ambiguousSince[id] = i; };
+  let at = 0; // the session the generator is writing
   const add = (type, i, payload) => {
     const row = rowOf(type, S[i], payload);
     const id = deriveActionId(row);
-    const e = feed.get(id) || { type, date: i, payloads: [] };
+    const e = feed.get(id) || { type, date: i, payloads: [], createdAt: at, first: payload };
     if (!e.payloads.includes(payload)) e.payloads.push(payload);
+    // (Ambiguous to the LEDGER only while unsettled: a second payload for an id first listed at an earlier close — which
+    // may have settled it — is a vendor correction of a settled id, T2D-05's class, carried; not marked here.)
+    if (e.payloads.length > 1 && (e.createdAt === at || id in ambiguousSince)) markAmbiguous(id, at);
     feed.set(id, e);
     return id;
   };
+  // C01's chain: an ex-date conflict, a payload added to it a session later, then that NEW payload re-dated.
+  let c01 = null;
+  // C04's chain: an unexplained halving, then an uncovered close with a second halving, the 2:1 that explains the first
+  // and a dividend dated there, then the recovery.
+  const c04At = !clean && r.chance(0.3) ? 1 + r.int(Math.max(1, n - 3)) : -1;
   const recentSame = (type, payload, i) => [...feed.values()].some((e) => e.type === type && e.payloads.includes(payload) && Math.abs(e.date - i) <= WINDOW);
   const priceAt = (i) => {
     // The market price follows every split dated after the entry (the first listed payload of each), times any unexplained move.
@@ -86,10 +99,22 @@ export function generate(seed) {
     const type = r.chance(0.5) ? 'cash_dividend' : 'split';
     add(type, 0, type === 'cash_dividend' ? r.pick(AMOUNTS) : r.pick(RATIOS));
     kinds.add('purchase_on_ex_date');
-    if (!clean && r.chance(0.5)) { add(type, 0, type === 'cash_dividend' ? r.pick(AMOUNTS) : r.pick(RATIOS)); kinds.add('conflict'); }
+    if (!clean && r.chance(0.5)) {
+      const id = add(type, 0, type === 'cash_dividend' ? r.pick(AMOUNTS) : r.pick(RATIOS));
+      kinds.add('conflict');
+      if (feed.get(id).payloads.length > 1 && r.chance(0.6)) c01 = { id, type };
+    }
   }
   for (let i = 0; i < n; i += 1) {
+    at = i;
     const ev = r.next();
+    if (c01 && i === 1) { // the conflict's id listed with a payload it has not had
+      const e = feed.get(c01.id);
+      const pool = c01.type === 'cash_dividend' ? AMOUNTS : RATIOS;
+      const p = pool.find((x) => !e.payloads.includes(x));
+      if (p !== undefined) { e.payloads = [e.payloads[0], p]; c01.fresh = p; kinds.add('c01_chain'); }
+    }
+    if (c01?.fresh !== undefined && i === 2) { add(c01.type, 2, c01.fresh); markAmbiguous(deriveActionId(rowOf(c01.type, S[2], c01.fresh)), 2); }
     if (i > 0 && ev < 0.25) {
       const type = 'cash_dividend';
       const amount = r.pick(AMOUNTS);
@@ -101,7 +126,8 @@ export function generate(seed) {
       if (!clean || !recentSame('split', ratio, i)) { add('split', i, ratio); kinds.add('split'); }
     }
     if (!clean && i > 0) {
-      const ids = [...feed.keys()].filter((id) => i - feed.get(id).date <= WINDOW);
+      // (Only an id a close has already listed: one first listed now with a single payload was never ambiguous.)
+      const ids = [...feed.keys()].filter((id) => i - feed.get(id).date <= WINDOW && feed.get(id).createdAt < i);
       const z = r.next();
       if (z < 0.15) { // a conflict: a new id listed two ways
         const type = r.chance(0.5) ? 'cash_dividend' : 'split';
@@ -112,11 +138,14 @@ export function generate(seed) {
         const id = r.pick(ids); const e = feed.get(id);
         const pool = e.type === 'cash_dividend' ? AMOUNTS : RATIOS;
         const p = pool.find((x) => !e.payloads.includes(x));
-        if (p !== undefined) { if (r.chance(0.5)) e.payloads = [p]; else e.payloads.push(p); kinds.add('revision'); }
+        if (p !== undefined) { if (r.chance(0.5)) e.payloads = [p]; else e.payloads.push(p); if (id in ambiguousSince) markAmbiguous(id, i); kinds.add('revision'); }
       } else if (z < 0.45 && ids.length > 0) { // a re-date: one payload of a listed id under a new date (the old kept or dropped)
         const id = r.pick(ids); const e = feed.get(id);
         if (i > e.date) {
-          add(e.type, i, r.pick(e.payloads));
+          // (A re-date the ledger can match: of a payload an ambiguous record of it holds, or of the id's first payload.)
+          const pick = r.pick(e.payloads);
+          const newId = add(e.type, i, pick);
+          if (id in ambiguousSince || pick === e.first) markAmbiguous(newId, i);
           if (r.chance(0.5)) feed.delete(id);
           kinds.add('redate');
         }
@@ -124,29 +153,33 @@ export function generate(seed) {
         shapeFactor *= r.chance(0.5) ? 0.5 : 2; kinds.add('split_shaped_move');
       }
     }
-    const uncovered = !clean && i > 0 && r.chance(0.18);
+    let priceNow = null;
+    if (c04At >= 0 && i === c04At) { priceNow = priceAt(i) * 0.5; kinds.add('c04_chain'); }
+    if (c04At >= 0 && i === c04At + 1) { add('split', c04At, '2/1'); add('cash_dividend', i, 1.5); priceNow = priceAt(i) * 0.5; }
+    const uncovered = (!clean && i > 0 && r.chance(0.18)) || (c04At >= 0 && i === c04At + 1);
     if (uncovered) kinds.add('coverage_failure');
     const listed = [];
     for (const [, e] of feed) if (i - e.date >= 0 && i - e.date <= WINDOW) for (const p of e.payloads) listed.push(rowOf(e.type, S[e.date], p));
     // A catch-up: this session (and the next one) archived without a close, then closed by the catch-up with a stored
     // backfill that agrees with the archive or disagrees with it on one row.
-    if (!clean && i > 1 && i < n - 1 && r.chance(0.15)) {
+    if (!clean && i > 1 && i < n - 1 && i !== c04At && i !== c04At + 1 && r.chance(0.15)) {
       const mode = listed.length > 0 && r.chance(0.6) ? 'disagree' : 'agree';
       let backfill = listed.map((a) => ({ ...a }));
       if (mode === 'disagree') {
         const k = r.int(backfill.length);
         const a = backfill[k];
         backfill[k] = a.type === 'cash_dividend' ? { ...a, amount: AMOUNTS.find((x) => x !== a.amount) } : { ...a, ratio: ratioOf(RATIOS.find((x) => ratioOf(x) !== a.ratio)) };
+        if (feed.get(deriveActionId(a))?.createdAt === i || deriveActionId(a) in ambiguousSince) markAmbiguous(deriveActionId(a), i);
       }
       if (r.chance(0.3)) backfill = [];
       steps.push({ kind: 'catchup', i, price: priceAt(i), rows: listed, backfill, mode });
       kinds.add(mode === 'disagree' ? 'backfill_disagrees' : 'backfill_agrees');
       continue;
     }
-    steps.push({ kind: 'close', i, price: priceAt(i), rows: listed, uncovered });
+    steps.push({ kind: 'close', i, price: priceNow === null ? priceAt(i) : Math.round(priceNow * 100) / 100, rows: listed, uncovered });
     if (!clean && r.chance(0.35)) { steps.push({ kind: 'rule', pick: r.next(), decision: r.next() }); kinds.add('founder_ruling'); }
   }
-  return { seed, clean, steps, kinds: [...kinds], feed };
+  return { seed, clean, steps, kinds: [...kinds], feed, ambiguousSince };
 }
 
 const quotes = (p, rows) => ({ AAPL: { price: p, marketCap: 3e12, corporateActions: rows }, MSFT: { price: 200, marketCap: 3e12 }, SPY: { price: 500 } });
@@ -159,8 +192,22 @@ const money = (c) => {
   });
 };
 
-/** Every invariant that holds after every close (I-1, I-2, I-3). */
-function checkAfterClose(c, date) {
+/** What the generated histories actually REACHED in the product (counted, asserted at the end). */
+const reached = { payloadAddedLater: 0, redateOfAmbiguous: 0, uncoveredTransition: 0, revisedAfterRuling: 0 };
+function tallyReached(idea) {
+  const l = idea.ledger;
+  const records = l.corporateActionReceipts.filter((r) => r.reason === CONFLICTING_ACTION || r.reason === POSSIBLE_REDATE);
+  if (records.some((r) => r.lastRevisedOn)) reached.payloadAddedLater += 1;
+  const ambiguousIds = new Set(records.map((r) => r.actionId));
+  if (records.some((r) => r.reason === POSSIBLE_REDATE && ambiguousIds.has(r.redateOf))) reached.redateOfAmbiguous += 1;
+  const h = l.holdings.AAPL;
+  const transitions = [...(h?.basisSuspicion?.transitions || []), ...(h?.basisSuspicionHistory || []).flatMap((x) => x.transitions || [])];
+  if (transitions.some((t) => t.uncovered) || (h?.basisSuspicion && h.basisSuspicion.raisedBy?.explainedBy)) reached.uncoveredTransition += 1;
+  if (l.corporateActionReceipts.some((r) => r.reason === 'revised_after_ruling')) reached.revisedAfterRuling += 1;
+}
+
+/** Every invariant that holds after every close (I-1, I-2, I-3). `oracle`: the generator's own record of ambiguous ids. */
+function checkAfterClose(c, date, oracleSince = null) {
   const idea = getIdea(c.db, c.bookId, c.ideaId);
   const book = getBook(c.db, c.bookId);
   // I-3: the book reconciles to its ideas, and the same-stock comparison is tied to the idea (no fill is ever made here).
@@ -181,6 +228,15 @@ function checkAfterClose(c, date) {
     }
   }
   if (LEDGERS.some((f) => openAmbiguities(idea[f]).length > 0)) expect(getRow(c.db, c.bookId, c.ideaId, date).fullQuality, `${date} I-2 quality`).toBe(false);
+  // I-2 against the ORACLE (not the product's own predicate): an id the feed made ambiguous at session s is applied at a
+  // close on or after s only by the founder's ruling.
+  for (const [id, since] of Object.entries(oracleSince || {})) {
+    for (const f of LEDGERS) {
+      for (const x of idea[f].corporateActionReceipts.filter((r) => r.actionId === id && r.applied === true && r.appliedOn >= S[since])) {
+        expect(x.founderRuling, `${date} I-2 oracle ${f} ${id} (ambiguous since ${S[since]}) applied without a ruling`).toBeTruthy();
+      }
+    }
+  }
 }
 
 /** I-5: the book's cursor put back one session and the close run again on the state it left — nothing more moves. */
@@ -265,12 +321,13 @@ async function run(plan) {
       await closeIdeaBook(c.db, c.bookRef, { date, now: closeNowOf(date) });
     }
     expect(getBook(c.db, c.bookId).execState.lastCloseKey, `seed ${plan.seed} closed ${date}`).toBe(date);
-    checkAfterClose(c, date);
+    checkAfterClose(c, date, plan.ambiguousSince);
     if (previous !== null) await rerunAdds(c, date, previous);
-    checkAfterClose(c, date);
+    checkAfterClose(c, date, plan.ambiguousSince);
     previous = date;
   }
   const idea = getIdea(c.db, c.bookId, c.ideaId);
+  if (typeof plan.seed === 'number') tallyReached(idea);
   if (plan.clean) {
     // I-4: complete coverage and no ambiguity — the engine's own applier, over the same rows.
     for (const f of LEDGERS) expect(openAmbiguities(idea[f]).map((r) => [r.reason, r.actionId, r.redateOf ?? null]), `seed ${plan.seed} clean has no ambiguity`).toEqual([]);
@@ -352,7 +409,7 @@ describe('S-6 — the generator reaches every order it is meant to (no vacuous p
     expect(clean.filter((p) => p.kinds.includes('split')).length).toBeGreaterThanOrEqual(4);
     expect(clean.filter((p) => p.kinds.includes('dividend')).length).toBeGreaterThanOrEqual(4);
     expect(clean.filter((p) => p.kinds.includes('purchase_on_ex_date')).length).toBeGreaterThanOrEqual(2);
-    for (const k of ['conflict', 'revision', 'redate', 'coverage_failure', 'backfill_agrees', 'backfill_disagrees', 'split_shaped_move', 'founder_ruling', 'purchase_on_ex_date']) {
+    for (const k of ['conflict', 'revision', 'redate', 'coverage_failure', 'backfill_agrees', 'backfill_disagrees', 'split_shaped_move', 'founder_ruling', 'purchase_on_ex_date', 'c01_chain', 'c04_chain']) {
       expect(count(k), k).toBeGreaterThanOrEqual(3);
     }
   });
@@ -368,4 +425,13 @@ describe('S-6 — I-1 to I-5 after every close of every generated history', () =
   it.each(SEEDS)('seed %i', async (seed) => {
     await run(generate(seed));
   }, 60_000);
+  // (Runs after the seeds, in file order: what the histories REACHED in the product, not only what was generated — AR2-C's
+  // test-integrity finding: a payload added to a record later, a re-date matched against an ambiguous record, a halving
+  // kept at an uncovered close, a ruled id revised. Each class must have been driven at least once.)
+  it('the seeds reached each of the product paths the fixed cases pin (payload kept later, re-date of an ambiguous record, uncovered transition, revision after a ruling)', () => {
+    expect(reached.payloadAddedLater, 'payloadAddedLater').toBeGreaterThanOrEqual(2);
+    expect(reached.redateOfAmbiguous, 'redateOfAmbiguous').toBeGreaterThanOrEqual(2);
+    expect(reached.uncoveredTransition, 'uncoveredTransition').toBeGreaterThanOrEqual(2);
+    expect(reached.revisedAfterRuling, 'revisedAfterRuling').toBeGreaterThanOrEqual(1);
+  });
 });
