@@ -1,20 +1,20 @@
 # Review — setup payoff check (BUILD_RULES §2)
 
-**Date:** 18 Nov 2026 · **Reviewed:** branch `claude/setup-payoff-check` at `278c5edd` (6 files, 2,173 lines against `main`, past the 1,500-line threshold) · **Report:** `docs/audits/20261118_SETUP_PAYOFF_CHECK.md` · **Prompt:** the setup payoff experiment prompt, 18 Nov 2026 (Fable).
+**Date:** 18 Nov 2026 · **Reviewed:** branch `claude/setup-payoff-check` at `278c5edd` (6 files, 2,173 lines against `main`, past the 1,500-line threshold) by three lenses and three refuters; then the changes after it, `278c5edd` → `b2270519`, by a delta reviewer · **Report:** `docs/audits/20261118_SETUP_PAYOFF_CHECK.md` · **Prompt:** the setup payoff experiment prompt, 18 Nov 2026 (Fable).
 
 ## In plain terms
 
-Three independent reviewers checked the scripts and the report, each looking for a different kind of mistake. Every mistake they raised then went to a second reviewer told to prove it wrong. No fixed number moved, and no reviewer found a code error in the measurement. The wording changed where the report claimed more than the data shows. The biggest change: a January–May "worse" result, added after the main results, does not hold up once overlapping three-day windows are allowed for, and the report now says so wherever it uses that result.
+Three independent reviewers checked the scripts and the report, each looking for a different kind of mistake. Every mistake they raised then went to a second reviewer told to prove it wrong. No fixed number moved, and no reviewer found a code error in the measurement. A further reviewer then checked everything changed after the review, the rewritten report included, and found one more point worth the founder's eye: the Fundamental Investor's quota cannot be met at all. The wording changed where the report claimed more than the data shows. The biggest change: a January–May "worse" result, added after the main results, does not hold up once overlapping three-day windows are allowed for, and the report now says so wherever it uses that result.
 
 | Item | Verdict |
 |---|---|
 | Lenses | 3: method fidelity and statistics (L1), data fidelity and rule compliance (L2), the report against the data (L3) |
 | Refuters | 3, one per lens, each told to refute every finding with a reproduction |
-| Findings | 29: **15 confirmed, 12 partly confirmed, 2 refuted** |
+| Findings | 29: **15 confirmed, 12 partly confirmed, 2 refuted**; then 10 from the delta review (1 medium, 3 low, 6 info), all applied |
 | Severity after refutation | **No high.** 2 medium (SP-L3-3 and SP-L3-4, both report wording or disclosure), 16 low, 11 info |
 | Numbers moved | **No fixed figure.** Every value in `summary.json` before the review is identical after it. Additions are labelled as such: session-weighted arm means, the overlap sensitivity, the quota reading (R-10), the Part B base by period, and two integrity counts |
-| Independent confirmations | L1's own code reproduced every headline point estimate and interval, and Parts B to E (below). L2 re-ran shards byte for byte. L3 recomputed every hand-typed number: 0 mismatches |
-| Mutation check | No test was added. The scripts' own gates were mutation-checked: R2's three planted copies now stop (below), and six planted forms trip the grep |
+| Independent confirmations | L1's own code reproduced every headline point estimate and interval, and Parts B to E (below). L2 re-ran shards byte for byte. L3 recomputed every hand-typed number in the report at `278c5edd`: 0 mismatches. The delta reviewer re-checked the rewritten report at `b2270519`: 78 scripted prose assertions and 3 hand-built tables, one rounding (DR-9) |
+| Mutation check | No test was added. The scripts' own gates were mutation-checked: R2's three planted copies now stop (below), and nine planted forms trip the grep |
 | `vite build` | Stops locally at `Rollup failed to resolve import "three"` (`src/components/AgentForm/engine/bloom.js`). `three` is not installed on this machine, a known gap. This branch touches no `src/` file; the Vercel preview build is the real check |
 
 ## Method
@@ -36,8 +36,8 @@ Severity is the refuter's. "Report" means `docs/audits/20261118_SETUP_PAYOFF_CHE
 | SP-L1-4 | The list of post-results changes omits the replaced Part D row | PARTLY ("mixed sources" is wrong; the session sets differed) | info | **Fixed:** the Preamble names it (fetched bars on all 120 sessions, median 49) |
 | SP-L1-5 | "The extra names did worse" was not tested | PARTLY: whole long-window sets L3 and L4 are worse too | low | **Fixed:** the wording is about whole candidate sets: short L3–L5 (and H2); long L2–L4; L5 not |
 | SP-L2-1 | Step 0 ran after the fetch; the prompt says "before anything else"; report l.72 gave the opposite order | CONFIRMED. `fetchLong.mjs` was byte-identical to the committed file when it ran | low | **Disclosed** in the Preamble with times; l.72 corrected. `analyze.mjs` now computes Step 0 before reading anything the fetch produced |
-| SP-L2-2 | `analyze.mjs` trusts the shards' own mismatch counts | CONFIRMED; L2's fix alone would not catch a planted ATR or a stray shard | low | **Fixed** (`7133ec29`, `43beaf0c`). Step 0 compares every compact record with `replay.json`. Each record's limit must equal SMA_fast + 2 × ATR in exact decimal (28,654 and 52,696 checked, 0 differ). Shards merge strictly. R2's three planted copies now stop: ATR × 3 at Step 0; a stray fetched shard as a duplicate symbol; the swapped 17 Nov bar at Step 0 with 86 mismatches. The control passes |
-| SP-L2-3 | The 260 cap is per run folder; the lock is taken after the counter is read | CONFIRMED (a design gap; the 241 checks out independently) | low | **Fixed** (`7133ec29`): the lock is taken first and sits at the check's root, and the cap counts every run folder. Disclosed: the run used `30954dc2`'s version |
+| SP-L2-2 | `analyze.mjs` trusts the shards' own mismatch counts | CONFIRMED; L2's fix alone would not catch a planted ATR or a stray shard | low | **Fixed** (`7133ec29`, `43beaf0c`). Step 0 compares every compact record with `replay.json`. Each record's limit must equal SMA_fast + 2 × ATR in exact decimal (28,654 and 52,696 checked, 0 differ). That ties ATR and SMA_fast only: the swing high and the pattern assessments are not tied (DR-6; disclosed in Step 0). Shards merge strictly. R2's three planted copies now stop: ATR × 3 at Step 0; a stray fetched shard as a duplicate symbol; the swapped 17 Nov bar at Step 0 with 86 mismatches. The control passes |
+| SP-L2-3 | The 260 cap is per run folder; the lock is taken after the counter is read | CONFIRMED (a design gap; the 241 checks out independently) | low | **Fixed** (`7133ec29`, and DR-4 below): the lock is taken first, sits in the run folder's parent and is released on any exit, and the cap counts every run folder beside it (DR-5). Disclosed: the run used `30954dc2`'s version |
 | SP-L2-4 | The write-verb grep misses `.js` / `.cjs` files, Google Cloud clients, raw requests and URLs | CONFIRMED (none of the missed forms exists in the scripts) | info | **Fixed:** it reads the import guard's extension set and refuses those forms. It now calls itself a tripwire, not a proof. Six planted forms trip it |
 | SP-L2-5 | All 86 overlap fact differences come from the stored series' preliminary 17 Nov bar | CONFIRMED; the final bar changes 0 of 1,118 labels, and 24 report lines move in the third decimal | info | **Fixed:** Step 0 and the Limits section say so |
 | SP-L2-6 | The 221 cap works by a slightly different route (no session from the calendar; the replay cannot set its clock) | CONFIRMED | info | **Fixed:** the wording gives both (`storeReplay.mjs:46`, `dailyBarsAdapter.js:97`) |
@@ -85,15 +85,38 @@ Severity is the refuter's. "Report" means `docs/audits/20261118_SETUP_PAYOFF_CHE
   - Every hand-typed number in the report matches `summary.json` (0 mismatches over the bullets, the verdict table, the readings and every Part).
   - Every `file:line` citation says what the report claims.
 
+## The delta review (`278c5edd` → `b2270519`)
+
+The three lenses reviewed `278c5edd`. The scripts then gained new logic, and the report was largely rewritten. One more reviewer, on its own `git archive` of `b2270519`, checked every change against this record.
+- **Prose.** It recomputed the rewritten report's prose from the final `summary.json` (78 scripted assertions and the three hand-built tables).
+- **No fixed figure moved.** It re-ran both `analyze.mjs` versions on copies of the same inputs: all 15,741 pre-review values are identical.
+- **New code.** It reimplemented the block bootstrap independently and confirmed each fix.
+
+Its findings, all applied in the next commit:
+
+| Id | Claim (short) | Severity | Disposition |
+|---|---|---|---|
+| DR-1 | The Fundamental Investor's quota ("at least 5 stocks above 70") cannot be met by any book, since only 2 of the 228 score above 70; its quota "median 2" was arithmetic, not a measurement | medium | **Fixed.** The quota reading records "cannot be met" when fewer than N stocks in the universe pass both rules (100% of mornings for the Fundamental Investor). R-10, founder question 4 and the Part E tables say so. The Speculator and the Capital Preserver are unchanged |
+| DR-2 | "No evidence of a reversal" overclaims: the block interval's upper end only just clears zero | low | **Fixed:** "not robust evidence of a reversal" |
+| DR-3 | "Every candidate did poorly" is unscoped; against G2 no candidate is worse over three sessions | low | **Fixed:** "every candidate's own three-session average was below zero" (short −0.21 to −0.37, long −0.03 to −0.20), and against G2 none is worse over three sessions |
+| DR-4 | `fetchLong.mjs` leaks its lock on a thrown error after the lock is taken (it fails closed) | low | **Fixed:** an exit handler releases it on any exit, an interrupt included |
+| DR-5 | The cap covers run folders under the same parent, not every run folder | info | **Fixed** in wording (report and this record) |
+| DR-6 | The limit identity ties ATR and SMA_fast only; a planted swing high passes Step 0 | info | **Disclosed** in Step 0 and under SP-L2-2. Those facts come from the same re-run, which L2 reproduced byte for byte |
+| DR-7 | The grep misses `node:https`, `undici` and similar imports | info | **Fixed:** they are added, and three planted forms trip it |
+| DR-8 | Windows treats a drive-less `\x` as absolute, so `--run '\FREQ\x'` passes the absolute-path check | info | **Fixed:** on Windows `--run` needs a drive letter or a UNC path; `\FREQ\y` is refused before any folder is made |
+| DR-9 | The long confirmation's "+0.15" double-rounds 0.1447 | info | **Fixed:** "+0.145" |
+| DR-10 | This record's "0 mismatches" refers to the report at `278c5edd` | info | **Fixed** (the table above) |
+
 ## After the review
 
 - `7133ec29`: script fixes for SP-L2-1 to SP-L2-4 and SP-L2-9, the sensitivity, the session-weighted means, the Part B rows and the per-table session counts.
 - `43beaf0c`: the limit identity and strict merging (R2's acceptance cases), the quota reading, and "too few sessions".
+- The delta-review commit: DR-1, DR-4, DR-7 and DR-8 in the scripts, and the wording fixes.
 - The report: every fix in the table above.
 - `summary.json`: every value present before the review is identical after it.
 
 ## Housekeeping
 
-- **A stray empty folder `C:\FREQ\x` exists.** Lens L2 created it with a mis-quoted `--run` while testing the run-folder guard. Its own removal was blocked by the permission check, so it is left for the founder to delete; it holds nothing. `--run` now refuses a relative path.
+- **A stray empty folder `C:\FREQ\x` exists.** Lens L2 created it with a mis-quoted `--run` while testing the run-folder guard. Its own removal was blocked by the permission check, so it is left for the founder to delete; it holds nothing. `--run` now refuses a relative or drive-less path.
 - **The run folder's `summary.json` changed during the review.** A determinism re-run at 17:03 CST rewrote it with identical bytes.
 - **R1 and R2 edited their own snapshots' `lib.mjs`,** pointing it at their data copies, so those snapshots are not pristine archives. R2 wrote five stray script copies to `/tmp` by mistake and deleted them.

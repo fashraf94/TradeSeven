@@ -132,7 +132,8 @@ export const argOf = (argv, flag) => { const i = argv.indexOf(flag); return i >=
  */
 export function runDirOf(argv) {
   const given = argOf(argv, '--run');
-  if (given && !path.isAbsolute(given)) die(`--run must be an absolute path: ${given}`);
+  // Absolute with a drive (or a UNC path): Windows treats a drive-less "\x" as absolute too (delta review DR-8).
+  if (given && !(process.platform === 'win32' ? /^(?:[A-Za-z]:[\\/]|\\\\)/.test(given) : path.isAbsolute(given))) die(`--run must be an absolute path with a drive: ${given}`);
   const dir = path.resolve(given || DEFAULT_RUN_DIR);
   const real = (p) => { try { return realpathSync.native(p); } catch { return p; } };
   if (insideAny(dir, repoRoots(PROJECT_ROOT)) || insideAny(real(dir), repoRoots(PROJECT_ROOT))) die(`the run folder must be outside the repository: ${dir}`);
@@ -150,7 +151,9 @@ export function writeJson(file, value) {
 const WRITE_VERB_RE = /\.(set|update|create|delete|add|commit|batch|runTransaction|bulkWriter|recursiveDelete)\s*\(/g;
 const ADMIN_SDK_RE = /['"`](?:firebase-admin|@google-cloud\/)/;
 const PROVIDER_RE = /['"`/]eodhdDailyWindow/;
-const NETWORK_RE = /\bfetch\s*\(|fetchDaily[O]HLCV|\bhttps?:\/\//; // a raw request, the cache's own fetcher, a URL (spelled so it cannot match itself)
+// A global fetch call, the cache's own fetcher, a literal URL, or an import of Node's http(s) or a common HTTP client
+// (delta review DR-7). Spelled so it cannot match itself.
+const NETWORK_RE = /\bfetch\s*\(|fetchDaily[O]HLCV|\bhttps?:\/\/|['"`](?:node:)?https?['"`]|['"`](?:undici|axios|node-fetch|got)['"`]/;
 const STORE_NAME_RE = /['"`/]setup[E]vidence(?:Claims)?['"`/]/; // the import guard's own pattern, spelled so it cannot match itself
 const CODE_RE = /\.(js|jsx|mjs|cjs|mts|cts|ts|tsx)$/; // the import guard's extension set
 

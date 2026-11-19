@@ -137,7 +137,7 @@ function partE(E, name) {
     out.push(table(['Archetype (gate)', ...P.map((p) => PN[p])], Object.entries(E.readings[rd]).map(([g, x]) => [g, ...P.map((p) => `${x[p].median} · ${pc(x[p].all7)} · ${pc(x[p].atLeast4)} · ${pc(x[p].none)}`)])));
   }
   out.push('\n**Post review — the code\'s levels read as quotas over the seven slots** (literal reading; not a fixed figure; median · all seven · at least four · none).\n');
-  out.push(table(['Archetype (quota)', ...P.map((p) => PN[p])], [['Speculator (at least 3 with ATR percentile > 0.80)', 'speculator'], ['Fundamental Investor (at least 5 > 70, none < 40)', 'fundamental'], ['Capital Preserver (at least 5 > 60, none with ATR percentile > 0.75; sectors not applied)', 'preserver']].map(([label, k]) => [label, ...P.map((p) => { const x = E.quotaReading[k][p]; return `${x.median} · ${pc(x.all7)} · ${pc(x.atLeast4)} · ${pc(x.none)}`; })])));
+  out.push(table(['Archetype (quota)', ...P.map((p) => PN[p])], [['Speculator (at least 3 with ATR percentile > 0.80)', 'speculator'], ['Fundamental Investor (at least 5 > 70, none < 40)', 'fundamental'], ['Capital Preserver (at least 5 > 60, none with ATR percentile > 0.75; sectors not applied)', 'preserver']].map(([label, k]) => [label, ...P.map((p) => { const x = E.quotaReading[k][p]; return x.median === null ? `cannot be met (no book holds the quota on ${pc(x.cannotBeMet)} of mornings)` : `${x.median} · ${pc(x.all7)} · ${pc(x.atLeast4)} · ${pc(x.none)}`; })])));
   out.push('\nContrarian: not applicable (no detector).');
   return out.join('\n');
 }

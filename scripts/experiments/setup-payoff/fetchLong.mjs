@@ -49,7 +49,12 @@ async function main() {
   const root = path.dirname(runDir);
   const lockFile = path.join(root, 'requests.lock');
   let lock = null;
-  if (!planOnly) { try { lock = openSync(lockFile, 'wx'); } catch { die(`another fetch holds ${lockFile}`); } }
+  if (!planOnly) {
+    try { lock = openSync(lockFile, 'wx'); } catch { die(`another fetch holds ${lockFile}`); }
+    // Released on any exit after this point, a thrown error or an interrupt included (delta review DR-4).
+    process.on('exit', () => { if (lock !== null) { try { closeSync(lock); unlinkSync(lockFile); } catch { /* already gone */ } } });
+    process.on('SIGINT', () => process.exit(130));
+  }
   const release = () => { if (lock !== null) { closeSync(lock); unlinkSync(lockFile); lock = null; } };
   const counterFile = path.join(runDir, 'requests.json');
   const counter = existsSync(counterFile) ? readJson(counterFile) : { cap: CAP, made: 0, from: FROM, to: TO, symbols: symbols.length, log: [] };

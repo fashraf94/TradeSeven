@@ -688,7 +688,10 @@ async function main() {
       // must pass the per-name rule (the Fundamental Investor's "exclude below 40", the Capital Preserver's "avoid ATR
       // percentile above 0.75"); when fewer than N valid names meet the quota level, the missing ones must be names with
       // no setup, so valid setups fill at most 7 - (N - met). The Capital Preserver's sector rule is not applied here.
+      // A quota that no book can meet (fewer than N names in the whole universe pass both rules, on today's scores) is
+      // recorded as null, "cannot be met", never as a fill (delta review DR-1).
       const quotaFill = (perName, meets, quota) => {
+        if (U.filter((s) => perName(s) && meets(s)).length < quota) return null;
         const pn = sets.literal.filter(perName);
         const met = pn.filter(meets).length;
         return met >= quota ? Math.min(D.slots, pn.length) : Math.min(pn.length, D.slots - (quota - met));
@@ -701,8 +704,9 @@ async function main() {
     for (const [k, xs0] of Object.entries(quota)) {
       E.quotaReading[k] = {};
       for (const p of PERIODS) {
-        const xs = xs0.filter((_, j) => p === 'whole' || morningPeriod[j] === p);
-        E.quotaReading[k][p] = { mornings: xs.length, median: median(xs), all7: share(xs.filter((v) => v >= D.slots).length, xs.length), atLeast4: share(xs.filter((v) => v >= 4).length, xs.length), none: share(xs.filter((v) => v === 0).length, xs.length) };
+        const all = xs0.filter((_, j) => p === 'whole' || morningPeriod[j] === p);
+        const xs = all.filter((v) => v !== null);
+        E.quotaReading[k][p] = { mornings: all.length, cannotBeMet: share(all.length - xs.length, all.length), median: median(xs), all7: share(xs.filter((v) => v >= D.slots).length, xs.length), atLeast4: share(xs.filter((v) => v >= 4).length, xs.length), none: share(xs.filter((v) => v === 0).length, xs.length) };
       }
     }
     for (const rd of Object.keys(fills)) {

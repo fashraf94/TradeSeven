@@ -9,13 +9,13 @@ This check counts past price moves on paper. It ignores trading costs and the ga
 - **Not reliably.** The test named in advance compares a fresh Pullback and Resume with uptrending stocks that have no setup, over three sessions.
   - **120-session window: better.** +0.15 units (+0.34%), each session weighted equally.
   - **But confirmation does not confirm.** Development reads better (+0.18); confirmation reads **no clear difference** (+0.08).
-  - **All of 2026: no clear difference** (+0.03 units). Its development period, January to early August, is also no clear difference (−0.03). Its confirmation period, August to November, reads better in units (+0.15) but no clear difference in percent (+0.29%), and sits inside the 120-session window.
+  - **All of 2026: no clear difference** (+0.03 units). Its development period, January to early August, is also no clear difference (−0.03). Its confirmation period, August to November, reads better in units (+0.145) but no clear difference in percent (+0.29%), and sits inside the 120-session window.
 - **It does not beat an ordinary stock.** Against every stock in the universe there is **no clear difference** over three sessions in either window (−0.005 units short, −0.033 across 2026). A fresh setup's own three-session average is about zero (−0.09% short, −0.01% across 2026). Where it beats uptrending names, those names are the ones lagging: on the same sessions they trail every stock by about 0.15 units.
 - **Over one session it is no better.**
   - Against uptrending names: **no clear difference** (−0.032 units short, −0.010 across 2026).
   - Against every stock: the short window reads slightly **worse** (−0.047 units, −0.15%); all of 2026 reads no clear difference (−0.009).
   - Within three sessions, 33% of setups reach +1 unit first and 35% reach −1 unit first. Every stock gives 35% and 32%.
-- **January to May, a row added after the results (post hoc).** The estimate against uptrending names is negative (−0.11 units). It reads worse under the fixed test, but not once the overlap of three-session windows is allowed for (blocks of three: [−0.232, +0.003]), so it is no evidence of a reversal.
+- **January to May, a row added after the results (post hoc).** The estimate against uptrending names is negative (−0.11 units). It reads worse under the fixed test, but not once the overlap of three-session windows is allowed for (blocks of three: [−0.232, +0.003]), so it is not robust evidence of a reversal.
 - **No Trend Breakout candidate qualified.** Even with no extension limit, a valid breakout appears on a median of **1** name a morning (none on 47% of mornings); the rule asked for 3. What binds is the pattern itself and the uptrend, not the limit. In the short window the looser candidate sets did worse than every stock over three sessions (L3–L5, about −0.3 units).
 - **The archetypes' rules (today's scores, approximate).**
   - Of the 228 stocks, **198** score 40 or more, **125** 50 or more, **30** 60 or more and **2** 70 or more. The Capital Preserver's two conditions pass **16** and the Speculator's **45**.
@@ -40,7 +40,7 @@ This check counts past price moves on paper. It ignores trading costs and the ga
 | Part E | **All seven:** Trend Follower, Fundamental Investor ≥40, Diversifier. **Speculator** 3 (quota reading: all seven on 64%). **Capital Preserver** 1. **Fundamental Investor >70** 0. Medians, literal reading |
 | Requests | **241 EODHD requests** of the 260 cap, 0 failed, outside market hours. No model call. No production read |
 | Rules | New files only. No evaluator, threshold, golden, store, sweep, flag, rule, fenced file or test changed. **No new import-guard entry** |
-| Review (BUILD_RULES §2) | 3 lenses, 3 refuters: **29 findings, 15 confirmed, 12 partly, 2 refuted; no high.** No fixed figure moved; the wording and disclosures changed (the post-hoc January–May row hedged; reading R-10 added). Fixes in `7133ec29`, `43beaf0c` and this report. Record: `…_REVIEW.md` |
+| Review (BUILD_RULES §2) | 3 lenses, 3 refuters: **29 findings, 15 confirmed, 12 partly, 2 refuted; no high.** Then a delta review of every later change: 10 more (1 medium, the Fundamental Investor quota; all applied). No fixed figure moved; the wording and disclosures changed (the post-hoc January–May row hedged; reading R-10 added). Record: `…_REVIEW.md` |
 
 ## Preamble
 
@@ -93,13 +93,13 @@ This check counts past price moves on paper. It ignores trading costs and the ga
 | R-7 | Volatility thirds | Per session: the unit (ATR ÷ close) ranked among that session's stocks |
 | R-8 | Part D ties and coverage | idx = how many of the other 119 sessions are strictly narrower; pct = round(idx ÷ 119 × 100) ≤ 20, the producer's own formula applied along time. A session counts only when all 228 stocks have 120 trailing sessions |
 | R-9 | Splits and dividends in the outcome window | Raw prices. An adjusted-to-raw step above 10% (the evaluator's split rule) excludes the outcome at that horizon. Smaller steps (ex-dividend days) are kept, counted, and dropped in one sensitivity row. That row also drops an ex-dividend day at *t* + 1, which cannot move a return measured from that day's open, so it is conservative. The headline is unchanged (short +0.148) |
-| R-10 | The archetypes' levels in Part E | The code states quotas on the deploy model's 25–35-name shortlist ("at least 3 stocks with ATR percentile above 0.80", `archetypeScoring.js:89`; "at least 5 … above 70", `:91`; "at least 5 … above 60", `:93`), not rules on seven slots. Part E applies each level to every slot, following the prompt's "gates" and the frequency run's overlays. Added after the review: the same levels read as quotas over the seven slots. The Speculator then fills all seven on 64% of short-window mornings (66% long). The Fundamental Investor above 70 never does. The Capital Preserver does on 0% short and 4% long (Part E) |
+| R-10 | The archetypes' levels in Part E | The code states quotas on the deploy model's 25–35-name shortlist ("at least 3 stocks with ATR percentile above 0.80", `archetypeScoring.js:89`; "at least 5 … above 70", `:91`; "at least 5 … above 60", `:93`), not rules on seven slots. Part E applies each level to every slot, following the prompt's "gates" and the frequency run's overlays. Added after the review: the same levels read as quotas over the seven slots. The Speculator then fills all seven on 64% of short-window mornings (66% long). The Capital Preserver does on 0% short and 4% long. The Fundamental Investor's quota cannot be met at all: only 2 of the 228 score above 70 (today's scores), so no book holds 5. The code's own instruction (`:91`) cannot be met even on the shortlist (Part E) |
 
 ## Step 0 — reproduce, then fix the windows
 
 **In plain terms.** The check re-ran the frequency count's own replay and got its numbers exactly. It also fetched a longer price history (the fetch ran first, as the Preamble says) and replayed every 2026 session. On the 120 sessions the two runs share, every verdict matched.
 
-- **The re-run.** The frequency run's stored output drops ATR, the 20-day average, the swing high and the pattern assessments, which Parts A and B need. So `enrich.mjs` re-ran that run's own module over its stored bars for all 241 symbols × 120 sessions, keeping those values beside each record. `analyze.mjs` then compares every compact record with the frequency run's `replay.json`, field for field. It also checks each record's own extension limit against its 20-day average and ATR, rebuilt in exact decimal: 28,654 of 28,654 stored records and 52,696 of 52,696 fetched agree. That ties the two facts `replay.json` does not carry to one it does.
+- **The re-run.** The frequency run's stored output drops ATR, the 20-day average, the swing high and the pattern assessments, which Parts A and B need. So `enrich.mjs` re-ran that run's own module over its stored bars for all 241 symbols × 120 sessions, keeping those values beside each record. `analyze.mjs` then compares every compact record with the frequency run's `replay.json`, field for field. It also checks each record's own extension limit against its 20-day average and ATR, rebuilt in exact decimal: 28,654 of 28,654 stored records and 52,696 of 52,696 fetched agree. That ties the two facts `replay.json` does not carry to one it does. The swing high and the pattern assessments (Part B's base) are not tied to `replay.json`; they come from the same re-run, which the review reproduced byte for byte.
 - **The three figures,** recounted from that re-run. `analyze.mjs` stops before any outcome if one differs:
 
 | Check | Expected | Re-run |
@@ -550,7 +550,7 @@ Adjacent sessions' three-session windows overlap, so resampling whole sessions c
 - **What binds.** The pattern is a close at the 20-day high on heavy volume. It is satisfied on 346 stock-days in any regime, and on only 189 in an uptrend, so the pattern and the uptrend bind before any limit does.
 - **How limits are computed.** Each candidate's limit is rebuilt from the record's own facts, in exact decimal, as the evaluator builds its guard (`tfSetupV1.js:242`).
 - **Self-check.** L0 reproduces the record's own extension result on **189 of 189** (465 of 465 long), with the limit equal to the stored one on every record. It gives exactly **31** valid breakouts (70 long).
-- **Every candidate did poorly.** Three-session averages run from −0.21 to −0.37 units in the short window, today's limit included (−0.244). The label against every stock reaches "worse" only where events are numerous:
+- **Every candidate's own three-session average was below zero.** In the short window they run from −0.21 to −0.37 units, today's limit included (−0.244); across 2026 from −0.03 to −0.20. Against uptrending names with no setup, none is worse over three sessions in either window. Against every stock, the label reaches "worse" only where events are numerous:
   - Short window: L3 −0.301, L4 −0.315, L5 −0.322, H2 −0.238.
   - Long window: L2 −0.209, L3 −0.177, L4 −0.177; L5 is no clear difference (−0.119).
   - The names a looser limit adds were not tested on their own.
@@ -990,7 +990,7 @@ Whole window; each cell is the median slots filled · share of mornings filling 
 | Diversifier (5 sectors) | 7 · 88.8% · 0% | 7 · 89.4% · 0% | 7 · 51.7% · 0% | 7 · 55.8% · 0% | 7 · 82.8% · 0% | 7 · 83.4% · 0% |
 | Diversifier (code: 7 sectors) | 7 · 66.4% · 0% | 7 · 71.9% · 0% | 5 · 19.8% · 0% | 5 · 24.4% · 0% | 7 · 60.3% · 0% | 7 · 68.2% · 0% |
 | Speculator, quota reading (R-10) | 7 · 63.8% · 0% | 7 · 66.4% · 0% | — | — | — | — |
-| Fundamental Investor, quota reading (R-10) | 2 · 0% · 0% | 2 · 0% · 0% | — | — | — | — |
+| Fundamental Investor, quota reading (R-10) | cannot be met | cannot be met | — | — | — | — |
 | Capital Preserver, quota reading (R-10) | 3 · 0% · 0% | 3 · 4.1% · 0% | — | — | — | — |
 
 <details><summary>Part E, every reading by period, and the quota reading (median · all seven · at least four · none)</summary>
@@ -1044,7 +1044,7 @@ Whole window; each cell is the median slots filled · share of mornings filling 
 | Archetype (quota) | Development | Confirmation | Whole window |
 |---|---|---|---|
 | Speculator (at least 3 with ATR percentile > 0.80) | 7 · 64.9% · 100% · 0% | 7 · 61.5% · 100% · 0% | 7 · 63.8% · 100% · 0% |
-| Fundamental Investor (at least 5 > 70, none < 40) | 2 · 0% · 0% · 0% | 2 · 0% · 0% · 0% | 2 · 0% · 0% · 0% |
+| Fundamental Investor (at least 5 > 70, none < 40) | cannot be met (no book holds the quota on 100% of mornings) | cannot be met (no book holds the quota on 100% of mornings) | cannot be met (no book holds the quota on 100% of mornings) |
 | Capital Preserver (at least 5 > 60, none with ATR percentile > 0.75; sectors not applied) | 3 · 0% · 45.5% · 0% | 3 · 0% · 17.9% · 0% | 3 · 0% · 36.2% · 0% |
 
 Contrarian: not applicable (no detector).
@@ -1098,7 +1098,7 @@ Contrarian: not applicable (no detector).
 | Archetype (quota) | Development | Confirmation | Whole window |
 |---|---|---|---|
 | Speculator (at least 3 with ATR percentile > 0.80) | 7 · 67.4% · 100% · 0% | 7 · 64.4% · 100% · 0% | 7 · 66.4% · 100% · 0% |
-| Fundamental Investor (at least 5 > 70, none < 40) | 2 · 0% · 5.6% · 0% | 2 · 0% · 0% · 0% | 2 · 0% · 3.7% · 0% |
+| Fundamental Investor (at least 5 > 70, none < 40) | cannot be met (no book holds the quota on 100% of mornings) | cannot be met (no book holds the quota on 100% of mornings) | cannot be met (no book holds the quota on 100% of mornings) |
 | Capital Preserver (at least 5 > 60, none with ATR percentile > 0.75; sectors not applied) | 3 · 6.3% · 43.8% · 0% | 3 · 0% · 35.6% · 0% | 3 · 4.1% · 41% · 0% |
 
 Contrarian: not applicable (no detector).
@@ -1114,7 +1114,7 @@ Contrarian: not applicable (no detector).
   - **What:** one long series per symbol, 1 Nov 2024 → 17 Nov 2026, for the frequency run's 241 symbols. Each came back with 512 rows, except CRWV with 413 (listed March 2025).
   - Each place was written to disk before its request.
   - The fetched bars already reach 1 Nov 2024, so a 2025 replay would need the calendar change, not a new fetch.
-- **Hardened after the review.** The script now takes its lock before it reads the counter, and counts the cap across every run folder. The run itself used the version at `30954dc2`. Only one run folder exists, and its 241 log entries match its 241 bar files.
+- **Hardened after the review.** The script now takes its lock before it reads the counter, releases it on any exit, and counts the cap across every run folder beside its own (the same parent folder). The run itself used the version at `30954dc2`; the hardened version has run only with `--plan-only`. Only one run folder exists, and its 241 log entries match its 241 bar files.
 - **Production: no read.** Everything else is the frequency run's local export.
 - **No model call.**
 
@@ -1160,7 +1160,8 @@ Contrarian: not applicable (no detector).
    Which readings do you mean?
 4. **The Capital Preserver and the Fundamental Investor above 70.**
    - A gate on every slot: on a typical morning they fill 1 and 0 of seven slots with valid setups.
-   - Read as quotas: a median of 3 and 2, and almost never all seven.
+   - Read as quotas: the Capital Preserver fills a median of 3 and almost never all seven.
+   - The Fundamental Investor's quota (at least 5 stocks above 70) cannot be met by any book, valid or not: only 2 of the 228 score above 70 (today's scores).
 
    Let them hold names with no setup? Drop the setup requirement for them? Or change their score bars (`archetypeScoring.js`, a fenced file)?
 5. **A longer test.** The two pre-named windows disagree: the short window reads better, all of 2026 no clear difference. A January–May row added afterwards has a negative estimate, though not a robust one. Going back before 2026 needs the market calendar extended (`src/utils/marketCalendar.js:69`, a product change); the bars are already fetched. Is a 2025 replay worth that change before launch?
@@ -1172,7 +1173,7 @@ Contrarian: not applicable (no detector).
 | File | What it does |
 |---|---|
 | `scripts/experiments/setup-payoff/lib.mjs` | `DEFINITIONS` (fixed before results), the run folder, the write-verb grep (a tripwire: it also refuses a store path, a raw request and a Google Cloud client), sessions, the seeded resampling and the labels |
-| `scripts/experiments/setup-payoff/fetchLong.mjs` | The one optional fetch: the cap across run folders, the counter, the lock, the market-hours check |
+| `scripts/experiments/setup-payoff/fetchLong.mjs` | The one optional fetch: the cap across sibling run folders, the counter, the lock, the market-hours check |
 | `scripts/experiments/setup-payoff/enrich.mjs` | Re-runs the frequency run's replay module and keeps each record's facts |
 | `scripts/experiments/setup-payoff/analyze.mjs` | Step 0 (first, against `replay.json` itself), the overlap check, Parts A–E, the post-hoc row, the overlap sensitivity and the quota reading; `summary.json` |
 | `scripts/experiments/setup-payoff/tables.mjs` | Renders `summary.json` as the report's tables (`tables.md`) |
