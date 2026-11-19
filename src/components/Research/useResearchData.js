@@ -756,21 +756,33 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
         result = [...result.slice(0, -1), patched];
       }
     } else if (timeframe === '1D') {
-      // Daily: append if last candle is from a previous day
-      // Parse as local date to avoid UTC-midnight shift
-      // new Date("YYYY-MM-DD") parses as UTC → setHours(0,0,0,0) shifts back a day in US timezones
-      const [ly, lm, ld] = lastDateStr.substring(0, 10).split('-').map(Number);
-      const lastDate = new Date(ly, lm - 1, ld);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      // Daily: append if last candle is from a previous day.
+      let append;
+      let patch;
+      let todayStr;
+      if (!isCrypto) {
+        // FX-9 (the 18 Nov chart-read report's L2-2): a stock's live candle belongs to the MARKET's day — the ET
+        // session date, as the controlled path's (V-11) — never the device's. The device's midnight dated the row by
+        // that midnight's UTC date (east of UTC: yesterday's) and the weekend by the device's weekday.
+        const lastKey = lastDateStr.substring(0, 10);
+        todayStr = sessionDateOf(Date.now(), false);
+        const etDay = new Date(`${todayStr}T00:00:00Z`).getUTCDay();
+        append = lastKey < todayStr && etDay !== 0 && etDay !== 6;
+        patch = lastKey === todayStr;
+      } else {
+        // Crypto (24/7): the device's own day, as before.
+        // Parse as local date to avoid UTC-midnight shift
+        // new Date("YYYY-MM-DD") parses as UTC → setHours(0,0,0,0) shifts back a day in US timezones
+        const [ly, lm, ld] = lastDateStr.substring(0, 10).split('-').map(Number);
+        const lastDate = new Date(ly, lm - 1, ld);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        append = lastDate < today;
+        patch = lastDate.getTime() === today.getTime();
+        todayStr = today.toISOString().split('T')[0];
+      }
 
-      // For stocks, skip weekends (Sat=6, Sun=0); crypto trades 24/7
-      const dayOfWeek = today.getDay();
-      const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-      const shouldAppend = isCrypto ? true : !isWeekend;
-
-      if (lastDate < today && shouldAppend) {
-        const todayStr = today.toISOString().split('T')[0];
+      if (append) {
         const dailySynthOpen = realtimeExtremes?.open > 0 ? realtimeExtremes.open : lastCandle.close;
         result = [...result, {
           date: todayStr,
@@ -780,7 +792,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
           close: throttledPrice,
           volume: 0,
         }];
-      } else if (lastDate.getTime() === today.getTime()) {
+      } else if (patch) {
         // Today's candle exists but may have stale H/L/C — patch with live price
         const patched = { ...lastCandle };
         patched.high = Math.max(Number(patched.high), wsHL?.high || 0, throttledPrice, rtHigh);
