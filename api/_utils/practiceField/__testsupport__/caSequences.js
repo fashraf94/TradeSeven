@@ -567,7 +567,10 @@ export const ASTRA_R2 = [d01, d02, ...D01_ROWS, ...D02_ROWS];
  * THE FINAL SOAK'S FINDINGS (6,000 ordered histories, seeds 1,911,200,000–1,911,205,999), each as a fixed case.
  * SOAK-R3-1 (I-2, a sibling of T2D-D02): a pending founder split moved the count under an id the vendor's rows had made a
  * POSSIBLE RE-DATE — the same 2:1 under another date, in an open conflict, or repeating a split declined as not entitled.
+ * SOAK-R3-2 (I-5): a founder split found moot partway through a close still held a later split for that close; re-running
+ * the close applied it.
  */
+const sus = (i) => 'suspected_split_AAPL_' + S[i];
 export const SOAK_R3 = [
   // R3-1: the vendor agrees with the founder's 2:1 under its id, and lists 2:1 again dated the next day inside a 3:2/2:1
   // conflict — the founder's split is refused (a possible re-date), nothing moves; the founder then rules the record.
@@ -582,6 +585,12 @@ export const SOAK_R3 = [
   // and the vendor then lists that 2:1 under the next day — a possible re-date of the declined one (the agreed Q10).
   { seed: 'SOAK-R3-1-redate-of-a-declined-split', steps: [cl(0, 100, [sp(0, '2/1')]), cl(1, 50, [sp(0, '2/1')]), splitRuling(2), cl(2, 50, [sp(0, '2/1'), sp(1, '2/1')]),
     at((idea) => expect(rulingOf(idea, 'suspicion')?.refusedBecause).toBe('possible_redate')), cl(3, 50)], end: { dividends: 0, shares: SH } },
+  // R3-2: a halving seen across an uncovered close, the founder's 2:1 for it held through another, then the vendor's own
+  // 2:1 inside the gap explains it first (the founder's goes moot) and a 3:1 dated later is applied AT THAT CLOSE.
+  { seed: 'SOAK-R3-2-moot-founder-split-holds-nothing', steps: [cl(0, 100), cl(1, 100, [], true), cl(2, 50),
+    { kind: 'ruleExact', body: { kind: 'suspicion', recordId: sus(2), decision: 'split', ratio: 2 } },
+    cl(3, 50, [], true), cl(4, 16.67, [sp(1, '2/1'), sp(4, '3/1')]),
+    at((idea) => expect(rulingOf(idea, 'suspicion')?.outcome, 'the founder\'s split went moot').toBe('moot'))], end: { dividends: 0, shares: 599.820048 } },
 ];
 
 /**

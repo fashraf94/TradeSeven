@@ -54,8 +54,8 @@ describe('S-6 — Astra round 2: T2D-D01 and T2D-D02, her replay seeds verbatim 
   }, 60_000);
 });
 
-// …and the final soak's finding SOAK-R3-1, as fixed cases.
-describe('S-6 — the final soak\'s findings: a founder split under a possible re-date', () => {
+// …and the final soak's two findings (SOAK-R3-1, SOAK-R3-2), each as a fixed case.
+describe('S-6 — the final soak\'s findings: a founder split under a possible re-date, a moot founder split holding nothing', () => {
   it.each(SOAK_R3.map((p) => [p.seed, p]))('%s', async (_seed, plan) => {
     await run(plan);
   }, 60_000);

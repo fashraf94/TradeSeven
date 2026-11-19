@@ -1307,7 +1307,10 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
       const s = openBasisSuspicion(next.holdings[sym]);
       return !s || suspicionIdOf(sym, s) !== i.actionId;
     })();
-    for (const i of blocked.get(sym) || []) if (i.actionId !== action.actionId && before(i) && !nowSettled.has(i.actionId) && !retiredHere(i)) addItem(out, sym, plain(i));
+    // (SOAK-R3-2, the final soak: nor does a founder split found MOOT earlier in this call — its record retired by a row
+    // applied first. Before, its item still held what is dated after it for this close; re-running the close applied it.)
+    const mootHere = (i) => founderSkips.some((s) => s.actionId === i.actionId);
+    for (const i of blocked.get(sym) || []) if (i.actionId !== action.actionId && before(i) && !nowSettled.has(i.actionId) && !retiredHere(i) && !mootHere(i)) addItem(out, sym, plain(i));
     return (out.get(sym) || []).sort(byItem);
   };
   // Not applied, not settled: the holding keeps a record of what it is owed, refreshed to the payload the feed lists now.
