@@ -23,7 +23,8 @@ export const joinNouns = (items) => (items.length <= 1 ? items.join('') : `${ite
 export const CHART_READ_COPY = Object.freeze({
   eyebrow: 'Setup check · daily',
   asOf: (day) => `as of ${day} close`,
-  asOfBehind: (day) => `As of ${day} close (today’s isn’t in yet)`,
+  // FX-3 (founder Q-3): "the latest close", true on a Saturday too (the missing record is Friday's).
+  asOfBehind: (day) => `As of ${day} close (the latest close isn’t in yet)`,
   // RD-8: during and after a session whose record isn't in yet.
   sessionNote: (weekday) => `${weekday}’s close. Today’s session is read after it ends.`,
   // RD-10: the record's bars had no adjusted close.
@@ -32,7 +33,8 @@ export const CHART_READ_COPY = Object.freeze({
   battleNote: 'Daily marks are on 1D and 1W, not on these 30-minute bars.',
   // The quiet states (§5): one line, no sheet.
   absent: 'Measured after each close; no read yet for this stock.',
-  refusedLead: 'No read for this stock today',
+  // FX-3 (founder Q-3): no "today" — the refused lead can sit beside an earlier date.
+  refusedLead: 'No read for this stock',
   refusedRest: (why) => ` — ${why}.`,
   unknownLead: 'Not enough to read',
   unknownRest: (why) => ` — ${why}.`,
@@ -75,6 +77,8 @@ export const CHART_READ_COPY = Object.freeze({
   marksLabel: (names) => `Rule marks on the chart: ${names}`,
   // What changed (CR-6): one chip above the lead, from `read` and `previous` only, by a fixed table.
   change: Object.freeze({
+    // FX-1 (founder Q-1): the previous record was stretched and already held today's valid pattern.
+    backWithinLimit: (day) => `Since ${day}: back within the stretch limit.`,
     newPullback: (day) => `New since ${day}: touched the 20-day and closed back above it.`,
     newBreakout: (day) => `New since ${day}: closed at or above the 20-session high.`,
     stretched: (day) => `Since ${day}: stretched past the limit.`,
@@ -125,8 +129,15 @@ export const RULE_SET_COPY = Object.freeze({
       slowFalling: 'the 50-day is falling',
       slowFlat: 'the 50-day is flat over five sessions',
     }),
-    regimeSecond: 'It changes with closes back above the 20-day and the 50-day turning up. This is not a downtrend call.',
-    regimeSecondDowntrend: 'It changes with closes back above the 20-day and the 50-day turning up.',
+    // FX-2 (founder Q-2): the second line is built from the checks that failed, in the sheet's order, as nouns;
+    // "This is not a downtrend call." follows unless the record's regime is downtrend.
+    regimeSecond: (parts) => `It changes with ${joinNouns(parts)}.`,
+    regimeChange: Object.freeze({
+      close: 'a close back above the 20-day',
+      fast: 'the 20-day back above the 50-day',
+      slow: 'the 50-day turning up',
+    }),
+    notDowntrend: ' This is not a downtrend call.',
     noSetupLead: 'In an uptrend; no entry pattern today.',
     noSetupSecond: (sma, high) => `A pullback needs a low at or below the 20-day (${sma}). A breakout needs a close at or above ${high} on 1.5× average volume.`,
     extendedLead: (names, many) => `${names} ${many ? 'patterns' : 'pattern'} present, but stretched`,
@@ -159,12 +170,15 @@ export const RULE_SET_COPY = Object.freeze({
       swing_high: '20-session high', swing_low: '20-session low', extension_limit: 'stretch limit',
     }),
     // SH-5: the other reading and what separates them, per state the sheet opens in. Round 6's wording where it
-    // has it (valid · Pullback and Resume); the rest written from the rule's own checks, for the founder to check.
+    // has it (valid · Pullback and Resume); the rest as the founder ruled them (FX-6, Q-6 of the 18 Nov report):
+    // two kept as built, three amended — the breakout's and no pattern's separates, and the downtrend's reading.
     other: Object.freeze({
       valid_pullback: Object.freeze({ reading: 'A failed bounce in a weakening trend.', separates: (weekday) => `The next close against that session’s own 20-day. That number doesn’t exist yet; mark 1 is ${weekday}’s.` }),
-      valid_breakout: Object.freeze({ reading: 'A breakout that slips back under the high it cleared.', separates: (weekday) => `The next closes against the 20-session high it cleared. Mark 5 is the high before ${weekday}; each session has its own.` }),
+      valid_breakout: Object.freeze({ reading: 'A breakout that slips back under the high it cleared.', separates: () => 'The next closes against the high it cleared (mark 5).' }),
       regime: Object.freeze({ reading: 'A dip inside a trend that hasn’t turned.', separates: (weekday) => `The three uptrend checks: a close above the 20-day, the 20-day above the 50-day, and the 50-day rising. Marks 1 and 2 are ${weekday}’s; mark 3 is the 50-day five sessions earlier.` }),
-      no_setup: Object.freeze({ reading: 'A trend that is tiring, not pausing.', separates: () => 'A low that reaches the 20-day (mark 1), or a close at or above the 20-session high (mark 5) on 1.5× average volume.' }),
+      // A not-in-an-uptrend record whose regime is downtrend: its own reading, the same separates.
+      regime_downtrend: Object.freeze({ reading: 'A bottom forming before the trend turns.', separates: (weekday) => `The three uptrend checks: a close above the 20-day, the 20-day above the 50-day, and the 50-day rising. Marks 1 and 2 are ${weekday}’s; mark 3 is the 50-day five sessions earlier.` }),
+      no_setup: Object.freeze({ reading: 'A trend that is tiring, not pausing.', separates: (weekday) => `A low at or below the 20-day with a close back above it, or a close at or above the 20-session high on 1.5× average volume. Marks 1 and 5 are ${weekday}’s; each session has its own.` }),
       extended: Object.freeze({ reading: 'Strength that keeps going without a pullback.', separates: (weekday) => `The close coming back within the stretch limit while the pattern still holds. Mark 7 is ${weekday}’s limit; each session has its own.` }),
     }),
   }),

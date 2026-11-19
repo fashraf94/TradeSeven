@@ -48,7 +48,8 @@ describe('the eight states of §5, each from an evaluator-made record', () => {
     const l = readLineOf(B.REGIME_A);
     expect(l.state).toBe('regime');
     expect(text(l)).toBe(`Not in an uptrend — closed below its 20-day (${cents(B.REGIME_A.read.facts.SMA_fast)}).`);
-    expect(l.second).toBe('It changes with closes back above the 20-day and the 50-day turning up. This is not a downtrend call.');
+    // FX-2 (founder Q-2): the second line names only what failed — here the close alone.
+    expect(l.second).toBe('It changes with a close back above the 20-day. This is not a downtrend call.');
     expect(l.glyph).toBe('absent');
   });
   it('in an uptrend, no pattern: the two gaps, each number the record\'s', () => {
@@ -88,11 +89,12 @@ describe('the eight states of §5, each from an evaluator-made record', () => {
   it('refused: the reason in words; no sheet, no marks, no change chip', () => {
     const l = readLineOf({ ...B.SPLIT, previous: { session: PREV_SESSION, verdict: 'valid', reason: null, pattern: 'pullback_resume', regime: 'uptrend', patternsSatisfied: ['pullback_resume'], checks: [] } });
     expect(l.state).toBe('refused');
-    expect(text(l)).toBe('No read for this stock today — a split or dividend inside the window.');
+    // FX-3 (founder Q-3): no "today" — the refused lead can sit beside an earlier date.
+    expect(text(l)).toBe('No read for this stock — a split or dividend inside the window.');
     expect([l.opensSheet, l.marks, l.change, l.glyph]).toEqual([false, [], null, 'none']);
     const odd = clone(B.SPLIT);
     odd.read.reason = 'a_reason_from_tomorrow';
-    expect(text(readLineOf(odd))).toBe(`No read for this stock today — ${REFUSAL_FALLBACK}.`);
+    expect(text(readLineOf(odd))).toBe(`No read for this stock — ${REFUSAL_FALLBACK}.`);
     expect(sheetOf(B.SPLIT)).toBeNull();
   });
   it('no record: one line, no date, no sheet', () => {
@@ -119,22 +121,34 @@ describe('the eight states of §5, each from an evaluator-made record', () => {
 
 describe('RD-7: the not-in-an-uptrend lead names only the checks that failed', () => {
   const sma = (k) => cents(B[k].read.facts.SMA_fast);
+  // FX-2 (founder Q-2): the second line is built from the same failed checks, in the sheet's order, joined as nouns —
+  // one row per combination of the three, and the downtrend (all three, the last sentence dropped).
+  const CLOSE = 'a close back above the 20-day';
+  const FAST = 'the 20-day back above the 50-day';
+  const SLOW = 'the 50-day turning up';
   it.each([
-    ['REGIME_A', () => `closed below its 20-day (${sma('REGIME_A')})`],
-    ['REGIME_B', () => 'the 20-day is below the 50-day'],
-    ['REGIME_C', () => 'the 50-day is falling'],
-    ['REGIME_AB', () => `closed below its 20-day (${sma('REGIME_AB')}), and the 20-day is below the 50-day`],
-    ['REGIME_AC', () => `closed below its 20-day (${sma('REGIME_AC')}), and the 50-day is falling`],
-    ['REGIME_BC', () => 'the 20-day is below the 50-day, and the 50-day is falling'],
-    ['REGIME_ABC_FLAT', () => `closed at its 20-day (${sma('REGIME_ABC_FLAT')}), the 20-day is level with the 50-day, and the 50-day is flat over five sessions`],
-    ['DOWNTREND', () => `closed below its 20-day (${sma('DOWNTREND')}), the 20-day is below the 50-day, and the 50-day is falling`],
-  ])('%s', (k, parts) => {
+    ['REGIME_A', () => `closed below its 20-day (${sma('REGIME_A')})`, CLOSE],
+    ['REGIME_B', () => 'the 20-day is below the 50-day', FAST],
+    ['REGIME_C', () => 'the 50-day is falling', SLOW],
+    ['REGIME_AB', () => `closed below its 20-day (${sma('REGIME_AB')}), and the 20-day is below the 50-day`, `${CLOSE} and ${FAST}`],
+    ['REGIME_AC', () => `closed below its 20-day (${sma('REGIME_AC')}), and the 50-day is falling`, `${CLOSE} and ${SLOW}`],
+    ['REGIME_BC', () => 'the 20-day is below the 50-day, and the 50-day is falling', `${FAST} and ${SLOW}`],
+    ['REGIME_ABC_FLAT', () => `closed at its 20-day (${sma('REGIME_ABC_FLAT')}), the 20-day is level with the 50-day, and the 50-day is flat over five sessions`, `${CLOSE}, ${FAST} and ${SLOW}`],
+    ['DOWNTREND', () => `closed below its 20-day (${sma('DOWNTREND')}), the 20-day is below the 50-day, and the 50-day is falling`, `${CLOSE}, ${FAST} and ${SLOW}`],
+  ])('%s', (k, parts, changes) => {
     const l = readLineOf(B[k]);
     expect(text(l)).toBe(`Not in an uptrend — ${parts()}.`);
     // "downtrend" only when the record's regime says so (RD-7); then the second line drops its last sentence.
     const down = B[k].read.regime === 'downtrend';
     expect(down).toBe(k === 'DOWNTREND');
-    expect(l.second).toBe(down ? 'It changes with closes back above the 20-day and the 50-day turning up.' : 'It changes with closes back above the 20-day and the 50-day turning up. This is not a downtrend call.');
+    expect(l.second).toBe(down ? `It changes with ${changes}.` : `It changes with ${changes}. This is not a downtrend call.`);
+  });
+  it('FX-2: the second line\'s parts follow the uptrend rows\' own results (a row that passes is never named)', () => {
+    for (const k of ['REGIME_A', 'REGIME_B', 'REGIME_C', 'REGIME_AB', 'REGIME_AC', 'REGIME_BC', 'REGIME_ABC_FLAT', 'DOWNTREND']) {
+      const failed = uptrendRows(B[k].read).map((r) => r.result === false);
+      const l = readLineOf(B[k]);
+      expect([l.second.includes(CLOSE), l.second.includes(FAST), l.second.includes(SLOW)], k).toEqual(failed);
+    }
   });
   it('never says "downtrend" when the record is no_trend, in the line or the sheet', () => {
     for (const k of ['REGIME_A', 'REGIME_B', 'REGIME_C', 'REGIME_AB', 'REGIME_AC', 'REGIME_BC', 'REGIME_ABC_FLAT']) {
@@ -159,16 +173,24 @@ describe('RD-7: the not-in-an-uptrend lead names only the checks that failed', (
 });
 
 describe('the date and the footnotes (RD-8 – RD-10, round 6 F)', () => {
-  it('RD-9: yesterday\'s record says so in the date', () => {
+  it('RD-9: yesterday\'s record says so in the date (FX-3: "the latest close", true on a Saturday too)', () => {
     const b = clone(B.NO_SETUP);
     b.read.behind = true;
-    expect(readLineOf(b).asOf).toBe('As of Tue Nov 17 close (today’s isn’t in yet)');
+    expect(readLineOf(b).asOf).toBe('As of Tue Nov 17 close (the latest close isn’t in yet)');
   });
   it('RD-8: on a trading day whose own record is not in yet; never on a weekend, never once today\'s is in', () => {
     expect(readLineOf(B.VALID_PULLBACK, { todayEt: '2026-11-18', todayIsSession: true }).notes).toEqual(['Tuesday’s close. Today’s session is read after it ends.']);
     expect(readLineOf(B.VALID_PULLBACK, { todayEt: '2026-11-21', todayIsSession: false }).notes).toEqual([]);
     expect(readLineOf(B.VALID_PULLBACK, { todayEt: SESSION, todayIsSession: true }).notes).toEqual([]);
     expect(readLineOf(B.VALID_PULLBACK).notes).toEqual([]);
+  });
+  it('FX-3: no RD-8 footnote while the read is behind (its date already says the latest close is not in)', () => {
+    const b = clone(B.VALID_PULLBACK);
+    b.read.behind = true;
+    expect(readLineOf(b, { todayEt: '2026-11-18', todayIsSession: true }).notes).toEqual([]);
+    const split = clone(B.NO_ADJUSTMENT);
+    split.read.behind = true; // RD-10 is not RD-8: it stays
+    expect(readLineOf(split, { todayEt: '2026-11-18', todayIsSession: true }).notes).toEqual(['The split check couldn’t run on this record.']);
   });
   it('RD-10: adjustment data missing → the one footnote', () => {
     expect(readLineOf(B.NO_ADJUSTMENT).notes).toEqual(['The split check couldn’t run on this record.']);
@@ -290,24 +312,45 @@ describe('the sheet (§6, CR-3, SH-1 – SH-5)', () => {
     expect(sheetOf(B.NO_SETUP, { sector: { percentile: null, updatedAtMs: 1 } }).context.value).toBe('no reading');
   });
   it('SH-5: every state the sheet opens in has its other reading and what separates them', () => {
-    for (const k of ['VALID_PULLBACK', 'VALID_BREAKOUT', 'REGIME_A', 'NO_SETUP', 'EXTENDED']) {
+    for (const k of ['VALID_PULLBACK', 'VALID_BREAKOUT', 'REGIME_A', 'NO_SETUP', 'EXTENDED', 'DOWNTREND']) {
       const sh = sheetOf(B[k]);
       expect(sh.other).toHaveLength(2);
       for (const o of sh.other) expect(o.text.length).toBeGreaterThan(10);
     }
-    expect(Object.keys(W.other).sort()).toEqual([...SHEET_STATES].map((s) => (s === 'regime' ? 'regime' : s)).sort());
+    expect(Object.keys(W.other).sort()).toEqual([...SHEET_STATES, 'regime_downtrend'].sort());
+  });
+  it('FX-6 (founder Q-6): the two lines kept and the three amended, word for word', () => {
+    const lines = (k) => sheetOf(B[k]).other.map((o) => o.text);
+    // kept as built
+    expect(lines('VALID_PULLBACK')).toEqual(['A failed bounce in a weakening trend.', 'The next close against that session’s own 20-day. That number doesn’t exist yet; mark 1 is Tue’s.']);
+    expect(lines('EXTENDED')).toEqual(['Strength that keeps going without a pullback.', 'The close coming back within the stretch limit while the pattern still holds. Mark 7 is Tue’s limit; each session has its own.']);
+    // amended
+    expect(lines('VALID_BREAKOUT')).toEqual(['A breakout that slips back under the high it cleared.', 'The next closes against the high it cleared (mark 5).']);
+    expect(lines('NO_SETUP')).toEqual(['A trend that is tiring, not pausing.', 'A low at or below the 20-day with a close back above it, or a close at or above the 20-session high on 1.5× average volume. Marks 1 and 5 are Tue’s; each session has its own.']);
+    const regimeSeparates = 'The three uptrend checks: a close above the 20-day, the 20-day above the 50-day, and the 50-day rising. Marks 1 and 2 are Tue’s; mark 3 is the 50-day five sessions earlier.';
+    expect(lines('DOWNTREND')).toEqual(['A bottom forming before the trend turns.', regimeSeparates]);
+  });
+  it('FX-6: the downtrend reading only where the record\'s regime is downtrend; every other not-in-an-uptrend record keeps the dip', () => {
+    for (const k of ['REGIME_A', 'REGIME_B', 'REGIME_C', 'REGIME_AB', 'REGIME_AC', 'REGIME_BC', 'REGIME_ABC_FLAT']) {
+      expect(B[k].read.regime, k).toBe('no_trend');
+      expect(sheetOf(B[k]).other[0].text, k).toBe('A dip inside a trend that hasn’t turned.');
+    }
+    const flipped = clone(B.REGIME_A);
+    flipped.read.regime = 'downtrend';
+    expect(sheetOf(flipped).other[0].text).toBe('A bottom forming before the trend turns.');
   });
 });
 
 describe('what changed (CR-6): the fixed table, row by row; every unlisted pair shows nothing', () => {
   const PREV = {};
   beforeAll(async () => {
-    for (const [code, state] of Object.entries({ VP: 'VALID_PULLBACK', VB: 'VALID_BREAKOUT', RN: 'REGIME_A', RD: 'DOWNTREND', NS: 'NO_SETUP', EX: 'EXTENDED', UN: 'UNKNOWN_V', RF: 'SPLIT' })) {
+    for (const [code, state] of Object.entries({ VP: 'VALID_PULLBACK', VB: 'VALID_BREAKOUT', RN: 'REGIME_A', RD: 'DOWNTREND', NS: 'NO_SETUP', EX: 'EXTENDED', UN: 'UNKNOWN_V', RF: 'SPLIT', XB: 'EXTENDED_BREAKOUT' })) {
       PREV[code] = await previousFor(state, { session: PREV_SESSION });
     }
   });
   const CUR = { VP: 'VALID_PULLBACK', VB: 'VALID_BREAKOUT', RN: 'REGIME_A', RD: 'DOWNTREND', NS: 'NO_SETUP', EX: 'EXTENDED', UN: 'UNKNOWN_V', RF: 'SPLIT' };
-  // prev → cur: P newPullback · B newBreakout · S stretched · G patternGone · L leftUptrend · U backInUptrend · - none
+  // prev → cur: W backWithinLimit · P newPullback · B newBreakout · S stretched · G patternGone · L leftUptrend ·
+  // U backInUptrend · - none. FX-1 (founder Q-1): EX → VP is W (the stretched record already held the pullback).
   const MATRIX = {
     //     VP   VB   RN   RD   NS   EX   UN   RF
     VP: ['-', '-', 'L', 'L', 'G', 'S', '-', '-'],
@@ -315,11 +358,27 @@ describe('what changed (CR-6): the fixed table, row by row; every unlisted pair 
     RN: ['P', 'B', '-', '-', 'U', 'U', '-', '-'],
     RD: ['P', 'B', '-', '-', 'U', 'U', '-', '-'],
     NS: ['P', 'B', 'L', 'L', '-', '-', '-', '-'],
-    EX: ['P', 'B', 'L', 'L', '-', '-', '-', '-'],
+    EX: ['W', 'B', 'L', 'L', '-', '-', '-', '-'],
     UN: ['-', '-', '-', '-', '-', '-', '-', '-'],
     RF: ['-', '-', '-', '-', '-', '-', '-', '-'],
   };
-  const LINES = { P: 'New since Mon: touched the 20-day and closed back above it.', B: 'New since Mon: closed at or above the 20-session high.', S: 'Since Mon: stretched past the limit.', G: 'Since Mon: the entry pattern is gone; still in an uptrend.', L: 'Since Mon: left the uptrend.', U: 'Since Mon: back in an uptrend.', '-': null };
+  const LINES = { W: 'Since Mon: back within the stretch limit.', P: 'New since Mon: touched the 20-day and closed back above it.', B: 'New since Mon: closed at or above the 20-session high.', S: 'Since Mon: stretched past the limit.', G: 'Since Mon: the entry pattern is gone; still in an uptrend.', L: 'Since Mon: left the uptrend.', U: 'Since Mon: back in an uptrend.', '-': null };
+  it('FX-1: after a stretched day that already held today\'s pattern — back within the limit; the New since rows no longer match that pair', () => {
+    expect([PREV.EX.verdict, PREV.EX.reason, PREV.EX.patternsSatisfied]).toEqual(['invalid', 'extended', ['pullback_resume']]);
+    expect([PREV.XB.verdict, PREV.XB.reason, PREV.XB.patternsSatisfied]).toEqual(['invalid', 'extended', ['breakout']]);
+    expect(CHANGE_TABLE[0].key).toBe('backWithinLimit');
+    expect(changeOf(B.VALID_PULLBACK.read, PREV.EX)).toBe(LINES.W);
+    expect(changeOf(B.VALID_BREAKOUT.read, PREV.XB)).toBe(LINES.W);
+    const newRows = CHANGE_TABLE.filter((r) => r.key === 'newPullback' || r.key === 'newBreakout');
+    expect(newRows).toHaveLength(2);
+    for (const r of newRows) {
+      expect(r.when(PREV.EX, B.VALID_PULLBACK.read), r.key).toBe(false);
+      expect(r.when(PREV.XB, B.VALID_BREAKOUT.read), r.key).toBe(false);
+    }
+    // a stretched day that held the OTHER pattern: today's pattern is new
+    expect(changeOf(B.VALID_BREAKOUT.read, PREV.EX)).toBe(LINES.B);
+    expect(changeOf(B.VALID_PULLBACK.read, PREV.XB)).toBe(LINES.P);
+  });
   it('the 64 pairs', () => {
     const cols = Object.keys(CUR);
     for (const [p, row] of Object.entries(MATRIX)) {
@@ -330,10 +389,10 @@ describe('what changed (CR-6): the fixed table, row by row; every unlisted pair 
     }
   });
   it('the order decides an overlap: not valid → valid · pullback beats not an uptrend → uptrend', () => {
-    expect(CHANGE_TABLE[0].when(PREV.RN, B.VALID_PULLBACK.read)).toBe(true);
-    expect(CHANGE_TABLE[5].when(PREV.RN, B.VALID_PULLBACK.read)).toBe(true);
+    expect(CHANGE_TABLE[1].when(PREV.RN, B.VALID_PULLBACK.read)).toBe(true);
+    expect(CHANGE_TABLE[6].when(PREV.RN, B.VALID_PULLBACK.read)).toBe(true);
     expect(changeOf(B.VALID_PULLBACK.read, PREV.RN)).toBe(LINES.P);
-    expect(CHANGE_TABLE.map((r) => r.key)).toEqual(['newPullback', 'newBreakout', 'stretched', 'patternGone', 'leftUptrend', 'backInUptrend']);
+    expect(CHANGE_TABLE.map((r) => r.key)).toEqual(['backWithinLimit', 'newPullback', 'newBreakout', 'stretched', 'patternGone', 'leftUptrend', 'backInUptrend']);
   });
   it('no previous record → no chip; the read line carries the chip above the lead', () => {
     expect(changeOf(B.VALID_PULLBACK.read, null)).toBeNull();
