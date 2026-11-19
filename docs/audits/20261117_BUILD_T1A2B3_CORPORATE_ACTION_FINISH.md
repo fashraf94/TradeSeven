@@ -9,7 +9,7 @@
 | Branch | `claude/practice-field-t1a2b3-corporate-action-finish` |
 | Mode | `PRACTICE_FIELD_MODE` stays `'off'`. No flag value, pin, rules or index changed; no fenced file edited; no model call, Firestore write or EODHD call made |
 | Fix round (18 Nov 2026) | Astra's final review (`docs/audits/20261118_ASTRA_REVIEW_T1A2B3.md`, committed byte-identical in ad413fb4) answered in the scope the founder set: commits 737282ed, 3373476c, 943f1286, 782cb74b, d96af701, de7180d0 (code head), and the report's. §10 is the round; §7 is updated |
-| Fix round 2 (18 Nov 2026) | Astra's confirmation (`docs/audits/20261118_ASTRA_CONFIRMATION_T1A2B3_ROUND1.md`, T2D-C01 to C05) answered by the founder's Amendment F revision 1, sticky ambiguity (`docs/design/20261118_PRACTICE_FIELD_AMENDMENT_F_REV1_STICKY_AMBIGUITY.md`); both byte-identical in 1f3adaca. Code head b040987d. §11 is the round; §7.3 is updated |
+| Fix round 2 (18 Nov 2026) | Astra's confirmation (`docs/audits/20261118_ASTRA_CONFIRMATION_T1A2B3_ROUND1.md`, T2D-C01 to C05) answered by the founder's Amendment F revision 1, sticky ambiguity (`docs/design/20261118_PRACTICE_FIELD_AMENDMENT_F_REV1_STICKY_AMBIGUITY.md`); both byte-identical in 1f3adaca. Code head b040987d; after the founder's two further requests (the S-6 soak at scale and an independent refuter, §11.8–§11.12), product code 78c2bce4 and final head 40beab14. §11 is the round; §7.3 is updated |
 
 Contents:
 1. In plain terms
@@ -840,8 +840,8 @@ Code read only, not probed:
 |---|---|
 | Review | `docs/audits/20261118_ASTRA_CONFIRMATION_T1A2B3_ROUND1.md` — Astra's confirmation of round 1 at d2370f51, committed byte-identical in 1f3adaca (SHA-256 `1e4338019855de7d768ad2960962d697bf0d9a34dced6f859823be8a2ed3774f`, 20,612 bytes, one CR as attached). Verdicts: dark merge **DO NOT MERGE** (T2D-C01 to T2D-C05); founder allowlist **NOT READY** |
 | Ruling | `docs/design/20261118_PRACTICE_FIELD_AMENDMENT_F_REV1_STICKY_AMBIGUITY.md` — the founder's ruling for this round, at its destination, byte-identical in 1f3adaca (SHA-256 `8f9bd794dcdc31d55600879c1b8f7ac695a19dfd517b4d46cb6d51d3d08e1e9c`, LF). It replaces T1a-1's R-21 and withdraws RF-A2; where it and an earlier rule disagree, it wins |
-| Commits | 1f3adaca (both documents) · 579d0953 (S-1 to S-5; every row that pinned R-21, RF-A1 or RF-A2 re-pinned) · 2fa54413 (C01–C05 as fixed cases; the re-date pair before anything applies) · 4e253c61 (S-6) · 1f9a7de0 (two rows) · e7a54cec (the AR2 review's fixes) · 778ab641 (S-6 reaches the pinned classes; I-2 against the generator's own oracle) · e35434e0 (the final refuter's fixes) · b040987d (the rows the battery asked for, and the held-founder-row gap its trace found) · this report |
-| Code head | b040987d. The report's commit adds documents only |
+| Commits | 1f3adaca (both documents) · 579d0953 (S-1 to S-5; every row that pinned R-21, RF-A1 or RF-A2 re-pinned) · 2fa54413 (C01–C05 as fixed cases; the re-date pair before anything applies) · 4e253c61 (S-6) · 1f9a7de0 (two rows) · e7a54cec (the AR2 review's fixes) · 778ab641 (S-6 reaches the pinned classes; I-2 against the generator's own oracle) · e35434e0 (the final refuter's fixes) · b040987d (the rows the battery asked for, and the held-founder-row gap its trace found) · 07c7f3ff (this report, pushed) · 1a19e7e7 (the S-6 soak harness; SOAK-1 fixed) · d8c2842b (two harness faults; no product change) · 78c2bce4 (the independent refuter's six findings) · 40beab14 (the harness plants its state; IS-5 pins; test-only) · §11.8–§11.12 |
+| Code head | b040987d for §11.1–§11.7; **78c2bce4** (product) and **40beab14** (final head, test-only on top) for §11.8–§11.12. The report's commits add documents only |
 | Mode | `PRACTICE_FIELD_MODE` stays `'off'`. No flag, pin, rule, index or quarterly file changed; no fenced file edited; no new store; no model, Firestore or EODHD call made |
 
 ### 11.1 In plain terms
@@ -960,9 +960,144 @@ The round is over the review threshold, so it was reviewed adversarially (BUILD_
 
 What the reviewers found to HOLD, with probes: complete-data money is identical to round 1's on seven clean histories (dividends a day late, splits with the price following, a purchase on an ex-date, two dividends a week apart, a split and a dividend on one date, a late dividend then a split, a late split then a dividend); a split conflict ruled on a same-stock idea applies on both ledgers and the book at once; a ruling held behind two uncovered closes applies at recovery and reports the one new payload once; a delisting ruled at $12 behind a split conflict pays on the post-split count; a coverage `no_action` leaves an open conflict open; lower-case tickers form conflicts and re-dates; three mutual re-dates each wait and one ruling pays once; no id is ever both applied and declined.
 
-**Not probed, read only:** admission marks and `suspectedActionSymbols` read the stored holding's own records first, with no dry run. **No refuter has seen the final refuter's four fixes** (e35434e0) **or the battery's fix** (b040987d); they are pinned by their rows and by the battery (AR2-M45 to AR2-M49, all killed).
+**Not probed, read only:** admission marks and `suspectedActionSymbols` read the stored holding's own records first, with no dry run. **No refuter has seen the final refuter's four fixes** (e35434e0) **or the battery's fix** (b040987d); they are pinned by their rows and by the battery (AR2-M45 to AR2-M49, all killed). (Since then: the independent refuter of §11.10.)
 
-### 11.7 Where this leaves the verdicts
+### 11.7 Where this leaves the verdicts (as first reported; §11.12 supersedes it)
 
 - **The dark merge.** Astra's five findings are fixed by the founder's mechanism, not by one more patch per order; each has a row that fails at round 1's head, the sequence test checks the invariants after every close of 48 generated and 15 fixed histories, and the review's sixteen findings, and the one the battery's trace found, are fixed and pinned; the battery kills 146 of 149 (three equivalent). With complete data, money is unchanged (the end-to-end pin is byte-identical); the quarterly product is unchanged (34/34, 40/40, a planted backfill reaches no quarterly reader). That is for Astra's confirmation to judge.
 - **The founder allowlist stays NOT READY**: T2D-03, T2D-04, T2D-05 and T2D-12 are T1a-2b-4's, before the switch; FQ-5 to FQ-11 are open.
+
+### 11.8 The founder's answers to §11.4 (18 Nov 2026)
+
+| # | Answer | Effect on the build |
+|---|---|---|
+| FQ-5 | **Yes:** reopen only on an unseen payload | None: built so (`seen`) |
+| FQ-6 | **Yes:** accept only the original ruling until T1a-2b-4 | None: built so (422 `ruling_needs_adjustment`) |
+| FQ-7, FQ-8 | **Accept the stricter holds** | None. AR2-IR-4 (§11.10) is one more of the same class: a payload the founder dismissed by confirming a ruling, re-dated later, waits as a possible re-date. Pinned |
+| FQ-9 to FQ-11 | **Accept as built.** Corrections to settled actions stay T2D-05, in T1a-2b-4 | None; T2D-05 stays carried to T1a-2b-4 |
+
+The founder then asked for two more things before the round goes back to Astra:
+- S-6 run at the scale its prompt specified (§11.9).
+- One independent refuter over the fixes nothing had reviewed: e35434e0, b040987d, and anything the run produced (§11.10).
+
+### 11.9 S-6 at scale: 6,000 generated histories
+
+**What ran.**
+- The founder's specification: at least 5,000 sequences with random seeds, up to 15 sessions each, across the three ledger kinds, with I-1 to I-5 checked after every close.
+- The wide generator (`__testsupport__/caSequences.js` `generateWide`) writes histories of 6 to 15 sessions.
+- Events fall on AAPL, which is the idea's own holding and its comparison's. The comparison is same-stock or a frozen basket of AAPL and MSFT, drawn per history.
+- Events also fall on SPY, the SPY line's own holding.
+- Every event kind is drawn per symbol: purchases on ex-dates, dividends on their date or a session late, splits, conflicts, revisions, re-dates, split-shaped moves, coverage failures, catch-ups whose stored backfill agrees, disagrees or is empty, founder rulings, and C04's chain.
+- Each history runs through the real close, catch-up and founder action. After every close it is checked for:
+  - I-1;
+  - I-2, both against the product's records and against the generator's own record of what it made ambiguous;
+  - I-3: reconciliation, and the same-stock tie when the comparison is same-stock;
+  - I-5: the close re-run on the state it left.
+- A clean history must also pass I-4 on each ledger kind, against the engine's own `applyCorporateAction` from that ledger's entry holding.
+- The 48 seeded histories and Astra's 15 reproductions stay in `corporateActionSequences.test.js` as fixed cases, unchanged.
+- The soak file `corporateActionSequences.soak.test.js` runs a seed range from the environment (`PF_SOAK_FROM`, `PF_SOAK_COUNT`, `PF_SOAK_OUT`). Without one, it runs four fixed wide seeds in every suite.
+
+**Seeds.** The seed start was drawn at random (`crypto.randomInt`): **1,184,872,571 to 1,184,878,570**, 6,000 sequences. They hold **63,113 sessions** (6 to 15 per history, about 600 at each length), so **120,226 closes were checked**: each session's close, plus a re-run of every close after the first. **1,877** histories are clean (I-4 applies).
+
+**The runs, and what each found.**
+
+| Run | Code | Result | What it was, and the fix |
+|---|---|---|---|
+| Pre-runs, seeds 1–200 (Windows) | b040987d with the soak harness | Seed 26 and seed 36 failed | **SOAK-1, a product finding.** You ruled `none` on a split conflict; the vendor then listed a ratio you had not seen, which correctly opened a revised-after-ruling record, and you answered `none` again; that ratio, re-dated, was then applied as a fresh split, 199.94 shares at full quality. The re-date matcher did not read revised-after-ruling records' payloads. **Fixed in 1a19e7e7 with its row** (Sticky "SOAK-1 …") and mutant AR2-M50. Seed 36 was an **oracle error**: the generator re-dated a payload it had added and dropped within one session, which no close ever listed. The oracle now counts only listed payloads |
+| 1: 6,000 seeds, 8 parallel shards (WSL) | 1a19e7e7 | 30 seeds failed; 5 shards stopped early | **Harness only, no product change** (d8c2842b). 24 were an oracle error: the generator marked a backfill disagreement and then emptied that backfill (its 30% "no rows" draw), so the disagreeing row never reached a ledger. The other 6 crashed the worker (`STACK_TRACE_ERROR`): the harness attached the circular fake store to the error, and the shard then hung. With the oracle fixed and the store non-enumerable, all 30 seeds pass on the **same histories** (306 histories checked byte-identical to the committed generator) |
+| 2: 6,000 seeds, 8 shards | d8c2842b | **0 failures**; 3 shards stopped early with no failure | The three stalled at seeds 1184873515, 1184874214 and 1184878041. Each runs in about 0.2 s alone, and the shards' memory peaked with 8 processes. The three unfinished ranges (1,695 seeds) were re-run in 3 shards: 0 failures in 111 s, with memory steady. **Every one of the 6,000 seeds passed I-1 to I-5** |
+| The independent refuter (§11.10) | d8c2842b | six findings | Five fixed in 78c2bce4, each with a row; one (AR2-IR-4) is the stricter hold the founder accepted, pinned |
+| 3: 6,000 seeds, 4 shards | **78c2bce4, the final product code** | **0 failures**: all 6,000 histories pass I-1 to I-5 (vitest 6,004 rows, 0 failed), 258 s | The same seed range, so the same 6,000 histories, on the code with the refuter's fixes |
+| 4: 6,000 seeds, 4 shards | **40beab14, the final head** (test-only: §11.11) | **0 failures**, the same 120,226 closes, 256 s | — |
+
+**Coverage.** These figures are properties of the generated histories, computed from the generator for all 6,000 seeds; the generator is unchanged since d8c2842b. "On AAPL" and "on SPY" count the histories in which the kind fell on that symbol.
+
+| Kind | Code | Histories containing it | on AAPL | on SPY |
+|---|---|---|---|---|
+| purchase on ex date | ExD | 2,086 | 1,028 | 1,058 |
+| dividend | Div | 5,819 | 5,136 | 5,145 |
+| split | Spl | 5,014 | 3,732 | 3,681 |
+| conflict | Cnf | 3,591 | 2,653 | 2,705 |
+| revision | Rev | 3,041 | 2,074 | 2,043 |
+| redate | Rdt | 3,053 | 2,072 | 2,089 |
+| split shaped move | Shp | 3,436 | 2,455 | 2,427 |
+| coverage failure | Cov | 3,769 | 3,083 | 2,847 |
+| backfill agrees | BfA | 880 | — | — |
+| backfill disagrees | BfD | 1,209 | 673 | 661 |
+| backfill empty | BfE | 913 | — | — |
+| founder ruling | Rul | 4,009 | — | — |
+| c04 chain | C04 | 815 | 815 | — |
+| comparison same stock | SSt | 3,020 | — | — |
+| comparison frozen basket | FBk | 2,980 | — | — |
+
+**Each pair of kinds** (histories containing both). All 104 possible pairs occur, between **135** and **4,859** times (median 1,142). The only empty cell is a same-stock comparison together with a frozen basket, which one history cannot have.
+
+| | ExD | Div | Spl | Cnf | Rev | Rdt | Shp | Cov | BfA | BfD | BfE | Rul | C04 | SSt | FBk |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **ExD** | · | 2033 | 1765 | 1331 | 1121 | 1142 | 1139 | 1325 | 332 | 426 | 310 | 1402 | 298 | 1087 | 999 |
+| **Div** | 2033 | · | 4859 | 3491 | 2983 | 2992 | 3333 | 3662 | 856 | 1182 | 894 | 3888 | 793 | 2928 | 2891 |
+| **Spl** | 1765 | 4859 | · | 3014 | 2610 | 2611 | 2877 | 3152 | 759 | 1042 | 790 | 3348 | 685 | 2551 | 2463 |
+| **Cnf** | 1331 | 3491 | 3014 | · | 2689 | 2700 | 2970 | 3304 | 792 | 1088 | 812 | 3499 | 717 | 1836 | 1755 |
+| **Rev** | 1121 | 2983 | 2610 | 2689 | · | 2320 | 2538 | 2810 | 694 | 952 | 730 | 2965 | 607 | 1533 | 1508 |
+| **Rdt** | 1142 | 2992 | 2611 | 2700 | 2320 | · | 2541 | 2828 | 684 | 977 | 720 | 2976 | 608 | 1535 | 1518 |
+| **Shp** | 1139 | 3333 | 2877 | 2970 | 2538 | 2541 | · | 3152 | 750 | 999 | 782 | 3340 | 671 | 1730 | 1706 |
+| **Cov** | 1325 | 3662 | 3152 | 3304 | 2810 | 2828 | 3152 | · | 823 | 1123 | 845 | 3669 | 815 | 1906 | 1863 |
+| **BfA** | 332 | 856 | 759 | 792 | 694 | 684 | 750 | 823 | · | 265 | 186 | 857 | 135 | 439 | 441 |
+| **BfD** | 426 | 1182 | 1042 | 1088 | 952 | 977 | 999 | 1123 | 265 | · | 279 | 1184 | 178 | 607 | 602 |
+| **BfE** | 310 | 894 | 790 | 812 | 730 | 720 | 782 | 845 | 186 | 279 | · | 892 | 136 | 468 | 445 |
+| **Rul** | 1402 | 3888 | 3348 | 3499 | 2965 | 2976 | 3340 | 3669 | 857 | 1184 | 892 | · | 796 | 2011 | 1998 |
+| **C04** | 298 | 793 | 685 | 717 | 607 | 608 | 671 | 815 | 135 | 178 | 136 | 796 | · | 420 | 395 |
+| **SSt** | 1087 | 2928 | 2551 | 1836 | 1533 | 1535 | 1730 | 1906 | 439 | 607 | 468 | 2011 | 420 | · | 0 |
+| **FBk** | 999 | 2891 | 2463 | 1755 | 1508 | 1518 | 1706 | 1863 | 441 | 602 | 445 | 1998 | 395 | 0 | · |
+
+**What the runs reached in the product** (histories in which each path was reached on some ledger, the same in runs 3 and 4): a re-date matched against an ambiguous record **2,925**; a payload added to a record at a later close **1,955**; an uncovered split-shaped transition **807**; a revision after a ruling (`revised_after_ruling`) **695**.
+
+### 11.10 The independent refuter: the fixes nothing had reviewed
+
+One refuter, on a read-only `git archive` tree of d8c2842b, attacked the final refuter's four fixes (e35434e0), the battery's held-founder-row fix (b040987d) and SOAK-1 (1a19e7e7). It compared each against 778ab641, the code before them, with only `ledger.js` and `holdRulings.js` swapped in. It reproduced six findings, prefixed AR2-IR. Each is now a committed row in `corporateActionStickyAmbiguity.test.js` ("AR2-IR — …"), and each fix has a mutant.
+
+| Id | What broke | Severity | Before these fixes? | Done (78c2bce4) |
+|---|---|---|---|---|
+| AR2-IR-1 | A rename ruling into a ticker a named ledger already holds (the idea's own MSFT, or a frozen-basket comparison's) was accepted, never applied, and locked the record. A frozen basket was left split: the idea renamed, the comparison not | ruling locked | the same | Refused when made (422 `ruling_unrepresentable`), and refused at the close as a backstop. AR2-M51 |
+| AR2-IR-2 | A dividend ruling on a holding that a clean rename had moved closed `moot` (RF-4), so the $99.97 owed could not be paid | money held wrongly | marked "applied" with $0 paid | A rename now waits while its symbol has any open ambiguity on any ledger, a cash one included. The ruling pays the holding it was made for, then the rename applies. AR2-M53, and the row for a conflict and a rename in one close |
+| AR2-IR-3 | A conflict formed in one close dropped a payload the holding held of that id (your coverage row), so it could not be chosen (422 `payload_not_recorded`) | ruling partly locked | the same | Held payloads of the id join the record. AR2-M56 |
+| AR2-IR-4 | A payload you dismissed by confirming a ruling, re-dated later, waits as a possible re-date | over-hold | it was paid | **Accepted (FQ-8)**: the stricter-hold class. Pinned by a row |
+| AR2-IR-5 | Your coverage row and the same payload from the feed showed twice on the record | cosmetic | — | Each payload once. AR2-M57 |
+| AR2-IR-6 | A dividend re-listed under a renamed ticker was paid again, at full quality. The re-date screen keyed on the ticker | money at full quality | **the same (pre-existing)** | The re-date screen reads a renamed holding's old ticker's records as its own. AR2-M55; two rows (a paid dividend re-listed under the new ticker; an ambiguous one after `none`) |
+
+What it found to HOLD, with probes:
+- A coverage row and a feed row with the same payload pay once, at full quality.
+- A held coverage row against a different feed payload is now a conflict, and choosing either pays once. Before these fixes the feed's payload was paid automatically.
+- A lower-case and an upper-case target in one close are one target.
+- A pending dividend ruling followed by a clean rename pays before the rename.
+- A coverage-gap id revised later accepts only the original answer.
+- A founder split with the identical feed ratio applies once on all three ledgers.
+- No never-ambiguous action was held by these fixes. AR2-IR-4 is the only new over-hold.
+
+The folder was 781 of 782 on its first run: `endToEnd.test.js` "one book, three ideas…" took 5,215 ms against its 5,000 ms limit. Alone it passed 2 of 2, and a quiet rerun of the folder passed 782 of 782.
+
+**No reviewer has seen 78c2bce4's fixes.** They are pinned by their rows, by the battery's AR2-M51, M53, M55, M56 and M57 (all killed), and by soak runs 3 and 4.
+
+### 11.11 The checks on the final code
+
+| Check | Where, and the command | Exit | Log lines |
+|---|---|---|---|
+| Full suite (Linux) | WSL worktree of `~/pd-ci` at 40beab14 **merged with `origin/main` eb34d2fd** (tree fe2e5634; no file overlaps): `TZ=UTC flock /tmp/pd-suite.lock npx vitest run --maxWorkers=8` | **0** | `Test Files  1580 passed | 13 skipped (1593)` · `Tests  36108 passed | 179 skipped (36287)`. The run before it, at 78c2bce4 (tree 10abe40a), failed **two rows**, both in `compositionProtectedStores.scan.test.js`. The deny-by-default write scan and the IS-5 caller census both read `__testsupport__/` files, and the soak harness wrote the fake store's documents and called the close directly. **Fixed in 40beab14, test-only:** the harness plants its state in the fake store's map (`plant`), and its three close callers are pinned in the IS-5 tally by name |
+| Lint gate | the same merged tree: `npm run lint:gate` | **0** | no error, no warning |
+| Build | 78c2bce4 merged with eb34d2fd (tree d3af0716): `npx vite build`. 40beab14 changes two test files only | **0** | `✓ built in 15.67s` |
+| Rules suite | 78c2bce4 merged with eb34d2fd (tree b4e9824a): `npm run test:rules` | **0** | `Test Files  46 passed (46)` · `Tests  839 passed (839)` |
+| Seventeen-scenario differential | Astra's harness, base `git archive` of 2e069d42 against a fresh `git archive` of 40beab14 | **0** | **34/34 identical**; 4,000 default build sets identical; the quarterly prompts byte-identical in 4 cases, the positive control detecting a leak |
+| 40-case traced differential | the same run | **0** | **40/40 identical** |
+| Backfill isolation (rule 5) | Astra's `plant.test.js`, the same trees | **0** | 4/4: 100 shares and $90,000 in both modes; the vendor's split gives 200 (control) |
+| End-to-end pin | `endToEnd.test.js` (in the suite) | **0** | `abcf8420…c24ed9` unchanged: with complete data no money leaf changed |
+| S-6 soak | §11.9, runs 3 and 4 | **0** | 6,000 of 6,000 histories, 120,226 closes, 0 failures, at 78c2bce4 and again at 40beab14 |
+| Mutation battery | `run-battery.mjs`, private WSL worktree at 40beab14, one pass | **0** | baseline 928 rows, 0 failing; **defined 155, ran 155, broken 0, killed 152, survived 3** |
+
+**The battery.** It has 149 definitions from §11.5 and six new ones: AR2-M50 (SOAK-1), and AR2-M51, M53, M55, M56 and M57 (the refuter's fixes; there is no M52 or M54). AR2-M46 was re-cut, with the same intent, where AR2-IR-1's backstop moved its line. Every new mutant is killed. The three survivors are the same three as in §11.5 (AR2-M07, M11, M34). Their equivalence was argued at b040987d, and that reasoning was not traced again on 78c2bce4.
+
+No vendor, model or Firestore call was made. Every store is the in-memory fake or the local emulator.
+
+### 11.12 Where this leaves the verdicts
+
+- **The dark merge.** Astra's five findings are fixed by the founder's mechanism. S-6 has now run at the scale its prompt set: 6,000 random histories of up to 15 sessions across the three ledger kinds, 120,226 closes, I-1 to I-5 after every close, 0 failures on the final code. Every event kind and every possible pair of kinds occurred at least 135 times. The run found one product defect (SOAK-1), and the independent refuter found six more (AR2-IR-1 to IR-6). Five of those are fixed and the sixth is the stricter hold the founder accepted. Each has a committed row. The battery kills 152 of 155. The three survivors are the ones §11.5 argued equivalent. With complete data, money is unchanged, and the quarterly product is unchanged: 34/34, 40/40, and a planted backfill reaches no quarterly reader. **No reviewer has seen 78c2bce4's fixes.** That is for Astra's confirmation to judge.
+- **The founder allowlist stays NOT READY.** T2D-03, T2D-04, T2D-05 and T2D-12 belong to T1a-2b-4, before the switch. FQ-5 to FQ-11 are answered (§11.8). Corrections to settled actions (FQ-11) stay with T2D-05 in T1a-2b-4.
