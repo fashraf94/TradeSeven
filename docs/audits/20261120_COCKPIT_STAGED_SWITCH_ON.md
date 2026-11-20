@@ -12,17 +12,17 @@
 | Part | Result |
 |---|---|
 | **A. Pre-flight** (read-only) | The cockpit path on `main` is as the prompt describes (all four flags on; the resolver composes the allowlist with the cohort; the cohort test admits only real agent-mode battles). **The control document is absent** in production. Nov 17, 19 and 20 each have one agent-mode battle and Nov 18 has none, all from one allowlisted pilot account: K = 1, no deferral, no 429. **Anthropic reports 10,000 requests, 10,000,000 input and 2,000,000 output tokens a minute; at 70 % that allows K = 269 (input tokens bind).** The code caps K at 8 and ruling R4 holds it at 2, so EODHD binds first, not Anthropic. **Stage 1 would admit 0 owners outside the allowlist today.** `LEAGUE_HIDE_ENABLED` is still `false` (`featureFlags.js:152`). |
-| **B. The daily readout** (PR 1) | `scripts/beta-daily-readout.mjs`: one session in plain words, ending in the six PAUSE / STOP lines. `--switch` is Part E's verification read. 51 rows; **56 / 56 mutants killed**. Read-only, no uid, no id printed. Its first production run (Thu Nov 19) reads **CHECK**: the one `invalid_tool_result` in 16 `on` checks has no `off` baseline to compare with. Every other line is `ok`. |
+| **B. The daily readout** (PR 1) | `scripts/beta-daily-readout.mjs`: one session in plain words, ending in nine lines that read ok, PAUSE, STOP or CHECK. Its cockpit lines follow the founder's Q-1 / Q-2 rulings (§7). `--switch` is Part E's verification read. 57 rows; **71 / 71 mutants killed**. Read-only, no uid, no id printed. Its production run for Thu Nov 19 reads **CHECK**: one `invalid_tool_result` in 16 `on` checks, which is a CHECK line and never a STOP. Every other line is `ok`. |
 | **C. The cuts flip** (PR 2) | `EVAL_MARKET_DATA_CUTS_ENABLED` → `true`, with the pin, its literal row, its registration row and the `DARK_BY_DESIGN` entry in the same commit. The full Linux suite reddened **28 rows in five golden suites**, whose `marketDataCache` doubles lacked the symbol helpers the cut path calls. The flip commit completes those doubles (§5.1), and every golden holds byte-identical with the cuts on and off. After that: the full suite exits 0, the rules suite is green in both states, `lint:gate` and `vite build` exit 0, and a flag-only rollback reddens only pin and guard rows. Expected effect, from the code: **about 119 → about 78 EODHD units per agent-mode check, and about 3,000 → about 2,000 per battle-day.** The measured "before" is the pilot's Nov 17 and Nov 19 traffic (§5.3). |
 | **D. Runbook** | §6, in plain steps. Monday's steps 1–2 need only this session (Part E). Step 3 (the readout after each close) needs PR 1 on `main`, or a session on its branch. |
-| **Blocks stage 1** | **Nothing.** Two founder questions go with it (§7). First, with `shareBp: 10000` no battle stays `off`, so the cockpit STOP rule's "above the `off` baseline" can no longer fire. Second, no "sweep lag bound" exists anywhere, so the readout uses 30 minutes. |
+| **Blocks stage 1** | **Nothing.** Both founder questions were answered on 20 Nov (§7) and are now built. The cockpit's one STOP is `on` timeouts above 2 % over three sessions, with at least 60 checks. `invalid_tool_result`, 400s and a sweep lag past 30 minutes are CHECK lines. |
 
 ---
 
 ## 1. Preamble (BUILD_RULES §2, §3)
 
 - `git fetch origin` was run first: `origin/main` = `41c04cd2` (Merge pull request #1097). The session's worktree was clean at that commit.
-- **PR 1:** branch `claude/beta-daily-readout`, cut from `origin/main` @ `41c04cd2`, clean tree. Code commit `dbbd2e5e`; head the commit that adds this report.
+- **PR 1:** branch `claude/beta-daily-readout`, cut from `origin/main` @ `41c04cd2`, clean tree. Code commits `dbbd2e5e` (the readout) and `27cec4d6` (the cockpit lines per the Q-1 / Q-2 rulings); the report first landed in `d31dadd3`; the head is the commit that last updated this report.
 - **PR 2:** branch `claude/eval-cuts-flip`, cut from `origin/main` @ `41c04cd2`, clean tree. Flip commit `5b43230d` (flag, pins and the five doubles), note commit `523e5216`; head `523e5216`. The first flip commit, `ddf9ebcb`, was amended before any push (§5.1).
 - **Production was read only**: Admin SDK `.get()` / `getAll()`, project `tradeseven`. There was no write, no deploy, no environment variable and no Vercel, Firebase or EODHD setting. `cockpitConfig/release` was neither created nor edited. Credentials came from the main checkout's `.env.local` through `node --env-file` (worktrees have none). Only variable names were checked.
 - **No account id** appears in code, output, this report or a commit message. Owners are counted, and only as ordinals.
@@ -37,6 +37,11 @@
 | S-3 | Gates before the doors open on Dec 4: (a) Amendment H (the `on` tool text's one false sentence, plus the release itself) blessed by the framework chat and merged; (b) the first-time cockpit intro, shipped with F-3 (the status hook's re-ask). Neither gates stage 1. Stage 1 players are invited testers, in the same position as the two pilot accounts. |
 | S-4 | Capacity: at 100,000 EODHD calls a day, and after these cuts, the app holds about **8–10 players in battles at once** (the full range is 7–11, depending on how long players watch). Going past that needs a higher EODHD allowance or the market-data plan, plus `EVAL_POOL_K` above 2. The planning target of 25 waits on that. |
 | S-5 | The founder's answers to Capacity Build 1's five questions (PR #1071):<br>Q1 the shared macro quote goes only to battles that don't own the instrument, as built.<br>Q2 the three occasional fetches are not cut now.<br>Q3 yes to a TTL policy on `evalSessionDaily` (`expiresAt`); the founder creates it in the console.<br>Q4 rewriting `marketDataCache/{SYM}_daily` once a session is accepted.<br>Q5 flip order: cuts, then the guard, then `EVAL_POOL_K = 2`. |
+
+**The founder's answers to this report's Q-1 and Q-2 (20 Nov 2026), verbatim:**
+
+> Q-1: use absolute limits, and only for what the cockpit can cause. invalid_tool_result stays a CHECK line, never STOP (the readiness check found it is not caused by the cockpit: 1.9% on vs 2.5% off). STOP only when on-check timeouts exceed 2% over the last three sessions with at least 60 on checks; below 60 checks, print CHECK with the counts. A 400 is CHECK (often account-level, like the Oct 8 usage-limit 400s).
+> Q-2: keep 30 minutes, as a CHECK line, not STOP.
 
 ---
 
@@ -140,30 +145,35 @@ This was one masked read of `agentBattles` (`ownerId`, `gameMode`, `isCpu`, `sta
 | Evaluator capacity | — | PAUSE on any run with `deferred > 0` or `budgetSkipped > 0` |
 | Anthropic | `PAUSE_ANTHROPIC_INPUT_LEFT_SHARE = 0.2` | PAUSE on any 429, or the lowest input tokens left < 20 % of the limit |
 | EODHD (records) | `PAUSE_EODHD_UNITS = 60_000`, `EODHD_INTRADAY_UNITS = 5` | PAUSE if the evaluator's eod + realTime + 5 × intraday plus the poller's units are above. A missing part is `no data`, never a zero; a known part already above the line pauses. `other` requests are printed but not counted (the letter of the rule). |
-| Cockpit health | `STOP_SWEEP_LAG_MS = 30 min` | **STOP: set `disabled: true`** when an `on` timeout, 400 or `invalid_tool_result` rate is above the session's `off` baseline (all `on` checks, or the cohort's own), or when a swept call's lag passes the bound. **CHECK** (a read, nothing paused) when such a failure has **no `off` check that session** to compare with (§7 Q-1). |
+| Cockpit timeouts (ruling Q-1) | `STOP_TIMEOUT_RATE = 0.02`, `STOP_TIMEOUT_MIN_CHECKS = 60`, `TIMEOUT_WINDOW_SESSIONS = 3` | **STOP: set `disabled: true`** when `on` timeouts are above 2 % of the `on` checks over the session and the two trading sessions before it (`windowSessions`, from the market calendar), with at least 60 `on` checks. The same rate over fewer than 60 checks is **CHECK** with the counts. At or under 2 % it is `ok` with the counts. |
+| `invalid_tool_result` (ruling Q-1) | — | **CHECK, never STOP**, when the session has any. The readiness check found the cockpit does not cause it (1.9 % `on`, 2.5 % `off`). |
+| Model 400s (ruling Q-1) | — | **CHECK** when the session has any; they are often account-level (the Oct 8 usage-limit 400s). |
+| Sweep lag (ruling Q-2) | `CHECK_SWEEP_LAG_MS = 30 min` | **CHECK, not STOP**, when a call the sweep settled was stamped more than 30 minutes after its deadline. |
 
-The verdict ranks STOP over PAUSE, PAUSE over CHECK, and CHECK over ok. It is `no data` only when no line could judge anything.
+The `off`-baseline comparison of the first build no longer drives any line; the stage read's own tables (`--detail`) still show it. The verdict ranks STOP over PAUSE, PAUSE over CHECK, and CHECK over ok. It is `no data` only when no line could judge anything.
 
-**Tests** (`scripts/beta-daily-readout.test.js`, 51 rows; the neighbours `cockpit-release-read.test.js` and `eval-capacity-read.limits.test.js` are unchanged and green):
-- **Thresholds.** Every rule on both sides of its line and at the line itself; each constant against a value between it and a nearby wrong value; every `no data` path, including NaN and null.
+**One reading of Q-1 to confirm.** "Below 60 checks, print CHECK with the counts" is built as: the same above-2 % rate, over fewer than 60 checks, prints CHECK instead of STOP. Under 60 checks with no timeouts, or at most 2 %, the line is `ok` and still shows the counts (Nov 19: 0 timeouts in 32 checks). The other reading would print CHECK on every day with fewer than 60 checks in the window. That changes one line (`beta-daily-readout.mjs`, the `cockpitTimeouts` CHECK branch) if the founder wants it.
+
+**Tests** (`scripts/beta-daily-readout.test.js`, 57 rows; the neighbours `cockpit-release-read.test.js` and `eval-capacity-read.limits.test.js` are unchanged and green):
+- **Thresholds.** Every rule on both sides of its line and at the line itself, including the timeout STOP's 2 % and 60-check edges, its window, and that `invalid_tool_result`, 400s and the sweep lag never STOP; each constant against a value between it and a nearby wrong value; every `no data` path, including NaN and null.
 - **Calendar.** The default session after the close, before it, on Thanksgiving, on the early close and at a weekend.
 - **Fake Admin handle.** Four sessions driven end to end, as the other two scripts' tests do: a normal one, one that trips every rule, one with no battles, and an empty one.
 - **No id in the output.** Six owner, battle, agent, CPU, call and eval ids, plus a deferred battle id, are absent from the block, the detail and the `--json` object.
 - **Read-only.** A source grep for any Firestore write.
 - **Part E.** The switch read at absent, 0, 10000, disabled and a partial share; NOT AS EXPECTED; and "nothing to test yet".
 
-**Mutation check** (snapshot tree of `dbbd2e5e`, judged by exit code with at least one failed row, every anchor unique): **56 defined, 56 ran, 56 killed.** 0 survived, 0 broken, 0 error, and the file was restored. The battery covers every flipped comparison and every wrong constant; each constant mutant is killed by a behaviour row as well as by the constants pin. It also covers every `no data` guard, the verdict's order, the calendar, the summary's arithmetic, the switch read's buckets and expectation, the read masks and window, and an id leak (the players block keeping its owner list).
+**Mutation check** (snapshot tree of `27cec4d6`, judged by exit code with at least one failed row, every anchor unique): **71 defined, 71 ran, 71 killed.** 0 survived, 0 broken, 0 error, and the file was restored. The 71 are the first battery's 48 that still apply, plus 23 for the cockpit lines. The new ones cover the timeout STOP's comparison, its 2 % and its 60 checks (each in both directions), STOP read as CHECK, the under-60 CHECK read as ok, the window cut to the session or to two sessions, and the stage read cut to the session. They also cover `invalid_tool_result` and 400s read as STOP or thresholded at 2, the sweep lag's comparison, its 15 / 45-minute constants and a STOP status, and every `no data` guard. The first battery (56 / 56 at `dbbd2e5e`) covered the rest: every flipped comparison and wrong constant of the cost and capacity lines, the verdict's order, the calendar, the summary's arithmetic, the switch read, the read masks and an id leak. Every constant mutant is killed by a behaviour row as well as by the constants pin.
 
 **PR 1's checks.**
-- Full Linux suite at the code commit `dbbd2e5e` (`--maxWorkers=8`, `TZ=UTC`, under `flock`): **exit 0: 1,597 files, 36,552 rows; 36,373 passed, 0 failed, 179 skipped** (324 s).
+- Full Linux suite at the first code commit `dbbd2e5e` (`--maxWorkers=8`, `TZ=UTC`, under `flock`): **exit 0: 1,597 files, 36,552 rows; 36,373 passed, 0 failed, 179 skipped** (324 s). At the rulings commit `27cec4d6`: **exit 0: 1,597 files, 36,558 rows; 36,379 passed, 0 failed, 179 skipped** (357 s).
 - `lint:gate` and `vite build` were run at the pushed head; the results are in PR #1100.
-- The cumulative diff is about 1,340 lines, under BUILD_RULES §2's 1,500-line review threshold. Each Part E append adds to it, so it is re-counted before each push.
+- The cumulative diff is 1,449 lines (at the rulings update), under BUILD_RULES §2's 1,500-line review threshold, with about 50 lines of room. A Part E run adds about 10 lines, so it is re-counted before each push. The append that would cross 1,500 is flagged to the founder first, because at the threshold BUILD_RULES requires the multi-lens review.
 
-### The readout's first output (production, read-only)
+### The readout for Thu Nov 19 (production, read-only), under the cockpit rulings
 
 #### Beta daily readout — Thu 2026-11-19 (ET)
 
-Read Nov 20, 2026, 12:38 PM ET · read-only · no id is printed.
+Read Nov 20, 2026, 12:57 PM ET · read-only · no id is printed.
 
 **CHECK — nothing is paused, but a line needs a read before you invite more players.**
 
@@ -200,7 +210,8 @@ Read Nov 20, 2026, 12:38 PM ET · read-only · no id is printed.
 - Cohort battles: 0 (outside the allowlist)
 - Answers: 0 commands · 0 acknowledgments · 0 heard · 0 acted
 - `on` checks: 16 (0 timeouts · 0 400s · 1 invalid_tool_result · 0 other) · `off` checks: 0
-- Sweep: 18 calls settled, lag max 0.7 min · queue rows overdue now: 0
+- `on` timeouts over the last 3 sessions (2026-11-17 → 2026-11-19): 0 in 32 checks
+- Sweep: 18 calls settled, lag max 0.7 min · queue rows overdue now: 1
 
 **Rules**
 - Cost per battle-day: ok ($0.41; pauses above $0.65)
@@ -208,9 +219,12 @@ Read Nov 20, 2026, 12:38 PM ET · read-only · no id is printed.
 - Evaluator capacity: ok (no run deferred or budget-skipped a battle, over 26 runs)
 - Anthropic: ok (no 429; the lowest input tokens left was 99.9 % of the limit)
 - EODHD (records): ok (27,953 units; pauses above 60,000 — the fixed jobs and browser polling come on top)
-- Cockpit health: CHECK: no `off` check this session to compare with — 1 invalid_tool_result in 16 `on` checks; read them (nothing is paused)
+- Cockpit timeouts: ok (0 timeout(s) in 32 `on` checks over the last 3 sessions = 0.0 %; stops above 2.0 % over at least 60 checks)
+- invalid_tool_result: CHECK: 1 in 16 `on` checks this session (6.3 %); not caused by the cockpit (readiness: 1.9 % `on`, 2.5 % `off`) — read them
+- Model 400s: ok (none in 16 `on` checks this session)
+- Sweep lag: ok (max 0.7 min; a read above 30.0 min)
 
-The whole output also carries the two reads' own tables (`--detail`); their figures for Nov 19 are the ones in Part A3. The output and its `--json` were scanned for both allowlisted uids: neither appears.
+The first run, before the rulings, read the same CHECK for the same failure, then as "no `off` check this session to compare with". The whole output also carries the two reads' own tables (`--detail`); their figures for Nov 19 are the ones in Part A3. The output and its `--json` were scanned for both allowlisted uids: neither appears.
 
 ---
 
@@ -295,14 +309,10 @@ Optional hygiene. Each `evalSessionDaily` document carries a three-day `expiresA
 
 ---
 
-## 7. Founder questions
+## 7. Founder questions, answered 20 Nov 2026 and built
 
-- **Q-1. With `shareBp: 10000`, the cockpit STOP rule has no `off` baseline.** Every agent-mode, non-CPU battle resolves `on`, and the League is the only `off` traffic left. That will be none once the League is hidden. So "`on` timeouts, 400s or `invalid_tool_result` above the session's `off` baseline" can never fire. Today's pilot traffic shows the case already: Nov 19 had one `invalid_tool_result` in 16 `on` checks and no `off` check. As built (the letter), the readout prints **CHECK** with the counts and does not STOP. Should a fixed baseline stand in? Two options:
-  - the `off` era's own rates, a constant measured once from the tick records before Oct 23;
-  - an absolute rate, for example STOP above x % `invalid_tool_result` over at least n checks.
-- **Q-2. The sweep-lag bound.** Neither the readiness report §C3 nor `sweep.js` sets one. The readout uses **30 minutes** (`STOP_SWEEP_LAG_MS`): two of the sweep's 15-minute slots, against a measured lag of 0.7 min. Keep 30, or name another number?
-
----
+- **Q-1. The cockpit STOP rule had no `off` baseline once `shareBp` is 10000.** Ruled: absolute limits, only for what the cockpit can cause (verbatim in §2). Built (§4): one STOP, for `on` timeouts above 2 % over three sessions with at least 60 checks. `invalid_tool_result` and 400s are CHECK lines. One reading is noted in §4 for confirmation.
+- **Q-2. The sweep-lag bound.** Ruled: 30 minutes, as a CHECK line, not STOP. Built as `CHECK_SWEEP_LAG_MS`.
 
 ## 8. Part E: verification reads (appended each time the control document changes)
 
