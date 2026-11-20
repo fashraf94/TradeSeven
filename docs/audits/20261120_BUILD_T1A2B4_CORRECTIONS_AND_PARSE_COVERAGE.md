@@ -173,6 +173,20 @@ On Windows, `mandateMoneyRounding.scan` and `mandateRationale.imports` fail the 
 | Isolation and retention | QUARTERLY ISOLATION; RETENTION; the cron trace (§7) |
 | I-6 | `caOracle.test.js` I-6 rows; every sequence file (§6) |
 
+**Astra's positive controls.** Every one is a row in the suite, and every one passes at ec941a1c (suite exit 0).
+
+| Control | `file › row` |
+|---|---|
+| Z1 | `corporateActionFinish.test.js` › "Z1 — a ruling covers only the recorded move …" |
+| Y4 | `corporateActionFinish.test.js` › "Y4 — a listed split applied AFTER the ruling does not re-suspect the ruled move …" |
+| N3 | `corporateActionFinish.test.js` › "N3 — after a ruled halving a LATER 2-for-1 is judged against the fresh mark …" (and lens A's N3, "the vendor is never reached from a row") |
+| D01, D02 | `corporateActionSequences.test.js` › "S-6 — Astra round 2: T2D-D01 and T2D-D02, her replay seeds verbatim …"; `corporateActionSequences.ordered.test.js` › "the ordered generator: C03, D01 and D02 on one id" and her seeds 19112000–19112031 |
+| C01–C05 | `corporateActionStickyAmbiguity.test.js` › "T2D-C01 …", "T2D-C02 …", "T2D-C03 …", "T2D-C04 …", "T2D-C05 …" |
+| SOAK-R3 | `corporateActionSequences.test.js` (SOAK-R3-1, SOAK-R3-2 as fixed cases); `corporateActionSequences.ordered.test.js` › "the final soak's failing histories, as fixed seeds" (1911201905, 1911200342, 1911205903, 1911202882) |
+| AR3-RF | `__testsupport__/caSequences.js` AR3-RF-2 fixed cases (run by `corporateActionSequences.test.js`); AR3-RF-3/4 seeds 73100109, 73100236 (`ordered`); `corporateActionStickyAmbiguity.test.js` › "AR3-RF-5 …" (2 rows) |
+| The six-session outage | `endToEnd.test.js` › "the end-to-end case with a coverage gap (Amendment F-1)": AAPL's fetch fails for six sessions, S[1]…S[6], then the backfill, the split applied once, the dividend on the adjusted count |
+| The size alert | `corporateActionFinish.test.js` › "Amendment F-9 — the idea document's size": 786,432 bytes alerts, 786,431 does not, pure and through a close |
+
 **I-6 fails on `main` for T2D-03 and T2D-04.** `main` (41c04cd2) was run with this build's test support laid over it (`corporateActionSequences.late.test.js`, fixed cases): 6 failed.
 - `astra-T2D-03`: "I-6 ledger cash_dividend_AAPL_2026-11-17: received $0, the inputs and the holding history say $99.97". The sector-fund case gives the same.
 - `astra-T2D-04`: "received $99.97 … say $124.96".
@@ -265,6 +279,13 @@ Its three new findings, each fixed in 747a92e4 and kept as a row (`corporateActi
 - **B-6** (one write that never settles makes every later write from that fetcher time out, so those symbols read uncovered): fails closed; stated.
 - **B-1** (two concurrent top-ups merging different rows for a new symbol leave it uncovered for one session): fails closed; stated.
 - **A-6** (a paper holding's suspicion or held action holds the resulted idea's late rows; the rows are named, the root doubt is not): stated.
+
+**What no reviewer has seen.** RFX checked de858e26. These came after it:
+- the hold-set fix (fbf83457);
+- the three RFX fixes and the endpoint's pending corrections (747a92e4);
+- the rows of f6fea858 and ec941a1c.
+
+Each has rows that failed before it, the final soak and a mutant (§5.4), but no reviewer has checked them. They are handed to Astra's review of this build (§10), as T1a-2b-3 handed its last fixes on.
 
 **Soak 3's finding (fbf83457).** The AR4-A-4 fix let a ruling apply to a sold holding's split record. But the record stayed in the hold set the other ledgers' appliers read, so the comparison's later dividend waited at the ruling's close and a re-run paid it (I-5; 4 of 6,000 late histories). A ruled id now leaves the hold set. The four seeds are kept (§6).
 
@@ -403,6 +424,8 @@ Each history runs through the real close, sales, catch-up and founder action. Af
 | | | ordered 1911200000–1911205999 | 6,000 | 119,912 | **0** |
 | | | Astra's wide 2026111900–2026112299 | 400 | 8,032 | **0** |
 
+**What the soak does not draw.** Soak 4 and soak 5 report the same figures, because the generator never writes the shapes RFX-1 and RFX-2 need: a rejected row dated before the entry, and two share-basis ids on one date. Those fixes are covered by the `fixRound` rows and the FR1 and FR2 mutants, not by the soak. The ranges reported are the ones every soak failure came from; a fresh range was not run.
+
 **Soak 3's four failures.** They are one class, a consequence of the AR4-A-4 fix. A ruling that settles a sold holding's split record at its close is applied there by the plan. But the record stayed in the hold set that the other ledgers' appliers read. So the same-stock comparison's later dividend waited at the ruling's close, and a re-run of that close paid it (I-5). Fixed in fbf83457: a ruled id leaves the hold set (close.js). All four seeds are kept as fixed seeds.
 
 **What the final soak's late histories exercised** (soak 5; soak 4's figures are the same — 6,000 histories, 59,957 sessions, 113,914 closes including the re-runs; the idea sold a line in 2,858):
@@ -503,6 +526,7 @@ The full register to T1a-2b-3 is `docs/audits/20261117_BUILD_T1A2B3_CORPORATE_AC
 | T2D-13 (pass budget) | Carried, T5 (unchanged) |
 | T2D-14 (a stale failed backfill can overwrite a success) | **Partly**: AR4-B-5's guard means a failure never replaces a stored `failed: false` document. The race between two concurrent fetches is not addressed. Still T5 |
 | T2D-11 (legacy split receipt) | Carried, T5 (unchanged) |
+| T1a-2b-3 §7.4: Astra re-checks D01, D02 and fixes 3–6 | Carried: in Astra's review of this build (§10). Their rows and seeds pass here (§4), and the soak re-ran them (§6) |
 
 ### 9.3 Items this build's review raised
 
@@ -529,7 +553,7 @@ These are not fixed, or not fully fixed.
 - Complete, on-time data moves money exactly as `main`: the end-to-end dump and both differentials are identical (§7).
 
 **What stays before the flag moves from `'off'`:**
-1. Astra's review of this build.
+1. Astra's review of this build. That includes the fixes no reviewer has seen (fbf83457, 747a92e4: §5.3), and T1a-2b-3's carried request to re-check D01, D02 and its fixes 3–6 (its §7.4).
 2. The founder's answers. Q-1 (sign-off for `practiceFieldCaParseReports`) is needed before the switch. Q-2 to Q-10 can be answered after it, because each leaves money where it is and names the case, but Q-2 decides whether late data on a resulted idea can ever be settled.
 3. The switch itself, by its own PR. This build changes no flag, pin, rule or index.
 
