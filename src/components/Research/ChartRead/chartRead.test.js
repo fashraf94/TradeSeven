@@ -543,6 +543,11 @@ describe('CP-3: today so far — the header\'s price against the record\'s marks
     }
     expect(todayLineOf({ state: 'valid_pullback', marks: line.marks, session: SESSION }, { ...ON, headerPrice: '200.00' })).not.toBeNull();
   });
+  it('review L1-3: only a header printed to the cent — under $1 the header prints four places, and "at" could never mean equal to the cent', () => {
+    const k = 'VALID_PULLBACK';
+    for (const p of ['0.5030', '0.0123', '195.6', '195', '195.620']) expect(readLineOf(B[k], { ...ON, headerPrice: p }).today, p).toBeNull();
+    expect(readLineOf(B[k], { ...ON, headerPrice: '195.62' }).today).not.toBeNull();
+  });
   it('TD-1: each of its four conditions turned off alone hides the line', () => {
     const k = 'VALID_PULLBACK';
     const price = at(k, 1);

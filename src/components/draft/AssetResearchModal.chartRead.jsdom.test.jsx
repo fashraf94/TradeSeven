@@ -349,7 +349,7 @@ describe('flag on: the candles and the marks (§4, §7)', () => {
     const point = sma20.data.find((p) => p.time === t);
     expect(Math.abs(point.value - B.VALID_PULLBACK.read.facts.SMA_fast)).toBeLessThanOrEqual(0.005 + 1e-9);
   });
-  it('PG-4 (review L2-3): a tapped check never follows the modal to another stock; its patterns collapse again and the chart is full again', async () => {
+  it('PG-4 (review L2-3): a tapped check never follows the modal to another stock; its patterns collapse again; the height follows where the view is', async () => {
     net.read = answer(200, B.REGIME_B);
     await browse();
     await toChart();
@@ -366,6 +366,9 @@ describe('flag on: the candles and the marks (§4, §7)', () => {
     expect(litNow()).toEqual([]);
     expect($('[data-check-row][aria-pressed="true"]')).toBeNull();
     expect($('[data-check-group="patterns"]')?.hasAttribute('data-collapsed')).toBe(true);
+    // The view kept its place (scrolled into the checks): the new stock's checks land compact (review L2B-6); at the top, full.
+    expect($('[data-chart-pin]').dataset.chartPin).toBe('compact');
+    await scrollView(0);
     expect($('[data-chart-pin]').dataset.chartPin).toBe('full');
   });
   it('review L2-3 (mutant Y7): leaving the Chart view clears the tapped check; back on it no mark is lit and the chart is full height', async () => {
@@ -501,6 +504,92 @@ describe('CP-1: the checks on the page (PG-1 – PG-10)', () => {
     await browse();
     await toChart();
     expect($('[data-chart-read-checks]')).toBeTruthy();
+  });
+});
+
+describe('the review of 19 Nov (lens 2 and lens 1): each row failed before its fix', () => {
+  /** The view's height as the shell measures it (jsdom has no layout: 0 — "unmeasured" — unless set here). */
+  const viewHeight = (h) => {
+    const desc = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientHeight');
+    Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get() { return this.hasAttribute('data-shell-view') ? h : 0; } });
+    return () => { if (desc) Object.defineProperty(HTMLElement.prototype, 'clientHeight', desc); else delete HTMLElement.prototype.clientHeight; };
+  };
+  it('L2B-3: on a short view (a phone on its side) the chart is not pinned and never compacts — the checks scroll into view with the page', async () => {
+    const restore = viewHeight(300);
+    try {
+      await browse();
+      await toChart();
+      expect($('[data-chart-read-checks]')).toBeTruthy();
+      expect($('[data-chart-pin]').dataset.chartPin).toBe('none');
+      expect($('[data-chart-pin]').style.position).toBe('');
+      await intoChecks();
+      expect($('[data-chart-pin]').dataset.chartPin).toBe('none');
+      expect($$('[data-chart-read-checks] button').map((b) => b.style.scrollMarginTop).filter((m) => m && m !== '0px')).toEqual([]);
+    } finally {
+      restore();
+    }
+  });
+  it('L2B-3: a tall view pins as before (650 px: the compact chart and a page under it fit)', async () => {
+    const restore = viewHeight(650);
+    try {
+      await browse();
+      await toChart();
+      expect($('[data-chart-pin]').dataset.chartPin).toBe('full');
+      expect($('[data-chart-pin]').style.position).toBe('sticky');
+    } finally {
+      restore();
+    }
+  });
+  it('L2B-2: while compact, the chart\'s own placeholder (here its error box) takes the compact height, never the full one', async () => {
+    net.daily = []; // the daily request answers no bars: the chart's error box, while the read still lands with its checks
+    await browse();
+    await toChart();
+    expect($('[data-shell-chart-state="error"]').style.height).toBe('284px'); // 240 + 44 at full height
+    await intoChecks();
+    expect($('[data-chart-pin]').dataset.chartPin).toBe('compact');
+    expect($('[data-shell-chart-state="error"]').style.height).toBe('224px'); // 180 + 44
+  });
+  it('L2B-6: a read that lands after the player has scrolled into where its checks will be compacts at once — no full-height chart over the page', async () => {
+    let release;
+    const gate = new Promise((r) => { release = r; });
+    net.read = () => gate.then(() => answer(200, B.VALID_PULLBACK)());
+    const proto = Element.prototype.getBoundingClientRect;
+    Element.prototype.getBoundingClientRect = function rect() {
+      if (this.hasAttribute?.('data-chart-read-checks')) return { top: 120, bottom: 720, left: 0, right: 390, width: 390, height: 600, x: 0, y: 120 };
+      if (this.hasAttribute?.('data-chart-pin')) return { top: 0, bottom: 284, left: 0, right: 390, width: 390, height: 284, x: 0, y: 0 };
+      return proto.call(this);
+    };
+    try {
+      await browse();
+      await toChart();
+      expect($('[data-chart-read-checks]')).toBeNull(); // still loading
+      const view = $('[data-shell-scroll="chart"]');
+      Object.defineProperty(view, 'scrollTop', { configurable: true, writable: true, value: 400 });
+      await act(async () => { view.dispatchEvent(new Event('scroll')); });
+      await act(async () => { release(); });
+      await flush();
+      expect($('[data-chart-read-checks]')).toBeTruthy();
+      expect($('[data-chart-pin]').dataset.chartPin).toBe('compact');
+    } finally {
+      Element.prototype.getBoundingClientRect = proto;
+    }
+  });
+  it('L1-6 (side note): while 1W loads (the daily bars still drawn) with SMA on, the weekly note does not show; it shows once the weeks land', async () => {
+    let release;
+    net.read = answer(200, B.REGIME_B);
+    net.daily = dailyFor('REGIME_B');
+    net.weekly = null;
+    const weekly = [{ date: '2026-11-16', open: 199, high: 202, low: 197, close: 200.37, volume: 1 }, { date: '2026-11-09', open: 197, high: 200, low: 195, close: 198.1, volume: 1 }, { date: '2026-11-02', open: 195, high: 198, low: 193, close: 196.3, volume: 1 }, { date: '2026-10-26', open: 193, high: 196, low: 191, close: 194.4, volume: 1 }];
+    net.weeklyGate = new Promise((r) => { release = r; });
+    await browse();
+    await toChart();
+    await click(chartBtn('SMA'));
+    await click(chartBtn('1W'));
+    expect($('[data-chart-read-weekly-note]')).toBeNull(); // the daily bars and daily averages are still what is drawn
+    net.weekly = weekly;
+    await act(async () => { release(); });
+    await flush();
+    expect($('[data-chart-read-weekly-note]').textContent).toBe('On 1W the drawn averages are weekly; marks 1 to 3 are on 1D.');
   });
 });
 

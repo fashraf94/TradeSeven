@@ -445,6 +445,14 @@ describe('BATTLE_RESEARCH_MODE on — the surface in the screen', () => {
     await click(q('[data-cockpit-browse]'));
     expect(q('[data-cockpit-bench-sheet]')).toBeTruthy();
     expect(q('[data-br-surface]')).toBeNull();
+    // Review L2B-8 (CP-2, OV-2): a stock opened from the bench sheet — outside Battle Research — carries no
+    // openedFromResearch, so it opens like any battle row (on the Chart view, where the read is on).
+    const door = q('[data-cockpit-bench-research]');
+    expect(door).toBeTruthy();
+    await click(door);
+    expect(q(`[data-research-modal="${door.getAttribute('data-cockpit-bench-research')}"]`)).toBeTruthy();
+    expect(MODAL.last.sheetContext).toBeTruthy();
+    expect('openedFromResearch' in MODAL.last.sheetContext).toBe(false);
   }, ROW_MS);
 
   it('the battle leaving active closes the surface (BRS-1)', async () => {

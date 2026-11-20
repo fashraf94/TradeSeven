@@ -612,8 +612,14 @@ const AssetResearchModal = ({
   const readAfterRef = useRef(null);
   // PG-2: the chart has two heights — the shell's at the top of the view; about a third of the view's height (never under
   // 180 px) once the player scrolls into the checks. Never compact in a quiet state (PG-7).
-  const compact = checksShown && readCompact;
   const compactChartH = Math.min(shellChartH, Math.max(180, Math.round(shellBodyHeight / 3)));
+  // Review L2B-3: the chart pins only where the view holds the compact chart (its control row, 56 px with the Rule chip, and
+  // its plot) AND a page under it; on a short view (a phone on its side, a short window) it scrolls away with the page at
+  // its full height, never compact. Before the view is measured (0), as designed: pinned.
+  const pinned = checksShown && (!(shellBodyHeight > 0) || shellBodyHeight - (56 + compactChartH) >= 160);
+  const compact = pinned && readCompact;
+  // The chart block's plot at its height now: the chart and its own placeholders (loading, error, Battle's) alike (L2B-2).
+  const plotH = compact ? compactChartH : shellChartH;
   // What the chart is handed (ChartRead/chartProps.js): UC-1's unadjusted 1D candles exactly where the read shows,
   // the Rule chip and the marks on 1D and 1W, the one 20-day stub on Battle; nothing without a read.
   // Only on bars that ARE the timeframe's (review L2-1: the hook keeps the old series until the new one lands); a
@@ -625,17 +631,44 @@ const AssetResearchModal = ({
   });
   const readChart = readChartBase?.ruleChip ? { ...readChartBase, ruleChip: { ...readChartBase.ruleChip, onToggle: () => setReadRuleOn((v) => !v) } } : readChartBase;
   // PG-2: ONE change of height, never a resize per scroll frame — compact once the checks reach the pinned chart's lower
-  // edge; full again only back at the top of the view (the two thresholds apart, so a change never undoes itself).
-  const onChartScroll = (e) => {
-    if (!checksShown) return;
-    const view = e.currentTarget;
-    if (!readCompact) {
+  // edge; full again only back at the top of the view (the two thresholds apart, so a change never undoes itself). The
+  // checks are measured where they sit in the page, not where the ease is drawing them (review L2B-5), and the height is
+  // decided on every scroll AND once when the pinned checks first show (review L2B-6: a read that lands after the player
+  // has scrolled). Read through refs: the effect below runs with this render's values.
+  const readPinState = useRef({ pinned: false, compact: false });
+  readPinState.current = { pinned, compact: readCompact };
+  const decideCompact = () => {
+    const view = chartViewRef.current;
+    if (!readPinState.current.pinned || !view) return;
+    if (!readPinState.current.compact) {
       const pin = chartPinRef.current;
       const checks = readChecksRef.current;
-      if (pin && checks && view.scrollTop > 0 && checks.getBoundingClientRect().top <= pin.getBoundingClientRect().bottom + 0.5) setReadCompact(true);
+      if (!pin || !checks || !(view.scrollTop > 0)) return;
+      let easing = 0;
+      try {
+        const t = readAfterRef.current ? getComputedStyle(readAfterRef.current).transform : 'none';
+        if (t && t !== 'none' && typeof DOMMatrixReadOnly === 'function') easing = new DOMMatrixReadOnly(t).m42;
+      } catch { easing = 0; }
+      if (checks.getBoundingClientRect().top - easing <= pin.getBoundingClientRect().bottom + 0.5) setReadCompact(true);
     } else if (view.scrollTop <= 0) {
       setReadCompact(false);
     }
+  };
+  const onChartScroll = () => decideCompact();
+  React.useLayoutEffect(() => { if (pinned) decideCompact(); }, [pinned]); // eslint-disable-line react-hooks/exhaustive-deps -- once, as the pinned checks appear
+  // Focus order (review L2B-4): anything under the pinned chart that the keyboard focuses — a record-day chip, the
+  // Technical content's sections, a check — is brought out from under it. Keyboard focus only (:focus-visible): a tap
+  // scrolls nothing (PG-4). The chart's own controls never move the page.
+  const onChartFocus = (e) => {
+    const view = e.currentTarget;
+    const pin = chartPinRef.current;
+    const target = e.target;
+    if (!readPinState.current.pinned || !pin || !target || pin.contains(target)) return;
+    let keyboard = false;
+    try { keyboard = target.matches(':focus-visible'); } catch { keyboard = false; }
+    if (!keyboard) return;
+    const over = pin.getBoundingClientRect().bottom + 8 - target.getBoundingClientRect().top;
+    if (over > 0) view.scrollTop -= over;
   };
   // The height changes at once (one chart rebuild); the page under the pinned chart eases into its new place by the
   // difference (BUILD_RULES §11 'smooth'; reduced motion: at once).
@@ -659,14 +692,14 @@ const AssetResearchModal = ({
   const [readPinH, setReadPinH] = useState(null);
   React.useLayoutEffect(() => {
     const el = chartPinRef.current;
-    if (!checksShown || !el) return undefined;
+    if (!pinned || !el) return undefined;
     const measure = () => setReadPinH((h) => (h === el.offsetHeight ? h : el.offsetHeight));
     measure();
     if (typeof ResizeObserver !== 'function') return undefined;
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [checksShown]);
+  }, [pinned]);
   // (Build C's drawer geometry — the shorter chart above the drawer, its mid snap and
   // footer — is replaced by the shell, R-28: the sheet now lives only in the shell.)
 
@@ -1008,14 +1041,14 @@ const AssetResearchModal = ({
           // PG-2: while the checks show, no scroll anchoring — when the pinned chart changes height the page under it moves
           // by the difference (the browser's anchoring would undo that by moving the scroll position instead, to the top,
           // and the chart would change height straight back: measured in Edge, 240 → 0 → full → compact).
-          <motion.div key="chart" ref={chartViewRef} data-shell-scroll="chart" {...fadeIn} style={checksShown ? { ...viewScroll, overflowAnchor: 'none' } : viewScroll} {...(chartRead.status !== 'off' ? { onScroll: onChartScroll } : {})}>
+          <motion.div key="chart" ref={chartViewRef} data-shell-scroll="chart" {...fadeIn} style={pinned ? { ...viewScroll, overflowAnchor: 'none' } : viewScroll} {...(chartRead.status !== 'off' ? { onScroll: onChartScroll, onFocus: onChartFocus } : {})}>
             {(() => {
               const chartBlock = (<>
             {battleShown && battleSeries.status !== 'ready' && (
               // BC2-1: the Battle bars' own states — loading, a refused or failed request (Retry is a tap), none yet.
-              <div data-shell-chart-state={`battle-${battleSeries.status}`} style={{ height: `${shellChartH + 44}px`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', background: ST.bg }}>
+              <div data-shell-chart-state={`battle-${battleSeries.status}`} style={{ height: `${plotH + 44}px`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', background: ST.bg }}>
                 {battleSeries.status === 'loading' || battleSeries.status === 'idle'
-                  ? <div style={{ width: '90%', height: `${Math.max(60, shellChartH - 24)}px`, borderRadius: '8px', background: ST.surface }} />
+                  ? <div style={{ width: '90%', height: `${Math.max(60, plotH - 24)}px`, borderRadius: '8px', background: ST.surface }} />
                   : <span style={{ color: ST.ink2, fontSize: '14px', textAlign: 'center', padding: '0 16px' }}>{battleSeries.status === 'empty' ? SHELL_COPY.battleEmpty : SHELL_COPY.battleUnavailable}</span>}
                 {(
                   // Always a way back to the 1D / 1W pill, loading included (PR 2 review B2).
@@ -1033,12 +1066,12 @@ const AssetResearchModal = ({
               </div>
             )}
             {!battleShown && researchData.loading && !researchData.ohlcvData && (
-              <div data-shell-chart-state="loading" style={{ height: `${shellChartH + 44}px`, display: 'flex', alignItems: 'center', justifyContent: 'center', background: ST.bg }}>
-                <div style={{ width: '90%', height: `${Math.max(60, shellChartH - 24)}px`, borderRadius: '8px', background: ST.surface }} />
+              <div data-shell-chart-state="loading" style={{ height: `${plotH + 44}px`, display: 'flex', alignItems: 'center', justifyContent: 'center', background: ST.bg }}>
+                <div style={{ width: '90%', height: `${Math.max(60, plotH - 24)}px`, borderRadius: '8px', background: ST.surface }} />
               </div>
             )}
             {!battleShown && researchData.error && !researchData.ohlcvData && (
-              <div data-shell-chart-state="error" style={{ height: `${shellChartH + 44}px`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', background: ST.bg }}>
+              <div data-shell-chart-state="error" style={{ height: `${plotH + 44}px`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', background: ST.bg }}>
                 <span style={{ color: ST.ink2, fontSize: '14px' }}>{SHELL_COPY.chartUnavailable}</span>
                 <button type="button" onClick={researchData.retry} style={{ padding: '6px 16px', borderRadius: '6px', border: `1px solid ${ST.hair}`, background: ST.surface, color: ST.teal, fontWeight: 600, cursor: 'pointer' }}>
                   <span style={{ fontSize: '12px' }}>{SHELL_COPY.chartRetry}</span>
@@ -1058,7 +1091,7 @@ const AssetResearchModal = ({
                 activeHighlight={chartHighlight}
                 // The Chart view's read: the shell's own height at the top of the view; compact once the player scrolls
                 // into the checks (PG-2).
-                height={compact ? compactChartH : shellChartH}
+                height={plotH}
                 // 💣 is a view of its own here (the header's pill), never a pill inside the chart;
                 // with Bomb mode rolled back the legacy bomb chart keeps its pill (bombData).
                 bombData={bombOn || bombHidden ? null : bombData}
@@ -1078,7 +1111,7 @@ const AssetResearchModal = ({
               // chart never remounts when the read lands); it pins only while the checks show. Off: today's markup.
               if (chartRead.status === 'off') return chartBlock;
               return (
-                <div ref={chartPinRef} data-chart-pin={checksShown ? (compact ? 'compact' : 'full') : 'none'} style={checksShown ? { position: 'sticky', top: 0, zIndex: 3, background: ST.bg } : undefined}>
+                <div ref={chartPinRef} data-chart-pin={pinned ? (compact ? 'compact' : 'full') : 'none'} style={pinned ? { position: 'sticky', top: 0, zIndex: 3, background: ST.bg } : undefined}>
                   {chartBlock}
                 </div>
               );
@@ -1112,10 +1145,11 @@ const AssetResearchModal = ({
                 expanded={readExpanded}
                 onExpand={() => setReadExpanded(true)}
                 // FX-4: on 1W with SMA on, one quiet line in the checks' head says where marks 1 – 3 went.
-                note={!battleShown && weeklyAveragesHideMarks({ timeframe: researchData.timeframe, smaOn }) ? CHART_READ_COPY.weeklyAveragesNote : null}
+                // Only once the weeks are drawn (review L1-6: while 1W loads, the daily bars and averages are still on screen).
+                note={!battleShown && weeklyAveragesHideMarks({ timeframe: researchData.timeframe, smaOn }) && barsMatchTimeframe(researchData.ohlcvData, '1W') ? CHART_READ_COPY.weeklyAveragesNote : null}
                 // Tab never leaves a row under the pinned chart: the chart block's measured height (before the first
                 // measure, its 44 px control row and plot), and a little air.
-                scrollMarginTop={(readPinH > 0 ? readPinH : 44 + (compact ? compactChartH : shellChartH)) + 8}
+                scrollMarginTop={pinned ? (readPinH > 0 ? readPinH : 44 + plotH) + 8 : 0}
               />
             )}
             {/* SQ-1: today's Technical tab, below the chart in the same scroll; a level tapped here still lights on the chart */}

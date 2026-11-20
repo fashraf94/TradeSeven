@@ -163,6 +163,8 @@ const lineOf = (state, fields) => ({ state, glyph: 'none', lead: null, rest: '',
 // ---------------------------------------------------------------- today so far (CP-3)
 
 const DECIMAL_RE = /^\d+(\.\d+)?$/;
+/** A header printed to the cent (review L1-3: under $1 the header prints four places, and "at" must mean equal to the cent). */
+const CENT_RE = /^\d+\.\d{2}$/;
 /** Two printed decimals compared exactly ('361.78' vs '366.70'): -1, 0, 1; null when either is not a plain decimal. */
 function comparePrinted(a, b) {
   if (typeof a !== 'string' || typeof b !== 'string' || !DECIMAL_RE.test(a) || !DECIMAL_RE.test(b)) return null;
@@ -188,7 +190,7 @@ function comparePrinted(a, b) {
 export function todayLineOf(line, { todayEt = null, todayIsSession = false, sessionOpened = false, headerPrice = null } = {}) {
   if (!line || !CHECK_STATES.includes(line.state)) return null;
   if (todayIsSession !== true || sessionOpened !== true || typeof todayEt !== 'string' || typeof line.session !== 'string' || !(line.session < todayEt)) return null;
-  if (typeof headerPrice !== 'string' || !DECIMAL_RE.test(headerPrice)) return null;
+  if (typeof headerPrice !== 'string' || !CENT_RE.test(headerPrice)) return null;
   const T = C.today;
   const day = weekdayShort(line.session);
   const mark = (n) => line.marks.find((m) => m.n === n) ?? null;
