@@ -400,7 +400,7 @@ export class EntitlementOracle {
    * After the close of index `k`: for each ledger in `ledgers` — `{ field: { sym, entryShares, boughtAt (index), soldAt
    * (index | null) } }` — and each dividend of its symbol the inputs listed so far, received === entitled.
    */
-  check(idea, k, ledgers, label) {
+  check(idea, k, ledgers, label, { uncoveredNow = [] } = {}) {
     for (const [f, h] of Object.entries(ledgers)) {
       const l = idea?.[f];
       if (!l || !h) continue;
@@ -424,7 +424,10 @@ export class EntitlementOracle {
         const recordId = String(rq.body.recordId || '');
         if (recordId.startsWith(prefix)) splitsWait = Math.min(splitsWait, this.S.indexOf(recordId.slice(prefix.length)));
       }
-      const doubt = this.doubtOn(idea, sym);
+      // (…and a symbol whose data this close does NOT cover, by the inputs — its fetch failed, or its parse report is dirty
+      // or missing: the product waits. For a symbol no ledger holds any more the product keeps no gap record, so the inputs
+      // say it. Excused for this close only, counted; the next covered close is checked.)
+      const doubt = this.doubtOn(idea, sym) || uncoveredNow.includes(sym);
       for (const [id, e] of this.inputs.ids) {
         if (e.sym !== sym || e.type !== 'cash_dividend' || e.d > k) continue;
         const received = addUsd(0, ...(l.corporateActionReceipts || []).filter((r) => r?.applied === true && r.actionId === id).map((r) => Number(r.incomeUsd) || 0),

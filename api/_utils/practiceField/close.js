@@ -936,6 +936,17 @@ async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false, w
       alerts.push(...out.alerts);
       if (!out.row.fullQuality) allFullQuality = false;
       for (const sym of out.ownFrozen) frozenBookSymbols.add(sym);
+      // T1a-2b-4 (T2D-05): FIRST, the founder's correction of a split's ratio, as the idea's holding took it — before this
+      // close's actions, as the idea took it before its own (holdRulings.js applies it ahead of them): the same count,
+      // average cost and carried mark (reconcile.js rules 2 and 7). A dividend or a split of this close then meets the
+      // corrected count on the book as on the idea (the late soak's 1795727711 and 1795727357: mirrored after them, the book
+      // paid a dividend on the old count, and a split listed in the same close met the wrong base).
+      for (const c of (out.shareCorrections || []).filter((x) => x.field === 'ledger')) {
+        const pos = positions[c.symbol];
+        if (!pos) continue;
+        const lastMark = Number(pos.lastMark);
+        positions = { ...positions, [c.symbol]: { ...pos, shares: c.sharesAfter, avgCost: (Number(pos.costBasisTotal) || 0) / c.sharesAfter, lastMark: Number.isFinite(lastMark) ? lastMark / c.factor : pos.lastMark } };
+      }
       // Mirror the idea's OWN applied actions onto the book's positions and cash — an independent application of
       // the same action, which the reconciliation below then compares with the idea's ledger. The list is the
       // ledger's deduplicated one (Astra T1A-01): one application per action id, never one per feed row. A delisting
@@ -966,12 +977,6 @@ async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false, w
       // count, average cost and carried mark (reconcile.js rules 2 and 7). Each adjustment of each ledger is recorded
       // beside the idea (its evidence document, created below).
       for (const a of out.adjusted?.ledger?.posted || []) bookCash = fromCents(toCents(bookCash) + toCents(a.amountUsd));
-      for (const c of (out.shareCorrections || []).filter((x) => x.field === 'ledger')) {
-        const pos = positions[c.symbol];
-        if (!pos) continue;
-        const lastMark = Number(pos.lastMark);
-        positions = { ...positions, [c.symbol]: { ...pos, shares: c.sharesAfter, avgCost: (Number(pos.costBasisTotal) || 0) / c.sharesAfter, lastMark: Number.isFinite(lastMark) ? lastMark / c.factor : pos.lastMark } };
-      }
       for (const [f, plan] of Object.entries(out.adjusted || {})) {
         for (const a of plan?.posted || []) adjustmentDocs.push([idea.ideaId, f, a]);
       }

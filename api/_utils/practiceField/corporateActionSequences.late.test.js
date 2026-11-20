@@ -12,7 +12,7 @@
 
 import { describe, it, expect, afterAll } from 'vitest';
 import { writeFileSync } from 'node:fs';
-import { generateLate, run, installSequenceHooks, FIXED_LATE, LATE_KINDS } from './__testsupport__/caSequences.js';
+import { generateLate, run, installSequenceHooks, FIXED_LATE, LATE_KINDS, LATE_SOAK_SEEDS } from './__testsupport__/caSequences.js';
 
 installSequenceHooks();
 
@@ -27,6 +27,10 @@ describe('S-6 extended — Astra\'s T2D-03, 04, 05 and 12 as fixed cases, I-1 to
     const { entitlement } = await run(plan);
     expect(entitlement.checked).toBeGreaterThan(0); // I-6 looked at something
   }, 60_000);
+});
+
+describe('S-6 extended — the late soak findings, kept as fixed seeds', () => {
+  it.each(LATE_SOAK_SEEDS)('late soak seed %i', async (seed) => { await run(generateLate(seed)); }, 60_000);
 });
 
 describe('S-6 extended — late generated histories: I-1 to I-6 after every close', () => {

@@ -440,10 +440,12 @@ async function runInner(plan, expose) {
     closes += 1;
     // (A sale breaks the same-stock tie, as it should: the comparison keeps the stock the idea sold.)
     checkAfterClose(c, date, plan.ambiguousSince, tied && soldAt === null, inputs, entryOf, plan.seed);
-    entitlement.check(getIdea(c.db, c.bookId, c.ideaId), step.i, holdingsOf(), plan.seed);
+    // (The symbols this close's inputs leave uncovered: a failed fetch, or a dirty or missing parse report.)
+    const uncoveredNow = step.kind === 'catchup' ? [] : [...(step.uncoveredSyms ?? (step.uncovered ? ['AAPL'] : [])), ...(step.parse ? ['AAPL'] : [])];
+    entitlement.check(getIdea(c.db, c.bookId, c.ideaId), step.i, holdingsOf(), plan.seed, { uncoveredNow });
     if (previous !== null) { await rerunAdds(c, date, previous); closes += 1; }
     checkAfterClose(c, date, plan.ambiguousSince, tied && soldAt === null, inputs, entryOf, plan.seed);
-    entitlement.check(getIdea(c.db, c.bookId, c.ideaId), step.i, holdingsOf(), plan.seed);
+    entitlement.check(getIdea(c.db, c.bookId, c.ideaId), step.i, holdingsOf(), plan.seed, { uncoveredNow });
     previous = date;
   }
   const idea = getIdea(c.db, c.bookId, c.ideaId);
@@ -1113,3 +1115,9 @@ export const FIXED_LATE = [
     lc(2, 80, [sp(1, '5/4'), d(2, 1)]), lc(3, 80, [sp(1, '5/4'), d(2, 1)])],
     end: late((idea) => { expect(idea.ledger.holdings.AAPL.shares).toBe(124.96251); expect(idea.ledger.dividendsUsd).toBe(124.96); }) },
 ];
+
+/** T1a-2b-4: the late soak's findings, kept as fixed seeds of the late generator (each failed at the commit before its fix):
+ *  1911240021 a late entitlement's place among the receipts; 1795727711, 1795727357 the book's mirror of a ruled split
+ *  correction; 1795729395, 1795728065 a closed holding's row that waited on a doubt; 1795731088, 1795732944, 1795729025 a
+ *  closed holding's re-date screen and the rows dated outside its holding. */
+export const LATE_SOAK_SEEDS = [1911240021, 1795727711, 1795727357, 1795729395, 1795728065, 1795731088, 1795732944, 1795729025];

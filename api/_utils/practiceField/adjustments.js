@@ -259,11 +259,36 @@ export function planLedgerAdjustments(ledger, ctx) {
       const id = typeof a.actionId === 'string' && a.founderRuling ? a.actionId : actionIdOf(a);
       byId.set(id, [...(byId.get(id) || []), { ...a, actionId: id }]);
     }
-    for (const [id, group] of [...byId].sort(([, a], [, b]) => byDatePhaseId(a[0], b[0]))) {
+    // A row that waited on a doubt at an earlier close (`closedHeldRows`, the closed holding's own held record — as a held
+    // symbol's `heldActions`): replayed when the feed no longer lists it, and the payload a later different row revises.
+    // (The late soak's 1795729395 and 1795728065: with nothing kept while it waited, a row listed only during a doubt was
+    // never paid, and a later different payload under its id was applied as if it were the first.)
+    const heldOf = (id) => (cur().closedHeldRows || []).find((r) => r.actionId === id && upper(r.ticker) === sym) ?? null;
+    for (const r of cur().closedHeldRows || []) {
+      if (upper(r.ticker) !== sym || byId.has(r.actionId) || !(r.effectiveDate <= c.through)) continue;
+      byId.set(r.actionId, [{ type: r.type, ticker: sym, effectiveDate: r.effectiveDate, ...(r.ratio != null ? { ratio: r.ratio } : {}), ...(r.amount != null ? { amount: r.amount } : {}), source: r.source ?? null, actionId: r.actionId, fromHeld: true }]);
+    }
+    const dropHeld = (id) => { if (heldOf(id)) { const l = edit(); l.closedHeldRows = l.closedHeldRows.filter((r) => r.actionId !== id); if (l.closedHeldRows.length === 0) delete l.closedHeldRows; } };
+    for (const [id, group0] of [...byId].sort(([, a], [, b]) => byDatePhaseId(a[0], b[0]))) {
+      // (S-1 ②, for a closed holding: the feed now lists the id with a payload other than the one it waited with — a revision.)
+      const held = heldOf(id);
+      const listedHere = group0.filter((a) => !a.fromHeld);
+      const group = listedHere.length > 0 ? listedHere : group0;
       const first = group[0];
       const ruled = group.find((a) => a.founderRuling?.kind === 'conflict' && ruledIds?.has(id)) ?? null;
       const keys = [...new Set(group.filter((a) => !a.founderRuling).map(actionPayloadOf))];
+      if (!ruled && held && listedHere.length > 0 && keys.some((k) => k !== actionPayloadOf(held))) {
+        const l = edit();
+        const rowsAll = [...new Map([payloadRow(held, held.heldOn ?? null), ...group.filter((a) => !a.founderRuling).map((a) => payloadRow(a, date))].map((x) => [actionPayloadOf(x), x])).values()];
+        const rec = { actionId: id, type: first.type, ticker: sym, effectiveDate: first.effectiveDate, applied: false, reason: CONFLICTING_ACTION, entitled: true, rows: rowsAll, seenOn: date, kinds: ['revision'], revisedFrom: { heldOn: held.heldOn ?? null }, closedHolding: true };
+        l.corporateActionReceipts = [...l.corporateActionReceipts, rec];
+        out.recorded.push(rec);
+        dropHeld(id);
+        out.alerts.push(`PRACTICE_FIELD_CORPORATE_ACTION_AMBIGUOUS ${ideaId} ${ledgerKind} ${sym} ${id} — revision on a holding since closed (it waited with another payload): nothing is paid until the founder rules`);
+        continue;
+      }
       if (settledNow().has(id)) {
+        dropHeld(id);
         // A different payload under an id already settled on this ledger: the vendor's correction (T2D-05) — recorded,
         // never applied by code (a ruling then corrects it through the recompute below).
         const settledKey = (() => {
@@ -294,6 +319,7 @@ export function planLedgerAdjustments(ledger, ctx) {
         // An OPEN record (rev 1): the id is ambiguous — it takes any payload it has not seen, and waits for the founder.
         const open = openRecordOf(cur(), id);
         if (open) {
+          dropHeld(id);
           const have = new Set(recordedPayloadsOf(open).map(actionPayloadOf));
           const add = [...new Map(group.filter((a) => !a.founderRuling && !have.has(actionPayloadOf(a))).map((a) => [actionPayloadOf(a), payloadRow(a, date)])).values()];
           if (add.length > 0 && open.reason !== REVISED_AFTER_RULING) {
@@ -309,13 +335,28 @@ export function planLedgerAdjustments(ledger, ctx) {
           const rec = { actionId: id, type: first.type, ticker: sym, effectiveDate: first.effectiveDate, applied: false, reason: CONFLICTING_ACTION, entitled: true, rows: rowsAll, seenOn: date, kinds: ['conflict'], closedHolding: true };
           l.corporateActionReceipts = [...l.corporateActionReceipts, rec];
           out.recorded.push(rec);
+          dropHeld(id);
           out.alerts.push(`PRACTICE_FIELD_CORPORATE_ACTION_AMBIGUOUS ${ideaId} ${ledgerKind} ${sym} ${id} — conflict on a holding since closed (${rowsAll.length} payloads): nothing is paid until the founder rules`);
           continue;
         }
         // A POSSIBLE RE-DATE (S-1 ③): the same payload under another id within the window.
         const key = keys[0];
-        const match = redatePool(cur(), sym, first.type).find((p) => p.actionId !== id && p.key === key && withinSessions(p.effectiveDate, first.effectiveDate, REDATE_WINDOW_SESSIONS));
+        // (…and every row of the symbol listed now OUTSIDE the holding's dates — after it closed, or on or before it was
+        // bought: the same payload under such a date may be this very action moved past the sale, or before the purchase,
+        // when the holding was owed nothing. The late soak's 1795731088 and 1795732944: a split dated before the sale, beside
+        // the same ratio dated after it, was applied to the history.)
+        const outside = (rows[sym] || []).filter((a) => a && !a.founderRuling && upper(a.ticker) === sym && a.type === first.type && isDate(a.effectiveDate) && a.effectiveDate <= date
+          && !(a.effectiveDate <= c.through && (c.openedAt === null || a.effectiveDate > c.openedAt))).map((a) => ({ actionId: actionIdOf(a), effectiveDate: a.effectiveDate, key: actionPayloadOf(a) }));
+        const pool = [...redatePool(cur(), sym, first.type), ...outside, ...(cur().closedHeldRows || []).filter((r) => r.type === first.type && upper(r.ticker) === sym).map((r) => ({ actionId: r.actionId, effectiveDate: r.effectiveDate, key: actionPayloadOf(r), held: r }))];
+        const match = pool.find((p) => p.actionId !== id && p.key === key && withinSessions(p.effectiveDate, first.effectiveDate, REDATE_WINDOW_SESSIONS));
         if (match) {
+          dropHeld(id);
+          // (S-1 ③: a held row it may repeat is ambiguous too — recorded, and no longer replayed.)
+          if (match.held) {
+            const l0 = edit();
+            l0.corporateActionReceipts = [...l0.corporateActionReceipts, { actionId: match.actionId, type: first.type, ticker: sym, effectiveDate: match.held.effectiveDate, ratio: match.held.ratio ?? null, amount: match.held.amount ?? null, cashPerShare: null, source: match.held.source ?? null, applied: false, reason: POSSIBLE_REDATE, redateOf: id, seenOn: date, rows: [payloadRow(match.held, match.held.heldOn ?? null)], kinds: ['possible_redate'], closedHolding: true }];
+            dropHeld(match.actionId);
+          }
           const l = edit();
           const rec = { actionId: id, type: first.type, ticker: sym, effectiveDate: first.effectiveDate, ratio: first.ratio ?? null, amount: first.amount ?? null, cashPerShare: null, source: first.source ?? null, applied: false, reason: POSSIBLE_REDATE, redateOf: match.actionId, seenOn: date, rows: [payloadRow(first, null)], kinds: ['possible_redate'], closedHolding: true };
           l.corporateActionReceipts = [...l.corporateActionReceipts, rec];
@@ -325,7 +366,16 @@ export function planLedgerAdjustments(ledger, ctx) {
         }
       }
       const action = ruled ?? first;
-      if (doubtOn(sym, action.effectiveDate)) continue; // durable: re-examined at the next close
+      if (doubtOn(sym, action.effectiveDate)) {
+        // Durable: the row waits on the closed holding (replayed at the first close without the doubt, revised if the feed
+        // later lists it otherwise). A founder's action is re-supplied by its ruling: not kept here.
+        if (!action.founderRuling && !held) {
+          const l = edit();
+          l.closedHeldRows = [...(l.closedHeldRows || []), { actionId: id, type: action.type, ticker: sym, effectiveDate: action.effectiveDate, ratio: action.ratio ?? null, amount: action.amount ?? null, source: action.source ?? null, heldOn: date, closedOn: c.through }];
+        }
+        continue;
+      }
+      dropHeld(id);
       if (SHARE_BASIS_TYPES.has(action.type)) {
         // A HISTORY-ONLY share-basis receipt: the stock is gone, but the ex-date count of a dividend dated after it changes.
         const ratio = Number(action.ratio);
