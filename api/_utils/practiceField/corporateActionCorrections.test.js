@@ -863,19 +863,17 @@ describe('the lens (b) review\'s rows — the report tied to its rows, a late re
     const base = (sym, o) => fetchCorporateActionsEODHD(sym, { ...o, apiKey: 'k', fetchImpl: o.fetchImpl ?? http });
     const opts = { from: '2026-11-12', to: '2026-11-19' };
     // Three symbols fetched at once: every entry lands, never two writes to the document at once, in at most two merges.
+    // (Fix round, L-7: each merge is a TRANSACTION — reading the stored entries and merging into them — so the writes are
+    // counted at the transaction.)
     let inFlight = 0; let most = 0; let writes = 0;
-    const watched = new Proxy(db, { get: (t, k) => (k !== 'collection' ? t[k] : (name) => {
-      const col = t.collection(name);
-      if (name !== 'practiceFieldCaParseReports') return col;
-      return { doc: (id) => { const d = col.doc(id); return { set: async (...a) => { inFlight += 1; writes += 1; most = Math.max(most, inFlight); await new Promise((r) => setTimeout(r, 5)); try { return await d.set(...a); } finally { inFlight -= 1; } } }; } };
-    }) });
+    const watched = new Proxy(db, { get: (t, k) => (k !== 'runTransaction' ? t[k] : async (fn, o) => { inFlight += 1; writes += 1; most = Math.max(most, inFlight); await new Promise((r) => setTimeout(r, 5)); try { return await t.runTransaction(fn, o); } finally { inFlight -= 1; } }) });
     const fetcher = makeParseReportingFetcher(watched, { symbols: ['AAPL', 'MSFT', 'SPY'], base, fetchImpl: http });
     await Promise.all(['AAPL', 'MSFT', 'SPY'].map((s) => fetcher(s, opts)));
     expect(Object.keys(db._get('practiceFieldCaParseReports/2026-11-17').symbols).sort()).toEqual(['AAPL', 'MSFT', 'SPY']);
     expect(most).toBe(1);
     expect(writes).toBeLessThanOrEqual(2);
     // A write that never answers: given up after the timeout, the base's answer returned, nothing stored, alerted.
-    const stuck = new Proxy(db, { get: (t, k) => (k !== 'collection' ? t[k] : () => ({ doc: () => ({ set: () => new Promise(() => {}) }) })) });
+    const stuck = new Proxy(db, { get: (t, k) => (k !== 'runTransaction' ? t[k] : () => new Promise(() => {})) });
     const errors = [];
     const spy = vi.spyOn(console, 'error').mockImplementation((m) => errors.push(String(m)));
     try {

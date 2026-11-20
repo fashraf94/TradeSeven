@@ -411,6 +411,7 @@ export class EntitlementOracle {
     this.checked = 0;
     this.excused = 0;
     this.waiting = 0;
+    this.refused = 0;
     this.nothingOwed = 0;
     this.authorityChecks = 0;
     this.byKind = { late_entitlement: 0, late_basis: 0, ruled_correction: 0 };
@@ -513,6 +514,25 @@ export class EntitlementOracle {
     return false;
   }
 
+  /** L-2's refusals of an approved proposal of `id` on ledger `f`, from the product's state (an excuse — never authority). */
+  refusalStands(idea, f, sym, id, h, k) {
+    const l = idea?.[f];
+    const end = this.S[h.soldAt ?? k];
+    const start = this.S[h.boughtAt];
+    const within = (d) => typeof d !== 'string' || (d > start && d <= end);
+    const openOn = (x, r) => ((r.reason === 'conflicting_action' || r.reason === 'possible_redate') && !new Set([...(x.appliedActionIds || []), ...(x.declinedActionIds || [])]).has(r.actionId)) || (r.reason === 'revised_after_ruling' && r.closedBy == null);
+    if ((l?.corporateActionReceipts || []).some((r) => r?.reason === 'possible_redate' && r.redateOf === id && openOn(l, r))) return true;
+    for (const g of LEDGERS) {
+      const x = idea?.[g];
+      if (!x) continue;
+      if ((x.corporateActionReceipts || []).some((r) => SHARE_BASIS.has(r?.type) && String(r.ticker).toUpperCase() === sym && within(r.effectiveDate) && openOn(x, r))) return true;
+      const hh = x.holdings?.[sym];
+      if (hh && ((hh.heldActions || []).some((r) => SHARE_BASIS.has(r.type) && within(r.effectiveDate)) || (hh.basisSuspicion && !(typeof hh.basisSuspicion.since === 'string' && hh.basisSuspicion.since >= end)))) return true;
+      if ((x.closedHeldRows || []).some((r) => SHARE_BASIS.has(r.type) && String(r.ticker).toUpperCase() === sym && within(r.effectiveDate))) return true;
+    }
+    return Boolean(idea?.caCoverageGaps?.[sym]) || (l?.closedCoverageDoubts?.[sym]?.dates || []).length > 0;
+  }
+
   /**
    * After the close of index `k`: for each ledger in `ledgers` — `{ field: { sym, entryShares, boughtAt (index), soldAt
    * (index | null) } }` — and each dividend of its symbol the inputs listed so far, received against entitled (see above).
@@ -530,7 +550,11 @@ export class EntitlementOracle {
         const p = this.payloadOf(id);
         if (p === undefined) { splitsWait = Math.min(splitsWait, e.d); continue; }
         if (p === null || !(Number(p.ratio) > 0)) continue;
-        splits.push({ id, d: e.d, ratio: Number(p.ratio), listedAt: this.inputs.firstListedAt(id) });
+        // (When the count this split gives became known: its first listing — or, a founder's CORRECTING ruling of its ratio, the
+        // close that ruling applies at: the dividends paid before it are recomputed by a proposal, as for a split listed late —
+        // the shape soak's 2120900188 and 2120900265.)
+        const ruled = this.authoritiesFor(null, id).filter((x) => x.kind === 'ruling' && x.correcting).map((x) => x.at);
+        splits.push({ id, d: e.d, ratio: Number(p.ratio), listedAt: Math.max(this.inputs.firstListedAt(id) ?? -1, ...ruled) });
       }
       splits.sort((a, b) => a.d - b.d || a.id.localeCompare(b.id));
       // (A founder `split` for a suspicion — an accepted request — may apply, or go moot or be refused: the product decides
@@ -565,7 +589,10 @@ export class EntitlementOracle {
         // (Unpaid when the ledger sold the stock — first listed after the sale, or listed before it and held by a doubt.)
         const lateEntitlement = h.soldAt != null && receipts.length === 0;
         if (lateEntitlement && firstListed !== null) late.push(Math.max(firstListed, h.soldAt));
-        const paidAt = receipts.length > 0 ? this.S.indexOf(receipts[0].appliedOn) : null;
+        // (Paid: its receipt, or — a late entitlement — its first posting. A split listed after that is a new late fact,
+        // which the approval that posted it did not cover: shape seed 2119990027, a 4-for-5 listed after the approved $1.)
+        const firstPosted = adjustments.map((a) => this.S.indexOf(a.postedOn)).filter((x) => x >= 0).sort((a, b) => a - b)[0] ?? null;
+        const paidAt = receipts.length > 0 ? this.S.indexOf(receipts[0].appliedOn) : firstPosted;
         if (paidAt !== null) for (const sp of splits) if (sp.d <= e.d && sp.listedAt !== null && sp.listedAt > paidAt) late.push(sp.listedAt);
         if (late.length > 0) {
           const lastLate = Math.max(...late);
@@ -573,6 +600,9 @@ export class EntitlementOracle {
           // which posts the net on the dated count.)
           const approved = authorities.some((x) => x.at > lastLate && x.at <= k && (x.kind === 'approval' || lateEntitlement || x.correcting));
           if (!approved) { this.waiting += 1; continue; }
+          // (Approved, but L-2 refuses the posting while it stands — another candidate pairs with the id, a share-basis id dated
+          // within the holding is unresolved, a holding date is uncovered: the founder's own rule, so a wait. Excuse only.)
+          if (this.refusalStands(idea, f, sym, id, h, k)) { this.refused += 1; continue; }
         }
         let count = h.entryShares;
         for (const sp of splits) if (sp.d <= e.d) count = roundSharesHere(count * sp.ratio);

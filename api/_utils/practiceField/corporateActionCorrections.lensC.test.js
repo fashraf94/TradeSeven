@@ -804,7 +804,9 @@ describe('the refuters\' rows — RF4, RF5, RF6 (each failed at 994ccc2e)', () =
     const D = `cash_dividend_AAPL_${S[1]}`;
     await close(c, 0);
     await close(c, 1, 100, [div(1, 1)]);
-    await close(c, 2, 100, [div(1, 2), spl(2, '5/4'), spl(2, '3/2')]);
+    // (Fix round: the doubt that keeps the correction pending is dated ON the dividend's ex-date — a split dated after it can
+    // no longer change that count, so it no longer defers the correction: the held path's own dating, ledger.js causesOf.)
+    await close(c, 2, 100, [div(1, 2), spl(1, '5/4'), spl(1, '3/2')]);
     expect((await rules(c, { kind: 'conflict', recordId: D, decision: 'payload', payload: { amount: 2 } }, 'r2')).status).toBe(200);
     await close(c, 3, 100, [div(1, 3)]);
     await close(c, 4, 100, [div(1, 3)]);
@@ -812,8 +814,8 @@ describe('the refuters\' rows — RF4, RF5, RF6 (each failed at 994ccc2e)', () =
     const open3 = ideaOf(c).ledger.corporateActionReceipts.filter((r) => r.actionId === D && r.reason === 'revised_after_ruling' && r.closedBy == null);
     expect(open3.map((r) => r.rows.map((x) => x.amount))).toEqual([[3]]);
     expect(rowOf(c, 4).fullQuality).toBe(false);
-    // The founder settles the split; the $2 posts; the $3 revision is still the founder's to answer.
-    expect((await rules(c, { kind: 'conflict', recordId: `split_AAPL_${S[2]}`, decision: 'payload', payload: { ratio: 1.25 } }, 'rs')).status).toBe(200);
+    // The founder settles the split (`none`: the count stands); the $2 posts; the $3 revision is still the founder's to answer.
+    expect((await rules(c, { kind: 'conflict', recordId: `split_AAPL_${S[1]}`, decision: 'none' }, 'rs')).status).toBe(200);
     for (const i of [5, 6]) await close(c, i, 100, [div(1, 3)]);
     expect(pendingKeys(c)).toEqual([]);
     expect(ideaOf(c).ledger.dividendsUsd).toBe(199.94);

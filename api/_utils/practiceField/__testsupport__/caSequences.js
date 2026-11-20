@@ -1015,10 +1015,10 @@ export const LATE_KINDS = ['sale', 'late_after_sale', 'late_after_sale_ambiguous
   'coverage_failure', 'dividend_on_time', 'spy_dividend', 'founder_ruling', 'comparison_same_stock', 'comparison_frozen_basket', 'comparison_sector_fund'];
 const LATE_AMOUNTS = [0.31, 0.47, 0.62, 0.83, 1, 1.07, 1.19, 1.38, 1.66, 2.14, 0.58, 0.94];
 
-export function generateLate(seed) {
+export function generateLate(seed, { shapes = false } = {}) {
   const r = rng(seed);
   const n = 8 + r.int(5);
-  const comparison = r.pick([{ type: 'same_stock_held' }, { type: 'frozen_basket', symbols: ['AAPL', 'MSFT'] }, { type: 'sector_fund', symbols: ['XLK'] }]);
+  let comparison = r.pick([{ type: 'same_stock_held' }, { type: 'frozen_basket', symbols: ['AAPL', 'MSFT'] }, { type: 'sector_fund', symbols: ['XLK'] }]);
   const kinds = new Set([`comparison_${comparison.type === 'same_stock_held' ? 'same_stock' : (comparison.type === 'frozen_basket' ? 'frozen_basket' : 'sector_fund')}`]);
   const feed = new Map(); // id → { sym, type, d, versions: [{ from, payloads }] }
   const truthSplits = []; // { d, ratio } the price follows
@@ -1096,9 +1096,80 @@ export function generateLate(seed) {
   const uncovered = new Set();
   for (let i = 1; i < n; i += 1) if (i !== sk && r.chance(0.12)) uncovered.add(i);
   if (uncovered.size > 0) kinds.add('coverage_failure');
+  // ── T1a-2b-4 FIX ROUND: THE SHAPES ASTRA FOUND MISSING (`shapes: true`; drawn from a SECOND stream, so every older seed of
+  // this generator writes the history it always wrote). One shape per history, and the founder's decisions on late
+  // proposals (`late` steps) through the real endpoint:
+  //   two_dates_one_close          T2E-01: two dividends of one payload dated in the sold holding, first listed in one close
+  //   moved_across_sale            T2E-02: a payload dated after the sale, dropped, then the same payload dated before it
+  //   late_split_pending_revision  T2E-03: a paid dividend revised (open), then a split dated before it listed with the revision
+  //   out_of_order_splits_round    T2E-04: a 4-for-5 and a 2-for-1 a session apart, the first listed after the second, a dividend
+  //   opposite_same_date_ids       T2E-06: a 10-for-1 and a 1-for-10 of one date, a dividend of it, the price at ×0.10–0.104
+  //   rejected_before_sale_sector  T2E-08: a sector comparison, a rejected row dated in the sold holding, then a dividend of it
+  let shape = null;
+  let noBelowLine = false;
+  const priceFactor = new Map(); // session → a factor on the split-following price (T2E-06's drift)
+  const o = shapes ? rng((seed ^ 0x2e7a1c3b) >>> 0) : null;
+  if (shapes) {
+    shape = o.pick(LATE_SHAPES);
+    kinds.add(`shape_${shape}`);
+    const amountO = () => { const free = LATE_AMOUNTS.filter((a) => !used.includes(a)); const a = free.length > 0 ? o.pick(free) : o.pick(LATE_AMOUNTS); used.push(a); return a; };
+    const needSale = ['two_dates_one_close', 'moved_across_sale', 'rejected_before_sale_sector'].includes(shape);
+    if (needSale && (sk < 0 || sk > n - 5)) { sk = 2 + o.int(2); kinds.add('sale'); }
+    if (shape === 'rejected_before_sale_sector') { comparison = { type: 'sector_fund', symbols: ['XLK'] }; kinds.delete('comparison_same_stock'); kinds.delete('comparison_frozen_basket'); kinds.add('comparison_sector_fund'); }
+    if (shape === 'two_dates_one_close') {
+      const x = amountO();
+      const d1 = 1 + o.int(sk);
+      const d2 = d1 + 1;
+      const at = Math.min(n - 1, sk + 2 + o.int(2));
+      if (at - d1 <= WINDOW) {
+        const pair = o.chance(0.5) ? [d1, d2] : [d2, d1];
+        for (const d of pair) list('AAPL', 'cash_dividend', d, at, [x]);
+      }
+    } else if (shape === 'moved_across_sale') {
+      const x = amountO();
+      const after = sk + 2; // dated after the sale (the window of sk + 1)
+      const l2 = Math.min(n - 1, after + 1 + o.int(2));
+      const outId = list('AAPL', 'cash_dividend', after, after, [x]);
+      feed.get(outId).versions.push({ from: l2, payloads: [] });
+      list('AAPL', 'cash_dividend', sk + o.int(2), l2, [x]);
+    } else if (shape === 'late_split_pending_revision') {
+      sk = -1; kinds.delete('sale');
+      const d = 2 + o.int(Math.max(1, n - 5));
+      const [p1, p2] = [amountO(), amountO()];
+      const id = list('AAPL', 'cash_dividend', d, d, [p1]);
+      feed.get(id).versions.push({ from: d + 1, payloads: [p2] });
+      const ratio = o.pick(RATIOS);
+      list('AAPL', 'split', d - 1, d + 2, [ratio]);
+      truthSplits.push({ d: d + 2, ratio: ratioOf(ratio) }); // (the price follows when the split is listed, as in T2E-03)
+      if (o.chance(0.5)) rulesAfter.set(d + 2, [...(rulesAfter.get(d + 2) || []), { kind: 'ruleTry', body: { kind: 'conflict', recordId: id, decision: 'payload', payload: { amount: o.chance(0.5) ? p2 : p1 } } }]);
+    } else if (shape === 'out_of_order_splits_round') {
+      const a = 1 + o.int(Math.max(1, n - 4));
+      list('AAPL', 'split', a + 1, a + 1, ['2/1']);
+      truthSplits.push({ d: a, ratio: 0.8 }, { d: a + 1, ratio: 2 });
+      const divFirst = o.chance(0.5);
+      if (divFirst) list('AAPL', 'cash_dividend', a + 2, a + 2, [o.pick([3.23, 1.17, 2.71])]);
+      list('AAPL', 'reverse_split', a, a + 2, ['4/5']);
+      if (!divFirst) list('AAPL', 'cash_dividend', a + 2, a + 2, [o.pick([3.23, 1.17, 2.71])]);
+    } else if (shape === 'opposite_same_date_ids') {
+      const a = 1 + o.int(Math.max(1, n - 3));
+      const rows = o.chance(0.5) ? ['10/1', '1/10'] : ['1/10', '10/1'];
+      for (const v of rows) list('AAPL', 'split', a, a, [v]);
+      list('AAPL', 'cash_dividend', a, a, [amountO()]);
+      const drift = o.pick([0.1, 0.101, 0.102, 0.104]);
+      for (let i = a; i < n; i += 1) priceFactor.set(i, drift);
+      if (sk < 0 || sk > a) { sk = a; noBelowLine = true; kinds.add('sale'); }
+    } else if (shape === 'rejected_before_sale_sector') {
+      const at = Math.min(n - 2, sk + 2 + o.int(2));
+      const rd = 1 + o.int(sk + 1);
+      parseAt.set(at, { reject: rd });
+      const dd = Math.max(rd, at + 1 - WINDOW);
+      if (dd <= sk + 1) list('AAPL', 'cash_dividend', dd, at + 1, [amountO()]);
+    }
+  }
   const priceAt = (i) => {
     let p = 100;
     for (const t of truthSplits) if (t.d <= i) p /= t.ratio;
+    if (priceFactor.has(i)) p *= priceFactor.get(i);
     return Math.round(p * 100) / 100;
   };
   const steps = [];
@@ -1112,13 +1183,17 @@ export function generateLate(seed) {
     }
     steps.push({
       kind: 'close', i, prices: { AAPL: priceAt(i), SPY: 500 }, rowsBySym, uncoveredSyms: uncovered.has(i) ? ['AAPL'] : [],
-      ...(i === sk ? { belowLine: true } : {}), ...(parseAt.has(i) ? { parse: parseAt.get(i) } : {}),
+      ...(i === sk && !noBelowLine ? { belowLine: true } : {}), ...(parseAt.has(i) ? { parse: parseAt.get(i) } : {}),
     });
     for (const x of rulesAfter.get(i) || []) steps.push(x);
     if (i > 0 && r.chance(0.15)) { steps.push({ kind: 'rule', pick: r.next(), decision: r.next() }); kinds.add('founder_ruling'); }
+    // (The founder's decisions on late proposals — approve 70%, decline 30% — after a close, in shape histories.)
+    if (shapes && i > 0 && o.chance(0.4)) { steps.push({ kind: 'late', pick: o.next(), decision: o.next() }); kinds.add('late_decision'); }
   }
-  return { seed, steps, comparison, kinds: [...kinds].sort(), clean: false, late: true, n, saleAt: sk >= 0 ? sk + 1 : null };
+  return { seed, steps, comparison, kinds: [...kinds].sort(), clean: false, late: true, n, saleAt: sk >= 0 ? sk + 1 : null, ...(shape ? { shape } : {}) };
 }
+/** T1a-2b-4 fix round: the shapes Astra found missing (generateLate's `shapes`). */
+export const LATE_SHAPES = ['two_dates_one_close', 'moved_across_sale', 'late_split_pending_revision', 'out_of_order_splits_round', 'opposite_same_date_ids', 'rejected_before_sale_sector'];
 
 // ── T1a-2b-4: ASTRA'S FOUR REPRODUCTIONS, AS FIXED CASES through every check (I-1 to I-6) ────────────────────────────
 const lc = (i, aapl, rows = [], extra = {}) => ({ kind: 'close', i, prices: { AAPL: aapl, SPY: 500 }, rowsBySym: { AAPL: rows, SPY: [] }, uncoveredSyms: [], ...extra });

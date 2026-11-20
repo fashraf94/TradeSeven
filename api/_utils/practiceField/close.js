@@ -72,7 +72,7 @@ import { PracticeFieldError } from './errors.js';
 import { practiceFieldLive } from './mode.js';
 import {
   applyLedgerActions, valueLedger, withCloseMarks, suspectedActionSymbols, markedEquityCents, openAmbiguities, cloneLedger, REDATE_WINDOW_SESSIONS,
-  shareBasisHolds, heldActionRecords, withBasisSuspicions, basisSuspicionRecords, delistingWaitingSymbols,
+  shareBasisHolds, heldActionRecords, withBasisSuspicions, basisSuspicionRecords, delistingWaitingSymbols, unresolvedShareBasis,
   markProvenance, MARK_PROVENANCE_SOURCE,
 } from './ledger.js';
 import { closeMarkQuality } from './marks.js';
@@ -450,12 +450,23 @@ function closeFilledIdea(idea, {
       // for a held symbol the dry run applies the ruled action and the item is gone; for a closed one nothing applies it, so
       // the founder's own action was deferred by its own record and the ruling closed moot.)
       const ruledHere = (id) => LEDGER_FIELDS.some((g) => ruledIdsOf(g)?.has(id));
-      const doubtOn = (sym) => uncovered.has(sym) || (holds?.get(sym) || []).some((i) => !ruledHere(i.actionId)) || out.unresolved.has(sym) || (closed.has(sym) && closedDoubt(sym));
-      // L-2: the close's own refusals of an approval — an uncovered date, the idea's hold set — named on each proposal.
-      const blockersOf = (sym) => [
+      // (Fix round: A DOUBT IN THE COUNT ON AN EX-DATE, dated as the held path dates it — ledger.js causesOf: a coverage gap
+      // holds whatever its date (T2D-07); a suspicion holds what is dated after its `since`; any other unresolved share-basis
+      // item holds what is dated on or after it. An item dated after the ex-date cannot change its count — the shape soak's
+      // 2120900020 and 2120900137: a split ambiguity, or a suspicion, dated after a dividend deferred its ruled correction.)
+      const itemHolds = (i, d) => i.type === CA_COVERAGE_GAP || typeof i.effectiveDate !== 'string' || typeof d !== 'string'
+        || (i.type === 'suspected_split' ? (typeof i.since !== 'string' || d > i.since) : i.effectiveDate <= d);
+      const ownItems = observed ? unresolvedShareBasis(out.ledger, actionsOf[f], { date }) : new Map();
+      const doubtOn = (sym, d) => uncovered.has(sym) || (closed.has(sym) && closedDoubt(sym))
+        || [...(holds?.get(sym) || []), ...(ownItems.get(sym) || [])].some((i) => !ruledHere(i.actionId) && itemHolds(i, d));
+      // L-2: the close's own refusals of an approval — an uncovered date, a share-basis id DATED WITHIN THE HOLDING unresolved
+      // on any ledger (the idea's hold set; a suspicion whose move began within it) — named on each proposal.
+      const within = (i, end, openedAt) => (typeof i.effectiveDate !== 'string' || ((openedAt === null || i.effectiveDate > openedAt) && i.effectiveDate <= end))
+        || (i.type === 'suspected_split' && (typeof i.since !== 'string' || i.since < end));
+      const blockersOf = (sym, d, { end = date, openedAt = null } = {}) => [
         ...(uncovered.has(sym) || (closed.has(sym) && closedDoubt(sym)) ? [`${LATE_BLOCKER.UNCOVERED}:${date}`] : []),
-        ...(holds?.get(sym) || []).filter((i) => !ruledHere(i.actionId)).map((i) => (i.type === CA_COVERAGE_GAP ? `${LATE_BLOCKER.UNCOVERED}:${i.since ?? i.effectiveDate}` : `${LATE_BLOCKER.SHARE_BASIS}:${i.actionId}`)),
-        ...(out.unresolved.has(sym) ? [`${LATE_BLOCKER.SHARE_BASIS}:${sym}`] : []),
+        ...[...(holds?.get(sym) || []), ...(ownItems.get(sym) || [])].filter((i) => !ruledHere(i.actionId) && (i.type === CA_COVERAGE_GAP || within(i, end, openedAt)))
+          .map((i) => (i.type === CA_COVERAGE_GAP ? `${LATE_BLOCKER.UNCOVERED}:${i.since ?? i.effectiveDate}` : `${LATE_BLOCKER.SHARE_BASIS}:${i.actionId}`)),
         ...((out.ledger.closedCoverageDoubts?.[sym]?.dates || []).map((x) => `${LATE_BLOCKER.UNCOVERED}:${x.date}`)),
       ];
       const plan = planLedgerAdjustments(out.ledger, {

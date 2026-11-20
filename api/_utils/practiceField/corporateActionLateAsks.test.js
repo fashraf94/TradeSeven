@@ -343,3 +343,18 @@ describe('T2E-05 (L-6) — `q5-correct-sold-5/4-to-3/2` and its first-listing va
     expect(ideaOf(c).result.economic.unmeasurableBecause).toContain('sale_count_differs_from_owed');
   });
 });
+
+describe('the planner\'s doubt in the count is dated as the held path dates it (fix round; the shape soak\'s 2120900020, 2120900137)', () => {
+  it('a split ambiguity dated AFTER a dividend does not defer the founder\'s correction of that dividend; one dated ON its ex-date does', async () => {
+    for (const [splitDay, deferred] of [[2, false], [1, true]]) {
+      const c = await opened();
+      await closeAt(c, 0);
+      await closeAt(c, 1, 100, [div(1, 1)]);
+      await closeAt(c, 2, 100, [div(1, 2), spl(splitDay, '5/4'), spl(splitDay, '3/2')]);
+      expect((await ask(c, { kind: 'conflict', recordId: D1, decision: 'payload', payload: { amount: 2 } }, 'r2')).status).toBe(200);
+      await closeAt(c, 3, 100);
+      const pending = (ideaOf(c).founderRulings || []).filter((r) => r.appliedOn == null).map((r) => r.requestKey);
+      expect([pending, ideaOf(c).ledger.dividendsUsd], `split dated S${splitDay}`).toEqual(deferred ? [['r2'], 99.97] : [[], 199.94]);
+    }
+  });
+});
