@@ -64,6 +64,9 @@ export function layoutRuleMarks(scene, { toX, toY, spacing, width, height = null
   const segments = []; // { n, x0, x1, y0, y1, w } — every mark's strokes, for the squares to keep off
   const wants = []; // { n, lit, y, sides: [x, …] } — each square's candidate places, in preference
   const pitch = isNum(spacing) && spacing > 0 ? spacing : 6;
+  // Review L2B-1: does any of a mark's own strokes fall in the pane? One that does not (panned or zoomed away, or its value
+  // off the price scale) draws no square and is never pulled in — the library clips its strokes, as before FX-8.
+  const inPane = (x0, x1, y0, y1) => (W === null || (x1 >= 0 && x0 <= W)) && (H === null || (y1 >= 0 && y0 <= H));
   for (const m of scene?.items || []) {
     const y = toY(m.value);
     if (!isNum(y)) continue;
@@ -72,17 +75,20 @@ export function layoutRuleMarks(scene, { toX, toY, spacing, width, height = null
       const xs = (m.times || []).map(toX);
       const x = toX(m.time);
       if (xs.length !== 3 || !xs.every(isNum) || !isNum(x)) continue;
-      // Inside the pane: the latest bar's half pitch can reach under the price scale.
-      const x0 = W === null ? Math.min(...xs) - pitch / 2 : clamp(Math.min(...xs) - pitch / 2, 0.5, W - 0.5);
-      const x1 = W === null ? Math.max(...xs) + pitch / 2 : clamp(Math.max(...xs) + pitch / 2, 0.5, W - 0.5);
       const yb = y + BRACKET_DROP;
       const lx0 = x - (LOW_TICK_BARS / 2) * pitch;
       const lx1 = x + (LOW_TICK_BARS / 2) * pitch;
+      const rx0 = Math.min(...xs) - pitch / 2;
+      const rx1 = Math.max(...xs) + pitch / 2;
+      const seen = inPane(Math.min(rx0, lx0), Math.max(rx1, lx1), y, yb);
+      // A bracket in view stays inside the pane: the latest bar's half pitch can reach under the price scale.
+      const x0 = W === null || !seen ? rx0 : clamp(rx0, 0.5, W - 0.5);
+      const x1 = W === null || !seen ? rx1 : clamp(rx1, 0.5, W - 0.5);
       lines.push({ op: 'line', x0: lx0, x1: lx1, y, w, n: m.n });
       lines.push({ op: 'path', points: [[x0, yb - 4], [x0, yb], [x1, yb], [x1, yb - 4]], w, n: m.n });
       segments.push({ n: m.n, x0: lx0, x1: lx1, y0: y, y1: y, w }, { n: m.n, x0, x1, y0: yb, y1: yb, w },
         { n: m.n, x0, x1: x0, y0: yb - 4, y1: yb, w }, { n: m.n, x0: x1, x1, y0: yb - 4, y1: yb, w });
-      wants.push({ n: m.n, lit: !!m.lit, y: yb, sides: [x1 + 3, x0 - SQUARE - 3] });
+      if (seen) wants.push({ n: m.n, lit: !!m.lit, y: yb, sides: [x1 + 3, x0 - SQUARE - 3] });
       continue;
     }
     const x = toX(m.time);
@@ -91,7 +97,7 @@ export function layoutRuleMarks(scene, { toX, toY, spacing, width, height = null
     const x1 = x + (TICK_BARS / 2) * pitch;
     lines.push({ op: 'line', x0, x1, y, w, n: m.n });
     segments.push({ n: m.n, x0, x1, y0: y, y1: y, w });
-    wants.push({ n: m.n, lit: !!m.lit, y, sides: [x0 - SQUARE - 3, x1 + 3] });
+    if (inPane(x0, x1, y, y)) wants.push({ n: m.n, lit: !!m.lit, y, sides: [x0 - SQUARE - 3, x1 + 3] });
   }
   const placed = [];
   const STEP = SQUARE + 2;
@@ -111,13 +117,14 @@ export function layoutRuleMarks(scene, { toX, toY, spacing, width, height = null
     const clear = ([px, py]) => inside(px) && !onSquare(px, py) && !onLine(px, py);
     const noSquare = ([px, py]) => inside(px) && !onSquare(px, py);
     // Nearby and clear of every square and every other mark's line; else nearby and clear of every square (a line then
-    // passes UNDER it — the squares are drawn last, so no line is ever drawn across a number); else further out; else its
-    // first end, inside the pane. A square is never put on another square while the pane has room for it.
-    const [x, cy] = near.find(clear) ?? near.find(noSquare) ?? far.find(clear) ?? far.find(noSquare)
-      ?? [W === null ? a : clamp(a, 0, Math.max(0, W - SQUARE)), fit(s.y)];
+    // passes UNDER it — the squares are drawn last, so no line is ever drawn across a number); else further out. With no
+    // room left anywhere, no square — never one on another square (review L2B-1).
+    const spot = near.find(clear) ?? near.find(noSquare) ?? far.find(clear) ?? far.find(noSquare) ?? null;
+    if (!spot) return null;
+    const [x, cy] = spot;
     placed.push({ x, y: cy });
     return { op: 'square', x, y: cy, n: s.n, lit: s.lit };
-  });
+  }).filter(Boolean);
   const ops = [...lines, ...squares];
   if (scene?.stub && isNum(scene.stub.value)) {
     const y = toY(scene.stub.value);

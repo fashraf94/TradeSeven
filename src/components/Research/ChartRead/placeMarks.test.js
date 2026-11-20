@@ -203,6 +203,40 @@ describe('FX-8: no tick through another mark\'s square; two close lit values bot
       expect(s.y + SQUARE / 2, `square ${s.n}`).toBeLessThanOrEqual(at.height);
     }
   });
+  // Review L2B-1 (19 Nov): "nothing leaves the pane" must not pull a mark that is itself OFF the pane into it — after a pan
+  // or a zoom, such squares piled along the pane's edges, away from any tick, on top of one another.
+  describe('review L2B-1: a mark whose own strokes are all off the pane draws no square, and its bracket is not pulled in', () => {
+    const W = 260;
+    const H = 200;
+    const items = [
+      { n: 1, kind: 'tick', time: 100, value: 195 }, { n: 2, kind: 'tick', time: 100, value: 190 }, { n: 3, kind: 'tick', time: 95, value: 189 },
+      { n: 4, kind: 'bracket', time: 99, value: 193, times: [98, 99, 100] }, { n: 5, kind: 'tick', time: 90, value: 201 },
+      { n: 6, kind: 'tick', time: 80, value: 186 }, { n: 7, kind: 'tick', time: 100, value: 199 },
+    ];
+    const lay = (shift, toY = (p) => (205 - p) * 10) => layoutRuleMarks({ items }, { toX: (t) => (t - 100) * 8 + shift, toY, spacing: 8, width: W, height: H });
+    const strokesOf = (ops, n) => ops.filter((o) => (o.op === 'line' || o.op === 'path') && o.n === n);
+    const meetsPane = (ops, n) => strokesOf(ops, n).some((o) => (o.op === 'line' ? o.x1 >= 0 && o.x0 <= W && o.y >= 0 && o.y <= H : o.points.some(([x, y]) => x >= 0 && x <= W && y >= 0 && y <= H)));
+    const onEach = (ops) => { const s = ops.filter((o) => o.op === 'square'); const out = []; for (let i = 0; i < s.length; i++) for (let j = i + 1; j < s.length; j++) if (Math.abs(s[i].x - s[j].x) < SQUARE && Math.abs(s[i].y - s[j].y) < SQUARE) out.push(`${s[i].n}/${s[j].n}`); return out; };
+    it('panned back (the record\'s day 150 px right of the pane): squares only for marks with a stroke in view, none on another', () => {
+      const ops = lay(410);
+      const squares = ops.filter((o) => o.op === 'square').map((o) => o.n);
+      expect(squares).toEqual(items.map((m) => m.n).filter((n) => meetsPane(ops, n)));
+      expect(squares).toEqual([6]); // mark 6's tick crosses x 260; every other mark is wholly to the right
+      expect(onEach(ops)).toEqual([]);
+      const bracket = strokesOf(ops, 4).find((o) => o.op === 'path');
+      expect(Math.min(...bracket.points.map(([x]) => x))).toBeGreaterThan(W); // not collapsed onto the pane's edge
+    });
+    it('panned far, and every value above the pane: no square at all (the drawing is the library\'s to clip)', () => {
+      expect(lay(3000).filter((o) => o.op === 'square')).toEqual([]);
+      expect(lay(3000, (p) => -50 - p).filter((o) => o.op === 'square')).toEqual([]);
+      expect(lay(200, (p) => -50 - p).filter((o) => o.op === 'square')).toEqual([]); // in time, but above the pane
+    });
+    it('zoomed in on the latest bars: marks wholly left of the pane draw no square at x 0', () => {
+      const ops = layoutRuleMarks({ items }, { toX: (t) => (t - 100) * 30 + 240, toY: (p) => (205 - p) * 10, spacing: 30, width: W, height: H });
+      for (const s of ops.filter((o) => o.op === 'square')) expect(meetsPane(ops, s.n), `square ${s.n}`).toBe(true);
+      expect(onEach(ops)).toEqual([]);
+    });
+  });
   it('fault 3 (mutant FX8-h): a bracket whose latest bar sits on the pane\'s edge is kept inside it', () => {
     const ops = layoutRuleMarks({ items: [{ n: 4, kind: 'bracket', time: 39, value: 360.37, times: [38, 39, 40] }] }, at);
     const path = ops.find((o) => o.op === 'path');
@@ -273,7 +307,7 @@ describe('RuleMarksPrimitive — the library interface', () => {
   const attach = () => {
     const updates = [];
     const p = new RuleMarksPrimitive({ ink: 'white', paper: 'black', font: 'monospace', format: formatPriceBare });
-    const series = { priceToCoordinate: (v) => 1000 - v };
+    const series = { priceToCoordinate: (v) => 300 - v }; // inside the 400 × 300 pane the draw rows hand it
     const ts = { timeToCoordinate: (t) => t * 10, logicalToCoordinate: (l) => l * 10 };
     p.attached({ chart: { timeScale: () => ts }, series, requestUpdate: () => updates.push(1) });
     return { p, updates };
@@ -282,7 +316,7 @@ describe('RuleMarksPrimitive — the library interface', () => {
     const { p, updates } = attach();
     p.setScene({ items: [{ n: 1, kind: 'tick', time: 20, value: 141.1, lit: true }] });
     expect(updates).toHaveLength(1);
-    expect(p.priceAxisViews().map((v) => [v.coordinate(), v.text()])).toEqual([[1000 - 141.1, '141.10']]);
+    expect(p.priceAxisViews().map((v) => [v.coordinate(), v.text()])).toEqual([[300 - 141.1, '141.10']]);
   });
   it('draws solid lines only, in the neutral ink — no dash, never red', () => {
     const { p } = attach();
