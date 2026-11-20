@@ -29,6 +29,7 @@
 // protected-store scan.
 
 import { MANDATE_CA_FETCH_LOOKBACK_DAYS } from '../mandateConfig.js';
+import { canonicalContentHash, stableStringify } from '../canonicalHash.js';
 
 /** The daily layer's collection — named here for the comparisons below; every READ names it by its literal. */
 export const DAILY_COLLECTION_NAME = 'mandateUniverseDaily';
@@ -63,12 +64,47 @@ export const PARSE_LEGS = Object.freeze(['splits', 'dividends']);
 export function parseEntryVerdict(entry) {
   if (!isPlainObject(entry)) return { clean: false, reason: 'parse_report_missing' };
   if (entry.malformedEnvelope !== false) return { clean: false, reason: 'parse_envelope_malformed' };
-  if (entry.rowsRejected !== 0) return { clean: false, reason: 'parse_rejected' };
+  // (Review AR4-B-7: every count a whole number, a rejection named in `rejects` counted, nothing rejected.)
+  if (entry.rowsRejected !== 0 || !Array.isArray(entry.rejects) || entry.rejects.length !== 0) return { clean: false, reason: 'parse_rejected' };
   for (const name of PARSE_LEGS) {
     const leg = entry.legs?.[name];
     if (!isPlainObject(leg) || leg.answered !== true || leg.envelope !== 'list' || leg.rejected !== 0) return { clean: false, reason: 'parse_leg_unanswered' };
+    // (…an answer the vendor gave with a success status, and whose rows all add up: accepted, no-op or rejected.)
+    // (The base fetcher trusts `res.ok`; a status, where the answer gave one, must agree with it.)
+    if (leg.status !== null && !(Number.isInteger(leg.status) && leg.status >= 200 && leg.status < 300)) return { clean: false, reason: 'parse_leg_unanswered' };
+    const counts = [leg.received, leg.accepted, leg.noOp, leg.rejected];
+    if (!counts.every((n) => Number.isInteger(n) && n >= 0) || leg.received !== leg.accepted + leg.noOp + leg.rejected) return { clean: false, reason: 'parse_counts_inconsistent' };
   }
   return { clean: true, reason: null };
+}
+
+/**
+ * THE ROWS A REPORT DESCRIBES (review AR4-B-1): the report is written during the fetch, the daily document only when the
+ * build publishes it — and two builds of one session race (mandateUniverseSnapshot.js createOrAdopt keeps the first). So
+ * each entry carries `actionsHash`, the canonical hash of the actions ITS build's fetch returned — exactly what that build
+ * stores as the symbol's `corporateActions` — and an entry counts only beside a daily entry listing exactly those rows.
+ * Order-free (each row's canonical form, sorted). Pure.
+ */
+export function actionsHashOf(actions) {
+  const rows = (Array.isArray(actions) ? actions : []).map((a) => stableStringify(a)).sort();
+  return canonicalContentHash(rows);
+}
+
+/**
+ * The dates of the rows the session's report says were REJECTED for `symbol` (review AR4-B-3), earliest first — and
+ * `undated: true` when a rejected row carried no date the parser could read. A rejected row is evidence of an action the
+ * data could not read, dated where it was dated: the doubt it raises reaches back to that date, not only to this session.
+ */
+export function rejectedRowDatesOf(report, session, symbol) {
+  const entry = parseReportEntry(report, session, symbol);
+  if (!isPlainObject(entry) || !Array.isArray(entry.rejects)) return { dates: [], undated: false };
+  const dates = [];
+  let undated = false;
+  for (const r of entry.rejects) {
+    const d = typeof r?.row?.date === 'string' ? r.row.date.slice(0, 10) : null;
+    if (isDate(d)) dates.push(d); else undated = true;
+  }
+  return { dates: [...new Set(dates)].sort(), undated };
 }
 
 /** The entry of `symbol` in a stored report document of `session` (`practiceFieldCaParseReports/{session}`; own
@@ -109,8 +145,11 @@ export function dailyCoverageOf(daily, symbol, parseReport) {
   if (flag !== undefined && flag !== false) return { covered: true, fetchSucceeded: false, refusal: DAILY_COVERAGE_REFUSAL.FETCH_FAILED };
   // T2D-12: the fetch "succeeded", but a row the parser rejected, or an envelope that was not a list, was dropped
   // silently — or no report was written. The rows that parsed are still the session's rows (F-2); the symbol is in doubt.
-  const verdict = parseEntryVerdict(parseReportEntry(parseReport, daily.date, symbol));
+  const reportEntry = parseReportEntry(parseReport, daily.date, symbol);
+  const verdict = parseEntryVerdict(reportEntry);
   if (!verdict.clean) return { covered: false, fetchSucceeded: true, refusal: DAILY_COVERAGE_REFUSAL.PARSE_INCOMPLETE, parse: verdict.reason };
+  // (Review AR4-B-1: the report must describe THIS entry's rows — another build's report beside it is no evidence.)
+  if (reportEntry.actionsHash !== actionsHashOf(entry.corporateActions)) return { covered: false, fetchSucceeded: true, refusal: DAILY_COVERAGE_REFUSAL.PARSE_INCOMPLETE, parse: 'parse_report_other_rows' };
   return { covered: true, fetchSucceeded: true, refusal: null };
 }
 

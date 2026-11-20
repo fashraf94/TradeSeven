@@ -142,8 +142,11 @@ export async function ensureCoverageBackfills(db, bookRef, {
         const line = `PRACTICE_FIELD_CA_BACKFILL_FAILED ${bookRef.id} ${symbol} ${fetchFrom}..${through} — the backfill of its corporate actions failed${why ? ` (${why})` : ''}; its coverage gap stays in doubt`;
         out.alerts.push(line);
         console.error(`${LOG_PREFIX} ${line}`);
-        // A failed answer never replaces a successful one; with none, it is kept — rows and all — for the founder.
-        if (stored === null) await ref.set(doc);
+        // A failed answer never replaces a successful one; with none, it is kept — rows and all — for the founder. (Review
+        // AR4-B-5: "successful" here is the stored answer's own `failed: false`, its report or not — a success stored before
+        // this build carries none, covers nothing now, and is still never overwritten by a failure.)
+        const priorSucceeded = prior.exists && prior.data()?.failed === false;
+        if (stored === null && !priorSucceeded) await ref.set(doc);
         continue;
       }
       await ref.set(doc);

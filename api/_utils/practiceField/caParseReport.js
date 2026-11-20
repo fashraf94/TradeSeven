@@ -39,9 +39,11 @@
 import { parseVendorSplits, parseVendorDividends } from './ledger.js';
 import { fetchCorporateActionsEODHD } from '../mandateUniverseSnapshot.js';
 import { MANDATE_CA_FETCH_LOOKBACK_DAYS, MANDATE_CA_FETCH_LOOKAHEAD_DAYS } from '../mandateConfig.js';
-import { shiftCalendarDate, PARSE_LEGS, parseEntryVerdict, parseReportEntry } from './dailyCoverage.js';
+import { shiftCalendarDate, PARSE_LEGS, parseEntryVerdict, parseReportEntry, actionsHashOf } from './dailyCoverage.js';
 
-export { PARSE_LEGS, parseEntryVerdict, parseReportEntry };
+export { PARSE_LEGS, parseEntryVerdict, parseReportEntry, actionsHashOf };
+/** A report write that has not settled in this long is given up (the symbol reads uncovered — review AR4-B-6). */
+export const PARSE_REPORT_WRITE_TIMEOUT_MS = 10_000;
 
 const LOG_PREFIX = '[PracticeFieldParseReport]';
 export const PARSE_REPORT_SCHEMA_VERSION = 1;
@@ -55,6 +57,8 @@ const legOfUrl = (url) => (String(url).includes('/splits/') ? 'splits' : 'divide
 
 /** A split row's ratio is exactly 1 (the parser drops it as a no-op, neither accepted nor rejected). */
 function isNoOpSplit(row) {
+  // (Dated, as the parser requires — a dateless 1:1 row is a rejection, not a no-op: review AR4-B-7.)
+  if (!(typeof row?.date === 'string' && row.date.slice(0, 10))) return false; // (the parser's own date test)
   const m = typeof row?.split === 'string' ? row.split.match(/^([\d.]+)\s*\/\s*([\d.]+)$/) : null;
   if (!m) return false;
   const n = Number(m[1]);
@@ -92,13 +96,15 @@ export function legReportOf(symbol, leg, seen) {
  * A symbol's report entry from its two legs' reports. Pure.
  * @returns {object}  the entry stored under `symbols.SYM`
  */
-export function parseReportEntryOf(legs, { at = null } = {}) {
+export function parseReportEntryOf(legs, { at = null, actions = [] } = {}) {
   const l = Object.fromEntries(PARSE_LEGS.map((name) => [name, legs?.[name] ?? { answered: false, status: null, envelope: null, received: 0, accepted: 0, noOp: 0, rejected: 0, rejects: [] }]));
   const sum = (k) => PARSE_LEGS.reduce((n, name) => n + (Number(l[name][k]) || 0), 0);
   return {
     rowsReceived: sum('received'), rowsAccepted: sum('accepted'), rowsNoOp: sum('noOp'), rowsRejected: sum('rejected'),
     rejects: PARSE_LEGS.flatMap((name) => l[name].rejects || []),
     malformedEnvelope: PARSE_LEGS.some((name) => l[name].envelope === 'not_a_list'),
+    // The rows THIS build's fetch returned — what it stores as the symbol's daily `corporateActions` (review AR4-B-1).
+    actionsHash: actionsHashOf(actions),
     legs: Object.fromEntries(PARSE_LEGS.map((name) => {
       const { rejects: _r, ...rest } = l[name];
       return [name, rest];
@@ -152,15 +158,41 @@ export function observingFetch(fetchImpl) {
  * entry)`: where a report goes — by default, the session's document in its own collection.
  * @returns {(symbol: string, opts: { from: string, to: string }) => Promise<object>}  the base's own answer
  */
-export function makeParseReportingFetcher(db, { symbols = [], base = fetchCorporateActionsEODHD, fetchImpl = null, onReport = null, now = () => new Date() } = {}) {
+export function makeParseReportingFetcher(db, { symbols = [], base = fetchCorporateActionsEODHD, fetchImpl = null, onReport = null, now = () => new Date(), writeTimeoutMs = PARSE_REPORT_WRITE_TIMEOUT_MS } = {}) {
   const required = new Set((symbols || []).map(upper));
-  const write = onReport ?? (async (symbol, session, entry) => {
-    // The collection by its literal name, for the protected-store scan. A merge of this symbol's entry only: the build
-    // fetches several symbols at once, each writing its own.
-    await db.collection('practiceFieldCaParseReports').doc(session).set({
-      schemaVersion: PARSE_REPORT_SCHEMA_VERSION, session, symbols: { [symbol]: entry },
-    }, { merge: true });
+  const writeDoc = onReport ? null : (session, entries) => db.collection('practiceFieldCaParseReports').doc(session).set({
+    // The collection by its literal name, for the protected-store scan. A merge of the symbols' entries only.
+    schemaVersion: PARSE_REPORT_SCHEMA_VERSION, session, symbols: entries,
+  }, { merge: true });
+  // ONE WRITER AT A TIME, COALESCED (review AR4-B-6): the build fetches several symbols at once; their entries wait in
+  // `pending` and go in one merge per round, never several writes to one document at once. Each symbol's fetch resolves
+  // when the round carrying its entry settles — or after `writeTimeoutMs`, given up (its report then reads missing:
+  // uncovered) — so a slow write never stalls the shared build for long.
+  const pending = new Map(); // session → { [symbol]: { entry, settle } }
+  let running = null;
+  const pump = async () => {
+    while (pending.size > 0) {
+      const [session, batch] = pending.entries().next().value;
+      pending.delete(session);
+      const entries = Object.fromEntries(Object.entries(batch).map(([sym, x]) => [sym, x.entry]));
+      try {
+        await writeDoc(session, entries);
+        for (const x of Object.values(batch)) x.settle(null);
+      } catch (err) {
+        for (const x of Object.values(batch)) x.settle(err);
+      }
+    }
+    running = null;
+  };
+  const enqueue = (symbol, session, entry) => new Promise((resolve) => {
+    const batch = pending.get(session) || {};
+    // (A later entry of the same symbol and session replaces the waiting one; the replaced fetch settles with this round.)
+    const prior = batch[symbol];
+    batch[symbol] = { entry, settle: (err) => { prior?.settle(err); resolve(err); } };
+    pending.set(session, batch);
+    if (!running) running = pump();
   });
+  const write = onReport ? (symbol, session, entry) => onReport(symbol, session, entry).then(() => null, (err) => err) : enqueue;
   return async function fetchWithParseReport(symbol, opts = {}) {
     const sym = upper(symbol);
     if (!required.has(sym)) return base(symbol, opts);
@@ -170,7 +202,11 @@ export function makeParseReportingFetcher(db, { symbols = [], base = fetchCorpor
       const session = sessionOfWindow(opts?.from, opts?.to);
       if (session !== null) {
         const legs = Object.fromEntries(PARSE_LEGS.map((leg) => [leg, legReportOf(sym, leg, observer.seen[leg])]));
-        await write(sym, session, parseReportEntryOf(legs, { at: now().toISOString() }));
+        const entry = parseReportEntryOf(legs, { at: now().toISOString(), actions: res?.actions });
+        let timer;
+        const late = new Promise((resolve) => { timer = setTimeout(() => resolve(new Error(`no answer in ${writeTimeoutMs} ms`)), writeTimeoutMs); });
+        const err = await Promise.race([write(sym, session, entry), late]).finally(() => clearTimeout(timer));
+        if (err) throw err;
       }
     } catch (err) {
       console.error(`${LOG_PREFIX} PRACTICE_FIELD_PARSE_REPORT_UNWRITTEN ${sym} — ${err?.message ?? err}; the report is missing, so the symbol reads uncovered`);
@@ -188,5 +224,5 @@ export async function fetchObservingParse(symbol, opts, { base = fetchCorporateA
   const observer = observingFetch(fetchImpl ?? ((url) => globalThis.fetch(url)));
   const res = await base(symbol, { ...opts, fetchImpl: observer.fetchImpl });
   const legs = Object.fromEntries(PARSE_LEGS.map((leg) => [leg, legReportOf(sym, leg, observer.seen[leg])]));
-  return { res, entry: parseReportEntryOf(legs, { at: now().toISOString() }) };
+  return { res, entry: parseReportEntryOf(legs, { at: now().toISOString(), actions: res?.actions }) };
 }

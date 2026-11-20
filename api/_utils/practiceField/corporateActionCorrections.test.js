@@ -22,13 +22,14 @@ import { ensureDailySnapshot, fetchCorporateActionsEODHD } from '../mandateUnive
 import { roundUsd, roundShares } from '../mandateRounding.js';
 import { verifyPacket } from './evidence.js';
 import { ADJUSTMENT_KIND, ADJUSTMENT_POSTED_TO, adjustmentDocIdOf, countOnExDate, shareBasisChain } from './adjustments.js';
-import { makeParseReportingFetcher, sessionOfWindow } from './caParseReport.js';
+import { makeParseReportingFetcher, sessionOfWindow, parseEntryVerdict } from './caParseReport.js';
+import { dailyCoverageOf } from './dailyCoverage.js';
 import { practiceFieldBuildInputs } from './sweep.js';
 import { openRulingRevisions } from './ledger.js';
 import { nextSessionDate } from './windows.js';
 import {
   seedBook, admitAndEnter, contractOf, getBook, getIdea, getRow, closeOn, closeNowOf, storeCloseSnapshot, windowAt, founderRules,
-  takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, storeParseReport, omitParseReport, CLEAN_PARSE_ENTRY, makeMandateFakeDb, etIso,
+  takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, storeParseReport, omitParseReport, CLEAN_PARSE_ENTRY, cleanParseEntryFor, makeMandateFakeDb, etIso,
 } from './__testsupport__/fixtures.js';
 
 const S = ['2026-11-16'];
@@ -654,13 +655,167 @@ describe('the battery\'s rows — each a behaviour of this build no other row pi
     await sellOnLine(c, 1);
     await close(c, 2, belowLine(c));
     expect(ideaOf(c).status).toBe('resulted');
-    const at = async (date) => {
+    const at = async (date, ideaBookIds = [c.bookId]) => {
       vi.useFakeTimers({ toFake: ['Date'] });
       vi.setSystemTime(new Date(etIso(date, 8, 0)));
-      try { return await practiceFieldBuildInputs(c.db, { ideaHeldTickers: [], quarterlyActive: false, coverageData: null, ideaBookIds: [c.bookId], now: new Date(etIso(date, 8, 0)) }); } finally { vi.useRealTimers(); }
+      try { return await practiceFieldBuildInputs(c.db, { ideaHeldTickers: [], quarterlyActive: false, coverageData: null, ideaBookIds, now: new Date(etIso(date, 8, 0)) }); } finally { vi.useRealTimers(); }
     };
     expect((await at(S[3])).daily.coverageTickers).toEqual(expect.arrayContaining(['AAPL', 'SPY']));
     expect((await at(S[3])).daily.fetchCorporateActions).toBeTypeOf('function');
     expect((await at(S[12])).daily.coverageTickers).toEqual([]); // past the look-back: released
+    // Review AR4-B-2 (the isolation rule): retention is read only for the idea books in the fire. With none — at 'on',
+    // the resulted idea still in the store — the build inputs carry nothing of it: no symbol, no wrapper. At 'off', none.
+    const none = await at(S[3], []);
+    expect([none.daily.coverageTickers, none.daily.fetchCorporateActions]).toEqual([[], undefined]);
+    const restore = setPracticeFieldModeForTests('off');
+    try {
+      const off = await at(S[3]);
+      expect([off.daily.coverageTickers, off.daily.fetchCorporateActions]).toEqual([[], undefined]);
+    } finally { restore(); }
+  });
+});
+
+describe('the lens (b) review\'s rows — the report tied to its rows, a late rejection, the fenced query, the stored success, the writer', () => {
+  const rejectedEntry = (row, leg = 'splits') => ({
+    ...CLEAN_PARSE_ENTRY, rowsReceived: 1, rowsRejected: 1, rejects: [{ leg, reason: leg === 'splits' ? 'malformed_split' : 'malformed_dividend', row }],
+    legs: { ...CLEAN_PARSE_ENTRY.legs, [leg]: { ...CLEAN_PARSE_ENTRY.legs[leg], received: 1, rejected: 1 } },
+  });
+
+  it('AR4-B-1: a clean report written by ANOTHER build of the session (other rows) is no evidence for the stored entry — uncovered, `parse_report_other_rows`; the matching report covers', () => {
+    const daily = { date: S[1], dailyWindowFrom: S[0], symbols: { AAPL: { sector: null, corporateActions: [spl(1, '5/4')] } } };
+    const report = (entry) => ({ schemaVersion: 1, session: S[1], symbols: { AAPL: entry } });
+    // The losing build fetched nothing for AAPL and parsed it cleanly; the stored entry is the winning build's split.
+    expect(dailyCoverageOf(daily, 'AAPL', report(CLEAN_PARSE_ENTRY))).toMatchObject({ covered: false, refusal: 'ca_parse_incomplete', parse: 'parse_report_other_rows' });
+    expect(dailyCoverageOf(daily, 'AAPL', report(cleanParseEntryFor([spl(1, '5/4')])))).toMatchObject({ covered: true });
+    // Order-free: the same rows listed in another order are the same rows.
+    const two = [spl(1, '5/4'), div(1, 1)];
+    expect(dailyCoverageOf({ ...daily, symbols: { AAPL: { sector: null, corporateActions: two } } }, 'AAPL', report(cleanParseEntryFor([...two].reverse())))).toMatchObject({ covered: true });
+  });
+
+  it('AR4-B-1: an entry without `actionsHash` (a report written before the tie) is uncovered too', () => {
+    const daily = { date: S[1], dailyWindowFrom: S[0], symbols: { AAPL: { sector: null, corporateActions: [] } } };
+    const { actionsHash, ...old } = CLEAN_PARSE_ENTRY;
+    expect(actionsHash).toBeTypeOf('string');
+    expect(dailyCoverageOf(daily, 'AAPL', { schemaVersion: 1, session: S[1], symbols: { AAPL: old } })).toMatchObject({ covered: false, parse: 'parse_report_other_rows' });
+  });
+
+  it('AR4-B-3: a rejected row dated BEFORE the last covered session reaches back — the covered-through date drops to the day before it, and the next clean window covering that date restores it', async () => {
+    const c = await start();
+    await close(c, 0);
+    await close(c, 1);
+    await close(c, 2);
+    expect(ideaOf(c).caCoveredThrough.AAPL).toBe(S[2]);
+    // S[3]'s build lists, late, a row dated S[1] that the parser rejects.
+    await storeCloseSnapshot(c.db, S[3], q(100));
+    storeParseReport(c.db, S[3], 'AAPL', rejectedEntry({ date: S[1], split: '5:4' }));
+    await closeIdeaBook(c.db, c.bookRef, { date: S[3], now: closeNowOf(S[3]) });
+    recon(c);
+    expect(rowOf(c, 3).marks.AAPL.quality).toBe('ca_coverage_missing');
+    expect(ideaOf(c).caCoveredThrough.AAPL).toBe(S[0]); // the day before the rejected row's date, not S[2]
+    expect(ideaOf(c).caCoveredThrough.MSFT).toBe(S[3]);
+    // S[4]'s clean build: its window reaches back past S[1] — covered again, a fresh mark.
+    await close(c, 4, 101);
+    expect(rowOf(c, 4).marks.AAPL).toMatchObject({ mark: 101, quality: 'vendor_time' });
+    expect(ideaOf(c).caCoveredThrough.AAPL).toBe(S[4]);
+  });
+
+  it('AR4-B-3: a rejected row with NO readable date reaches back to the idea\'s entry', async () => {
+    const c = await start();
+    await close(c, 0);
+    await close(c, 1);
+    await storeCloseSnapshot(c.db, S[2], q(100));
+    storeParseReport(c.db, S[2], 'AAPL', rejectedEntry({ split: '5/4' }));
+    await closeIdeaBook(c.db, c.bookRef, { date: S[2], now: closeNowOf(S[2]) });
+    expect(ideaOf(c).caCoveredThrough.AAPL).toBe(ideaOf(c).entry.sessionDate);
+  });
+
+  it('AR4-B-4: the resulted-ideas query failing does not stop the book closing — alerted; the next close posts the late dividend, once', async () => {
+    const c = await start({ names: ['AAPL'], capitalUsd: 10000 });
+    await close(c, 0);
+    await sellOnLine(c, 1);
+    await close(c, 2, belowLine(c));
+    expect(ideaOf(c).status).toBe('resulted');
+    const treasury = bookOf(c).treasury.unreservedCash;
+    // A book ref whose `ideas` range query fails (every other read and write is the real one).
+    const failing = new Proxy(c.bookRef, {
+      get(t, k) {
+        if (k !== 'collection') return t[k];
+        return (name) => {
+          const col = t.collection(name);
+          if (name !== 'ideas') return col;
+          return new Proxy(col, { get: (ct, ck) => (ck === 'where' ? () => ({ get: async () => { throw new Error('FAILED_PRECONDITION: the query needs an index'); } }) : ct[ck]) });
+        };
+      },
+    });
+    await storeCloseSnapshot(c.db, S[3], q(belowLine(c), [div(1, 1)]));
+    const out = await closeIdeaBook(c.db, failing, { date: S[3], now: closeNowOf(S[3]) });
+    expect(out.closed).toBe(true);
+    expect(bookOf(c).execState.lastCloseKey).toBe(S[3]);
+    expect(out.alerts.some((a) => a.startsWith('PRACTICE_FIELD_RESULTED_IDEAS_UNREAD'))).toBe(true);
+    expect(adjustmentsOf(c)).toEqual([]);
+    await close(c, 4, belowLine(c), [div(1, 1)]);
+    expect(adjustmentsOf(c)).toEqual([expect.objectContaining({ kind: ADJUSTMENT_KIND.LATE_ENTITLEMENT, amountUsd: 99.97, postedTo: ADJUSTMENT_POSTED_TO.TREASURY, postedOn: S[4] })]);
+    expect(roundUsd(bookOf(c).treasury.unreservedCash - treasury)).toBe(99.97);
+  });
+
+  it('AR4-B-5: a success stored before this build (no parse report) is never overwritten by a later failure', async () => {
+    const { ensureCoverageBackfills } = await import('./caBackfill.js');
+    const c = await start();
+    const ref = c.db.collection('mandates').doc(c.bookId);
+    const idea = ideaOf(c);
+    c.db._store.get(`mandates/${c.bookId}/ideas/${c.ideaId}`).data = { ...idea, caCoveredThrough: { AAPL: S[0], MSFT: S[0], SPY: S[0] }, status: 'holding' };
+    const legacy = { symbol: 'AAPL', from: S[0], to: S[2], failed: false, actions: [spl(1, '2/1')], fetchedAt: '2026-11-18T13:00:00.000Z' };
+    c.db._store.set('practiceFieldCaBackfill/AAPL', { data: structuredClone(legacy), version: 1 });
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await ensureCoverageBackfills(c.db, ref, { through: S[9], now: closeNowOf(S[9]), fetchCorporateActions: async () => { throw new Error('vendor down'); } });
+    } finally { quiet.mockRestore(); }
+    expect(c.db._get('practiceFieldCaBackfill/AAPL')).toEqual(legacy);
+  });
+
+  it('AR4-B-6: the writer is one merge at a time, coalesced, and a write that never answers is given up — the fetch returns the base\'s answer, the symbol reads uncovered', async () => {
+    const db = makeMandateFakeDb();
+    const http = async () => ({ ok: true, status: 200, json: async () => [] });
+    const base = (sym, o) => fetchCorporateActionsEODHD(sym, { ...o, apiKey: 'k', fetchImpl: o.fetchImpl ?? http });
+    const opts = { from: '2026-11-12', to: '2026-11-19' };
+    // Three symbols fetched at once: every entry lands, never two writes to the document at once, in at most two merges.
+    let inFlight = 0; let most = 0; let writes = 0;
+    const watched = new Proxy(db, { get: (t, k) => (k !== 'collection' ? t[k] : (name) => {
+      const col = t.collection(name);
+      if (name !== 'practiceFieldCaParseReports') return col;
+      return { doc: (id) => { const d = col.doc(id); return { set: async (...a) => { inFlight += 1; writes += 1; most = Math.max(most, inFlight); await new Promise((r) => setTimeout(r, 5)); try { return await d.set(...a); } finally { inFlight -= 1; } } }; } };
+    }) });
+    const fetcher = makeParseReportingFetcher(watched, { symbols: ['AAPL', 'MSFT', 'SPY'], base, fetchImpl: http });
+    await Promise.all(['AAPL', 'MSFT', 'SPY'].map((s) => fetcher(s, opts)));
+    expect(Object.keys(db._get('practiceFieldCaParseReports/2026-11-17').symbols).sort()).toEqual(['AAPL', 'MSFT', 'SPY']);
+    expect(most).toBe(1);
+    expect(writes).toBeLessThanOrEqual(2);
+    // A write that never answers: given up after the timeout, the base's answer returned, nothing stored, alerted.
+    const stuck = new Proxy(db, { get: (t, k) => (k !== 'collection' ? t[k] : () => ({ doc: () => ({ set: () => new Promise(() => {}) }) })) });
+    const errors = [];
+    const spy = vi.spyOn(console, 'error').mockImplementation((m) => errors.push(String(m)));
+    try {
+      const slow = makeParseReportingFetcher(stuck, { symbols: ['NVDA'], base, fetchImpl: http, writeTimeoutMs: 20 });
+      const got = await slow('NVDA', opts);
+      expect(got).toEqual(await base('NVDA', opts));
+    } finally { spy.mockRestore(); }
+    expect(errors.some((e) => e.includes('PRACTICE_FIELD_PARSE_REPORT_UNWRITTEN NVDA'))).toBe(true);
+    expect(db._get('practiceFieldCaParseReports/2026-11-17').symbols.NVDA).toBeUndefined();
+  });
+
+  it('AR4-B-7: a dateless 1:1 row is a rejection, not a no-op; a non-success status is not an answer; counts must add up', async () => {
+    const db = makeMandateFakeDb();
+    const http = async (url) => ({ ok: true, status: 200, json: async () => (url.includes('/splits/') ? [{ split: '1/1' }] : []) });
+    const base = (sym, o) => fetchCorporateActionsEODHD(sym, { ...o, apiKey: 'k', fetchImpl: o.fetchImpl ?? http });
+    await makeParseReportingFetcher(db, { symbols: ['AAPL'], base, fetchImpl: http })('AAPL', { from: '2026-11-12', to: '2026-11-19' });
+    const entry = db._get('practiceFieldCaParseReports/2026-11-17').symbols.AAPL;
+    expect(entry).toMatchObject({ rowsNoOp: 0, rowsRejected: 1 });
+    expect(parseEntryVerdict(entry).clean).toBe(false);
+    const clean = cleanParseEntryFor([]);
+    expect(parseEntryVerdict(clean).clean).toBe(true);
+    expect(parseEntryVerdict({ ...clean, legs: { ...clean.legs, splits: { ...clean.legs.splits, status: 500 } } }).clean).toBe(false);
+    expect(parseEntryVerdict({ ...clean, legs: { ...clean.legs, splits: { ...clean.legs.splits, received: 2, accepted: 1 } } })).toMatchObject({ clean: false, reason: 'parse_counts_inconsistent' });
+    expect(parseEntryVerdict({ ...clean, legs: { ...clean.legs, splits: { ...clean.legs.splits, received: 1.5, accepted: 1.5 } } })).toMatchObject({ clean: false, reason: 'parse_counts_inconsistent' });
+    expect(parseEntryVerdict({ ...clean, rejects: undefined }).clean).toBe(false);
   });
 });

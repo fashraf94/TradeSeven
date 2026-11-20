@@ -97,7 +97,7 @@ import { applyFounderRulings, markRulingsApplied } from './holdRulings.js';
 import {
   planLedgerAdjustments, closedHoldingsOf, resultAdjustmentView, adjustmentDocIdOf, ADJUSTMENT_POSTED_TO, heldAdjustments,
 } from './adjustments.js';
-import { dailyCoverageOf } from './dailyCoverage.js';
+import { dailyCoverageOf, rejectedRowDatesOf } from './dailyCoverage.js';
 import { MANDATE_CA_FETCH_LOOKBACK_DAYS } from '../mandateConfig.js';
 
 /**
@@ -241,7 +241,19 @@ function closeFilledIdea(idea, {
   if (observed) {
     for (const [sym, input] of coverageInputs) {
       // F-5: a coverage-gap ruling counts the symbol's data as covered through the gap's last session.
-      const coveredThrough = ruled?.coveredThroughOverrides.get(sym) ?? input.coveredThrough;
+      let coveredThrough = ruled?.coveredThroughOverrides.get(sym) ?? input.coveredThrough;
+      // T1a-2b-4 (review AR4-B-3): A REJECTED ROW IS DATED. The session's parse report names each row the parser rejected;
+      // the action it may be is dated where it was dated — on or before the last covered session, when it was listed late.
+      // The doubt therefore reaches back to the day before it: data must cover the symbol again from that date (a backfill
+      // past the window, which records its own report) before the doubt clears. A row with no readable date reaches back to
+      // the idea's entry. A founder's coverage-gap ruling that covers the row's date settles it.
+      if (!ruled?.coveredThroughOverrides.has(sym) && typeof coveredThrough === 'string') {
+        const rejected = rejectedRowDatesOf(parseReport, date, sym);
+        const ruledThrough = (idea.founderRulings || []).filter((x) => x?.kind === 'coverage_gap' && x.symbol === sym && x.appliedOn != null && typeof x.coversThrough === 'string').map((x) => x.coversThrough).sort().at(-1) ?? null;
+        const dates = rejected.dates.filter((d) => ruledThrough === null || d > ruledThrough);
+        const floor = rejected.undated && ruledThrough === null ? (idea.entry?.sessionDate ?? null) : (dates.length > 0 ? shiftCalendarDate(dates[0], -1) : null);
+        if (typeof floor === 'string' && floor < coveredThrough) coveredThrough = floor;
+      }
       const r = sessionCoverage({ symbol: sym, session: date, coveredThrough, daily, dailyRefOk, backfill: input.backfill, parseReport });
       coverage.set(sym, { ...r, coveredThrough });
       if (!r.covered) uncovered.add(sym);
@@ -789,9 +801,17 @@ async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false, w
     const resultedIdeas = [];
     {
       const through = missed ?? date;
-      for (const found of await recentlyResultedIdeas(bookRef, { through })) {
-        if ((book.openIdeaIds || []).includes(found.ideaId)) continue;
-        const snap = await tx.get(bookRef.collection('ideas').doc(found.ideaId));
+      // (Review AR4-B-4: fenced — the query failing must not stop the book closing. The resulted ideas are then not
+      // examined at this close, alerted; the next close asks again inside the same look-back.)
+      let found = [];
+      try {
+        found = await recentlyResultedIdeas(bookRef, { through });
+      } catch (err) {
+        alerts.push(`PRACTICE_FIELD_RESULTED_IDEAS_UNREAD ${bookRef.id} ${through} — the resulted ideas within the look-back could not be listed (${err?.message ?? err}); their late adjustments are examined at the next close`);
+      }
+      for (const f of found) {
+        if ((book.openIdeaIds || []).includes(f.ideaId)) continue;
+        const snap = await tx.get(bookRef.collection('ideas').doc(f.ideaId));
         if (snap.exists && snap.data()?.status === IDEA_STATUS.RESULTED) resultedIdeas.push(snap.data());
       }
     }

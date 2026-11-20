@@ -29,7 +29,7 @@ import { nextSessionDate } from './windows.js';
 import { setPracticeFieldModeForTests } from './mode.js';
 import { roundUsd } from '../mandateRounding.js';
 import {
-  seedBook, closeOn, windowAt, contractOf, getBook, getIdea, getRow, dumpStore, countDocs, etIso, ADMIT_ISO, CLEAN_PARSE_ENTRY,
+  seedBook, closeOn, windowAt, contractOf, getBook, getIdea, getRow, dumpStore, countDocs, etIso, ADMIT_ISO, cleanParseEntryFor,
   takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, countResults, withoutWindowAlerts, admitAndEnter, closeNowOf, vendorAnswering } from './__testsupport__/fixtures.js';
 import { closeIdeaBook } from './close.js';
 import { ensureDailySnapshot, ensureUniverseSnapshot } from '../mandateUniverseSnapshot.js';
@@ -339,7 +339,8 @@ describe('the end-to-end synthetic run', () => {
     for (const path of reports) {
       const date = path.split('/')[1];
       const doc = db._get(path);
-      expect(doc, path).toEqual({ schemaVersion: 1, session: date, symbols: Object.fromEntries(Object.keys(db._get(`mandateUniverseDaily/${date}`).symbols).map((s) => [s, CLEAN_PARSE_ENTRY])) });
+      const layer = db._get(`mandateUniverseDaily/${date}`).symbols;
+      expect(doc, path).toEqual({ schemaVersion: 1, session: date, symbols: Object.fromEntries(Object.keys(layer).map((s) => [s, cleanParseEntryFor(layer[s].corporateActions)])) });
     }
     const stripped = Object.fromEntries([...db._store.keys()].filter((p) => !p.startsWith('practiceFieldCaParseReports/')).sort().map((p) => [p, db._store.get(p).data]));
     const dump = JSON.stringify(stripped, (_k, v) => (v instanceof Date ? v.toISOString() : v), 1);

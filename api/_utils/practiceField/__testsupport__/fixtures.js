@@ -10,6 +10,7 @@ import { makeMandateFakeDb } from '../../__testsupport__/mandateFakeFirestore.js
 import { etWallClockToMs } from '../../../../src/utils/marketCalendar.js';
 import { resolveSessionSlots } from '../../mandateSessionSlots.js';
 import { SNAPSHOT_COLLECTION, fetchCorporateActionsEODHD } from '../../mandateUniverseSnapshot.js';
+import { actionsHashOf } from '../dailyCoverage.js';
 
 if (SNAPSHOT_COLLECTION !== 'mandateUniverseSnapshots') throw new Error('fixtures.js: the close-snapshot collection was renamed; update storeCloseSnapshot');
 import { PRACTICE_FIELD_FUNDS } from '../../../../src/data/practiceFieldFunds.js';
@@ -247,24 +248,49 @@ export const CLEAN_PARSE_LEG = Object.freeze({ answered: true, status: 200, enve
 export const CLEAN_PARSE_ENTRY = Object.freeze({
   rowsReceived: 0, rowsAccepted: 0, rowsNoOp: 0, rowsRejected: 0, rejects: [], malformedEnvelope: false,
   legs: { splits: { ...CLEAN_PARSE_LEG }, dividends: { ...CLEAN_PARSE_LEG } }, at: null,
+  // (Review AR4-B-1: the entry names the rows its build returned — none here; cleanParseEntryFor names a daily entry's.)
+  actionsHash: actionsHashOf([]),
 });
+/** A clean entry for a daily entry listing `rows` (its `corporateActions`): what a build that returned them writes. */
+export const cleanParseEntryFor = (rows) => ({ ...structuredClone(CLEAN_PARSE_ENTRY), actionsHash: actionsHashOf(rows) });
 const FIXTURE_REPORT = new WeakMap(); // db → Map(date → Set of symbols a ROW wrote or removed: never overwritten)
 const rowOwnedReports = (db) => { if (!FIXTURE_REPORT.has(db)) FIXTURE_REPORT.set(db, new Map()); return FIXTURE_REPORT.get(db); };
+const FIXTURE_WRITTEN = new WeakMap(); // db → Map(date → Set of symbols whose entry the fixtures wrote)
+const fixtureWrittenReports = (db, date) => {
+  if (!FIXTURE_WRITTEN.has(db)) FIXTURE_WRITTEN.set(db, new Map());
+  const m = FIXTURE_WRITTEN.get(db);
+  if (!m.has(date)) m.set(date, new Set());
+  return m.get(date);
+};
 function ensureFixtureParseReport(db, date, symbols) {
   if (typeof date !== 'string' || !db?._store) return;
   const path = `practiceFieldCaParseReports/${date}`;
   const cur = db._store.get(path);
   const owned = rowOwnedReports(db).get(date) || new Set();
   const entries = { ...(cur?.data?.symbols || {}) };
+  const layer = db._store.get(`mandateUniverseDaily/${date}`)?.data?.symbols || {};
   let added = false;
+  const mine = fixtureWrittenReports(db, date);
   for (const sym of symbols) {
-    if (owned.has(sym) || Object.hasOwn(entries, sym)) continue;
-    entries[sym] = structuredClone(CLEAN_PARSE_ENTRY);
+    if (owned.has(sym)) continue;
+    // An entry the fixtures did not write — the real wrapper's, through the daily builder — is left exactly as it is.
+    if (Object.hasOwn(entries, sym) && !mine.has(sym)) continue;
+    // (A clean entry names the rows the layer lists for the symbol — refreshed as a later stored snapshot adds rows.)
+    const want = cleanParseEntryFor(layer[sym]?.corporateActions);
+    mine.add(sym);
+    if (Object.hasOwn(entries, sym) && JSON.stringify(entries[sym]) === JSON.stringify(want)) continue;
+    entries[sym] = want;
     added = true;
   }
   if (!added && cur) return;
   db._store.set(path, { data: { schemaVersion: 1, session: date, symbols: entries }, version: (cur?.version || 0) + 1 });
 }
+/**
+ * A row that edits a daily entry straight in the store (as the build would have stored it) gets the clean report entry
+ * that build would have written for it — naming the rows the entry now lists (review AR4-B-1's tie). Entries a row
+ * owns (storeParseReport, omitParseReport) are left alone.
+ */
+export const refreshFixtureParseReport = (db, date, symbols) => ensureFixtureParseReport(db, date, symbols);
 /** A row's own parse-report entry for one symbol of one session (a rejected row, a malformed envelope…). */
 export function storeParseReport(db, date, symbol, entry) {
   const path = `practiceFieldCaParseReports/${date}`;

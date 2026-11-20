@@ -24,7 +24,7 @@ import { backfillNeeds, ensureCoverageBackfills } from './caBackfill.js';
 import {
   seedBook, admitAndEnter, closeOn, windowAt, contractOf, getBook, getIdea, getRow, closeNowOf, etIso,
   tickSnapshot, closeSnapshot, storeTickSnapshot, storeCloseSnapshot, takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults,
-  withoutWindowAlerts, moneyStoreBytes, founderRules, vendorAnswering, CLEAN_PARSE_ENTRY } from './__testsupport__/fixtures.js';
+  withoutWindowAlerts, moneyStoreBytes, founderRules, vendorAnswering, CLEAN_PARSE_ENTRY, refreshFixtureParseReport } from './__testsupport__/fixtures.js';
 
 const S = ['2026-11-16', '2026-11-17', '2026-11-18', '2026-11-19', '2026-11-20', '2026-11-23', '2026-11-24', '2026-11-25', '2026-11-27', '2026-11-30', '2026-12-01', '2026-12-02', '2026-12-03', '2026-12-04', '2026-12-07'];
 const BASE = { AAPL: 231.47, MSFT: 418.13, NVDA: 141.29, SPY: 597.31, XLK: 233.59 };
@@ -66,6 +66,8 @@ function plantDaily(db, date, { symbol, entry, docDate } = {}) {
   if (symbol !== undefined) data.symbols[symbol] = entry;
   if (docDate !== undefined) data.date = docDate;
   db._store.set(path, { data, version: cur.version + 1 });
+  // (T1a-2b-4: the build that stored this entry wrote its clean parse report — naming the rows it now lists.)
+  if (symbol !== undefined) refreshFixtureParseReport(db, date, [symbol]);
 }
 
 let restoreMode;
