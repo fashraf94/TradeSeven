@@ -358,3 +358,32 @@ describe('the planner\'s doubt in the count is dated as the held path dates it (
     }
   });
 });
+
+describe('L-1, L-2 — the endpoint names a waiting proposal; a second proposal posts the net owed now less everything received', () => {
+  it('an open idea reaches its endpoint with a late proposal waiting: the endpoint names it, the result is unmeasurable under its reason', async () => {
+    const c = await opened({ comparison: xlk });
+    const p = await soldAt2(c);
+    await closeAt(c, 3, p, [div(1, 1)]);
+    const due = ideaOf(c).contract.schedule.dueSession;
+    for (let i = 4; S[i] <= due; i += 1) await closeAt(c, i, p);
+    const ep = getRow(c.db, c.bookId, c.ideaId, 'endpoint');
+    expect(ep.idea.unsettledActions).toContain(`late_idea_${D1}`);
+    expect(ideaOf(c).result.economicResult).toBe('unmeasurable');
+    expect(ideaOf(c).result.economic.unmeasurableBecause).toContain('idea_unsettled_corporate_action');
+  });
+
+  it('a late entitlement approved and posted; then a split dated before it is first listed — a SECOND proposal of the id posts only the difference (owed now less received), never the whole again', async () => {
+    const c = await opened({ comparison: xlk });
+    const p = await soldAt2(c);
+    await closeAt(c, 3, p, [div(1, 1)]);
+    expect((await ask(c, lateBody('idea', D1), 'a1')).status).toBe(200);
+    await closeAt(c, 4, p);
+    expect(posted(c)).toEqual([['late_entitlement', D1, 99.97]]);
+    await closeAt(c, 5, p, [spl(1, '5/4')]); // first listed after the sale, dated with the dividend: 124.96251 owed
+    expect(ideaOf(c).ledger.lateProposals.filter((x) => x.status === 'open')).toEqual([expect.objectContaining({ id: `late_idea_${D1}_2`, kind: 'late_basis', owedUsd: 124.96, receivedUsd: 99.97, netUsd: 24.99 })]);
+    expect((await ask(c, lateBody('idea', `${D1}_2`), 'a2')).status).toBe(200);
+    await closeAt(c, 6, p);
+    expect(posted(c)).toEqual([['late_entitlement', D1, 99.97], ['late_basis', D1, 24.99]]);
+    expect(ideaOf(c).ledger.dividendsUsd).toBe(124.96);
+  });
+});

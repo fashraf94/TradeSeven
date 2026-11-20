@@ -218,6 +218,18 @@ describe('I-6 — every ledger is paid what its holding was owed, from the input
     e2.check({ ...ideaWith([]), caCoverageGaps: { AAPL: { since: S[2] } } }, 3, held(), 'plant');
     expect([e2.checked, e2.excused]).toEqual([0, 1]);
   });
+  it('(fix round) I-6\'s excuses are SCOPED: an unrelated dividend\'s open conflict on the symbol excuses nothing — a wrong payment is still rejected (Astra\'s $0.10/$0.20 variant, planted); the id\'s own conflict, or a split dated on or before it, still excuses', async () => {
+    const { EntitlementOracle } = await import('./__testsupport__/caOracle.js');
+    const o = new InputOracle(S);
+    o.close(2, [div(2, 1)]);
+    const e = new EntitlementOracle(S, o);
+    const wrong = ideaWith([{ ...paid(`cash_dividend_AAPL_${S[2]}`, 1, S[2]), incomeUsd: 100.01 }]);
+    const conflictOn = (id, type = 'cash_dividend', effectiveDate = id.slice(-10)) => ({ ...wrong, ledger: { ...wrong.ledger, corporateActionReceipts: [...wrong.ledger.corporateActionReceipts, { actionId: id, type, ticker: 'AAPL', effectiveDate, applied: false, reason: 'conflicting_action', rows: [{ amount: 0.1 }, { amount: 0.2 }] }] } });
+    expect(() => e.check(conflictOn(`cash_dividend_AAPL_${S[1]}`), 2, held(), 'plant'), 'an unrelated dividend conflict').toThrow(/received \$100\.01/);
+    e.check(conflictOn(`cash_dividend_AAPL_${S[2]}`), 2, held(), 'plant'); // the id's own conflict: excused
+    e.check(conflictOn(`split_AAPL_${S[2]}`, 'split'), 2, held(), 'plant'); // a split dated on its ex-date: excused
+    expect(() => e.check(conflictOn(`split_AAPL_${S[3]}`, 'split'), 2, held(), 'plant'), 'a split dated after it').toThrow(/received \$100\.01/);
+  });
   it('an id ambiguous by the inputs is checked only once the founder\'s accepted ruling chose its payload', async () => {
     const { EntitlementOracle } = await import('./__testsupport__/caOracle.js');
     const o = new InputOracle(S);

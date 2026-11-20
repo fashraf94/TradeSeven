@@ -421,17 +421,29 @@ describe('AR4-A-5 — each late_basis its own id and evidence document', () => {
   afterEach(() => { restoreMode(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); takeSeededDbs(); });
 
   describe('deterministic id collision', () => {
-    it('2-for-1 (S2), 1-for-2 (S3), 2-for-1 (S8) listed late after a $1 dated S8 was paid: the third late_basis reuses the first one\'s id', async () => {
+    // (Fix round, L-1: each late split is a PROPOSAL; the founder approves each before the next arrives, so three postings
+    // follow — each its own id (the approved proposal's id is in it) and its own evidence document. Without the approvals
+    // the row would post nothing and pass vacuously.)
+    it('2-for-1 (S2), 1-for-2 (S3), 2-for-1 (S8) listed late after a $1 dated S8 was paid, each proposal approved in turn: three postings, three ids, three records', async () => {
       const c = await start({ slot: 'medium', comparison: { type: 'sector_fund', symbols: ['XLK'] } });
       for (let i = 0; i <= 7; i += 1) await close(c, i);
       await close(c, 8, 100, [div(8, 1)]);
       expect(ideaOf(c).ledger.dividendsUsd).toBe(99.97);
       await sellOnLine(c, 9); // sold S10
       await close(c, 10, belowLine(c));
+      const D8 = `cash_dividend_AAPL_${S[8]}`;
       await close(c, 11, belowLine(c), [spl(2, '2/1')]);
-      await close(c, 12, belowLine(c), [spl(3, '1/2')]);
-      await close(c, 13, belowLine(c), [spl(8, '2/1')]);
+      await approveLate(c, 'idea', D8, 'a1');
+      await close(c, 12, belowLine(c));
+      await close(c, 13, belowLine(c), [spl(3, '1/2')]);
+      expect((await founderRules(c.db, c.bookId, c.ideaId, { kind: 'late_adjustment', recordId: `late_idea_${D8}_2`, decision: 'approve' }, { requestKey: 'a2' })).status).toBe(200);
+      await close(c, 14, belowLine(c));
+      await close(c, 15, belowLine(c), [spl(8, '2/1')]);
+      expect((await founderRules(c.db, c.bookId, c.ideaId, { kind: 'late_adjustment', recordId: `late_idea_${D8}_3`, decision: 'approve' }, { requestKey: 'a3' })).status).toBe(200);
+      await close(c, 16, belowLine(c));
       const adj = adjustmentsOf(c);
+      expect(adj.map((a) => [a.kind, a.amountUsd, a.proposal])).toEqual([['late_basis', 99.97, `late_idea_${D8}`], ['late_basis', -99.97, `late_idea_${D8}_2`], ['late_basis', 99.97, `late_idea_${D8}_3`]]);
+      expect(ideaOf(c).ledger.dividendsUsd, 'net each time: owed now less received').toBe(199.94);
       console.log(JSON.stringify(adj.map((a) => [a.id, a.kind, a.amountUsd, a.correction, a.postedOn])));
       const ids = adj.map((a) => a.id);
       const docs = ids.map((id) => !!c.db._get(`mandates/${c.bookId}/ideas/${c.ideaId}/evidence/${adjustmentDocIdOf(id)}`));
@@ -439,6 +451,7 @@ describe('AR4-A-5 — each late_basis its own id and evidence document', () => {
       const evidenceCount = [...c.db._store.keys()].filter((p) => p.includes(`/ideas/${c.ideaId}/evidence/adjustment_`)).length;
       console.log('adjustments', adj.length, 'evidence documents', evidenceCount);
       expect(new Set(ids).size, 'each posted adjustment its own id and record').toBe(ids.length);
+      expect(docs.every(Boolean), 'each its own evidence document').toBe(true);
     });
   });
 });
