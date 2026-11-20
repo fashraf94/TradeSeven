@@ -25,7 +25,7 @@ Claude Code (Opus 5.5), 20 Nov 2026, for Flash. Prompt: "Discovery prompt — th
 **Which targets are one line and which are not**
 
 - **One line:** Film Room cards (`'allowlist'` → `'on'`).
-- **One merge:** the League hide (PR #1076, which must catch up 307 commits first).
+- **One merge:** the League hide (PR #1076). It also ships the founder's 16 Nov page additions, and it must catch up 307 commits first.
 - **A Console write:** the cockpit stages. The founder ruled that two prerequisites must come first, and neither is on `main`: Amendment H and the status re-ask.
 - **Needs code:**
   - **Work an idea.** Its gate still requires the shared list even at `'on'`.
@@ -56,7 +56,7 @@ Today = `main` at `41c04cd2`. "The list" = `COCKPIT_ALLOWLIST_UIDS` (§4). Every
 | Research shell / sheet (+ its Ask) | `RESEARCH_MODAL_SHEET_MODE` `researchModalFlags.js:122` | `'allowlist'` — the list, in their own agent battles | as today | **no change** | **the list** |
 | Battle Research | `BATTLE_RESEARCH_MODE` `researchModalFlags.js:169` | `'allowlist'` — the list, where the shell and the cockpit are on | as today | **no change** | **the list** |
 | Chart read | `CHART_READ_MODE` `researchModalFlags.js:217` | `'allowlist'` — the list, where the shell is on | as today | **no change** | **the list** |
-| League | `LEAGUE_HIDE_ENABLED` `featureFlags.js:152` | **`false` — the League is shown to everyone** | stays hidden | **Merge PR #1076** (`claude/league-hide-flip` @ `7180ad23`: flag `true`, pin, `DARK_BY_DESIGN` entry). It is 307 commits behind `main`: merge `main` into it and re-run its checks first. Merge only with League groups in flight = 0, after 6 PM ET, after the preview smoke. | — |
+| League | `LEAGUE_HIDE_ENABLED` `featureFlags.js:152` | **`false` — the League is shown to everyone** | stays hidden | **Merge PR #1076** (`claude/league-hide-flip` @ `7180ad23`). It holds the flag `true`, its pin and the `DARK_BY_DESIGN` entry, **plus the founder's 16 Nov page and hub copy additions** (17 files, +374/−34). It is 307 commits behind `main`: merge `main` into it and re-run its checks first. Merge only with League groups in flight = 0, after 6 PM ET, after the preview smoke. | — |
 | Forge | **no per-section switch** (tabs `ForgeWorkshop.jsx:109-112`) | all four tabs shown | only the sections that reach battles | **A small build**, not a flip: Lists, Rules and Character's Tempo and Standing leans reach battles; the Overview, Character's display panes and Explore, the Lists' Idea panel and notes/Analysis/Discover do not (§5). | — |
 | Onboarding | none (`App.jsx:10325`) | the agent-creation flow for any player without an agent; V4 is not in build | as today | **no change** | — |
 | Market data | `EODHD_QUICK_WINS_ENABLED` | **does not exist on `main`** (two unmerged branches, 1,802 commits behind) | not in the rulings | nothing to flip | — |
@@ -176,7 +176,13 @@ Off for each: one step back + pin, PR + deploy (doc "ROLLBACK" paragraphs, V). D
 
 Readers (all V): `src/App.jsx:59` (the BaggerBomb page), `:2246`, `:2291`, `:2306` (the three League web-address doors), `:4027` (the poll), `:10213` (the 'league' route renders the page), `:12714`; `src/components/Navigation/BottomNav.jsx:12`; `DesktopSidebar.jsx:16`; `src/components/CommandCenter/LoadoutCards.jsx:179` (the League loadout card); `PerGameLoadoutScope.jsx:27`; server `api/_utils/leagueHidden.js:26-30` (`404 league_hidden` on slot-claim and the six lobby routes), `liveDraftEndpoint.js:83`, `lobbyEndpoint.js:89`. No env var, no list, no Firestore document.
 
-**Smallest change to hide it:** merge #1076 — it also moves the pin, drops the `DARK_BY_DESIGN` entry and holds 13 League-card rows of the hub's loadout test at flag-off (A — memory of the build; re-check on the PR). It must first take `main` (307 commits) and re-run its checks on the merged tree. The build report's pre-merge conditions: **League groups in flight = 0**, after 6 PM ET, after the preview smoke (V `docs/audits/20261115_BUILD_LEAGUE_HIDE_BAGGERBOMB_PAGE.md:150-160`). Code only: no env var, no rules deploy (A). Unhide: the literal back + pin, PR + deploy. The other League flags (`LEAGUE_LOBBY_ENABLED` and the rest, all `true`) stay as they are and are reached only through the doors the hide closes (A).
+**Smallest change to hide it:** merge #1076. **It is more than the flag** (V `git log origin/main..origin/claude/league-hide-flip`, `git diff --stat origin/main...origin/claude/league-hide-flip`: 5 commits, 17 files, +374/−34). It carries:
+- the flip (`91d39aa0`): `:152` → `true`, the pin in `leagueHideFlag.test.js`, and the `flagPinGuard.test.js` entry;
+- **the founder's 16 Nov additions** (`03d495ee`): the BaggerBomb page's idea and Reconfirm lines, draws in the record, and two hub League strings (`BaggerBombPage.jsx`, `baggerBombPageModel.js`, `LoadoutCards.jsx`, `perGameLoadoutModel.js`, `loadoutCopy.js`, `baggerBombPageCopy.js`);
+- a mount-guard row (`d769b9ec`);
+- the report's §14 (`7180ad23`).
+
+Merging it ships all of that. It must first take `main` (307 commits) and re-run its checks on the merged tree. Whether that catch-up conflicts was not tested here: a trial merge writes objects. The build report's pre-merge conditions: **League groups in flight = 0**, after 6 PM ET, after the preview smoke (V `docs/audits/20261115_BUILD_LEAGUE_HIDE_BAGGERBOMB_PAGE.md:150-160`). Code only: no env var, no rules deploy (A). Unhide: the literal back + pin, PR + deploy. The other League flags (`LEAGUE_LOBBY_ENABLED` and the rest, all `true`) stay as they are and are reached only through the doors the hide closes (A).
 
 #### Onboarding
 
@@ -394,7 +400,7 @@ Two kinds of reader: **mode readers** (the feature has its own `'on'`, so it can
 
 ### 5.1 The two battles are one battle type
 
-- **Every BaggerBomb deploy now runs on the casual clone.** With per-game loadouts on, a deploy with no clone is refused (V `src/services/agentDeploy.js:253`).
+- **Every BaggerBomb deploy now runs on the casual clone.** With per-game loadouts on, a deploy with no clone is refused (V `src/services/agentDeploy.js:253`). This is the only client deploy request to `/api/agent/decide` (V `agentDeploy.js:269`; grep of `src/` finds no other caller).
 - **The clone's battle is a tiered battle.** `decide.js` creates it with no game mode (V `api/agent/decide.js:964`), and `createAgentBattle` falls back to `TIERED_GAME_MODE` (V `api/_utils/agentBattleService.js:93` `const gameMode = options.gameMode || TIERED_GAME_MODE;`). So "the casual BaggerBomb clone" and "the tiered battle" are the same `baggerbomb_agent` battle and **share every read site below**.
 - **What differs is which agent document holds the settings.**
   - The Forge edits the **ranked** agent, never a clone (V `src/services/agentService.js:29`).
@@ -482,4 +488,4 @@ Reported for separate tasking; nothing was fixed (BUILD_RULES §3).
 - No production read: no Vercel environment, no Firestore document, no deploy history.
 - No screen was rendered. "Player-facing" in §3.4 comes from each flag's own docstring.
 
-**Out-of-tree copy (BUILD_RULES §3).** A byte-exact copy of this report is kept outside the repo, in the session's scratch directory.
+**Out-of-tree copy (BUILD_RULES §3).** A byte-exact copy of this report is kept outside the repo at `Documents/FantasyTrades/BetaSwitchCensus/20261120_BETA_SWITCH_CENSUS.md`.
