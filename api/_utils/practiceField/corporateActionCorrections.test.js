@@ -79,6 +79,14 @@ async function sellOnLine(c, i) {
 }
 const adjustmentsOf = (c, f = 'ledger') => ideaOf(c)[f]?.adjustments || [];
 const evidenceOf = (c, a) => c.db._get(`mandates/${c.bookId}/ideas/${c.ideaId}/evidence/${adjustmentDocIdOf(a.id)}`);
+// (T1a-2b-4 fix round, L-1: late data is PROPOSED; the founder approves one proposal — `late_<ledger>_<actionId>` — through
+// the real endpoint, and the next observed close posts its net.)
+const proposalsOf = (c, f = 'ledger') => ideaOf(c)[f]?.lateProposals || [];
+async function approve(c, ledger, actionId, requestKey = `approve-${ledger}-${actionId}`) {
+  const out = await founderRules(c.db, c.bookId, c.ideaId, { kind: 'late_adjustment', recordId: `late_${ledger}_${actionId}`, decision: 'approve' }, { requestKey, expectOk: false });
+  expect(out.status, JSON.stringify(out.body)).toBe(200);
+  return out;
+}
 
 let restoreMode;
 beforeEach(() => {
@@ -107,15 +115,16 @@ describe('the holding history and the ex-date count (pure)', () => {
       adjustments: [],
     };
     expect(shareBasisChain(ledger, 'AAPL').end).toBe(124.96251);
-    expect(countOnExDate(ledger, 'AAPL', '2026-11-17', { held: ledger.holdings.AAPL })).toMatchObject({ count: SH, from: 'split_AAPL_2026-11-18' });
-    expect(countOnExDate(ledger, 'AAPL', '2026-11-18', { held: ledger.holdings.AAPL })).toMatchObject({ count: 124.96251, from: 'holding' });
+    // (Fix round, L-4: the count is the DATED chain's — the derivation names the events counted, not the first one after.)
+    expect(countOnExDate(ledger, 'AAPL', '2026-11-17', { held: ledger.holdings.AAPL })).toMatchObject({ count: SH, from: 'dated_chain', also: [] });
+    expect(countOnExDate(ledger, 'AAPL', '2026-11-18', { held: ledger.holdings.AAPL })).toMatchObject({ count: 124.96251, from: 'dated_chain', also: ['split_AAPL_2026-11-18'] });
     const corrected = { ...ledger, adjustments: [{ kind: ADJUSTMENT_KIND.RULED_CORRECTION, type: 'split', ticker: 'AAPL', actionId: 'split_AAPL_2026-11-18', ratio: 1.5, held: false }] };
     expect(shareBasisChain(corrected, 'AAPL').end).toBe(roundShares(SH * 1.5));
   });
 });
 
 describe('T2D-03 — a dividend first listed after the idea\'s line sale, dated while it held the stock', () => {
-  it('Astra\'s case: held Nov 17, sold Nov 18, a $1 dividend listed Nov 19 dated Nov 17 — the idea gets $99.97 and the book cash rises $99.97, once; the same-stock comparison is paid its own', async () => {
+  it('Astra\'s case: held Nov 17, sold Nov 18, a $1 dividend listed Nov 19 dated Nov 17 — PROPOSED (L-1); on the founder\'s approval the idea gets $99.97 and the book cash rises $99.97, once; the same-stock comparison is paid its own', async () => {
     const c = await start();
     await close(c, 0);
     await sellOnLine(c, 1); // S[1] = Nov 17 below the line; sold at S[2] = Nov 18's first window
@@ -124,13 +133,21 @@ describe('T2D-03 — a dividend first listed after the idea\'s line sale, dated 
     const bookCashBefore = bookOf(c).portfolio.cash;
     const cmpBefore = ideaOf(c).comparisonLedger.dividendsUsd;
     await close(c, 3, belowLine(c), [div(1, 1)]); // Nov 19 lists the $1 dated Nov 17
+    // (Fix round, L-1: a proposal — nothing posted, the row below full quality while it waits, the book unmoved.)
+    expect(adjustmentsOf(c)).toEqual([]);
+    expect(proposalsOf(c)).toEqual([expect.objectContaining({ id: `late_idea_cash_dividend_AAPL_${S[1]}`, status: 'open', kind: ADJUSTMENT_KIND.LATE_ENTITLEMENT, netUsd: 99.97, entitledShares: SH, blockers: [] })]);
+    expect(rowOf(c, 3).fullQuality).toBe(false);
+    expect(bookOf(c).portfolio.cash).toBe(bookCashBefore);
+    await approve(c, 'idea', `cash_dividend_AAPL_${S[1]}`);
+    await close(c, 4, belowLine(c), [div(1, 1)]);
     const idea = ideaOf(c);
     const [adj] = adjustmentsOf(c);
     expect(adjustmentsOf(c)).toHaveLength(1);
     expect(adj).toMatchObject({
       kind: ADJUSTMENT_KIND.LATE_ENTITLEMENT, actionId: `cash_dividend_AAPL_${S[1]}`, ledger: 'idea', amountUsd: 99.97, entitledShares: SH,
-      postedOn: S[3], postedTo: ADJUSTMENT_POSTED_TO.LEDGER, derivation: expect.objectContaining({ closedOn: S[2], openedAt: S[0] }),
+      postedOn: S[4], postedTo: ADJUSTMENT_POSTED_TO.LEDGER, derivation: expect.objectContaining({ closedOn: S[2], openedAt: S[0] }), proposal: `late_idea_cash_dividend_AAPL_${S[1]}`,
     });
+    expect(proposalsOf(c)).toEqual([expect.objectContaining({ status: 'posted', adjustmentId: adj.id })]);
     expect(idea.ledger.dividendsUsd).toBe(99.97);
     expect(roundUsd(bookOf(c).portfolio.cash - bookCashBefore)).toBe(99.97);
     // The comparison still holds AAPL: it is paid its own dividend by the ordinary path, not by an adjustment.
@@ -141,24 +158,27 @@ describe('T2D-03 — a dividend first listed after the idea\'s line sale, dated 
     expect(doc).toMatchObject({ packet: 'adjustment', kind: ADJUSTMENT_KIND.LATE_ENTITLEMENT, amountUsd: 99.97, field: 'ledger', ideaId: c.ideaId });
     expect(verifyPacket(doc)).toBe(true);
     // Once: a re-run, and the next close with the row still listed, post nothing more.
-    await rerun(c, 3);
-    await close(c, 4, belowLine(c), [div(1, 1)]);
+    await rerun(c, 4);
+    await close(c, 5, belowLine(c), [div(1, 1)]);
     expect(adjustmentsOf(c)).toHaveLength(1);
     expect(ideaOf(c).ledger.dividendsUsd).toBe(99.97);
   });
 
-  it('the comparison does not hold the symbol (a sector fund): only the idea is paid, once', async () => {
+  it('the comparison does not hold the symbol (a sector fund): only the idea is paid, once, on the founder\'s approval', async () => {
     const c = await start({ comparison: { type: 'sector_fund', symbols: ['XLK'] } });
     await close(c, 0);
     await sellOnLine(c, 1);
     await close(c, 2, belowLine(c));
     const before = bookOf(c).portfolio.cash;
     await close(c, 3, belowLine(c), [div(1, 1)]);
+    expect(adjustmentsOf(c)).toEqual([]);
+    await approve(c, 'idea', `cash_dividend_AAPL_${S[1]}`);
+    await close(c, 4, belowLine(c));
     expect(adjustmentsOf(c)).toEqual([expect.objectContaining({ kind: ADJUSTMENT_KIND.LATE_ENTITLEMENT, amountUsd: 99.97 })]);
     expect(adjustmentsOf(c, 'comparisonLedger')).toEqual([]);
     expect(ideaOf(c).comparisonLedger.dividendsUsd).toBe(0);
     expect(roundUsd(bookOf(c).portfolio.cash - before)).toBe(99.97);
-    await rerun(c, 3);
+    await rerun(c, 4);
   });
 
   it('a dividend dated AFTER the sale is not owed; one dated on the day it was opened is not owed either', async () => {
@@ -194,7 +214,7 @@ describe('T2D-03 — a dividend first listed after the idea\'s line sale, dated 
     expect(ideaOf(c).ledger.corporateActionReceipts).toContainEqual(expect.objectContaining({ actionId: `cash_dividend_AAPL_${S[2]}`, reason: 'possible_redate', redateOf: `cash_dividend_AAPL_${S[1]}` }));
   });
 
-  it('AFTER THE IDEA\'S RESULT: the idea\'s own late dividend goes to the book\'s treasury, its comparison\'s is recorded beside the result; the result stands, its view says whether the label would change', async () => {
+  it('AFTER THE IDEA\'S RESULT (L-8): the late dividend is NAMED and alerted only — nothing posts to the treasury or on paper; the result stands; the founder\'s action answers 404 (open ideas only)', async () => {
     const c = await start({ names: ['AAPL'], capitalUsd: 10000 });
     await close(c, 0);
     await sellOnLine(c, 1);
@@ -203,40 +223,44 @@ describe('T2D-03 — a dividend first listed after the idea\'s line sale, dated 
     const result = JSON.stringify(ideaOf(c).result);
     const treasury = bookOf(c).treasury.unreservedCash;
     const cash = bookOf(c).portfolio.cash;
-    await close(c, 3, belowLine(c), [div(1, 1)], { spy: [] });
+    const out = await close(c, 3, belowLine(c), [div(1, 1)], { spy: [] });
     const idea = ideaOf(c);
     expect(JSON.stringify(idea.result)).toBe(result); // never rewritten
-    expect(adjustmentsOf(c)).toEqual([expect.objectContaining({ kind: ADJUSTMENT_KIND.LATE_ENTITLEMENT, amountUsd: 99.97, postedTo: ADJUSTMENT_POSTED_TO.TREASURY })]);
-    expect(adjustmentsOf(c, 'comparisonLedger')).toEqual([expect.objectContaining({ kind: ADJUSTMENT_KIND.LATE_ENTITLEMENT, amountUsd: 99.97, postedTo: ADJUSTMENT_POSTED_TO.PAPER_AFTER_RESULT })]);
-    expect(roundUsd(bookOf(c).treasury.unreservedCash - treasury)).toBe(99.97);
-    expect(roundUsd(bookOf(c).portfolio.cash - cash)).toBe(99.97);
+    expect([adjustmentsOf(c), adjustmentsOf(c, 'comparisonLedger')]).toEqual([[], []]);
+    expect(bookOf(c).treasury.unreservedCash).toBe(treasury);
+    expect(bookOf(c).portfolio.cash).toBe(cash);
     expect(idea.ledger.cash).toBe(0); // the resulted ledger keeps its returned state
-    expect(idea.resultAdjustments).toMatchObject({ ideaUsd: 99.97, comparisonUsd: 99.97, wouldChangeLabel: false, economicResult: idea.result.economicResult });
-    for (const [f, a] of [['ledger', adjustmentsOf(c)[0]], ['comparisonLedger', adjustmentsOf(c, 'comparisonLedger')[0]]]) expect(verifyPacket(evidenceOf(c, a)), f).toBe(true);
-    // Once.
+    expect(idea.resultAdjustments).toBeUndefined();
+    const id = `cash_dividend_AAPL_${S[1]}`;
+    expect(idea.lateDataUnsettled.actions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ ledger: 'idea', actionId: id, kind: 'late_proposal', netUsd: 99.97 }),
+      expect.objectContaining({ ledger: 'comparison', actionId: id, kind: 'late_proposal', netUsd: 99.97 }),
+    ]));
+    expect(out.alerts.some((a) => a.startsWith(`PRACTICE_FIELD_LATE_DATA_UNSETTLED ${c.ideaId}`))).toBe(true);
+    expect(await founderRules(c.db, c.bookId, c.ideaId, { kind: 'late_adjustment', recordId: `late_idea_${id}`, decision: 'approve' }, { requestKey: 'resulted', expectOk: false })).toMatchObject({ status: 404 });
+    // Still nothing, at a re-run and the next close.
     await rerun(c, 3);
     await close(c, 4, belowLine(c), [div(1, 1)]);
-    expect(adjustmentsOf(c)).toHaveLength(1);
-    expect(roundUsd(bookOf(c).treasury.unreservedCash - treasury)).toBe(99.97);
+    expect(adjustmentsOf(c)).toEqual([]);
+    expect(bookOf(c).treasury.unreservedCash).toBe(treasury);
   });
 
-  it('the SPY line after the result: a SPY dividend dated while it held, first listed after the result, is recorded beside the result (paper)', async () => {
+  it('the SPY line after the result (L-8): a SPY dividend dated while it held, first listed after the result, is named only — nothing moves', async () => {
     const c = await start({ names: ['AAPL'], capitalUsd: 10000 });
     await close(c, 0);
     await sellOnLine(c, 1);
     await close(c, 2, belowLine(c));
     const treasury = bookOf(c).treasury.unreservedCash;
     await close(c, 3, belowLine(c), [], { spy: [div(1, 2, 'SPY')] });
-    const spy = adjustmentsOf(c, 'spyLedger');
-    expect(spy).toEqual([expect.objectContaining({ kind: ADJUSTMENT_KIND.LATE_ENTITLEMENT, postedTo: ADJUSTMENT_POSTED_TO.PAPER_AFTER_RESULT, actionId: `cash_dividend_SPY_${S[1]}` })]);
-    expect(spy[0].amountUsd).toBe(roundUsd(ideaOf(c).spyLedger.holdings.SPY.shares * 2));
-    expect(bookOf(c).treasury.unreservedCash).toBe(treasury); // paper: nothing moves
-    expect(ideaOf(c).resultAdjustments).toMatchObject({ spyUsd: spy[0].amountUsd, wouldChangeLabel: false });
+    expect(adjustmentsOf(c, 'spyLedger')).toEqual([]);
+    expect(proposalsOf(c, 'spyLedger')).toEqual([expect.objectContaining({ actionId: `cash_dividend_SPY_${S[1]}`, status: 'open', netUsd: roundUsd(ideaOf(c).spyLedger.holdings.SPY.shares * 2) })]);
+    expect(ideaOf(c).lateDataUnsettled.actions).toContainEqual(expect.objectContaining({ ledger: 'spy', actionId: `cash_dividend_SPY_${S[1]}`, kind: 'late_proposal' }));
+    expect(bookOf(c).treasury.unreservedCash).toBe(treasury);
   });
 });
 
 describe('T2D-04 — a split listed late, dated before a dividend already paid', () => {
-  it('Astra\'s case: a 5:4 split listed late — the $1 dividend first paid $99.97 is adjusted +$24.99 to $124.96 on the idea, its same-stock comparison and the book, once', async () => {
+  it('Astra\'s case: a 5:4 split listed late — the $1 dividend first paid $99.97 is PROPOSED +$24.99 (L-1), and on the founder\'s approval adjusted to $124.96 on the idea, its same-stock comparison and the book, once', async () => {
     const c = await start();
     await close(c, 0);
     await close(c, 1, 80); // the 5:4 happened (the price follows), no row: no hold (×0.8 is not a split's shape, under the threshold)
@@ -244,6 +268,16 @@ describe('T2D-04 — a split listed late, dated before a dividend already paid',
     expect([ideaOf(c).ledger.dividendsUsd, ideaOf(c).comparisonLedger.dividendsUsd]).toEqual([99.97, 99.97]);
     const cash = bookOf(c).portfolio.cash;
     await close(c, 3, 80, [div(2, 1), spl(1, '5/4')]); // the split, dated Nov 17, listed Nov 19
+    // (Fix round, L-1: the count follows the split at once; the dividend's correction is a proposal on each ledger.)
+    for (const f of ['ledger', 'comparisonLedger']) {
+      expect(ideaOf(c)[f].holdings.AAPL.shares, f).toBe(124.96251);
+      expect(ideaOf(c)[f].dividendsUsd, f).toBe(99.97);
+      expect(proposalsOf(c, f), f).toEqual([expect.objectContaining({ kind: ADJUSTMENT_KIND.LATE_BASIS, actionId: `cash_dividend_AAPL_${S[2]}`, netUsd: 24.99, owedUsd: 124.96, receivedUsd: 99.97, status: 'open' })]);
+    }
+    expect(bookOf(c).portfolio.cash).toBe(cash);
+    await approve(c, 'idea', `cash_dividend_AAPL_${S[2]}`);
+    await approve(c, 'comparison', `cash_dividend_AAPL_${S[2]}`);
+    await close(c, 4, 80, [div(2, 1), spl(1, '5/4')]);
     const idea = ideaOf(c);
     for (const f of ['ledger', 'comparisonLedger']) {
       expect(idea[f].holdings.AAPL.shares, f).toBe(124.96251);
@@ -256,8 +290,8 @@ describe('T2D-04 — a split listed late, dated before a dividend already paid',
     expect(roundUsd(bookOf(c).portfolio.cash - cash)).toBe(24.99);
     expect(bookOf(c).portfolio.positions.AAPL.shares).toBe(124.96251);
     // Once: a re-run, and the next close listing both rows again.
-    await rerun(c, 3);
-    await close(c, 4, 80, [div(2, 1), spl(1, '5/4')]);
+    await rerun(c, 4);
+    await close(c, 5, 80, [div(2, 1), spl(1, '5/4')]);
     expect(adjustmentsOf(c)).toHaveLength(1);
     expect(ideaOf(c).ledger.dividendsUsd).toBe(124.96);
   });
@@ -271,13 +305,18 @@ describe('T2D-04 — a split listed late, dated before a dividend already paid',
     expect(adjustmentsOf(c)).toEqual([]); // on time: nothing late, nothing posted
   });
 
-  it('a REVERSE split listed late is a debit: 4-for-5 after a $1 paid on 99.970008 — −$19.99, to $79.98', async () => {
+  it('a REVERSE split listed late is a debit: 4-for-5 after a $1 paid on 99.970008 — proposed −$19.99, and on approval to $79.98', async () => {
     const c = await start();
     await close(c, 0);
     await close(c, 1, 125);
     await close(c, 2, 125, [div(2, 1)]);
     const cash = bookOf(c).portfolio.cash;
     await close(c, 3, 125, [spl(1, '4/5')]);
+    expect(proposalsOf(c)).toEqual([expect.objectContaining({ kind: ADJUSTMENT_KIND.LATE_BASIS, netUsd: -19.99 })]);
+    expect(ideaOf(c).ledger.dividendsUsd).toBe(99.97);
+    await approve(c, 'idea', `cash_dividend_AAPL_${S[2]}`);
+    await approve(c, 'comparison', `cash_dividend_AAPL_${S[2]}`);
+    await close(c, 4, 125);
     const idea = ideaOf(c);
     expect(idea.ledger.holdings.AAPL.shares).toBe(roundShares(SH * 0.8));
     expect(adjustmentsOf(c)).toEqual([expect.objectContaining({ kind: ADJUSTMENT_KIND.LATE_BASIS, amountUsd: -19.99 })]);
@@ -285,7 +324,7 @@ describe('T2D-04 — a split listed late, dated before a dividend already paid',
     expect(roundUsd(bookOf(c).portfolio.cash - cash)).toBe(-19.99);
   });
 
-  it('two dividends after one late split: each is recomputed, once', async () => {
+  it('two dividends after one late split: each is proposed, approved and recomputed, once', async () => {
     const c = await start();
     await close(c, 0);
     await close(c, 1, 80);
@@ -293,12 +332,15 @@ describe('T2D-04 — a split listed late, dated before a dividend already paid',
     await close(c, 3, 80, [div(3, 0.5)]);
     await close(c, 4, 80, [spl(1, '5/4')]);
     const want = [roundUsd(124.96251 * 1) - roundUsd(SH * 1), roundUsd(124.96251 * 0.5) - roundUsd(SH * 0.5)].map(roundUsd);
+    expect(proposalsOf(c).map((p) => [p.actionId, p.netUsd])).toEqual([[`cash_dividend_AAPL_${S[2]}`, want[0]], [`cash_dividend_AAPL_${S[3]}`, want[1]]]);
+    for (const i of [2, 3]) for (const l of ['idea', 'comparison']) await approve(c, l, `cash_dividend_AAPL_${S[i]}`);
+    await close(c, 5, 80);
     expect(adjustmentsOf(c).map((a) => [a.actionId, a.amountUsd])).toEqual([[`cash_dividend_AAPL_${S[2]}`, want[0]], [`cash_dividend_AAPL_${S[3]}`, want[1]]]);
     expect(ideaOf(c).ledger.dividendsUsd).toBe(roundUsd(124.96 + roundUsd(124.96251 * 0.5)));
-    await rerun(c, 4);
+    await rerun(c, 5);
   });
 
-  it('AFTER THE RESULT: a split dated on the dividend\'s own ex-date, listed after the idea resulted, corrects it — the idea\'s +$24.99 to the treasury, its comparison\'s beside the result', async () => {
+  it('AFTER THE RESULT (L-8): a split dated on the dividend\'s own ex-date, listed after the idea resulted, is recorded in its history and its correction NAMED — nothing posts to the treasury or on paper', async () => {
     const c = await start({ names: ['AAPL'], capitalUsd: 10000 });
     await close(c, 0);
     // Nov 17: the 5:4 happens (the price follows, to $80, below the line) and the $1 dated Nov 17 is listed and paid.
@@ -312,10 +354,13 @@ describe('T2D-04 — a split listed late, dated before a dividend already paid',
     await close(c, 3, 80, [spl(1, '5/4')]); // the split, dated Nov 17, listed after the result
     const idea = ideaOf(c);
     expect(idea.ledger.corporateActionReceipts).toContainEqual(expect.objectContaining({ actionId: `split_AAPL_${S[1]}`, historyOnly: true, applied: true, sharesBefore: SH, sharesAfter: 124.96251 }));
-    expect(adjustmentsOf(c)).toEqual([expect.objectContaining({ kind: ADJUSTMENT_KIND.LATE_BASIS, amountUsd: 24.99, postedTo: ADJUSTMENT_POSTED_TO.TREASURY })]);
-    expect(adjustmentsOf(c, 'comparisonLedger')).toEqual([expect.objectContaining({ kind: ADJUSTMENT_KIND.LATE_BASIS, amountUsd: 24.99, postedTo: ADJUSTMENT_POSTED_TO.PAPER_AFTER_RESULT })]);
-    expect(roundUsd(bookOf(c).treasury.unreservedCash - treasury)).toBe(24.99);
-    expect(idea.resultAdjustments).toMatchObject({ ideaUsd: 24.99, comparisonUsd: 24.99, wouldChangeLabel: false });
+    expect([adjustmentsOf(c), adjustmentsOf(c, 'comparisonLedger')]).toEqual([[], []]);
+    expect(bookOf(c).treasury.unreservedCash).toBe(treasury);
+    expect(idea.resultAdjustments).toBeUndefined();
+    expect(idea.lateDataUnsettled.actions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ ledger: 'idea', actionId: `cash_dividend_AAPL_${S[1]}`, kind: 'late_proposal', netUsd: 24.99 }),
+      expect.objectContaining({ ledger: 'comparison', actionId: `cash_dividend_AAPL_${S[1]}`, kind: 'late_proposal', netUsd: 24.99 }),
+    ]));
     await rerun(c, 3);
   });
 });
@@ -354,11 +399,14 @@ describe('T2D-05 — a vendor correction under an id already settled', () => {
     for (const f of ['ledger', 'comparisonLedger']) {
       expect(idea[f].holdings.AAPL.shares, f).toBe(149.955012);
       expect(idea[f].dividendsUsd, f).toBe(299.91);
+      // (Fix round, L-2: the dividend's ruled_correction posts the NET owed now — $2 on the corrected, dated count — less
+      // everything received for the id, once; the count's own late_basis no longer posts first, and the proposal the split
+      // correction raised is settled by the ruling. The same money: $299.91.)
       expect(adjustmentsOf(c, f).map((a) => [a.kind, a.type, a.amountUsd]), f).toEqual([
         [ADJUSTMENT_KIND.RULED_CORRECTION, 'split', 0],
-        [ADJUSTMENT_KIND.LATE_BASIS, 'cash_dividend', 25],
-        [ADJUSTMENT_KIND.RULED_CORRECTION, 'cash_dividend', 149.95],
+        [ADJUSTMENT_KIND.RULED_CORRECTION, 'cash_dividend', 174.95],
       ]);
+      expect((idea[f].lateProposals || []).filter((p) => p.status === 'open'), f).toEqual([]);
       expect(openRulingRevisions(idea[f]), f).toEqual([]);
     }
     expect(bookOf(c).portfolio.positions.AAPL.shares).toBe(149.955012);
@@ -371,7 +419,7 @@ describe('T2D-05 — a vendor correction under an id already settled', () => {
     await rerun(c, 3);
     await close(c, 4, 66.67, [spl(1, '3/2'), div(1, 2)]);
     expect(ideaOf(c).ledger.dividendsUsd).toBe(299.91);
-    expect(adjustmentsOf(c)).toHaveLength(3);
+    expect(adjustmentsOf(c)).toHaveLength(2);
   });
 
   it('ruled to keep the original: nothing moves, the records close, full quality returns', async () => {
@@ -545,26 +593,38 @@ describe('the adjustment record (pure): a debit larger than its cash is held, an
       { actionId: 'reverse_split_AAPL_2026-11-17', type: 'reverse_split', ticker: 'AAPL', effectiveDate: '2026-11-17', ratio: 0.8, incomeUsd: 0, applied: true, appliedOn: '2026-11-19', sharesBefore: SH, sharesAfter: 79.976006 },
     ],
   });
-  it('a late-basis DEBIT larger than the cash it would come from is not posted: held, `adjustment_exceeds_cash`, alerted; with the cash later, posted once', async () => {
-    const { planLedgerAdjustments } = await import('./adjustments.js');
+  // (Fix round, L-1 and L-2: the late_basis is a PROPOSAL; the founder's approval, handed to the plan, posts its net.)
+  const approval = { proposalId: 'late_idea_cash_dividend_AAPL_2026-11-18', decision: 'approve', ruling: { requestKey: 'k', kind: 'late_adjustment', recordId: 'late_idea_cash_dividend_AAPL_2026-11-18', decision: 'approve' } };
+  it('a late-basis DEBIT, approved, larger than the cash it would come from is not posted: held, `adjustment_exceeds_cash`, alerted; with the cash later, posted once', async () => {
+    const { planLedgerAdjustments, openProposals } = await import('./adjustments.js');
     const ctx = { ideaId: 'i', ledgerKind: 'idea', date: '2026-11-19', rows: {}, closed: new Map(), doubtOn: () => false };
-    const short = planLedgerAdjustments(ledgerPaid(5), ctx);
+    const proposed = planLedgerAdjustments(ledgerPaid(5), ctx);
+    expect([proposed.posted, proposed.held]).toEqual([[], []]);
+    expect(proposed.proposed).toEqual([expect.objectContaining({ id: approval.proposalId, kind: ADJUSTMENT_KIND.LATE_BASIS, netUsd: -19.99, status: 'open' })]);
+    const short = planLedgerAdjustments(proposed.ledger, { ...ctx, date: '2026-11-20', approvals: [approval] });
     expect(short.posted).toEqual([]);
     expect(short.held).toEqual([expect.objectContaining({ kind: ADJUSTMENT_KIND.LATE_BASIS, held: true, reason: 'adjustment_exceeds_cash', amountUsd: -19.99 })]);
     expect(short.ledger.cash).toBe(5);
     expect(short.alerts.some((a) => /PRACTICE_FIELD_ADJUSTMENT_HELD .*(adjustment_exceeds_cash)/.test(a))).toBe(true);
-    const later = planLedgerAdjustments({ ...short.ledger, cash: 50 }, { ...ctx, date: '2026-11-20' });
-    expect(later.posted).toEqual([expect.objectContaining({ kind: ADJUSTMENT_KIND.LATE_BASIS, amountUsd: -19.99 })]);
+    expect(openProposals(short.ledger).map((p) => p.blockers)).toEqual([['exceeds_cash:cash_dividend_AAPL_2026-11-18']]);
+    const later = planLedgerAdjustments({ ...short.ledger, cash: 50 }, { ...ctx, date: '2026-11-23', approvals: [approval] });
+    expect(later.posted).toEqual([expect.objectContaining({ kind: ADJUSTMENT_KIND.LATE_BASIS, amountUsd: -19.99, proposal: approval.proposalId })]);
     expect(later.ledger.adjustments.filter((a) => a.held)).toEqual([]);
     expect([later.ledger.cash, later.ledger.dividendsUsd]).toEqual([30.01, 79.98]);
-    expect(planLedgerAdjustments(later.ledger, { ...ctx, date: '2026-11-23' }).posted).toEqual([]);
+    expect(openProposals(later.ledger)).toEqual([]);
+    expect(planLedgerAdjustments(later.ledger, { ...ctx, date: '2026-11-24', approvals: [approval] }).posted).toEqual([]);
   });
-  it('a doubt on the symbol defers it (durable: posted at the first close without the doubt)', async () => {
+  it('a doubt on the count defers the proposal; a refusal defers the approval (durable: posted at the first close without either)', async () => {
     const { planLedgerAdjustments } = await import('./adjustments.js');
     const ctx = { ideaId: 'i', ledgerKind: 'idea', date: '2026-11-19', rows: {}, closed: new Map() };
     const waiting = planLedgerAdjustments(ledgerPaid(500), { ...ctx, doubtOn: () => true });
-    expect([waiting.posted, waiting.held]).toEqual([[], []]);
-    expect(planLedgerAdjustments(waiting.ledger, { ...ctx, doubtOn: () => false }).posted).toEqual([expect.objectContaining({ amountUsd: -19.99 })]);
+    expect([waiting.posted, waiting.held, waiting.proposed]).toEqual([[], [], []]);
+    const proposed = planLedgerAdjustments(waiting.ledger, { ...ctx, doubtOn: () => false });
+    expect([proposed.posted, proposed.proposed.map((p) => p.netUsd)]).toEqual([[], [-19.99]]);
+    const refused = planLedgerAdjustments(proposed.ledger, { ...ctx, doubtOn: () => false, blockersOf: () => ['date_uncovered:2026-11-19'], approvals: [approval] });
+    expect(refused.posted).toEqual([]);
+    expect(refused.alerts.some((a) => a.startsWith('PRACTICE_FIELD_LATE_APPROVAL_WAITING'))).toBe(true);
+    expect(planLedgerAdjustments(refused.ledger, { ...ctx, doubtOn: () => false, approvals: [approval] }).posted).toEqual([expect.objectContaining({ amountUsd: -19.99 })]);
   });
   it('the result view: `wouldChangeLabel` is computed from the figures — an idea-only adjustment that moves the gap past the band changes it; one dated after the endpoint is not counted', async () => {
     const { resultAdjustmentView } = await import('./adjustments.js');
@@ -591,6 +651,11 @@ describe('the battery\'s rows — each a behaviour of this build no other row pi
     // Listed after the sale: $1 dated Nov 16 (before the split, after the purchase? no — Nov 16 is the purchase day: owed nothing),
     // $0.5 dated Nov 19 (the sale day: owed, on 199.940016), and $2 dated Nov 17 (the split's own date: share basis first).
     await close(c, 4, belowLine(c), [div(0, 1), div(3, 0.5), div(1, 2)]);
+    // (Fix round, L-1: proposed — the owed ones only — then posted on the founder's approval.)
+    const proposed = Object.fromEntries(proposalsOf(c).map((p) => [p.actionId.slice(-10), [p.netUsd, p.entitledShares]]));
+    expect(proposed).toEqual({ [S[3]]: [roundUsd(199.940016 * 0.5), 199.940016], [S[1]]: [roundUsd(199.940016 * 2), 199.940016] });
+    for (const i of [1, 3]) await approve(c, 'idea', `cash_dividend_AAPL_${S[i]}`);
+    await close(c, 5, belowLine(c), [div(0, 1), div(3, 0.5), div(1, 2)]);
     const got = Object.fromEntries(adjustmentsOf(c).map((a) => [a.actionId.slice(-10), [a.amountUsd, a.entitledShares]]));
     expect(got).toEqual({ [S[3]]: [roundUsd(199.940016 * 0.5), 199.940016], [S[1]]: [roundUsd(199.940016 * 2), 199.940016] });
   });
@@ -603,10 +668,13 @@ describe('the battery\'s rows — each a behaviour of this build no other row pi
     expect(ideaOf(c).ledger.holdings.AAPL.shares).toBe(199.940016);
     await sellOnLine(c, 3); // below the line Nov 19, sold Nov 20
     await close(c, 4, belowLine(c), [div(1, 1)]); // $1 dated Nov 17, listed Nov 20
+    expect(proposalsOf(c).map((p) => [p.kind, p.netUsd, p.entitledShares])).toEqual([[ADJUSTMENT_KIND.LATE_ENTITLEMENT, 99.97, SH]]);
+    await approve(c, 'idea', `cash_dividend_AAPL_${S[1]}`);
+    await close(c, 5, belowLine(c), [div(1, 1)]);
     expect(adjustmentsOf(c).map((a) => [a.kind, a.amountUsd, a.entitledShares])).toEqual([[ADJUSTMENT_KIND.LATE_ENTITLEMENT, 99.97, SH]]);
   });
 
-  it('T2D-03: the late row waits while the session\'s data does not cover the sold symbol (its parse report missing), and is paid at the first close that covers it', async () => {
+  it('T2D-03: the late row waits while the session\'s data does not cover the sold symbol (its parse report missing), is proposed at the first close that covers it, and paid on approval', async () => {
     const c = await start();
     await close(c, 0);
     await sellOnLine(c, 1);
@@ -614,9 +682,12 @@ describe('the battery\'s rows — each a behaviour of this build no other row pi
     await storeCloseSnapshot(c.db, S[3], q(belowLine(c), [div(1, 1)]));
     omitParseReport(c.db, S[3], ['AAPL']);
     await closeIdeaBook(c.db, c.bookRef, { date: S[3], now: closeNowOf(S[3]) });
-    expect(adjustmentsOf(c)).toEqual([]);
+    expect([adjustmentsOf(c), proposalsOf(c)]).toEqual([[], []]);
     await close(c, 4, belowLine(c), [div(1, 1)]);
-    expect(adjustmentsOf(c)).toEqual([expect.objectContaining({ kind: ADJUSTMENT_KIND.LATE_ENTITLEMENT, amountUsd: 99.97, postedOn: S[4] })]);
+    expect(proposalsOf(c)).toEqual([expect.objectContaining({ kind: ADJUSTMENT_KIND.LATE_ENTITLEMENT, netUsd: 99.97, proposedOn: S[4] })]);
+    await approve(c, 'idea', `cash_dividend_AAPL_${S[1]}`);
+    await close(c, 5, belowLine(c), [div(1, 1)]);
+    expect(adjustmentsOf(c)).toEqual([expect.objectContaining({ kind: ADJUSTMENT_KIND.LATE_ENTITLEMENT, amountUsd: 99.97, postedOn: S[5] })]);
   });
 
   it('T2D-12: a SALE waits on a session whose parse report shows a rejected row for the symbol (the same rule as the close)', async () => {
@@ -740,7 +811,7 @@ describe('the lens (b) review\'s rows — the report tied to its rows, a late re
     expect(ideaOf(c).caCoveredThrough.AAPL).toBe(ideaOf(c).entry.sessionDate);
   });
 
-  it('AR4-B-4: the resulted-ideas query failing does not stop the book closing — alerted; the next close posts the late dividend, once', async () => {
+  it('AR4-B-4: the resulted-ideas query failing does not stop the book closing — alerted; the next close reads the idea and names the late dividend (L-8: nothing posts)', async () => {
     const c = await start({ names: ['AAPL'], capitalUsd: 10000 });
     await close(c, 0);
     await sellOnLine(c, 1);
@@ -764,9 +835,11 @@ describe('the lens (b) review\'s rows — the report tied to its rows, a late re
     expect(bookOf(c).execState.lastCloseKey).toBe(S[3]);
     expect(out.alerts.some((a) => a.startsWith('PRACTICE_FIELD_RESULTED_IDEAS_UNREAD'))).toBe(true);
     expect(adjustmentsOf(c)).toEqual([]);
+    expect(ideaOf(c).lateDataUnsettled).toBeUndefined();
     await close(c, 4, belowLine(c), [div(1, 1)]);
-    expect(adjustmentsOf(c)).toEqual([expect.objectContaining({ kind: ADJUSTMENT_KIND.LATE_ENTITLEMENT, amountUsd: 99.97, postedTo: ADJUSTMENT_POSTED_TO.TREASURY, postedOn: S[4] })]);
-    expect(roundUsd(bookOf(c).treasury.unreservedCash - treasury)).toBe(99.97);
+    expect(adjustmentsOf(c)).toEqual([]);
+    expect(ideaOf(c).lateDataUnsettled.actions).toContainEqual(expect.objectContaining({ ledger: 'idea', actionId: `cash_dividend_AAPL_${S[1]}`, kind: 'late_proposal', netUsd: 99.97 }));
+    expect(bookOf(c).treasury.unreservedCash).toBe(treasury);
   });
 
   it('AR4-B-5: a success stored before this build (no parse report) is never overwritten by a later failure', async () => {

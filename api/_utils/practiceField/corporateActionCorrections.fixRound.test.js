@@ -211,19 +211,30 @@ describe('RFX-2 — two share-basis rows of one date on a closed holding apply i
     return { c, log };
   }
 
-  describe('RFX: two same-date share-basis rows waiting on a closed holding', () => {
-    it('A: both listed during one doubt (10/1 and 1/10 dated S1), then listed on clean closes with a $1 dated S2', async () => {
+  // (T1a-2b-4 fix round, L-5 — Q-9 answered with a hold: two share-basis ids of one symbol and one date are ONE AMBIGUITY.
+  // The two rows no longer apply in order: both are recorded for the founder's conflict ruling — reachable, so nothing waits
+  // for good — and the dividend dated after them waits on that ambiguity, then is proposed once it is ruled.)
+  const SPLIT = `split_AAPL_${S[1]}`;
+  const REVERSE = `reverse_split_AAPL_${S[1]}`;
+  const sameDateRecords = (c) => (ideaOf(c).ledger.corporateActionReceipts || []).filter((r) => r.reason === 'possible_redate').map((r) => [r.actionId, r.kinds[0]]).sort();
+  describe('RFX: two same-date share-basis rows on a closed holding (L-5: one ambiguity, for the founder)', () => {
+    it('A: both listed during one doubt (10/1 and 1/10 dated S1), then listed on clean closes with a $1 dated S2 — one ambiguity; the founder reaches both; the dividend is proposed once they are ruled', async () => {
       const { c, log } = await scenario([spl(1, '10/1'), spl(1, '1/10')], [spl(1, '10/1'), spl(1, '1/10'), div(2, 1)]);
-      // Can the founder reach either? (closedHeldRows is not a resolve_hold record.)
-      const r1 = await founderRules(c.db, c.bookId, c.ideaId, { kind: 'conflict', recordId: `split_AAPL_${S[1]}`, decision: 'none' }, { expectOk: false });
-      const r2 = await founderRules(c.db, c.bookId, c.ideaId, { kind: 'conflict', recordId: `reverse_split_AAPL_${S[1]}`, decision: 'none' }, { expectOk: false });
-      console.info(`[RFX mutual wait A]\n${log.join('\n')}\n  founder on split: ${r1.status} ${JSON.stringify(r1.body ?? r1).slice(0, 120)}; on reverse: ${r2.status} ${JSON.stringify(r2.body ?? r2).slice(0, 120)}`);
-      expect(ideaOf(c).ledger.closedHeldRows ?? [], 'rows that wait on each other for good').toEqual([]);
+      console.info(`[RFX same-date A]\n${log.join('\n')}`);
+      expect(sameDateRecords(c)).toEqual([[REVERSE, 'same_date_share_basis'], [SPLIT, 'same_date_share_basis']]);
+      expect((ideaOf(c).ledger.closedHeldRows ?? []).map((r) => r.actionId), 'only the dividend waits — on the ambiguity, never on each other').toEqual([`cash_dividend_AAPL_${S[2]}`]);
+      const r1 = await founderRules(c.db, c.bookId, c.ideaId, { kind: 'conflict', recordId: SPLIT, decision: 'none' }, { expectOk: false, requestKey: 'r1' });
+      const r2 = await founderRules(c.db, c.bookId, c.ideaId, { kind: 'conflict', recordId: REVERSE, decision: 'none' }, { expectOk: false, requestKey: 'r2' });
+      expect([r1.status, r2.status], 'the founder reaches both').toEqual([200, 200]);
+      await close(c, 10, belowLine(c), [spl(1, '10/1'), spl(1, '1/10'), div(2, 1)]);
+      expect(ideaOf(c).ledger.closedHeldRows ?? []).toEqual([]);
+      expect((ideaOf(c).ledger.lateProposals || []).map((p) => [p.actionId, p.netUsd, p.entitledShares])).toEqual([[`cash_dividend_AAPL_${S[2]}`, 99.97, 99.970008]]);
     });
-    it('B: the vendor lists 10/1 during a doubt, then corrects the direction to 1/10 (only), with a $1 dated S2', async () => {
+    it('B: the vendor lists 10/1 during a doubt, then corrects the direction to 1/10 (only), with a $1 dated S2 — the waiting row and the correction are one ambiguity', async () => {
       const { c, log } = await scenario([spl(1, '10/1')], [spl(1, '1/10'), div(2, 1)]);
-      console.info(`[RFX mutual wait B]\n${log.join('\n')}`);
-      expect(ideaOf(c).ledger.closedHeldRows ?? [], 'rows that wait on each other for good').toEqual([]);
+      console.info(`[RFX same-date B]\n${log.join('\n')}`);
+      expect(sameDateRecords(c)).toEqual([[REVERSE, 'same_date_share_basis'], [SPLIT, 'same_date_share_basis']]);
+      expect((ideaOf(c).ledger.closedHeldRows ?? []).map((r) => r.actionId)).toEqual([`cash_dividend_AAPL_${S[2]}`]);
     });
     it('control: the same first row, the vendor then lists it unchanged — applied once', async () => {
       const { c, log } = await scenario([spl(1, '10/1')], [spl(1, '10/1'), div(2, 1)]);
@@ -232,7 +243,7 @@ describe('RFX-2 — two share-basis rows of one date on a closed holding apply i
     });
   });
 
-  describe('RFX: the mutual wait through the idea\'s result (variant B)', () => {
+  describe('RFX: variant B through the idea\'s result (L-5: unruled at the endpoint, the ambiguity leaves the result unmeasurable, named)', () => {
     const qm = (p, a = [], msft = 200) => ({ AAPL: { price: p, marketCap: 3e12, corporateActions: a }, MSFT: { price: msft, marketCap: 3e12 }, SPY: { price: 500 }, XLK: { price: 200 } });
     it('MSFT sold on its line after the lock: the endpoint, the result, the look-back', async () => {
       const c = await start();
@@ -260,8 +271,14 @@ describe('RFX-2 — two share-basis rows of one date on a closed holding apply i
       const fin = ideaOf(c);
       lines.push(`after S14 closedHeldRows=${JSON.stringify((fin.ledger.closedHeldRows || []).map((r) => r.actionId))} adjustments=${JSON.stringify((fin.ledger.adjustments || []).map((a) => [a.kind, a.amountUsd]))} lateDataUnsettled=${JSON.stringify(fin.lateDataUnsettled)} economic=${fin.result?.economicResult}`);
       lines.push(`alerts ${JSON.stringify(seen)}`);
-      console.info(['[RFX mutual wait to result]', ...lines].join(' || '));
-      expect(fin.result?.economicResult).not.toBe('unmeasurable');
+      console.info(['[RFX same-date to result]', ...lines].join(' || '));
+      // (L-5: the founder never ruled the two same-date ids before the endpoint — the result is unmeasurable under its own
+      // reason, the ambiguity named there and, after the result, on the idea; nothing posts — L-8.)
+      expect(fin.result?.economicResult).toBe('unmeasurable');
+      expect(fin.result.economic.unmeasurableBecause).toContain('idea_unsettled_corporate_action');
+      expect(ep.idea.unsettledActions).toEqual(expect.arrayContaining([SPLIT, REVERSE]));
+      expect(fin.lateDataUnsettled.actions.map((a) => a.actionId)).toEqual(expect.arrayContaining([SPLIT, REVERSE]));
+      expect(fin.ledger.adjustments ?? []).toEqual([]);
     });
   });
 });

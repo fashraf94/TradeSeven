@@ -1,61 +1,64 @@
 // api/_utils/practiceField/adjustments.js
 //
-// Practice Field T1a-2b-4 — LATE AND CORRECTED DATA (Astra T2D-03, T2D-04, T2D-05). Money the data now shows was owed
-// differently from what a ledger received, corrected by ONE NEW LINKED RECORD — never a rewrite of a receipt, a holding's
-// history or a result:
+// Practice Field T1a-2b-4 — LATE AND CORRECTED DATA (Astra T2D-03, T2D-04, T2D-05), and its fix round: LATE DATA ASKS (the
+// founder's ruling of 20 Nov 2026, L-1 to L-8; Astra's T2E-01 to T2E-08). Money the data now shows was owed differently from
+// what a ledger received is corrected by ONE NEW LINKED RECORD — never a rewrite of a receipt, a holding's history or a
+// result — and, since the fix round, ONLY WITH THE FOUNDER'S AUTHORITY:
 //
-//   late_entitlement  a cash dividend first listed AFTER the ledger stopped holding the stock (the idea's line sale, or a
-//                     resulted idea's last close), dated while it held it: paid once, on the ex-date count (T2D-03);
-//   late_basis        a share-basis action applied AFTER a cash dividend it predates (listed late): that dividend is
-//                     recomputed on its ex-date count, and the difference posted (T2D-04; C-16's derivation, now for a
-//                     payment already made). Both arrival orders end with the same money;
-//   ruled_correction  the founder's ruling (resolve_hold, `conflict`) chose a vendor CORRECTION of an id already settled:
-//                     a dividend's amount, or a split's ratio — the count corrected, and every dividend paid since
-//                     recomputed through the late_basis path (T2D-05).
+//   late_entitlement  a cash dividend first listed AFTER the ledger stopped holding the stock (the idea's line sale), dated
+//                     while it held it — PROPOSED, on the ex-date count (T2D-03);
+//   late_basis        a paid dividend whose ex-date count a share-basis action applied after it changes (listed late), or a
+//                     founder's ratio correction changes — PROPOSED (T2D-04);
+//   ruled_correction  the founder's ruling (resolve_hold, `conflict`) chose a vendor CORRECTION of an id already settled: a
+//                     dividend's amount (posted at the close: the net owed now, on the dated count, less everything
+//                     received for the id), or a split's ratio (the count corrected) (T2D-05). Unchanged: it is a ruling.
 //
-// THE PRINCIPLE (the founder's, one line): a correction the data fully determines is applied by code; a correction where
-// the vendor contradicts itself waits for the founder (Amendment F rev 1, S-2, S-3). So a late entitlement is automatic
-// only for an id that has never been ambiguous on that ledger — a conflict, a revision or a possible re-date records,
-// alerts and waits, as every ambiguous id does — and a corrected payload under a settled id is never applied by code.
+// L-1, NO LATE ADJUSTMENT POSTS ON ITS OWN. A late_entitlement or late_basis is computed and recorded as a PROPOSAL on the
+// ledger (`lateProposals`), and alerted; while it waits, the row and the endpoint read below full quality, naming it. The
+// founder's `resolve_hold` of kind `late_adjustment` approves or declines ONE proposal (open ideas only — Q-2 as ruled).
+// L-2, APPROVAL POSTS THE NET, computed at posting: what the ledger is owed now (the ruled payloads, the dated count) less
+// everything it has received for the id — never a chained delta. It is refused (409 at the endpoint; not posted at the
+// close) while the id is unresolved, another candidate pairs with it under the re-date rule, a share-basis id dated within
+// the holding is unresolved, or a date in the holding interval is uncovered (`blockers`).
+// L-3, CLOSED HOLDINGS ARE SCREENED LIKE HELD ONES: before a proposal is made, every row for a closed holding goes through
+// the held path's re-date pairing — the other rows of the same close, and the rows observed just outside the holding within
+// the re-date window, whose economic identity is kept (`closedOutsideRows`). A paired id is an ambiguity for a `conflict`
+// ruling, never a proposal.
+// L-8, A RESULTED IDEA: late data is named and alerted only (`proposeOnly`); nothing posts to the treasury.
 //
-// RECEIVED VERSUS ENTITLED. Each adjustment posts the difference between what the ledger is entitled to now — the ex-date
-// count (countOnExDate) times the amount in force (the receipt's, or the founder's correction) — and what it has received
-// for that dividend: its receipt plus every adjustment posted for it. Nothing accumulates: a second identical close
-// computes a difference of nought and posts nothing. And it fires only when something LATE exists for that dividend — a
-// share-basis action applied after it with a date on or before its ex-date, a founder's correction, or a dividend first
-// listed after a sale — so on complete, on-time data this module posts nothing, by construction.
+// RECEIVED VERSUS ENTITLED. The entitlement is the ex-date count (countOnExDate: the DATED chain, L-4) times the amount in
+// force (the receipt's, or the founder's correction); what was received is the receipt plus every adjustment posted for the
+// id. A proposal is made only when something LATE exists for the dividend — a share-basis action applied after it with a
+// date on or before its ex-date, a founder's correction, or a dividend first listed after a sale — so on complete, on-time
+// data this module records nothing and posts nothing, by construction.
 //
-// THE HOLDING HISTORY (the build prompt asks what was added): NOTHING NEW IS STORED for it. A ledger's history of a symbol
-// is derived from what it already keeps: its holding (`shares`, `openedAt`) while held; the idea's entry session (the one
-// basket entry — an idea never buys again) and its sale receipt (`shares`, `sessionDate`) once sold; and the share-basis
-// receipts (`sharesBefore`, `sharesAfter`, in the order applied). The one new receipt kind is a HISTORY-ONLY share-basis
-// receipt (`historyOnly: true`): a split first listed after the ledger sold the stock, dated while it held it — it moves
-// no shares (there are none) but belongs in the ex-date count of a dividend dated after it.
+// THE HOLDING HISTORY: nothing new is stored for it. A ledger's history of a symbol is derived from what it already keeps:
+// its holding while held; the idea's entry session and its sale receipt once sold; the share-basis receipts. A HISTORY-ONLY
+// share-basis receipt (`historyOnly: true`) is a split first listed after the ledger sold the stock, dated while it held it —
+// it moves no shares, enters the ex-date count of a dividend dated after it, and (L-6) leaves a standing reason when the
+// shares sold differ from the shares owed at the sale.
 //
-// A DOUBT HOLDS IT. Every adjustment depends on a share count, so none posts while the symbol is in doubt on the idea —
-// a coverage gap (the session's data, its parse report included), an open ambiguity, a held or refused action, a
-// suspicion: the caller says (`doubtOn`). The condition that fired it is durable, so it posts at the first close without
-// the doubt.
-//
-// A DEBIT LARGER THAN THE CASH it would come from is not posted: it is recorded `held: true`, `reason:
-// 'adjustment_exceeds_cash'`, and alerted at every close it stands, for the founder.
+// A DOUBT HOLDS IT: nothing is computed on a count in doubt (`doubtOn`), and every refusal is named on the proposal.
+// A DEBIT LARGER THAN THE CASH it would come from is not posted: recorded `held: true`, `reason: 'adjustment_exceeds_cash'`.
 //
 // Pure. The close (close.js) posts the cash on the book's mirror, writes each adjustment's evidence document
 // (`mandates/{bookId}/ideas/{ideaId}/evidence/adjustment_{id}`, create-once, content-hashed) and the result's view.
 
 import { roundUsd, roundShares } from '../mandateRounding.js';
-import { canonicalContentHash } from '../canonicalHash.js';
+import { canonicalContentHash, stableStringify } from '../canonicalHash.js';
 import { toCents, fromCents, addUsd } from './money.js';
 import {
   cloneLedger, actionIdOf, SHARE_BASIS_TYPES, withinSessions, REDATE_WINDOW_SESSIONS, actionPayloadOf, recordedPayloadsOf,
-  CONFLICTING_ACTION, POSSIBLE_REDATE, REVISED_AFTER_RULING, NOT_ENTITLED, founderSettledIds, shareBasisChainOf,
+  CONFLICTING_ACTION, POSSIBLE_REDATE, REVISED_AFTER_RULING, NOT_ENTITLED, founderSettledIds, shareBasisChainOf, datedCountOn,
 } from './ledger.js';
 
 export const ADJUSTMENT_KIND = Object.freeze({ LATE_ENTITLEMENT: 'late_entitlement', LATE_BASIS: 'late_basis', RULED_CORRECTION: 'ruled_correction' });
-/** Where an adjustment's cash went: the ledger's own cash (an open idea), the book's treasury (a resulted idea's own
- *  ledger), or nowhere (a resulted idea's paper ledger: recorded beside its result). */
-export const ADJUSTMENT_POSTED_TO = Object.freeze({ LEDGER: 'ledger', TREASURY: 'treasury', PAPER_AFTER_RESULT: 'paper_after_result' });
+/** Where an adjustment's cash goes: the ledger's own cash (an open idea). (L-8: a resulted idea posts nowhere — its late data
+ *  is named and alerted only; the fix round removed the treasury and paper-after-result destinations.) */
+export const ADJUSTMENT_POSTED_TO = Object.freeze({ LEDGER: 'ledger' });
 export const ADJUSTMENT_EXCEEDS_CASH = 'adjustment_exceeds_cash';
+/** L-6: the standing reasons a row, the endpoint and the result read below full quality for. */
+export const STANDING_REASON = Object.freeze({ SALE_COUNT_DIFFERS: 'sale_count_differs_from_owed' });
 /** The evidence document id of an adjustment. */
 export const adjustmentDocIdOf = (id) => `adjustment_${id}`;
 
@@ -82,41 +85,28 @@ export function adjustmentCentsOnLedger(ledger) {
 }
 
 /**
- * THE SHARE-BASIS CHAIN of a ledger's symbol, in the order applied: each event's ratio — the founder's correction of it,
- * if one is in force (a share-basis ruled_correction) — and the count before and after it, REPLAYED from the first
- * receipt's `sharesBefore`, rounding at each step as the applier rounds (so, with no correction, the replay reproduces
- * the recorded counts exactly). Pure.
- * @returns {{ events: Array<{ actionId, effectiveDate, ratio, before, after, index, historyOnly }>, end: number|null }}
+ * THE SHARE-BASIS CHAIN of a ledger's symbol, in DATED order (L-4): ledger.js shareBasisChainOf — the one chain the C-16
+ * path, the suspicion's residual and every count here read (review AR4-C-1, AR4-C-5). Pure.
+ * @returns {{ events: Array<{ actionId, effectiveDate, ratio, before, after, index, historyOnly }>, base: number|null, end: number|null }}
  */
 export function shareBasisChain(ledger, symbol) {
-  // (The one corrected chain — ledger.js shareBasisChainOf — which the C-16 path and the suspicion's residual read too:
-  // review AR4-C-1, AR4-C-5.)
   return shareBasisChainOf(ledger, symbol);
 }
 
 /**
- * THE COUNT A LEDGER HELD ON AN EX-DATE (C-16's derivation): the count before the first event, in the order applied,
- * dated after the ex-date; then each event applied after that one but dated on or before the ex-date (listed late), in
- * the order applied. With no event dated after it, the count now — the holding's, or (a closed holding) the chain's end
- * or its count when it closed. Pure.
+ * THE COUNT A LEDGER HELD ON AN EX-DATE (C-16; L-4): the count before any share-basis event times every one dated on or
+ * before the ex-date, in dated order, rounded at each step — whatever order they were applied in. With no event, the count
+ * now (the holding's) or, a closed holding, its count when it closed. Pure.
  * @param {{ held: object|null, closed: { shares: number }|null }} at  the holding now, or the closed holding
  * @returns {{ count: number, from: string, also: string[] }}
  */
 export function countOnExDate(ledger, symbol, exDate, { held = null, closed = null } = {}) {
-  const { events, end } = shareBasisChain(ledger, symbol);
-  const k = events.findIndex((e) => e.effectiveDate > exDate);
-  if (k < 0) {
+  const dated = datedCountOn(ledger, symbol, exDate);
+  if (dated === null) {
     if (held) return { count: Number(held.shares), from: 'holding', also: [] };
-    return { count: events.length > 0 ? end : Number(closed?.shares), from: events.length > 0 ? 'chain' : 'closed', also: [] };
+    return { count: Number(closed?.shares), from: 'closed', also: [] };
   }
-  let count = events[k].before;
-  const also = [];
-  for (const e of events.slice(k + 1)) {
-    if (e.effectiveDate > exDate) continue;
-    count = roundShares(count * e.ratio);
-    also.push(e.actionId);
-  }
-  return { count, from: events[k].actionId, also };
+  return { count: dated.count, from: 'dated_chain', also: dated.from };
 }
 
 /**
@@ -180,19 +170,24 @@ function paidDividends(ledger) {
   return out;
 }
 
-/** The payloads a ledger has seen for `symbol` and `type`, for the re-date screen of a closed holding's row: applied
- *  receipts, not-entitled declines, every recorded payload of its ambiguity records, its late entitlements. */
+/** The payloads a ledger has seen for `symbol` and `type` (null: every share-basis type — L-5), for the re-date screen of a
+ *  closed holding's row: applied receipts, not-entitled declines, every recorded payload of its ambiguity records, its
+ *  late entitlements, and (L-1) its OPEN late proposals — a payload the ledger proposed is one it has seen. */
 function redatePool(ledger, symbol, type) {
+  const ok = (t) => (type === null ? SHARE_BASIS_TYPES.has(t) : t === type);
   const pool = [];
   for (const r of ledger?.corporateActionReceipts || []) {
-    if (r?.type !== type || upper(r.ticker) !== symbol) continue;
-    if (r.applied === true || r.reason === NOT_ENTITLED) pool.push({ actionId: r.actionId, effectiveDate: r.effectiveDate, key: actionPayloadOf(r) });
+    if (!ok(r?.type) || upper(r.ticker) !== symbol) continue;
+    if (r.applied === true || r.reason === NOT_ENTITLED) pool.push({ actionId: r.actionId, effectiveDate: r.effectiveDate, key: actionPayloadOf(r), type: r.type });
     if (r.reason === CONFLICTING_ACTION || r.reason === POSSIBLE_REDATE || r.reason === REVISED_AFTER_RULING) {
-      for (const p of recordedPayloadsOf(r)) pool.push({ actionId: r.actionId, effectiveDate: r.effectiveDate, key: actionPayloadOf(p) });
+      for (const p of recordedPayloadsOf(r)) pool.push({ actionId: r.actionId, effectiveDate: r.effectiveDate, key: actionPayloadOf(p), type: r.type });
     }
   }
   for (const a of postedAdjustments(ledger)) {
-    if (a.kind === ADJUSTMENT_KIND.LATE_ENTITLEMENT && a.type === type && upper(a.ticker) === symbol) pool.push({ actionId: a.actionId, effectiveDate: a.effectiveDate, key: actionPayloadOf({ amount: a.amountPerShare }) });
+    if (a.kind === ADJUSTMENT_KIND.LATE_ENTITLEMENT && ok(a.type) && upper(a.ticker) === symbol) pool.push({ actionId: a.actionId, effectiveDate: a.effectiveDate, key: actionPayloadOf({ amount: a.amountPerShare }), type: a.type });
+  }
+  for (const p of openProposals(ledger)) {
+    if (ok(p.type) && upper(p.ticker) === symbol && p.kind === ADJUSTMENT_KIND.LATE_ENTITLEMENT) pool.push({ actionId: p.actionId, effectiveDate: p.effectiveDate, key: actionPayloadOf({ amount: p.amountPerShare }), type: p.type, proposal: p });
   }
   return pool;
 }
@@ -207,35 +202,60 @@ function openRecordOf(ledger, actionId) {
 
 const payloadRow = (a, seenOn) => ({ ratio: a.ratio ?? null, amount: a.amount ?? null, source: a.source ?? null, ...(a.feedOrigin === 'backfill' ? { origin: 'backfill' } : {}), ...(seenOn ? { seenOn } : {}) });
 
+/** The status of a late proposal (L-1). Only an OPEN one waits; the rest are kept as its history. */
+export const LATE_PROPOSAL_STATUS = Object.freeze({ OPEN: 'open', POSTED: 'posted', DECLINED: 'declined', SETTLED: 'settled' });
+/** Why the founder's approval of a proposal is refused now (L-2) — each a prefix of a blocker `<kind>:<what>`. */
+export const LATE_BLOCKER = Object.freeze({
+  ID_UNRESOLVED: 'id_unresolved', PAIRS: 'pairs_with', SHARE_BASIS: 'share_basis_unresolved', UNCOVERED: 'date_uncovered', EXCEEDS_CASH: 'exceeds_cash',
+});
+/** A proposal's id: `late_<ledger>_<actionId>`, and `_<n>` for the n-th proposal of that id on that ledger (n > 1). */
+export const proposalIdOf = (ledgerKind, actionId, n = 1) => `late_${ledgerKind}_${actionId}${n > 1 ? `_${n}` : ''}`;
+/** A ledger's OPEN late proposals. */
+export const openProposals = (ledger) => (ledger?.lateProposals || []).filter((p) => p && p.status === LATE_PROPOSAL_STATUS.OPEN);
+
 /**
- * PLAN ONE LEDGER'S ADJUSTMENTS at one close (see the header). Pure.
+ * PLAN ONE LEDGER'S LATE DATA at one close (see the header). Pure.
  *
  * @param {object} ledger
  * @param {object} ctx
  *   ideaId, ledgerKind ('idea' | 'comparison' | 'spy'), date (the session), rows (`{ SYM: [rows] }` this ledger was
  *   handed, the founder's actions among them), ruledIds (Set: ids a pending conflict ruling supplies on this ledger),
- *   closed (closedHoldingsOf), doubtOn(sym, exDate) → boolean, postedTo (ADJUSTMENT_POSTED_TO), availableCents (what a
- *   debit may come from), corrections (the founder's amount corrections applied at this close: [{ actionId, amount, from,
- *   ruling }]), seqBase (a stable sequence for this close)
- * @returns {{ ledger: object, posted: Array<object>, held: Array<object>, recorded: Array<object>, historyOnly: Array<object>, alerts: string[] }}
+ *   closed (closedHoldingsOf), doubtOn(sym, exDate) → boolean (a doubt in the count: nothing is computed on it),
+ *   blockersOf(sym, exDate, { end }) → string[] (the caller's refusals: uncovered dates, the idea's hold set),
+ *   availableCents (what a debit may come from), corrections (the founder's amount corrections applied at this close:
+ *   [{ actionId, amount, from, ruling }]), approvals (the founder's pending late_adjustment rulings on this ledger:
+ *   [{ proposalId, decision, ruling }]), proposeOnly (a resulted idea: nothing posts — L-8)
+ * @returns {{ ledger: object, posted: Array<object>, held: Array<object>, recorded: Array<object>, historyOnly: Array<object>,
+ *             proposed: Array<object>, closedProposals: Array<object>, standingReasons: Array<object>, alerts: string[] }}
  */
 export function planLedgerAdjustments(ledger, ctx) {
-  const { ideaId = null, ledgerKind, date, rows = {}, ruledIds = null, closed = new Map(), doubtOn = () => false } = ctx;
-  const postedTo = ctx.postedTo ?? ADJUSTMENT_POSTED_TO.LEDGER;
+  const { ideaId = null, ledgerKind, date, rows = {}, ruledIds = null, closed = new Map(), doubtOn = () => false, blockersOf = () => [], proposeOnly = false } = ctx;
   let available = Number.isFinite(ctx.availableCents) ? ctx.availableCents : toCents(ledger?.cash || 0);
-  const out = { ledger, posted: [], held: [], recorded: [], historyOnly: [], alerts: [] };
+  const out = { ledger, posted: [], held: [], recorded: [], historyOnly: [], proposed: [], closedProposals: [], standingReasons: [], alerts: [] };
   if (!ledger) return out;
   let next = null;
-  const edit = () => { if (next === null) { next = cloneLedger(ledger); next.adjustments = [...(ledger.adjustments || [])]; } return next; };
+  const edit = () => {
+    if (next === null) {
+      next = cloneLedger(ledger);
+      next.adjustments = [...(ledger.adjustments || [])];
+      if (ledger.lateProposals) next.lateProposals = ledger.lateProposals.map((p) => ({ ...p }));
+      if (ledger.closedOutsideRows) next.closedOutsideRows = [...ledger.closedOutsideRows];
+    }
+    return next;
+  };
   const cur = () => next ?? ledger;
   const settledNow = () => new Set([...(cur().appliedActionIds || []), ...(cur().declinedActionIds || [])]);
 
-  /** Post (or hold) one adjustment of `cents`. */
+  /**
+   * POST one adjustment of `cents` — only with the founder's authority (an approval, a ruling) or as a ruled_correction
+   * (L-1). Never on a resulted idea (L-8). A debit larger than the cash it would come from is held, never posted.
+   */
   const post = (entry) => {
+    if (proposeOnly) return null;
     const l = edit();
     const cents = entry.amountCents;
     const id = adjustmentIdOf({ ideaId, ledger: ledgerKind, actionId: entry.actionId, kind: entry.kind, correction: entry.correction });
-    const base = { id, ...entry, ledger: ledgerKind, postedOn: date, postedTo, amountUsd: fromCents(cents), seq: (l.corporateActionReceipts || []).length };
+    const base = { id, ...entry, ledger: ledgerKind, postedOn: date, postedTo: ADJUSTMENT_POSTED_TO.LEDGER, amountUsd: fromCents(cents), seq: (l.corporateActionReceipts || []).length };
     if (cents < 0 && available + cents < 0) {
       // A debit larger than the cash it would come from: recorded, held, alerted — never posted. One held record per
       // correction (a later close replaces it while it stands).
@@ -246,25 +266,60 @@ export function planLedgerAdjustments(ledger, ctx) {
       return null;
     }
     l.adjustments = [...l.adjustments.filter((a) => !(a.held === true && a.id === id)), base];
-    if (postedTo === ADJUSTMENT_POSTED_TO.LEDGER) {
-      l.cash = addUsd(l.cash, base.amountUsd);
-      l.dividendsUsd = addUsd(l.dividendsUsd, base.amountUsd);
-    }
+    l.cash = addUsd(l.cash, base.amountUsd);
+    l.dividendsUsd = addUsd(l.dividendsUsd, base.amountUsd);
     available += cents;
     out.posted.push(base);
     return base;
   };
 
+  // ── THE PROPOSALS (L-1) ─────────────────────────────────────────────────────────────────────────────────────────────
+  const proposalFields = (p) => ({ kind: p.kind, ticker: p.ticker, effectiveDate: p.effectiveDate, amountPerShare: p.amountPerShare, entitledShares: p.entitledShares, derivation: p.derivation ?? null, owedUsd: p.owedUsd, receivedUsd: p.receivedUsd, netUsd: p.netUsd, trigger: p.trigger ?? [] });
+  const openProposalOf = (id) => openProposals(cur()).find((p) => p.actionId === id) ?? null;
+  /** Close an open proposal (status, why, and by whom). */
+  const closeProposal = (id, status, because, extra = {}) => {
+    const p = openProposalOf(id);
+    if (!p) return null;
+    const l = edit();
+    const closedP = { ...p, status, closedOn: date, closedBecause: because, ...extra };
+    l.lateProposals = l.lateProposals.map((x) => (x.id === p.id ? closedP : x));
+    out.closedProposals.push(closedP);
+    return closedP;
+  };
+  /**
+   * PROPOSE (or re-state) the late money of one dividend id on this ledger: what it is owed now on the dated count, less
+   * what it has received for the id. Nothing owed beyond what was received: an open proposal is settled. Never posts.
+   */
+  const propose = (entry) => {
+    const net = entry.owedCents - entry.receivedCents;
+    const fields = {
+      kind: entry.kind, ticker: entry.ticker, effectiveDate: entry.effectiveDate, amountPerShare: entry.amountPerShare, entitledShares: entry.entitledShares,
+      derivation: entry.derivation ?? null, owedUsd: fromCents(entry.owedCents), receivedUsd: fromCents(entry.receivedCents), netUsd: fromCents(net), trigger: entry.trigger ?? [],
+    };
+    const open = openProposalOf(entry.actionId);
+    if (net === 0) { if (open) closeProposal(entry.actionId, LATE_PROPOSAL_STATUS.SETTLED, 'nothing_owed', { netUsd: 0 }); return null; }
+    if (open) {
+      if (stableStringify(proposalFields(open)) === stableStringify(fields)) return open;
+      const l = edit();
+      const updated = { ...open, ...fields, updatedOn: date };
+      l.lateProposals = l.lateProposals.map((x) => (x.id === open.id ? updated : x));
+      out.proposed.push(updated);
+      return updated;
+    }
+    const l = edit();
+    const n = (l.lateProposals || []).filter((x) => x.actionId === entry.actionId).length + 1;
+    const p = { id: proposalIdOf(ledgerKind, entry.actionId, n), ledger: ledgerKind, actionId: entry.actionId, type: 'cash_dividend', status: LATE_PROPOSAL_STATUS.OPEN, proposedOn: date, ...fields, blockers: [] };
+    l.lateProposals = [...(l.lateProposals || []), p];
+    out.proposed.push(p);
+    out.alerts.push(`PRACTICE_FIELD_LATE_PROPOSED ${ideaId} ${ledgerKind} ${entry.actionId} ${p.id} — ${entry.kind} of $${p.netUsd} (owed $${p.owedUsd} on ${entry.entitledShares} shares, received $${p.receivedUsd}): late data moves no money on its own — it waits for the founder (resolve_hold, late_adjustment)`);
+    return p;
+  };
+
   // AN OPEN SHARE-BASIS AMBIGUITY OF THE SYMBOL ON THIS LEDGER — a record this very call made included — holds every
-  // count-dependent row of it dated on or after it, as the hold set does for a held symbol (review AR4-A-1: the caller's
-  // `doubtOn` is decided before the plan runs, so a conflict or a possible re-date recorded on a closed holding at this
-  // close did not hold a later-dated dividend of the same close, and it was paid on a count the founder had not settled).
-  // A row waiting on a doubt (`closedHeldRows`) of a share-basis type holds them too. An id a ruling settles at this close
-  // is the ruling's, never a doubt.
-  // (The held path's order — ledger.js applyActions, `byDatePhaseId`: date, then phase, then id. A cash row waits on a
-  // share-basis one dated on or before it; a share-basis row waits only on one that PRECEDES it in that order, never on
-  // itself or one after it — fix-round refuter RFX-2: a split and a reverse split of one date, both waiting, each held the
-  // other for good. The held path applies the two in that order, as `main` does.)
+  // count-dependent row of it dated on or after it, as the hold set does for a held symbol (review AR4-A-1). A row waiting
+  // on a doubt (`closedHeldRows`) of a share-basis type holds them too. An id a ruling settles at this close is the
+  // ruling's, never a doubt. (The held path's order — date, then phase, then id: a share-basis row waits only on one that
+  // PRECEDES it — fix-round refuter RFX-2.)
   const shareDoubtOn = (sym, d, selfId = null, selfShare = false) => {
     const l = cur();
     const precedes = (r) => isDate(r.effectiveDate) && (r.effectiveDate < d || (r.effectiveDate === d && (!selfShare || String(r.actionId) < String(selfId))));
@@ -275,54 +330,110 @@ export function planLedgerAdjustments(ledger, ctx) {
   };
 
   // ── 1. CLOSED HOLDINGS (T2D-03; T2D-04 after a sale or a result): rows first listed after the ledger stopped holding the
-  //       stock, dated while it held it.
+  //       stock, dated while it held it — screened as the held path screens (L-3), and PROPOSED, never posted (L-1).
   for (const [sym, c] of closed) {
+    const inInterval = (a) => isDate(a.effectiveDate) && a.effectiveDate <= c.through && (c.openedAt === null || a.effectiveDate > c.openedAt);
     const listed = (rows[sym] || []).filter((a) => a && upper(a.ticker) === sym && (a.type === 'cash_dividend' || SHARE_BASIS_TYPES.has(a.type))
-      && isDate(a.effectiveDate) && a.effectiveDate <= date && a.effectiveDate <= c.through && (c.openedAt === null || a.effectiveDate > c.openedAt));
+      && isDate(a.effectiveDate) && a.effectiveDate <= date && inInterval(a));
     const byId = new Map();
     for (const a of listed) {
       const id = typeof a.actionId === 'string' && a.founderRuling ? a.actionId : actionIdOf(a);
       byId.set(id, [...(byId.get(id) || []), { ...a, actionId: id }]);
     }
-    // A row that waited on a doubt at an earlier close (`closedHeldRows`, the closed holding's own held record — as a held
-    // symbol's `heldActions`): replayed when the feed no longer lists it, and the payload a later different row revises.
-    // (The late soak's 1795729395 and 1795728065: with nothing kept while it waited, a row listed only during a doubt was
-    // never paid, and a later different payload under its id was applied as if it were the first.)
+    // A row that waited on a doubt at an earlier close (`closedHeldRows`): replayed when the feed no longer lists it, and
+    // the payload a later different row revises (the late soak's 1795729395 and 1795728065).
     const heldOf = (id) => (cur().closedHeldRows || []).find((r) => r.actionId === id && upper(r.ticker) === sym) ?? null;
     for (const r of cur().closedHeldRows || []) {
       if (upper(r.ticker) !== sym || byId.has(r.actionId) || !(r.effectiveDate <= c.through)) continue;
       byId.set(r.actionId, [{ type: r.type, ticker: sym, effectiveDate: r.effectiveDate, ...(r.ratio != null ? { ratio: r.ratio } : {}), ...(r.amount != null ? { amount: r.amount } : {}), source: r.source ?? null, actionId: r.actionId, fromHeld: true }]);
     }
     const dropHeld = (id) => { if (heldOf(id)) { const l = edit(); l.closedHeldRows = l.closedHeldRows.filter((r) => r.actionId !== id); if (l.closedHeldRows.length === 0) delete l.closedHeldRows; } };
-    // REVISIONS FIRST (review AR4-C-3; the open path's T2D-D01 pre-pass, ledger.js): an id settled on this ledger, or one
-    // waiting with another payload, whose feed rows now show a payload it has not seen, is recorded BEFORE any row of
-    // another id is classified — so a moved row of the corrected payload, dated earlier and listed in the same close,
-    // meets that payload in the re-date pool instead of an empty one, and waits instead of being paid.
+    // L-3: THE ROWS JUST OUTSIDE THE HOLDING — listed now dated after it closed, or on or before it was bought, within the
+    // re-date window of its ends: the same payload under such a date may be this very action moved past the sale (T2E-02:
+    // $1 dated after the sale one day, dated before it the next). Their economic identity is KEPT on the ledger
+    // (`closedOutsideRows`) for the window, so a row listed at a LATER close still meets them.
+    const nearEnds = (a) => withinSessions(a.effectiveDate, c.through, REDATE_WINDOW_SESSIONS) || (c.openedAt !== null && withinSessions(a.effectiveDate, c.openedAt, REDATE_WINDOW_SESSIONS));
+    const outsideNow = (rows[sym] || []).filter((a) => a && !a.founderRuling && upper(a.ticker) === sym && (a.type === 'cash_dividend' || SHARE_BASIS_TYPES.has(a.type))
+      && isDate(a.effectiveDate) && a.effectiveDate <= date && !inInterval(a) && nearEnds(a)).map((a) => ({ actionId: actionIdOf(a), type: a.type, ticker: sym, effectiveDate: a.effectiveDate, ratio: a.ratio ?? null, amount: a.amount ?? null }));
+    for (const o of outsideNow) {
+      const known = (cur().closedOutsideRows || []).some((x) => x.actionId === o.actionId && actionPayloadOf(x) === actionPayloadOf(o));
+      if (!known) { const l = edit(); l.closedOutsideRows = [...(l.closedOutsideRows || []), { ...o, seenOn: date }]; }
+    }
+    const outsidePool = (type) => (cur().closedOutsideRows || []).filter((x) => upper(x.ticker) === sym && x.type === type).map((x) => ({ actionId: x.actionId, effectiveDate: x.effectiveDate, key: actionPayloadOf(x), type: x.type }));
+    // REVISIONS FIRST (review AR4-C-3; the open path's T2D-D01 pre-pass).
     const sorted = [...byId].sort(([, a], [, b]) => byDatePhaseId(a[0], b[0]));
+    // (The payload the ledger already holds for an UNSETTLED id: a row waiting on a doubt, or an open late ENTITLEMENT
+    // proposal — L-1. A late_basis proposal is of a paid, settled id: its revisions are the settled path's.)
+    const priorKeyOf = (id) => {
+      const held = heldOf(id);
+      if (held) return actionPayloadOf(held);
+      const p = openProposalOf(id);
+      return p && p.kind === ADJUSTMENT_KIND.LATE_ENTITLEMENT && !settledNow().has(id) ? actionPayloadOf({ amount: p.amountPerShare }) : null;
+    };
     const revisionFirst = ([id, group0]) => {
       const listedHere = group0.filter((a) => !a.fromHeld);
       if (listedHere.length === 0) return false;
       if (settledNow().has(id)) return true;
-      const held = heldOf(id);
-      return held !== null && listedHere.some((a) => !a.founderRuling && actionPayloadOf(a) !== actionPayloadOf(held));
+      const prior = priorKeyOf(id);
+      return prior !== null && listedHere.some((a) => !a.founderRuling && actionPayloadOf(a) !== prior);
     };
     const ordered = [...sorted.filter(revisionFirst), ...sorted.filter((x) => !revisionFirst(x))];
+    // L-3 (Astra T2E-01): BEFORE A PROPOSAL IS MADE, THE ROWS OF THIS CLOSE ARE PAIRED with one another under the held path's
+    // re-date rule — the same type and payload within the window — and (L-5) two share-basis ids of one date pair whatever
+    // their ratios. A paired id is an ambiguity for the founder's `conflict` ruling, never a proposal: both are recorded.
+    // (One at a time, the earlier-dated id met an empty pool and was paid; only the later one waited — whichever order the
+    // vendor's array had.)
+    {
+      const candidates = [];
+      for (const [id, group0] of ordered) {
+        const group = group0.filter((a) => !a.founderRuling);
+        if (group.length === 0 || group0.some((a) => a.founderRuling && ruledIds?.has(id))) continue;
+        if (settledNow().has(id) || openRecordOf(cur(), id) !== null) continue;
+        const keys = [...new Set(group.map(actionPayloadOf))];
+        if (keys.length !== 1) continue;
+        const prior = priorKeyOf(id);
+        if (prior !== null && prior !== keys[0]) continue;
+        candidates.push({ id, row: group[0], key: keys[0] });
+      }
+      const paired = new Set();
+      for (const a of candidates) {
+        for (const b of candidates) {
+          if (a === b || paired.has(a.id)) continue;
+          const sameDateShare = SHARE_BASIS_TYPES.has(a.row.type) && SHARE_BASIS_TYPES.has(b.row.type) && a.row.effectiveDate === b.row.effectiveDate;
+          const redate = a.row.type === b.row.type && a.key === b.key && withinSessions(a.row.effectiveDate, b.row.effectiveDate, REDATE_WINDOW_SESSIONS);
+          if (!sameDateShare && !redate) continue;
+          paired.add(a.id);
+          const how = redate ? 'possible_redate' : 'same_date_share_basis';
+          dropHeld(a.id);
+          const l = edit();
+          const rec = { actionId: a.id, type: a.row.type, ticker: sym, effectiveDate: a.row.effectiveDate, ratio: a.row.ratio ?? null, amount: a.row.amount ?? null, cashPerShare: null, source: a.row.source ?? null, applied: false, reason: POSSIBLE_REDATE, redateOf: b.id, seenOn: date, rows: [payloadRow(a.row, null)], kinds: [how], closedHolding: true };
+          l.corporateActionReceipts = [...l.corporateActionReceipts, rec];
+          out.recorded.push(rec);
+          out.alerts.push(`PRACTICE_FIELD_CORPORATE_ACTION_REDATE ${ideaId} ${ledgerKind} ${a.id} — ${how === 'possible_redate' ? `the same ${a.row.type} as ${b.id}, under a moved date` : `a second share-basis id of ${sym} on ${a.row.effectiveDate} beside ${b.id}`}, both first listed after the holding closed: not proposed — the founder rules it (resolve_hold, conflict)`);
+        }
+      }
+    }
     const handle = (id, group0) => {
       // (S-1 ②, for a closed holding: the feed now lists the id with a payload other than the one it waited with — a revision.)
       const held = heldOf(id);
+      const proposal = openProposalOf(id);
       const listedHere = group0.filter((a) => !a.fromHeld);
       const group = listedHere.length > 0 ? listedHere : group0;
       const first = group[0];
       const ruled = group.find((a) => a.founderRuling?.kind === 'conflict' && ruledIds?.has(id)) ?? null;
       const keys = [...new Set(group.filter((a) => !a.founderRuling).map(actionPayloadOf))];
-      if (!ruled && held && listedHere.length > 0 && keys.some((k) => k !== actionPayloadOf(held))) {
+      // (A waiting row, or an open PROPOSAL of the id — L-1: its payload is one the ledger has seen — revised by a row listed
+      // now with another payload: the id is ambiguous; a proposal under it waits on the founder's conflict ruling.)
+      const priorKey = priorKeyOf(id);
+      if (!ruled && priorKey !== null && listedHere.length > 0 && keys.some((k) => k !== priorKey)) {
         const l = edit();
-        const rowsAll = [...new Map([payloadRow(held, held.heldOn ?? null), ...group.filter((a) => !a.founderRuling).map((a) => payloadRow(a, date))].map((x) => [actionPayloadOf(x), x])).values()];
-        const rec = { actionId: id, type: first.type, ticker: sym, effectiveDate: first.effectiveDate, applied: false, reason: CONFLICTING_ACTION, entitled: true, rows: rowsAll, seenOn: date, kinds: ['revision'], revisedFrom: { heldOn: held.heldOn ?? null }, closedHolding: true };
+        const priorRow = held ? payloadRow(held, held.heldOn ?? null) : payloadRow({ amount: proposal.amountPerShare }, proposal.proposedOn ?? null);
+        const rowsAll = [...new Map([priorRow, ...group.filter((a) => !a.founderRuling).map((a) => payloadRow(a, date))].map((x) => [actionPayloadOf(x), x])).values()];
+        const rec = { actionId: id, type: first.type, ticker: sym, effectiveDate: first.effectiveDate, applied: false, reason: CONFLICTING_ACTION, entitled: true, rows: rowsAll, seenOn: date, kinds: ['revision'], revisedFrom: held ? { heldOn: held.heldOn ?? null } : { proposal: proposal.id }, closedHolding: true };
         l.corporateActionReceipts = [...l.corporateActionReceipts, rec];
         out.recorded.push(rec);
         dropHeld(id);
-        out.alerts.push(`PRACTICE_FIELD_CORPORATE_ACTION_AMBIGUOUS ${ideaId} ${ledgerKind} ${sym} ${id} — revision on a holding since closed (it waited with another payload): nothing is paid until the founder rules`);
+        out.alerts.push(`PRACTICE_FIELD_CORPORATE_ACTION_AMBIGUOUS ${ideaId} ${ledgerKind} ${sym} ${id} — revision on a holding since closed (it ${held ? 'waited' : 'was proposed'} with another payload): nothing is paid until the founder rules`);
         return;
       }
       if (settledNow().has(id)) {
@@ -339,7 +450,10 @@ export function planLedgerAdjustments(ledger, ctx) {
         for (const x of cur().corporateActionReceipts || []) if (x?.actionId === id && x.reason === REVISED_AFTER_RULING) for (const p of x.rows || []) seen.add(actionPayloadOf(p));
         // (FQ-5 on the closed path — review AR4-C-9: every payload a founder's ruling of the id covered, `seen` included.)
         for (const k of founderSettledIds(cur()).get(id)?.keys || []) seen.add(k);
-        for (const a of postedAdjustments(cur())) if (a.actionId === id && a.kind === ADJUSTMENT_KIND.RULED_CORRECTION) { for (const p of a.ruling?.seen || []) seen.add(actionPayloadOf(p)); seen.add(actionPayloadOf(a.payload || {})); }
+        // (…and, fix round, every payload the founder's CONFLICT ruling saw when it settled the id on this closed holding — a
+        // late entitlement posted under that ruling (L-3: a revision of a proposed id is an ambiguity for the founder), as a
+        // ruled_correction's.)
+        for (const a of postedAdjustments(cur())) if (a.actionId === id && (a.kind === ADJUSTMENT_KIND.RULED_CORRECTION || a.ruling?.kind === 'conflict')) { for (const p of a.ruling?.seen || []) seen.add(actionPayloadOf(p)); seen.add(actionPayloadOf(a.payload || {})); }
         const fresh = group.filter((a) => !a.founderRuling && settledKey !== null && !seen.has(actionPayloadOf(a)));
         if (fresh.length > 0) {
           const l = edit();
@@ -379,37 +493,45 @@ export function planLedgerAdjustments(ledger, ctx) {
           out.alerts.push(`PRACTICE_FIELD_CORPORATE_ACTION_AMBIGUOUS ${ideaId} ${ledgerKind} ${sym} ${id} — conflict on a holding since closed (${rowsAll.length} payloads): nothing is paid until the founder rules`);
           return;
         }
-        // A POSSIBLE RE-DATE (S-1 ③): the same payload under another id within the window.
+        // A POSSIBLE RE-DATE (S-1 ③): the same payload under another id within the window — against every payload the ledger
+        // has seen (applied, declined, recorded, PROPOSED), the rows listed now and KEPT just outside the holding (L-3),
+        // and the rows waiting on a doubt; and (L-5) any other share-basis id of the symbol on the same date.
         const key = keys[0];
-        // (…and every row of the symbol listed now OUTSIDE the holding's dates — after it closed, or on or before it was
-        // bought: the same payload under such a date may be this very action moved past the sale, or before the purchase,
-        // when the holding was owed nothing. The late soak's 1795731088 and 1795732944: a split dated before the sale, beside
-        // the same ratio dated after it, was applied to the history.)
-        const outside = (rows[sym] || []).filter((a) => a && !a.founderRuling && upper(a.ticker) === sym && a.type === first.type && isDate(a.effectiveDate) && a.effectiveDate <= date
-          && !(a.effectiveDate <= c.through && (c.openedAt === null || a.effectiveDate > c.openedAt))).map((a) => ({ actionId: actionIdOf(a), effectiveDate: a.effectiveDate, key: actionPayloadOf(a) }));
+        const outside = [...(rows[sym] || []).filter((a) => a && !a.founderRuling && upper(a.ticker) === sym && a.type === first.type && isDate(a.effectiveDate) && a.effectiveDate <= date
+          && !inInterval(a)).map((a) => ({ actionId: actionIdOf(a), effectiveDate: a.effectiveDate, key: actionPayloadOf(a) })), ...outsidePool(first.type)];
         const pool = [...redatePool(cur(), sym, first.type), ...outside, ...(cur().closedHeldRows || []).filter((r) => r.type === first.type && upper(r.ticker) === sym).map((r) => ({ actionId: r.actionId, effectiveDate: r.effectiveDate, key: actionPayloadOf(r), held: r }))];
-        const match = pool.find((p) => p.actionId !== id && p.key === key && withinSessions(p.effectiveDate, first.effectiveDate, REDATE_WINDOW_SESSIONS));
+        let match = pool.find((p) => p.actionId !== id && p.key === key && withinSessions(p.effectiveDate, first.effectiveDate, REDATE_WINDOW_SESSIONS)) ?? null;
+        let how = 'possible_redate';
+        if (!match && SHARE_BASIS_TYPES.has(first.type)) {
+          const sameDate = [...redatePool(cur(), sym, null), ...(cur().closedHeldRows || []).filter((r) => SHARE_BASIS_TYPES.has(r.type) && upper(r.ticker) === sym).map((r) => ({ actionId: r.actionId, effectiveDate: r.effectiveDate, held: r }))];
+          match = sameDate.find((p) => p.actionId !== id && p.effectiveDate === first.effectiveDate) ?? null;
+          how = 'same_date_share_basis';
+        }
         if (match) {
           dropHeld(id);
-          // (S-1 ③: a held row it may repeat is ambiguous too — recorded, and no longer replayed.)
+          // (S-1 ③: a held row it may repeat is ambiguous too — recorded, and no longer replayed; L-1: so is an open proposal.)
           if (match.held) {
             const l0 = edit();
-            l0.corporateActionReceipts = [...l0.corporateActionReceipts, { actionId: match.actionId, type: first.type, ticker: sym, effectiveDate: match.held.effectiveDate, ratio: match.held.ratio ?? null, amount: match.held.amount ?? null, cashPerShare: null, source: match.held.source ?? null, applied: false, reason: POSSIBLE_REDATE, redateOf: id, seenOn: date, rows: [payloadRow(match.held, match.held.heldOn ?? null)], kinds: ['possible_redate'], closedHolding: true }];
+            l0.corporateActionReceipts = [...l0.corporateActionReceipts, { actionId: match.actionId, type: match.held.type, ticker: sym, effectiveDate: match.held.effectiveDate, ratio: match.held.ratio ?? null, amount: match.held.amount ?? null, cashPerShare: null, source: match.held.source ?? null, applied: false, reason: POSSIBLE_REDATE, redateOf: id, seenOn: date, rows: [payloadRow(match.held, match.held.heldOn ?? null)], kinds: [how], closedHolding: true }];
             dropHeld(match.actionId);
+          } else if (match.proposal && openRecordOf(cur(), match.actionId) === null) {
+            const l0 = edit();
+            l0.corporateActionReceipts = [...l0.corporateActionReceipts, { actionId: match.actionId, type: 'cash_dividend', ticker: sym, effectiveDate: match.effectiveDate, ratio: null, amount: match.proposal.amountPerShare, cashPerShare: null, source: null, applied: false, reason: POSSIBLE_REDATE, redateOf: id, seenOn: date, rows: [payloadRow({ amount: match.proposal.amountPerShare }, match.proposal.proposedOn ?? null)], kinds: [how], closedHolding: true }];
           }
           const l = edit();
-          const rec = { actionId: id, type: first.type, ticker: sym, effectiveDate: first.effectiveDate, ratio: first.ratio ?? null, amount: first.amount ?? null, cashPerShare: null, source: first.source ?? null, applied: false, reason: POSSIBLE_REDATE, redateOf: match.actionId, seenOn: date, rows: [payloadRow(first, null)], kinds: ['possible_redate'], closedHolding: true };
+          const rec = { actionId: id, type: first.type, ticker: sym, effectiveDate: first.effectiveDate, ratio: first.ratio ?? null, amount: first.amount ?? null, cashPerShare: null, source: first.source ?? null, applied: false, reason: POSSIBLE_REDATE, redateOf: match.actionId, seenOn: date, rows: [payloadRow(first, null)], kinds: [how], closedHolding: true };
           l.corporateActionReceipts = [...l.corporateActionReceipts, rec];
           out.recorded.push(rec);
-          out.alerts.push(`PRACTICE_FIELD_CORPORATE_ACTION_REDATE ${ideaId} ${ledgerKind} ${id} — the same ${first.type} as ${match.actionId}, under a moved date, on a holding since closed: not paid — the founder may apply it (resolve_hold, conflict)`);
+          out.alerts.push(`PRACTICE_FIELD_CORPORATE_ACTION_REDATE ${ideaId} ${ledgerKind} ${id} — ${how === 'possible_redate' ? `the same ${first.type} as ${match.actionId}, under a moved date` : `a second share-basis id of ${sym} on ${first.effectiveDate} beside ${match.actionId}`}, on a holding since closed: not proposed — the founder may apply it (resolve_hold, conflict)`);
           return;
         }
       }
       const action = ruled ?? first;
       if (doubtOn(sym, action.effectiveDate) || shareDoubtOn(sym, action.effectiveDate, id, SHARE_BASIS_TYPES.has(action.type))) {
         // Durable: the row waits on the closed holding (replayed at the first close without the doubt, revised if the feed
-        // later lists it otherwise). A founder's action is re-supplied by its ruling: not kept here.
-        if (!action.founderRuling && !held) {
+        // later lists it otherwise). A founder's action is re-supplied by its ruling: not kept here. (An open proposal of
+        // it stands, its approval refused while the doubt does — L-2.)
+        if (!action.founderRuling && !held && !proposal) {
           const l = edit();
           l.closedHeldRows = [...(l.closedHeldRows || []), { actionId: id, type: action.type, ticker: sym, effectiveDate: action.effectiveDate, ratio: action.ratio ?? null, amount: action.amount ?? null, source: action.source ?? null, heldOn: date, closedOn: c.through }];
         }
@@ -433,27 +555,53 @@ export function planLedgerAdjustments(ledger, ctx) {
         l.corporateActionReceipts = [...l.corporateActionReceipts, receipt];
         l.appliedActionIds = [...l.appliedActionIds, id];
         out.historyOnly.push(receipt);
+        // L-6 (Astra T2E-05, Q-5): a split FIRST LISTED AFTER THE SALE, dated while the idea held the stock, leaves the shares
+        // it SOLD different from the shares it was OWED at the sale — the sale stands, and a standing reason says so.
+        if (ledgerKind === 'idea' && c.paper !== true) {
+          const owed = countOnExDate(l, sym, c.through, { closed: c }).count;
+          if (Number(owed) !== Number(c.shares)) {
+            out.standingReasons.push({ kind: STANDING_REASON.SALE_COUNT_DIFFERS, symbol: sym, actionId: id, since: date, soldOn: c.through, sharesSold: Number(c.shares), sharesOwed: Number(owed), via: 'split_listed_after_sale' });
+          }
+        }
         return;
       }
-      // A LATE ENTITLEMENT (T2D-03): once, on the ex-date count.
       const amount = Number(action.amount);
       if (!(amount > 0) || !Number.isFinite(amount)) return;
       const counted = countOnExDate(cur(), sym, action.effectiveDate, { closed: c });
       if (!(counted.count > 0)) return;
-      const cents = toCents(roundUsd(counted.count * amount));
-      const posted = post({
-        kind: ADJUSTMENT_KIND.LATE_ENTITLEMENT, actionId: id, ticker: sym, type: 'cash_dividend', effectiveDate: action.effectiveDate,
-        corrects: null, correction: `entitlement:${amount}`,
+      const owedCents = toCents(roundUsd(counted.count * amount));
+      const receivedCents = postedAdjustments(cur()).filter((a) => a.actionId === id).reduce((n, a) => n + toCents(a.amountUsd || 0), 0);
+      if (ruled) {
+        // THE FOUNDER'S CONFLICT RULING settles a closed holding's ambiguous row: its authority posts the net, once (L-2).
+        const posted = post({
+          kind: ADJUSTMENT_KIND.LATE_ENTITLEMENT, actionId: id, ticker: sym, type: 'cash_dividend', effectiveDate: action.effectiveDate,
+          corrects: null, correction: `ruled:${action.founderRuling?.requestKey ?? ''}:${amount}`,
+          entitledShares: counted.count, derivation: { from: counted.from, also: counted.also, closedOn: c.through, openedAt: c.openedAt },
+          amountPerShare: amount, amountCents: owedCents - receivedCents, payload: { amount }, ruling: action.founderRuling ?? null, trigger: ['listed_after_close', 'ruled'],
+        });
+        if (posted) {
+          edit().appliedActionIds = [...cur().appliedActionIds, id];
+          closeProposal(id, LATE_PROPOSAL_STATUS.SETTLED, 'ruled', { closedBy: action.founderRuling ?? null });
+        }
+        return;
+      }
+      // A LATE ENTITLEMENT (T2D-03), PROPOSED (L-1): owed on the ex-date count, less what was received for it.
+      propose({
+        kind: ADJUSTMENT_KIND.LATE_ENTITLEMENT, actionId: id, ticker: sym, effectiveDate: action.effectiveDate, amountPerShare: amount,
         entitledShares: counted.count, derivation: { from: counted.from, also: counted.also, closedOn: c.through, openedAt: c.openedAt },
-        amountPerShare: amount, amountCents: cents, payload: { amount }, ruling: action.founderRuling ?? null, trigger: ['listed_after_close'],
+        owedCents, receivedCents, trigger: ['listed_after_close'],
       });
-      if (posted) edit().appliedActionIds = [...cur().appliedActionIds, id];
     };
     for (const [id, group0] of ordered) handle(id, group0);
   }
 
-  // ── 2. THE RECOMPUTE (T2D-04, T2D-05): each paid dividend something late has touched.
+  // ── 2. THE RECOMPUTE (T2D-04, T2D-05): each paid dividend something late has touched — PROPOSED (L-1) — and the founder's
+  //       amount corrections, which a ruling authorizes: the net, owed now on the dated count less what was received (L-2).
   const corrections = new Map((ctx.corrections || []).map((x) => [x.actionId, x]));
+  const countFor = (sym, exDate) => {
+    const held = cur().holdings?.[sym] ?? null;
+    return countOnExDate(cur(), sym, exDate, { held: held && !closed.has(sym) ? held : null, closed: closed.get(sym) ?? (held ? { shares: held.shares } : leftByActionOf(cur(), sym, exDate)) });
+  };
   const paid = paidDividends(cur());
   for (const d of [...paid.values()].sort(byDatePhaseId)) {
     const sym = d.ticker;
@@ -461,41 +609,108 @@ export function planLedgerAdjustments(ledger, ctx) {
     const late = events.filter((e) => e.index > d.index && e.effectiveDate <= d.effectiveDate).map((e) => e.actionId);
     const countCorrected = postedAdjustments(cur()).some((a) => a.kind === ADJUSTMENT_KIND.RULED_CORRECTION && SHARE_BASIS_TYPES.has(a.type) && upper(a.ticker) === sym && Number(a.seq) > d.index);
     const amountCorrection = corrections.get(d.actionId) ?? null;
-    if (late.length === 0 && !countCorrected && !amountCorrection) continue;
+    if (late.length === 0 && !countCorrected && !amountCorrection && !openProposalOf(d.actionId)) continue;
     if (doubtOn(sym, d.effectiveDate) || shareDoubtOn(sym, d.effectiveDate)) continue; // durable: re-examined at the next close
-    const held = cur().holdings?.[sym] ?? null;
-    const counted = countOnExDate(cur(), sym, d.effectiveDate, { held: held && !closed.has(sym) ? held : null, closed: closed.get(sym) ?? (held ? { shares: held.shares } : leftByActionOf(cur(), sym, d.effectiveDate)) });
-    // (Review AR4-A-5: the key names WHAT the count was recomputed for — every late event and count correction behind it —
-    // so a count that returns to an earlier value under another set of events is a new correction, with its own document.)
-    const countFrom = [...late, ...postedAdjustments(cur()).filter((a) => a.kind === ADJUSTMENT_KIND.RULED_CORRECTION && SHARE_BASIS_TYPES.has(a.type) && upper(a.ticker) === sym && Number(a.seq) > d.index).map((a) => a.id)].sort();
+    const counted = countFor(sym, d.effectiveDate);
     if (!(counted.count > 0)) continue;
-    // (a) the count: the amount in force, on the ex-date count — late_basis.
-    const basisCents = toCents(roundUsd(counted.count * d.amount));
-    let received = d.cents;
-    if (basisCents !== received) {
-      const p = post({
-        kind: ADJUSTMENT_KIND.LATE_BASIS, actionId: d.actionId, ticker: sym, type: 'cash_dividend', effectiveDate: d.effectiveDate,
-        corrects: d.receipt ? { receipt: d.actionId, appliedOn: d.receipt.appliedOn ?? null } : { adjustment: d.actionId },
-        correction: `basis:${counted.count}:${d.amount}:${countFrom.join('+')}`,
-        entitledShares: counted.count, derivation: { from: counted.from, also: counted.also },
-        amountPerShare: d.amount, amountCents: basisCents - received, receivedBeforeUsd: fromCents(received), entitledUsd: fromCents(basisCents),
-        ruling: null, trigger: countCorrected && late.length === 0 ? ['ruled_count_correction'] : late,
-      });
-      if (p) received = basisCents;
-    }
-    // (b) the amount: the founder's correction this close — ruled_correction.
     if (amountCorrection) {
+      if (proposeOnly) continue;
+      // (b) the founder's correction this close — ruled_correction: the NET owed now (the ruled amount on the dated count)
+      // less everything received for the id. It settles any open proposal of the id (T2E-03: $249.93 in all, posted once).
       const amount = Number(amountCorrection.amount);
       const target = toCents(roundUsd(counted.count * amount));
-      post({
+      const p = post({
         kind: ADJUSTMENT_KIND.RULED_CORRECTION, actionId: d.actionId, ticker: sym, type: 'cash_dividend', effectiveDate: d.effectiveDate,
         corrects: d.receipt ? { receipt: d.actionId, appliedOn: d.receipt.appliedOn ?? null } : { adjustment: d.actionId },
         correction: `amount:${amountCorrection.ruling?.requestKey ?? ''}:${amount}`,
         entitledShares: counted.count, derivation: { from: counted.from, also: counted.also },
-        amountPerShare: amount, correctsAmount: d.amount, amountCents: target - received, receivedBeforeUsd: fromCents(received), entitledUsd: fromCents(target),
-        payload: { amount }, ruling: amountCorrection.ruling ?? null, trigger: ['ruled_amount_correction'],
+        amountPerShare: amount, correctsAmount: d.amount, amountCents: target - d.cents, receivedBeforeUsd: fromCents(d.cents), entitledUsd: fromCents(target),
+        payload: { amount }, ruling: amountCorrection.ruling ?? null, trigger: ['ruled_amount_correction', ...late],
       });
+      if (p) closeProposal(d.actionId, LATE_PROPOSAL_STATUS.SETTLED, 'ruled_correction', { closedBy: amountCorrection.ruling ?? null });
+      continue;
     }
+    // (a) the count: the amount in force on the dated ex-date count, less what was received — late_basis, proposed.
+    // (Review AR4-A-5: the derivation names every late event and count correction behind it.)
+    const countFrom = [...late, ...postedAdjustments(cur()).filter((a) => a.kind === ADJUSTMENT_KIND.RULED_CORRECTION && SHARE_BASIS_TYPES.has(a.type) && upper(a.ticker) === sym && Number(a.seq) > d.index).map((a) => a.id)].sort();
+    propose({
+      kind: ADJUSTMENT_KIND.LATE_BASIS, actionId: d.actionId, ticker: sym, effectiveDate: d.effectiveDate, amountPerShare: d.amount,
+      entitledShares: counted.count, derivation: { from: counted.from, also: counted.also, events: countFrom },
+      owedCents: toCents(roundUsd(counted.count * d.amount)), receivedCents: d.cents, trigger: countCorrected && late.length === 0 ? ['ruled_count_correction'] : late,
+    });
+  }
+
+  // ── 3. EVERY OPEN PROPOSAL: re-stated on what it is owed NOW, its refusals named (L-2), and the founder's decisions applied.
+  const paidNow = paidDividends(cur());
+  for (const p of openProposals(cur())) {
+    const sym = upper(p.ticker);
+    // (A dividend the founder declined, or ruled `none`, since: nothing is owed.)
+    if ((cur().declinedActionIds || []).includes(p.actionId)) { closeProposal(p.actionId, LATE_PROPOSAL_STATUS.SETTLED, 'declined_by_ruling'); continue; }
+    if (!(doubtOn(sym, p.effectiveDate) || shareDoubtOn(sym, p.effectiveDate))) {
+      const counted = countFor(sym, p.effectiveDate);
+      const d = paidNow.get(p.actionId) ?? null;
+      const amount = d ? d.amount : Number(p.amountPerShare);
+      const receivedCents = d ? d.cents : postedAdjustments(cur()).filter((a) => a.actionId === p.actionId).reduce((n, a) => n + toCents(a.amountUsd || 0), 0);
+      if (counted.count > 0 && amount > 0) {
+        propose({ kind: d ? ADJUSTMENT_KIND.LATE_BASIS : p.kind, actionId: p.actionId, ticker: sym, effectiveDate: p.effectiveDate, amountPerShare: amount,
+          entitledShares: counted.count, derivation: { ...(p.derivation || {}), from: counted.from, also: counted.also }, owedCents: toCents(roundUsd(counted.count * amount)), receivedCents, trigger: p.trigger });
+      }
+    }
+  }
+  const blockersNow = (p) => {
+    const sym = upper(p.ticker);
+    const c = closed.get(sym) ?? null;
+    const out2 = [];
+    // L-2 ①: the id is unresolved on this ledger (an open conflict, re-date or revision of it, or a row of it waiting).
+    if (openRecordOf(cur(), p.actionId) !== null || (cur().closedHeldRows || []).some((r) => r.actionId === p.actionId)) out2.push(`${LATE_BLOCKER.ID_UNRESOLVED}:${p.actionId}`);
+    // L-2 ②: another candidate of the symbol pairs with it under the re-date rule (an open possible re-date of it).
+    for (const r of cur().corporateActionReceipts || []) if (r?.reason === POSSIBLE_REDATE && r.redateOf === p.actionId && upper(r.ticker) === sym && openRecordOf(cur(), r.actionId) !== null) out2.push(`${LATE_BLOCKER.PAIRS}:${r.actionId}`);
+    // L-2 ③: a share-basis id dated within the holding is unresolved (this ledger's own, and the caller's hold set).
+    const end = c ? c.through : date;
+    if (shareDoubtOn(sym, end) || (c !== null && (cur().closedHeldRows || []).some((r) => SHARE_BASIS_TYPES.has(r.type) && upper(r.ticker) === sym))) out2.push(`${LATE_BLOCKER.SHARE_BASIS}:${sym}`);
+    // L-2 ④: a date in the holding interval is uncovered — and whatever else the caller refuses on (its hold set).
+    out2.push(...blockersOf(sym, p.effectiveDate, { end, openedAt: c?.openedAt ?? null }));
+    return [...new Set(out2)].sort();
+  };
+  for (const p of openProposals(cur())) {
+    const blockers = blockersNow(p);
+    if (stableStringify(blockers) !== stableStringify(p.blockers || [])) {
+      const l = edit();
+      l.lateProposals = l.lateProposals.map((x) => (x.id === p.id ? { ...x, blockers } : x));
+    }
+  }
+  // THE FOUNDER'S DECISIONS (resolve_hold, late_adjustment): a decline closes the proposal; an approval posts its net —
+  // owed now less received, never a chained delta — only while nothing refuses it (L-2). Refused, the approval waits.
+  for (const a of ctx.approvals || []) {
+    const p = (cur().lateProposals || []).find((x) => x.id === a.proposalId) ?? null;
+    if (!p || p.status !== LATE_PROPOSAL_STATUS.OPEN) continue;
+    if (a.decision === 'decline') {
+      closeProposal(p.actionId, LATE_PROPOSAL_STATUS.DECLINED, 'founder_declined', { closedBy: a.ruling ?? null });
+      out.alerts.push(`PRACTICE_FIELD_LATE_DECLINED ${ideaId} ${ledgerKind} ${p.actionId} ${p.id} — the founder declined it; nothing posts`);
+      continue;
+    }
+    if (proposeOnly) continue;
+    if ((p.blockers || []).length > 0) {
+      out.alerts.push(`PRACTICE_FIELD_LATE_APPROVAL_WAITING ${ideaId} ${ledgerKind} ${p.actionId} ${p.id} — approved, but not posted while ${p.blockers.join(', ')} stands`);
+      continue;
+    }
+    const net = toCents(p.netUsd);
+    if (net === 0) { closeProposal(p.actionId, LATE_PROPOSAL_STATUS.SETTLED, 'nothing_owed', { closedBy: a.ruling ?? null }); continue; }
+    const d = paidNow.get(p.actionId) ?? null;
+    const posted = post({
+      kind: p.kind, actionId: p.actionId, ticker: upper(p.ticker), type: 'cash_dividend', effectiveDate: p.effectiveDate,
+      corrects: d?.receipt ? { receipt: p.actionId, appliedOn: d.receipt.appliedOn ?? null } : (d ? { adjustment: p.actionId } : null),
+      correction: `approved:${p.id}:${a.ruling?.requestKey ?? ''}`,
+      entitledShares: p.entitledShares, derivation: p.derivation ?? null, amountPerShare: p.amountPerShare, amountCents: net,
+      receivedBeforeUsd: p.receivedUsd, entitledUsd: p.owedUsd, payload: { amount: p.amountPerShare }, ruling: a.ruling ?? null, proposal: p.id, trigger: p.trigger ?? [],
+    });
+    if (!posted) {
+      const l = edit();
+      l.lateProposals = l.lateProposals.map((x) => (x.id === p.id ? { ...x, blockers: [...new Set([...(x.blockers || []), `${LATE_BLOCKER.EXCEEDS_CASH}:${p.actionId}`])].sort() } : x));
+      continue;
+    }
+    closeProposal(p.actionId, LATE_PROPOSAL_STATUS.POSTED, 'founder_approved', { closedBy: a.ruling ?? null, adjustmentId: posted.id, postedUsd: posted.amountUsd });
+    if (p.kind === ADJUSTMENT_KIND.LATE_ENTITLEMENT && !settledNow().has(p.actionId)) edit().appliedActionIds = [...cur().appliedActionIds, p.actionId];
   }
   out.ledger = next ?? ledger;
   return out;

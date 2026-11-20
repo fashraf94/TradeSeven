@@ -309,7 +309,7 @@ describe('P5 — a split correction leaves an open suspicion standing for a stal
 });
 
 describe('P6e — a dividend correction deferred at the idea result close', () => {
-  it('single-name idea: correction ruled, line sold, a doubt on the result close — the correction is lost and the ruling pends forever', async () => {
+  it('single-name idea: correction ruled, line sold, a doubt on the result close — (fix round, L-8) the correction is NAMED on the resulted idea and alerted, never posted to the treasury', async () => {
     const { omitParseReport, storeCloseSnapshot } = await import('./__testsupport__/fixtures.js');
     const c = await start({ names: ['AAPL'], capitalUsd: 10000 });
     await close(c, 0);
@@ -326,7 +326,12 @@ describe('P6e — a dividend correction deferred at the idea result close', () =
     for (const i of [4, 5]) await close(c, i, p);
     idea = ideaOf(c);
     log('P6e after S5', 'status', idea.status, JSON.stringify(brief(idea.ledger)), JSON.stringify(brief(idea.comparisonLedger)), 'pending', JSON.stringify(pending(c)), 'resultAdjustments', JSON.stringify(idea.resultAdjustments ?? null));
-    expect(idea.ledger.dividendsUsd + (idea.resultAdjustments?.ideaUsd ?? 0), 'the ruled +$99.97 reached neither the ledger nor the result view').toBe(roundUsd(SH * 2));
+    // (Before the fix round the resulted idea posted the ruled +$99.97 to the treasury — AR4-C-8. L-8: a resulted idea's late
+    // data is named and alerted only; the correction stays pending, named in `lateDataUnsettled`.)
+    expect(idea.status).toBe('resulted');
+    expect(idea.ledger.dividendsUsd).toBe(99.97);
+    expect(idea.resultAdjustments).toBeUndefined();
+    expect(idea.lateDataUnsettled.actions).toContainEqual(expect.objectContaining({ actionId: `cash_dividend_AAPL_${S[1]}`, kind: 'correction_pending', requestKey: 'fix-div' }));
   });
 });
 
@@ -702,8 +707,13 @@ describe('P25 — a split correction at a close whose data does not cover AAPL',
     const idea = ideaOf(c);
     log('P25 S4', JSON.stringify(brief(idea.ledger)), 'level', lineLevel(c), 'row fq', rowOf(c, 4)?.fullQuality);
     expect(idea.ledger.holdings.AAPL.shares).toBe(149.955012);
-    expect(idea.ledger.dividendsUsd).toBe(149.96);
-    await rerun(c, 4, 'P25');
+    // (Fix round, L-1: the recompute is a PROPOSAL once coverage returns — posted on the founder's approval.)
+    expect(idea.ledger.dividendsUsd).toBe(124.96);
+    expect((idea.ledger.lateProposals || []).map((p) => [p.kind, p.netUsd, p.status])).toEqual([['late_basis', 25, 'open']]);
+    for (const l of ['idea', 'comparison']) expect((await rules(c, { kind: 'late_adjustment', recordId: `late_${l}_cash_dividend_AAPL_${S[1]}`, decision: 'approve' }, `ok-${l}`)).status).toBe(200);
+    await close(c, 5, 66.67);
+    expect(ideaOf(c).ledger.dividendsUsd).toBe(149.96);
+    await rerun(c, 5, 'P25');
   });
 });
 
@@ -827,7 +837,7 @@ describe('the refuters\' rows — RF4, RF5, RF6 (each failed at 994ccc2e)', () =
     expect(rowOf(c, 3).fullQuality).toBe(true);
   });
 
-  it('AR4-C-8 (RFX note): a correction still pending at the endpoint is an unsettled action there, as a waiting closed row is — the result is unmeasurable, and the correction posts after it', async () => {
+  it('AR4-C-8 (RFX note): a correction still pending at the endpoint is an unsettled action there, as a waiting closed row is — the result is unmeasurable, and (fix round, L-8) after it the correction is named, never posted', async () => {
     const { omitParseReport, storeCloseSnapshot } = await import('./__testsupport__/fixtures.js');
     const c = await start({ names: ['AAPL'], capitalUsd: 10000, comparison: { type: 'sector_fund', symbols: ['XLK'] } });
     await close(c, 0);
@@ -846,8 +856,9 @@ describe('the refuters\' rows — RF4, RF5, RF6 (each failed at 994ccc2e)', () =
     expect(JSON.stringify(idea.result)).toContain('idea_unsettled_corporate_action');
     for (const i of [4, 5]) await close(c, i, p);
     idea = ideaOf(c);
-    expect(pendingKeys(c)).toEqual([]);
-    expect(idea.resultAdjustments).toMatchObject({ ideaUsd: 99.97 });
+    expect(pendingKeys(c)).toEqual(['fix-div']);
+    expect(idea.resultAdjustments).toBeUndefined();
+    expect(idea.lateDataUnsettled.actions).toContainEqual(expect.objectContaining({ kind: 'correction_pending', requestKey: 'fix-div' }));
   });
 
   it('AR4-C-11 (RF4, realistic price): a split correction after the line sold the stock is flagged — the alert and the record say what the corrected count would have sold; the sale stands', async () => {

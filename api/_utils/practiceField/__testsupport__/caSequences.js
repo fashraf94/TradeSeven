@@ -1124,25 +1124,34 @@ export function generateLate(seed) {
 const lc = (i, aapl, rows = [], extra = {}) => ({ kind: 'close', i, prices: { AAPL: aapl, SPY: 500 }, rowsBySym: { AAPL: rows, SPY: [] }, uncoveredSyms: [], ...extra });
 const lwin = (i, aapl) => ({ kind: 'window', i, prices: { AAPL: aapl, SPY: 500 }, rowsBySym: {} });
 const late = (fn) => ({ late: fn });
+// (T1a-2b-4 fix round, L-1: the founder approves a late proposal — `late_<ledger>_<actionId>` — through the real endpoint.)
+const approveLate = (ledger, actionId, status) => ({ kind: 'lateExact', ...(status ? { status } : {}), body: { kind: 'late_adjustment', recordId: `late_${ledger}_${actionId}`, decision: 'approve' } });
 export const FIXED_LATE = [
   // T2D-03: held Nov 17, sold Nov 18 (the line), a $1 dividend listed Nov 19 dated Nov 17 — $99.97 to the idea, once.
-  { seed: 'astra-T2D-03', steps: [lc(0, 100), lc(1, 100, [], { belowLine: true }), lwin(2, 100), lc(2, 94), lc(3, 94, [d(1, 1)]), lc(4, 94, [d(1, 1)])],
+  // (Fix round, L-1: PROPOSED on Nov 19, posted at the close after the founder's approval.)
+  { seed: 'astra-T2D-03', steps: [lc(0, 100), lc(1, 100, [], { belowLine: true }), lwin(2, 100), lc(2, 94), lc(3, 94, [d(1, 1)]),
+    at((idea) => { expect(idea.ledger.dividendsUsd, 'proposed, not posted').toBe(0); }), approveLate('idea', `cash_dividend_AAPL_${S[1]}`), lc(4, 94, [d(1, 1)])],
     end: late((idea, book, soldAt) => {
       expect(soldAt).toBe(2);
       expect((idea.ledger.adjustments || []).map((a) => [a.kind, a.amountUsd])).toEqual([['late_entitlement', 99.97]]);
       expect(idea.ledger.dividendsUsd).toBe(99.97);
     }) },
   // …the comparison does not hold AAPL (a sector fund).
-  { seed: 'astra-T2D-03-sector-fund', comparison: { type: 'sector_fund', symbols: ['XLK'] }, steps: [lc(0, 100), lc(1, 100, [], { belowLine: true }), lwin(2, 100), lc(2, 94), lc(3, 94, [d(1, 1)])],
+  { seed: 'astra-T2D-03-sector-fund', comparison: { type: 'sector_fund', symbols: ['XLK'] }, steps: [lc(0, 100), lc(1, 100, [], { belowLine: true }), lwin(2, 100), lc(2, 94), lc(3, 94, [d(1, 1)]),
+    approveLate('idea', `cash_dividend_AAPL_${S[1]}`), lc(4, 94)],
     end: late((idea) => { expect(idea.ledger.dividendsUsd).toBe(99.97); expect(idea.comparisonLedger.dividendsUsd).toBe(0); }) },
   // T2D-04: a 5:4 dated Nov 17 (the price follows to $80), a $1 dated Nov 18 paid $99.97, the split listed Nov 19 — +$24.99.
-  { seed: 'astra-T2D-04', steps: [lc(0, 100), lc(1, 80), lc(2, 80, [d(2, 1)]), lc(3, 80, [d(2, 1), sp(1, '5/4')]), lc(4, 80, [d(2, 1), sp(1, '5/4')])],
+  // (Fix round, L-1: the +$24.99 is PROPOSED on each ledger at Nov 19 and posted after the founder approves both.)
+  { seed: 'astra-T2D-04', steps: [lc(0, 100), lc(1, 80), lc(2, 80, [d(2, 1)]), lc(3, 80, [d(2, 1), sp(1, '5/4')]),
+    at((idea) => { expect([idea.ledger.dividendsUsd, idea.comparisonLedger.dividendsUsd], 'proposed, not posted').toEqual([99.97, 99.97]); }),
+    approveLate('idea', `cash_dividend_AAPL_${S[2]}`), approveLate('comparison', `cash_dividend_AAPL_${S[2]}`), lc(4, 80, [d(2, 1), sp(1, '5/4')])],
     end: late((idea, book) => {
       for (const f of ['ledger', 'comparisonLedger']) { expect(idea[f].dividendsUsd, f).toBe(124.96); expect(idea[f].holdings.AAPL.shares, f).toBe(124.96251); }
       expect(book.portfolio.positions.AAPL.shares).toBe(124.96251);
     }) },
   // …a reverse 4-for-5 listed late: a debit.
-  { seed: 'astra-T2D-04-reverse', steps: [lc(0, 100), lc(1, 125), lc(2, 125, [d(2, 1)]), lc(3, 125, [d(2, 1), sp(1, '4/5')])],
+  { seed: 'astra-T2D-04-reverse', steps: [lc(0, 100), lc(1, 125), lc(2, 125, [d(2, 1)]), lc(3, 125, [d(2, 1), sp(1, '4/5')]),
+    approveLate('idea', `cash_dividend_AAPL_${S[2]}`), approveLate('comparison', `cash_dividend_AAPL_${S[2]}`), lc(4, 125)],
     end: late((idea) => { expect(idea.ledger.dividendsUsd).toBe(79.98); }) },
   // T2D-05: 5:4 and $1 for Nov 17 settled, then 3:2 and $2 — ruled to the correction: 149.955012 shares and $299.91.
   { seed: 'astra-T2D-05', steps: [lc(0, 100), lc(1, 80, [sp(1, '5/4'), d(1, 1)]), lc(2, 66.67, [sp(1, '3/2'), d(1, 2)]),
@@ -1166,7 +1175,9 @@ export const FIXED_LATE = [
     lc(3, 94, [sp(1, '5/4'), sp(1, '3/2'), d(2, 1)]),
     at((idea) => { expect(idea.ledger.adjustments || [], 'nothing paid while the split is ambiguous').toEqual([]); }),
     { kind: 'ruleExact', body: { kind: 'conflict', recordId: `split_AAPL_${S[1]}`, decision: 'payload', payload: { ratio: 1.25 } } },
-    lc(4, 94, [sp(1, '5/4'), sp(1, '3/2'), d(2, 1)]), lc(5, 94)],
+    lc(4, 94, [sp(1, '5/4'), sp(1, '3/2'), d(2, 1)]),
+    // (Fix round, L-1: the dividend is then PROPOSED on the ruled count, and posted after the founder's approval.)
+    at((idea) => { expect(idea.ledger.dividendsUsd, 'proposed, not posted').toBe(0); }), approveLate('idea', `cash_dividend_AAPL_${S[2]}`), lc(5, 94)],
     end: late((idea) => { expect(idea.ledger.dividendsUsd).toBe(124.96); expect((idea.founderRulings || []).every((r) => r.appliedOn != null && r.outcome !== 'moot')).toBe(true); }) },
   // AR4-C-1: 5:4 settled, a 2:1 dated later applied, the 5:4 corrected to 3:2, then a $1 dated between them listed late —
   // paid on the corrected count (149.955012), as the other arrival order pays.

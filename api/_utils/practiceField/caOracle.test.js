@@ -100,7 +100,8 @@ describe('the independent I-2 oracle — ambiguity from the inputs, authorizatio
     const o = new InputOracle(S);
     o.close(1, [div(1, 1)]);
     expect(() => o.check(ideaWith([], { dividendsUsd: 99.97 }), S[1], 't', ENTRY)).toThrow(/dividends = Σ receipts/);
-    expect(() => o.check(ideaWith([], { shares: 199.940016 }), S[1], 't', ENTRY)).toThrow(/shares = receipt chain/);
+    // (Fix round, L-4: the count is the DATED chain of the applied receipts — the message names it.)
+    expect(() => o.check(ideaWith([], { shares: 199.940016 }), S[1], 't', ENTRY)).toThrow(/shares = the dated receipt chain/);
     const wrong = { ...paid(ID1, 1, S[1]), incomeUsd: 199.94 };
     expect(() => o.check(ideaWith([wrong]), S[1], 't', ENTRY)).toThrow(/income = amount × the count held when applied/);
     expect(() => o.check(ideaWith([paid(ID1, 1, S[1])]), S[1], 't', ENTRY)).not.toThrow();
@@ -171,33 +172,45 @@ describe('the independent I-2 oracle — ambiguity from the inputs, authorizatio
 describe('I-6 — every ledger is paid what its holding was owed, from the inputs and its holding history alone', () => {
   const held = (soldAt = null) => ({ ledger: { sym: 'AAPL', entryShares: SH, boughtAt: 0, soldAt } });
   const withAdj = (idea, adjustments) => ({ ...idea, ledger: { ...idea.ledger, adjustments } });
-  it('T2D-03: a dividend dated while held, first listed after the sale, NOT paid — rejected; paid by a late entitlement — passes', async () => {
+  // (Fix round, L-1: late money is owed only once the founder approved it. Unapproved, it WAITS — counted; an adjustment
+  // with no approval in the inputs is rejected in every branch: a wait is never a payment.)
+  const approval = (o, ledger, id, at) => o.ruling({ kind: 'late_adjustment', recordId: `late_${ledger}_${id}`, decision: 'approve' }, { status: 200 }, `a-${ledger}-${id}-${at}`, at);
+  it('T2D-03: a dividend dated while held, first listed after the sale — unapproved it waits (paid anyway: rejected); approved, NOT paid — rejected; paid by its late entitlement — passes', async () => {
     const { EntitlementOracle } = await import('./__testsupport__/caOracle.js');
     const o = new InputOracle(S);
     o.close(3, [div(1, 1)]);
     const e = new EntitlementOracle(S, o);
     const sold = { ...ideaWith([]), ledger: { ...ideaWith([]).ledger, holdings: {} } };
-    expect(() => e.check(sold, 3, held(2), 'plant')).toThrow(/I-6 ledger cash_dividend_AAPL_2026-11-17: received \$0, the inputs and the holding history say \$99\.97/);
-    expect(() => e.check(withAdj(sold, [{ kind: 'late_entitlement', actionId: ID1, amountUsd: 99.97 }]), 3, held(2), 'plant')).not.toThrow();
+    const le = (on) => ({ kind: 'late_entitlement', actionId: ID1, amountUsd: 99.97, postedOn: on });
+    e.check(sold, 3, held(2), 'plant');
+    expect([e.checked, e.waiting]).toEqual([0, 1]);
+    expect(() => e.check(withAdj(sold, [le(S[3])]), 3, held(2), 'plant')).toThrow(/\$99\.97 moved by adjustments the inputs never approved/);
+    approval(o, 'idea', ID1, 4);
+    expect(() => e.check(sold, 4, held(2), 'plant')).toThrow(/I-6 ledger cash_dividend_AAPL_2026-11-17: received \$0, the inputs and the holding history say \$99\.97/);
+    expect(() => e.check(withAdj(sold, [le(S[4])]), 4, held(2), 'plant')).not.toThrow();
     // Paid twice is rejected too.
-    expect(() => e.check(withAdj(sold, [{ kind: 'late_entitlement', actionId: ID1, amountUsd: 99.97 }, { kind: 'late_entitlement', actionId: ID1, amountUsd: 99.97 }]), 3, held(2), 'plant')).toThrow(/received \$199\.94/);
+    expect(() => e.check(withAdj(sold, [le(S[4]), le(S[4])]), 4, held(2), 'plant')).toThrow(/received \$199\.94/);
   });
-  it('T2D-04: a split dated before a dividend paid on the old count — the old payment alone is rejected; with its late_basis it passes', async () => {
+  it('T2D-04: a split listed after a dividend paid on the old count — unapproved it waits; approved, the old payment alone is rejected; with its late_basis it passes', async () => {
     const { EntitlementOracle } = await import('./__testsupport__/caOracle.js');
     const o = new InputOracle(S);
     o.close(2, [div(2, 1)]);
     o.close(3, [div(2, 1), spl(1, '5/4')]);
     const e = new EntitlementOracle(S, o);
     const idea = ideaWith([paid(`cash_dividend_AAPL_${S[2]}`, 1, S[2])]);
-    expect(() => e.check(idea, 3, held(), 'plant')).toThrow(/received \$99\.97, the inputs and the holding history say \$124\.96/);
-    expect(() => e.check(withAdj(idea, [{ kind: 'late_basis', actionId: `cash_dividend_AAPL_${S[2]}`, amountUsd: 24.99 }]), 3, held(), 'plant')).not.toThrow();
+    e.check(idea, 3, held(), 'plant');
+    expect([e.checked, e.waiting]).toEqual([0, 1]);
+    approval(o, 'idea', `cash_dividend_AAPL_${S[2]}`, 4);
+    expect(() => e.check(idea, 4, held(), 'plant')).toThrow(/received \$99\.97, the inputs and the holding history say \$124\.96/);
+    expect(() => e.check(withAdj(idea, [{ kind: 'late_basis', actionId: `cash_dividend_AAPL_${S[2]}`, amountUsd: 24.99, postedOn: S[4] }]), 4, held(), 'plant')).not.toThrow();
   });
   it('a dividend owed nothing (dated after the sale) that was paid is rejected, never excused; a doubt excuses equality and is counted', async () => {
     const { EntitlementOracle } = await import('./__testsupport__/caOracle.js');
     const o = new InputOracle(S);
     o.close(4, [div(4, 1)]);
+    approval(o, 'idea', `cash_dividend_AAPL_${S[4]}`, 4);
     const e = new EntitlementOracle(S, o);
-    const idea = withAdj({ ...ideaWith([]), caCoverageGaps: { AAPL: { since: S[3] } } }, [{ kind: 'late_entitlement', actionId: `cash_dividend_AAPL_${S[4]}`, amountUsd: 99.97 }]);
+    const idea = withAdj({ ...ideaWith([]), caCoverageGaps: { AAPL: { since: S[3] } } }, [{ kind: 'late_entitlement', actionId: `cash_dividend_AAPL_${S[4]}`, amountUsd: 99.97, postedOn: S[4] }]);
     expect(() => e.check(idea, 4, held(2), 'plant')).toThrow(/is owed nothing/);
     const o2 = new InputOracle(S);
     o2.close(3, [div(3, 1)]);

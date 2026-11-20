@@ -708,28 +708,53 @@ export function ratioCorrectionsOf(ledger, symbol, { postedOnOrBefore = null } =
 }
 
 /**
- * THE SHARE-BASIS CHAIN of a ledger's symbol, in the order applied: each event's ratio — the founder's correction of it,
- * if one is in force — and the count before and after it, REPLAYED from the first receipt's `sharesBefore`, rounding at
- * each step as the applier rounds (so, with no correction, the replay reproduces the recorded counts exactly). The one
- * chain every reader of a corrected count reads (review AR4-C-1: the late-dividend path read the receipts' recorded
- * counts, which a correction never rewrites). Pure.
- * @returns {{ events: Array<{ actionId, effectiveDate, ratio, before, after, index, historyOnly }>, end: number|null }}
+ * THE SHARE-BASIS CHAIN of a ledger's symbol, IN DATED ORDER (T1a-2b-4 fix round, the founder's L-4: counts are
+ * recomputed, not patched): every applied share-basis receipt — effective date, then phase, then id, whatever order they
+ * were applied in — each with its ratio (the founder's correction of it, if one is in force) and the count before and
+ * after it, REPLAYED from the count before any of them (the first-applied receipt's `sharesBefore`: the entry fill, as an
+ * idea never buys again and a sale closes the whole holding), rounding to six places at each step as the applier rounds.
+ * Applied in date order, the replay reproduces the recorded counts exactly; applied out of it (a split listed late), it
+ * is the count the holding, the book's mirror and every later ex-date count use (T2E-04: 4-for-5 then 2-for-1 gives
+ * 159.952012, the order of arrival 159.952013). The one chain every reader of a count reads (review AR4-C-1). `index` is
+ * each receipt's place in the order applied. Pure.
+ * @returns {{ events: Array<{ actionId, effectiveDate, ratio, before, after, index, historyOnly }>, base: number|null, end: number|null }}
  */
 export function shareBasisChainOf(ledger, symbol) {
   const sym = upper(symbol);
   const corrected = ratioCorrectionsOf(ledger, sym);
-  const events = [];
-  let count = null;
+  const applied = [];
+  let base = null;
   for (const [index, r] of (ledger?.corporateActionReceipts || []).entries()) {
     if (r?.applied !== true || !SHARE_BASIS_TYPES.has(r.type) || upper(r.ticker) !== sym) continue;
-    if (count === null) count = Number(r.sharesBefore);
+    if (base === null) base = Number(r.sharesBefore);
+    applied.push({ r, index });
+  }
+  applied.sort((a, b) => byDatePhaseId(a.r, b.r) || a.index - b.index);
+  const events = [];
+  let count = base;
+  for (const { r, index } of applied) {
     const ratio = corrected.get(r.actionId) ?? Number(r.ratio);
     const before = count;
     const after = roundShares(before * ratio);
     count = after;
     events.push({ actionId: r.actionId, effectiveDate: r.effectiveDate, ratio, before, after, index, historyOnly: r.historyOnly === true });
   }
-  return { events, end: count };
+  return { events, base, end: count };
+}
+
+/** T1a-2b-4 fix round (L-4): the count of `symbol` on `exDate` along the dated chain — the count before any share-basis
+ *  event, times every one dated on or before it, in dated order, rounded at each step. Null with no event applied. Pure. */
+export function datedCountOn(ledger, symbol, exDate) {
+  const { events, base } = shareBasisChainOf(ledger, symbol);
+  if (events.length === 0) return null;
+  let count = base;
+  const from = [];
+  for (const e of events) {
+    if (e.effectiveDate > exDate) break;
+    count = roundShares(count * e.ratio);
+    from.push(e.actionId);
+  }
+  return { count, from };
 }
 
 /** The feed's rows of `id` listed for a symbol this ledger holds, due on or before `date` (never a founder's action). */
@@ -1244,18 +1269,19 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
   // after it (fix round 3, Astra T2A-D02: shares are rounded after each action, so two of one date applied out of order
   // leave a different count).
   const blocked = new Map();
-  const recordRedate = (sym, action, redateOf) => {
+  // (T1a-2b-4 fix round, L-5: `how` 'same_date_share_basis' — a share-basis id of another type or ratio on the same date.)
+  const recordRedate = (sym, action, redateOf, how = 'possible_redate') => {
     const receipt = {
       actionId: action.actionId, type: action.type, ticker: action.ticker, effectiveDate: action.effectiveDate,
       ratio: action.ratio ?? null, amount: action.amount ?? null, cashPerShare: action.cashPerShare ?? null, source: action.source ?? null,
       applied: false, reason: POSSIBLE_REDATE, redateOf, seenOn: date,
       // (Rev 1: the record keeps every payload it sees, as a conflict's does.)
-      rows: [rowOfPayload(action, null)], kinds: ['possible_redate'],
+      rows: [rowOfPayload(action, null)], kinds: [how],
     };
     if (!next.corporateActionReceipts.some((r) => r.actionId === action.actionId && r.reason === POSSIBLE_REDATE)) {
       next.corporateActionReceipts.push(receipt);
       ambiguity.set(receipt.actionId, receipt);
-      ambiguities.push({ actionId: receipt.actionId, ticker: sym, type: receipt.type, how: 'possible_redate', redateOf, payloads: 1 });
+      ambiguities.push({ actionId: receipt.actionId, ticker: sym, type: receipt.type, how, redateOf, payloads: 1 });
     }
     redates.push(receipt);
     if (SHARE_BASIS_TYPES.has(action.type)) { unresolved.add(sym); addItem(blocked, sym, itemOf(action, kind)); }
@@ -1295,20 +1321,38 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
     }
     const heldRows = (next.holdings[sym]?.heldActions || []).filter((r) => sameKind({ ...r, ticker: sym }) && !r.refused && r.founderRuling == null && !settledNow.has(r.actionId));
     for (const r of heldRows) pool.push({ actionId: r.actionId, effectiveDate: r.effectiveDate, ratio: r.ratio ?? null, amount: r.amount ?? null, cashPerShare: r.cashPerShare ?? null, open: true, held: r });
+    // (A founder split meets only what is UNSETTLED — an open record's payload, a held row: a settled action explained a
+    // move of its own, and the founder answered a later one, not a re-date of it — fix-round row T2D-11.)
+    const openEnough = (r) => !(unsettledOnly || isFounderSplit(action)) || r.open;
     const matches = pool.filter((r) => r.actionId !== action.actionId && samePayload(r, action) && withinSessions(r.effectiveDate, action.effectiveDate, REDATE_WINDOW_SESSIONS)
-      && !inFounderGap(action, r.effectiveDate)
-      // (A founder split meets only what is UNSETTLED — an open record's payload, a held row: a settled action explained a
-      // move of its own, and the founder answered a later one, not a re-date of it — fix-round row T2D-11.)
-      && (!(unsettledOnly || isFounderSplit(action)) || r.open));
-    if (matches.length === 0) return null;
-    return { redateOf: matches[0].actionId, heldMatches: [...new Map(matches.filter((m) => m.held).map((m) => [m.actionId, m.held])).values()] };
+      && !inFounderGap(action, r.effectiveDate) && openEnough(r));
+    // T1a-2b-4 fix round (L-5, Astra T2E-06; Q-9 answered with a hold): TWO SHARE-BASIS IDS OF ONE SYMBOL AND ONE EFFECTIVE
+    // DATE are one ambiguity — whatever their types or ratios (a 10-for-1 and a 1-for-10 of one date, under `split_…` and
+    // `reverse_split_…`, may be one action and its direction correction). Applied, held, declined or recorded, the other id
+    // matches: this one is recorded, and nothing uses the count until the founder's conflict ruling.
+    const sameDate = [];
+    if (SHARE_BASIS_TYPES.has(action.type)) {
+      for (const r of next.corporateActionReceipts || []) {
+        if (!SHARE_BASIS_TYPES.has(r?.type) || !aliases.has(upper(r.ticker)) || r.actionId === action.actionId || r.effectiveDate !== action.effectiveDate) continue;
+        if (r.applied === true || r.reason === NOT_ENTITLED) sameDate.push({ actionId: r.actionId, effectiveDate: r.effectiveDate, open: false });
+        if (r.reason === CONFLICTING_ACTION || r.reason === POSSIBLE_REDATE || r.reason === REVISED_AFTER_RULING) sameDate.push({ actionId: r.actionId, effectiveDate: r.effectiveDate, open: !settledNow.has(r.actionId) });
+      }
+      for (const r of next.holdings[sym]?.heldActions || []) {
+        if (!SHARE_BASIS_TYPES.has(r.type) || r.refused || r.founderRuling != null || settledNow.has(r.actionId) || r.actionId === action.actionId || r.effectiveDate !== action.effectiveDate) continue;
+        sameDate.push({ actionId: r.actionId, effectiveDate: r.effectiveDate, open: true, held: r });
+      }
+    }
+    const dated = sameDate.filter((r) => !inFounderGap(action, r.effectiveDate) && openEnough(r));
+    if (matches.length === 0 && dated.length === 0) return null;
+    const all = [...matches, ...dated];
+    return { redateOf: all[0].actionId, how: matches.length > 0 ? 'possible_redate' : 'same_date_share_basis', heldMatches: [...new Map(all.filter((m) => m.held).map((m) => [m.actionId, m.held])).values()] };
   };
   /** Record `action` as a possible re-date, and make every unsettled held row it may repeat ambiguous too (S-1 ③). */
   const recordRedatePair = (sym, action, match) => {
-    recordRedate(sym, action, match.redateOf);
+    recordRedate(sym, action, match.redateOf, match.how);
     for (const r of match.heldMatches) {
       next.holdings = { ...next.holdings, [sym]: withoutHeld(next.holdings[sym], r.actionId) };
-      recordRedate(sym, actionOfRecord(sym, r), action.actionId);
+      recordRedate(sym, actionOfRecord(sym, r), action.actionId, match.how);
     }
   };
 
@@ -1448,13 +1492,16 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
     const paired = new Set();
     for (const a of open) {
       for (const b of open) {
-        if (a === b || a.actionId === b.actionId || a.type !== b.type || upper(a.ticker) !== upper(b.ticker) || !samePayload(a, b)) continue;
+        if (a === b || a.actionId === b.actionId || upper(a.ticker) !== upper(b.ticker)) continue;
+        // (T1a-2b-4 fix round, L-5: two share-basis rows of one date under two ids pair whatever their types or ratios.)
+        const sameDateShare = SHARE_BASIS_TYPES.has(a.type) && SHARE_BASIS_TYPES.has(b.type) && a.effectiveDate === b.effectiveDate;
+        if (!sameDateShare && (a.type !== b.type || !samePayload(a, b))) continue;
         if (!withinSessions(a.effectiveDate, b.effectiveDate, REDATE_WINDOW_SESSIONS) || paired.has(a.actionId)) continue;
         if (inFounderGap(a, b.effectiveDate) || inFounderGap(b, a.effectiveDate)) continue;
         paired.add(a.actionId);
         const sym = upper(a.ticker);
         if (next.holdings[sym]?.heldActions?.some((r) => r.actionId === a.actionId)) next.holdings = { ...next.holdings, [sym]: withoutHeld(next.holdings[sym], a.actionId) };
-        recordRedate(sym, a, b.actionId);
+        recordRedate(sym, a, b.actionId, sameDateShare && !(a.type === b.type && samePayload(a, b)) ? 'same_date_share_basis' : 'possible_redate');
         refuseFounderSplit(a, 'possible_redate');
       }
     }
@@ -1561,20 +1608,14 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
       const basis = (next.corporateActionReceipts || [])
         .filter((r) => r.applied === true && SHARE_BASIS_TYPES.has(r.type) && upper(r.ticker) === sym && typeof r.effectiveDate === 'string');
       const first = basis.findIndex((r) => r.effectiveDate > action.effectiveDate);
-      // (T1a-2b-4, review AR4-C-1: with a founder's ratio correction in force for the symbol, the counts and ratios are
-      // the corrected chain's — the receipts keep what was applied then, which the correction does not rewrite.)
-      const corrected = ratioCorrectionsOf(next, sym).size > 0 ? new Map(shareBasisChainOf(next, sym).events.map((e) => [e.actionId, e])) : null;
       if (first >= 0) {
-        let count = corrected ? Number(corrected.get(basis[first].actionId)?.before) : Number(basis[first].sharesBefore);
-        if (!(count > 0) || !Number.isFinite(count)) { hold(sym, action, [], 'count_on_ex_date_unknown'); continue; }
-        // A share-basis action dated ON OR BEFORE the ex-date but applied after that one (it was listed late) belongs
-        // in the ex-date count: applied to it here, in date order, rounded at each step as the applier rounds (review C3).
+        // (T1a-2b-4 fix round, L-4: the ex-date count is the DATED CHAIN's — ledger.js datedCountOn: the count before any
+        // share-basis event times each one dated on or before the ex-date, in dated order, the founder's corrected ratio in
+        // force (AR4-C-1). A share-basis action dated on or before the ex-date but applied after the first one dated after it
+        // (it was listed late) is named, as before.)
         const earlierLate = basis.slice(first + 1).filter((r) => r.effectiveDate <= action.effectiveDate).sort(byDatePhaseId);
-        for (const r of earlierLate) {
-          const ratio = corrected ? Number(corrected.get(r.actionId)?.ratio) : Number(r.ratio);
-          if (!(ratio > 0) || !Number.isFinite(ratio)) { count = NaN; break; }
-          count = roundShares(count * ratio);
-        }
+        const dated = datedCountOn(next, sym, action.effectiveDate);
+        const count = Number(dated?.count);
         if (!(count > 0) || !Number.isFinite(count)) { hold(sym, action, [], 'count_on_ex_date_unknown'); continue; }
         late = { entitledShares: count, countFrom: basis[first].actionId, ...(earlierLate.length > 0 ? { countAlsoFrom: earlierLate.map((r) => r.actionId) } : {}) };
       }
@@ -1682,6 +1723,20 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
       ...(action.founderRuling ? { founderRuling: action.founderRuling } : {}),
     };
     next.corporateActionReceipts.push(receipt);
+    // T1a-2b-4 fix round (L-4, Astra T2E-04): A SHARE-BASIS ACTION APPLIED OUT OF DATE ORDER — one dated before a share-basis
+    // action this ledger already applied (listed late) — leaves the count the applier rounded in the order of ARRIVAL. The
+    // count is recomputed along the dated chain from the entry fill (shareBasisChainOf: date, phase, id; six places at
+    // each step) and the holding takes it; the receipt keeps what happened (`sharesAfter`, the applier's) and records the
+    // difference (`recount`). The close's book mirror takes the same count from the receipt.
+    if (SHARE_BASIS_TYPES.has(action.type) && next.holdings[sym]
+      && next.corporateActionReceipts.some((r) => r !== receipt && r?.applied === true && SHARE_BASIS_TYPES.has(r.type) && upper(r.ticker) === sym && byDatePhaseId(r, action) > 0)) {
+      const dated = shareBasisChainOf(next, sym).end;
+      const h = next.holdings[sym];
+      if (Number.isFinite(dated) && dated > 0 && dated !== Number(h.shares)) {
+        receipt.recount = { order: 'dated', sharesAfterApplied: Number(h.shares), sharesAfter: dated, differenceShares: roundShares(dated - Number(h.shares)) };
+        next.holdings = { ...next.holdings, [sym]: { ...h, shares: dated, avgCost: (Number(h.costBasisTotal) || 0) / dated } };
+      }
+    }
     applied.push({ ...action, receipt, ...(late ? { entitledShares: late.entitledShares } : {}) });
     if (SHARE_BASIS_TYPES.has(action.type)) shareBasisChanges.push({ ticker: sym, ratio: Number(action.ratio), actionId: action.actionId });
   }

@@ -1352,7 +1352,10 @@ describe('Fix round 3 — Astra T2A-D02: a share-basis action waits behind an un
     await closeQ(ctx, S[1], { ...Q, AAPL: { price: PX, corporateActions: [a, ...(conflict ? [{ ...a, ratio: 0.02 }] : []), b] } });
     const whileUnresolved = ideaOf(ctx);
     // (Amendment F rev 1: with the conflict, the founder's ruling settles it — the feed's one row alone no longer does.)
-    if (conflict) await ruleConflict(ctx, RS, { ratio: 0.01 });
+    // (T1a-2b-4 fix round, L-5: two share-basis ids of ONE date are one ambiguity — with or without the conflict, the
+    // founder rules each: the reverse split's 0.01, and the distribution's 1.2.)
+    await ruleConflict(ctx, RS, { ratio: 0.01 });
+    await ruleConflict(ctx, SD, { ratio: 1.2 });
     await closeQ(ctx, S[2], { ...Q, AAPL: { price: PX, corporateActions: [a] } }); // resolved to 0.01; the distribution's row gone
     const resolved = ideaOf(ctx);
     const resolvedBook = bookOf(ctx);
@@ -1361,16 +1364,16 @@ describe('Fix round 3 — Astra T2A-D02: a share-basis action waits behind an un
     return { ctx, whileUnresolved, resolved, resolvedBook, treasuryBefore, after: ideaOf(ctx), afterBook: bookOf(ctx) };
   }
 
-  it('Astra\'s case: a stock distribution of the SAME date as a conflicting reverse split is HELD, then applied after it once it settles — the quantity (4.795684 on the idea, the comparison and the book\'s mirror) and the cash returned ($19,994.01) equal the consistent-basis control exactly', async () => {
+  it('Astra\'s case: a stock distribution of the SAME date as a (conflicting) reverse split is ONE AMBIGUITY with it (L-5), then applied after it once the founder rules both — the quantity (4.795684 on the idea, the comparison and the book\'s mirror) and the cash returned ($19,994.01) equal the control exactly', async () => {
     const actual = await run(true);
     const control = await run(false);
-    // While the reverse split is unresolved, the distribution of its date is not applied on either ledger: it is held.
-    for (const ledger of [actual.whileUnresolved.ledger, actual.whileUnresolved.comparisonLedger]) {
-      expect(ledger.appliedActionIds, ledger.kind).toEqual([]);
-      expect(ledger.holdings.AAPL.heldActions).toEqual([expect.objectContaining({
-        actionId: SD, type: 'stock_distribution', ratio: 1.2, heldOn: S[1],
-        heldBecause: expect.arrayContaining([expect.objectContaining({ actionId: RS, type: 'reverse_split' })]),
-      })]);
+    // While unruled, neither id applies on either ledger: the distribution is recorded beside the reverse split (L-5).
+    for (const w of [actual.whileUnresolved, control.whileUnresolved]) {
+      for (const ledger of [w.ledger, w.comparisonLedger]) {
+        expect(ledger.appliedActionIds, ledger.kind).toEqual([]);
+        expect(ledger.holdings.AAPL.heldActions).toBeUndefined();
+        expect(ledger.corporateActionReceipts).toContainEqual(expect.objectContaining({ actionId: SD, reason: 'possible_redate', redateOf: RS, kinds: ['same_date_share_basis'] }));
+      }
     }
     // Once it settles: the reverse split first, then the distribution from its record — the control's order.
     for (const key of ['ledger', 'comparisonLedger']) {
@@ -1402,25 +1405,38 @@ describe('Fix round 3 — Astra T2A-D02: a share-basis action waits behind an un
   const ledgerOf = (kind = 'idea', shares = 399.76012) => ({ ...newLedger(kind, 20000), cash: 0, holdings: { AAPL: { shares, costBasisTotal: 20000, avgCost: 20000 / shares, lastMark: 50.03, openedAt: S[0] } } });
   const r6 = (n) => Math.round(n * 1e6) / 1e6;
 
-  it('two CLEAN share-basis actions of one date apply at once, in the applier\'s order (date, phase, id) — unchanged', () => {
-    const out = applyLedgerActions(ledgerOf(), { AAPL: [basisRow('stock_distribution', 1.2), basisRow('reverse_split', 0.01)] }, { date: S[1] });
-    expect(out.applied.map((a) => a.actionId)).toEqual([RS, SD]);
+  it('(T1a-2b-4 fix round, L-5) two share-basis ids of ONE date are ONE ambiguity: neither applies, both are recorded (`same_date_share_basis`), the count holds; ruled, they apply in the applier\'s order (date, phase, id)', () => {
+    const rows = { AAPL: [basisRow('stock_distribution', 1.2), basisRow('reverse_split', 0.01)] };
+    const out = applyLedgerActions(ledgerOf(), rows, { date: S[1] });
+    expect(out.applied).toEqual([]);
     expect(out.held).toEqual([]);
-    expect(out.ledger.holdings.AAPL.shares).toBe(r6(r6(399.76012 * 0.01) * 1.2));
+    expect(out.ledger.corporateActionReceipts.filter((r) => r.reason === 'possible_redate').map((r) => [r.actionId, r.kinds[0]]).sort()).toEqual([[RS, 'same_date_share_basis'], [SD, 'same_date_share_basis']]);
+    expect(out.unresolved.has('AAPL')).toBe(true);
+    expect(out.ledger.holdings.AAPL.shares).toBe(399.76012);
+    // The founder's conflict rulings settle both; then they apply in order — the count the old row pinned.
+    const rule = (id, ratio) => ({ type: id === RS ? 'reverse_split' : 'stock_distribution', ticker: 'AAPL', ratio, effectiveDate: S[1], source: 'founder_ruling', actionId: id, founderRuling: { kind: 'conflict', requestKey: id, recordId: id, decision: 'payload' } });
+    const ruled = applyLedgerActions(out.ledger, { AAPL: [rule(SD, 1.2), rule(RS, 0.01)] }, { date: S[2], ruledIds: new Set([RS, SD]) });
+    expect(ruled.applied.map((a) => a.actionId)).toEqual([RS, SD]);
+    expect(ruled.ledger.holdings.AAPL.shares).toBe(r6(r6(399.76012 * 0.01) * 1.2));
   });
 
-  it('the mirror case: an unresolved action that FOLLOWS a clean one of its date (a larger id) holds nothing before it — the clean one applies at once; nothing waits on a later action (no cycle)', () => {
-    // The distribution (id "stock_…") conflicts; the reverse split (id "reverse_…") precedes it and is clean.
+  it('the mirror case (L-5): an id of the same date beside a CONFLICTING one is ambiguous with it — nothing applies; nothing waits on a later action (no cycle)', () => {
+    // The distribution (id "stock_…") conflicts; the reverse split (id "reverse_…") is of its date: one ambiguity (L-5).
     const rows = { AAPL: [basisRow('reverse_split', 0.01), basisRow('stock_distribution', 1.2), basisRow('stock_distribution', 1.3)] };
     const out = applyLedgerActions(ledgerOf(), rows, { date: S[1] });
-    expect(out.applied.map((a) => a.actionId)).toEqual([RS]);
+    expect(out.applied).toEqual([]);
     expect(out.held).toEqual([]);
     expect(out.conflicts.map((c) => c.actionId)).toEqual([SD]);
-    expect(out.ledger.holdings.AAPL.shares).toBe(r6(399.76012 * 0.01));
-    // …and through the idea's hold set: the later conflict holds nothing that precedes it, on any ledger.
+    expect(out.redates.map((r) => [r.actionId, r.redateOf])).toEqual([[RS, SD]]);
+    expect(out.ledger.holdings.AAPL.shares).toBe(399.76012);
+    // …and through the idea's hold set: nothing applies on any ledger, and nothing is held for good behind a later action.
     const ledgers = [ledgerOf('idea'), ledgerOf('comparison')];
     const holds = shareBasisHolds(ledgers, rows, { date: S[1] });
-    for (const l of ledgers) expect(applyLedgerActions(l, rows, { date: S[1], holds }).applied.map((a) => a.actionId)).toEqual([RS]);
+    for (const l of ledgers) {
+      const o = applyLedgerActions(l, rows, { date: S[1], holds });
+      expect(o.applied).toEqual([]);
+      expect(o.held).toEqual([]);
+    }
   });
 
   it('through the idea\'s hold set: a same-date conflict on the COMPARISON alone holds the idea\'s distribution of its date', () => {
@@ -1432,7 +1448,12 @@ describe('Fix round 3 — Astra T2A-D02: a share-basis action waits behind an un
     const out = applyLedgerActions(idea, rows, { date: S[1], holds });
     expect(out.applied).toEqual([]);
     expect(out.held.map((r) => r.actionId)).toEqual([SD]);
-    expect(out.held[0].heldBecause).toEqual([{ actionId: RS, type: 'reverse_split', effectiveDate: S[1], ledger: 'comparison' }]);
+    // (T1a-2b-4 fix round, L-5: on the comparison the distribution is ONE ambiguity with its date's reverse-split conflict,
+    // so the idea's distribution waits on that record too — its own id, ambiguous on another ledger: AR2-B-3's class.)
+    expect(out.held[0].heldBecause).toEqual([
+      { actionId: RS, type: 'reverse_split', effectiveDate: S[1], ledger: 'comparison' },
+      { actionId: SD, type: 'stock_distribution', effectiveDate: S[1], ledger: 'comparison' },
+    ]);
   });
 });
 
