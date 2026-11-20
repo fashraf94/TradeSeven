@@ -16,19 +16,25 @@ const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 // research — SHADOW_CPU_PLACEHOLDER_PRICE_SPEC_V1_6.md E-1 item 31): a field
 // that is not a finite number reads "—", and the close is coloured neutrally
 // unless both open and close are known. Absent, the output is unchanged.
-const OHLCDisplay = ({ data, showUnavailable = false }) => {
+// `right` (opt-in; StockChart passes the measured price scale's width plus a
+// gap \u2014 FX-10, 19 Nov 2026): the row stops that far from the right edge and
+// wraps, so its last field never runs under the price scale on a narrow
+// screen. Absent, the output is unchanged.
+const OHLCDisplay = ({ data, showUnavailable = false, right = null }) => {
   if (!data) return null;
   const isGreen = data.close >= data.open;
   const changeColor = showUnavailable && !(isNum(data.open) && isNum(data.close))
     ? valueStyle.color
     : (isGreen ? '#00ff88' : '#ff4757');
   const fmt = (v) => (showUnavailable && !isNum(v) ? '\u2014' : v?.toFixed(2));
+  const bound = isNum(right) && right >= 0;
 
   return (
     <div style={{
       position: 'absolute',
       top: '8px',
       left: '8px',
+      ...(bound ? { right: `${right}px`, flexWrap: 'wrap', rowGap: '2px' } : {}),
       zIndex: 10,
       display: 'flex',
       gap: '12px',

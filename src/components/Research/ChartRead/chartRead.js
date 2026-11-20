@@ -91,10 +91,19 @@ export function readStateOf(body) {
   return 'unshown';
 }
 
+/**
+ * FX-1 (founder Q-1): the previous record was stretched (`invalid · extended`) and its satisfied patterns already held
+ * today's valid pattern — the pattern is not new; the close came back within the stretch limit.
+ */
+const backWithinLimit = (p, r) => p.verdict === 'invalid' && p.reason === 'extended' && r.verdict === 'valid'
+  && Array.isArray(p.patternsSatisfied) && p.patternsSatisfied.includes(r.pattern);
+
 /** CR-6: the change table, in order — the first row that matches wins (a pair two rows match is pinned in the tests). */
 export const CHANGE_TABLE = Object.freeze([
-  Object.freeze({ key: 'newPullback', when: (p, r) => p.verdict === 'invalid' && r.verdict === 'valid' && r.pattern === 'pullback_resume' }),
-  Object.freeze({ key: 'newBreakout', when: (p, r) => p.verdict === 'invalid' && r.verdict === 'valid' && r.pattern === 'breakout' }),
+  Object.freeze({ key: 'backWithinLimit', when: backWithinLimit }),
+  // The two "New since" rows never match the stretched-then-valid pair above (FX-1), whatever their order.
+  Object.freeze({ key: 'newPullback', when: (p, r) => p.verdict === 'invalid' && r.verdict === 'valid' && r.pattern === 'pullback_resume' && !backWithinLimit(p, r) }),
+  Object.freeze({ key: 'newBreakout', when: (p, r) => p.verdict === 'invalid' && r.verdict === 'valid' && r.pattern === 'breakout' && !backWithinLimit(p, r) }),
   Object.freeze({ key: 'stretched', when: (p, r) => p.verdict === 'valid' && r.verdict === 'invalid' && r.reason === 'extended' }),
   Object.freeze({ key: 'patternGone', when: (p, r) => p.verdict === 'valid' && r.verdict === 'invalid' && r.reason === 'no_setup' }),
   Object.freeze({ key: 'leftUptrend', when: (p, r) => p.regime === 'uptrend' && (r.regime === 'downtrend' || r.regime === 'no_trend') }),
@@ -129,6 +138,13 @@ function regimeParts(rows, words) {
   return parts.length ? parts : null;
 }
 
+/** FX-2: the second line's nouns — what the record would need — for the same failed rows, in the sheet's order. */
+function regimeChangeParts(rows, words) {
+  const N = words.regimeChange;
+  const [close, fast, slow] = rows;
+  return [close.result === false && N.close, fast.result === false && N.fast, slow.result === false && N.slow].filter(Boolean);
+}
+
 /** An unknown verdict's reason in words (the facts the record lists missing). */
 function unknownWhy(read, words) {
   if (read.reason === 'insufficient_history') return REFUSAL_WORDS.insufficient_history;
@@ -157,7 +173,8 @@ function leadOf(state, read, words) {
     const rows = uptrendRows(read);
     const parts = rows && regimeParts(rows, words);
     if (!parts) return null;
-    return { glyph: 'absent', lead: words.regimeLead, rest: words.regimeRest(parts), second: read.regime === 'downtrend' ? words.regimeSecondDowntrend : words.regimeSecond };
+    const second = `${words.regimeSecond(regimeChangeParts(rows, words))}${read.regime === 'downtrend' ? '' : words.notDowntrend}`;
+    return { glyph: 'absent', lead: words.regimeLead, rest: words.regimeRest(parts), second };
   }
   if (state === 'no_setup') {
     const sma = formatPrice(f.SMA_fast);
@@ -189,7 +206,8 @@ export function readLineOf(body, { todayEt = null, todayIsSession = false, battl
   if (state === 'unknown_rule_set') return lineOf(state, { ...base, rest: C.unknownRuleSet(String(ruleSetOf(read) ?? '')) });
   const words = RULE_SET_COPY[ruleSetOf(read)];
   const notes = [];
-  const sessionNoteDue = todayIsSession === true && typeof todayEt === 'string' && read.session < todayEt;
+  // RD-8, never while the read is behind (FX-3): its date already says the latest close is not in.
+  const sessionNoteDue = todayIsSession === true && typeof todayEt === 'string' && read.session < todayEt && read.behind !== true;
   if (battle) notes.push(C.battleNote);
   else if (sessionNoteDue) notes.push(C.sessionNote(weekdayLong(read.session)));
   if (read.adjustmentMetadata === 'absent') notes.push(C.adjustmentNote);
@@ -286,7 +304,8 @@ export function sheetOf(body, { sector = null, expanded = false } = {}) {
   const at = sector && isNum(sector.updatedAtMs) ? etTimeLabel(sector.updatedAtMs) : null;
   const context = { title: C.contextTitle, name: C.sectorName, value: pct !== null && at ? C.sectorReading(pct, at) : C.sectorNone, def: C.sectorDef };
 
-  const otherReading = words.other[state];
+  // FX-6: a not-in-an-uptrend record whose regime is downtrend reads as a bottom forming; every other one keeps the dip.
+  const otherReading = words.other[state === 'regime' && read.regime === 'downtrend' ? 'regime_downtrend' : state];
   return {
     state,
     lead: `${line.lead}${line.rest}`,

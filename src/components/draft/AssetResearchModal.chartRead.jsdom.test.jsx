@@ -254,6 +254,32 @@ describe('flag on: the candles and the marks (§4, §7)', () => {
     expect(days).toEqual([[1, '2026-11-16'], [4, '2026-11-16'], [5, '2026-11-16'], [6, '2026-10-19']]);
     expect($('[data-rule-pill]')).toBeTruthy();
   });
+  it('FX-4: on 1W with SMA on, marks 1 – 3 are not drawn and the checks\' head says why; SMA off or 1D brings them back', async () => {
+    net.read = answer(200, B.REGIME_B); // marks 1, 2, 3 by default
+    net.daily = dailyFor('REGIME_B');
+    net.weekly = [{ date: '2026-11-16', open: 199, high: 202, low: 197, close: 200.37, volume: 1 }, { date: '2026-11-09', open: 197, high: 200, low: 195, close: 198.1, volume: 1 }, { date: '2026-11-02', open: 195, high: 198, low: 193, close: 196.3, volume: 1 }, { date: '2026-10-26', open: 193, high: 196, low: 191, close: 194.4, volume: 1 }, { date: '2026-10-19', open: 191, high: 194, low: 189, close: 192.2, volume: 1 }];
+    await browse();
+    await toChart();
+    // what is drawn: the attached primitive's scene (nothing to show detaches it)
+    const drawn = () => { const p = rec.prims.at(-1)?.primitive; return p && !rec.detached.includes(p) ? p.scene.items.map((i) => i.n) : []; };
+    await click(chartBtn('1W'));
+    expect(drawn()).toEqual([1, 2, 3]);
+    await click(chartBtn('SMA'));
+    expect(drawn()).toEqual([]);
+    await click($('[data-chart-read]'));
+    expect($('[data-chart-read-weekly-note]').textContent).toBe('On 1W the drawn averages are weekly; marks 1 to 3 are on 1D.');
+    expect(drawn().some((n) => n <= 3)).toBe(false);
+    // a row still lists its mark numbers
+    expect($('[data-check-row="fastAboveSlow"] [data-mark-number="2"]')).toBeTruthy();
+    await click(chartBtn('SMA'));
+    expect($('[data-chart-read-weekly-note]')).toBeNull();
+    expect(drawn()).toEqual(expect.arrayContaining([1, 2, 3]));
+    await click(chartBtn('SMA'));
+    expect(drawn().some((n) => n <= 3)).toBe(false);
+    await click(chartBtn('1D'));
+    expect($('[data-chart-read-weekly-note]')).toBeNull();
+    expect(drawn()).toEqual(expect.arrayContaining([1, 2, 3]));
+  });
   it('review L2-1: while 1W loads (the daily series still in hand) nothing of the read is drawn — no marks on daily bars, no raw basis', async () => {
     let release;
     net.weekly = null;

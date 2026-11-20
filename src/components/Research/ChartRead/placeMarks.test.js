@@ -10,7 +10,12 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { bodyFor } from './__fixtures__/chartReadRecords.js';
 import { marksOf } from './marks.js';
 import { placeMarks, calendarDateOf, weekStartOf, sessionsBefore } from './placeMarks.js';
-import { layoutRuleMarks, axisLabels, RuleMarksPrimitive, TICK_BARS, LOW_TICK_BARS, LINE, STUB_LEN, BRACKET_DROP } from './ruleMarksPrimitive.js';
+import * as RMP from './ruleMarksPrimitive.js';
+import { layoutRuleMarks, axisLabels, RuleMarksPrimitive, TICK_BARS, LOW_TICK_BARS, LINE, STUB_LEN, BRACKET_DROP, SQUARE } from './ruleMarksPrimitive.js';
+
+// FX-8's additions, read through the namespace so this file loads before they exist (each row then fails, not the file).
+const { AXIS_LABEL_H, LEADER } = RMP;
+const leaderOps = (...a) => RMP.leaderOps(...a);
 import { formatTime } from '../chartUtils.js';
 import { formatPriceBare } from './format.js';
 
@@ -76,7 +81,7 @@ describe('layoutRuleMarks — the primitive\'s geometry (MK-4, CR-4)', () => {
     const ops = layoutRuleMarks(scene, at);
     expect(ops.filter((o) => o.op === 'line').map((o) => o.w)).toEqual([LINE.lit, LINE.plain]);
     expect(ops.filter((o) => o.op === 'square').map((o) => o.lit)).toEqual([true, false]);
-    expect(axisLabels(scene, { toY: at.toY, format: formatPriceBare })).toEqual([{ y: 1000 - 141.1, text: '141.10' }]);
+    expect(axisLabels(scene, { toY: at.toY, format: formatPriceBare })).toEqual([{ n: 1, y: 1000 - 141.1, labelY: 1000 - 141.1, text: '141.10' }]);
   });
   it('the touch: a short tick at the lowest low and a bracket under its three sessions', () => {
     const ops = layoutRuleMarks({ items: [{ n: 4, kind: 'bracket', time: 31, value: 140.7, lit: false, times: [30, 31, 32] }] }, at);
@@ -119,6 +124,180 @@ describe('review L2-8 / L2-5: coincident squares step aside; the scale takes in 
   });
 });
 
+// FX-8 — the three faults of the founder's PANW screenshot (19 Nov), each reproduced on a fixture first: the 50-day
+// ($366.70, mark 2, on the record's day) and the 50-day five sessions earlier ($367.81, mark 3) a few pixels apart and
+// lit together, and the touch bracket under the latest three bars.
+describe('FX-8: no tick through another mark\'s square; two close lit values both readable; nothing cut off', () => {
+  // 4 px a dollar: the two 50-days sit 4.4 px apart, as on the screenshot's scale ($366.70 at y 233.2, $367.81 at 228.76).
+  const at = { toX: (t) => t * 10, toY: (p) => 1700 - p * 4, spacing: 10, width: 400, height: 300 };
+  const rectOf = (s) => ({ x0: s.x, x1: s.x + SQUARE, y0: s.y - SQUARE / 2, y1: s.y + SQUARE / 2 });
+  const segsOf = (o) => (o.op === 'line'
+    ? [{ x0: o.x0, x1: o.x1, y0: o.y, y1: o.y, w: o.w }]
+    : o.points.slice(1).map(([x, y], i) => ({ x0: Math.min(x, o.points[i][0]), x1: Math.max(x, o.points[i][0]), y0: Math.min(y, o.points[i][1]), y1: Math.max(y, o.points[i][1]), w: o.w })));
+  const crosses = (seg, r) => seg.x0 - seg.w / 2 < r.x1 && seg.x1 + seg.w / 2 > r.x0 && seg.y0 - seg.w / 2 < r.y1 && seg.y1 + seg.w / 2 > r.y0;
+  /** Every pair (a mark's line, ANOTHER mark's square) that meets. */
+  const throughSquares = (ops) => {
+    const out = [];
+    for (const sq of ops.filter((o) => o.op === 'square')) {
+      for (const o of ops.filter((x) => (x.op === 'line' || x.op === 'path') && x.n !== sq.n)) {
+        if (segsOf(o).some((s) => crosses(s, rectOf(sq)))) out.push(`${o.n} through ${sq.n}`);
+      }
+    }
+    return out;
+  };
+  const PANW = { items: [
+    { n: 2, kind: 'tick', time: 30, value: 366.7, lit: true },
+    { n: 3, kind: 'tick', time: 25, value: 367.81, lit: true },
+  ] };
+  it('fault 1: mark 3\'s tick never runs through mark 2\'s square (the screenshot\'s pair, with room on the right)', () => {
+    expect(throughSquares(layoutRuleMarks(PANW, at))).toEqual([]);
+  });
+  it('fault 1: …and with the record\'s day at the right edge (no room right of mark 2): its square steps clear, still inside the pane', () => {
+    const edge = { ...at, width: 340 };
+    const ops = layoutRuleMarks(PANW, edge);
+    expect(throughSquares(ops)).toEqual([]);
+    for (const s of ops.filter((o) => o.op === 'square')) expect([s.n, s.x >= 0, s.x + SQUARE <= edge.width]).toEqual([s.n, true, true]);
+  });
+  it('fault 1: every square is drawn after every line, so no line is ever painted over a square', () => {
+    const ops = layoutRuleMarks({ items: [...PANW.items, { n: 1, kind: 'tick', time: 30, value: 360.1 }, { n: 4, kind: 'bracket', time: 31, value: 355.37, times: [29, 30, 31] }] }, at);
+    const lastLine = Math.max(...ops.map((o, i) => (o.op === 'line' || o.op === 'path' ? i : -1)));
+    const firstSquare = ops.findIndex((o) => o.op === 'square');
+    expect(firstSquare).toBeGreaterThan(lastLine);
+  });
+  it('fault 2: two lit values 4.4 px apart get two labels a full label apart, each with a leader from its own price', () => {
+    const labels = axisLabels(PANW, { toY: at.toY, format: formatPriceBare, height: at.height });
+    expect(labels.map((l) => l.text).sort()).toEqual(['366.70', '367.81']);
+    const [a, b] = [...labels].sort((p, q) => p.labelY - q.labelY);
+    expect(b.labelY - a.labelY).toBeGreaterThanOrEqual(AXIS_LABEL_H);
+    // each label still names its own price: its y is its value's coordinate, and the higher price sits higher
+    for (const l of labels) expect(l.y).toBe(at.toY(Number(l.text)));
+    expect(a.text).toBe('367.81');
+    const leaders = leaderOps(labels, at.width);
+    expect(leaders).toHaveLength(2);
+    for (const [l, p] of labels.map((x) => [x, leaders.find((o) => o.n === x.n)])) {
+      expect(p.points[0]).toEqual([at.width - LEADER, l.y]); // starts at its price
+      expect(p.points.at(-1)).toEqual([at.width, l.labelY]); // ends at its label
+    }
+  });
+  it('fault 2: labels far apart are not moved and need no leader; a label is never pushed off the pane', () => {
+    const apart = { items: [{ n: 1, kind: 'tick', time: 30, value: 360.13, lit: true }, { n: 2, kind: 'tick', time: 30, value: 366.7, lit: true }] };
+    const labels = axisLabels(apart, { toY: at.toY, format: formatPriceBare, height: at.height });
+    for (const l of labels) expect(l.labelY).toBe(l.y);
+    expect(leaderOps(labels, at.width)).toEqual([]);
+    const top = { items: [{ n: 2, kind: 'tick', time: 30, value: 423.75, lit: true }, { n: 3, kind: 'tick', time: 25, value: 424.13, lit: true }] }; // y 5 and 3.48
+    for (const l of axisLabels(top, { toY: at.toY, format: formatPriceBare, height: at.height })) expect(l.labelY).toBeGreaterThanOrEqual(AXIS_LABEL_H / 2);
+  });
+  it('fault 3: the touch bracket under the latest three bars keeps its square inside the pane, left of the price scale', () => {
+    const ops = layoutRuleMarks({ items: [{ n: 4, kind: 'bracket', time: 38, value: 360.37, lit: true, times: [37, 38, 39] }] }, at);
+    const sq = ops.find((o) => o.op === 'square');
+    expect(sq.x).toBeGreaterThanOrEqual(0);
+    expect(sq.x + SQUARE).toBeLessThanOrEqual(at.width);
+    const path = ops.find((o) => o.op === 'path');
+    for (const [x] of path.points) expect(x).toBeLessThanOrEqual(at.width);
+  });
+  it('fault 3: a tick at the left edge puts its square right of the tick, and a square never leaves the pane\'s height', () => {
+    const ops = layoutRuleMarks({ items: [{ n: 6, kind: 'tick', time: 2, value: 400.61 }, { n: 1, kind: 'tick', time: 20, value: 424.37 }] }, at);
+    for (const s of ops.filter((o) => o.op === 'square')) {
+      expect(s.x, `square ${s.n}`).toBeGreaterThanOrEqual(0);
+      expect(s.y - SQUARE / 2, `square ${s.n}`).toBeGreaterThanOrEqual(0);
+      expect(s.y + SQUARE / 2, `square ${s.n}`).toBeLessThanOrEqual(at.height);
+    }
+  });
+  // Review L2B-1 (19 Nov): "nothing leaves the pane" must not pull a mark that is itself OFF the pane into it — after a pan
+  // or a zoom, such squares piled along the pane's edges, away from any tick, on top of one another.
+  describe('review L2B-1: a mark whose own strokes are all off the pane draws no square, and its bracket is not pulled in', () => {
+    const W = 260;
+    const H = 200;
+    const items = [
+      { n: 1, kind: 'tick', time: 100, value: 195 }, { n: 2, kind: 'tick', time: 100, value: 190 }, { n: 3, kind: 'tick', time: 95, value: 189 },
+      { n: 4, kind: 'bracket', time: 99, value: 193, times: [98, 99, 100] }, { n: 5, kind: 'tick', time: 90, value: 201 },
+      { n: 6, kind: 'tick', time: 80, value: 186 }, { n: 7, kind: 'tick', time: 100, value: 199 },
+    ];
+    const lay = (shift, toY = (p) => (205 - p) * 10) => layoutRuleMarks({ items }, { toX: (t) => (t - 100) * 8 + shift, toY, spacing: 8, width: W, height: H });
+    const strokesOf = (ops, n) => ops.filter((o) => (o.op === 'line' || o.op === 'path') && o.n === n);
+    const meetsPane = (ops, n) => strokesOf(ops, n).some((o) => (o.op === 'line' ? o.x1 >= 0 && o.x0 <= W && o.y >= 0 && o.y <= H : o.points.some(([x, y]) => x >= 0 && x <= W && y >= 0 && y <= H)));
+    const onEach = (ops) => { const s = ops.filter((o) => o.op === 'square'); const out = []; for (let i = 0; i < s.length; i++) for (let j = i + 1; j < s.length; j++) if (Math.abs(s[i].x - s[j].x) < SQUARE && Math.abs(s[i].y - s[j].y) < SQUARE) out.push(`${s[i].n}/${s[j].n}`); return out; };
+    it('panned back (the record\'s day 150 px right of the pane): squares only for marks with a stroke in view, none on another', () => {
+      const ops = lay(410);
+      const squares = ops.filter((o) => o.op === 'square').map((o) => o.n);
+      expect(squares).toEqual(items.map((m) => m.n).filter((n) => meetsPane(ops, n)));
+      expect(squares).toEqual([6]); // mark 6's tick crosses x 260; every other mark is wholly to the right
+      expect(onEach(ops)).toEqual([]);
+      const bracket = strokesOf(ops, 4).find((o) => o.op === 'path');
+      expect(Math.min(...bracket.points.map(([x]) => x))).toBeGreaterThan(W); // not collapsed onto the pane's edge
+    });
+    it('panned far, and every value above the pane: no square at all (the drawing is the library\'s to clip)', () => {
+      expect(lay(3000).filter((o) => o.op === 'square')).toEqual([]);
+      expect(lay(3000, (p) => -50 - p).filter((o) => o.op === 'square')).toEqual([]);
+      expect(lay(200, (p) => -50 - p).filter((o) => o.op === 'square')).toEqual([]); // in time, but above the pane
+    });
+    it('zoomed in on the latest bars: marks wholly left of the pane draw no square at x 0', () => {
+      const ops = layoutRuleMarks({ items }, { toX: (t) => (t - 100) * 30 + 240, toY: (p) => (205 - p) * 10, spacing: 30, width: W, height: H });
+      for (const s of ops.filter((o) => o.op === 'square')) expect(meetsPane(ops, s.n), `square ${s.n}`).toBe(true);
+      expect(onEach(ops)).toEqual([]);
+    });
+  });
+  it('fault 3 (mutant FX8-h): a bracket whose latest bar sits on the pane\'s edge is kept inside it', () => {
+    const ops = layoutRuleMarks({ items: [{ n: 4, kind: 'bracket', time: 39, value: 360.37, times: [38, 39, 40] }] }, at);
+    const path = ops.find((o) => o.op === 'path');
+    for (const [x] of path.points) expect(x).toBeLessThanOrEqual(at.width);
+  });
+  it('fault 1 (mutant FX8-d): with every nearby place crossed only by OTHER marks\' lines, a square stays beside its own mark (the line passes under it) rather than go far', () => {
+    // Mark 1 at x 200, y 100; six other ticks cross its ends at its height and a square above and below; nothing else.
+    const lines = { toX: (t) => t * 10, toY: (v) => v, spacing: 10, width: 400, height: 300 };
+    const items = [
+      { n: 1, kind: 'tick', time: 20, value: 100 },
+      { n: 2, kind: 'tick', time: 15, value: 100 }, { n: 3, kind: 'tick', time: 15, value: 85 }, { n: 4, kind: 'tick', time: 15, value: 115 },
+      { n: 5, kind: 'tick', time: 25, value: 100 }, { n: 6, kind: 'tick', time: 25, value: 85 }, { n: 7, kind: 'tick', time: 25, value: 115 },
+    ];
+    const ops = layoutRuleMarks({ items }, lines);
+    const s1 = ops.find((o) => o.op === 'square' && o.n === 1);
+    const tick = ops.find((o) => o.op === 'line' && o.n === 1);
+    const dx = Math.max(0, tick.x0 - (s1.x + SQUARE), s1.x - tick.x1);
+    expect(dx).toBeLessThanOrEqual(2 * (SQUARE + 2) + 3);
+    expect(Math.abs(s1.y - tick.y)).toBeLessThanOrEqual(SQUARE + 2);
+  });
+  it('compact (every mark, zoomed out, all within a few dollars): each square stays beside its own mark and never on another square', () => {
+    // The compact chart as the browser check drew it (A at 390, the touch lit; dumped from the probe): a 330 × 188 pane,
+    // 4.07 px a bar, the record's bar at x 322.9 — each mark's own x and y, as the library placed them.
+    const cramped = { toX: (t) => t, toY: (v) => v, spacing: 4.074074, width: 330, height: 188 };
+    const scene = { items: [
+      { n: 1, kind: 'tick', time: 322.889, value: 63.144, lit: true },
+      { n: 2, kind: 'tick', time: 322.889, value: 84.508 },
+      { n: 3, kind: 'tick', time: 302.519, value: 91.63 },
+      { n: 4, kind: 'bracket', time: 318.815, value: 66.021, lit: true, times: [322.889, 318.815, 314.741] },
+      { n: 5, kind: 'tick', time: 318.815, value: 44.97 },
+      { n: 6, kind: 'tick', time: 241.407, value: 84.167 },
+      { n: 7, kind: 'tick', time: 322.889, value: 37.6 },
+    ] };
+    const ops = layoutRuleMarks(scene, cramped);
+    const STEP = SQUARE + 2;
+    const sq = ops.filter((o) => o.op === 'square');
+    expect(sq).toHaveLength(7);
+    for (const s of sq) {
+      const own = ops.filter((o) => (o.op === 'line' || o.op === 'path') && o.n === s.n);
+      const xs = own.flatMap((o) => (o.op === 'line' ? [o.x0, o.x1] : o.points.map(([x]) => x)));
+      const ys = own.flatMap((o) => (o.op === 'line' ? [o.y] : o.points.map(([, y]) => y)));
+      const dx = Math.max(0, Math.min(...xs) - (s.x + SQUARE), s.x - Math.max(...xs));
+      const dy = Math.max(0, Math.min(...ys) - s.y, s.y - Math.max(...ys));
+      expect({ n: s.n, besideX: dx <= 2 * STEP + 3, besideY: dy <= STEP }).toEqual({ n: s.n, besideX: true, besideY: true });
+      for (const t of sq.filter((u) => u !== s)) expect(Math.abs(t.x - s.x) < SQUARE && Math.abs(t.y - s.y) < SQUARE, `${s.n} on ${t.n}`).toBe(false);
+      expect(s.x >= 0 && s.x + SQUARE <= cramped.width, `square ${s.n} inside`).toBe(true);
+    }
+  });
+  it('the primitive hands the library fixed coordinates (so it never moves them again) and hides the tick of a moved label', () => {
+    const p = new RuleMarksPrimitive({ ink: 'white', paper: 'black', font: 'monospace', format: formatPriceBare });
+    p.attached({ chart: { timeScale: () => ({}), paneSize: () => ({ width: 400, height: 300 }) }, series: { priceToCoordinate: at.toY }, requestUpdate() {} });
+    p.setScene(PANW);
+    const views = p.priceAxisViews();
+    expect(views).toHaveLength(2);
+    const coords = views.map((v) => v.fixedCoordinate()).sort((x, y) => x - y);
+    expect(coords[1] - coords[0]).toBeGreaterThanOrEqual(AXIS_LABEL_H);
+    for (const v of views) expect(v.coordinate()).toBe(v.fixedCoordinate());
+    expect(views.filter((v) => v.tickVisible())).toHaveLength(0);
+  });
+});
+
 describe('RuleMarksPrimitive — the library interface', () => {
   const fakeCtx = () => {
     const calls = [];
@@ -128,7 +307,7 @@ describe('RuleMarksPrimitive — the library interface', () => {
   const attach = () => {
     const updates = [];
     const p = new RuleMarksPrimitive({ ink: 'white', paper: 'black', font: 'monospace', format: formatPriceBare });
-    const series = { priceToCoordinate: (v) => 1000 - v };
+    const series = { priceToCoordinate: (v) => 300 - v }; // inside the 400 × 300 pane the draw rows hand it
     const ts = { timeToCoordinate: (t) => t * 10, logicalToCoordinate: (l) => l * 10 };
     p.attached({ chart: { timeScale: () => ts }, series, requestUpdate: () => updates.push(1) });
     return { p, updates };
@@ -137,7 +316,7 @@ describe('RuleMarksPrimitive — the library interface', () => {
     const { p, updates } = attach();
     p.setScene({ items: [{ n: 1, kind: 'tick', time: 20, value: 141.1, lit: true }] });
     expect(updates).toHaveLength(1);
-    expect(p.priceAxisViews().map((v) => [v.coordinate(), v.text()])).toEqual([[1000 - 141.1, '141.10']]);
+    expect(p.priceAxisViews().map((v) => [v.coordinate(), v.text()])).toEqual([[300 - 141.1, '141.10']]);
   });
   it('draws solid lines only, in the neutral ink — no dash, never red', () => {
     const { p } = attach();

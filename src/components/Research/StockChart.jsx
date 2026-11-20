@@ -58,6 +58,7 @@ const StockChart = ({
   realtimeExtremes,  // Battle hook's real-time intraday high/low { high, low } (optional backup)
   controlledSession, // Optional { crypto }: controlled held research. Absent = legacy.
   onToggleSR,        // Optional (isOn) => void, called when the S/R pill flips
+  onToggleSMA,       // Optional (isOn) => void, called when the SMA pill flips (the Chart view's read, FX-4)
   // Research Modal Build A (spec docs/specs/RESEARCH_MODAL_BUILD_A_BOMB_MODE_SPEC_V1.md
   // §4.4): with Bomb mode on, the modal hands a plot (the Fuse or the red zone)
   // and the RED ZONE chip. On the bomb and spectate views the plot area is
@@ -119,6 +120,8 @@ const StockChart = ({
   const lastTimeframeRef = useRef(null);
 
   const [ohlcData, setOhlcData] = useState(null);
+  // FX-10: the right price scale's width as the library measures it (null until it can say).
+  const [axisWidth, setAxisWidth] = useState(null);
   const [showSMA, setShowSMA] = useState(false);
   const [showSR, setShowSR] = useState(false);
   // Build C: the Idea pill (Amendment B-2: on by default when the stock is in an idea).
@@ -757,15 +760,29 @@ const StockChart = ({
       }
     });
 
+    // FX-10: the OHLC row stops short of the right price scale, whose width the library sets from its labels — read
+    // after each layout (the first frame, a resize, a pan or zoom that changes the labels). A chart that cannot say
+    // (0 px before its first layout, or a test's fake) leaves the row as it was.
+    const measureAxis = () => {
+      try {
+        const w = chart.priceScale('right').width();
+        if (Number.isFinite(w) && w > 0) setAxisWidth((p) => (p === w ? p : w));
+      } catch { /* not measurable: the row keeps today's style */ }
+    };
+    const axisFrame = typeof requestAnimationFrame === 'function' ? requestAnimationFrame(measureAxis) : null;
+    try { chart.timeScale().subscribeVisibleLogicalRangeChange?.(measureAxis); } catch { /* none */ }
+
     // ResizeObserver for responsive
     const resizeObserver = new ResizeObserver(() => {
       if (chartRef.current && container) {
         chartRef.current.applyOptions({ width: container.clientWidth });
+        measureAxis();
       }
     });
     resizeObserver.observe(container);
 
     return () => {
+      if (axisFrame !== null && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(axisFrame);
       // Save visible range before destruction so data-only updates can restore it
       try {
         if (chartRef.current) {
@@ -1126,9 +1143,9 @@ const StockChart = ({
         padding: '6px 12px',
         background: HOLO_COLORS.bgCard,
         borderBottom: `1px solid ${isBombView ? 'rgba(245, 158, 11, 0.1)' : 'rgba(0, 255, 255, 0.05)'}`,
-        // The Chart view's read: with the Rule chip a phone's bar can hold seven pills (1D 1W Battle · SMA S/R Idea
-        // Rule) — it wraps rather than scroll sideways. Without the chip, the bar as today.
-        ...(ruleChip ? { flexWrap: 'wrap', rowGap: '6px' } : {}),
+        // A battle mount's bar (1D 1W Battle · SMA S/R Idea, and the read's Rule) is wider than a 320 px phone — it wraps
+        // rather than run past the screen, with or without the read (FX-10). A browse mount's bar, as today.
+        ...(ruleChip || battlePill ? { flexWrap: 'wrap', rowGap: '6px' } : {}),
       }}>
         {/* Timeframe pills */}
         <div style={{ display: 'flex', gap: '4px' }}>
@@ -1154,8 +1171,8 @@ const StockChart = ({
 
         {/* Overlay toggles - hidden in bomb view */}
         {!isBombView && (
-          <div style={ruleChip ? { display: 'flex', gap: '4px', marginLeft: 'auto', alignItems: 'center' } : { display: 'flex', gap: '4px' }}>
-            <button onClick={() => setShowSMA(v => !v)} style={pillStyle(showSMA)}>
+          <div style={ruleChip || battlePill ? { display: 'flex', gap: '4px', marginLeft: 'auto', alignItems: 'center' } : { display: 'flex', gap: '4px' }}>
+            <button onClick={() => { setShowSMA(v => !v); onToggleSMA?.(!showSMA); }} style={pillStyle(showSMA)}>
               SMA
             </button>
             <button onClick={() => { setShowSR(v => !v); onToggleSR?.(!showSR); }} style={pillStyle(showSR)}>
@@ -1188,7 +1205,7 @@ const StockChart = ({
         />
 
         {/* OHLC overlay — hidden in spectate view (back button uses same position) */}
-        {!isSpectateView && <OHLCDisplay data={displayOhlc} showUnavailable={controlled} />}
+        {!isSpectateView && <OHLCDisplay data={displayOhlc} showUnavailable={controlled} {...(axisWidth !== null ? { right: axisWidth + 8 } : {})} />}
 
         {/* The Chart view's read (UC-3): the candles' basis, once, right-aligned under the OHLC row (a phone's OHLC row fills
             its width), left of the price scale */}

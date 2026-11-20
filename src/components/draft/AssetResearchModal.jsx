@@ -49,7 +49,7 @@ import { useChartRead } from '../Research/ChartRead/useChartRead';
 import { readLineOf } from '../Research/ChartRead/chartRead';
 import { CHART_READ_COPY } from '../Research/ChartRead/chartReadCopy';
 import { etDateOf } from '../Research/ChartRead/format';
-import { chartReadProps, barsMatchTimeframe } from '../Research/ChartRead/chartProps';
+import { chartReadProps, barsMatchTimeframe, weeklyAveragesHideMarks } from '../Research/ChartRead/chartProps';
 import ChartReadBand from '../Research/ChartRead/ChartReadBand';
 import ChartReadSheet from '../Research/ChartRead/ChartReadSheet';
 import { getSessionForDate } from '../../utils/marketCalendar';
@@ -275,6 +275,8 @@ const AssetResearchModal = ({
   const [highlightedLevel, setHighlightedLevel] = useState(null);
   // The chart's S/R pill, as the chart reports it (onToggleSR).
   const [srOn, setSrOn] = useState(false);
+  // The chart's SMA pill, as the chart reports it (onToggleSMA): on 1W the read's marks 1 – 3 give way to it (FX-4).
+  const [smaOn, setSmaOn] = useState(false);
   const [drawerSnapState, setDrawerSnapState] = useState('mid');
   const [v2ContainerHeight, setV2ContainerHeight] = useState(600);
   const v2ContainerRef = useRef(null);
@@ -289,6 +291,7 @@ const AssetResearchModal = ({
     setChartSymbol(currentAsset?.symbol);
     setHighlightedLevel(null);
     setSrOn(false);
+    setSmaOn(false);
     setBattleOn(false); // BC2-4: a new stock's Chart view starts on its 1D / 1W pill, never on Battle
   }
   // BA-5: a hidden Bomb tab is never the open one.
@@ -369,6 +372,7 @@ const AssetResearchModal = ({
   // reported state goes with it.
   const chartShown = version >= 2 && !!researchData.ohlcvData && researchData.ohlcvData.length > 0;
   if (srOn && !chartShown) setSrOn(false);
+  if (smaOn && !chartShown) setSmaOn(false);
   // The Chart view's last timeframe: leaving 💣 restores it (SB-4).
   if (shellOn && isChartTimeframe(researchData.timeframe) && chartTf !== researchData.timeframe) setChartTf(researchData.timeframe);
 
@@ -566,6 +570,7 @@ const AssetResearchModal = ({
   const battleSeries = useBattleSeries({ symbol: currentAsset?.symbol, spec: battleSpec, active: battleShown });
   // The chart unmounts while Battle's bars load: its S/R pill goes with it (§3; PR 2 review B4).
   if (srOn && battleShown && battleSeries.status !== 'ready') setSrOn(false);
+  if (smaOn && battleShown && battleSeries.status !== 'ready') setSmaOn(false);
   // The Chart view's read (spec docs/specs/CHART_READ_SPEC_V1.md; build prompt §5 – §7): asked for only on the
   // shell's Chart view of a stock — never crypto, an index or a sector fund (RD-11; the shell is off for them, R-35)
   // — and only while CHART_READ_MODE resolves on; 'off' makes no request and draws nothing (useChartRead).
@@ -588,7 +593,7 @@ const AssetResearchModal = ({
   // marks only while the sheet is open (review L2-3).
   const readChartBase = chartReadProps({
     line: readLine, timeframe: battleShown || barsMatchTimeframe(researchData.ohlcvData, researchData.timeframe) ? researchData.timeframe : null,
-    battle: battleShown, ruleOn: readRuleOn, sheetOpen: readSheetOpen,
+    battle: battleShown, ruleOn: readRuleOn, sheetOpen: readSheetOpen, smaOn,
     lit: readSheetOpen ? readLit?.marks ?? [] : [], dailyDates: (researchData.dailyData || []).map((d) => String(d?.date || '').slice(0, 10)),
   });
   const readChart = readChartBase?.ruleChip ? { ...readChartBase, ruleChip: { ...readChartBase.ruleChip, onToggle: () => setReadRuleOn((v) => !v) } } : readChartBase;
@@ -659,7 +664,7 @@ const AssetResearchModal = ({
   const onShellView = (to) => {
     const next = switchView({ to, timeframe: researchData.timeframe, lastChartTf: chartTf });
     if (next.timeframe) researchData.setTimeframe(next.timeframe);
-    if (shownView === 'chart' && to !== 'chart') setSrOn(false); // the chart unmounts with its S/R pill
+    if (shownView === 'chart' && to !== 'chart') { setSrOn(false); setSmaOn(false); } // the chart unmounts with its S/R and SMA pills
     // BC2-4: the Chart view opened on its own starts on its 1D / 1W pill (§3), never on Battle.
     if (to === 'chart' && shownView !== 'chart') setBattleOn(false);
     if (to !== 'chart') setReadSheetFor(null); // the read's sheet goes with the Chart view
@@ -1000,6 +1005,7 @@ const AssetResearchModal = ({
                 realtimeExtremes={isOriginalAsset && !controlledMode ? realtimeExtremes : null}
                 controlledSession={controlledMode ? { crypto: !!isCrypto } : undefined}
                 onToggleSR={setSrOn}
+                onToggleSMA={setSmaOn}
                 {...(sheetView?.chart ? { markers: sheetView.chart.markers, priceLines: sheetView.chart.priceLines } : {})}
                 {...(battleSpec ? { battlePill: { label: SHELL_COPY.timeBattle }, onMarkerTap: (id) => { if (typeof id === 'string' && id.startsWith('day:')) onRecordDay(); } } : {})}
                 {...(readChart || {})}
@@ -1018,6 +1024,8 @@ const AssetResearchModal = ({
                 onClose={closeReadSheet}
                 viewRef={chartViewRef}
                 reducedMotion={reducedMotion}
+                // FX-4: on 1W with SMA on, one quiet line in the checks' head says where marks 1 – 3 went.
+                note={!battleShown && weeklyAveragesHideMarks({ timeframe: researchData.timeframe, smaOn }) ? CHART_READ_COPY.weeklyAveragesNote : null}
               />
             )}
             {/* BC2-3: on 1D and 1W, each day of the record with its count — a tap opens Battle (a phone's tap
