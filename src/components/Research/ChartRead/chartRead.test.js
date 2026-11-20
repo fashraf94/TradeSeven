@@ -379,6 +379,12 @@ describe('what changed (CR-6): the fixed table, row by row; every unlisted pair 
     expect(changeOf(B.VALID_BREAKOUT.read, PREV.EX)).toBe(LINES.B);
     expect(changeOf(B.VALID_PULLBACK.read, PREV.XB)).toBe(LINES.P);
   });
+  it('FX-1 (mutant FX1-d): only a STRETCHED previous record — one not in an uptrend that still held the pattern is New since', () => {
+    const notUp = { ...PREV.RN, patternsSatisfied: ['pullback_resume'] }; // invalid · regime, the pattern held
+    expect([notUp.verdict, notUp.reason]).toEqual(['invalid', 'regime']);
+    expect(changeOf(B.VALID_PULLBACK.read, notUp)).toBe(LINES.P);
+    expect(CHANGE_TABLE[0].when(notUp, B.VALID_PULLBACK.read)).toBe(false);
+  });
   it('the 64 pairs', () => {
     const cols = Object.keys(CUR);
     for (const [p, row] of Object.entries(MATRIX)) {

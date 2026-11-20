@@ -203,6 +203,26 @@ describe('FX-8: no tick through another mark\'s square; two close lit values bot
       expect(s.y + SQUARE / 2, `square ${s.n}`).toBeLessThanOrEqual(at.height);
     }
   });
+  it('fault 3 (mutant FX8-h): a bracket whose latest bar sits on the pane\'s edge is kept inside it', () => {
+    const ops = layoutRuleMarks({ items: [{ n: 4, kind: 'bracket', time: 39, value: 360.37, times: [38, 39, 40] }] }, at);
+    const path = ops.find((o) => o.op === 'path');
+    for (const [x] of path.points) expect(x).toBeLessThanOrEqual(at.width);
+  });
+  it('fault 1 (mutant FX8-d): with every nearby place crossed only by OTHER marks\' lines, a square stays beside its own mark (the line passes under it) rather than go far', () => {
+    // Mark 1 at x 200, y 100; six other ticks cross its ends at its height and a square above and below; nothing else.
+    const lines = { toX: (t) => t * 10, toY: (v) => v, spacing: 10, width: 400, height: 300 };
+    const items = [
+      { n: 1, kind: 'tick', time: 20, value: 100 },
+      { n: 2, kind: 'tick', time: 15, value: 100 }, { n: 3, kind: 'tick', time: 15, value: 85 }, { n: 4, kind: 'tick', time: 15, value: 115 },
+      { n: 5, kind: 'tick', time: 25, value: 100 }, { n: 6, kind: 'tick', time: 25, value: 85 }, { n: 7, kind: 'tick', time: 25, value: 115 },
+    ];
+    const ops = layoutRuleMarks({ items }, lines);
+    const s1 = ops.find((o) => o.op === 'square' && o.n === 1);
+    const tick = ops.find((o) => o.op === 'line' && o.n === 1);
+    const dx = Math.max(0, tick.x0 - (s1.x + SQUARE), s1.x - tick.x1);
+    expect(dx).toBeLessThanOrEqual(2 * (SQUARE + 2) + 3);
+    expect(Math.abs(s1.y - tick.y)).toBeLessThanOrEqual(SQUARE + 2);
+  });
   it('compact (every mark, zoomed out, all within a few dollars): each square stays beside its own mark and never on another square', () => {
     // The compact chart as the browser check drew it (A at 390, the touch lit; dumped from the probe): a 330 × 188 pane,
     // 4.07 px a bar, the record's bar at x 322.9 — each mark's own x and y, as the library placed them.
