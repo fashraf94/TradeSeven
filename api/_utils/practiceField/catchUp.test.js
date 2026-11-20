@@ -56,10 +56,13 @@ async function setup(contract = {}) {
 }
 
 let restoreMode;
-beforeEach(() => { restoreMode = setPracticeFieldModeForTests('on'); takeSeededDbs(); });
+// No row reaches the vendor (review, lens A N3): a close across a gap longer than the window asks the backfill's fetch,
+// which, with no key, fails at once — whatever key the shell exports.
+beforeEach(() => { restoreMode = setPracticeFieldModeForTests('on'); takeSeededDbs(); vi.stubEnv('EODHD_API_KEY', ''); });
 afterEach(() => {
   restoreMode();
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   for (const db of takeSeededDbs()) {
     expect(saleWordsOnMarkRows(db)).toEqual([]);
     expect(bannedWordsOnResults(db)).toEqual([]);
@@ -314,7 +317,12 @@ describe('B-CATCHUP (E12) — missed closes are caught up before the next close,
     const expected = [S[0]];
     while (expected[expected.length - 1] !== far) expected.push(nextSessionDate(expected[expected.length - 1]));
     expect(dates).toEqual(expected);
-    expect(ideaOf(ctx).unobservedLineSessions.AAPL).toHaveLength(expected.length - 1);
+    // T1a-2b-3 (Amendment F-1): `far` is observed, but no corporate-action data has covered AAPL since before the gap,
+    // which is longer than the daily layer's window, and no backfill is stored: a day of doubt — the mark is carried
+    // (`ca_coverage_missing`), so `far`'s line is unobserved too, and the gap is on the idea.
+    expect(ideaOf(ctx).unobservedLineSessions.AAPL).toHaveLength(expected.length);
+    expect(rowOf(ctx, far).marks.AAPL.quality).toBe('ca_coverage_missing');
+    expect(ideaOf(ctx).caCoverageGaps.AAPL).toMatchObject({ reason: 'gap_beyond_window', backfillNeeded: true, lastSession: far });
     recon(ctx);
   });
 

@@ -6,7 +6,7 @@
 // PRACTICE_FIELD_WINDOW_MISSED alert is returned per missed window. A window is never recorded as served when its pass
 // errored, and a retry of a served window writes nothing.
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { setPracticeFieldModeForTests } from './mode.js';
 import { admitIdea } from './admission.js';
 import { runIdeaBookEvalPass, runIdeaBookWindow } from './sweep.js';
@@ -33,8 +33,10 @@ async function setup() {
 }
 
 let restore;
-beforeEach(() => { restore = setPracticeFieldModeForTests('on'); });
-afterEach(() => restore());
+// No row reaches the vendor (review, lens A N3): a close across a gap longer than the window asks the backfill's fetch,
+// which, with no key, fails at once — whatever key the shell exports.
+beforeEach(() => { restore = setPracticeFieldModeForTests('on'); vi.stubEnv('EODHD_API_KEY', ''); });
+afterEach(() => { restore(); vi.unstubAllEnvs(); });
 
 describe('the expected windows come from windows.js alone', () => {
   it('a regular session: the engine\'s three slots at their own instants, then the close', () => {
@@ -439,9 +441,10 @@ describe('nothing a committed session or a filled sale did is lost to a later fa
   it('fix-round refuter NF-5 — the SALES pass throwing as a whole: the entry pass still runs, its fill is the window\'s, and the window is one error, not served', async () => {
     const ctx = await setup();
     await storeTickSnapshot(ctx.db, DAYS.d1, 'open30', QUOTES);
-    // The second read of the book in the window is the sales pass's own: it fails.
+    // The THIRD read of the book in the window is the sales pass's own: it fails. (The first is the window's; the second,
+    // since T1a-2b-3, the catch-up's backfill pass, which a book that has never closed always asks — Amendment F-1.)
     let reads = 0;
-    const flaky = { ...ctx.bookRef, get: async () => { reads += 1; if (reads === 2) throw new Error('UNAVAILABLE: injected (sales pass read)'); return ctx.bookRef.get(); } };
+    const flaky = { ...ctx.bookRef, get: async () => { reads += 1; if (reads === 3) throw new Error('UNAVAILABLE: injected (sales pass read)'); return ctx.bookRef.get(); } };
     const original = console.error; console.error = () => {};
     let win;
     try { win = await runIdeaBookWindow(ctx.db, { bookRef: flaky, tick: tickOf(DAYS.d1), now: slotNowOf(DAYS.d1) }); } finally { console.error = original; }

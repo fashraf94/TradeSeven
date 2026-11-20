@@ -316,6 +316,10 @@ export const PROTECTED_COLLECTIONS = new Set([
   // server-only collections — the owner's one-open-book claim with the founder-cap registry, and reserved data
   // coverage — listed so every write site to them is counted against the allowlist. Founder sign-off required.
   'practiceFieldBooks', 'practiceFieldCoverage',
+  // Practice Field T1a-2b-3 (Amendment F-1; build report docs/audits/20261117_BUILD_T1A2B3_CORPORATE_ACTION_FINISH.md):
+  // the corporate-action BACKFILL, server-only, read by the idea book's close alone — listed so every write site to
+  // it is counted against the allowlist. Founder sign-off required.
+  'practiceFieldCaBackfill',
 ]);
 
 // T1A-07 — THE MONEY STORE. The book (`mandates/{bookId}`: the quarterly Mandate book and the Practice Field idea

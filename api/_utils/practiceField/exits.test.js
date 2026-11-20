@@ -26,7 +26,7 @@ import { roundUsd, roundShares } from '../mandateRounding.js';
 import {
   seedBook, admitAndEnter, closeOn, windowAt, storeTickSnapshot, storeCloseSnapshot, contractOf, getBook, getIdea, getRow, tickOf, tickSnapshot,
   slotNowOf, slotOpenIso, closeNowOf, etIso, ADMIT_ISO, takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, countResults, moneyStoreBytes,
-  withoutWindowAlerts, admitAllThenEnter, coverHeldNames,
+  withoutWindowAlerts, admitAllThenEnter, coverHeldNames, founderRules,
 } from './__testsupport__/fixtures.js';
 
 // A short idea admitted on Friday 13 Nov 2026 starts on Monday the 16th (session 0) and is due ten sessions later.
@@ -265,7 +265,9 @@ describe('E6, continued — what else is not a full-quality close', () => {
     expect(ideaOf(ctx).status).toBe('holding');
     expect(lineOf(ctx, 'AAPL').breach).toBeUndefined();
     expect(ideaOf(ctx).unobservedLineSessions).toEqual({ AAPL: [S[1], S[2]] });
-    // A consistent row settles it: the dividend is paid once, and the next close below the line is recognised.
+    // Amendment F rev 1: a consistent row no longer settles it — the founder's ruling does. Paid once, and the next close
+    // below the line is recognised.
+    await founderRules(ctx.db, ctx.bookId, ctx.ideaId, { kind: 'conflict', recordId: `cash_dividend_AAPL_${S[1]}`, decision: 'payload', payload: { amount: 0.26 } });
     await closeDay(ctx, S[3], { AAPL: { price: below(level), corporateActions: [dividend(0.26)] } });
     expect(ideaOf(ctx).ledger.appliedActionIds).toEqual([`cash_dividend_AAPL_${S[1]}`]);
     expect(ideaOf(ctx).status).toBe('line_hit_exit_pending');
@@ -733,11 +735,13 @@ describe('Q-2 and FR-A7 — one rule for every fill: a maximum age, and the stor
     const idea = ideaOf(ctx);
     const frozen = JSON.stringify([book, idea]);
     const snapshot = tickSnapshot(S[1], 'open30', quotes());
-    const plan = planPendingSales({ book, idea, others: [], snapshot, tick: tickOf(S[1], 'open30'), nowIso: slotNowOf(S[1]).toISOString() });
+    // (T1a-2b-3: the session's daily layer, covering the name — Amendment F-6: with none, the sale waits.)
+    const daily = { date: S[1], symbols: { AAPL: { sector: null } } };
+    const plan = planPendingSales({ book, idea, others: [], snapshot, daily, tick: tickOf(S[1], 'open30'), nowIso: slotNowOf(S[1]).toISOString() });
     expect(plan).toMatchObject({ changed: true, resulted: false, sold: [{ symbol: 'AAPL', origin: 'line_exit' }] });
     expect(JSON.stringify([book, idea])).toBe(frozen); // the inputs are not mutated
     const foreign = { ...book, portfolio: { ...book.portfolio, positions: { AAPL: { ...book.portfolio.positions.AAPL, ideaId: 'another-idea' } } } };
-    expect(() => planPendingSales({ book: foreign, idea, others: [], snapshot, tick: tickOf(S[1], 'open30'), nowIso: slotNowOf(S[1]).toISOString() })).toThrow(/sale_position_mismatch/);
+    expect(() => planPendingSales({ book: foreign, idea, others: [], snapshot, daily, tick: tickOf(S[1], 'open30'), nowIso: slotNowOf(S[1]).toISOString() })).toThrow(/sale_position_mismatch/);
   });
 
   it('the sales pass serves an active or a draining book and nothing else; one idea\'s failure does not block another\'s sale', async () => {
@@ -1023,15 +1027,19 @@ describe('the second refuter pass — what the review\'s own fixes left open', (
     expect(JSON.stringify(ctx.db._get(`mandateUniverseDaily/${S[2]}`))).toBe(dailyBefore); // read, never written
     // A symbol whose fetch did not fail is not held: the same day, another idea's sale would fill (the pure plan).
     const plan = (daily) => planPendingSales({ book: bookOf(ctx), idea: ideaOf(ctx), others: [], snapshot: tickSnapshot(S[2], 'preClose', quotes()), daily, tick: tickOf(S[2], 'preClose'), nowIso: slotNowOf(S[2], 'preClose').toISOString() });
-    expect(plan({ symbols: { AAPL: { caFetchFailed: true }, MSFT: { sector: 'Technology' } } }).sold).toHaveLength(1); // another symbol's failure holds nothing
-    expect(plan({ symbols: { MSFT: { caFetchFailed: true } } }).sold).toHaveLength(0);
+    expect(plan({ date: S[2], symbols: { AAPL: { caFetchFailed: true }, MSFT: { sector: 'Technology' } } }).sold).toHaveLength(1); // another symbol's failure holds nothing
+    expect(plan({ date: S[2], symbols: { MSFT: { caFetchFailed: true } } }).sold).toHaveLength(0);
     // A daily document with NO ENTRY for the symbol (built without the idea book's coverage) knows as little: held.
-    const absent = plan({ symbols: { AAPL: { sector: 'Technology' } } });
+    const absent = plan({ date: S[2], symbols: { AAPL: { sector: 'Technology' } } });
     expect(absent.sold).toHaveLength(0);
     expect(absent.waited).toEqual([expect.objectContaining({ symbol: 'MSFT', refusal: 'corporate_action_data_missing' })]);
     expect(plan({ date: S[2] }).sold).toHaveLength(0); // …or with no symbols at all
-    // No daily document at all: nothing can be said either way, and the slot snapshot's own lists are all there is.
-    expect(plan(null).sold).toHaveLength(1);
+    // No daily document at all — or one whose own date is not the session's, which counts as missing (Amendment F-6) —
+    // is a day of doubt (F-1): the sale waits. (Before T1a-2b-3 it filled on the slot snapshot's own lists.)
+    expect(plan(null).sold).toHaveLength(0);
+    expect(plan({ symbols: { MSFT: { sector: 'Technology' } } }).sold).toHaveLength(0);
+    expect(plan({ date: S[3], symbols: { MSFT: { sector: 'Technology' } } }).sold).toHaveLength(0);
+    expect(plan({ date: S[2], symbols: { MSFT: { sector: 'Technology' } } }).sold).toHaveLength(1); // the control
     // The next day's document has no failure: the sale fills.
     await closeDay(ctx, S[2]);
     await ctx.db.collection('mandateUniverseDaily').doc(S[3]).set({ date: S[3], symbols: { MSFT: { sector: 'Technology' } } });

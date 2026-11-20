@@ -42,7 +42,9 @@ import {
 import { PracticeFieldError } from './errors.js';
 import { modelledSaleProceeds, isCostTier, costTierOf } from './fills.js';
 import { fundOf, frictionForSymbol } from './symbols.js';
-import { unsettledConflicts, heldActionRecords, basisSuspicionRecords } from './ledger.js';
+import { unsettledConflicts, heldActionRecords, basisSuspicionRecords, unsettledRedates, openAmbiguities, openRulingRevisions } from './ledger.js';
+const SHARE_BASIS_TYPES = new Set(['split', 'reverse_split', 'stock_distribution']);
+import { coverageGapIdOf } from './dailyCoverage.js';
 import { toCents, fromCents } from './money.js';
 
 /** The kinds of endpoint: at the scheduled due session, early (no holdings left — E2), or after a due session passed. */
@@ -191,15 +193,21 @@ export function exitTierOf(symbol, holding) {
  *   `fullQuality` is `marksFullQuality` (every mark is `vendor_time`) AND no unsettled conflicting corporate action:
  *   the two are kept apart so a result can say WHICH it lacked (review RH-7).
  */
-export function ledgerEndpoint(ledger, valuation) {
+export function ledgerEndpoint(ledger, valuation, { coverageGaps = null } = {}) {
   const cashCents = toCents(ledger.cash);
   let grossCents = 0;
   let netCents = 0;
   let rawNet = 0;
   // …and every action a holding is owed that waits on its share basis (fix round 2), and every open gap-screen suspicion
   // (fix round 3, T2A-D01): the value is in doubt by it.
+  // …and (T1a-2b-3, Amendment F-1) every open coverage gap of a symbol this ledger holds: the session's data did not
+  // cover it, so what it is owed cannot be known.
+  // …and (Amendment F rev 1, S-2) EVERY OPEN AMBIGUITY — a conflict (one the holding was not entitled to included), a
+  // possible re-date of any kind (a dividend's is a payment that waits for the founder), a ruled id revised since: until
+  // the founder rules, the value is in doubt by it. The same predicate as the row's quality (close.js).
   const unsettledActions = [
-    ...unsettledConflicts(ledger).map((r) => r.actionId), ...heldActionRecords(ledger).map((r) => r.actionId), ...basisSuspicionRecords(ledger).map((r) => r.actionId),
+    ...openAmbiguities(ledger).map((r) => r.actionId), ...heldActionRecords(ledger).map((r) => r.actionId), ...basisSuspicionRecords(ledger).map((r) => r.actionId),
+    ...Object.keys(ledger.holdings || {}).sort().filter((sym) => coverageGaps?.[sym]).map((sym) => coverageGapIdOf(sym, coverageGaps[sym].since)),
   ];
   let marksFullQuality = true;
   let costTiersStored = true;
@@ -242,6 +250,42 @@ export function ledgerEndpoint(ledger, valuation) {
     costTiersStored,
     holdings,
   };
+}
+
+/**
+ * WHAT A LEDGER HOLDS IN DOUBT at the endpoint, by symbol (Amendment F-4): every reason its value is in doubt — a
+ * conflicting action, a held or refused action, a split-shaped move the feed never explained, a coverage gap — and
+ * every cash dividend it is owed and holds, unpaid. The result names SPY's: SPY in doubt leaves the result measurable
+ * (SPY is context and carries no label, E10), and says so instead of saying nothing. Pure.
+ * @returns {Array<{ symbol: string, reasons: Array<object>, heldDividends: Array<object> }>}
+ */
+export function ledgerDoubts(ledger, { coverageGaps = null } = {}) {
+  const upper = (s) => String(s || '').trim().toUpperCase();
+  const held = heldActionRecords(ledger);
+  const redates = unsettledRedates(ledger);
+  const out = [];
+  for (const sym of Object.keys(ledger?.holdings || {}).sort()) {
+    const reasons = [
+      ...unsettledConflicts(ledger).filter((r) => upper(r.ticker) === sym).map((r) => ({ kind: 'conflicting_action', actionId: r.actionId, type: r.type ?? null })),
+      ...held.filter((r) => r.symbol === sym).map((r) => ({ kind: r.refused ? 'refused_action' : 'held_action', actionId: r.actionId, type: r.type, ...(r.refused ? { refused: r.refused } : {}) })),
+      ...basisSuspicionRecords(ledger).filter((s) => s.symbol === sym).map((s) => ({ kind: 'suspected_split', actionId: s.actionId, suspectedOn: s.suspectedOn ?? null })),
+      ...(coverageGaps?.[sym] ? [{ kind: 'ca_coverage_gap', actionId: coverageGapIdOf(sym, coverageGaps[sym].since), since: coverageGaps[sym].since ?? null }] : []),
+      // F-7 (review D2, D4): a row recorded as a possible re-date and not settled — a split's puts the count in doubt; a
+      // dividend's is one not paid, waiting for the founder. Both are named.
+      ...redates.filter((r) => upper(r.ticker) === sym).map((r) => ({ kind: 'possible_redate', actionId: r.actionId, type: r.type ?? null, redateOf: r.redateOf ?? null })),
+      // Rev 1, S-2: a ruled id the feed has since listed with a payload the ruling did not see.
+      ...openRulingRevisions(ledger).filter((r) => upper(r.ticker) === sym).map((r) => ({ kind: 'revised_after_ruling', actionId: r.actionId, type: r.type ?? null, ruling: r.ruling ?? null })),
+    ];
+    if (reasons.length === 0) continue;
+    const heldDividends = [
+      ...held.filter((r) => r.symbol === sym && r.type === 'cash_dividend')
+        .map((r) => ({ actionId: r.actionId, amount: r.amount ?? null, effectiveDate: r.effectiveDate ?? null, heldOn: r.heldOn ?? null })),
+      ...redates.filter((r) => upper(r.ticker) === sym && r.type === 'cash_dividend')
+        .map((r) => ({ actionId: r.actionId, amount: r.amount ?? null, effectiveDate: r.effectiveDate ?? null, heldOn: r.seenOn ?? null, possibleRedateOf: r.redateOf ?? null })),
+    ];
+    out.push({ symbol: sym, reasons, heldDividends });
+  }
+  return out;
 }
 
 // ── The running record ───────────────────────────────────────────────────────────────────────────────────────
@@ -320,9 +364,10 @@ export function trackStatistics(track) {
  * @returns {{ endpointRow: object, result: object }}
  */
 export function buildEndpoint({ idea, valuations, date, kind, observed, caughtUp = false, snapshotMeta, nowIso }) {
-  const own = ledgerEndpoint(idea.ledger, valuations.idea);
-  const cmp = ledgerEndpoint(idea.comparisonLedger, valuations.comparison);
-  const spy = ledgerEndpoint(idea.spyLedger, valuations.spy);
+  const gaps = { coverageGaps: idea.caCoverageGaps ?? null };
+  const own = ledgerEndpoint(idea.ledger, valuations.idea, gaps);
+  const cmp = ledgerEndpoint(idea.comparisonLedger, valuations.comparison, gaps);
+  const spy = ledgerEndpoint(idea.spyLedger, valuations.spy, gaps);
   const reservedCents = toCents(idea.contract.capitalUsd);
   const gapCents = own.valueCents - cmp.valueCents;
   const spyGapCents = own.valueCents - spy.valueCents;
@@ -429,7 +474,11 @@ export function buildEndpoint({ idea, valuations, date, kind, observed, caughtUp
     closingNote: null,
     oneObservationLabel: true,
     // Beside them (contract §4.4).
-    spy: { valueUsd: spy.valueUsd, gapUsd: fromCents(spyGapCents), gapPctOfReserved: (spyGapCents * 100) / reservedCents, fullQuality: spy.fullQuality },
+    // …and SPY's doubt, by name (Amendment F-4): the symbol, the reasons, and any dividend held and not paid.
+    spy: {
+      valueUsd: spy.valueUsd, gapUsd: fromCents(spyGapCents), gapPctOfReserved: (spyGapCents * 100) / reservedCents, fullQuality: spy.fullQuality,
+      inDoubt: ledgerDoubts(idea.spyLedger, gaps),
+    },
     largestDecline: stats.largestDecline,
     trades: {
       entry: { count: idea.entry?.legCount ?? null, costsUsd: idea.entry?.costsPaidUsd ?? null },

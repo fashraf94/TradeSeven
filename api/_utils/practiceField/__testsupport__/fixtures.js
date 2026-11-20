@@ -50,7 +50,16 @@ export function slotOpenIso(date, slot = 'open30') {
  * stock with NO market cap: the Q-1 case. A fund never has one (its tier is explicit).
  */
 export const FIXTURE_MARKET_CAP = 1e9;
-export function snapshotOf({ tickKey, sessionDate, builtAt, quoteAt, quotes }) {
+/**
+ * THE DAILY LAYER A SNAPSHOT NAMES (T1a-2b-3; Amendment F-1, F-2). The engine's cron builds the session's daily layer
+ * (`mandateUniverseDaily/{date}`) before every slot and close snapshot, with the idea books' symbols in it, and the
+ * snapshot names it (`dailyRef`) and copies its corporate-action rows. So a fixture snapshot names its session's daily
+ * layer by default, and STORING one (storeTickSnapshot, storeCloseSnapshot, placeSnapshot) also writes that layer: one
+ * entry per symbol of the snapshot, as a fetch that succeeded leaves it, carrying the snapshot's own action rows — the
+ * data complete, as production makes it. `dailyRef: null` builds a snapshot that names none, and stores no layer.
+ */
+export const dailyRefOf = (date) => `mandateUniverseDaily/${date}`;
+export function snapshotOf({ tickKey, sessionDate, builtAt, quoteAt, quotes, dailyRef }) {
   const symbols = {};
   for (const [sym, raw] of Object.entries(quotes)) {
     const q = typeof raw === 'number' ? { price: raw } : raw;
@@ -69,25 +78,28 @@ export function snapshotOf({ tickKey, sessionDate, builtAt, quoteAt, quotes }) {
       ...(q.corporateActions?.length ? { corporateActions: q.corporateActions } : {}),
     };
   }
-  return { schemaVersion: 1, tickKey, sessionDate, builtAt: new Date(builtAt), symbols };
+  return {
+    schemaVersion: 1, tickKey, sessionDate, builtAt: new Date(builtAt),
+    dailyRef: dailyRef === undefined ? dailyRefOf(sessionDate) : dailyRef, symbols,
+  };
 }
 
 /** A slot snapshot: built one minute into the slot, quotes observed fifteen minutes before it. */
-export function tickSnapshot(date, slot, quotes) {
+export function tickSnapshot(date, slot, quotes, { dailyRef } = {}) {
   const open = Date.parse(slotOpenIso(date, slot));
   return snapshotOf({
     tickKey: `${date}_${slot}`, sessionDate: date,
-    builtAt: new Date(open + 60_000).toISOString(), quoteAt: new Date(open - 15 * 60_000).toISOString(), quotes,
+    builtAt: new Date(open + 60_000).toISOString(), quoteAt: new Date(open - 15 * 60_000).toISOString(), quotes, dailyRef,
   });
 }
 
 /** THE close snapshot of a date: built twenty minutes after the close, quotes observed at the close. */
-export function closeSnapshot(date, quotes) {
+export function closeSnapshot(date, quotes, { dailyRef } = {}) {
   const s = resolveSessionSlots(date);
   const closeMs = etMs(date, 9, 30) + (s.closeMin - s.openMin) * 60_000;
   return snapshotOf({
     tickKey: `${date}_close`, sessionDate: date,
-    builtAt: new Date(closeMs + 20 * 60_000).toISOString(), quoteAt: new Date(closeMs).toISOString(), quotes,
+    builtAt: new Date(closeMs + 20 * 60_000).toISOString(), quoteAt: new Date(closeMs).toISOString(), quotes, dailyRef,
   });
 }
 
@@ -199,8 +211,83 @@ async function storeSnapshotOnce(db, snap) {
     if (!same) throw new Error(`storeSnapshotOnce: a different snapshot is already stored at ${snap.tickKey}`);
     return snap;
   }
+  mergeDailyLayerOf(db, snap);
   await ref.set(snap);
   return snap;
+}
+
+/** The daily layer's own fields, as the engine's builder writes them (its corporate-action window included). */
+function dailyBaseOf(date) {
+  const shift = (days) => new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+  return { schemaVersion: 1, date, builtAt: new Date(etIso(date, 9, 0)), caWindow: { from: shift(-5), to: shift(2) } };
+}
+const actionKeyOf = (a) => JSON.stringify(Object.keys(a || {}).sort().map((k) => [k, a[k]]));
+/**
+ * The daily layers the FIXTURES wrote, per database: path → the symbols a row removed (omitDailyEntry), which a later
+ * stored snapshot must not put back. A layer a row wrote ITSELF, through the database (the engine's document as the row
+ * gives it), is not one of them: a stored snapshot never merges into it.
+ */
+const FIXTURE_DAILY = new WeakMap();
+const fixtureDailyOf = (db) => { if (!FIXTURE_DAILY.has(db)) FIXTURE_DAILY.set(db, new Map()); return FIXTURE_DAILY.get(db); };
+function writeFixtureDaily(db, path, doc, cur, omitted) {
+  db._store.set(path, { data: structuredClone(doc), version: (cur?.version || 0) + 1 });
+  fixtureDailyOf(db).set(path, omitted ?? fixtureDailyOf(db).get(path) ?? new Set());
+}
+
+/**
+ * A daily layer WITHOUT an entry for `symbols` (a build that did not cover them): the entries are removed and stay out
+ * when a later snapshot of the session is stored. For the rows about a missing entry. Returns the document.
+ */
+export function omitDailyEntry(db, date, symbols) {
+  const path = `mandateUniverseDaily/${date}`;
+  const cur = db._store.get(path);
+  const entries = { ...(cur?.data?.symbols || {}) };
+  for (const sym of symbols) delete entries[sym];
+  const omitted = new Set([...(fixtureDailyOf(db).get(path) || []), ...symbols]);
+  const doc = { ...(cur?.data || dailyBaseOf(date)), symbols: entries };
+  writeFixtureDaily(db, path, doc, cur, omitted);
+  return doc;
+}
+
+/**
+ * The daily layer a stored snapshot names (see `dailyRefOf`), written straight into the fake's store: every symbol of
+ * the snapshot — and, as the cron's build covers them whether or not a quote comes back (sweep.js
+ * practiceFieldBuildInputs), every symbol the coverage document reserves and every name an idea book holds — gets an
+ * entry if it has none, and every action row the snapshot carries for it is added to its entry if the entry does not
+ * already list it. An entry already there is never replaced (a row that wrote a failed or missing one keeps it), and
+ * a symbol a row REMOVED from the layer (`omitDailyEntry`) stays out. A snapshot that names no daily layer, or another
+ * session's, stores none.
+ */
+export function mergeDailyLayerOf(db, snap) {
+  if (!db?._store || snap?.dailyRef !== dailyRefOf(snap?.sessionDate)) return null;
+  const date = snap.sessionDate;
+  const path = `mandateUniverseDaily/${date}`;
+  const cur = db._store.get(path);
+  // A layer a row wrote itself (not through the fixtures) is the engine's document as the row gives it: left alone.
+  if (cur && !fixtureDailyOf(db).has(path)) return cur.data;
+  const entries = { ...(cur?.data?.symbols || {}) };
+  const omitted = fixtureDailyOf(db).get(path) || new Set();
+  const covered = new Set(Object.keys(db._store.get('practiceFieldCoverage/current')?.data?.symbols || {}));
+  for (const [p, d] of db._store.entries()) {
+    if (/^mandates\/[^/]+$/.test(p) && d?.data?.kind === 'idea_book') for (const sym of Object.keys(d.data.portfolio?.positions || {})) covered.add(sym);
+  }
+  const fromSnapshot = { ...Object.fromEntries([...covered].map((s) => [s, {}])), ...(snap.symbols || {}) };
+  for (const [sym, e] of Object.entries(fromSnapshot)) {
+    if (omitted.has(sym)) continue;
+    const prior = Object.hasOwn(entries, sym) ? entries[sym] : null;
+    const entry = prior !== null && typeof prior === 'object' && !Array.isArray(prior)
+      ? { ...prior }
+      : (prior === null ? { sector: null, industry: null, marketCap: null, source: 'eodhd_fundamentals', complete: false } : null);
+    if (entry === null) continue; // an odd value a row planted stays exactly as it is
+    const actions = [...(entry.corporateActions || [])];
+    const seen = new Set(actions.map(actionKeyOf));
+    for (const a of e?.corporateActions || []) if (!seen.has(actionKeyOf(a))) { seen.add(actionKeyOf(a)); actions.push(a); }
+    if (actions.length > 0) entry.corporateActions = actions;
+    entries[sym] = entry;
+  }
+  const doc = { ...(cur?.data || dailyBaseOf(date)), symbols: entries };
+  writeFixtureDaily(db, path, doc, cur);
+  return doc;
 }
 
 /**
@@ -219,6 +306,7 @@ export async function storeTickSnapshot(db, date, slot, quotes) {
 export function placeSnapshot(db, snap) {
   const path = `mandateUniverseSnapshots/${snap.tickKey}`;
   const cur = db._store.get(path);
+  mergeDailyLayerOf(db, snap);
   db._store.set(path, { data: structuredClone(snap), version: (cur?.version || 0) + 1 });
   return snap;
 }
@@ -229,7 +317,8 @@ export function placeSnapshot(db, snap) {
  * with nothing listed leaves it; `failed` names whose fetch failed (`caFetchFailed: true`). Merged into whatever the
  * document already holds, straight into the fake's store (it works on a db a test wraps to fail its writes).
  * Admission refuses a held name its session's daily layer does not cover (admissionMarks.js), and a sale reads it too
- * (exits.js) — so the snapshot fixtures above never write it: a row that needs the day's coverage stores it. Returns it.
+ * (exits.js). Since T1a-2b-3 a stored snapshot writes its session's layer (mergeDailyLayerOf); this REPLACES the
+ * named symbols' entries — a row about a failed fetch says so here. Returns it.
  */
 export function storeDailyLayer(db, date, symbols, { failed = [] } = {}) {
   const path = `mandateUniverseDaily/${date}`;
@@ -241,8 +330,8 @@ export function storeDailyLayer(db, date, symbols, { failed = [] } = {}) {
       ...(failed.includes(sym) ? { caFetchFailed: true } : {}),
     };
   }
-  const doc = { ...(cur?.data || { schemaVersion: 1, date, builtAt: new Date(etIso(date, 9, 0)) }), symbols: entries };
-  db._store.set(path, { data: structuredClone(doc), version: (cur?.version || 0) + 1 });
+  const doc = { ...(cur?.data || dailyBaseOf(date)), symbols: entries };
+  writeFixtureDaily(db, path, doc, cur);
   return doc;
 }
 
@@ -276,10 +365,11 @@ export async function entryPassWith(db, { snapshot, ...rest }) {
 }
 
 /**
- * The store's bytes (documents and their versions) WITHOUT the shared snapshot documents — which no Practice Field
- * path writes, and which a row using the shims above places for the fill to read. What a money path wrote, or did not.
+ * The store's bytes (documents and their versions) WITHOUT the shared snapshot documents and their daily layers — which
+ * no Practice Field path writes, and which a row using the shims above places for the fill to read (a stored snapshot
+ * writes its session's daily layer, mergeDailyLayerOf). What a money path wrote, or did not.
  */
-export const moneyStoreBytes = (db) => JSON.stringify([...db._store.entries()].filter(([path]) => !path.startsWith('mandateUniverseSnapshots/')));
+export const moneyStoreBytes = (db) => JSON.stringify([...db._store.entries()].filter(([path]) => !path.startsWith('mandateUniverseSnapshots/') && !path.startsWith('mandateUniverseDaily/')));
 
 /** The instant a fixture window runs: two minutes into the slot. */
 export function slotNowOf(date, slot = 'open30') {
@@ -391,6 +481,26 @@ export async function windDownBook(db, { uid = 'owner-1', requestKey = 'wind-dow
     const out = await runFounderAction(db, { uid, body: { action: 'wind_down', requestKey }, nowIso });
     if (out.status !== 200 || out.body.ok !== true) throw new Error(`windDownBook: ${JSON.stringify(out)}`);
     return out.body;
+  } finally {
+    if (prev === undefined) delete process.env.MANDATE_FOUNDER_UIDS;
+    else process.env.MANDATE_FOUNDER_UIDS = prev;
+  }
+}
+
+/**
+ * The founder's `resolve_hold` (Amendment F-5), as the endpoint runs it, for one idea — with MANDATE_FOUNDER_UIDS set
+ * for the call and restored after. Amendment F rev 1: it is the ONLY way an ambiguous id settles, so a row that once
+ * relied on the feed correcting itself rules here instead. `nowIso` defaults to 18:00 ET of the book's last close.
+ * Returns the endpoint's answer; with `expectOk` (the default) a refusal throws.
+ */
+export async function founderRules(db, bookId, ideaId, body, { uid = 'owner-1', requestKey = `rule-${body?.recordId}-${body?.decision}`, nowIso = null, expectOk = true } = {}) {
+  const prev = process.env.MANDATE_FOUNDER_UIDS;
+  process.env.MANDATE_FOUNDER_UIDS = uid;
+  try {
+    const at = nowIso ?? etIso(getBook(db, bookId).execState.lastCloseKey, 18, 0);
+    const out = await runFounderAction(db, { uid, body: { action: 'resolve_hold', requestKey, ideaId, ...body }, nowIso: at });
+    if (expectOk && out.status !== 200) throw new Error(`founderRules: ${JSON.stringify(out)}`);
+    return out;
   } finally {
     if (prev === undefined) delete process.env.MANDATE_FOUNDER_UIDS;
     else process.env.MANDATE_FOUNDER_UIDS = prev;
