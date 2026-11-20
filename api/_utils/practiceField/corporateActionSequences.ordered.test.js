@@ -21,9 +21,10 @@ describe('S-6 — Astra round 2: her independent generator (seeds 19112000–191
   }, 60_000);
 });
 
-// (The final soak's failing seeds, kept: SOAK-R3-1 — 1911201905, 1911200342 — and SOAK-R3-2 — 1911205903, 1911202882.)
+// (The final soak's failing seeds, kept: SOAK-R3-1 — 1911201905, 1911200342 — and SOAK-R3-2 — 1911205903, 1911202882; and
+// the refuter's own soak's (AR3-RF-3, AR3-RF-4): 73100109, an I-2 failure of SOAK-R3-1's class, and 73100236, an I-5 failure.)
 describe('S-6 — the final soak\'s failing histories, as fixed seeds', () => {
-  it.each([1911201905, 1911200342, 1911205903, 1911202882])('ordered seed %i', async (seed) => {
+  it.each([1911201905, 1911200342, 1911205903, 1911202882, 73100109, 73100236])('ordered seed %i', async (seed) => {
     await run(generateWide(seed, { ordered: true }));
   }, 120_000);
 });

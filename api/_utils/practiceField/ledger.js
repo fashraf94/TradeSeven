@@ -1400,6 +1400,10 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
     // founder's ruling for it — not by a later single row, a row under a moved date, a replay after coverage returns or a
     // backfill row. It moves no cash and no shares; a conflict, or a share-basis action, carries the mark.
     if (ambiguity.has(action.actionId) && !isRuled(action)) {
+      // (The refuter's AR3-RF-2: a pending founder split whose id this call found ambiguous by ANY path — here a held vendor
+      // row of its id revising it (S-1 ②) — is refused, not left pending under the gate: pending, it locked the suspicion
+      // (`price_move` 409) and, once a conflict ruling applied that id, was marked applied with its own split never applied.)
+      refuseFounderSplit(action, 'id_ambiguous');
       if (ambiguity.get(action.actionId).reason === CONFLICTING_ACTION || SHARE_BASIS_TYPES.has(action.type)) unresolved.add(upper(action.ticker));
       continue;
     }

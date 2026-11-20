@@ -603,6 +603,36 @@ export const SOAK_R3 = [
       expect(sharesOf(idea, book), 'neither 2:1 moved the count').toEqual([SH, SH, SH]);
       expect(rulingOf(idea, 'suspicion')?.refusedBecause).toBe('possible_redate');
     })], end: { dividends: 0, shares: SH } },
+  // ── The final fix's independent refuter (AR3-RF), on 47afe4ae; each a row here ──
+  // AR3-RF-1 (refuter F1; ×4 at 47afe4ae, the oracle silent then): a halving at S2, the founder's 2:1 for it, and at the
+  // close that applies it the vendor lists the same 2:1 dated S1 (outside the gap: since is S1). Both are possible re-dates
+  // of each other — nothing moves — until the founder rules: her 2:1 for her id, `none` for the vendor's: ×2, once.
+  { seed: 'AR3-RF-1-founder-split-and-the-vendor-split-a-session-earlier', steps: [cl(0, 100), cl(1, 100), cl(2, 50),
+    { kind: 'ruleExact', body: { kind: 'suspicion', recordId: sus(2), decision: 'split', ratio: 2 } }, cl(3, 50, [sp(1, '2/1')]),
+    at((idea, book) => {
+      expect(sharesOf(idea, book), 'nothing moved (it was ×4)').toEqual([SH, SH, SH]);
+      expect(rulingOf(idea, 'suspicion')?.refusedBecause).toBe('possible_redate');
+    }),
+    conflictRuling('split_AAPL_' + S[2], 'payload', { ratio: 2 }), conflictRuling('split_AAPL_' + S[1], 'none'), cl(4, 50, [sp(1, '2/1')])], end: { dividends: 0, shares: SH2 } },
+  // …the reverse split (it was ÷4).
+  { seed: 'AR3-RF-1-reverse-split', steps: [cl(0, 100), cl(1, 100), cl(2, 200),
+    { kind: 'ruleExact', body: { kind: 'suspicion', recordId: sus(2), decision: 'split', ratio: 0.5 } }, cl(3, 200, [sp(1, '1/2')]), cl(4, 200)], end: { dividends: 0, shares: SH } },
+  // AR3-RF-2 (refuter F2): a vendor 3:2 for the record's split id held at an uncovered close; the founder then rules 2:1. The
+  // next close finds the held row revising it: the founder's split is refused there ('id_ambiguous'), not left pending — so
+  // a `none` on the conflict leaves the suspicion answerable (`price_move` accepted; it was 409, the holding locked) …
+  { seed: 'AR3-RF-2-held-vendor-row-then-founder-split-none', steps: [cl(0, 100), cl(1, 50), cl(2, 50, [sp(1, '3/2')], true), splitRuling(2), cl(3, 50),
+    at((idea) => expect(rulingOf(idea, 'suspicion')?.refusedBecause).toBe('id_ambiguous')),
+    conflictRuling(splitId, 'none'), cl(4, 50), { kind: 'ruleExact', body: { kind: 'suspicion', recordId: sus(1), decision: 'price_move' } }, cl(5, 50)], end: { dividends: 0, shares: SH } },
+  // … and a 3:2 chosen on the conflict applies once while the founder's own ruling stays `refused` (it was marked `applied`
+  // with her 2:1 never applied).
+  { seed: 'AR3-RF-2-held-vendor-row-then-founder-split-three-for-two', steps: [cl(0, 100), cl(1, 50), cl(2, 50, [sp(1, '3/2')], true), splitRuling(2), cl(3, 50),
+    conflictRuling(splitId, 'payload', { ratio: 1.5 }), cl(4, 50),
+    at((idea) => expect(rulingOf(idea, 'suspicion')?.outcome, 'never "applied"').toBe('refused'))], end: { dividends: 0, shares: SH15 } },
+  // AR3-RF-3 (refuter F3; the soak's class SOAK-R3-1): the feed's 2:1 at S1 applied; a second halving; the founder's 2:1 for
+  // it; the vendor then lists 2:1 dated S2, a possible re-date of the applied one — the founder's split is refused.
+  { seed: 'AR3-RF-3-founder-split-under-a-vendor-redate', steps: [cl(0, 100), cl(1, 50, [sp(1, '2/1')]), cl(2, 25),
+    { kind: 'ruleExact', body: { kind: 'suspicion', recordId: sus(2), decision: 'split', ratio: 2 } }, cl(3, 25, [sp(2, '2/1')]),
+    at((idea) => expect(rulingOf(idea, 'suspicion')?.refusedBecause).toBe('possible_redate'))], end: { dividends: 0, shares: SH2 } },
   // R3-2: a halving seen across an uncovered close, the founder's 2:1 for it held through another, then the vendor's own
   // 2:1 inside the gap explains it first (the founder's goes moot) and a 3:1 dated later is applied AT THAT CLOSE.
   { seed: 'SOAK-R3-2-moot-founder-split-holds-nothing', steps: [cl(0, 100), cl(1, 100, [], true), cl(2, 50),
