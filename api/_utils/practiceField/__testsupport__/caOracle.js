@@ -527,7 +527,10 @@ export class EntitlementOracle {
     const unanswered = (id) => (this.inputs.marks.get(id) || []).filter((m) => {
       if (m.k > at || settledFirst(m) || (m.how === 'redate' && this.inputs.carvedOut(l, m))) return false;
       const others = (m.how === 'redate' || m.how === 'same_date') ? [...new Set((m.via?.sides || []).map(([s]) => s).filter((s) => s !== id))] : [];
-      return !(ruledBy(id, firstShown(id, m)) || (others.length > 0 && others.every((x) => ruledBy(x))));
+      // (Third refuter O-4: the OTHER id's ruling answers the pairing only if it was made after the pairing first showed —
+      // a ruling made before it, the founder's own split among them, never saw it.)
+      const since = firstShown(id, m);
+      return !(ruledBy(id, since) || (others.length > 0 && others.every((x) => ruledBy(x, since))));
     });
     // L-2 ① and ②: the id itself.
     for (const m of unanswered(a.actionId)) {

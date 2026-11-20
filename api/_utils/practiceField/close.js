@@ -178,7 +178,8 @@ function coverageAfterClose(prior, next, { date, observed, coverage, renames }) 
  * the sale — an undated one: the whole holding, from the day after the entry), is a doubt about what the holding was owed
  * that STICKS (`closedCoverageDoubts: { SYM: { dates: [{ date, seenOn }], through } }`); a later session that lists the
  * symbol cleanly says nothing about that date. It clears only when a backfill with a clean parse report (`backfills`, the
- * successful document read in the close's transaction) covers the date through the sale. Unchanged: the same ledger. Pure.
+ * successful document read in the close's transaction), fetched after the doubt was first seen, covers the date through the
+ * sale. Unchanged: the same ledger. Pure.
  */
 export function withClosedCoverageDoubts(ledger, closed, { date, parseReport, backfills = new Map() }) {
   const prior = ledger?.closedCoverageDoubts || {};
@@ -192,7 +193,10 @@ export function withClosedCoverageDoubts(ledger, closed, { date, parseReport, ba
     const kept = [...(prior[sym]?.dates || [])];
     for (const d of fresh) if (!kept.some((x) => x.date === d)) kept.push({ date: d, seenOn: date });
     const bf = backfills.get(sym) ?? null;
-    const left = kept.filter((x) => !(bf !== null && bf.from <= x.date && bf.to >= c.through)).sort((a, b) => a.date.localeCompare(b.date));
+    // (Third refuter F-1: only a backfill fetched AFTER the doubt was first seen answers it — its `to`, the session it was
+    // fetched through, later than the doubt's `seenOn`. A clean document stored before the rejection never saw that row:
+    // it cleared a later doubt while the vendor still listed the row malformed, and the approval posted.)
+    const left = kept.filter((x) => !(bf !== null && bf.from <= x.date && bf.to >= c.through && (typeof x.seenOn !== 'string' || bf.to > x.seenOn))).sort((a, b) => a.date.localeCompare(b.date));
     if (left.length > 0) nextDoubts[sym] = { dates: left, through: c.through };
   }
   if (stableStringify(nextDoubts) === stableStringify(prior)) return ledger;

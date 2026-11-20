@@ -26,12 +26,20 @@
 //   P-4  R-3 through the daily layer's lookahead: a row dated after the close was not screened.
 //   O-1, O-2, O-3  I-7's L-2 at posting read no share-basis (③) or coverage (④) fact, and a partner's ruling ignored ledgers.
 // Those rows failed at c569f281, and pass now.
+//
+// THE THIRD REFUTER (a read-only snapshot of 05aa1200, the diff of the second refuter's fixes) found no money moved without
+// authority on that diff, and:
+//   F-1  a clean backfill stored BEFORE a sold holding's rejection cleared that later doubt (unchanged code; I-7's new ④
+//        caught it): the approval posted while the vendor still listed the row malformed.
+//   O-4  the oracle let a ruling made before a pairing showed — the founder's own split among them — answer it.
+// Those rows failed at 05aa1200, and pass now.
 
 import { describe, it, expect } from 'vitest';
 import { run, installSequenceHooks, S } from './__testsupport__/caSequences.js';
 import { InputOracle, EntitlementOracle } from './__testsupport__/caOracle.js';
 import { parseDividendsPayload, parseSplitsPayload } from '../mandateCorporateActions.js';
-import { backfillNeeds } from './caBackfill.js';
+import { backfillNeeds, ensureCoverageBackfills } from './caBackfill.js';
+import { fetchCorporateActionsEODHD } from '../mandateUniverseSnapshot.js';
 import { closeIdeaBook } from './close.js';
 import {
   seedBook, admitAndEnter, contractOf, getIdea, getRow, closeOn, windowAt, founderRules, getBook, storeCloseSnapshot, storeParseReport, closeNowOf, CLEAN_PARSE_ENTRY,
@@ -363,14 +371,17 @@ describe('O — the oracle: I-7 checks L-2 at posting, from the inputs alone', (
     inputs.ruling(lateBody('idea', D(1)), { status: 200 }, 'a1', 5);
     expect(() => e.checkAuthority(posting(S[5]), 5, 'unit'), 'posted before the pairing: L-2 did not refuse it').not.toThrow();
     expect(() => e.checkAuthority(posting(S[6]), 6, 'unit')).toThrow(/I-7 \(L-2 at posting\) ledger cash_dividend_AAPL_/);
-    inputs.ruling({ kind: 'conflict', recordId: D(2), decision: 'none' }, { status: 200 }, 'r2', 6);
-    expect(() => e.checkAuthority(posting(S[6]), 6, 'unit'), 'D3 still unanswered').toThrow(/L-2 at posting/);
-    inputs.ruling({ kind: 'conflict', recordId: D(3), decision: 'none' }, { status: 409 }, 'r3x', 6);
-    expect(() => e.checkAuthority(posting(S[6]), 6, 'unit'), 'a refused ruling answers nothing').toThrow(/L-2 at posting/);
-    inputs.ruling({ kind: 'conflict', recordId: D(3), decision: 'none' }, { status: 200 }, 'r3', 7);
-    expect(() => e.checkAuthority(posting(S[6]), 6, 'unit'), 'a ruling applied after the posting close is too late').toThrow(/L-2 at posting/);
-    inputs.ruling({ kind: 'conflict', recordId: D(3), decision: 'none' }, { status: 200 }, 'r3b', 6);
-    expect(() => e.checkAuthority(posting(S[6]), 6, 'unit')).not.toThrow();
+    // (The founder answers the rows of S6 after seeing them: rulings applied at S7, and the posting at S7.)
+    inputs.ruling({ kind: 'conflict', recordId: D(2), decision: 'none' }, { status: 200 }, 'r2', 7);
+    expect(() => e.checkAuthority(posting(S[7]), 7, 'unit'), 'D3 still unanswered').toThrow(/L-2 at posting/);
+    inputs.ruling({ kind: 'conflict', recordId: D(3), decision: 'none' }, { status: 409 }, 'r3x', 7);
+    expect(() => e.checkAuthority(posting(S[7]), 7, 'unit'), 'a refused ruling answers nothing').toThrow(/L-2 at posting/);
+    inputs.ruling({ kind: 'conflict', recordId: D(3), decision: 'none' }, { status: 200 }, 'r3', 8);
+    expect(() => e.checkAuthority(posting(S[7]), 7, 'unit'), 'a ruling applied after the posting close is too late').toThrow(/L-2 at posting/);
+    inputs.ruling({ kind: 'conflict', recordId: D(3), decision: 'none' }, { status: 200 }, 'r3c', 6);
+    expect(() => e.checkAuthority(posting(S[7]), 7, 'unit'), 'a ruling made before the pairing showed (third refuter O-4) answers nothing').toThrow(/L-2 at posting/);
+    inputs.ruling({ kind: 'conflict', recordId: D(3), decision: 'none' }, { status: 200 }, 'r3b', 7);
+    expect(() => e.checkAuthority(posting(S[7]), 7, 'unit')).not.toThrow();
     expect(e.refusalChecks).toBeGreaterThan(0);
   });
 
@@ -386,9 +397,11 @@ describe('O — the oracle: I-7 checks L-2 at posting, from the inputs alone', (
     const idea = { ledger: { corporateActionReceipts: [], adjustments: [{ kind: 'late_basis', actionId: D(2), amountUsd: 24.99, amountPerShare: 1, postedOn: S[5] }] } };
     inputs.ruling(lateBody('idea', D(2)), { status: 200 }, 'a1', 5);
     expect(() => e.checkAuthority(idea, 5, 'unit'), 'the founder\'s ruling of S3 did not see the rows of S5').toThrow(/L-2 at posting\) ledger cash_dividend_AAPL_2026-11-18/);
-    inputs.ruling({ kind: 'conflict', recordId: D(4), decision: 'none' }, { status: 200 }, 'r4', 5);
-    inputs.ruling({ kind: 'conflict', recordId: D(5), decision: 'none' }, { status: 200 }, 'r5', 5);
-    expect(() => e.checkAuthority(idea, 5, 'unit')).not.toThrow();
+    // (The founder answers the rows of S5 after seeing them; the posting at S6 then meets no refusal.)
+    inputs.ruling({ kind: 'conflict', recordId: D(4), decision: 'none' }, { status: 200 }, 'r4', 6);
+    inputs.ruling({ kind: 'conflict', recordId: D(5), decision: 'none' }, { status: 200 }, 'r5', 6);
+    const later = { ledger: { corporateActionReceipts: [], adjustments: [{ kind: 'late_basis', actionId: D(2), amountUsd: 24.99, amountPerShare: 1, postedOn: S[6] }] } };
+    expect(() => e.checkAuthority(later, 6, 'unit')).not.toThrow();
   });
 
   it('through the S-6 harness, held: a ruled dividend\'s approved late_basis, refused while two new rows pair with each other, is excused by I-6 (the wider pairing) — and posts once they are answered', async () => {
@@ -644,11 +657,11 @@ describe('O-1 to O-3 — I-7\'s L-2 at posting reads ③, ④ and the ledgers a 
     inputs.close(5, [div(1, 1)]);
     inputs.close(6, [div(2, 1)]);
     inputs.ruling(lateBody('idea', D(1)), { status: 200 }, 'a1', 6);
-    inputs.ruling({ kind: 'conflict', recordId: D(2), decision: 'none' }, { status: 200 }, 'r2', 6, ['comparisonLedger']);
-    const idea = { ledger: { corporateActionReceipts: [], adjustments: [{ kind: 'late_entitlement', actionId: D(1), amountUsd: 99.97, amountPerShare: 1, postedOn: S[6] }] } };
-    expect(() => e.checkAuthority(idea, 6, 'unit')).toThrow(/L-2 at posting/);
-    inputs.ruling({ kind: 'conflict', recordId: D(2), decision: 'none' }, { status: 200 }, 'r2b', 6, ['ledger']);
-    expect(() => e.checkAuthority(idea, 6, 'unit')).not.toThrow();
+    inputs.ruling({ kind: 'conflict', recordId: D(2), decision: 'none' }, { status: 200 }, 'r2', 7, ['comparisonLedger']);
+    const idea = { ledger: { corporateActionReceipts: [], adjustments: [{ kind: 'late_entitlement', actionId: D(1), amountUsd: 99.97, amountPerShare: 1, postedOn: S[7] }] } };
+    expect(() => e.checkAuthority(idea, 7, 'unit')).toThrow(/L-2 at posting/);
+    inputs.ruling({ kind: 'conflict', recordId: D(2), decision: 'none' }, { status: 200 }, 'r2b', 7, ['ledger']);
+    expect(() => e.checkAuthority(idea, 7, 'unit')).not.toThrow();
   });
 });
 
@@ -671,5 +684,104 @@ describe('a share-basis row kept outside the sold holding that pairs with one ap
     await closeAt(c, 8, p, [spl(6, '4/5')]);
     await closeAt(c, 9, p);
     expect(postedFull(c)).toEqual([['late_basis', D(3), -19.99, S[8]]]);
+  });
+});
+
+// ── THE THIRD REFUTER (05aa1200) ──────────────────────────────────────────────────────────────────────────────────────
+describe('F-1 — a sold holding\'s coverage doubt clears only by a backfill fetched after it was seen', () => {
+  it('the idea\'s own pipeline: a clean backfill clears doubt #1; a later rejection is doubt #2; the refetch meets the bad row, the stale document does not clear it; the vendor corrects it, and the approval posts (red at 05aa1200: $99.97 posted at S8)', async () => {
+    const c = await opened({ comparison: xlk });
+    const p = await soldAtWith(c, 3);
+    let malformed = false; // the vendor lists the split dated S3 malformed while this holds
+    const fetchImpl = async (url) => {
+      const u = new URL(url);
+      const leg = u.pathname.includes('/splits/') ? 'splits' : 'dividends';
+      const body = leg === 'splits' ? (malformed ? [{ date: S[3], split: '5:4' }] : []) : [{ date: S[2], unadjustedValue: 1 }];
+      return { ok: true, status: 200, json: async () => body };
+    };
+    const fetchCorporateActions = (sym, opts = {}) => fetchCorporateActionsEODHD(sym, { ...opts, apiKey: 'fixture-vendor-key', fetchImpl: opts.fetchImpl ?? fetchImpl });
+    const closeWith = async (i, report = null, rows = []) => {
+      await ensureCoverageBackfills(c.db, c.bookRef, { through: S[i], now: closeNowOf(S[i]), fetchCorporateActions, fetchImpl });
+      await storeCloseSnapshot(c.db, S[i], q(p, rows));
+      if (report) storeParseReport(c.db, S[i], 'AAPL', report);
+      await closeIdeaBook(c.db, c.bookRef, { date: S[i], now: closeNowOf(S[i]) });
+    };
+    await closeWith(4, rejectedOn(S[1]), [div(2, 1)]);
+    expect(ideaOf(c).ledger.closedCoverageDoubts?.AAPL?.dates).toEqual([{ date: S[1], seenOn: S[4] }]);
+    await closeWith(5);
+    expect(ideaOf(c).ledger.closedCoverageDoubts, 'cleared by the clean backfill fetched for it at S5').toBeUndefined();
+    expect(proposalOf(c, D(2))).toMatchObject({ kind: 'late_entitlement', status: 'open', blockers: [] });
+    malformed = true;
+    await closeWith(6, rejectedOn(S[3]));
+    await closeWith(7);
+    expect(ideaOf(c).ledger.closedCoverageDoubts?.AAPL?.dates, 'the stored S1..S5 document never saw the S3 row').toEqual([{ date: S[3], seenOn: S[6] }]);
+    expect(await ask(c, lateBody('idea', D(2)), 'a1')).toMatchObject({ status: 409, body: { error: 'late_date_uncovered' } });
+    await closeWith(8);
+    expect(postedFull(c)).toEqual([]);
+    expect(rowAt(c, 8).fullQuality).toBe(false);
+    malformed = false;
+    await closeWith(9);
+    expect(ideaOf(c).ledger.closedCoverageDoubts, 'a clean backfill fetched after the doubt clears it').toBeUndefined();
+    expect((await ask(c, lateBody('idea', D(2)), 'a2')).status).toBe(200);
+    await closeWith(10);
+    expect(postedFull(c)).toEqual([['late_entitlement', D(2), 99.97, S[10]]]);
+  });
+
+  it('a clean document stored before the rejection (another idea\'s or an earlier need\'s) does not clear it (red at 05aa1200)', async () => {
+    const c = await opened({ comparison: xlk });
+    const p = await soldAtWith(c, 3);
+    c.db._store.set('practiceFieldCaBackfill/AAPL', backfillOf(S[0], S[4], [div(2, 1)]));
+    await closeAt(c, 4, p, [div(2, 1)]);
+    await storeCloseSnapshot(c.db, S[5], q(p));
+    storeParseReport(c.db, S[5], 'AAPL', rejectedOn(S[1]));
+    await closeIdeaBook(c.db, c.bookRef, { date: S[5], now: closeNowOf(S[5]) });
+    await closeAt(c, 6, p);
+    expect(ideaOf(c).ledger.closedCoverageDoubts?.AAPL?.dates).toEqual([{ date: S[1], seenOn: S[5] }]);
+    expect(await ask(c, lateBody('idea', D(2)), 'a1')).toMatchObject({ status: 409, body: { error: 'late_date_uncovered' } });
+    await closeAt(c, 7, p);
+    expect(postedFull(c)).toEqual([]);
+  });
+
+  it('through the S-6 harness: a catch-up before the rejection, then an approval — refused (red at 05aa1200: I-7 L-2 ④ at posting)', async () => {
+    await run({
+      seed: 'refuter3-F-1', comparison: xlk,
+      steps: [hc(0, 100), hc(1, 100), hc(2, 94, [], { belowLine: true }), { kind: 'window', i: 3, price: 94 }, hc(3, 94),
+        { kind: 'catchup', i: 4, price: 94, rows: [div(2, 1)], backfill: [div(2, 1)] },
+        hc(5, 94, [], { parse: { reject: 1 } }),
+        hc(6, 94),
+        { kind: 'lateExact', body: lateBody('idea', D(2)), status: 409 },
+        hc(7, 94),
+        { kind: 'expectIdea', fn: (idea) => expect((idea.ledger.adjustments || []).filter((a) => !a.held)).toEqual([]) }],
+    });
+  });
+});
+
+describe('O-4 — the oracle: a ruling made before a pairing showed never answers it', () => {
+  it('a vendor split paired only with the founder\'s pending split: an approval-only posting is refused by I-7 (L-2 ③) (red at 05aa1200: accepted)', () => {
+    const inputs = new InputOracle(S);
+    const e = new EntitlementOracle(S, inputs);
+    inputs.ruling({ kind: 'suspicion', recordId: `suspected_split_AAPL_${S[3]}`, decision: 'split', ratio: 2 }, { status: 200 }, 's1', 4);
+    const F = `split_AAPL_${S[3]}`;
+    const pend = new Map([[F, { ratio: 2, since: S[2], suspectedOn: S[3], at: 4 }]]);
+    inputs.close(4, [div(1, 1)], { pendingSplits: pend });
+    inputs.close(5, [spl(5, '2/1')], { pendingSplits: pend });
+    expect((inputs.marks.get(`split_AAPL_${S[5]}`) || []).map((m) => m.how)).toEqual(['redate']);
+    inputs.ruling(lateBody('idea', D(1)), { status: 200 }, 'a1', 6);
+    inputs.close(6, []);
+    const idea = { ledger: { corporateActionReceipts: [], adjustments: [{ kind: 'late_entitlement', ticker: 'AAPL', actionId: D(1), amountUsd: 99.97, amountPerShare: 1, postedOn: S[6] }] } };
+    expect(() => e.checkAuthority(idea, 6, 'unit')).toThrow(/L-2 ③ at posting/);
+  });
+
+  it('the posting id pairs with an id a conflict ruling settled before the pairing showed: refused (red at 05aa1200: accepted)', () => {
+    const inputs = new InputOracle(S);
+    const e = new EntitlementOracle(S, inputs);
+    inputs.close(3, [div(3, 1), div(3, 2)]);
+    inputs.ruling({ kind: 'conflict', recordId: D(3), decision: 'payload', payload: { amount: 1 } }, { status: 200 }, 'r3', 4);
+    inputs.close(4, []);
+    inputs.close(5, [div(1, 1)]);
+    inputs.ruling(lateBody('idea', D(1)), { status: 200 }, 'a1', 6);
+    inputs.close(6, []);
+    const idea = { ledger: { corporateActionReceipts: [], adjustments: [{ kind: 'late_entitlement', ticker: 'AAPL', actionId: D(1), amountUsd: 99.97, amountPerShare: 1, postedOn: S[6] }] } };
+    expect(() => e.checkAuthority(idea, 6, 'unit')).toThrow(/L-2 at posting/);
   });
 });
