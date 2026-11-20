@@ -1114,6 +1114,21 @@ export const FIXED_LATE = [
     at((idea) => { expect(idea.caCoverageGaps?.AAPL, 'S[1] is uncovered').toMatchObject({ reason: 'ca_parse_incomplete' }); expect(idea.ledger.holdings.AAPL.lastMark).not.toBe(80); }),
     lc(2, 80, [sp(1, '5/4'), d(2, 1)]), lc(3, 80, [sp(1, '5/4'), d(2, 1)])],
     end: late((idea) => { expect(idea.ledger.holdings.AAPL.shares).toBe(124.96251); expect(idea.ledger.dividendsUsd).toBe(124.96); }) },
+  // The fix round's reviewer cases (each failed at c08944d6). AR4-A-1 + A-4: after the sale, a split listed two ways and a
+  // dividend dated after it in ONE close — the dividend waits on the conflict; the founder's 5:4 enters the history and the
+  // dividend is paid on it, once.
+  { seed: 'review-AR4-A-1', comparison: { type: 'sector_fund', symbols: ['XLK'] }, steps: [lc(0, 100), lc(1, 100, [], { belowLine: true }), lwin(2, 100), lc(2, 94),
+    lc(3, 94, [sp(1, '5/4'), sp(1, '3/2'), d(2, 1)]),
+    at((idea) => { expect(idea.ledger.adjustments || [], 'nothing paid while the split is ambiguous').toEqual([]); }),
+    { kind: 'ruleExact', body: { kind: 'conflict', recordId: `split_AAPL_${S[1]}`, decision: 'payload', payload: { ratio: 1.25 } } },
+    lc(4, 94, [sp(1, '5/4'), sp(1, '3/2'), d(2, 1)]), lc(5, 94)],
+    end: late((idea) => { expect(idea.ledger.dividendsUsd).toBe(124.96); expect((idea.founderRulings || []).every((r) => r.appliedOn != null && r.outcome !== 'moot')).toBe(true); }) },
+  // AR4-C-1: 5:4 settled, a 2:1 dated later applied, the 5:4 corrected to 3:2, then a $1 dated between them listed late —
+  // paid on the corrected count (149.955012), as the other arrival order pays.
+  { seed: 'review-AR4-C-1', steps: [lc(0, 100), lc(1, 80, [sp(1, '5/4')]), lc(2, 80), lc(3, 40, [sp(3, '2/1')]), lc(4, 33.33, [sp(1, '3/2')]),
+    { kind: 'ruleExact', body: { kind: 'conflict', recordId: `split_AAPL_${S[1]}`, decision: 'payload', payload: { ratio: 1.5 } } },
+    lc(5, 33.33), lc(6, 33.33, [d(2, 1)]), lc(7, 33.33, [d(2, 1)])],
+    end: late((idea) => { for (const f of ['ledger', 'comparisonLedger']) expect(idea[f].dividendsUsd, f).toBe(149.96); }) },
 ];
 
 /** T1a-2b-4: the late soak's findings, kept as fixed seeds of the late generator (each failed at the commit before its fix):

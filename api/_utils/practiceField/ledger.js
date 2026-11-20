@@ -647,7 +647,7 @@ function kindsOf(record, rows, add) {
  * what the founder has not seen. Pure.
  * @returns {Map<string, { keys: Set<string>, ruling: string|null, ruled: object|string }>}
  */
-function founderSettledIds(ledger) {
+export function founderSettledIds(ledger) {
   const out = new Map();
   const receipts = ledger?.corporateActionReceipts || [];
   // T1a-2b-4 (Astra T2D-05; FQ-11): AN ID THE FEED SETTLED — applied with one payload, never ambiguous — is covered by that
@@ -690,6 +690,46 @@ function founderSettledIds(ledger) {
     out.set(r.actionId, { keys, ruling: ruling.requestKey ?? null, ruled });
   }
   return out;
+}
+
+/**
+ * T1a-2b-4: THE FOUNDER'S RATIO CORRECTIONS of a ledger's symbol — actionId → the ratio in force (a posted share-basis
+ * `ruled_correction` adjustment, adjustments.js correctShareBasisOn). Empty on a ledger no correction touched. Pure.
+ */
+export function ratioCorrectionsOf(ledger, symbol, { postedOnOrBefore = null } = {}) {
+  const sym = upper(symbol);
+  const out = new Map();
+  for (const a of ledger?.adjustments || []) {
+    if (!a || a.held === true || a.kind !== 'ruled_correction' || !SHARE_BASIS_TYPES.has(a.type) || upper(a.ticker) !== sym || !(Number(a.ratio) > 0)) continue;
+    if (postedOnOrBefore !== null && !(typeof a.postedOn === 'string' && a.postedOn <= postedOnOrBefore)) continue;
+    out.set(a.actionId, Number(a.ratio));
+  }
+  return out;
+}
+
+/**
+ * THE SHARE-BASIS CHAIN of a ledger's symbol, in the order applied: each event's ratio — the founder's correction of it,
+ * if one is in force — and the count before and after it, REPLAYED from the first receipt's `sharesBefore`, rounding at
+ * each step as the applier rounds (so, with no correction, the replay reproduces the recorded counts exactly). The one
+ * chain every reader of a corrected count reads (review AR4-C-1: the late-dividend path read the receipts' recorded
+ * counts, which a correction never rewrites). Pure.
+ * @returns {{ events: Array<{ actionId, effectiveDate, ratio, before, after, index, historyOnly }>, end: number|null }}
+ */
+export function shareBasisChainOf(ledger, symbol) {
+  const sym = upper(symbol);
+  const corrected = ratioCorrectionsOf(ledger, sym);
+  const events = [];
+  let count = null;
+  for (const [index, r] of (ledger?.corporateActionReceipts || []).entries()) {
+    if (r?.applied !== true || !SHARE_BASIS_TYPES.has(r.type) || upper(r.ticker) !== sym) continue;
+    if (count === null) count = Number(r.sharesBefore);
+    const ratio = corrected.get(r.actionId) ?? Number(r.ratio);
+    const before = count;
+    const after = roundShares(before * ratio);
+    count = after;
+    events.push({ actionId: r.actionId, effectiveDate: r.effectiveDate, ratio, before, after, index, historyOnly: r.historyOnly === true });
+  }
+  return { events, end: count };
 }
 
 /** The feed's rows of `id` listed for a symbol this ledger holds, due on or before `date` (never a founder's action). */
@@ -918,11 +958,21 @@ function founderSplitRowsOf(ledger, actionsBySymbol, { date, settled }) {
 export function residualMoveOf(ledger, symbol, s) {
   const sym = upper(symbol);
   let move = Number(s?.ratio);
+  // (T1a-2b-4, review AR4-C-5: a row the founder's correction re-ratioed explains the move by the ratio in force — and a
+  // row the record already counted, re-ratioed SINCE it was raised, explains the difference: ×(ratio now / ratio then).)
+  const corrected = ratioCorrectionsOf(ledger, sym);
+  const correctedThen = ratioCorrectionsOf(ledger, sym, { postedOnOrBefore: s?.suspectedOn ?? null });
   for (const r of ledger?.corporateActionReceipts || []) {
     if (r?.applied !== true || !SHARE_BASIS_TYPES.has(r.type) || upper(r.ticker) !== sym) continue;
-    if (!(typeof r.appliedOn === 'string' && r.appliedOn > s.suspectedOn)) continue;
     if (typeof r.effectiveDate !== 'string' || r.effectiveDate > s.suspectedOn || (typeof s.since === 'string' && r.effectiveDate <= s.since)) continue;
-    move *= Number(r.ratio);
+    const now = corrected.get(r.actionId) ?? Number(r.ratio);
+    if (!(typeof r.appliedOn === 'string' && r.appliedOn > s.suspectedOn)) {
+      // Counted in the record already (applied by its raise); a correction since moves it by the difference only.
+      const then = correctedThen.get(r.actionId) ?? Number(r.ratio);
+      if (now !== then && then > 0) move *= now / then;
+      continue;
+    }
+    move *= now;
   }
   return move;
 }
@@ -1511,14 +1561,17 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
       const basis = (next.corporateActionReceipts || [])
         .filter((r) => r.applied === true && SHARE_BASIS_TYPES.has(r.type) && upper(r.ticker) === sym && typeof r.effectiveDate === 'string');
       const first = basis.findIndex((r) => r.effectiveDate > action.effectiveDate);
+      // (T1a-2b-4, review AR4-C-1: with a founder's ratio correction in force for the symbol, the counts and ratios are
+      // the corrected chain's — the receipts keep what was applied then, which the correction does not rewrite.)
+      const corrected = ratioCorrectionsOf(next, sym).size > 0 ? new Map(shareBasisChainOf(next, sym).events.map((e) => [e.actionId, e])) : null;
       if (first >= 0) {
-        let count = Number(basis[first].sharesBefore);
+        let count = corrected ? Number(corrected.get(basis[first].actionId)?.before) : Number(basis[first].sharesBefore);
         if (!(count > 0) || !Number.isFinite(count)) { hold(sym, action, [], 'count_on_ex_date_unknown'); continue; }
         // A share-basis action dated ON OR BEFORE the ex-date but applied after that one (it was listed late) belongs
         // in the ex-date count: applied to it here, in date order, rounded at each step as the applier rounds (review C3).
         const earlierLate = basis.slice(first + 1).filter((r) => r.effectiveDate <= action.effectiveDate).sort(byDatePhaseId);
         for (const r of earlierLate) {
-          const ratio = Number(r.ratio);
+          const ratio = corrected ? Number(corrected.get(r.actionId)?.ratio) : Number(r.ratio);
           if (!(ratio > 0) || !Number.isFinite(ratio)) { count = NaN; break; }
           count = roundShares(count * ratio);
         }

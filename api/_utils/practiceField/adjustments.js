@@ -48,7 +48,7 @@ import { canonicalContentHash } from '../canonicalHash.js';
 import { toCents, fromCents, addUsd } from './money.js';
 import {
   cloneLedger, actionIdOf, SHARE_BASIS_TYPES, withinSessions, REDATE_WINDOW_SESSIONS, actionPayloadOf, recordedPayloadsOf,
-  CONFLICTING_ACTION, POSSIBLE_REDATE, REVISED_AFTER_RULING, NOT_ENTITLED,
+  CONFLICTING_ACTION, POSSIBLE_REDATE, REVISED_AFTER_RULING, NOT_ENTITLED, founderSettledIds, shareBasisChainOf,
 } from './ledger.js';
 
 export const ADJUSTMENT_KIND = Object.freeze({ LATE_ENTITLEMENT: 'late_entitlement', LATE_BASIS: 'late_basis', RULED_CORRECTION: 'ruled_correction' });
@@ -89,21 +89,9 @@ export function adjustmentCentsOnLedger(ledger) {
  * @returns {{ events: Array<{ actionId, effectiveDate, ratio, before, after, index, historyOnly }>, end: number|null }}
  */
 export function shareBasisChain(ledger, symbol) {
-  const sym = upper(symbol);
-  const corrected = new Map();
-  for (const a of postedAdjustments(ledger)) if (a.kind === ADJUSTMENT_KIND.RULED_CORRECTION && SHARE_BASIS_TYPES.has(a.type) && upper(a.ticker) === sym && Number(a.ratio) > 0) corrected.set(a.actionId, Number(a.ratio));
-  const events = [];
-  let count = null;
-  for (const [index, r] of (ledger?.corporateActionReceipts || []).entries()) {
-    if (r?.applied !== true || !SHARE_BASIS_TYPES.has(r.type) || upper(r.ticker) !== sym) continue;
-    if (count === null) count = Number(r.sharesBefore);
-    const ratio = corrected.get(r.actionId) ?? Number(r.ratio);
-    const before = count;
-    const after = roundShares(before * ratio);
-    count = after;
-    events.push({ actionId: r.actionId, effectiveDate: r.effectiveDate, ratio, before, after, index, historyOnly: r.historyOnly === true });
-  }
-  return { events, end: count };
+  // (The one corrected chain — ledger.js shareBasisChainOf — which the C-16 path and the suspicion's residual read too:
+  // review AR4-C-1, AR4-C-5.)
+  return shareBasisChainOf(ledger, symbol);
 }
 
 /**
@@ -148,6 +136,24 @@ export function closedHoldingsOf(ledger, { entrySession = null, closedOn = null 
     for (const [sym, h] of Object.entries(ledger?.holdings || {})) out.set(upper(sym), { openedAt: h?.openedAt ?? entrySession, through: closedOn, shares: Number(h?.shares), paper: true });
   }
   return out;
+}
+
+/**
+ * THE HOLDING A DIVIDEND'S TICKER LEFT THE LEDGER BY OTHER THAN A SALE (review AR4-C-2): a cash delisting (its receipt's
+ * `shares`), or a ticker change (the count, on the ex-date, of the holding it became). Null when neither. Pure.
+ */
+function leftByActionOf(ledger, symbol, exDate) {
+  const sym = upper(symbol);
+  const receipts = ledger?.corporateActionReceipts || [];
+  const delisted = receipts.find((r) => r?.applied === true && upper(r.ticker) === sym && r.cashPerShare != null && Number(r.shares) > 0);
+  if (delisted) return { shares: Number(delisted.shares), via: delisted.actionId };
+  const renamed = receipts.find((r) => r?.applied === true && r.type === 'ticker_change' && upper(r.ticker) === sym && r.renamedTo != null);
+  if (!renamed) return null;
+  const to = upper(renamed.renamedTo);
+  if (to === sym) return null;
+  const held = ledger?.holdings?.[to] ?? null;
+  const counted = countOnExDate(ledger, to, exDate, { held, closed: held ? null : leftByActionOf(ledger, to, exDate) });
+  return Number(counted.count) > 0 ? { shares: counted.count, via: renamed.actionId } : null;
 }
 
 /** The dividends a ledger has been PAID, by id: its applied receipt (or late entitlement), the amount in force, the
@@ -249,6 +255,20 @@ export function planLedgerAdjustments(ledger, ctx) {
     return base;
   };
 
+  // AN OPEN SHARE-BASIS AMBIGUITY OF THE SYMBOL ON THIS LEDGER — a record this very call made included — holds every
+  // count-dependent row of it dated on or after it, as the hold set does for a held symbol (review AR4-A-1: the caller's
+  // `doubtOn` is decided before the plan runs, so a conflict or a possible re-date recorded on a closed holding at this
+  // close did not hold a later-dated dividend of the same close, and it was paid on a count the founder had not settled).
+  // A row waiting on a doubt (`closedHeldRows`) of a share-basis type holds them too. An id a ruling settles at this close
+  // is the ruling's, never a doubt.
+  const shareDoubtOn = (sym, d, selfId = null) => {
+    const l = cur();
+    const waiting = (l.closedHeldRows || []).some((r) => SHARE_BASIS_TYPES.has(r.type) && upper(r.ticker) === sym && r.actionId !== selfId && isDate(r.effectiveDate) && r.effectiveDate <= d);
+    if (waiting) return true;
+    return (l.corporateActionReceipts || []).some((r) => SHARE_BASIS_TYPES.has(r?.type) && upper(r.ticker) === sym && r.actionId !== selfId
+      && !ruledIds?.has(r.actionId) && isDate(r.effectiveDate) && r.effectiveDate <= d && openRecordOf(l, r.actionId) !== null);
+  };
+
   // ── 1. CLOSED HOLDINGS (T2D-03; T2D-04 after a sale or a result): rows first listed after the ledger stopped holding the
   //       stock, dated while it held it.
   for (const [sym, c] of closed) {
@@ -269,7 +289,20 @@ export function planLedgerAdjustments(ledger, ctx) {
       byId.set(r.actionId, [{ type: r.type, ticker: sym, effectiveDate: r.effectiveDate, ...(r.ratio != null ? { ratio: r.ratio } : {}), ...(r.amount != null ? { amount: r.amount } : {}), source: r.source ?? null, actionId: r.actionId, fromHeld: true }]);
     }
     const dropHeld = (id) => { if (heldOf(id)) { const l = edit(); l.closedHeldRows = l.closedHeldRows.filter((r) => r.actionId !== id); if (l.closedHeldRows.length === 0) delete l.closedHeldRows; } };
-    for (const [id, group0] of [...byId].sort(([, a], [, b]) => byDatePhaseId(a[0], b[0]))) {
+    // REVISIONS FIRST (review AR4-C-3; the open path's T2D-D01 pre-pass, ledger.js): an id settled on this ledger, or one
+    // waiting with another payload, whose feed rows now show a payload it has not seen, is recorded BEFORE any row of
+    // another id is classified — so a moved row of the corrected payload, dated earlier and listed in the same close,
+    // meets that payload in the re-date pool instead of an empty one, and waits instead of being paid.
+    const sorted = [...byId].sort(([, a], [, b]) => byDatePhaseId(a[0], b[0]));
+    const revisionFirst = ([id, group0]) => {
+      const listedHere = group0.filter((a) => !a.fromHeld);
+      if (listedHere.length === 0) return false;
+      if (settledNow().has(id)) return true;
+      const held = heldOf(id);
+      return held !== null && listedHere.some((a) => !a.founderRuling && actionPayloadOf(a) !== actionPayloadOf(held));
+    };
+    const ordered = [...sorted.filter(revisionFirst), ...sorted.filter((x) => !revisionFirst(x))];
+    const handle = (id, group0) => {
       // (S-1 ②, for a closed holding: the feed now lists the id with a payload other than the one it waited with — a revision.)
       const held = heldOf(id);
       const listedHere = group0.filter((a) => !a.fromHeld);
@@ -285,7 +318,7 @@ export function planLedgerAdjustments(ledger, ctx) {
         out.recorded.push(rec);
         dropHeld(id);
         out.alerts.push(`PRACTICE_FIELD_CORPORATE_ACTION_AMBIGUOUS ${ideaId} ${ledgerKind} ${sym} ${id} — revision on a holding since closed (it waited with another payload): nothing is paid until the founder rules`);
-        continue;
+        return;
       }
       if (settledNow().has(id)) {
         dropHeld(id);
@@ -299,6 +332,8 @@ export function planLedgerAdjustments(ledger, ctx) {
         })();
         const seen = new Set([settledKey]);
         for (const x of cur().corporateActionReceipts || []) if (x?.actionId === id && x.reason === REVISED_AFTER_RULING) for (const p of x.rows || []) seen.add(actionPayloadOf(p));
+        // (FQ-5 on the closed path — review AR4-C-9: every payload a founder's ruling of the id covered, `seen` included.)
+        for (const k of founderSettledIds(cur()).get(id)?.keys || []) seen.add(k);
         for (const a of postedAdjustments(cur())) if (a.actionId === id && a.kind === ADJUSTMENT_KIND.RULED_CORRECTION) { for (const p of a.ruling?.seen || []) seen.add(actionPayloadOf(p)); seen.add(actionPayloadOf(a.payload || {})); }
         const fresh = group.filter((a) => !a.founderRuling && settledKey !== null && !seen.has(actionPayloadOf(a)));
         if (fresh.length > 0) {
@@ -313,7 +348,7 @@ export function planLedgerAdjustments(ledger, ctx) {
           }
           out.alerts.push(`PRACTICE_FIELD_CORPORATE_ACTION_AMBIGUOUS ${ideaId} ${ledgerKind} ${sym} ${id} — a correction of an action already settled on a holding since closed: only the founder's ruling applies it (resolve_hold, conflict)`);
         }
-        continue;
+        return;
       }
       if (!ruled) {
         // An OPEN record (rev 1): the id is ambiguous — it takes any payload it has not seen, and waits for the founder.
@@ -326,7 +361,7 @@ export function planLedgerAdjustments(ledger, ctx) {
             const l = edit();
             l.corporateActionReceipts = l.corporateActionReceipts.map((x) => (x === open ? { ...open, rows: [...recordedPayloadsOf(open), ...add], lastRevisedOn: date } : x));
           }
-          continue;
+          return;
         }
         // A CONFLICT (S-1 ①): listed two ways.
         if (keys.length > 1) {
@@ -337,7 +372,7 @@ export function planLedgerAdjustments(ledger, ctx) {
           out.recorded.push(rec);
           dropHeld(id);
           out.alerts.push(`PRACTICE_FIELD_CORPORATE_ACTION_AMBIGUOUS ${ideaId} ${ledgerKind} ${sym} ${id} — conflict on a holding since closed (${rowsAll.length} payloads): nothing is paid until the founder rules`);
-          continue;
+          return;
         }
         // A POSSIBLE RE-DATE (S-1 ③): the same payload under another id within the window.
         const key = keys[0];
@@ -362,24 +397,24 @@ export function planLedgerAdjustments(ledger, ctx) {
           l.corporateActionReceipts = [...l.corporateActionReceipts, rec];
           out.recorded.push(rec);
           out.alerts.push(`PRACTICE_FIELD_CORPORATE_ACTION_REDATE ${ideaId} ${ledgerKind} ${id} — the same ${first.type} as ${match.actionId}, under a moved date, on a holding since closed: not paid — the founder may apply it (resolve_hold, conflict)`);
-          continue;
+          return;
         }
       }
       const action = ruled ?? first;
-      if (doubtOn(sym, action.effectiveDate)) {
+      if (doubtOn(sym, action.effectiveDate) || shareDoubtOn(sym, action.effectiveDate, id)) {
         // Durable: the row waits on the closed holding (replayed at the first close without the doubt, revised if the feed
         // later lists it otherwise). A founder's action is re-supplied by its ruling: not kept here.
         if (!action.founderRuling && !held) {
           const l = edit();
           l.closedHeldRows = [...(l.closedHeldRows || []), { actionId: id, type: action.type, ticker: sym, effectiveDate: action.effectiveDate, ratio: action.ratio ?? null, amount: action.amount ?? null, source: action.source ?? null, heldOn: date, closedOn: c.through }];
         }
-        continue;
+        return;
       }
       dropHeld(id);
       if (SHARE_BASIS_TYPES.has(action.type)) {
         // A HISTORY-ONLY share-basis receipt: the stock is gone, but the ex-date count of a dividend dated after it changes.
         const ratio = Number(action.ratio);
-        if (!(ratio > 0) || !Number.isFinite(ratio)) continue;
+        if (!(ratio > 0) || !Number.isFinite(ratio)) return;
         const l = edit();
         const { end } = shareBasisChain(l, sym);
         const before = end ?? Number(c.shares);
@@ -393,13 +428,13 @@ export function planLedgerAdjustments(ledger, ctx) {
         l.corporateActionReceipts = [...l.corporateActionReceipts, receipt];
         l.appliedActionIds = [...l.appliedActionIds, id];
         out.historyOnly.push(receipt);
-        continue;
+        return;
       }
       // A LATE ENTITLEMENT (T2D-03): once, on the ex-date count.
       const amount = Number(action.amount);
-      if (!(amount > 0) || !Number.isFinite(amount)) continue;
+      if (!(amount > 0) || !Number.isFinite(amount)) return;
       const counted = countOnExDate(cur(), sym, action.effectiveDate, { closed: c });
-      if (!(counted.count > 0)) continue;
+      if (!(counted.count > 0)) return;
       const cents = toCents(roundUsd(counted.count * amount));
       const posted = post({
         kind: ADJUSTMENT_KIND.LATE_ENTITLEMENT, actionId: id, ticker: sym, type: 'cash_dividend', effectiveDate: action.effectiveDate,
@@ -408,7 +443,8 @@ export function planLedgerAdjustments(ledger, ctx) {
         amountPerShare: amount, amountCents: cents, payload: { amount }, ruling: action.founderRuling ?? null, trigger: ['listed_after_close'],
       });
       if (posted) edit().appliedActionIds = [...cur().appliedActionIds, id];
-    }
+    };
+    for (const [id, group0] of ordered) handle(id, group0);
   }
 
   // ── 2. THE RECOMPUTE (T2D-04, T2D-05): each paid dividend something late has touched.
@@ -421,9 +457,12 @@ export function planLedgerAdjustments(ledger, ctx) {
     const countCorrected = postedAdjustments(cur()).some((a) => a.kind === ADJUSTMENT_KIND.RULED_CORRECTION && SHARE_BASIS_TYPES.has(a.type) && upper(a.ticker) === sym && Number(a.seq) > d.index);
     const amountCorrection = corrections.get(d.actionId) ?? null;
     if (late.length === 0 && !countCorrected && !amountCorrection) continue;
-    if (doubtOn(sym, d.effectiveDate)) continue; // durable: re-examined at the next close
+    if (doubtOn(sym, d.effectiveDate) || shareDoubtOn(sym, d.effectiveDate)) continue; // durable: re-examined at the next close
     const held = cur().holdings?.[sym] ?? null;
-    const counted = countOnExDate(cur(), sym, d.effectiveDate, { held: held && !closed.has(sym) ? held : null, closed: closed.get(sym) ?? (held ? { shares: held.shares } : null) });
+    const counted = countOnExDate(cur(), sym, d.effectiveDate, { held: held && !closed.has(sym) ? held : null, closed: closed.get(sym) ?? (held ? { shares: held.shares } : leftByActionOf(cur(), sym, d.effectiveDate)) });
+    // (Review AR4-A-5: the key names WHAT the count was recomputed for — every late event and count correction behind it —
+    // so a count that returns to an earlier value under another set of events is a new correction, with its own document.)
+    const countFrom = [...late, ...postedAdjustments(cur()).filter((a) => a.kind === ADJUSTMENT_KIND.RULED_CORRECTION && SHARE_BASIS_TYPES.has(a.type) && upper(a.ticker) === sym && Number(a.seq) > d.index).map((a) => a.id)].sort();
     if (!(counted.count > 0)) continue;
     // (a) the count: the amount in force, on the ex-date count — late_basis.
     const basisCents = toCents(roundUsd(counted.count * d.amount));
@@ -432,7 +471,7 @@ export function planLedgerAdjustments(ledger, ctx) {
       const p = post({
         kind: ADJUSTMENT_KIND.LATE_BASIS, actionId: d.actionId, ticker: sym, type: 'cash_dividend', effectiveDate: d.effectiveDate,
         corrects: d.receipt ? { receipt: d.actionId, appliedOn: d.receipt.appliedOn ?? null } : { adjustment: d.actionId },
-        correction: `basis:${counted.count}:${d.amount}`,
+        correction: `basis:${counted.count}:${d.amount}:${countFrom.join('+')}`,
         entitledShares: counted.count, derivation: { from: counted.from, also: counted.also },
         amountPerShare: d.amount, amountCents: basisCents - received, receivedBeforeUsd: fromCents(received), entitledUsd: fromCents(basisCents),
         ruling: null, trigger: countCorrected && late.length === 0 ? ['ruled_count_correction'] : late,

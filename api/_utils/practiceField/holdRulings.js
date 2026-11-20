@@ -132,7 +132,9 @@ function ruledOutcomeOn(ledger, recordId) {
 function settledOutcomeOn(ledger, recordId) {
   let outcome = ruledOutcomeOn(ledger, recordId);
   if (outcome === null) {
-    const r = (ledger?.corporateActionReceipts || []).find((x) => x?.actionId === recordId && x.applied === true && x.historyOnly !== true);
+    // (A HISTORY-ONLY receipt too — review AR4-A-3 / AR4-C-6: on a holding since closed, the history-only split IS what the
+    // feed settled the id with; skipped, no outcome was in force and every answer to its revision was refused.)
+    const r = (ledger?.corporateActionReceipts || []).find((x) => x?.actionId === recordId && x.applied === true);
     if (r) outcome = payloadOf(r);
     else {
       const a = postedAdjustments(ledger).find((x) => x.actionId === recordId && x.kind === ADJUSTMENT_KIND.LATE_ENTITLEMENT);
@@ -142,6 +144,47 @@ function settledOutcomeOn(ledger, recordId) {
   if (outcome === null || outcome === 'none') return outcome;
   const corrections = postedAdjustments(ledger).filter((x) => x.actionId === recordId && x.kind === ADJUSTMENT_KIND.RULED_CORRECTION && x.payload);
   return corrections.length > 0 ? payloadOf(corrections[corrections.length - 1].payload) : outcome;
+}
+
+/** T1a-2b-4: was `recordId` settled on the ledger WITH its payload — an applied receipt (history-only included) or a late
+ *  entitlement — as opposed to declined (not entitled, or `none`)? Pure. */
+function movedOn(ledger, recordId) {
+  if ((ledger?.corporateActionReceipts || []).some((x) => x?.actionId === recordId && x.applied === true)) return true;
+  return postedAdjustments(ledger).some((x) => x.actionId === recordId && x.kind === ADJUSTMENT_KIND.LATE_ENTITLEMENT);
+}
+
+/** A ruling's receipt, as the actions and adjustments it supplies carry it (`founderRuling`, an adjustment's `ruling`). */
+export const rulingReceiptOf = (r) => ({ requestKey: r.requestKey, kind: r.kind, recordId: r.recordId, decision: r.decision, by: r.by, at: r.at, ...(Array.isArray(r.seen) ? { seen: r.seen } : {}), ...(r.corrects === true ? { corrects: true, payload: r.payload, from: r.from ?? null } : {}) });
+
+/**
+ * T1a-2b-4 (review AR4-C-8): THE DIVIDEND CORRECTIONS A RESULTED IDEA STILL OWES — each pending `corrects` ruling of a
+ * cash dividend, by ledger, as the close hands them to planLedgerAdjustments. A correction a doubt deferred at the idea's
+ * last close is posted at the first close after it without the doubt, as an open idea's is. Pure.
+ */
+export function pendingAmountCorrections(idea) {
+  const out = Object.fromEntries(LEDGERS.map((f) => [f, []]));
+  for (const r of idea?.founderRulings || []) {
+    if (!r || r.appliedOn != null || r.kind !== 'conflict' || r.corrects !== true || SHARE_BASIS.has(r.type)) continue;
+    const named = Array.isArray(r.ledgers) ? LEDGERS.filter((f) => r.ledgers.includes(f)) : LEDGERS;
+    for (const f of named) if (idea[f]) out[f].push({ actionId: r.recordId, amount: Number(r.payload?.amount), from: r.from ?? null, ruling: rulingReceiptOf(r) });
+  }
+  return out;
+}
+
+/** T1a-2b-4: the `corrects` rulings of an idea now posted on every ledger they name, marked applied (the rule
+ *  markRulingsApplied applies to them). Pure. */
+export function markCorrectionsApplied(idea, { date }) {
+  const rulings = idea?.founderRulings || [];
+  let changed = false;
+  const marked = rulings.map((r) => {
+    if (!r || r.appliedOn != null || r.kind !== 'conflict' || r.corrects !== true) return r;
+    const named = Array.isArray(r.ledgers) ? LEDGERS.filter((f) => r.ledgers.includes(f)) : LEDGERS;
+    const done = named.every((f) => !idea[f] || postedAdjustments(idea[f]).some((a) => a.kind === ADJUSTMENT_KIND.RULED_CORRECTION && a.ruling?.requestKey === r.requestKey));
+    if (!done) return r;
+    changed = true;
+    return { ...r, appliedOn: date, outcome: 'applied' };
+  });
+  return changed ? { ...idea, founderRulings: marked } : idea;
 }
 
 /**
@@ -220,6 +263,10 @@ export function planHoldRuling(idea, { kind, recordId, decision, ratio, payload,
         if (decision !== 'payload' || !isPlain(payload)) return { error: 'ruling_needs_adjustment', status: 422 };
         if (!(SHARE_BASIS.has(x.type) || x.type === 'cash_dividend')) return { error: 'ruling_needs_adjustment', status: 422 };
         if (inForce.some((o) => o === null || o === 'none')) return { error: 'ruling_needs_adjustment', status: 422 };
+        // (Review AR4-C-7: the id must have been SETTLED WITH ITS PAYLOAD on every named ledger — an applied receipt or a
+        // late entitlement. One the founder declined as not entitled moved nothing: there is nothing to correct, and a
+        // correction accepted there could never post. Refused, as before this build.)
+        if (!fields.every((f) => movedOn(idea[f], recordId))) return { error: 'ruling_needs_adjustment', status: 422 };
         const recorded = [...new Map([...inForce, ...revised.flatMap(([, rec]) => (rec.rows || []).map(payloadOf))].map((p) => [JSON.stringify(p), p])).values()];
         const chosen = recorded.find((p) => samePayload(p, payloadOf(payload))) ?? null;
         if (chosen === null) return { error: 'payload_not_recorded', status: 422 };
@@ -310,7 +357,7 @@ export function applyFounderRulings(idea, { date }) {
   const next = { ...idea };
   for (const f of LEDGERS) if (next[f]) next[f] = cloneLedger(next[f]);
   const appliedNow = new Set();
-  const receiptOf = (r) => ({ requestKey: r.requestKey, kind: r.kind, recordId: r.recordId, decision: r.decision, by: r.by, at: r.at, ...(Array.isArray(r.seen) ? { seen: r.seen } : {}), ...(r.corrects === true ? { corrects: true, payload: r.payload, from: r.from ?? null } : {}) });
+  const receiptOf = rulingReceiptOf;
   const addAction = (sym, action, r, fields) => {
     const a = { ...action, ticker: sym, source: 'founder_ruling', founderRuling: receiptOf(r) };
     const id = a.actionId ?? deriveActionId(a);
@@ -374,9 +421,13 @@ export function applyFounderRulings(idea, { date }) {
       // corrected by the close (one ruled_correction adjustment per ledger): the ruling stays pending until it is posted
       // everywhere (markRulingsApplied), so a doubt at this close defers it, never drops it.
       const named = namedLedgers(r).filter((f) => next[f]);
+      // (FQ-5 — review RF6-X1: only a revision whose every payload the ruling SAW is closed by it. A ruling a doubt keeps
+      // pending is applied again at each close; a payload the vendor listed since is a new ambiguity, left open for the
+      // founder — closed in the ruling's name, the vendor's latest amount was never put to the founder.)
+      const sawIt = (x) => (x.rows || []).every((p) => (r.seen || []).some((s) => samePayload(s, payloadOf(p))));
       for (const f of named) {
         const l = next[f];
-        l.corporateActionReceipts = l.corporateActionReceipts.map((x) => (x?.reason === REVISED_AFTER_RULING && x.actionId === r.recordId && x.closedBy == null
+        l.corporateActionReceipts = l.corporateActionReceipts.map((x) => (x?.reason === REVISED_AFTER_RULING && x.actionId === r.recordId && x.closedBy == null && sawIt(x)
           ? { ...x, closedBy: receiptOf(r), closedOn: date } : x));
       }
       if (SHARE_BASIS.has(r.type)) {
@@ -388,8 +439,16 @@ export function applyFounderRulings(idea, { date }) {
             actionId: r.recordId, ratio: Number(r.payload.ratio), from: r.from, ruling: receiptOf(r), date,
           });
           if (!c) continue;
+          // (Review AR4-C-11: a correction of a split the idea SOLD after — its line, set on the uncorrected count, may have
+          // triggered that sale. The sale stands (nothing re-trades it); the record says what the corrected count would have
+          // sold, and the founder is told: the comparison's count is corrected, the idea's sale is not.)
+          const sold = (c.ledger.saleReceipts || []).filter((x) => upper(x.symbol) === c.symbol && typeof x.sessionDate === 'string' && typeof r.effectiveDate === 'string' && x.sessionDate >= r.effectiveDate);
+          if (sold.length > 0) {
+            c.record.soldBeforeCorrection = sold.map((x) => ({ sessionDate: x.sessionDate, shares: Number(x.shares), sharesIfCorrected: roundShares(Number(x.shares) * c.factor) }));
+            out.alerts.push(`PRACTICE_FIELD_CORRECTION_AFTER_SALE ${idea.ideaId} ${c.symbol} ${r.recordId} — the founder's correction (×${c.factor} on the count) changes the count the idea held when it sold ${c.symbol} (${sold.map((x) => `${x.sessionDate}: ${x.shares} shares, ${roundShares(Number(x.shares) * c.factor)} on the corrected count`).join('; ')}); the sale stands and the line that triggered it was set on the uncorrected count — for the founder`);
+          }
           next[f] = c.ledger;
-          out.shareCorrections.push({ field: f, symbol: c.symbol, actionId: r.recordId, factor: c.factor, sharesBefore: c.sharesBefore, sharesAfter: c.sharesAfter, record: c.record });
+          out.shareCorrections.push({ field: f, symbol: c.symbol, actionId: r.recordId, factor: c.factor, sharesBefore: c.sharesBefore, sharesAfter: c.sharesAfter, record: c.record, held: Object.hasOwn(c.ledger.holdings || {}, c.symbol) });
         }
         appliedNow.add(r.requestKey);
       } else {

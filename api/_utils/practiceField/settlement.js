@@ -208,6 +208,9 @@ export function ledgerEndpoint(ledger, valuation, { coverageGaps = null } = {}) 
   const unsettledActions = [
     ...openAmbiguities(ledger).map((r) => r.actionId), ...heldActionRecords(ledger).map((r) => r.actionId), ...basisSuspicionRecords(ledger).map((r) => r.actionId),
     ...Object.keys(ledger.holdings || {}).sort().filter((sym) => coverageGaps?.[sym]).map((sym) => coverageGapIdOf(sym, coverageGaps[sym].since)),
+    // …and (T1a-2b-4, review AR4-A-2) every row listed for a holding since closed that waits on a doubt: money the idea
+    // may be owed and was not paid by its endpoint.
+    ...(ledger.closedHeldRows || []).map((r) => r.actionId),
   ];
   let marksFullQuality = true;
   let costTiersStored = true;

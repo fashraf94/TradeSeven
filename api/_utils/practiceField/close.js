@@ -93,7 +93,7 @@ import {
   coverageGapIdOf, CA_COVERAGE_GAP, backfillIdOf, successfulBackfill, shiftCalendarDate, heldSymbolsOf,
 } from './dailyCoverage.js';
 import { ensureCoverageBackfills } from './caBackfill.js';
-import { applyFounderRulings, markRulingsApplied } from './holdRulings.js';
+import { applyFounderRulings, markRulingsApplied, pendingAmountCorrections, markCorrectionsApplied } from './holdRulings.js';
 import {
   planLedgerAdjustments, closedHoldingsOf, resultAdjustmentView, adjustmentDocIdOf, ADJUSTMENT_POSTED_TO, heldAdjustments,
 } from './adjustments.js';
@@ -397,7 +397,11 @@ function closeFilledIdea(idea, {
     const closedDoubt = (sym) => !dailyRefOk || dailyCoverageOf(daily, sym, parseReport).refusal !== null;
     for (const [f, out, name] of [['ledger', own, 'idea'], ['comparisonLedger', cmp, 'comparison'], ['spyLedger', spy, 'spy']]) {
       const closed = f === 'ledger' ? closedHoldingsOf(out.ledger, { entrySession: idea.entry?.sessionDate ?? null }) : new Map();
-      const doubtOn = (sym) => uncovered.has(sym) || (holds?.get(sym) || []).length > 0 || out.unresolved.has(sym) || (closed.has(sym) && closedDoubt(sym));
+      // (Review AR4-A-4 / AR4-C-10: a hold item an id a pending ruling settles at this close is the ruling's, not a doubt —
+      // for a held symbol the dry run applies the ruled action and the item is gone; for a closed one nothing applies it, so
+      // the founder's own action was deferred by its own record and the ruling closed moot.)
+      const ruledHere = (id) => LEDGER_FIELDS.some((g) => ruledIdsOf(g)?.has(id));
+      const doubtOn = (sym) => uncovered.has(sym) || (holds?.get(sym) || []).some((i) => !ruledHere(i.actionId)) || out.unresolved.has(sym) || (closed.has(sym) && closedDoubt(sym));
       const plan = planLedgerAdjustments(out.ledger, {
         ideaId: idea.ideaId, ledgerKind: name, date, rows: actionsOf[f], ruledIds: ruledIdsOf(f), closed, doubtOn,
         postedTo: ADJUSTMENT_POSTED_TO.LEDGER, corrections: ruled?.amountCorrectionsByLedger?.[f] ?? [],
@@ -447,7 +451,7 @@ function closeFilledIdea(idea, {
       : l));
   }
   // T1a-2b-4 (T2D-05): the founder's correction of a split's ratio moves the line's level by the same factor as the count.
-  for (const c of (ruled?.shareCorrections || []).filter((x) => x.field === 'ledger')) {
+  for (const c of (ruled?.shareCorrections || []).filter((x) => x.field === 'ledger' && x.held !== false)) {
     lines = lines.map((l) => (l.symbol === c.symbol
       ? { ...l, level: l.level / c.factor, adjustments: [...(l.adjustments || []), { actionId: c.actionId, ratio: c.factor, appliedOn: date, correction: true }] }
       : l));
@@ -493,6 +497,14 @@ function closeFilledIdea(idea, {
   // Conflicts recorded on a ledger and not settled since (neither applied nor declined), this close's included.
   // Amendment F rev 1: every open ambiguity — a conflict, a possible re-date, a ruled id revised since — on any ledger.
   const openConflicts = [['idea', ownLedger], ['comparison', cmp.ledger], ['spy', spy.ledger]].flatMap(([name, ledger]) => openAmbiguities(ledger).map((r) => ({ name, actionId: r.actionId, reason: r.reason })));
+  // T1a-2b-4 (review AR4-A-2): a row listed for a holding since closed that WAITS on a doubt (`closedHeldRows`) is money the
+  // idea may be owed and has not been paid — the row is not full quality while it waits, and it is alerted at every close.
+  for (const [name, ledger] of [['idea', ownLedger], ['comparison', cmp.ledger], ['spy', spy.ledger]]) {
+    for (const r of ledger?.closedHeldRows || []) {
+      openConflicts.push({ name, actionId: r.actionId, reason: 'closed_held' });
+      alerts.push(`PRACTICE_FIELD_LATE_ROW_WAITING ${idea.ideaId} ${name} ${r.ticker} ${r.actionId} — a ${r.type} dated ${r.effectiveDate}, listed after the holding closed (${r.closedOn}), waits on a doubt since ${r.heldOn}; not paid, the row is not full quality`);
+    }
+  }
 
   // An unobserved session changes no ledger: there is nothing to write a mark from.
   let next = {
@@ -519,6 +531,13 @@ function closeFilledIdea(idea, {
     const m = markRulingsApplied(next, { date, skips, refusals });
     next = m.idea;
     alerts.push(...m.alerts);
+  }
+  // T1a-2b-4 (review AR4-C-2, C-8): a founder's correction not yet posted on every ledger it names (a doubt deferred it)
+  // is money the ruling moves and has not moved: the row is not full quality while it waits, and it is alerted.
+  for (const r of next.founderRulings || []) {
+    if (!r || r.appliedOn != null || r.kind !== 'conflict' || r.corrects !== true) continue;
+    openConflicts.push({ name: 'ruling', actionId: r.recordId, reason: 'correction_pending' });
+    alerts.push(`PRACTICE_FIELD_CORRECTION_WAITING ${idea.ideaId} ${r.recordId} — the founder's correction (${r.requestKey}) is not yet posted on every ledger it names; the row is not full quality until it is`);
   }
   // T1a-2b-4: an idea that already carries a result (settled, waiting for its settlement sale) keeps it; its readers show
   // the adjustments posted after its endpoint beside it, with `wouldChangeLabel` (adjustments.js resultAdjustmentView).
@@ -733,26 +752,67 @@ function closeResultedIdea(idea, { date, actionsBySymbol, daily, dailyRefOk, par
   const adjusted = {};
   let changed = false;
   let toTreasury = 0;
-  const next = { ...idea };
+  let next = { ...idea };
   const uncoveredHere = (sym) => !dailyRefOk || dailyCoverageOf(daily, sym, parseReport).refusal !== null;
+  // (Review AR4-A-6: the doubt is the COUNT's, per action — an open share-basis ambiguity of the symbol on any ledger
+  // dated on or before it, or a paper holding's open suspicion or held action — not every ambiguity of the symbol: a cash
+  // conflict on another id held an unambiguous split's correction for good. The ambiguous id itself waits in the planner.)
+  const SHARE = new Set(['split', 'reverse_split', 'stock_distribution']);
+  const countDoubt = (sym, d) => LEDGER_FIELDS.some((f) => {
+    const l = idea[f];
+    if (!l) return false;
+    const h = l.holdings?.[sym];
+    if (h && (h.basisSuspicion || (h.heldActions || []).length > 0)) return true;
+    return openAmbiguities(l).some((r) => SHARE.has(r.type) && upperSym(r.ticker) === sym && !(typeof r.effectiveDate === 'string' && typeof d === 'string' && r.effectiveDate > d));
+  });
+  // (Review AR4-C-8: a dividend correction the founder ruled while the idea was open, deferred by a doubt at its last
+  // close, is still posted — at the first close after it without the doubt.)
+  const corrections = pendingAmountCorrections(idea);
   for (const [f, name] of [['ledger', 'idea'], ['comparisonLedger', 'comparison'], ['spyLedger', 'spy']]) {
     const ledger = idea[f];
     if (!ledger) continue;
     const closed = closedHoldingsOf(ledger, { entrySession: idea.entry?.sessionDate ?? null, closedOn: f === 'ledger' ? null : (idea.lastClosedOn ?? null) });
     if (closed.size === 0) continue;
-    const ambiguousSyms = new Set(openAmbiguities(ledger).map((r) => upperSym(r.ticker)));
     const plan = planLedgerAdjustments(ledger, {
       ideaId: idea.ideaId, ledgerKind: name, date, rows: actionsBySymbol, ruledIds: null, closed,
-      doubtOn: (sym) => uncoveredHere(sym) || ambiguousSyms.has(sym),
+      doubtOn: (sym, d) => uncoveredHere(sym) || countDoubt(sym, d),
       postedTo: f === 'ledger' ? ADJUSTMENT_POSTED_TO.TREASURY : ADJUSTMENT_POSTED_TO.PAPER_AFTER_RESULT,
       availableCents: f === 'ledger' ? treasuryCents + toTreasury : Number.POSITIVE_INFINITY,
+      corrections: corrections[f],
     });
     adjusted[f] = plan;
     alerts.push(...plan.alerts);
     if (plan.ledger !== ledger) { next[f] = plan.ledger; changed = true; }
     if (f === 'ledger') for (const a of plan.posted) toTreasury += toCents(a.amountUsd);
   }
-  if (!changed) return null;
+  if (changed) {
+    const marked = markCorrectionsApplied(next, { date });
+    if (marked !== next) next = marked;
+  }
+  // WHAT STILL WAITS on the resulted idea (review AR4-A-2, A-6, C-8): a row waiting on a doubt, an open ambiguity, a
+  // correction not yet posted. Named on the idea (`lateDataUnsettled`) with the last session the close still reads the
+  // idea (its look-back), alerted at every close it stands — and, at that last session, alerted as left unsettled: the
+  // money stays where the result put it, and the founder sees what was never settled. Cleared once nothing waits.
+  const waiting = [];
+  for (const [f, name] of [['ledger', 'idea'], ['comparisonLedger', 'comparison'], ['spyLedger', 'spy']]) {
+    const l = next[f];
+    if (!l) continue;
+    for (const r of l.closedHeldRows || []) waiting.push({ ledger: name, actionId: r.actionId, kind: 'closed_held' });
+    for (const r of openAmbiguities(l)) waiting.push({ ledger: name, actionId: r.actionId, kind: r.reason });
+  }
+  for (const r of next.founderRulings || []) if (r && r.appliedOn == null && r.corrects === true) waiting.push({ ledger: null, actionId: r.recordId, kind: 'correction_pending', requestKey: r.requestKey });
+  const readUntil = lastLookbackSessionOf(idea.liquidation?.completedSession ?? null);
+  const unsettled = waiting.length > 0 ? { actions: waiting, readUntil } : null;
+  if (JSON.stringify(unsettled) !== JSON.stringify(idea.lateDataUnsettled ?? null)) {
+    if (unsettled) next.lateDataUnsettled = unsettled; else delete next.lateDataUnsettled;
+    changed = true;
+  }
+  if (unsettled) {
+    const last = readUntil !== null && date >= readUntil;
+    alerts.push(`PRACTICE_FIELD_LATE_DATA_${last ? 'LEFT_UNSETTLED' : 'UNSETTLED'} ${idea.ideaId} — ${waiting.length} late action${waiting.length === 1 ? '' : 's'} on the resulted idea wait (${waiting.map((w) => `${w.actionId}${w.ledger ? `@${w.ledger}` : ''}:${w.kind}`).join(', ')}); ${last ? 'this is the last close that reads it: they are left unsettled, for the founder' : `read until ${readUntil}`}`);
+  }
+  // (Nothing changed: no write — but what still waits is alerted at every close it stands.)
+  if (!changed) return alerts.length > 0 ? { nextIdea: null, adjusted: {}, treasuryCents: 0, alerts } : null;
   const view = resultAdjustmentView(next);
   if (view !== null) next.resultAdjustments = view;
   next.revision = (idea.revision || 0) + 1;
@@ -760,6 +820,19 @@ function closeResultedIdea(idea, { date, actionsBySymbol, daily, dailyRefOk, par
     for (const a of plan.posted) alerts.push(`PRACTICE_FIELD_ADJUSTMENT_POSTED ${idea.ideaId} ${f} ${a.actionId} ${a.kind} $${a.amountUsd} — after the idea's result (${a.postedTo}); the result stands, its view shows it${view?.wouldChangeLabel ? ' — and it WOULD change the label' : ''}`);
   }
   return { nextIdea: next, adjusted, treasuryCents: toTreasury, alerts };
+}
+
+/** T1a-2b-4: the last session whose close still reads an idea that resulted on `completedSession` (recentlyResultedIdeas:
+ *  a close of `through` reads it while `completedSession` ≥ `through` − the look-back − 1 day). Null without a date. */
+export function lastLookbackSessionOf(completedSession) {
+  if (typeof completedSession !== 'string') return null;
+  let s = completedSession;
+  for (let n = 0; n < 40; n += 1) {
+    const after = nextSessionDate(s);
+    if (shiftCalendarDate(after, -(MANDATE_CA_FETCH_LOOKBACK_DAYS + 1)) > completedSession) return s;
+    s = after;
+  }
+  return s;
 }
 
 /**
@@ -961,7 +1034,7 @@ async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false, w
       // average cost and carried mark (reconcile.js rules 2 and 7). A dividend or a split of this close then meets the
       // corrected count on the book as on the idea (the late soak's 1795727711 and 1795727357: mirrored after them, the book
       // paid a dividend on the old count, and a split listed in the same close met the wrong base).
-      for (const c of (out.shareCorrections || []).filter((x) => x.field === 'ledger')) {
+      for (const c of (out.shareCorrections || []).filter((x) => x.field === 'ledger' && x.held !== false)) {
         const pos = positions[c.symbol];
         if (!pos) continue;
         const lastMark = Number(pos.lastMark);
@@ -1034,6 +1107,7 @@ async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false, w
         });
         if (done === null) continue;
         alerts.push(...done.alerts);
+        if (done.nextIdea === null) continue;
         resultedNext.set(idea.ideaId, done.nextIdea);
         if (done.treasuryCents !== 0) {
           working = { ...working, treasury: { ...working.treasury, unreservedCash: fromCents(toCents(working.treasury.unreservedCash) + done.treasuryCents) } };
