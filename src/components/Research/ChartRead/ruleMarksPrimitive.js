@@ -94,16 +94,27 @@ export function layoutRuleMarks(scene, { toX, toY, spacing, width, height = null
     wants.push({ n: m.n, lit: !!m.lit, y, sides: [x0 - SQUARE - 3, x1 + 3] });
   }
   const placed = [];
+  const STEP = SQUARE + 2;
+  const fit = (y) => (H === null ? y : clamp(y, SQUARE / 2, H - SQUARE / 2));
+  const inside = (x) => x >= 0 && (W === null || x + SQUARE <= W);
+  const onSquare = (x, cy) => placed.some((p) => Math.abs(p.x - x) < SQUARE + GAP && Math.abs(p.y - cy) < SQUARE + GAP);
   const squares = wants.map((s) => {
-    const cy = H === null ? s.y : clamp(s.y, SQUARE / 2, H - SQUARE / 2);
-    const inside = (x) => x >= 0 && (W === null || x + SQUARE <= W);
-    const free = (x) => !placed.some((p) => Math.abs(p.x - x) < SQUARE + GAP && Math.abs(p.y - cy) < SQUARE + GAP)
-      && !segments.some((g) => g.n !== s.n && segmentMeetsSquare(g, x, cy));
-    let x = s.sides.find((c) => inside(c) && free(c));
-    if (x === undefined) {
-      x = s.sides.find(inside) ?? (W === null ? s.sides[0] : Math.max(0, W - SQUARE));
-      while (!free(x) && x - (SQUARE + 2) >= 0) x -= SQUARE + 2;
-    }
+    const onLine = (x, cy) => segments.some((g) => g.n !== s.n && segmentMeetsSquare(g, x, cy));
+    // Always BESIDE its own mark (the compact chart crowds all seven into a few dollars): its first end at its own height,
+    // the other end, each end a square above and below, then one or two squares further out from the first end.
+    const [a, b] = s.sides;
+    const out = a <= b ? -STEP : STEP;
+    const at = (list) => list.map(([x, v]) => [x, fit(s.y + v * STEP)]);
+    const near = at([[a, 0], [b, 0], [a, -1], [a, 1], [b, -1], [b, 1], [a + out, 0], [a + 2 * out, 0]]);
+    // Only when every nearby place holds a square: further out along its first end, at its height or a square off it.
+    const far = at(Array.from({ length: 40 }, (_, k) => [-1, 0, 1].map((v) => [a + (k + 3) * out, v])).flat());
+    const clear = ([px, py]) => inside(px) && !onSquare(px, py) && !onLine(px, py);
+    const noSquare = ([px, py]) => inside(px) && !onSquare(px, py);
+    // Nearby and clear of every square and every other mark's line; else nearby and clear of every square (a line then
+    // passes UNDER it — the squares are drawn last, so no line is ever drawn across a number); else further out; else its
+    // first end, inside the pane. A square is never put on another square while the pane has room for it.
+    const [x, cy] = near.find(clear) ?? near.find(noSquare) ?? far.find(clear) ?? far.find(noSquare)
+      ?? [W === null ? a : clamp(a, 0, Math.max(0, W - SQUARE)), fit(s.y)];
     placed.push({ x, y: cy });
     return { op: 'square', x, y: cy, n: s.n, lit: s.lit };
   });

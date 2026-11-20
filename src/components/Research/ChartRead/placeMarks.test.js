@@ -203,6 +203,34 @@ describe('FX-8: no tick through another mark\'s square; two close lit values bot
       expect(s.y + SQUARE / 2, `square ${s.n}`).toBeLessThanOrEqual(at.height);
     }
   });
+  it('compact (every mark, zoomed out, all within a few dollars): each square stays beside its own mark and never on another square', () => {
+    // The compact chart as the browser check drew it (A at 390, the touch lit; dumped from the probe): a 330 × 188 pane,
+    // 4.07 px a bar, the record's bar at x 322.9 — each mark's own x and y, as the library placed them.
+    const cramped = { toX: (t) => t, toY: (v) => v, spacing: 4.074074, width: 330, height: 188 };
+    const scene = { items: [
+      { n: 1, kind: 'tick', time: 322.889, value: 63.144, lit: true },
+      { n: 2, kind: 'tick', time: 322.889, value: 84.508 },
+      { n: 3, kind: 'tick', time: 302.519, value: 91.63 },
+      { n: 4, kind: 'bracket', time: 318.815, value: 66.021, lit: true, times: [322.889, 318.815, 314.741] },
+      { n: 5, kind: 'tick', time: 318.815, value: 44.97 },
+      { n: 6, kind: 'tick', time: 241.407, value: 84.167 },
+      { n: 7, kind: 'tick', time: 322.889, value: 37.6 },
+    ] };
+    const ops = layoutRuleMarks(scene, cramped);
+    const STEP = SQUARE + 2;
+    const sq = ops.filter((o) => o.op === 'square');
+    expect(sq).toHaveLength(7);
+    for (const s of sq) {
+      const own = ops.filter((o) => (o.op === 'line' || o.op === 'path') && o.n === s.n);
+      const xs = own.flatMap((o) => (o.op === 'line' ? [o.x0, o.x1] : o.points.map(([x]) => x)));
+      const ys = own.flatMap((o) => (o.op === 'line' ? [o.y] : o.points.map(([, y]) => y)));
+      const dx = Math.max(0, Math.min(...xs) - (s.x + SQUARE), s.x - Math.max(...xs));
+      const dy = Math.max(0, Math.min(...ys) - s.y, s.y - Math.max(...ys));
+      expect({ n: s.n, besideX: dx <= 2 * STEP + 3, besideY: dy <= STEP }).toEqual({ n: s.n, besideX: true, besideY: true });
+      for (const t of sq.filter((u) => u !== s)) expect(Math.abs(t.x - s.x) < SQUARE && Math.abs(t.y - s.y) < SQUARE, `${s.n} on ${t.n}`).toBe(false);
+      expect(s.x >= 0 && s.x + SQUARE <= cramped.width, `square ${s.n} inside`).toBe(true);
+    }
+  });
   it('the primitive hands the library fixed coordinates (so it never moves them again) and hides the tick of a moved label', () => {
     const p = new RuleMarksPrimitive({ ink: 'white', paper: 'black', font: 'monospace', format: formatPriceBare });
     p.attached({ chart: { timeScale: () => ({}), paneSize: () => ({ width: 400, height: 300 }) }, series: { priceToCoordinate: at.toY }, requestUpdate() {} });
