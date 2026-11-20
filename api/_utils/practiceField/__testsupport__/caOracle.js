@@ -76,8 +76,21 @@ export class InputOracle {
   ruling(body, out, requestKey, nextClose) {
     const status = out?.status ?? null;
     this.rulings.push({ at: nextClose, body, status, requestKey });
+    // (T1a-2b-4 fix round, L-1: a `late_adjustment` approval or decline names one proposal — its ledger and action id are in
+    // its record id, `late_<ledger>_<actionId>[_n]`.)
+    if (body?.kind === 'late_adjustment') {
+      const p = proposalOf(body.recordId);
+      if (p && status === 200) this.event(p.actionId, nextClose, body.decision === 'approve' ? 'late_approved' : 'late_declined');
+      return;
+    }
     const id = body?.kind === 'conflict' ? body.recordId : (body?.kind === 'suspicion' && body.decision === 'split' ? this.splitIdOf(body) : null);
     if (id && status === 200) this.event(id, nextClose, body.kind === 'conflict' ? (body.decision === 'none' ? 'rule_none' : 'rule_payload') : 'rule_suspicion_split');
+  }
+
+  /** The first close index `id` was listed at (any payload), or null. */
+  firstListedAt(id) {
+    const e = this.ids.get(id);
+    return e ? Math.min(...e.payloads.values()) : null;
   }
 
   /** The id a founder `split` ruling's action takes when the feed has not settled it (the derived split id). */
@@ -154,6 +167,18 @@ export class InputOracle {
         this.mark(other, k, 'redate', via);
         this.mark(id, k, 'redate', via);
         this.event(other, k, 'redate');
+      }
+    }
+    // (T1a-2b-4 fix round, L-5: TWO SHARE-BASIS IDS OF ONE SYMBOL AND ONE EFFECTIVE DATE are one ambiguity, whatever their
+    // payloads or types — a 10-for-1 and a 1-for-10 of one date may be one action and its direction correction. Both marked.)
+    for (const [id, cur] of byId) {
+      if (!SHARE_BASIS.has(cur.type)) continue;
+      for (const [other, o] of this.ids) {
+        if (other === id || o.sym !== cur.sym || !SHARE_BASIS.has(o.type) || o.d !== cur.d) continue;
+        const via = { key: null, sameDate: true, sides: [[id, k], [other, Math.min(...o.payloads.values())]] };
+        this.mark(id, k, 'same_date', via);
+        this.mark(other, k, 'same_date', via);
+        this.event(id, k, 'same_date_share_basis');
       }
     }
     // A possible re-date: a payload listed now that another id of the same symbol and type, dated within the window, has
@@ -237,38 +262,40 @@ export class InputOracle {
       // …shares: every holding's count is the chain of its applied share-basis receipts from the entry count — (T1a-2b-4)
       // with the founder's ratio in place of a corrected receipt's (a ruled_correction of a split), replayed as the
       // applier rounds. A receipt's own `sharesBefore` is checked where no correction touched the symbol.
-      const corrected = new Map();
-      for (const a of l.adjustments || []) if (a && a.held !== true && a.kind === 'ruled_correction' && SHARE_BASIS.has(a.type) && Number(a.ratio) > 0) corrected.set(a.actionId, Number(a.ratio));
-      const correctedSyms = new Set((l.adjustments || []).filter((a) => a?.kind === 'ruled_correction' && SHARE_BASIS.has(a.type)).map((a) => String(a.ticker).toUpperCase()));
-      const counts = new Map();
-      for (const [sym, h] of Object.entries(initialOf?.[f] || {})) counts.set(sym, [Number(h.shares)]);
-      for (const r of applied) {
-        if (!SHARE_BASIS.has(r.type)) continue;
-        const sym = String(r.ticker).toUpperCase();
-        const chain = counts.get(sym) || [Number(r.sharesBefore)];
-        if (!correctedSyms.has(sym)) expect(r.sharesBefore, `${label} ${date} conservation ${f} ${r.actionId} sharesBefore = the count before it`).toBe(chain.at(-1));
-        chain.push(roundSharesHere(chain.at(-1) * (corrected.get(r.actionId) ?? Number(r.ratio))));
-        if (!correctedSyms.has(sym)) expect(chain.at(-1), `${label} ${date} conservation ${f} ${r.actionId} sharesAfter`).toBe(r.sharesAfter);
-        counts.set(sym, chain);
-      }
-      for (const [sym, chain] of counts) if (l.holdings?.[sym]) expect(l.holdings[sym].shares, `${label} ${date} conservation ${f} ${sym} shares = receipt chain`).toBe(chain.at(-1));
-      // …income: each dividend receipt's income is ITS amount times the count the holding had WHEN it was applied (receipts
-      // are kept in the order applied), or its recorded ex-date count (AR3-O3: before, any count in the chain passed).
-      // (T1a-2b-4: the count held when a dividend was applied is the chain of the share-basis receipts before it, each with
-      // the founder's corrected ratio once that correction was made — a correction is posted at a place among the receipts,
-      // `seq`, and the dividends applied after it are paid on the corrected count.)
+      // (T1a-2b-4 fix round, L-4: COUNTS ARE RECOMPUTED, NOT PATCHED — the count is the entry count along the DATED chain of
+      // the applied share-basis receipts (effective date, then phase, then id), rounded at each step, whatever order they
+      // were applied in. A receipt keeps what happened when it was applied; only a receipt applied in date order is held to
+      // its own before-and-after here. The founder's corrected ratio stands in for a corrected receipt's.)
       const all = l.corporateActionReceipts || [];
       const correctionsOf = (id, at) => (l.adjustments || []).filter((a) => a && a.held !== true && a.kind === 'ruled_correction' && a.actionId === id && Number(a.ratio) > 0 && Number(a.seq) <= at);
+      const byDated = (a, b) => String(a.r.effectiveDate).localeCompare(String(b.r.effectiveDate)) || String(a.r.actionId).localeCompare(String(b.r.actionId));
+      /** The count of `sym` along the dated chain of the share-basis receipts applied before index `at` (all of them: Infinity). */
       const countAt = (sym, at) => {
         let n = Number(initialOf?.[f]?.[sym]?.shares);
-        for (let j = 0; j < at; j += 1) {
+        const events = [];
+        for (let j = 0; j < Math.min(at, all.length); j += 1) {
           const r = all[j];
-          if (r?.applied !== true || !SHARE_BASIS.has(r.type) || String(r.ticker).toUpperCase() !== sym) continue;
+          if (r?.applied !== true || !SHARE_BASIS.has(r.type) || String(r.ticker).toUpperCase() !== sym || r.historyOnly === true) continue;
+          events.push({ r, j });
+        }
+        for (const { r } of events.sort(byDated)) {
           const c = correctionsOf(r.actionId, at).at(-1);
           n = roundSharesHere(n * (c ? Number(c.ratio) : Number(r.ratio)));
         }
         return n;
       };
+      const correctedSyms = new Set((l.adjustments || []).filter((a) => a?.kind === 'ruled_correction' && SHARE_BASIS.has(a.type)).map((a) => String(a.ticker).toUpperCase()));
+      for (const [j, r] of all.entries()) {
+        if (r?.applied !== true || !SHARE_BASIS.has(r.type) || r.historyOnly === true || r.recount) continue;
+        const sym = String(r.ticker).toUpperCase();
+        if (correctedSyms.has(sym)) continue;
+        expect(r.sharesBefore, `${label} ${date} conservation ${f} ${r.actionId} sharesBefore = the dated count before it`).toBe(countAt(sym, j));
+        expect(r.sharesAfter, `${label} ${date} conservation ${f} ${r.actionId} sharesAfter`).toBe(roundSharesHere(countAt(sym, j) * Number(r.ratio)));
+      }
+      for (const sym of Object.keys(initialOf?.[f] || {})) if (l.holdings?.[sym]) expect(l.holdings[sym].shares, `${label} ${date} conservation ${f} ${sym} shares = the dated receipt chain`).toBe(countAt(sym, Infinity));
+      // …income: each dividend receipt's income is ITS amount times the count the holding had WHEN it was applied — the
+      // dated chain of the share-basis receipts applied before it — or its recorded ex-date count (AR3-O3: before, any count
+      // in the chain passed). (T1a-2b-4: a founder's ratio correction posted before it, by `seq`, stands in.)
       for (const [at, r] of all.entries()) {
         if (r?.applied !== true || r.type !== 'cash_dividend') continue;
         const sym = String(r.ticker).toUpperCase();
@@ -348,20 +375,44 @@ export class InputOracle {
 // ── T1a-2b-4: I-6 — EVERY LEDGER IS PAID WHAT ITS HOLDING WAS OWED ───────────────────────────────────────────────────────
 // For every unambiguous id, each ledger's received cash — its receipt's income plus every adjustment posted for the id —
 // equals the entitlement the ORACLE computes from the GENERATOR'S INPUTS (the rows each close listed, the founder's
-// accepted rulings) and the LEDGER'S HOLDING HISTORY (its entry count, the session it was bought, the session it was
-// sold), never from the product's records: the count on the ex-date is the entry count times every entitled split dated on
-// or before it, in date order, rounded as the applier rounds; a dividend dated on or before the purchase, or after the
-// sale, is owed nothing. An id ambiguous by the inputs is in it only once the founder's accepted ruling chose its payload.
-// Where the product holds the symbol in doubt (an open ambiguity, a held action or adjustment, a suspicion, a coverage gap)
-// equality is excused — counted, never assumed — and a dividend owed nothing must still have been paid nothing.
+// accepted rulings and approvals) and the LEDGER'S HOLDING HISTORY (its entry count, the session it was bought, the session
+// it was sold), never from the product's records: the count on the ex-date is the entry count times every entitled split
+// dated on or before it, in date order, rounded as the applier rounds; a dividend dated on or before the purchase, or after
+// the sale, is owed nothing. An id ambiguous by the inputs is in it only once the founder's accepted ruling chose its payload.
+//
+// THE FIX ROUND (20 Nov 2026; Astra's "Oracle" section). Two changes:
+//   · EXCUSES ARE SCOPED to the facts that can change THAT ledger's ex-date count or amount FOR THAT ID: the id's own
+//     ambiguity, a share-basis id of its symbol dated on or before its ex-date (ambiguous, held, suspected, uncovered), a
+//     held debit or a waiting row of the id itself. An unrelated dispute — another dividend's conflict — excuses nothing
+//     (her $0.10/$0.20 variant of T2E-04 turned the whole stock run green).
+//   · LATE DATA ASKS (L-1): money that late data moves — a dividend first listed after the ledger sold the stock, or one paid
+//     on time whose ex-date count a share-basis action listed after that payment changes — is owed to the ledger only once
+//     the founder approved it (an accepted `late_adjustment` for that ledger and id, or a conflict ruling choosing the id's
+//     payload), at a close after the late fact. Before that it WAITS: excused, counted. A wait excuses a payment waiting to
+//     post — never a payment the inputs forbid: in every branch, excused or not, the money adjustments moved for the id
+//     without an approval or ruling in the inputs must be nought.
+//
+// I-7 — EVERY POSTED ADJUSTMENT HAS A FOUNDER APPROVAL OR RULING FOR ITS ID AND LEDGER IN THE GENERATOR'S INPUTS: a
+// `ruled_correction` an accepted conflict ruling for the id choosing its payload; a late adjustment an accepted
+// `late_adjustment` approval naming that ledger and id (or, for a closed holding's row the founder settled, the conflict
+// ruling choosing its payload), each made before the close that posted it — and never more postings than approvals.
+
+/** A proposal's record id, `late_<ledger>_<actionId>[_<n>]` → { ledger field, actionId }, or null. */
+const PROPOSAL_LEDGER = { idea: 'ledger', comparison: 'comparisonLedger', spy: 'spyLedger' };
+export function proposalOf(recordId) {
+  const m = /^late_(idea|comparison|spy)_(.+?\d{4}-\d{2}-\d{2})(?:_(\d+))?$/.exec(String(recordId || ''));
+  return m ? { field: PROPOSAL_LEDGER[m[1]], actionId: m[2], n: m[3] ? Number(m[3]) : 1 } : null;
+}
 
 export class EntitlementOracle {
   constructor(S, inputs) {
     this.S = S;
-    this.inputs = inputs; // the InputOracle: the rows listed and the rulings made
+    this.inputs = inputs; // the InputOracle: the rows listed and the requests made
     this.checked = 0;
     this.excused = 0;
+    this.waiting = 0;
     this.nothingOwed = 0;
+    this.authorityChecks = 0;
     this.byKind = { late_entitlement: 0, late_basis: 0, ruled_correction: 0 };
   }
 
@@ -378,27 +429,93 @@ export class EntitlementOracle {
     return { ratio, amount };
   }
 
-  /** Does the product hold `sym` in doubt on any ledger of the idea? (Excuses equality; it can never authorize money.) */
-  doubtOn(idea, sym) {
+  /** The accepted requests that authorize money for `id` on ledger `f`, each with the close it applies at: an approval of
+   *  a proposal of that ledger and id, or a conflict ruling choosing a payload of the id. */
+  authoritiesFor(f, id) {
+    const out = [];
+    for (const r of this.inputs.rulings) {
+      if (r.status !== 200) continue;
+      if (r.body?.kind === 'late_adjustment' && r.body.decision === 'approve') {
+        const p = proposalOf(r.body.recordId);
+        if (p && p.field === f && p.actionId === id) out.push({ at: r.at, kind: 'approval', r });
+      }
+      if (r.body?.kind === 'conflict' && r.body.recordId === id && r.body.decision === 'payload') {
+        // (A CORRECTING ruling chooses a payload the id's first listing did not show — the founder's correction of a settled
+        // id, which posts the net. A ruling keeping the first payload posts nothing, and authorizes nothing late.)
+        const e = this.inputs.ids.get(id);
+        const first = e ? Math.min(...e.payloads.values()) : null;
+        const firstKeys = e ? [...e.payloads].filter(([, at]) => at === first).map(([key]) => key) : [];
+        out.push({ at: r.at, kind: 'ruling', r, correcting: firstKeys.length === 1 && firstKeys[0] !== keyOf(r.body.payload) });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * I-7, after the close of index `k`: every adjustment a ledger has POSTED has its authority in the inputs (see above).
+   */
+  checkAuthority(idea, k, label) {
     for (const f of LEDGERS) {
       const l = idea?.[f];
       if (!l) continue;
+      const posted = (l.adjustments || []).filter((a) => a && a.held !== true);
+      const lateCount = new Map();
+      for (const a of posted) {
+        const at = this.S.indexOf(a.postedOn);
+        this.authorityChecks += 1;
+        if (a.kind === 'ruled_correction') {
+          const ok = this.inputs.rulings.find((r) => r.status === 200 && r.body?.kind === 'conflict' && r.body.recordId === a.actionId && r.body.decision === 'payload'
+            && keyOf(r.body.payload) === keyOf(a.payload || {}) && r.at <= at) ?? null;
+          expect(ok, `${label} ${this.S[k]} I-7 ${f} ${a.actionId}: a ruled_correction of ${keyOf(a.payload || {})} posted on ${a.postedOn} with no accepted conflict ruling choosing that payload`).not.toBeNull();
+          continue;
+        }
+        const auth = this.authoritiesFor(f, a.actionId).filter((x) => x.at <= at
+          && (x.kind === 'approval' || keyOf(x.r.body.payload) === keyOf({ amount: a.amountPerShare })));
+        expect(auth.length > 0, `${label} ${this.S[k]} I-7 ${f} ${a.actionId}: a ${a.kind} of $${a.amountUsd} posted on ${a.postedOn} with no founder approval or ruling for this ledger and id in the inputs`).toBe(true);
+        lateCount.set(a.actionId, (lateCount.get(a.actionId) || 0) + 1);
+      }
+      for (const [id, n] of lateCount) {
+        const allowed = this.authoritiesFor(f, id).filter((x) => x.at <= k).length;
+        expect(n <= allowed, `${label} ${this.S[k]} I-7 ${f} ${id}: ${n} late postings for ${allowed} approvals or rulings`).toBe(true);
+      }
+    }
+  }
+
+  /**
+   * THE PRODUCT'S DOUBT THAT CAN CHANGE THIS LEDGER'S EX-DATE COUNT OR AMOUNT FOR THIS ID (scoped; it excuses equality and
+   * can never authorize money): an open ambiguity of the id itself, or of a share-basis id of its symbol dated on or before
+   * its ex-date, on any ledger of the idea; a held action of either kind; an open suspicion whose move may predate the
+   * ex-date; a coverage gap that began before it; a held debit or a waiting row of the id on this ledger; a closed
+   * holding's coverage doubt on this ledger dated within the re-date window of it or before it.
+   */
+  scopedDoubt(idea, f, sym, id, d) {
+    const SHARE_AND_DATED = (r) => SHARE_BASIS.has(r?.type) && typeof r.effectiveDate === 'string' && r.effectiveDate <= d;
+    const own = (r) => r?.actionId === id;
+    for (const g of LEDGERS) {
+      const l = idea?.[g];
+      if (!l) continue;
       const settled = new Set([...(l.appliedActionIds || []), ...(l.declinedActionIds || [])]);
       for (const r of l.corporateActionReceipts || []) {
-        if (String(r?.ticker).toUpperCase() !== sym) continue;
+        if (String(r?.ticker).toUpperCase() !== sym || !(own(r) || SHARE_AND_DATED(r))) continue;
         if ((r.reason === 'conflicting_action' || r.reason === 'possible_redate') && !settled.has(r.actionId)) return true;
         if (r.reason === 'revised_after_ruling' && r.closedBy == null) return true;
       }
       const h = l.holdings?.[sym];
-      if (h && ((h.heldActions || []).length > 0 || h.basisSuspicion)) return true;
-      if ((l.adjustments || []).some((a) => a?.held === true && String(a.ticker).toUpperCase() === sym)) return true;
+      if (h && (h.heldActions || []).some((r) => own(r) || SHARE_AND_DATED(r))) return true;
+      if (h?.basisSuspicion && !(typeof h.basisSuspicion.since === 'string' && h.basisSuspicion.since >= d)) return true;
+      if ((l.closedHeldRows || []).some((r) => String(r.ticker).toUpperCase() === sym && (own(r) || SHARE_AND_DATED(r)))) return true;
     }
-    return Boolean(idea?.caCoverageGaps?.[sym]);
+    const l = idea?.[f];
+    if ((l?.adjustments || []).some((a) => a?.held === true && a.actionId === id)) return true;
+    const gap = idea?.caCoverageGaps?.[sym];
+    if (gap && !(typeof gap.since === 'string' && gap.since >= d)) return true;
+    for (const x of l?.closedCoverageDoubts?.[sym]?.dates || []) if (typeof x?.date === 'string' && (x.date <= d || this.S.indexOf(x.date) - this.S.indexOf(d) <= REDATE_WINDOW)) return true;
+    return false;
   }
 
   /**
    * After the close of index `k`: for each ledger in `ledgers` — `{ field: { sym, entryShares, boughtAt (index), soldAt
-   * (index | null) } }` — and each dividend of its symbol the inputs listed so far, received === entitled.
+   * (index | null) } }` — and each dividend of its symbol the inputs listed so far, received against entitled (see above).
    */
   check(idea, k, ledgers, label, { uncoveredNow = [] } = {}) {
     for (const [f, h] of Object.entries(ledgers)) {
@@ -413,7 +530,7 @@ export class EntitlementOracle {
         const p = this.payloadOf(id);
         if (p === undefined) { splitsWait = Math.min(splitsWait, e.d); continue; }
         if (p === null || !(Number(p.ratio) > 0)) continue;
-        splits.push({ id, d: e.d, ratio: Number(p.ratio) });
+        splits.push({ id, d: e.d, ratio: Number(p.ratio), listedAt: this.inputs.firstListedAt(id) });
       }
       splits.sort((a, b) => a.d - b.d || a.id.localeCompare(b.id));
       // (A founder `split` for a suspicion — an accepted request — may apply, or go moot or be refused: the product decides
@@ -424,14 +541,15 @@ export class EntitlementOracle {
         const recordId = String(rq.body.recordId || '');
         if (recordId.startsWith(prefix)) splitsWait = Math.min(splitsWait, this.S.indexOf(recordId.slice(prefix.length)));
       }
-      // (…and a symbol whose data this close does NOT cover, by the inputs — its fetch failed, or its parse report is dirty
-      // or missing: the product waits. For a symbol no ledger holds any more the product keeps no gap record, so the inputs
-      // say it. Excused for this close only, counted; the next covered close is checked.)
-      const doubt = this.doubtOn(idea, sym) || uncoveredNow.includes(sym);
       for (const [id, e] of this.inputs.ids) {
         if (e.sym !== sym || e.type !== 'cash_dividend' || e.d > k) continue;
-        const received = addUsd(0, ...(l.corporateActionReceipts || []).filter((r) => r?.applied === true && r.actionId === id).map((r) => Number(r.incomeUsd) || 0),
-          ...(l.adjustments || []).filter((a) => a && a.held !== true && a.actionId === id).map((a) => Number(a.amountUsd) || 0));
+        const receipts = (l.corporateActionReceipts || []).filter((r) => r?.applied === true && r.actionId === id);
+        const adjustments = (l.adjustments || []).filter((a) => a && a.held !== true && a.actionId === id);
+        const received = addUsd(0, ...receipts.map((r) => Number(r.incomeUsd) || 0), ...adjustments.map((a) => Number(a.amountUsd) || 0));
+        // A WAIT IS NEVER A PAYMENT: what adjustments moved for the id with no approval or ruling in the inputs is nought.
+        const authorities = this.authoritiesFor(f, id);
+        const unauthorized = addUsd(0, ...adjustments.filter((a) => !authorities.some((x) => x.at <= this.S.indexOf(a.postedOn))).map((a) => Number(a.amountUsd) || 0));
+        expect(unauthorized, `${label} ${this.S[k]} I-6 ${f} ${id}: $${unauthorized} moved by adjustments the inputs never approved (a hold excuses a wait, never a payment)`).toBe(0);
         if (!entitledAt(e.d)) {
           // Owed nothing: bought on or after its ex-date, or sold before it. Never excused.
           this.nothingOwed += 1;
@@ -439,12 +557,28 @@ export class EntitlementOracle {
           continue;
         }
         const p = this.payloadOf(id);
-        if (p === undefined || doubt || e.d >= splitsWait) { this.excused += 1; continue; }
+        if (p === undefined || e.d >= splitsWait || this.scopedDoubt(idea, f, sym, id, this.S[e.d]) || uncoveredNow.includes(sym)) { this.excused += 1; continue; }
+        // LATE FACTS (L-1): the id first listed after the ledger sold the stock; or a split dated on or before its ex-date
+        // first listed after the close that paid it on time.
+        const late = [];
+        const firstListed = this.inputs.firstListedAt(id);
+        // (Unpaid when the ledger sold the stock — first listed after the sale, or listed before it and held by a doubt.)
+        const lateEntitlement = h.soldAt != null && receipts.length === 0;
+        if (lateEntitlement && firstListed !== null) late.push(Math.max(firstListed, h.soldAt));
+        const paidAt = receipts.length > 0 ? this.S.indexOf(receipts[0].appliedOn) : null;
+        if (paidAt !== null) for (const sp of splits) if (sp.d <= e.d && sp.listedAt !== null && sp.listedAt > paidAt) late.push(sp.listedAt);
+        if (late.length > 0) {
+          const lastLate = Math.max(...late);
+          // (An approval of the proposal; on a sold holding, the conflict ruling that settled the row; or a correcting ruling,
+          // which posts the net on the dated count.)
+          const approved = authorities.some((x) => x.at > lastLate && x.at <= k && (x.kind === 'approval' || lateEntitlement || x.correcting));
+          if (!approved) { this.waiting += 1; continue; }
+        }
         let count = h.entryShares;
         for (const sp of splits) if (sp.d <= e.d) count = roundSharesHere(count * sp.ratio);
         const owed = p === null ? 0 : roundUsdHere(count * Number(p.amount));
         this.checked += 1;
-        for (const a of (l.adjustments || []).filter((x) => x && x.held !== true && x.actionId === id)) if (this.byKind[a.kind] !== undefined) this.byKind[a.kind] += 1;
+        for (const a of adjustments) if (this.byKind[a.kind] !== undefined) this.byKind[a.kind] += 1;
         expect(received, `${label} ${this.S[k]} I-6 ${f} ${id}: received $${received}, the inputs and the holding history say $${owed} (${count} shares on ${this.S[e.d]} × ${p?.amount ?? 0})`).toBe(owed);
       }
     }
