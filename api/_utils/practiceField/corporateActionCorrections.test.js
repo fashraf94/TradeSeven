@@ -579,3 +579,88 @@ describe('the adjustment record (pure): a debit larger than its cash is held, an
     expect(resultAdjustmentView({ ...idea([a(99.97)]), result: { ...idea([]).result, economicResult: 'unmeasurable' } })).toMatchObject({ wouldChangeLabel: false });
   });
 });
+
+describe('the battery\'s rows — each a behaviour of this build no other row pins', () => {
+  it('T2D-03: a dividend dated ON the sale day is owed (sold on the ex-date); one dated before a split applied while held is paid on the count before it', async () => {
+    const c = await start();
+    await close(c, 0);
+    await close(c, 1, 50, [spl(1, '2/1')]); // a 2-for-1 on Nov 17, listed on time: 199.940016 shares
+    await sellOnLine(c, 2); // below the line Nov 18, sold Nov 19
+    await close(c, 3, belowLine(c));
+    // Listed after the sale: $1 dated Nov 16 (before the split, after the purchase? no — Nov 16 is the purchase day: owed nothing),
+    // $0.5 dated Nov 19 (the sale day: owed, on 199.940016), and $2 dated Nov 17 (the split's own date: share basis first).
+    await close(c, 4, belowLine(c), [div(0, 1), div(3, 0.5), div(1, 2)]);
+    const got = Object.fromEntries(adjustmentsOf(c).map((a) => [a.actionId.slice(-10), [a.amountUsd, a.entitledShares]]));
+    expect(got).toEqual({ [S[3]]: [roundUsd(199.940016 * 0.5), 199.940016], [S[1]]: [roundUsd(199.940016 * 2), 199.940016] });
+  });
+
+  it('T2D-03: the late row waits while the session\'s data does not cover the sold symbol (its parse report missing), and is paid at the first close that covers it', async () => {
+    const c = await start();
+    await close(c, 0);
+    await sellOnLine(c, 1);
+    await close(c, 2, belowLine(c));
+    await storeCloseSnapshot(c.db, S[3], q(belowLine(c), [div(1, 1)]));
+    omitParseReport(c.db, S[3], ['AAPL']);
+    await closeIdeaBook(c.db, c.bookRef, { date: S[3], now: closeNowOf(S[3]) });
+    expect(adjustmentsOf(c)).toEqual([]);
+    await close(c, 4, belowLine(c), [div(1, 1)]);
+    expect(adjustmentsOf(c)).toEqual([expect.objectContaining({ kind: ADJUSTMENT_KIND.LATE_ENTITLEMENT, amountUsd: 99.97, postedOn: S[4] })]);
+  });
+
+  it('T2D-12: a SALE waits on a session whose parse report shows a rejected row for the symbol (the same rule as the close)', async () => {
+    const c = await start();
+    await close(c, 0);
+    await close(c, 1, belowLine(c));
+    expect(ideaOf(c).ledger.holdings.AAPL.exitPending).toBeTruthy();
+    storeParseReport(c.db, S[2], 'AAPL', { ...CLEAN_PARSE_ENTRY, rowsReceived: 1, rowsRejected: 1, rejects: [{ leg: 'splits', reason: 'malformed_split', row: { date: S[2], split: '5:4' } }], legs: { ...CLEAN_PARSE_ENTRY.legs, splits: { ...CLEAN_PARSE_ENTRY.legs.splits, received: 1, rejected: 1 } } });
+    await windowAt(c.db, c.bookId, { date: S[2], slot: 'open30', quotes: q(belowLine(c)) });
+    expect(ideaOf(c).ledger.holdings.AAPL).toBeTruthy(); // not sold
+    expect(JSON.stringify(ideaOf(c).ledger.holdings.AAPL.exitPending.waiting)).toMatch(/corporate_action_data_missing/);
+  });
+
+  it('T2D-12: ADMISSION refuses a held name whose session parse report shows a rejection (`ca_parse_incomplete`)', async () => {
+    const { admitIdea } = await import('./admission.js');
+    const c = await start({ capitalUsd: 10000 });
+    await close(c, 0);
+    await storeCloseSnapshot(c.db, S[1], q(100));
+    storeParseReport(c.db, S[1], 'AAPL', { ...CLEAN_PARSE_ENTRY, malformedEnvelope: true, legs: { ...CLEAN_PARSE_ENTRY.legs, dividends: { ...CLEAN_PARSE_ENTRY.legs.dividends, envelope: 'not_a_list' } } });
+    await closeIdeaBook(c.db, c.bookRef, { date: S[1], now: closeNowOf(S[1]) });
+    const res = await admitIdea(c.db, { bookId: c.bookId, contract: contractOf({ slot: 'medium', names: ['NVDA'], capitalUsd: 1000 }), opId: 'p1', nowIso: etIso(S[1], 18, 0) });
+    expect(res.refusals).toEqual([expect.objectContaining({ code: 'admission_marks_unavailable', unavailable: expect.arrayContaining([expect.objectContaining({ symbol: 'AAPL', reason: 'ca_parse_incomplete' })]) })]);
+  });
+
+  it('T2D-12: a BACKFILL whose own parse report shows a rejection is stored failed (its rows kept) and covers nothing', async () => {
+    const { ensureCoverageBackfills } = await import('./caBackfill.js');
+    const { successfulBackfill } = await import('./dailyCoverage.js');
+    const c = await start();
+    const ref = c.db.collection('mandates').doc(c.bookId);
+    const idea = ideaOf(c);
+    c.db._store.get(`mandates/${c.bookId}/ideas/${c.ideaId}`).data = { ...idea, caCoveredThrough: { AAPL: S[0], MSFT: S[0], SPY: S[0] }, status: 'holding' };
+    const http = async (url) => ({ ok: true, status: 200, json: async () => (url.includes('/splits/AAPL') ? [{ date: S[3], split: '5:4' }, { date: S[4], split: '2/1' }] : []) });
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await ensureCoverageBackfills(c.db, ref, { through: S[9], now: closeNowOf(S[9]), fetchCorporateActions: (sym, o) => fetchCorporateActionsEODHD(sym, { ...o, apiKey: 'k' }), fetchImpl: http });
+    } finally { quiet.mockRestore(); }
+    const doc = c.db._get('practiceFieldCaBackfill/AAPL');
+    expect(doc).toMatchObject({ failed: true, parseReport: { rowsRejected: 1 } });
+    expect(doc.actions).toEqual([expect.objectContaining({ type: 'split', ratio: 2 })]); // the row that parsed is kept
+    expect(successfulBackfill(doc, 'AAPL', null)).toBeNull();
+    expect(successfulBackfill({ ...doc, failed: false }, 'AAPL', null)).toBeNull(); // not clean: never a success
+  });
+
+  it('RETENTION: the daily build keeps the symbols of an idea that resulted within the look-back, and only then', async () => {
+    const c = await start({ names: ['AAPL'], capitalUsd: 10000 });
+    await close(c, 0);
+    await sellOnLine(c, 1);
+    await close(c, 2, belowLine(c));
+    expect(ideaOf(c).status).toBe('resulted');
+    const at = async (date) => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date(etIso(date, 8, 0)));
+      try { return await practiceFieldBuildInputs(c.db, { ideaHeldTickers: [], quarterlyActive: false, coverageData: null, ideaBookIds: [c.bookId], now: new Date(etIso(date, 8, 0)) }); } finally { vi.useRealTimers(); }
+    };
+    expect((await at(S[3])).daily.coverageTickers).toEqual(expect.arrayContaining(['AAPL', 'SPY']));
+    expect((await at(S[3])).daily.fetchCorporateActions).toBeTypeOf('function');
+    expect((await at(S[12])).daily.coverageTickers).toEqual([]); // past the look-back: released
+  });
+});
