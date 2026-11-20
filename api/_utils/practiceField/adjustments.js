@@ -172,7 +172,8 @@ function paidDividends(ledger) {
 
 /** The payloads a ledger has seen for `symbol` and `type` (null: every share-basis type — L-5), for the re-date screen of a
  *  closed holding's row: applied receipts, not-entitled declines, every recorded payload of its ambiguity records, its
- *  late entitlements, and (L-1) its OPEN late proposals — a payload the ledger proposed is one it has seen. */
+ *  late entitlements, and (L-1) its OPEN late proposals — a payload the ledger proposed is one it has seen — and (second
+ *  refuter P-2b) the last DECLINED late entitlement of an id still unsettled: a decline answers the money, not the id. */
 function redatePool(ledger, symbol, type) {
   const ok = (t) => (type === null ? SHARE_BASIS_TYPES.has(t) : t === type);
   const pool = [];
@@ -188,6 +189,13 @@ function redatePool(ledger, symbol, type) {
   }
   for (const p of openProposals(ledger)) {
     if (ok(p.type) && upper(p.ticker) === symbol && p.kind === ADJUSTMENT_KIND.LATE_ENTITLEMENT) pool.push({ actionId: p.actionId, effectiveDate: p.effectiveDate, key: actionPayloadOf({ amount: p.amountPerShare }), type: p.type, proposal: p });
+  }
+  const settled = new Set([...(ledger?.appliedActionIds || []), ...(ledger?.declinedActionIds || [])]);
+  const lastOf = new Map();
+  for (const p of ledger?.lateProposals || []) if (p) lastOf.set(p.actionId, p);
+  for (const p of lastOf.values()) {
+    if (p.status !== LATE_PROPOSAL_STATUS.DECLINED || p.kind !== ADJUSTMENT_KIND.LATE_ENTITLEMENT || !ok(p.type) || upper(p.ticker) !== symbol || settled.has(p.actionId)) continue;
+    pool.push({ actionId: p.actionId, effectiveDate: p.effectiveDate, key: actionPayloadOf({ amount: p.amountPerShare }), type: p.type, proposal: p });
   }
   return pool;
 }
@@ -397,8 +405,10 @@ export function planLedgerAdjustments(ledger, ctx) {
     // $1 dated after the sale one day, dated before it the next). Their economic identity is KEPT on the ledger
     // (`closedOutsideRows`) for the window, so a row listed at a LATER close still meets them.
     const nearEnds = (a) => withinSessions(a.effectiveDate, c.through, REDATE_WINDOW_SESSIONS) || (c.openedAt !== null && withinSessions(a.effectiveDate, c.openedAt, REDATE_WINDOW_SESSIONS));
+    // (Second refuter P-4: a row dated AFTER this close is observed too — the daily layer lists two days ahead — and a
+    // vendor that moves a proposal's dividend to the next session is a move past the sale like any other.)
     const outsideNow = (rows[sym] || []).filter((a) => a && !a.founderRuling && upper(a.ticker) === sym && (a.type === 'cash_dividend' || SHARE_BASIS_TYPES.has(a.type))
-      && isDate(a.effectiveDate) && a.effectiveDate <= date && !inInterval(a) && nearEnds(a)).map((a) => ({ actionId: actionIdOf(a), type: a.type, ticker: sym, effectiveDate: a.effectiveDate, ratio: a.ratio ?? null, amount: a.amount ?? null }));
+      && isDate(a.effectiveDate) && !inInterval(a) && nearEnds(a)).map((a) => ({ actionId: actionIdOf(a), type: a.type, ticker: sym, effectiveDate: a.effectiveDate, ratio: a.ratio ?? null, amount: a.amount ?? null }));
     for (const o of outsideNow) {
       const known = (cur().closedOutsideRows || []).some((x) => x.actionId === o.actionId && actionPayloadOf(x) === actionPayloadOf(o));
       if (!known) { const l = edit(); l.closedOutsideRows = [...(l.closedOutsideRows || []), { ...o, seenOn: date }]; }
@@ -407,12 +417,21 @@ export function planLedgerAdjustments(ledger, ctx) {
     // REVISIONS FIRST (review AR4-C-3; the open path's T2D-D01 pre-pass).
     const sorted = [...byId].sort(([, a], [, b]) => byDatePhaseId(a[0], b[0]));
     // (The payload the ledger already holds for an UNSETTLED id: a row waiting on a doubt, or an open late ENTITLEMENT
-    // proposal — L-1. A late_basis proposal is of a paid, settled id: its revisions are the settled path's.)
+    // proposal — L-1 — or (second refuter P-2a) the one the founder DECLINED last: a decline settles nothing, and the
+    // payload it answered is one the ledger has seen. A late_basis proposal is of a paid, settled id: its revisions are the
+    // settled path's.)
+    const priorProposalOf = (id) => {
+      if (settledNow().has(id)) return null;
+      const open = openProposalOf(id);
+      if (open) return open.kind === ADJUSTMENT_KIND.LATE_ENTITLEMENT ? open : null;
+      const last = (cur().lateProposals || []).filter((x) => x.actionId === id).at(-1) ?? null;
+      return last && last.status === LATE_PROPOSAL_STATUS.DECLINED && last.kind === ADJUSTMENT_KIND.LATE_ENTITLEMENT ? last : null;
+    };
     const priorKeyOf = (id) => {
       const held = heldOf(id);
       if (held) return actionPayloadOf(held);
-      const p = openProposalOf(id);
-      return p && p.kind === ADJUSTMENT_KIND.LATE_ENTITLEMENT && !settledNow().has(id) ? actionPayloadOf({ amount: p.amountPerShare }) : null;
+      const p = priorProposalOf(id);
+      return p ? actionPayloadOf({ amount: p.amountPerShare }) : null;
     };
     const revisionFirst = ([id, group0]) => {
       const listedHere = group0.filter((a) => !a.fromHeld);
@@ -471,9 +490,10 @@ export function planLedgerAdjustments(ledger, ctx) {
       const priorKey = priorKeyOf(id);
       if (!ruled && priorKey !== null && listedHere.length > 0 && keys.some((k) => k !== priorKey)) {
         const l = edit();
-        const priorRow = held ? payloadRow(held, held.heldOn ?? null) : payloadRow({ amount: proposal.amountPerShare }, proposal.proposedOn ?? null);
+        const prior = held ? null : priorProposalOf(id);
+        const priorRow = held ? payloadRow(held, held.heldOn ?? null) : payloadRow({ amount: prior.amountPerShare }, prior.proposedOn ?? null);
         const rowsAll = [...new Map([priorRow, ...group.filter((a) => !a.founderRuling).map((a) => payloadRow(a, date))].map((x) => [actionPayloadOf(x), x])).values()];
-        const rec = { actionId: id, type: first.type, ticker: sym, effectiveDate: first.effectiveDate, applied: false, reason: CONFLICTING_ACTION, entitled: true, rows: rowsAll, seenOn: date, kinds: ['revision'], revisedFrom: held ? { heldOn: held.heldOn ?? null } : { proposal: proposal.id }, closedHolding: true };
+        const rec = { actionId: id, type: first.type, ticker: sym, effectiveDate: first.effectiveDate, applied: false, reason: CONFLICTING_ACTION, entitled: true, rows: rowsAll, seenOn: date, kinds: ['revision'], revisedFrom: held ? { heldOn: held.heldOn ?? null } : { proposal: prior.id, ...(prior.status === LATE_PROPOSAL_STATUS.DECLINED ? { declined: true } : {}) }, closedHolding: true };
         l.corporateActionReceipts = [...l.corporateActionReceipts, rec];
         out.recorded.push(rec);
         dropHeld(id);
@@ -541,7 +561,7 @@ export function planLedgerAdjustments(ledger, ctx) {
         // has seen (applied, declined, recorded, PROPOSED), the rows listed now and KEPT just outside the holding (L-3),
         // and the rows waiting on a doubt; and (L-5) any other share-basis id of the symbol on the same date.
         const key = keys[0];
-        const outside = [...(rows[sym] || []).filter((a) => a && !a.founderRuling && upper(a.ticker) === sym && a.type === first.type && isDate(a.effectiveDate) && a.effectiveDate <= date
+        const outside = [...(rows[sym] || []).filter((a) => a && !a.founderRuling && upper(a.ticker) === sym && a.type === first.type && isDate(a.effectiveDate)
           && !inInterval(a)).map((a) => ({ actionId: actionIdOf(a), effectiveDate: a.effectiveDate, key: actionPayloadOf(a) })), ...outsidePool(first.type)];
         const pool = [...redatePool(cur(), sym, first.type), ...outside, ...(cur().closedHeldRows || []).filter((r) => r.type === first.type && upper(r.ticker) === sym).map((r) => ({ actionId: r.actionId, effectiveDate: r.effectiveDate, key: actionPayloadOf(r), held: r }))];
         let match = pool.find((p) => p.actionId !== id && p.key === key && withinSessions(p.effectiveDate, first.effectiveDate, REDATE_WINDOW_SESSIONS)) ?? null;
@@ -704,6 +724,42 @@ export function planLedgerAdjustments(ledger, ctx) {
       }
     }
   }
+  // (Second refuter P-1: A ROW KEPT OUTSIDE A SOLD HOLDING that pairs with an open `late_basis` — a paid dividend's id,
+  // which can never be re-opened as an ambiguity — is RECORDED as a possible re-date of it, so the founder's conflict
+  // ruling can answer the pairing: `none` settles it and the approval may post; until then the approval is refused (L-2 ②).
+  // Kept only, it refused the approval for good, and the founder had nothing to rule.)
+  for (const p of openProposals(cur())) {
+    const sym = upper(p.ticker);
+    if (p.kind !== ADJUSTMENT_KIND.LATE_BASIS || !closed.has(sym)) continue;
+    const key = actionPayloadOf({ amount: p.amountPerShare });
+    for (const x of cur().closedOutsideRows || []) {
+      if (upper(x.ticker) !== sym || x.type !== 'cash_dividend' || x.actionId === p.actionId || actionPayloadOf(x) !== key) continue;
+      if (!withinSessions(x.effectiveDate, p.effectiveDate, REDATE_WINDOW_SESSIONS) || settledNow().has(x.actionId) || openRecordOf(cur(), x.actionId) !== null) continue;
+      const l = edit();
+      const rec = { actionId: x.actionId, type: x.type, ticker: sym, effectiveDate: x.effectiveDate, ratio: x.ratio ?? null, amount: x.amount ?? null, cashPerShare: null, source: null, applied: false, reason: POSSIBLE_REDATE, redateOf: p.actionId, seenOn: date, rows: [payloadRow(x, x.seenOn ?? null)], kinds: ['possible_redate'], closedHolding: true, outsideHolding: true };
+      l.corporateActionReceipts = [...l.corporateActionReceipts, rec];
+      out.recorded.push(rec);
+      out.alerts.push(`PRACTICE_FIELD_CORPORATE_ACTION_REDATE ${ideaId} ${ledgerKind} ${x.actionId} — the same cash_dividend as the paid ${p.actionId}, dated just outside the sold holding: ${p.id} waits — the founder rules it (resolve_hold, conflict)`);
+    }
+  }
+  // (…and — found by I-7's L-2 ③ check on shape seed 2119990011 — a SHARE-BASIS row kept outside the sold holding that pairs
+  // with a share-basis action applied within it: the count every proposal of the symbol stands on is in question (the
+  // action may have happened after the sale). Recorded while a proposal of the symbol waits, so the founder can rule it.)
+  for (const [sym, c] of closed) {
+    if (!openProposals(cur()).some((p) => upper(p.ticker) === sym)) continue;
+    const inside = (cur().corporateActionReceipts || []).filter((r) => r?.applied === true && SHARE_BASIS_TYPES.has(r.type) && upper(r.ticker) === sym
+      && isDate(r.effectiveDate) && r.effectiveDate <= c.through && (c.openedAt === null || r.effectiveDate > c.openedAt));
+    for (const x of cur().closedOutsideRows || []) {
+      if (upper(x.ticker) !== sym || !SHARE_BASIS_TYPES.has(x.type) || settledNow().has(x.actionId) || openRecordOf(cur(), x.actionId) !== null) continue;
+      const r = inside.find((y) => y.actionId !== x.actionId && y.type === x.type && actionPayloadOf(y) === actionPayloadOf(x) && withinSessions(y.effectiveDate, x.effectiveDate, REDATE_WINDOW_SESSIONS)) ?? null;
+      if (!r) continue;
+      const l = edit();
+      const rec = { actionId: x.actionId, type: x.type, ticker: sym, effectiveDate: x.effectiveDate, ratio: x.ratio ?? null, amount: x.amount ?? null, cashPerShare: null, source: null, applied: false, reason: POSSIBLE_REDATE, redateOf: r.actionId, seenOn: date, rows: [payloadRow(x, x.seenOn ?? null)], kinds: ['possible_redate'], closedHolding: true, outsideHolding: true };
+      l.corporateActionReceipts = [...l.corporateActionReceipts, rec];
+      out.recorded.push(rec);
+      out.alerts.push(`PRACTICE_FIELD_CORPORATE_ACTION_REDATE ${ideaId} ${ledgerKind} ${x.actionId} — the same ${x.type} as ${r.actionId}, applied within the sold holding, dated just outside it: the proposals of ${sym} wait — the founder rules it (resolve_hold, conflict)`);
+    }
+  }
   const blockersNow = (p) => {
     const sym = upper(p.ticker);
     const c = closed.get(sym) ?? null;
@@ -717,6 +773,14 @@ export function planLedgerAdjustments(ledger, ctx) {
     // L-2 ③: a share-basis id dated within the holding is unresolved (this ledger's own, and the caller's hold set).
     const end = c ? c.through : date;
     if (shareDoubtOn(sym, end) || (c !== null && (cur().closedHeldRows || []).some((r) => SHARE_BASIS_TYPES.has(r.type) && upper(r.ticker) === sym))) out2.push(`${LATE_BLOCKER.SHARE_BASIS}:${sym}`);
+    // (…an open share-basis re-date whose OTHER id is dated within the sold holding — wherever the moved row is dated.)
+    if (c !== null) {
+      for (const r of cur().corporateActionReceipts || []) {
+        if (r?.reason !== POSSIBLE_REDATE || !SHARE_BASIS_TYPES.has(r.type) || upper(r.ticker) !== sym || openRecordOf(cur(), r.actionId) === null) continue;
+        const partner = (cur().corporateActionReceipts || []).find((y) => y?.actionId === r.redateOf && isDate(y.effectiveDate)) ?? null;
+        if (partner && partner.effectiveDate <= c.through && (c.openedAt === null || partner.effectiveDate > c.openedAt)) out2.push(`${LATE_BLOCKER.SHARE_BASIS}:${r.actionId}`);
+      }
+    }
     // L-2 ④: a date in the holding interval is uncovered — and whatever else the caller refuses on (its hold set).
     out2.push(...blockersOf(sym, p.effectiveDate, { end, openedAt: c?.openedAt ?? null }));
     return [...new Set(out2)].sort();

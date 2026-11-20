@@ -196,6 +196,9 @@ export function lateApprovalRefusal(idea, f, p) {
     const x = idea?.[g];
     if (!x) return false;
     if ((x.corporateActionReceipts || []).some((r) => SHARE_BASIS.has(r?.type) && upper(r.ticker) === sym && within(r.effectiveDate) && openOn(x, r))) return true;
+    // (An open share-basis re-date whose other id is dated within the holding, wherever the moved row is dated — adjustments.js.)
+    const partnerDate = (r) => (x.corporateActionReceipts || []).find((y) => y?.actionId === r.redateOf)?.effectiveDate;
+    if ((x.corporateActionReceipts || []).some((r) => r?.reason === POSSIBLE_REDATE && SHARE_BASIS.has(r.type) && upper(r.ticker) === sym && openOn(x, r) && typeof partnerDate(r) === 'string' && within(partnerDate(r)))) return true;
     const h = x.holdings?.[sym];
     if (h && (h.basisSuspicion || (h.heldActions || []).some((r) => SHARE_BASIS.has(r.type)))) return true;
     return (x.closedHeldRows || []).some((r) => SHARE_BASIS.has(r.type) && upper(r.ticker) === sym && within(r.effectiveDate));

@@ -265,6 +265,7 @@ function closeFilledIdea(idea, {
   const coverage = new Map();
   const uncovered = new Set();
   let feedActions = sessionActions;
+  const backfillJoined = new Set(); // the symbols whose backfill rows joined the session's rows
   if (ruled) alerts.push(...ruled.alerts);
   // The ids a ruling supplied, ledger by ledger (Astra T2D-09): not re-date-screened on that ledger only.
   const ruledIdsOf = (f) => ruled?.ruledIdsByLedger?.[f] ?? null;
@@ -300,14 +301,16 @@ function closeFilledIdea(idea, {
       // because the idea disputed its id, and let a re-listed backfill payload settle the idea's own conflict.)
       const rows = input.backfillRows ?? (r.viaBackfill ? input.backfill?.actions : null);
       const tagged = Array.isArray(rows) ? rows.filter((a) => a && typeof a === 'object').map((a) => ({ ...a, feedOrigin: 'backfill' })) : [];
-      if (tagged.length > 0) feedActions = unionActionsBySymbol(feedActions, { [sym]: tagged });
+      if (tagged.length > 0) { feedActions = unionActionsBySymbol(feedActions, { [sym]: tagged }); backfillJoined.add(sym); }
     }
     // (Fix-round refuter R-4: A SOLD HOLDING'S CLEAN BACKFILL — read because its coverage doubt stands — is data about that
     // holding's history: its rows join the idea's rows for the symbol, tagged as the backfill's, so the row the daily build
     // rejected reaches the closed path as the backfill lists it. Clearing the doubt without them would compute on a count
     // that misses it.)
     for (const [sym, bf] of closedBackfills) {
-      if (coverageInputs.has(sym)) continue;
+      // (Second refuter P-3: skipped only where the coverage loop above joined this symbol's backfill rows already — a
+      // comparison still holding the stock, covered by the day's own window, read none.)
+      if (backfillJoined.has(sym)) continue;
       const tagged = (Array.isArray(bf?.actions) ? bf.actions : []).filter((a) => a && typeof a === 'object').map((a) => ({ ...a, feedOrigin: 'backfill' }));
       if (tagged.length > 0) feedActions = unionActionsBySymbol(feedActions, { [sym]: tagged });
     }

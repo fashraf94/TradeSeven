@@ -17,6 +17,15 @@
 //   O    the oracle: I-7 accepted an approval that L-2 must refuse (I-7 now checks L-2 at posting, from the inputs alone).
 //
 // Every row here failed at 193a3dda (the product rows on the product; the oracle rows on the oracle), and passes now.
+//
+// THE SECOND REFUTER (a read-only snapshot of c569f281, after the fixes above) found no money moved without authority, and:
+//   P-1  a sold holding's late_basis paired with a row kept outside it could never complete: no record to rule.
+//   P-2a a declined proposal's id relisted at another amount was a fresh, approvable proposal (no revision).
+//   P-2b a declined proposal's payload under another date was a fresh, approvable proposal (no pairing).
+//   P-3  R-4's backfill rows were dropped when a comparison still held the stock: the net missed the split.
+//   P-4  R-3 through the daily layer's lookahead: a row dated after the close was not screened.
+//   O-1, O-2, O-3  I-7's L-2 at posting read no share-basis (③) or coverage (④) fact, and a partner's ruling ignored ledgers.
+// Those rows failed at c569f281, and pass now.
 
 import { describe, it, expect } from 'vitest';
 import { run, installSequenceHooks, S } from './__testsupport__/caSequences.js';
@@ -54,7 +63,7 @@ async function soldAt(c, k) {
   return p;
 }
 const ask = (c, body, requestKey) => founderRules(c.db, c.bookId, c.ideaId, body, { requestKey, expectOk: false });
-const lateBody = (ledger, actionId, decision = 'approve') => ({ kind: 'late_adjustment', recordId: `late_${ledger}_${actionId}`, decision });
+const lateBody = (ledger, actionId, decision = 'approve', n = 1) => ({ kind: 'late_adjustment', recordId: `late_${ledger}_${actionId}${n > 1 ? `_${n}` : ''}`, decision });
 const D = (i) => `cash_dividend_AAPL_${S[i]}`;
 const postedFull = (c, f = 'ledger') => (ideaOf(c)[f]?.adjustments || []).filter((a) => !a.held).map((a) => [a.kind, a.actionId, a.amountUsd, a.postedOn]);
 const bookCash = (c) => getBook(c.db, c.bookId).portfolio.cash;
@@ -249,7 +258,7 @@ describe('R-5 — the same doubt holds a ruled correction; a doubt dated beyond 
     expect(postedFull(c)).toEqual([['ruled_correction', D(2), 99.97, S[7]]]);
   });
 
-  it('a rejected row dated more than the window after the dividend cannot change its count or be it moved: the ruling posts', async () => {
+  it('control: a rejected row dated more than the window after the dividend cannot change its count or be it moved — the ruling posts', async () => {
     const c = await opened({ comparison: xlk });
     const p = await soldAt(c, 9);
     await closeAt(c, 10, p, [div(1, 1), div(2, 1)]);
@@ -413,5 +422,254 @@ describe('O — the oracle: I-7 checks L-2 at posting, from the inputs alone', (
     expect(() => e.checkAuthority(idea, 6, 'unit')).toThrow(/L-2 at posting/);
     inputs.ruling({ kind: 'conflict', recordId: D(1), decision: 'payload', payload: { amount: 1 } }, { status: 200 }, 'r1', 6);
     expect(() => e.checkAuthority(idea, 6, 'unit')).not.toThrow();
+  });
+});
+
+// ── THE SECOND REFUTER (c569f281) ─────────────────────────────────────────────────────────────────────────────────────
+/** Hold AAPL through S[k-1] (rowsAt[i] listed at close i), close S[k-1] below the line, sell at S[k]'s window, close S[k]. */
+async function soldAtWith(c, k, rowsAt = {}) {
+  for (let i = 0; i < k - 1; i += 1) await closeAt(c, i, 100, rowsAt[i] || []);
+  const p = Math.round((lineOf(c) - 0.5) * 100) / 100;
+  await closeAt(c, k - 1, p, rowsAt[k - 1] || []);
+  await windowAt(c.db, c.bookId, { date: S[k], slot: 'open30', quotes: q(p) });
+  expect(ideaOf(c).ledger.holdings.AAPL).toBeUndefined();
+  await closeAt(c, k, p, rowsAt[k] || []);
+  return p;
+}
+const hc = (i, price, rows = [], extra = {}) => ({ kind: 'close', i, price, rows, ...extra });
+
+describe('P-1 — a sold holding\'s late_basis paired with a row kept outside the holding can complete', () => {
+  it('the outside row is recorded for the founder; ruled `none`, the approval posts the net (red at c569f281: 409 for good, and conflict 404)', async () => {
+    const c = await opened({ comparison: xlk });
+    const p = await soldAtWith(c, 5, { 3: [div(3, 1)] });
+    expect(ideaOf(c).ledger.dividendsUsd).toBe(99.97);
+    await closeAt(c, 6, p, [spl(2, '5/4')]);
+    expect(proposalOf(c, D(3))).toMatchObject({ kind: 'late_basis', status: 'open', netUsd: 24.99 });
+    await closeAt(c, 7, p, [div(6, 1)]);
+    expect(ideaOf(c).ledger.corporateActionReceipts).toContainEqual(expect.objectContaining({ actionId: D(6), reason: 'possible_redate', redateOf: D(3), outsideHolding: true }));
+    expect(proposalOf(c, D(3)).blockers).toContain(`pairs_with:${D(6)}`);
+    expect(await ask(c, lateBody('idea', D(3)), 'a0')).toMatchObject({ status: 409, body: { error: 'late_pairs_with_candidate' } });
+    expect((await ask(c, { kind: 'conflict', recordId: D(6), decision: 'none' }, 'r6')).status).toBe(200);
+    await closeAt(c, 8, p, [div(6, 1)]);
+    expect(proposalOf(c, D(3)).blockers).toEqual([]);
+    expect((await ask(c, lateBody('idea', D(3)), 'a1')).status).toBe(200);
+    await closeAt(c, 9, p);
+    expect(postedFull(c)).toEqual([['late_basis', D(3), 24.99, S[9]]]);
+  });
+
+  it('control: the founder may decline instead — accepted, nothing posts', async () => {
+    const c = await opened({ comparison: xlk });
+    const p = await soldAtWith(c, 5, { 3: [div(3, 1)] });
+    await closeAt(c, 6, p, [spl(2, '5/4')]);
+    await closeAt(c, 7, p, [div(6, 1)]);
+    expect((await ask(c, lateBody('idea', D(3), 'decline'), 'd1')).status).toBe(200);
+    await closeAt(c, 8, p);
+    expect(proposalOf(c, D(3)).status).toBe('declined');
+    expect(postedFull(c)).toEqual([]);
+  });
+});
+
+describe('P-2 — a decline answers the money, not the id: its payload stays one the ledger has seen', () => {
+  it('(a) declined at $1, relisted at $2: the id is a revision (a conflict record), not a fresh proposal; ruled $2, it posts once (red at c569f281: `_2` approved, $199.94 posted)', async () => {
+    const c = await opened({ comparison: xlk });
+    const p = await soldAt(c, 2);
+    await closeAt(c, 3, p, [div(1, 1)]);
+    expect((await ask(c, lateBody('idea', D(1), 'decline'), 'd1')).status).toBe(200);
+    await closeAt(c, 4, p, [div(1, 1)]);
+    await closeAt(c, 5, p, [div(1, 2)]);
+    const l = ideaOf(c).ledger;
+    expect(l.lateProposals.map((x) => [x.id, x.status])).toEqual([[`late_idea_${D(1)}`, 'declined']]);
+    expect(l.corporateActionReceipts).toContainEqual(expect.objectContaining({ actionId: D(1), reason: 'conflicting_action', kinds: ['revision'], revisedFrom: { proposal: `late_idea_${D(1)}`, declined: true } }));
+    expect((await ask(c, lateBody('idea', D(1), 'approve', 2), 'a2')).status).toBe(404);
+    expect((await ask(c, { kind: 'conflict', recordId: D(1), decision: 'payload', payload: { amount: 2 } }, 'r1')).status).toBe(200);
+    await closeAt(c, 6, p, [div(1, 2)]);
+    expect(postedFull(c)).toEqual([['late_entitlement', D(1), 199.94, S[6]]]);
+  });
+
+  it('(a) through the S-6 harness: I-7 (L-2 at posting) on decline → relist → approval (red at c569f281)', async () => {
+    await run({
+      seed: 'refuter2-P-2a', comparison: xlk,
+      steps: [hc(0, 100), hc(1, 100), hc(2, 100), hc(3, 94, [], { belowLine: true }), { kind: 'window', i: 4, price: 94 }, hc(4, 94),
+        hc(5, 94, [div(1, 1)]),
+        { kind: 'lateExact', body: lateBody('idea', D(1), 'decline') },
+        hc(6, 94, [div(1, 1)]),
+        hc(7, 94, [div(1, 2)]),
+        { kind: 'lateExact', body: lateBody('idea', D(1), 'approve', 2), status: 404 },
+        hc(8, 94, [div(1, 2)]),
+        { kind: 'expectIdea', fn: (idea) => expect((idea.ledger.adjustments || []).filter((a) => !a.held)).toEqual([]) }],
+    });
+  });
+
+  it('(b) declined D1 ($1), then $1 listed a session later: D2 pairs with it — both ambiguities, nothing proposed (red at c569f281: D2 approved, $99.97 posted)', async () => {
+    const c = await opened({ comparison: xlk });
+    const p = await soldAtWith(c, 3);
+    await closeAt(c, 4, p, [div(1, 1)]);
+    expect((await ask(c, lateBody('idea', D(1), 'decline'), 'd1')).status).toBe(200);
+    await closeAt(c, 5, p, [div(1, 1)]);
+    await closeAt(c, 6, p, [div(2, 1)]);
+    expect(redates(c)).toEqual(expect.arrayContaining([[D(2), D(1)], [D(1), D(2)]]));
+    expect((ideaOf(c).ledger.lateProposals || []).filter((x) => x.actionId === D(2))).toEqual([]);
+    expect((await ask(c, lateBody('idea', D(2)), 'a2')).status).toBe(404);
+    await closeAt(c, 7, p);
+    expect(postedFull(c)).toEqual([]);
+  });
+
+  it('(b) through the S-6 harness (red at c569f281: I-7 L-2 at posting)', async () => {
+    await run({
+      seed: 'refuter2-P-2b', comparison: xlk,
+      steps: [hc(0, 100), hc(1, 100), hc(2, 100), hc(3, 94, [], { belowLine: true }), { kind: 'window', i: 4, price: 94 }, hc(4, 94),
+        hc(5, 94, [div(1, 1)]),
+        { kind: 'lateExact', body: lateBody('idea', D(1), 'decline') },
+        hc(6, 94, [div(1, 1)]),
+        hc(7, 94, [div(2, 1)]),
+        { kind: 'lateExact', body: lateBody('idea', D(2), 'approve'), status: 404 },
+        hc(8, 94), hc(9, 94)],
+    });
+  });
+
+  it('(b) control: D2 at the very close the decline applies — D1 still open, both recorded, no proposal of D2 (unchanged)', async () => {
+    await run({
+      seed: 'refuter2-P-2b-control', comparison: xlk,
+      steps: [hc(0, 100), hc(1, 100), hc(2, 100), hc(3, 94, [], { belowLine: true }), { kind: 'window', i: 4, price: 94 }, hc(4, 94),
+        hc(5, 94, [div(1, 1)]),
+        { kind: 'lateExact', body: lateBody('idea', D(1), 'decline') },
+        hc(6, 94, [div(2, 1)]),
+        { kind: 'expectIdea', fn: (idea) => expect(idea.ledger.corporateActionReceipts.filter((r) => r.reason === 'possible_redate').map((r) => r.actionId).sort()).toEqual([D(1), D(2)].sort()) },
+        { kind: 'lateExact', body: lateBody('idea', D(2), 'approve'), status: 404 },
+        hc(7, 94),
+        { kind: 'expectIdea', fn: (idea) => expect((idea.ledger.adjustments || []).filter((a) => !a.held)).toEqual([]) }],
+    });
+  });
+});
+
+describe('P-3 — a sold holding\'s clean backfill reaches its path though the comparison still holds the stock', () => {
+  it('same-stock comparison: the backfill lists a 5/4 split dated within the holding — the net is 124.96 (red at c569f281: 99.97)', async () => {
+    const c = await opened({ comparison: { type: 'same_stock_held' } });
+    const p = await soldAtWith(c, 3);
+    await storeCloseSnapshot(c.db, S[4], q(p));
+    storeParseReport(c.db, S[4], 'AAPL', rejectedOn(S[2]));
+    await closeIdeaBook(c.db, c.bookRef, { date: S[4], now: closeNowOf(S[4]) });
+    expect(ideaOf(c).ledger.closedCoverageDoubts?.AAPL?.dates?.[0]?.date).toBe(S[2]);
+    await closeAt(c, 5, p, [div(3, 1)]);
+    expect(proposalOf(c, D(3))).toMatchObject({ kind: 'late_entitlement', status: 'open', owedUsd: 99.97 });
+    c.db._store.set('practiceFieldCaBackfill/AAPL', backfillOf(S[2], S[5], [spl(2, '5/4'), div(3, 1)]));
+    await closeAt(c, 6, p);
+    expect(ideaOf(c).ledger.closedCoverageDoubts).toBeUndefined();
+    expect(proposalOf(c, D(3))).toMatchObject({ status: 'open', owedUsd: 124.96 });
+    expect((await ask(c, lateBody('idea', D(3)), 'a1')).status).toBe(200);
+    await closeAt(c, 7, p);
+    expect(postedFull(c).filter(([k]) => k === 'late_entitlement')).toEqual([['late_entitlement', D(3), 124.96, S[7]]]);
+  });
+
+  it('control: a sector comparison — 124.96 (unchanged)', async () => {
+    const c = await opened({ comparison: xlk });
+    const p = await soldAtWith(c, 3);
+    await storeCloseSnapshot(c.db, S[4], q(p));
+    storeParseReport(c.db, S[4], 'AAPL', rejectedOn(S[2]));
+    await closeIdeaBook(c.db, c.bookRef, { date: S[4], now: closeNowOf(S[4]) });
+    await closeAt(c, 5, p, [div(3, 1)]);
+    c.db._store.set('practiceFieldCaBackfill/AAPL', backfillOf(S[2], S[5], [spl(2, '5/4'), div(3, 1)]));
+    await closeAt(c, 6, p);
+    expect((await ask(c, lateBody('idea', D(3)), 'a1')).status).toBe(200);
+    await closeAt(c, 7, p);
+    expect(postedFull(c).filter(([k]) => k === 'late_entitlement')).toEqual([['late_entitlement', D(3), 124.96, S[7]]]);
+  });
+});
+
+describe('P-4 — R-3 through the daily layer\'s lookahead: a row dated after the close is screened too', () => {
+  it('D2 proposed (sold Thursday S3) and approved; Monday S5 lists $1 dated Tuesday S6, D2 dropped: nothing posts; D2 is an ambiguity (red at c569f281: $99.97 at S5)', async () => {
+    const c = await opened({ comparison: xlk });
+    const p = await soldAtWith(c, 3);
+    await closeAt(c, 4, p, [div(2, 1)]);
+    expect((await ask(c, lateBody('idea', D(2)), 'a1')).status).toBe(200);
+    expect([S[5], S[6]]).toEqual(['2026-11-23', '2026-11-24']);
+    await closeAt(c, 5, p, [div(6, 1)]);
+    expect(postedFull(c)).toEqual([]);
+    expect(redates(c)).toContainEqual([D(2), D(6)]);
+    expect((ideaOf(c).ledger.closedOutsideRows || []).map((x) => x.actionId)).toContain(D(6));
+    await closeAt(c, 6, p, [div(6, 1)]);
+    expect(postedFull(c)).toEqual([]);
+  });
+
+  it('through the S-6 harness (red at c569f281: I-7 L-2 at posting)', async () => {
+    await run({
+      seed: 'refuter2-P-4', comparison: xlk,
+      steps: [hc(0, 100), hc(1, 100), hc(2, 94, [], { belowLine: true }), { kind: 'window', i: 3, price: 94 }, hc(3, 94),
+        hc(4, 94, [div(2, 1)]),
+        { kind: 'lateExact', body: lateBody('idea', D(2), 'approve') },
+        hc(5, 94, [div(6, 1)]),
+        hc(6, 94, [div(6, 1)]),
+        hc(7, 94)],
+    });
+  });
+});
+
+describe('O-1 to O-3 — I-7\'s L-2 at posting reads ③, ④ and the ledgers a ruling covers', () => {
+  it('O-1: L-2 ③ — a share-basis id dated within the holding ambiguous by the inputs refuses an approval-only posting (red at c569f281: accepted)', () => {
+    const inputs = new InputOracle(S);
+    const e = new EntitlementOracle(S, inputs);
+    inputs.close(4, [div(2, 1)]);
+    inputs.close(5, [spl(1, '5/4'), spl(1, '2/1')]);
+    expect((inputs.marks.get(`split_AAPL_${S[1]}`) || []).map((m) => m.how)).toContain('conflict');
+    inputs.ruling(lateBody('idea', D(2)), { status: 200 }, 'a1', 5);
+    const idea = { ledger: { corporateActionReceipts: [], adjustments: [{ kind: 'late_entitlement', actionId: D(2), amountUsd: 99.97, amountPerShare: 1, postedOn: S[5] }] } };
+    expect(() => e.checkAuthority(idea, 5, 'unit')).toThrow(/L-2 ③ at posting/);
+    // (Answered by the founder's ruling of the split, made after the close that showed it: a posting at the next close passes.)
+    inputs.ruling({ kind: 'conflict', recordId: `split_AAPL_${S[1]}`, decision: 'payload', payload: { ratio: 1.25 } }, { status: 200 }, 'r1', 6);
+    const next = { ledger: { corporateActionReceipts: [], adjustments: [{ kind: 'late_entitlement', actionId: D(2), amountUsd: 99.97, amountPerShare: 1, postedOn: S[6] }] } };
+    expect(() => e.checkAuthority(next, 6, 'unit')).not.toThrow();
+  });
+
+  it('O-2: L-2 ④ — a posting at a close whose inputs leave the symbol uncovered, or after a rejected row of a sold holding with no clean data since (red at c569f281: accepted)', () => {
+    const inputs = new InputOracle(S);
+    const e = new EntitlementOracle(S, inputs);
+    inputs.close(4, [div(2, 1)]);
+    inputs.close(5, [div(2, 1)], { uncoveredSyms: ['AAPL'] });
+    inputs.coverage(5, { uncovered: ['AAPL'] });
+    inputs.ruling(lateBody('idea', D(2)), { status: 200 }, 'a1', 5);
+    const at = (on) => ({ ledger: { corporateActionReceipts: [], adjustments: [{ kind: 'late_entitlement', actionId: D(2), amountUsd: 99.97, amountPerShare: 1, postedOn: on }] } });
+    expect(() => e.checkAuthority(at(S[5]), 5, 'unit')).toThrow(/L-2 ④ at posting/);
+    // A sold holding (bought S0, sold S3): a row dated S1 rejected at S4 is a sticky doubt; a catch-up after it clears it.
+    inputs.coverage(4, { rejected: [{ sym: 'AAPL', date: S[1] }] });
+    inputs.coverage(6, {});
+    const sold = { ledger: { sym: 'AAPL', entryShares: 99.970008, boughtAt: 0, soldAt: 3 } };
+    expect(() => e.checkAuthority(at(S[6]), 6, 'unit', sold)).toThrow(/L-2 ④ at posting.*rejected/);
+    inputs.coverage(6, { catchup: true });
+    expect(() => e.checkAuthority(at(S[6]), 6, 'unit', sold)).not.toThrow();
+  });
+
+  it('O-3: a ruling of the paired id covering only the comparison answers nothing on the idea\'s ledger (red at c569f281: accepted)', () => {
+    const inputs = new InputOracle(S);
+    const e = new EntitlementOracle(S, inputs);
+    inputs.close(5, [div(1, 1)]);
+    inputs.close(6, [div(2, 1)]);
+    inputs.ruling(lateBody('idea', D(1)), { status: 200 }, 'a1', 6);
+    inputs.ruling({ kind: 'conflict', recordId: D(2), decision: 'none' }, { status: 200 }, 'r2', 6, ['comparisonLedger']);
+    const idea = { ledger: { corporateActionReceipts: [], adjustments: [{ kind: 'late_entitlement', actionId: D(1), amountUsd: 99.97, amountPerShare: 1, postedOn: S[6] }] } };
+    expect(() => e.checkAuthority(idea, 6, 'unit')).toThrow(/L-2 at posting/);
+    inputs.ruling({ kind: 'conflict', recordId: D(2), decision: 'none' }, { status: 200 }, 'r2b', 6, ['ledger']);
+    expect(() => e.checkAuthority(idea, 6, 'unit')).not.toThrow();
+  });
+});
+
+// ── FOUND BY I-7's L-2 ③ ITSELF (shape seed 2119990011, probe seed 2120900156) ─────────────────────────────────────────
+describe('a share-basis row kept outside the sold holding that pairs with one applied within it holds the proposals of the symbol', () => {
+  it('a reverse split dated S2 (listed after the sale) makes a late_basis; the same 4-for-5 then listed dated S6, just after the sale: the approval waits; ruled `none`, it posts (red at c569f281: −$19.99 posted on the approval)', async () => {
+    const c = await opened({ comparison: xlk });
+    const p = await soldAtWith(c, 5, { 3: [div(3, 1)] });
+    expect(ideaOf(c).ledger.dividendsUsd).toBe(99.97);
+    await closeAt(c, 6, p, [spl(2, '4/5')]);
+    expect(proposalOf(c, D(3))).toMatchObject({ kind: 'late_basis', status: 'open', netUsd: -19.99, blockers: [] });
+    expect((await ask(c, lateBody('idea', D(3)), 'a1')).status).toBe(200);
+    await closeAt(c, 7, p, [spl(6, '4/5')]);
+    const rs6 = `reverse_split_AAPL_${S[6]}`;
+    expect(ideaOf(c).ledger.corporateActionReceipts).toContainEqual(expect.objectContaining({ actionId: rs6, reason: 'possible_redate', redateOf: `reverse_split_AAPL_${S[2]}`, outsideHolding: true }));
+    expect(proposalOf(c, D(3)).blockers).toContain(`share_basis_unresolved:${rs6}`);
+    expect(postedFull(c), 'the count the late_basis stands on is in question').toEqual([]);
+    expect(await ask(c, lateBody('idea', D(3)), 'a2')).toMatchObject({ status: 409 });
+    expect((await ask(c, { kind: 'conflict', recordId: rs6, decision: 'none' }, 'r6')).status).toBe(200);
+    await closeAt(c, 8, p, [spl(6, '4/5')]);
+    await closeAt(c, 9, p);
+    expect(postedFull(c)).toEqual([['late_basis', D(3), -19.99, S[8]]]);
   });
 });

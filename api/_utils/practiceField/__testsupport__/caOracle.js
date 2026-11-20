@@ -58,6 +58,14 @@ export class InputOracle {
     // the ruling explained a move of its own: fix-round row T2D-11), counted.
     this.founder = new Map();
     this.founderExcused = 0;
+    this.coverageAt = new Map(); // k → { uncovered: [sym], rejected: [{ sym, date }], catchup }
+  }
+
+  /** T1a-2b-4 fix round (the second refuter's O-2): the coverage facts of the close of index k — the symbols its inputs
+   *  leave uncovered (a failed fetch, a dirty or missing parse report), the rows its parse report rejected, and whether it
+   *  is a catch-up (which stores a backfill). */
+  coverage(k, { uncovered = [], rejected = [], catchup = false } = {}) {
+    this.coverageAt.set(k, { uncovered: [...uncovered], rejected: [...rejected], catchup });
   }
 
   event(id, k, kind) {
@@ -463,7 +471,7 @@ export class EntitlementOracle {
   /**
    * I-7, after the close of index `k`: every adjustment a ledger has POSTED has its authority in the inputs (see above).
    */
-  checkAuthority(idea, k, label) {
+  checkAuthority(idea, k, label, holdings = null) {
     for (const f of LEDGERS) {
       const l = idea?.[f];
       if (!l) continue;
@@ -483,7 +491,7 @@ export class EntitlementOracle {
         expect(auth.length > 0, `${label} ${this.S[k]} I-7 ${f} ${a.actionId}: a ${a.kind} of $${a.amountUsd} posted on ${a.postedOn} with no founder approval or ruling for this ledger and id in the inputs`).toBe(true);
         // (A ruling applied at this very close is the founder's answer for the id — the closed path's ruled row posts then. Any
         // other posting — an approval's, or one whose only ruling paid the id long before its late facts — meets L-2.)
-        if (!auth.some((x) => x.kind === 'ruling' && x.at === at)) this.checkRefusalAtPosting(l, f, a, at, k, label);
+        if (!auth.some((x) => x.kind === 'ruling' && x.at === at)) this.checkRefusalAtPosting(l, f, a, at, k, label, holdings?.[f] ?? null);
         lateCount.set(a.actionId, (lateCount.get(a.actionId) || 0) + 1);
       }
       for (const [id, n] of lateCount) {
@@ -502,16 +510,56 @@ export class EntitlementOracle {
    * (a settled id stands for nothing, whenever it was settled). (A carved-out re-date — the T2D-05 class, as I-2 excuses it
    * on this ledger — is none.) Derived from the inputs alone.
    */
-  checkRefusalAtPosting(l, f, a, at, k, label) {
-    const ruledBy = (id, after = -Infinity, own = false) => this.inputs.rulings.some((r) => r.status === 200 && r.body?.kind === 'conflict' && r.body.recordId === id && r.at > after && r.at <= at
-      && (!own || !Array.isArray(r.ledgers) || r.ledgers.includes(f)));
-    for (const m of this.inputs.marks.get(a.actionId) || []) {
-      if (m.k > at) continue;
-      if (m.how === 'redate' && this.inputs.carvedOut(l, m)) continue;
-      const others = (m.how === 'redate' || m.how === 'same_date') ? [...new Set((m.via?.sides || []).map(([s]) => s).filter((s) => s !== a.actionId))] : [];
-      const answered = ruledBy(a.actionId, m.k, true) || (others.length > 0 && others.every((x) => ruledBy(x)));
+  checkRefusalAtPosting(l, f, a, at, k, label, h = null) {
+    // (The second refuter's O-3: a ruling — of the id or of the other id of its pairing — answers only on the ledgers it
+    // covers, T2D-09.)
+    const covers = (r) => !Array.isArray(r.ledgers) || r.ledgers.includes(f);
+    const ruledBy = (id, after = -Infinity) => this.inputs.rulings.some((r) => r.status === 200 && r.at > after && r.at <= at && covers(r)
+      && ((r.body?.kind === 'conflict' && r.body.recordId === id) || (r.body?.kind === 'suspicion' && r.body.decision === 'split' && this.inputs.splitIdOf(r.body) === id)));
+    const settledFirst = (m) => m.how === 'redate' && m.via?.founder && (l?.corporateActionReceipts || []).some((r) => r?.actionId === m.via.founder.other
+      && (r.applied === true || r.reason === 'not_entitled' || r.reason === 'founder_ruled_none') && typeof (r.appliedOn ?? r.seenOn) === 'string' && (m.via.founder.at == null || (r.appliedOn ?? r.seenOn) < this.S[m.via.founder.at]));
+    /** Each ambiguity of `id` the inputs show at or before the posting close, not answered by then. (A ruling of the id
+     *  answers an ambiguity it was made after the FIRST showing of — the same conflict, or a pairing with the same ids,
+     *  listed again at later closes is the one the founder saw: review-AR4-A-1. A revision is a new payload each time.) */
+    const partnersOf = (m, id) => [...new Set((m.via?.sides || []).map(([s]) => s).filter((s) => s !== id))].sort().join(',');
+    const firstShown = (id, m) => (m.how === 'revision' ? m.k
+      : Math.min(...(this.inputs.marks.get(id) || []).filter((x) => x.how === m.how && partnersOf(x, id) === partnersOf(m, id)).map((x) => x.k)));
+    const unanswered = (id) => (this.inputs.marks.get(id) || []).filter((m) => {
+      if (m.k > at || settledFirst(m) || (m.how === 'redate' && this.inputs.carvedOut(l, m))) return false;
+      const others = (m.how === 'redate' || m.how === 'same_date') ? [...new Set((m.via?.sides || []).map(([s]) => s).filter((s) => s !== id))] : [];
+      return !(ruledBy(id, firstShown(id, m)) || (others.length > 0 && others.every((x) => ruledBy(x))));
+    });
+    // L-2 ① and ②: the id itself.
+    for (const m of unanswered(a.actionId)) {
       this.refusalChecks += 1;
-      expect(answered, `${label} ${this.S[k]} I-7 (L-2 at posting) ${f} ${a.actionId}: a ${a.kind} of $${a.amountUsd} posted on ${a.postedOn} on an approval alone, while the inputs show the id ambiguous since ${this.S[m.k]} (${m.how}${others.length > 0 ? ` with ${others.join(', ')}` : ''}) and no accepted conflict ruling answered it`).toBe(true);
+      const others = (m.via?.sides || []).map(([s]) => s).filter((s) => s !== a.actionId);
+      expect(false, `${label} ${this.S[k]} I-7 (L-2 at posting) ${f} ${a.actionId}: a ${a.kind} of $${a.amountUsd} posted on ${a.postedOn} on an approval alone, while the inputs show the id ambiguous since ${this.S[m.k]} (${m.how}${others.length > 0 ? ` with ${[...new Set(others)].join(', ')}` : ''}) and no accepted conflict ruling answered it`).toBe(true);
+    }
+    this.refusalChecks += 1;
+    // (The second refuter's O-1, O-2: L-2 ③ and ④ from the inputs, on the ledger's holding — the harness's holding history,
+    // or, in a unit row without one, a holding bought at the first session and still held.)
+    const sym = String(a.ticker ?? /^cash_dividend_([A-Z.]+)_/.exec(String(a.actionId))?.[1] ?? '').toUpperCase();
+    const boughtAt = h?.boughtAt ?? 0;
+    const end = h?.soldAt ?? at;
+    // L-2 ③: a share-basis id of the symbol dated within the holding, ambiguous by the inputs and unanswered.
+    for (const [id, e] of this.inputs.ids) {
+      if (e.sym !== sym || !SHARE_BASIS.has(e.type) || !(e.d > boughtAt && e.d <= end)) continue;
+      const open = unanswered(id);
+      expect(open.length, `${label} ${this.S[k]} I-7 (L-2 ③ at posting) ${f} ${a.actionId}: a ${a.kind} of $${a.amountUsd} posted on ${a.postedOn} on an approval alone, while ${id}, dated within the holding, is ambiguous by the inputs since ${open[0] ? this.S[open[0].k] : '?'} and unanswered`).toBe(0);
+    }
+    // L-2 ④: a date in the holding uncovered — the symbol uncovered at the posting close itself, or (a sold holding) a row its
+    // parse report rejected, dated within the holding, seen after the sale, with no catch-up since (a sticky doubt).
+    expect((this.inputs.coverageAt.get(at)?.uncovered || []).includes(sym), `${label} ${this.S[k]} I-7 (L-2 ④ at posting) ${f} ${a.actionId}: a ${a.kind} of $${a.amountUsd} posted on ${a.postedOn}, a close whose inputs leave ${sym} uncovered`).toBe(false);
+    if (f === 'ledger' && h?.soldAt != null) {
+      for (const [r, cov] of this.inputs.coverageAt) {
+        if (r < h.soldAt || r > at) continue;
+        for (const x of cov.rejected || []) {
+          const d = this.S.indexOf(x.date);
+          if (x.sym !== sym || !(d > boughtAt && d <= h.soldAt)) continue;
+          const cleared = [...this.inputs.coverageAt].some(([c2, v]) => c2 > r && c2 <= at && v.catchup);
+          expect(cleared, `${label} ${this.S[k]} I-7 (L-2 ④ at posting) ${f} ${a.actionId}: a ${a.kind} of $${a.amountUsd} posted on ${a.postedOn} on an approval alone, while a row dated ${x.date} within the sold holding, rejected at ${this.S[r]}, has no clean data since`).toBe(true);
+        }
+      }
     }
   }
 

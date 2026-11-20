@@ -483,10 +483,13 @@ async function runInner(plan, expose) {
     closes += 1;
     // (The symbols this close's inputs leave uncovered: a failed fetch, or a dirty or missing parse report.)
     const uncoveredNow = step.kind === 'catchup' ? [] : [...(step.uncoveredSyms ?? (step.uncovered ? ['AAPL'] : [])), ...(step.parse ? ['AAPL'] : [])];
+    // (The second refuter's O-2: the close's coverage facts, for I-7's L-2 ④ — the symbols it leaves uncovered, the row its
+    // parse report rejected, and whether it is a catch-up, which stores a backfill.)
+    inputs.coverage(step.i, { uncovered: uncoveredNow, rejected: rejectedOn !== null ? [{ sym: 'AAPL', date: rejectedOn }] : [], catchup: step.kind === 'catchup' });
     // (T1a-2b-4 fix round: I-7, then I-6, then the rest — so each of the two oracle changes shows its own failure first.)
     const moneyChecks = () => {
       // I-7: every posted adjustment has its founder approval or ruling in the inputs.
-      entitlement.checkAuthority(getIdea(c.db, c.bookId, c.ideaId), step.i, plan.seed);
+      entitlement.checkAuthority(getIdea(c.db, c.bookId, c.ideaId), step.i, plan.seed, holdingsOf());
       entitlement.check(getIdea(c.db, c.bookId, c.ideaId), step.i, holdingsOf(), plan.seed, { uncoveredNow });
       // (A sale breaks the same-stock tie, as it should: the comparison keeps the stock the idea sold.)
       checkAfterClose(c, date, plan.ambiguousSince, tied && soldAt === null, inputs, entryOf, plan.seed);
