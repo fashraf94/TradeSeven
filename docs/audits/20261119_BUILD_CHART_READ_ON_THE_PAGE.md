@@ -13,7 +13,7 @@
 | **Never** | A verdict computed, a model call, a provider call, a write, a stop or a target. No flag changes value. No fenced file edited or called. |
 | **Goldens moved by FX-9 and FX-10** | **None.** FX-10's two changes need a measured price scale or a Battle pill's control bar, which no existing golden carries; FX-9 ships in neither PR. |
 | **Review** | Two lenses (fidelity and wording; off means off and the layout), each with a refuter on its own snapshot tree. 14 findings: 8 confirmed, 3 partly refuted, 3 refuted. 9 fixed in this build, each with a row that failed first (5 jsdom, 3 pure, 10 Edge); 3 go to the founder (Q-2 – Q-4). |
-| **Mutation** | 80 mutants: 78 killed, 2 equivalent (FX2-c, PG2-f). Two more fixes (L2B-4, L2B-5) are proven by Edge rows that fail on the pre-fix code. |
+| **Mutation** | 79 mutants: 77 killed, 2 equivalent (FX2-c, PG2-f). Two more fixes (L2B-4, L2B-5) are proven by Edge rows that fail on the pre-fix code. |
 | **Real browser** | Headless Edge at 390 × 844, 320 × 640, 1280 × 800 (and 844 × 390): **153 rows, 0 failing** — the page at the top and in the checks for valid · Pullback, not in an uptrend and stretched; one change of height each way; marks on their bars after the change of height, a pan, a zoom and a rotation; FX-8's three layouts; no sideways scroll; tap targets; reduced motion; focus; FX-10 at 320; and the 10 rows for the review's fixes, each failing on the pre-fix code. |
 | **Checks** | The full Linux suite (WSL, Node 20.20.2, `TZ=UTC`, 8 workers, `flock`): A `c3a013ee` 35,890 passed, 0 failed; B `4ed771ce` 35,935 passed, 0 failed. `lint:gate` and `vite build` on the pushed heads (§9). |
 | **For the founder** | Seven questions (§8), readings R-13 – R-26 (§7), the live checklist (§10). |
@@ -84,7 +84,7 @@ Before the review, the build's own Edge check found and fixed three defects jsdo
 
 ### 4.1 The mutation battery
 
-Battery 1 (`mutants.mjs.txt`, 67 mutants over FX-1 – FX-10 and CP-1 – CP-3 at `2c1b658c`): 60 killed at first; 5 survivors (FX1-d, FX8-d, FX8-h, TD-i, CHK-a) got rows and were killed on re-run; 2 equivalent — **FX2-c** (`fast.result !== true` for `=== false`: an `unknown` uptrend row cannot reach the regime state — its chain is `unknown`, the record is `unshown`) and **PG2-f** (the scroll handler without its `checksShown` guard: with no checks the refs are null and nothing compacts). Battery 2 (`mutants2-list.mjs.txt`, 13 mutants over the review's fixes at `6d40d36e`): 13 killed. Each judged by the JSON report of its targeted files (a file that fails to load would be BROKEN, not killed; none was).
+Battery 1 (`mutants.mjs.txt`, 66 mutants over FX-1 – FX-10 and CP-1 – CP-3 at `2c1b658c`): 59 killed at first; 5 survivors (FX1-d, FX8-d, FX8-h, TD-i, CHK-a) got rows and were killed on re-run; 2 equivalent — **FX2-c** (`fast.result !== true` for `=== false`: an `unknown` uptrend row cannot reach the regime state — its chain is `unknown`, the record is `unshown`) and **PG2-f** (the scroll handler without its `checksShown` guard: with no checks the refs are null and nothing compacts). Battery 2 (`mutants2-list.mjs.txt`, 13 mutants over the review's fixes at `6d40d36e`): 13 killed. Each judged by the JSON report of its targeted files (a file that fails to load would be BROKEN, not killed; none was).
 
 ## 5. The real browser
 
