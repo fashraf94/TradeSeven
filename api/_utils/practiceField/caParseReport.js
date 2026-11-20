@@ -40,6 +40,7 @@ import { parseVendorSplits, parseVendorDividends } from './ledger.js';
 import { fetchCorporateActionsEODHD } from '../mandateUniverseSnapshot.js';
 import { MANDATE_CA_FETCH_LOOKBACK_DAYS, MANDATE_CA_FETCH_LOOKAHEAD_DAYS } from '../mandateConfig.js';
 import { shiftCalendarDate, PARSE_LEGS, parseEntryVerdict, parseReportEntry, actionsHashOf } from './dailyCoverage.js';
+import { stableStringify } from '../canonicalHash.js';
 
 export { PARSE_LEGS, parseEntryVerdict, parseReportEntry, actionsHashOf };
 /** A report write that has not settled in this long is given up (the symbol reads uncovered — review AR4-B-6). */
@@ -114,6 +115,36 @@ export function parseReportEntryOf(legs, { at = null, actions = [] } = {}) {
 }
 
 /**
+ * T1a-2b-4 fix round (the founder's L-7; Astra T2E-07): PARSE OBSERVATIONS MERGE, AND DOUBT STICKS. Two observations of one
+ * symbol in one session — two daily builds racing, a retry — meet in the report's merge. The same observation twice (every
+ * figure but its `at`) is one observation: the entry stays as it was. Two that DISAGREE — even when the rows they accepted
+ * hash the same (a losing build that saw an empty split list beside the winner's rejected `5:4`) — read UNCOVERED for the
+ * session (`observationsDisagree`; parseEntryVerdict). A rejection once recorded STAYS: the merged entry keeps every rejected
+ * row and the malformed-envelope flag of either. A later clean backfill covers the symbol through the existing path. Pure.
+ * @param {object|undefined} prior  the entry already stored (or waiting in the same write) for the symbol and session
+ * @param {object} entry            this observation's entry
+ * @returns {object}  the entry to store
+ */
+export function mergeParseEntries(prior, entry) {
+  if (prior === undefined || prior === null || typeof prior !== 'object' || Array.isArray(prior)) return entry;
+  const sameAs = (x) => { const { at: _a, ...rest } = x; return stableStringify(rest); };
+  if (prior.observationsDisagree !== true && sameAs(prior) === sameAs(entry)) return prior;
+  const key = (r) => stableStringify(r);
+  const rejects = [...new Map([...(Array.isArray(prior.rejects) ? prior.rejects : []), ...(Array.isArray(entry.rejects) ? entry.rejects : [])].map((r) => [key(r), r])).values()];
+  const hashes = [...new Set([...(prior.actionsHashes || [prior.actionsHash]), entry.actionsHash].filter((h) => typeof h === 'string'))].sort();
+  return {
+    ...prior,
+    rowsRejected: Math.max(Number(prior.rowsRejected) || 0, Number(entry.rowsRejected) || 0, rejects.length),
+    rejects,
+    malformedEnvelope: prior.malformedEnvelope === true || entry.malformedEnvelope === true,
+    observationsDisagree: true,
+    observations: (Number(prior.observations) || 1) + 1,
+    actionsHashes: hashes,
+    lastObservation: { at: entry.at ?? null, rowsReceived: entry.rowsReceived ?? null, rowsAccepted: entry.rowsAccepted ?? null, rowsRejected: entry.rowsRejected ?? null, malformedEnvelope: entry.malformedEnvelope ?? null, actionsHash: entry.actionsHash ?? null },
+  };
+}
+
+/**
  * The session a base fetch's window belongs to: the base asks `[session − LOOKBACK, session + LOOKAHEAD]` calendar
  * days (mandateUniverseSnapshot.js ensureDailySnapshot). Null when the window is not that shape — no report is written
  * then, and a missing report is uncovered.
@@ -160,10 +191,17 @@ export function observingFetch(fetchImpl) {
  */
 export function makeParseReportingFetcher(db, { symbols = [], base = fetchCorporateActionsEODHD, fetchImpl = null, onReport = null, now = () => new Date(), writeTimeoutMs = PARSE_REPORT_WRITE_TIMEOUT_MS } = {}) {
   const required = new Set((symbols || []).map(upper));
-  const writeDoc = onReport ? null : (session, entries) => db.collection('practiceFieldCaParseReports').doc(session).set({
+  // (T1a-2b-4 fix round, L-7: IN A TRANSACTION — each symbol's entry merged with the one already stored for the session
+  // (mergeParseEntries): two builds' observations meet, and a rejection one of them recorded is never overwritten by the
+  // other's clean one — Astra T2E-07, where the losing build's report replaced the winner's rejection.)
+  const writeDoc = onReport ? null : (session, entries) => db.runTransaction(async (tx) => {
     // The collection by its literal name, for the protected-store scan. A merge of the symbols' entries only.
-    schemaVersion: PARSE_REPORT_SCHEMA_VERSION, session, symbols: entries,
-  }, { merge: true });
+    const ref = db.collection('practiceFieldCaParseReports').doc(session);
+    const snap = await tx.get(ref);
+    const stored = snap.exists && snap.data()?.symbols && typeof snap.data().symbols === 'object' ? snap.data().symbols : {};
+    const merged = Object.fromEntries(Object.entries(entries).map(([sym, e]) => [sym, mergeParseEntries(Object.hasOwn(stored, sym) ? stored[sym] : undefined, e)]));
+    tx.set(ref, { schemaVersion: PARSE_REPORT_SCHEMA_VERSION, session, symbols: merged }, { merge: true });
+  });
   // ONE WRITER AT A TIME, COALESCED (review AR4-B-6): the build fetches several symbols at once; their entries wait in
   // `pending` and go in one merge per round, never several writes to one document at once. Each symbol's fetch resolves
   // when the round carrying its entry settles — or after `writeTimeoutMs`, given up (its report then reads missing:
@@ -186,9 +224,10 @@ export function makeParseReportingFetcher(db, { symbols = [], base = fetchCorpor
   };
   const enqueue = (symbol, session, entry) => new Promise((resolve) => {
     const batch = pending.get(session) || {};
-    // (A later entry of the same symbol and session replaces the waiting one; the replaced fetch settles with this round.)
+    // (A later entry of the same symbol and session MERGES with the waiting one — L-7: the two observations meet, a
+    // rejection sticks; the replaced fetch settles with this round.)
     const prior = batch[symbol];
-    batch[symbol] = { entry, settle: (err) => { prior?.settle(err); resolve(err); } };
+    batch[symbol] = { entry: mergeParseEntries(prior?.entry, entry), settle: (err) => { prior?.settle(err); resolve(err); } };
     pending.set(session, batch);
     if (!running) running = pump();
   });

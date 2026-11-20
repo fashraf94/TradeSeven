@@ -63,6 +63,9 @@ export const PARSE_LEGS = Object.freeze(['splits', 'dividends']);
  */
 export function parseEntryVerdict(entry) {
   if (!isPlainObject(entry)) return { clean: false, reason: 'parse_report_missing' };
+  // (T1a-2b-4 fix round, L-7: two observations of the session that DISAGREE read uncovered, whatever either one says —
+  // caParseReport.js mergeParseEntries; Astra T2E-07.)
+  if (entry.observationsDisagree === true) return { clean: false, reason: 'parse_observations_disagree' };
   if (entry.malformedEnvelope !== false) return { clean: false, reason: 'parse_envelope_malformed' };
   // (Review AR4-B-7: every count a whole number, a rejection named in `rejects` counted, nothing rejected.)
   if (entry.rowsRejected !== 0 || !Array.isArray(entry.rejects) || entry.rejects.length !== 0) return { clean: false, reason: 'parse_rejected' };
