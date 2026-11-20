@@ -26,7 +26,7 @@ const OUT = process.env.PF_SOAK_OUT || null;
 const ORDERED = process.env.PF_SOAK_ORDERED === '1';
 const SEEDS = Array.from({ length: COUNT }, (_, k) => FROM + k);
 
-const stats = { from: FROM, count: COUNT, ordered: ORDERED, sequences: 0, closes: 0, sessions: 0, clean: 0, kinds: {}, pairs: {}, reached: {}, failures: [], orderedPairs: {}, shapes: { c03: 0, d01: 0, d02: 0 }, chains: {}, carveOuts: 0, carvedSeeds: [] };
+const stats = { from: FROM, count: COUNT, ordered: ORDERED, sequences: 0, closes: 0, sessions: 0, clean: 0, kinds: {}, pairs: {}, reached: {}, failures: [], orderedPairs: {}, shapes: { c03: 0, d01: 0, d02: 0 }, chains: {}, carveOuts: 0, carvedSeeds: [], founderExcused: 0, founderExcusedSeeds: [] };
 // The ledgers' symbols the events can reach: the idea's and the comparison's AAPL (same-stock or a basket), the SPY line's SPY.
 const LEDGER_SYMBOLS = { idea: ['AAPL'], comparison: ['AAPL'], spy: ['SPY'] };
 
@@ -47,6 +47,8 @@ describe('S-6 soak — wide generated histories, three ledger kinds, up to 15 se
       for (const [k, v] of Object.entries(inputs.orderedPairs(LEDGER_SYMBOLS))) stats.orderedPairs[k] = (stats.orderedPairs[k] || 0) + v;
       for (const [k, v] of Object.entries(inputs.shapes())) stats.shapes[k] += v > 0 ? 1 : 0;
       if (inputs.carveOuts > 0) { stats.carveOuts += inputs.carveOuts; stats.carvedSeeds.push(seed); }
+      // (The re-dates through a founder split account that the as-built T2D-11 exception excused — counted, not hidden.)
+      if (inputs.founderExcused > 0) { stats.founderExcused += inputs.founderExcused; stats.founderExcusedSeeds.push(seed); }
     } catch (e) {
       stats.failures.push({ seed, message: String(e?.message || e).slice(0, 400) });
       throw e;
