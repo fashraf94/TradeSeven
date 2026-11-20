@@ -163,3 +163,56 @@ describe('the independent I-2 oracle — ambiguity from the inputs, authorizatio
     expect(pairs['idea dropped → returned']).toBe(1);
   });
 });
+
+// ── T1a-2b-4: I-6's own rows (EntitlementOracle). A weakened or disabled I-6 must fail here: it is told the inputs and
+// the holding history, and it rejects a ledger paid more, or less, than that history was owed — a late dividend after a
+// sale not paid, a late split never reflected, a dividend owed nothing paid — and excuses only what the product holds in
+// doubt, counting it.
+describe('I-6 — every ledger is paid what its holding was owed, from the inputs and its holding history alone', () => {
+  const held = (soldAt = null) => ({ ledger: { sym: 'AAPL', entryShares: SH, boughtAt: 0, soldAt } });
+  const withAdj = (idea, adjustments) => ({ ...idea, ledger: { ...idea.ledger, adjustments } });
+  it('T2D-03: a dividend dated while held, first listed after the sale, NOT paid — rejected; paid by a late entitlement — passes', async () => {
+    const { EntitlementOracle } = await import('./__testsupport__/caOracle.js');
+    const o = new InputOracle(S);
+    o.close(3, [div(1, 1)]);
+    const e = new EntitlementOracle(S, o);
+    const sold = { ...ideaWith([]), ledger: { ...ideaWith([]).ledger, holdings: {} } };
+    expect(() => e.check(sold, 3, held(2), 'plant')).toThrow(/I-6 ledger cash_dividend_AAPL_2026-11-17: received \$0, the inputs and the holding history say \$99\.97/);
+    expect(() => e.check(withAdj(sold, [{ kind: 'late_entitlement', actionId: ID1, amountUsd: 99.97 }]), 3, held(2), 'plant')).not.toThrow();
+    // Paid twice is rejected too.
+    expect(() => e.check(withAdj(sold, [{ kind: 'late_entitlement', actionId: ID1, amountUsd: 99.97 }, { kind: 'late_entitlement', actionId: ID1, amountUsd: 99.97 }]), 3, held(2), 'plant')).toThrow(/received \$199\.94/);
+  });
+  it('T2D-04: a split dated before a dividend paid on the old count — the old payment alone is rejected; with its late_basis it passes', async () => {
+    const { EntitlementOracle } = await import('./__testsupport__/caOracle.js');
+    const o = new InputOracle(S);
+    o.close(2, [div(2, 1)]);
+    o.close(3, [div(2, 1), spl(1, '5/4')]);
+    const e = new EntitlementOracle(S, o);
+    const idea = ideaWith([paid(`cash_dividend_AAPL_${S[2]}`, 1, S[2])]);
+    expect(() => e.check(idea, 3, held(), 'plant')).toThrow(/received \$99\.97, the inputs and the holding history say \$124\.96/);
+    expect(() => e.check(withAdj(idea, [{ kind: 'late_basis', actionId: `cash_dividend_AAPL_${S[2]}`, amountUsd: 24.99 }]), 3, held(), 'plant')).not.toThrow();
+  });
+  it('a dividend owed nothing (dated after the sale) that was paid is rejected, never excused; a doubt excuses equality and is counted', async () => {
+    const { EntitlementOracle } = await import('./__testsupport__/caOracle.js');
+    const o = new InputOracle(S);
+    o.close(4, [div(4, 1)]);
+    const e = new EntitlementOracle(S, o);
+    const idea = withAdj({ ...ideaWith([]), caCoverageGaps: { AAPL: { since: S[3] } } }, [{ kind: 'late_entitlement', actionId: `cash_dividend_AAPL_${S[4]}`, amountUsd: 99.97 }]);
+    expect(() => e.check(idea, 4, held(2), 'plant')).toThrow(/is owed nothing/);
+    const o2 = new InputOracle(S);
+    o2.close(3, [div(3, 1)]);
+    const e2 = new EntitlementOracle(S, o2);
+    e2.check({ ...ideaWith([]), caCoverageGaps: { AAPL: { since: S[2] } } }, 3, held(), 'plant');
+    expect([e2.checked, e2.excused]).toEqual([0, 1]);
+  });
+  it('an id ambiguous by the inputs is checked only once the founder\'s accepted ruling chose its payload', async () => {
+    const { EntitlementOracle } = await import('./__testsupport__/caOracle.js');
+    const o = new InputOracle(S);
+    o.close(2, [div(2, 1), div(2, 2)]);
+    const e = new EntitlementOracle(S, o);
+    e.check(ideaWith([]), 2, held(), 'plant');
+    expect([e.checked, e.excused]).toEqual([0, 1]);
+    o.ruling({ kind: 'conflict', recordId: `cash_dividend_AAPL_${S[2]}`, decision: 'payload', payload: { amount: 2 } }, { status: 200 }, 'r1', 3);
+    expect(() => e.check(ideaWith([]), 3, held(), 'plant')).toThrow(/say \$199\.94/);
+  });
+});

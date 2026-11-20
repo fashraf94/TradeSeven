@@ -161,7 +161,10 @@ function paidDividends(ledger) {
   for (const a of postedAdjustments(ledger)) {
     if (a.type !== 'cash_dividend') continue;
     if (a.kind === ADJUSTMENT_KIND.LATE_ENTITLEMENT && !out.has(a.actionId)) {
-      out.set(a.actionId, { actionId: a.actionId, ticker: upper(a.ticker), effectiveDate: a.effectiveDate, amount: Number(a.amountPerShare), cents: 0, index: Number(a.seq), receipt: null });
+      // (Its place among the receipts: before the first receipt written after it — `seq` is the count of receipts when it
+      // was posted, which is the index the NEXT receipt takes. A receipt written at a later close is after it: the soak's
+      // 1911240021, a split dated on a late dividend's own ex-date, listed after it was paid, never recomputed it.)
+      out.set(a.actionId, { actionId: a.actionId, ticker: upper(a.ticker), effectiveDate: a.effectiveDate, amount: Number(a.amountPerShare), cents: 0, index: Number(a.seq) - 0.5, receipt: null });
     }
     const d = out.get(a.actionId);
     if (!d) continue;

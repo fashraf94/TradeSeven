@@ -33,6 +33,8 @@ import { expect } from 'vitest';
 import { deriveActionId } from '../../mandateCorporateActions.js';
 import { addUsd } from '../money.js';
 
+import { roundUsd as roundUsdHere, roundShares as roundSharesHere } from '../../mandateRounding.js';
+
 const REDATE_WINDOW = 5; // sessions (the product's REDATE_WINDOW_SESSIONS, restated here on purpose — the oracle imports no policy)
 // (The refuter's AR3-O3: a delisting's cash and a rename's target are payloads too — two of either under one id differ.)
 const keyOf = (row) => JSON.stringify([row?.ratio ?? null, row?.amount ?? null, row?.cashPerShare ?? null, row?.renamedTo != null ? String(row.renamedTo).toUpperCase() : null]);
@@ -228,28 +230,49 @@ export class InputOracle {
       const l = idea?.[f];
       if (!l) continue;
       const applied = (l.corporateActionReceipts || []).filter((r) => r?.applied === true);
-      // CONSERVATION — dividends: the ledger's dividends are its applied receipts' income, and nothing else.
-      expect(l.dividendsUsd ?? 0, `${label} ${date} conservation ${f} dividends = Σ receipts`).toBe(addUsd(0, ...applied.map((r) => Number(r.incomeUsd) || 0)));
-      // …shares: every holding's count is the chain of its applied share-basis receipts from the entry count.
+      // CONSERVATION — dividends: the ledger's dividends are its applied receipts' income and (T1a-2b-4) its posted
+      // adjustments' amounts — each adjustment's own amount is checked against the entitlement by I-6 — and nothing else.
+      const adjustedHere = (l.adjustments || []).filter((a) => a && a.held !== true && a.postedTo === 'ledger');
+      expect(l.dividendsUsd ?? 0, `${label} ${date} conservation ${f} dividends = Σ receipts + Σ adjustments`).toBe(addUsd(0, ...applied.map((r) => Number(r.incomeUsd) || 0), ...adjustedHere.map((a) => Number(a.amountUsd) || 0)));
+      // …shares: every holding's count is the chain of its applied share-basis receipts from the entry count — (T1a-2b-4)
+      // with the founder's ratio in place of a corrected receipt's (a ruled_correction of a split), replayed as the
+      // applier rounds. A receipt's own `sharesBefore` is checked where no correction touched the symbol.
+      const corrected = new Map();
+      for (const a of l.adjustments || []) if (a && a.held !== true && a.kind === 'ruled_correction' && SHARE_BASIS.has(a.type) && Number(a.ratio) > 0) corrected.set(a.actionId, Number(a.ratio));
+      const correctedSyms = new Set((l.adjustments || []).filter((a) => a?.kind === 'ruled_correction' && SHARE_BASIS.has(a.type)).map((a) => String(a.ticker).toUpperCase()));
       const counts = new Map();
       for (const [sym, h] of Object.entries(initialOf?.[f] || {})) counts.set(sym, [Number(h.shares)]);
       for (const r of applied) {
         if (!SHARE_BASIS.has(r.type)) continue;
         const sym = String(r.ticker).toUpperCase();
-        const chain = counts.get(sym) || [];
-        expect(r.sharesBefore, `${label} ${date} conservation ${f} ${r.actionId} sharesBefore = the count before it`).toBe(chain.at(-1));
-        chain.push(r.sharesAfter);
+        const chain = counts.get(sym) || [Number(r.sharesBefore)];
+        if (!correctedSyms.has(sym)) expect(r.sharesBefore, `${label} ${date} conservation ${f} ${r.actionId} sharesBefore = the count before it`).toBe(chain.at(-1));
+        chain.push(roundSharesHere(chain.at(-1) * (corrected.get(r.actionId) ?? Number(r.ratio))));
+        if (!correctedSyms.has(sym)) expect(chain.at(-1), `${label} ${date} conservation ${f} ${r.actionId} sharesAfter`).toBe(r.sharesAfter);
         counts.set(sym, chain);
       }
       for (const [sym, chain] of counts) if (l.holdings?.[sym]) expect(l.holdings[sym].shares, `${label} ${date} conservation ${f} ${sym} shares = receipt chain`).toBe(chain.at(-1));
       // …income: each dividend receipt's income is ITS amount times the count the holding had WHEN it was applied (receipts
       // are kept in the order applied), or its recorded ex-date count (AR3-O3: before, any count in the chain passed).
-      const now = new Map([...Object.entries(initialOf?.[f] || {})].map(([sym, h]) => [sym, Number(h.shares)]));
-      for (const r of applied) {
+      // (T1a-2b-4: the count held when a dividend was applied is the chain of the share-basis receipts before it, each with
+      // the founder's corrected ratio once that correction was made — a correction is posted at a place among the receipts,
+      // `seq`, and the dividends applied after it are paid on the corrected count.)
+      const all = l.corporateActionReceipts || [];
+      const correctionsOf = (id, at) => (l.adjustments || []).filter((a) => a && a.held !== true && a.kind === 'ruled_correction' && a.actionId === id && Number(a.ratio) > 0 && Number(a.seq) <= at);
+      const countAt = (sym, at) => {
+        let n = Number(initialOf?.[f]?.[sym]?.shares);
+        for (let j = 0; j < at; j += 1) {
+          const r = all[j];
+          if (r?.applied !== true || !SHARE_BASIS.has(r.type) || String(r.ticker).toUpperCase() !== sym) continue;
+          const c = correctionsOf(r.actionId, at).at(-1);
+          n = roundSharesHere(n * (c ? Number(c.ratio) : Number(r.ratio)));
+        }
+        return n;
+      };
+      for (const [at, r] of all.entries()) {
+        if (r?.applied !== true || r.type !== 'cash_dividend') continue;
         const sym = String(r.ticker).toUpperCase();
-        if (SHARE_BASIS.has(r.type)) { now.set(sym, r.sharesAfter); continue; }
-        if (r.type !== 'cash_dividend') continue;
-        const n = r.entitledShares != null ? Number(r.entitledShares) : now.get(sym);
+        const n = r.entitledShares != null ? Number(r.entitledShares) : countAt(sym, at);
         expect(Math.abs(Number(r.incomeUsd) - Number(r.amount) * n) <= 0.0051, `${label} ${date} conservation ${f} ${r.actionId} income = amount × the count held when applied`).toBe(true);
       }
       // I-2, INDEPENDENT: a movement under an id ambiguous by the inputs, at a close on or after that, is authorized only by
@@ -318,5 +341,109 @@ export class InputOracle {
   /** Whether `id` was listed at close k. */
   lastListedAt(id, k) {
     return this.listedAt.get(k)?.has(id) === true;
+  }
+}
+
+
+// ── T1a-2b-4: I-6 — EVERY LEDGER IS PAID WHAT ITS HOLDING WAS OWED ───────────────────────────────────────────────────────
+// For every unambiguous id, each ledger's received cash — its receipt's income plus every adjustment posted for the id —
+// equals the entitlement the ORACLE computes from the GENERATOR'S INPUTS (the rows each close listed, the founder's
+// accepted rulings) and the LEDGER'S HOLDING HISTORY (its entry count, the session it was bought, the session it was
+// sold), never from the product's records: the count on the ex-date is the entry count times every entitled split dated on
+// or before it, in date order, rounded as the applier rounds; a dividend dated on or before the purchase, or after the
+// sale, is owed nothing. An id ambiguous by the inputs is in it only once the founder's accepted ruling chose its payload.
+// Where the product holds the symbol in doubt (an open ambiguity, a held action or adjustment, a suspicion, a coverage gap)
+// equality is excused — counted, never assumed — and a dividend owed nothing must still have been paid nothing.
+
+export class EntitlementOracle {
+  constructor(S, inputs) {
+    this.S = S;
+    this.inputs = inputs; // the InputOracle: the rows listed and the rulings made
+    this.checked = 0;
+    this.excused = 0;
+    this.nothingOwed = 0;
+    this.byKind = { late_entitlement: 0, late_basis: 0, ruled_correction: 0 };
+  }
+
+  /** The payload in force for `id` by the inputs: the founder's accepted payload ruling (the latest), else its one listed
+   *  payload if it was never ambiguous; `undefined` while it waits; null when ruled `none`. */
+  payloadOf(id) {
+    const ruled = [...this.inputs.rulings].reverse().find((r) => r.status === 200 && r.body?.kind === 'conflict' && r.body.recordId === id);
+    if (ruled) return ruled.body.decision === 'none' ? null : ruled.body.payload;
+    if ((this.inputs.marks.get(id) || []).length > 0) return undefined;
+    const e = this.inputs.ids.get(id);
+    if (!e || e.payloads.size !== 1) return undefined;
+    const [k] = [...e.payloads.keys()];
+    const [ratio, amount] = JSON.parse(k);
+    return { ratio, amount };
+  }
+
+  /** Does the product hold `sym` in doubt on any ledger of the idea? (Excuses equality; it can never authorize money.) */
+  doubtOn(idea, sym) {
+    for (const f of LEDGERS) {
+      const l = idea?.[f];
+      if (!l) continue;
+      const settled = new Set([...(l.appliedActionIds || []), ...(l.declinedActionIds || [])]);
+      for (const r of l.corporateActionReceipts || []) {
+        if (String(r?.ticker).toUpperCase() !== sym) continue;
+        if ((r.reason === 'conflicting_action' || r.reason === 'possible_redate') && !settled.has(r.actionId)) return true;
+        if (r.reason === 'revised_after_ruling' && r.closedBy == null) return true;
+      }
+      const h = l.holdings?.[sym];
+      if (h && ((h.heldActions || []).length > 0 || h.basisSuspicion)) return true;
+      if ((l.adjustments || []).some((a) => a?.held === true && String(a.ticker).toUpperCase() === sym)) return true;
+    }
+    return Boolean(idea?.caCoverageGaps?.[sym]);
+  }
+
+  /**
+   * After the close of index `k`: for each ledger in `ledgers` — `{ field: { sym, entryShares, boughtAt (index), soldAt
+   * (index | null) } }` — and each dividend of its symbol the inputs listed so far, received === entitled.
+   */
+  check(idea, k, ledgers, label) {
+    for (const [f, h] of Object.entries(ledgers)) {
+      const l = idea?.[f];
+      if (!l || !h) continue;
+      const sym = h.sym;
+      const entitledAt = (d) => d > h.boughtAt && (h.soldAt == null || d <= h.soldAt) && d <= k;
+      const splits = [];
+      let splitsWait = Infinity; // the earliest date of a split that waits (its ex-date counts depend on it)
+      for (const [id, e] of this.inputs.ids) {
+        if (e.sym !== sym || !SHARE_BASIS.has(e.type) || !entitledAt(e.d)) continue;
+        const p = this.payloadOf(id);
+        if (p === undefined) { splitsWait = Math.min(splitsWait, e.d); continue; }
+        if (p === null || !(Number(p.ratio) > 0)) continue;
+        splits.push({ id, d: e.d, ratio: Number(p.ratio) });
+      }
+      splits.sort((a, b) => a.d - b.d || a.id.localeCompare(b.id));
+      // (A founder `split` for a suspicion — an accepted request — may apply, or go moot or be refused: the product decides
+      // with what it holds. A dividend whose ex-date count it could touch is EXCUSED, counted apart: never assumed either way.)
+      for (const rq of this.inputs.rulings) {
+        if (rq.status !== 200 || rq.body?.kind !== 'suspicion' || rq.body.decision !== 'split') continue;
+        const prefix = `suspected_split_${sym}_`;
+        const recordId = String(rq.body.recordId || '');
+        if (recordId.startsWith(prefix)) splitsWait = Math.min(splitsWait, this.S.indexOf(recordId.slice(prefix.length)));
+      }
+      const doubt = this.doubtOn(idea, sym);
+      for (const [id, e] of this.inputs.ids) {
+        if (e.sym !== sym || e.type !== 'cash_dividend' || e.d > k) continue;
+        const received = addUsd(0, ...(l.corporateActionReceipts || []).filter((r) => r?.applied === true && r.actionId === id).map((r) => Number(r.incomeUsd) || 0),
+          ...(l.adjustments || []).filter((a) => a && a.held !== true && a.actionId === id).map((a) => Number(a.amountUsd) || 0));
+        if (!entitledAt(e.d)) {
+          // Owed nothing: bought on or after its ex-date, or sold before it. Never excused.
+          this.nothingOwed += 1;
+          expect(received, `${label} ${this.S[k]} I-6 ${f} ${id} is owed nothing (bought ${this.S[h.boughtAt]}, sold ${h.soldAt == null ? '—' : this.S[h.soldAt]}) but received $${received}`).toBe(0);
+          continue;
+        }
+        const p = this.payloadOf(id);
+        if (p === undefined || doubt || e.d >= splitsWait) { this.excused += 1; continue; }
+        let count = h.entryShares;
+        for (const sp of splits) if (sp.d <= e.d) count = roundSharesHere(count * sp.ratio);
+        const owed = p === null ? 0 : roundUsdHere(count * Number(p.amount));
+        this.checked += 1;
+        for (const a of (l.adjustments || []).filter((x) => x && x.held !== true && x.actionId === id)) if (this.byKind[a.kind] !== undefined) this.byKind[a.kind] += 1;
+        expect(received, `${label} ${this.S[k]} I-6 ${f} ${id}: received $${received}, the inputs and the holding history say $${owed} (${count} shares on ${this.S[e.d]} × ${p?.amount ?? 0})`).toBe(owed);
+      }
+    }
   }
 }
