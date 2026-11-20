@@ -585,6 +585,23 @@ export const SOAK_R3 = [
   // and the vendor then lists that 2:1 under the next day — a possible re-date of the declined one (the agreed Q10).
   { seed: 'SOAK-R3-1-redate-of-a-declined-split', steps: [cl(0, 100, [sp(0, '2/1')]), cl(1, 50, [sp(0, '2/1')]), splitRuling(2), cl(2, 50, [sp(0, '2/1'), sp(1, '2/1')]),
     at((idea) => expect(rulingOf(idea, 'suspicion')?.refusedBecause).toBe('possible_redate')), cl(3, 50)], end: { dividends: 0, shares: SH } },
+  // R3-1: the vendor never lists the founder's id, but lists 2:1 the next day inside a 3:2/2:1 conflict — the founder's own
+  // split meets that open record's payload (outside its gap) and is refused; nothing moves until the founder rules.
+  { seed: 'SOAK-R3-1-founder-split-meets-an-open-conflict', steps: [cl(0, 100), cl(1, 50), splitRuling(2), cl(2, 50, [sp(2, '3/2'), sp(2, '2/1')]),
+    at((idea, book) => {
+      expect(sharesOf(idea, book)).toEqual([SH, SH, SH]);
+      expect(rulingOf(idea, 'suspicion')?.refusedBecause).toBe('possible_redate');
+    }), cl(3, 50)], end: { dividends: 0, shares: SH } },
+  // R3-1: a halving seen across an uncovered close (its gap two sessions wide); the founder rules 2:1; the vendor then lists
+  // that 2:1 under the founder's own id AND under the other day of the gap — two vendor rows, one payload, two dates: both
+  // ambiguous (S-1 (3)), so the in-gap row does not explain the move by itself and the founder's split is refused.
+  { seed: 'SOAK-R3-1-vendor-lists-the-founder-id-and-another-gap-day', steps: [cl(0, 100), cl(1, 100, [], true), cl(2, 50),
+    { kind: 'ruleExact', body: { kind: 'suspicion', recordId: sus(2), decision: 'split', ratio: 2 } },
+    cl(3, 50, [sp(2, '2/1'), sp(1, '2/1')]),
+    at((idea, book) => {
+      expect(sharesOf(idea, book), 'neither 2:1 moved the count').toEqual([SH, SH, SH]);
+      expect(rulingOf(idea, 'suspicion')?.refusedBecause).toBe('possible_redate');
+    })], end: { dividends: 0, shares: SH } },
   // R3-2: a halving seen across an uncovered close, the founder's 2:1 for it held through another, then the vendor's own
   // 2:1 inside the gap explains it first (the founder's goes moot) and a 3:1 dated later is applied AT THAT CLOSE.
   { seed: 'SOAK-R3-2-moot-founder-split-holds-nothing', steps: [cl(0, 100), cl(1, 100, [], true), cl(2, 50),
