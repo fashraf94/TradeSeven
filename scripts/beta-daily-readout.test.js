@@ -13,10 +13,10 @@ import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  defaultSession, checkSession, isAgentReal, playersRead, summarize, evaluateRules, verdictOf, renderReadout, switchRead, renderSwitch,
+  defaultSession, checkSession, windowSessions, isAgentReal, playersRead, summarize, evaluateRules, verdictOf, renderReadout, switchRead, renderSwitch,
   readControl, gatherReadout, gatherSwitch,
   PAUSE_COST_PER_BATTLE_DAY_USD, PAUSE_COST_PER_CHECK_USD, PAUSE_ANTHROPIC_INPUT_LEFT_SHARE, PAUSE_EODHD_UNITS, EODHD_INTRADAY_UNITS,
-  STOP_SWEEP_LAG_MS, READ_AFTER_CLOSE_MS, SWITCH_KNOWN_SESSIONS,
+  STOP_TIMEOUT_RATE, STOP_TIMEOUT_MIN_CHECKS, TIMEOUT_WINDOW_SESSIONS, CHECK_SWEEP_LAG_MS, READ_AFTER_CLOSE_MS, SWITCH_KNOWN_SESSIONS,
 } from './beta-daily-readout.mjs';
 import { toMs } from './eval-capacity-read.mjs';
 import { bucketOf, parseReleaseDocument, isInReleaseCohort } from '../api/_utils/callRecords/release.js';
@@ -27,13 +27,16 @@ const MIN = 60_000;
 // ---------------------------------------------------------------- the thresholds
 
 describe('the founder\'s thresholds (build prompt §3)', () => {
-  it('are the table\'s numbers', () => {
+  it('are the table\'s numbers and the 20 Nov cockpit rulings', () => {
     expect(PAUSE_COST_PER_BATTLE_DAY_USD).toBe(0.65);
     expect(PAUSE_COST_PER_CHECK_USD).toBe(0.032);
     expect(PAUSE_ANTHROPIC_INPUT_LEFT_SHARE).toBe(0.2);
     expect(PAUSE_EODHD_UNITS).toBe(60_000);
     expect(EODHD_INTRADAY_UNITS).toBe(5);
-    expect(STOP_SWEEP_LAG_MS).toBe(30 * MIN);
+    expect(STOP_TIMEOUT_RATE).toBe(0.02);
+    expect(STOP_TIMEOUT_MIN_CHECKS).toBe(60);
+    expect(TIMEOUT_WINDOW_SESSIONS).toBe(3);
+    expect(CHECK_SWEEP_LAG_MS).toBe(30 * MIN);
     expect(READ_AFTER_CLOSE_MS).toBe(60 * MIN);
     expect(SWITCH_KNOWN_SESSIONS).toBe(10);
   });
@@ -52,7 +55,7 @@ const BASE = () => ({
     control: { status: 'ok', active: true, shareBp: 10_000, disabled: false }, cohortBattles: 1, cohortBasis: 'outside the allowlist',
     answers: { commands: 1, acknowledgments: 0, heard: 1, acted: 1, noMatchingTrade: 0 },
     on: { n: 16, timeout: 0, e400: 0, invalid: 0, other: 0 }, cohort: { n: 8, timeout: 0, e400: 0, invalid: 0, other: 0 }, off: { n: 4, timeout: 0, e400: 0, invalid: 0, other: 0 },
-    flags: { timeout: 'ok', e400: 'ok', invalid: 'ok', other: 'ok' }, cohortFlags: { timeout: 'ok', e400: 'ok', invalid: 'ok', other: 'ok' },
+    window: { sessions: ['2026-11-17', '2026-11-18', '2026-11-19'], onChecks: 120, timeouts: 0 },
     sweep: { swept: 18, endedWithBattle: 0, medianMs: 0.7 * MIN, maxMs: 0.7 * MIN }, overdueQueueRows: 0,
   },
 });
@@ -62,8 +65,8 @@ const status = (s, key) => evaluateRules(s).find((r) => r.key === key).status;
 describe('evaluateRules — every rule on both sides of its line', () => {
   it('the base summary is ok on every line, and the verdict is ok', () => {
     const rules = evaluateRules(S());
-    expect(rules.map((r) => r.key)).toEqual(['costPerBattleDay', 'costPerCheck', 'evaluator', 'anthropic', 'eodhd', 'cockpit']);
-    expect(rules.map((r) => r.status)).toEqual(['ok', 'ok', 'ok', 'ok', 'ok', 'ok']);
+    expect(rules.map((r) => r.key)).toEqual(['costPerBattleDay', 'costPerCheck', 'evaluator', 'anthropic', 'eodhd', 'cockpitTimeouts', 'cockpitInvalid', 'cockpit400', 'sweepLag']);
+    expect(rules.map((r) => r.status)).toEqual(['ok', 'ok', 'ok', 'ok', 'ok', 'ok', 'ok', 'ok', 'ok']);
     expect(verdictOf(rules)).toBe('ok');
   });
 
@@ -134,35 +137,72 @@ describe('evaluateRules — every rule on both sides of its line', () => {
     expect(status(S((s) => { s.eodhd.evaluatorUnits = null; s.eodhd.pollerUnits = 60_001; }), 'eodhd')).toBe('PAUSE');
   });
 
-  it('cockpit health: an `on` timeout, 400 or invalid_tool_result ABOVE the `off` baseline is STOP — set disabled: true', () => {
-    for (const k of ['timeout', 'e400', 'invalid']) {
-      const rules = evaluateRules(S((s) => { s.cockpit.flags[k] = 'ABOVE'; }));
-      const r = rules.find((x) => x.key === 'cockpit');
-      expect(r.status, k).toBe('STOP');
-      expect(r.reason).toContain('set disabled: true');
-      expect(verdictOf(rules)).toBe('STOP');
-    }
+  // The cockpit's lines (founder rulings of 20 Nov 2026 on Q-1 / Q-2): absolute limits, only for what the cockpit can cause.
+  const W = (onChecks, timeouts) => (s) => { s.cockpit.window = { sessions: ['2026-11-17', '2026-11-18', '2026-11-19'], onChecks, timeouts }; };
+  it('cockpit timeouts: STOP strictly above 2 % over the three sessions — 2 in 100 is ok, 3 in 100 stops (set disabled: true)', () => {
+    expect(status(S(W(100, 2)), 'cockpitTimeouts')).toBe('ok');
+    const r = evaluateRules(S(W(100, 3)));
+    expect(r.find((x) => x.key === 'cockpitTimeouts').status).toBe('STOP');
+    expect(r.find((x) => x.key === 'cockpitTimeouts').reason).toContain('set disabled: true — 3 timeout(s) in 100 `on` checks over the last 3 sessions');
+    expect(verdictOf(r)).toBe('STOP');
   });
-  it('cockpit health: the cohort\'s own `on` checks above the baseline also STOP', () => {
-    expect(status(S((s) => { s.cockpit.cohortFlags.timeout = 'ABOVE'; }), 'cockpit')).toBe('STOP');
+  it('cockpit timeouts: the 2 % line, not 1 % or 3 % — 3 in 150 is ok, 4 in 100 stops', () => {
+    expect(status(S(W(150, 3)), 'cockpitTimeouts')).toBe('ok');
+    expect(status(S(W(100, 4)), 'cockpitTimeouts')).toBe('STOP');
   });
-  it('cockpit health: an `other` failure class above the baseline is not one of the three named — ok', () => {
-    expect(status(S((s) => { s.cockpit.flags.other = 'ABOVE'; s.cockpit.cohortFlags.other = 'ABOVE'; }), 'cockpit')).toBe('ok');
-  });
-  it('cockpit health: sweep lag STOPs strictly past 30 min — 29.9 and 30 are ok, 30 min + 1 ms stops', () => {
-    expect(status(S((s) => { s.cockpit.sweep.maxMs = 29.9 * MIN; }), 'cockpit')).toBe('ok');
-    expect(status(S((s) => { s.cockpit.sweep.maxMs = 30 * MIN; }), 'cockpit')).toBe('ok');
-    expect(status(S((s) => { s.cockpit.sweep.maxMs = 30 * MIN + 1; }), 'cockpit')).toBe('STOP');
-  });
-  it('cockpit health: an `on` failure with no `off` check that session is CHECK (a read, not a pause) — and a trip beats it', () => {
-    const r = evaluateRules(S((s) => { s.cockpit.flags.invalid = 'no baseline'; s.cockpit.on.invalid = 1; s.cockpit.off.n = 0; })).find((x) => x.key === 'cockpit');
+  it('cockpit timeouts: STOP needs at least 60 `on` checks — 2 in 60 stops, 2 in 59 is CHECK with the counts', () => {
+    expect(status(S(W(60, 2)), 'cockpitTimeouts')).toBe('STOP');
+    const r = evaluateRules(S(W(59, 2))).find((x) => x.key === 'cockpitTimeouts');
     expect(r.status).toBe('CHECK');
-    expect(r.reason).toContain('1 invalid_tool_result in 16 `on` checks');
-    expect(status(S((s) => { s.cockpit.cohortFlags.e400 = 'no baseline'; }), 'cockpit')).toBe('CHECK');
-    expect(status(S((s) => { s.cockpit.flags.invalid = 'no baseline'; s.cockpit.sweep.maxMs = 31 * MIN; }), 'cockpit')).toBe('STOP');
+    expect(r.reason).toContain('2 timeout(s) in 59 `on` checks over the last 3 sessions = 3.4 %');
+    expect(status(S(W(50, 2)), 'cockpitTimeouts')).toBe('CHECK');
+    expect(status(S(W(69, 2)), 'cockpitTimeouts')).toBe('STOP');
   });
-  it('cockpit health: no `on` check and no swept call is `no data`', () => {
-    expect(status(S((s) => { s.cockpit.on.n = 0; s.cockpit.sweep.swept = 0; s.cockpit.sweep.maxMs = null; }), 'cockpit')).toBe('no data');
+  it('cockpit timeouts: under 60 checks at or below 2 % is ok; the window, not the session, is what counts', () => {
+    expect(status(S(W(59, 1)), 'cockpitTimeouts')).toBe('ok');
+    expect(status(S(W(32, 0)), 'cockpitTimeouts')).toBe('ok');
+    expect(status(S((s) => { W(100, 3)(s); s.cockpit.on.timeout = 0; }), 'cockpitTimeouts')).toBe('STOP');
+    expect(status(S((s) => { W(100, 0)(s); s.cockpit.on.timeout = 5; }), 'cockpitTimeouts')).toBe('ok');
+  });
+  it('cockpit timeouts: no `on` check in the window is `no data`', () => {
+    expect(status(S(W(0, 0)), 'cockpitTimeouts')).toBe('no data');
+  });
+  it('invalid_tool_result: CHECK, never STOP — even every check failing', () => {
+    expect(status(S((s) => { s.cockpit.on.invalid = 1; }), 'cockpitInvalid')).toBe('CHECK');
+    const all = evaluateRules(S((s) => { s.cockpit.on.invalid = 16; }));
+    expect(all.find((x) => x.key === 'cockpitInvalid').status).toBe('CHECK');
+    expect(verdictOf(all)).toBe('CHECK');
+    expect(all.find((x) => x.key === 'cockpitInvalid').reason).toContain('16 in 16 `on` checks this session (100.0 %); not caused by the cockpit');
+    expect(status(S(), 'cockpitInvalid')).toBe('ok');
+    expect(status(S((s) => { s.cockpit.on.n = 0; }), 'cockpitInvalid')).toBe('no data');
+  });
+  it('400s: CHECK, never STOP; none is ok; no `on` check is `no data`', () => {
+    const r = evaluateRules(S((s) => { s.cockpit.on.e400 = 1; })).find((x) => x.key === 'cockpit400');
+    expect(r.status).toBe('CHECK');
+    expect(r.reason).toContain('often account-level');
+    expect(status(S((s) => { s.cockpit.on.e400 = 16; }), 'cockpit400')).toBe('CHECK');
+    expect(status(S(), 'cockpit400')).toBe('ok');
+    expect(status(S((s) => { s.cockpit.on.n = 0; }), 'cockpit400')).toBe('no data');
+  });
+  it('the `off` arm and the `other` class no longer drive any line', () => {
+    const r = evaluateRules(S((s) => { s.cockpit.off = { n: 0, timeout: 0, e400: 0, invalid: 0, other: 0 }; s.cockpit.on.other = 9; }));
+    expect(r.map((x) => x.status)).toEqual(['ok', 'ok', 'ok', 'ok', 'ok', 'ok', 'ok', 'ok', 'ok']);
+  });
+  it('sweep lag: CHECK (never STOP) strictly past 30 min — 29.9 and 30 are ok, 30 min + 1 ms is CHECK', () => {
+    expect(status(S((s) => { s.cockpit.sweep.maxMs = 29.9 * MIN; }), 'sweepLag')).toBe('ok');
+    expect(status(S((s) => { s.cockpit.sweep.maxMs = 30 * MIN; }), 'sweepLag')).toBe('ok');
+    const r = evaluateRules(S((s) => { s.cockpit.sweep.maxMs = 30 * MIN + 1; }));
+    expect(r.find((x) => x.key === 'sweepLag').status).toBe('CHECK');
+    expect(verdictOf(r)).toBe('CHECK');
+    expect(status(S((s) => { s.cockpit.sweep.maxMs = 240 * MIN; }), 'sweepLag')).toBe('CHECK');
+  });
+  it('sweep lag: the 30-minute line, not 15 or 45 — 20 min is ok, 40 min is CHECK', () => {
+    expect(status(S((s) => { s.cockpit.sweep.maxMs = 20 * MIN; }), 'sweepLag')).toBe('ok');
+    expect(status(S((s) => { s.cockpit.sweep.maxMs = 40 * MIN; }), 'sweepLag')).toBe('CHECK');
+  });
+  it('sweep lag: no swept call, or a missing lag, is `no data`', () => {
+    expect(status(S((s) => { s.cockpit.sweep.swept = 0; s.cockpit.sweep.maxMs = null; }), 'sweepLag')).toBe('no data');
+    expect(status(S((s) => { s.cockpit.sweep.maxMs = null; }), 'sweepLag')).toBe('no data');
   });
 });
 
@@ -198,6 +238,11 @@ describe('defaultSession — the market calendar, an hour after the close', () =
   it('a weekend reads Friday', () => {
     expect(defaultSession(Date.parse('2026-11-21T15:00:00.000Z'))).toBe('2026-11-20');
     expect(defaultSession(Date.parse('2026-11-22T23:00:00.000Z'))).toBe('2026-11-20');
+  });
+  it('the timeout window is the session and the two trading sessions before it, holidays skipped', () => {
+    expect(windowSessions('2026-11-19')).toEqual(['2026-11-17', '2026-11-18', '2026-11-19']);
+    expect(windowSessions('2026-11-23')).toEqual(['2026-11-19', '2026-11-20', '2026-11-23']);
+    expect(windowSessions('2026-11-27')).toEqual(['2026-11-24', '2026-11-25', '2026-11-27']);
   });
   it('--session must be a trading session the calendar covers', () => {
     expect(checkSession('2026-11-19')).toBe('2026-11-19');
@@ -265,7 +310,9 @@ function fixture({ trips = false } = {}) {
     ['zzBATelse', { ownerId: ELSE_OWNER, gameMode: 'baggerbomb_agent', status: 'completed', expiresAt: '2026-11-18T21:00:00.000Z' }],
   ];
   const ticks = {
-    zzBATpilot: [mtick('15:00', { inputTokens: 17_197, outputTokens: 1_674 }), mtick('15:15', { inputTokens: 17_854, outputTokens: 1_950 }), mtick('15:30', { inputTokens: 16_420, outputTokens: 1_500 }), quiet('15:45')],
+    zzBATpilot: [mtick('15:00', { inputTokens: 17_197, outputTokens: 1_674 }), mtick('15:15', { inputTokens: 17_854, outputTokens: 1_950, ...(trips ? { outcome: 'failed', failureClass: '400' } : {}) }), mtick('15:30', { inputTokens: 16_420, outputTokens: 1_500 }), quiet('15:45'),
+      // Two sessions back (Nov 17): in the timeout window, never in the session's cost.
+      ...(trips ? Array.from({ length: 60 }, (_, i) => ({ ...mtick('15:00', { inputTokens: 1, outputTokens: 1, ...(i < 2 ? { outcome: 'failed', failureClass: 'timeout' } : {}) }), capturedAt: '2026-11-17T15:00:00.000Z' })) : [])],
     zzBATcohort: [mtick('15:00', { inputTokens: 16_003, outputTokens: 2_091, ...(trips ? { outcome: 'failed', failureClass: 'invalid_tool_result' } : {}) })],
     zzBATcohort2: [quiet('15:15')],
     zzBATleague: [mtick('15:00', { v: 1, inputTokens: 9_001, outputTokens: 777 })],
@@ -347,7 +394,9 @@ describe('gatherReadout — a normal session through a fake handle', () => {
     expect(s.cockpit.cohortBasis).toBe('outside the allowlist');
     expect(s.cockpit.answers).toMatchObject({ commands: 1, heard: 1, acted: 1 });
     expect(s.cockpit.sweep.maxMs).toBe(42_000);
-    expect(read.rules.map((r) => r.status)).toEqual(['ok', 'ok', 'ok', 'ok', 'ok', 'ok']);
+    // The window holds the session's 4 `on` checks and the other battle's Nov 18 check (outside the session, inside the window).
+    expect(s.cockpit.window).toEqual({ sessions: ['2026-11-17', '2026-11-18', '2026-11-19'], onChecks: 5, timeouts: 0 });
+    expect(read.rules.map((r) => r.status)).toEqual(['ok', 'ok', 'ok', 'ok', 'ok', 'ok', 'ok', 'ok', 'ok']);
     expect(read.verdict).toBe('ok');
   });
 
@@ -378,6 +427,8 @@ describe('gatherReadout — a normal session through a fake handle', () => {
     // gatherStage's battle read and the readout's own share the mask; the readout's is the last battle query.
     expect(own.at(-1)).toEqual({ path: 'agentBattles', wheres: [['expiresAt', '>=', '2026-11-18T00:00:00.000Z'], ['expiresAt', '<=', '2026-11-21T00:00:00.000Z']], mask: ['ownerId', 'gameMode', 'isCpu', 'status', 'expiresAt'] });
     expect(db.log.filter((e) => e.path === 'getAll')).toEqual([{ path: 'getAll', days: [D] }]);
+    // The stage read covers the three-session timeout window (Nov 17 → 19): its run read starts a day before Nov 17.
+    expect(db.log.filter((e) => e.path === 'agentEvalRuns').map((e) => e.wheres[0][2])).toContain('2026-11-16T00:00:00.000Z');
   });
 
   it('a disabled switch is read as disabled, and the block says so', async () => {
@@ -390,7 +441,7 @@ describe('gatherReadout — a normal session through a fake handle', () => {
 });
 
 describe('gatherReadout — a session that trips every rule', () => {
-  it('the evaluator, Anthropic and EODHD pause; the cockpit STOPs (above the baseline and a late sweep); the verdict is STOP', async () => {
+  it('the evaluator, Anthropic and EODHD pause; timeouts over the window STOP; invalid_tool_result, a 400 and a late sweep are CHECK; the verdict is STOP', async () => {
     const read = await readoutOf(fixture({ trips: true }));
     const by = Object.fromEntries(read.rules.map((r) => [r.key, r]));
     expect(by.costPerBattleDay.status).toBe('ok');
@@ -398,9 +449,14 @@ describe('gatherReadout — a session that trips every rule', () => {
     expect(by.evaluator.status).toBe('PAUSE');
     expect(by.anthropic.status).toBe('PAUSE');
     expect(by.eodhd.status).toBe('PAUSE');
-    expect(by.cockpit.status).toBe('STOP');
-    expect(by.cockpit.reason).toContain('invalid_tool_result above');
-    expect(by.cockpit.reason).toContain('sweep lag 31.0 min, past its 30.0 min bound');
+    expect(read.summary.cockpit.window).toEqual({ sessions: ['2026-11-17', '2026-11-18', '2026-11-19'], onChecks: 65, timeouts: 2 });
+    expect(read.summary.cost.modelChecks).toBe(5); // the Nov 17 checks are in the window, never in the session's cost
+    expect(by.cockpitTimeouts.status).toBe('STOP');
+    expect(by.cockpitTimeouts.reason).toContain('set disabled: true — 2 timeout(s) in 65 `on` checks over the last 3 sessions = 3.1 %');
+    expect(by.cockpitInvalid.status).toBe('CHECK');
+    expect(by.cockpit400.status).toBe('CHECK');
+    expect(by.sweepLag.status).toBe('CHECK');
+    expect(by.sweepLag.reason).toContain('31.0 min, past 30.0 min');
     expect(read.verdict).toBe('STOP');
     expect(renderReadout(read)).toContain('**STOP — set `disabled: true` in cockpitConfig/release now (save this readout first).**');
     expect(renderReadout(read)).toContain('- Evaluator capacity: PAUSE: 1 run(s) deferred a battle and 1 budget-skipped one');
@@ -429,7 +485,7 @@ describe('gatherReadout — a session with no battles, and an empty one', () => 
   it('no battles, the runs and the poller present: costs and the cockpit have no data, the evaluator and EODHD are ok', async () => {
     const read = await readoutOf({ runs: [quietRun('15:00'), quietRun('15:15')], budget: { [D]: { unitsRequested: 20_541 } }, control: CONTROL_DOC });
     const by = Object.fromEntries(read.rules.map((r) => [r.key, r.status]));
-    expect(by).toEqual({ costPerBattleDay: 'no data', costPerCheck: 'no data', evaluator: 'ok', anthropic: 'no data', eodhd: 'ok', cockpit: 'no data' });
+    expect(by).toEqual({ costPerBattleDay: 'no data', costPerCheck: 'no data', evaluator: 'ok', anthropic: 'no data', eodhd: 'ok', cockpitTimeouts: 'no data', cockpitInvalid: 'no data', cockpit400: 'no data', sweepLag: 'no data' });
     expect(read.summary.players).toEqual({ owners: 0, agentBattles: 0, peakBattlesInRun: 0 });
     expect(read.summary.eodhd).toMatchObject({ evaluatorUnits: 0, pollerUnits: 20_541, totalUnits: 20_541 });
     const text = renderReadout(read, { detail: true });
@@ -448,7 +504,7 @@ describe('gatherReadout — a session with no battles, and an empty one', () => 
 
   it('nothing at all: every line is `no data`, the verdict is `no data`, and the block still prints', async () => {
     const read = await readoutOf({});
-    expect(read.rules.map((r) => r.status)).toEqual(['no data', 'no data', 'no data', 'no data', 'no data', 'no data']);
+    expect(read.rules.map((r) => r.status)).toEqual(Array(9).fill('no data'));
     expect(read.verdict).toBe('no data');
     expect(renderReadout(read, { detail: true })).toContain('**no data — the session holds nothing to judge');
   });

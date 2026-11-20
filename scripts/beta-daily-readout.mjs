@@ -9,9 +9,12 @@
 //   Evaluator             runs that deferred or budget-skipped a battle, the largest wall time, K and max in flight
 //   Anthropic limits      the limits the API reported, the lowest remaining, 429s
 //   EODHD                 the evaluator's requests (run records) and the intraday poller's units (intradayBudget)
-//   Cockpit               the release switch (cockpitConfig/release, read now), cohort battles, the answer chain,
-//                         the readiness report's §C3 trips
-//   Rules                 each rule below as ok / PAUSE / STOP, or CHECK (a human should read it) / no data
+//   Cockpit               the release switch (cockpitConfig/release, read now), cohort battles, the answer chain, the
+//                         `on` failures, the `on` timeouts over the last three sessions, the sweep lag
+//   Rules                 each rule below as ok / PAUSE / STOP, or CHECK (a human should read it) / no data. The
+//                         cockpit's lines follow the founder's rulings of 20 Nov 2026: STOP only for `on` timeouts
+//                         above 2 % over three sessions and at least 60 checks; invalid_tool_result, 400s and a sweep
+//                         lag past 30 minutes are CHECK lines
 //
 // It is built on the two reads that already exist and does not copy them: `gather` + `renderLimits`
 // (scripts/eval-capacity-read.mjs) and `gatherStage` + `renderStage` (scripts/cockpit-release-read.mjs). --detail
@@ -56,20 +59,25 @@ export const PAUSE_ANTHROPIC_INPUT_LEFT_SHARE = 0.2;
 export const PAUSE_EODHD_UNITS = 60_000;
 /** An EODHD intraday request bills 5 units; an end-of-day or real-time request bills 1. */
 export const EODHD_INTRADAY_UNITS = 5;
+// The cockpit's lines (founder rulings of 20 Nov 2026 on the report's Q-1 and Q-2): absolute limits, and only for what
+// the cockpit can cause. With every agent-mode battle `on` there is no `off` arm left to compare with.
 /**
- * STOP when a call the sweep settled was stamped more than this after its deadline. Not set by the readiness report
- * (§C3 names "sweep lag" with no number) nor by sweep.js: chosen here as two of the sweep's 15-minute slots
- * (process-pending-reflections, `*15 13-1 UTC`) — one slot is the ordinary worst case for a deadline that falls just
- * after a run, the second covers one late or short run. A founder question in the report; measured lag is ≈ 0.7 min.
+ * STOP (set `disabled: true`) when the `on` checks' timeout rate over the last TIMEOUT_WINDOW_SESSIONS sessions exceeds
+ * this, over at least STOP_TIMEOUT_MIN_CHECKS `on` checks. With fewer checks the same rate prints CHECK with the counts.
  */
-export const STOP_SWEEP_LAG_MS = 30 * 60_000;
+export const STOP_TIMEOUT_RATE = 0.02;
+export const STOP_TIMEOUT_MIN_CHECKS = 60;
+export const TIMEOUT_WINDOW_SESSIONS = 3;
+/**
+ * CHECK (never STOP) when a call the sweep settled was stamped more than this after its deadline: two of the sweep's
+ * 15-minute slots (process-pending-reflections, `*15 13-1 UTC`). Measured lag ≈ 0.7 min.
+ */
+export const CHECK_SWEEP_LAG_MS = 30 * 60_000;
 /** The default session is the latest one whose close was at least this long ago. */
 export const READ_AFTER_CLOSE_MS = 60 * 60_000;
 /** The switch read's known-owner window: the agent-mode owners of this many sessions back. */
 export const SWITCH_KNOWN_SESSIONS = 10;
 
-const FAILURES = ['timeout', 'e400', 'invalid'];
-const FAILURE_WORDS = { timeout: 'timeouts', e400: '400s', invalid: 'invalid_tool_result' };
 const finite = (v) => typeof v === 'number' && Number.isFinite(v);
 
 // ---------------------------------------------------------------- the session
@@ -97,6 +105,17 @@ export function checkSession(day) {
   return day;
 }
 
+/** The `n` trading sessions ending with `session`, oldest first, from the market calendar (holidays skipped). Pure. */
+export function windowSessions(session, n = TIMEOUT_WINDOW_SESSIONS) {
+  const days = [session];
+  while (days.length < n) {
+    const prev = getPreviousSessionDate(days[0]);
+    if (!prev) break;
+    days.unshift(prev);
+  }
+  return days;
+}
+
 /** Is this battle a real player's agent-mode battle (not a CPU seat, a non-empty owner)? Pure. */
 export function isAgentReal(b) {
   return b?.gameMode === RELEASE_COHORT_GAME_MODE && b?.isCpu !== true && typeof b?.ownerId === 'string' && b.ownerId.length > 0 && !isCpuUserId(b.ownerId);
@@ -116,10 +135,11 @@ const sumOfDist = (d) => (d && d.n > 0 && finite(d.mean) ? Math.round(d.mean * d
 
 /**
  * The block's numbers, from the two reads for ONE session. Pure. `capacity` is eval-capacity-read's gather() over
- * [session]; `stage` cockpit-release-read's gatherStage() over [session]; `players` playersRead(); `control` the
- * switch as read now ({ view, disabled }).
+ * [session]; `stage` cockpit-release-read's gatherStage() over `windowDays` (the timeout window, which ends with the
+ * session); `players` playersRead(); `control` the switch as read now ({ view, disabled }).
  */
-export function summarize({ session, capacity, stage, players, control }) {
+export function summarize({ session, windowDays = [session], capacity, stage, players, control }) {
+  const inWindow = stage.checks.filter((c) => windowDays.includes(c.day));
   const runDay = capacity.runs.perDay.find((d) => d.day === session) || null;
   const lim = capacity.limits.perDay.find((d) => d.day === session) || null;
   const bud = capacity.budget.perDay.find((d) => d.day === session) || null;
@@ -174,7 +194,8 @@ export function summarize({ session, capacity, stage, players, control }) {
       cohortBasis: stage.cohort.basis,
       answers: { commands: answers.commands, acknowledgments: answers.acknowledgments, heard: answers.heard, acted: answers.acted, noMatchingTrade: answers.noMatchingTrade },
       on: checks.on, cohort: checks.cohort, off: checks.off,
-      flags: checks.flags, cohortFlags: checks.cohortFlags,
+      // Every `on` check of the window (the pilot's included), for the timeout line.
+      window: { sessions: [...windowDays], onChecks: inWindow.reduce((n, c) => n + c.on.n, 0), timeouts: inWindow.reduce((n, c) => n + c.on.timeout, 0) },
       sweep: { swept: sweep.swept, endedWithBattle: sweep.endedWithBattle, medianMs: sweep.medianMs, maxMs: sweep.maxMs },
       overdueQueueRows: stage.sweep.overdueQueueRows,
     },
@@ -186,11 +207,12 @@ export function summarize({ session, capacity, stage, players, control }) {
 const money = (v) => (finite(v) ? `$${v.toFixed(v > 0 && v < 0.1 ? 4 : 2)}` : '—');
 const int = (v) => (finite(v) ? Math.round(v).toLocaleString('en-US') : '—');
 const minutes = (ms) => (finite(ms) ? `${(ms / 60_000).toFixed(1)} min` : '—');
+const pct = (n, d) => (finite(n) && finite(d) && d > 0 ? `${((100 * n) / d).toFixed(1)} %` : '—');
 
 /**
  * Each rule of the build prompt's table, evaluated. Pure. A rule reads `no data` when the session holds nothing it can
- * judge (never `ok` by default: a NaN or a null compared to a threshold is never allowed to pass silently), and the
- * cockpit rule reads CHECK when an `on` failure has no `off` check that session to be compared with.
+ * judge (never `ok` by default: a NaN or a null compared to a threshold is never allowed to pass silently). CHECK is a
+ * line a human should read; it pauses nothing.
  * @returns {{ key: string, label: string, status: 'ok'|'PAUSE'|'STOP'|'CHECK'|'no data', reason: string }[]}
  */
 export function evaluateRules(s) {
@@ -233,19 +255,32 @@ export function evaluateRules(s) {
   else if (gaps.length) push('eodhd', 'EODHD (records)', 'no data', gaps.join('; '));
   else push('eodhd', 'EODHD (records)', 'ok', `${int(known)} units; pauses above ${int(PAUSE_EODHD_UNITS)} — the fixed jobs and browser polling come on top`);
 
-  // 6. Cockpit health — the off switch, not a cost rule.
+  // 6–9. The cockpit (rulings Q-1 / Q-2 of 20 Nov 2026): absolute limits, only for what the cockpit can cause. The one
+  // STOP is the off switch, not a cost rule.
   const ck = s.cockpit;
-  const above = (flags) => FAILURES.filter((k) => flags?.[k] === 'ABOVE');
-  const unbased = (flags) => FAILURES.filter((k) => flags?.[k] === 'no baseline');
-  const trips = [];
-  const allAbove = [...new Set([...above(ck.flags), ...above(ck.cohortFlags)])];
-  if (allAbove.length) trips.push(`\`on\` ${allAbove.map((k) => FAILURE_WORDS[k]).join(', ')} above the session's \`off\` baseline`);
-  if (finite(ck.sweep.maxMs) && ck.sweep.maxMs > STOP_SWEEP_LAG_MS) trips.push(`sweep lag ${minutes(ck.sweep.maxMs)}, past its ${minutes(STOP_SWEEP_LAG_MS)} bound`);
-  const noBase = [...new Set([...unbased(ck.flags), ...unbased(ck.cohortFlags)])];
-  if (trips.length) push('cockpit', 'Cockpit health', 'STOP', `set disabled: true — ${trips.join('; ')}`);
-  else if (noBase.length) push('cockpit', 'Cockpit health', 'CHECK', `no \`off\` check this session to compare with — ${noBase.map((k) => `${ck.on[k]} ${FAILURE_WORDS[k]}`).join(', ')} in ${ck.on.n} \`on\` checks; read them (nothing is paused)`);
-  else if (!(ck.on.n > 0) && !(ck.sweep.swept > 0)) push('cockpit', 'Cockpit health', 'no data', 'no `on` check and no swept call this session');
-  else push('cockpit', 'Cockpit health', 'ok', `no §C3 trip: ${ck.on.n} \`on\` checks, sweep lag max ${minutes(ck.sweep.maxMs)}`);
+  const w = ck.window;
+  const span = `the last ${w.sessions.length} session${w.sessions.length === 1 ? '' : 's'}`;
+  const rate = w.onChecks > 0 ? w.timeouts / w.onChecks : null;
+  const counts = `${w.timeouts} timeout(s) in ${w.onChecks} \`on\` checks over ${span} = ${pct(w.timeouts, w.onChecks)}`;
+  if (!(w.onChecks > 0) || !finite(rate)) push('cockpitTimeouts', 'Cockpit timeouts', 'no data', `no \`on\` check in ${span}`);
+  else if (rate > STOP_TIMEOUT_RATE && w.onChecks >= STOP_TIMEOUT_MIN_CHECKS) push('cockpitTimeouts', 'Cockpit timeouts', 'STOP', `set disabled: true — ${counts}, above ${pct(STOP_TIMEOUT_RATE, 1)}`);
+  else if (rate > STOP_TIMEOUT_RATE) push('cockpitTimeouts', 'Cockpit timeouts', 'CHECK', `${counts}: above ${pct(STOP_TIMEOUT_RATE, 1)}, but under ${STOP_TIMEOUT_MIN_CHECKS} checks — read them`);
+  else push('cockpitTimeouts', 'Cockpit timeouts', 'ok', `${counts}; stops above ${pct(STOP_TIMEOUT_RATE, 1)} over at least ${STOP_TIMEOUT_MIN_CHECKS} checks`);
+
+  // invalid_tool_result: CHECK, never STOP — the readiness check found the cockpit does not cause it (1.9 % `on`, 2.5 % `off`).
+  if (!(ck.on.n > 0)) push('cockpitInvalid', 'invalid_tool_result', 'no data', 'no `on` check this session');
+  else if (ck.on.invalid > 0) push('cockpitInvalid', 'invalid_tool_result', 'CHECK', `${ck.on.invalid} in ${ck.on.n} \`on\` checks this session (${pct(ck.on.invalid, ck.on.n)}); not caused by the cockpit (readiness: 1.9 % \`on\`, 2.5 % \`off\`) — read them`);
+  else push('cockpitInvalid', 'invalid_tool_result', 'ok', `none in ${ck.on.n} \`on\` checks this session`);
+
+  // 400s: CHECK — often account-level (the Oct 8 usage-limit 400s).
+  if (!(ck.on.n > 0)) push('cockpit400', 'Model 400s', 'no data', 'no `on` check this session');
+  else if (ck.on.e400 > 0) push('cockpit400', 'Model 400s', 'CHECK', `${ck.on.e400} in ${ck.on.n} \`on\` checks this session — often account-level (like the Oct 8 usage-limit 400s); read them`);
+  else push('cockpit400', 'Model 400s', 'ok', `none in ${ck.on.n} \`on\` checks this session`);
+
+  // Sweep lag: CHECK, never STOP (ruling Q-2).
+  if (!(ck.sweep.swept > 0) || !finite(ck.sweep.maxMs)) push('sweepLag', 'Sweep lag', 'no data', 'no call settled by the sweep this session');
+  else if (ck.sweep.maxMs > CHECK_SWEEP_LAG_MS) push('sweepLag', 'Sweep lag', 'CHECK', `${minutes(ck.sweep.maxMs)}, past ${minutes(CHECK_SWEEP_LAG_MS)} — read it`);
+  else push('sweepLag', 'Sweep lag', 'ok', `max ${minutes(ck.sweep.maxMs)}; a read above ${minutes(CHECK_SWEEP_LAG_MS)}`);
 
   return rules;
 }
@@ -272,7 +307,6 @@ const VERDICT_WORDS = {
 
 const etClock = (ms) => new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(ms));
 const weekday = (day) => new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'short' }).format(new Date(`${day}T12:00:00Z`));
-const pct = (n, d) => (finite(n) && finite(d) && d > 0 ? `${((100 * n) / d).toFixed(1)} %` : '—');
 
 /** The readout as Markdown: the block, then (with `detail`) the two reads' own tables. Pure. */
 export function renderReadout(read, { detail = false } = {}) {
@@ -317,6 +351,7 @@ export function renderReadout(read, { detail = false } = {}) {
   L.push(`- Cohort battles: ${ck.cohortBattles ?? '—'} (${ck.cohortBasis})`);
   L.push(`- Answers: ${ck.answers.commands} commands · ${ck.answers.acknowledgments} acknowledgments · ${ck.answers.heard} heard · ${ck.answers.acted} acted`);
   L.push(`- \`on\` checks: ${ck.on.n} (${ck.on.timeout} timeouts · ${ck.on.e400} 400s · ${ck.on.invalid} invalid_tool_result · ${ck.on.other} other) · \`off\` checks: ${ck.off.n}`);
+  L.push(`- \`on\` timeouts over the last ${ck.window.sessions.length} sessions (${ck.window.sessions[0]} → ${ck.window.sessions[ck.window.sessions.length - 1]}): ${ck.window.timeouts} in ${ck.window.onChecks} checks`);
   L.push(`- Sweep: ${ck.sweep.swept} calls settled, lag max ${minutes(ck.sweep.maxMs)} · queue rows overdue now: ${ck.overdueQueueRows}`, '');
   L.push('**Rules**');
   for (const r of read.rules) L.push(`- ${r.label}: ${r.status === 'ok' || r.status === 'no data' ? `${r.status} (${r.reason})` : `${r.status}: ${r.reason}`}`);
@@ -421,11 +456,13 @@ export async function gatherReadout(db, { session, readAtMs, allowlistList = [],
   const control = await readControl(db, readAtMs);
   const days = [session];
   const capacity = await gather(db, { days, readAtMs });
-  const stage = await gatherStage(db, { days, readAtMs, control: control.view, allowlistList, deadlineOf, isInCohort });
+  // The stage read covers the timeout window (the session and the sessions before it); every other line is the session's.
+  const windowDays = windowSessions(session);
+  const stage = await gatherStage(db, { days: windowDays, readAtMs, control: control.view, allowlistList, deadlineOf, isInCohort });
   const floorIso = new Date(Date.parse(`${session}T00:00:00Z`) - 86_400_000).toISOString();
   const ceilIso = new Date(Date.parse(`${session}T00:00:00Z`) + 2 * 86_400_000).toISOString();
   const players = playersRead(await maskedBattles(db, floorIso, ceilIso), session);
-  const summary = summarize({ session, capacity, stage, players, control });
+  const summary = summarize({ session, windowDays, capacity, stage, players, control });
   const rules = evaluateRules(summary);
   return { session, readAtMs, summary, rules, verdict: verdictOf(rules), capacity, stage };
 }
