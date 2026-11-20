@@ -602,6 +602,26 @@ The founder set the fix round's scope (§10.1). Statuses at the fix round's head
 | T2D-13 | P2: the 60 s pass budget bounds the starts of fetches, not their completion | Carried | **T5** (with C-7) | A-2B3 T2D-13 |
 | T2D-14 | P2: a stale failed backfill can overwrite a committed successful one | Carried | **T5** | A-2B3 T2D-14 |
 
+### 7.4 Astra's confirmation of fix round 2 (19 Nov 2026): T2D-D01, T2D-D02, and the final soak's two findings
+
+Statuses at the final fix's head (§12):
+
+| Id | Finding | Status | Home | Evidence |
+|---|---|---|---|---|
+| T2D-D01 | A correction of a founder-settled dividend and its possible re-date, first listed in one close, paid $299.91 without a ruling ($399.88 where the founder had chosen $1) | **Fixed** in the final fix (7436eb24, §12.2 fix 1) | — | Seq `ASTRA_R2`: her `d01` verbatim, rows reversed, the moved id ruled (200, was 404), the original $1, the split analogue, her control; the oracle on 8c3d5939 fails it (§12.3) |
+| T2D-D02 | A pending suspicion ruling hid a same-id vendor conflict: after a partly covered close the founder's 2:1 applied over 3:2 and 5:4, 199.940016 shares at full quality | **Fixed** in the final fix (679d066f, §12.2 fix 2) | — | Seq `ASTRA_R2`: her `d02` verbatim, then ruled (3:2 accepted, was 404), the covered variant (nothing applies; 3:2 accepted, was 422), one disagreeing row, both controls; the oracle on 8c3d5939 fails it |
+| SOAK-R3-1 | A pending founder split moved the count while the vendor's rows made its id a possible re-date (35 of 6,000 ordered histories) | **Fixed** (d64ac782, bb6157f4; §12.2 fix 3) | — | Seq `SOAK_R3` (four rows), Ordered "the final soak's failing histories" (1911201905, 1911200342) |
+| SOAK-R3-2 | A founder split found moot partway through a close still held a later split for that close; a re-run applied it (I-5; 2 histories) | **Fixed** (253ea451, §12.2 fix 4) | — | Seq `SOAK_R3` (one row), Ordered (1911205903, 1911202882) |
+| AR3-RF-1, -3, -4 | The refuter's F1 (a founder split and the vendor's same split a session earlier: ×4), F3 and its I-5 seed — SOAK-R3-1's and SOAK-R3-2's classes | **Fixed** by fixes 3 and 4 | — | Seq `SOAK_R3` "AR3-RF-1 …" (two), "AR3-RF-3 …"; Ordered (73100109, 73100236) |
+| AR3-RF-2 | A pending founder split left pending under an id a held vendor row made ambiguous: the suspicion locked (`price_move` 409), and a 3:2 ruling marked the founder's split `applied` | **Fixed** (53cc2396, §12.2 fix 5) | — | Seq `SOAK_R3` "AR3-RF-2 …" (two) |
+| AR3-RF-5 | A founder coverage-gap row and the vendor's same payload under the gap's other session were both paid ($199.94) | **Fixed** (e1da1a64, §12.2 fix 6) | — | Sticky "AR3-RF-5 …" (both orders) |
+| T2D-03, -04, -05, -12 | As §7.3 | **Still carried** | **T1a-2b-4 (before the switch)** | §7.3 |
+| T2D-11, -13, -14 | As §7.3 | Still carried | T5 | §7.3 |
+
+(Seq is `corporateActionSequences.test.js` with its plans in `__testsupport__/caSequences.js`; Ordered is `corporateActionSequences.ordered.test.js`; Sticky is `corporateActionStickyAmbiguity.test.js`.)
+
+**Astra to re-check D01 and D02 in T1a-2b-4's review, before the switch** — and fixes 3 to 6, which no reviewer has seen, with §12.2's readings R-1 to R-3.
+
 ## 8. New stores and fields, and the founder's steps after merge
 
 **One new collection** (server-only; the rules' catch-all deny covers it — no rules or index change):
@@ -1101,3 +1121,332 @@ No vendor, model or Firestore call was made. Every store is the in-memory fake o
 
 - **The dark merge.** Astra's five findings are fixed by the founder's mechanism. S-6 has now run at the scale its prompt set: 6,000 random histories of up to 15 sessions across the three ledger kinds, 120,226 closes, I-1 to I-5 after every close, 0 failures on the final code. Every event kind and every possible pair of kinds occurred at least 135 times. The run found one product defect (SOAK-1), and the independent refuter found six more (AR2-IR-1 to IR-6). Five of those are fixed and the sixth is the stricter hold the founder accepted. Each has a committed row. The battery kills 152 of 155. The three survivors are the ones §11.5 argued equivalent. With complete data, money is unchanged, and the quarterly product is unchanged: 34/34, 40/40, and a planted backfill reaches no quarterly reader. **No reviewer has seen 78c2bce4's fixes.** That is for Astra's confirmation to judge.
 - **The founder allowlist stays NOT READY.** T2D-03, T2D-04, T2D-05 and T2D-12 belong to T1a-2b-4, before the switch. FQ-5 to FQ-11 are answered (§11.8). Corrections to settled actions (FQ-11) stay with T2D-05 in T1a-2b-4.
+
+## 12. Final fix, 19 Nov 2026 — T2D-D01, D02
+
+Astra's round-2 confirmation (`docs/audits/20261119_ASTRA_CONFIRMATION_T1A2B3_ROUND2.md`, committed byte-identical; SHA-256 `546fa64aa0c311bb860eb6805cd6a1f4c6cf626d95a9ec1ef1300cf75b9770e7`, checked on the attachment before the copy and on the committed blob after) reviewed `8c3d5939`. Most of fix round 2 passed. Two ordinary histories broke I-2, and she named three gaps in the evidence. This section answers them as the founder's final-fix prompt of 19 Nov 2026 set out. **It is the last change in this PR; there is no further Astra round on it.**
+
+**Preamble.** `git fetch origin` first. The branch was at `8c3d5939` and `origin/main` at `eb34d2fd`, which was not in the branch. `main` was merged in without conflict (fccf5dfd). The merge touched no practice-field or mandate file. The work was done in a worktree on a local branch cut from `origin/claude/practice-field-t1a2b3-corporate-action-finish`, and pushed to it as a fast-forward.
+
+### 12.1 In plain terms
+
+**What was wrong.**
+- **T2D-D01.** The founder answered a dividend conflict with "none". Two closes later the vendor corrected that old date to $3 and, in the same close, listed $3 under a new date. The system paid the new-date $3 ($299.91) without asking. The correction had not been recorded yet when the new date was checked against what the old one had shown.
+- **T2D-D02.** The founder answered a halving with "a 2:1 split". At the next close the vendor reported two other ratios for that same split (3:2 and 5:4), and the dividend feed failed. The system set the vendor's ratios aside because the founder had ruled. A close later it applied the founder's 2:1 at full quality (199.940016 shares). The founder had ruled before either vendor ratio arrived.
+
+**What happens now.**
+- **D01.** The new payload of an action the founder settled is recorded before anything else in the close is classified. The new-date $3 is then recognized as a possible move of the old one and waits for the founder. Nothing is paid until the founder rules.
+- **D02.** A pending founder split stands in for the vendor's rows of its id only when they agree with it. When they disagree, they form a conflict on that close, covered or not. The founder's split is refused (its ruling is closed, with the reason), and only the founder's conflict ruling settles the id. When the rows agree, the split applies once, as before.
+
+**The scope grew. Say so plainly.** The prompt anticipated two fixes and one test commit. This section ships **six product fixes** in `ledger.js` and `close.js`. All six are the same family: a founder action, or a founder-settled action, meeting the vendor's rows. Each extra fix has its own commit and rows. They came from three places:
+- The new 6,000-history soak found **SOAK-R3-1**: a founder split applied under an id the vendor's rows made a possible re-date (35 histories). It also found **SOAK-R3-2**: a moot founder split held a later split for a close, so a re-run moved money (2 histories).
+- The independent refuter found **AR3-RF-1** to **-4**. RF-1 and RF-3 are SOAK-R3-1's class, and so is RF-4's I-5. **RF-2** is new: a founder split left pending under an ambiguous id, which locked the suspicion.
+- My own probe of the one analogue the refuter had not tried found **AR3-RF-5**: a founder coverage-gap row and the vendor's same payload under the gap's other session were both paid.
+
+Three of the refuter's points were about the oracle (AR3-O1 to O3). They are fixed in the tests.
+
+**The evidence, strengthened.**
+- I-2's oracle no longer trusts the system's records. It reads ambiguity from the vendor's rows and the founder's own requests. Only an accepted conflict ruling choosing the moved payload authorizes a movement, and every movement must have its receipt.
+- The generator writes C03's order, D01's shape and D02's shape on one id. The coverage tables count ordered events on one id and one ledger.
+- Each of Astra's three "equivalent" survivors has a distinguishing row.
+
+**What did not change.** With complete, unambiguous data, money moves exactly as before. The end-to-end dump is byte-identical and both quarterly differentials are identical. No fenced file, flag, pin, rule or index changed. `PRACTICE_FIELD_MODE` stays `'off'`.
+
+**No reviewer has seen fixes 3 to 6.** The refuter's tree was 47afe4ae. They are pinned by their rows (each fails at the commit before it), by mutants, and by the final soak. **Astra to re-check D01 and D02, and fixes 3–6, in T1a-2b-4's review, before the switch.**
+
+### 12.2 The fixes, by `file:line` (lines at the final head)
+
+| Fix | Commit | Where | What |
+|---|---|---|---|
+| **1 · T2D-D01** | 7436eb24 | `api/_utils/practiceField/ledger.js:1156` | `checkRulingRevisions()` (defined `ledger.js:1124`) runs once more, right after its definition, before the not-entitled loop, the in-call re-date pairing and the candidates loop. A founder-settled id's unseen payload becomes a `revised_after_ruling` record before `redateMatchOf` reads its pool, and that pool already reads those records. The end-of-call run (`ledger.js:1703`) stays, for a ruling this call settles. A second run adds nothing it already has. |
+| **2 · T2D-D02** | 679d066f | `close.js:307–331`, `close.js:364`; `ledger.js:1091` | `disputedIdsOf` finds, per ledger, a pending suspicion split whose id the feed lists with any payload that differs from it. `replacedIdsOf` leaves that id out of the replacement in each ledger's rows (`actionsOf`) and in the rows passed apart (`replacedRowsOf`). The vendor's rows reach the ledger beside the founder's row. The S-1 ① block records the conflict on every close, covered or not, before any coverage hold, and refuses the founder split (`'vendor_rows_disagree'`). The close closes the ruling `refused` (`holdRulings.js` `markRulingsApplied`, unchanged). An agreeing row is still replaced and applied once. |
+| **3 · SOAK-R3-1** | d64ac782, bb6157f4 | `ledger.js:1004–1019`, `:1193`, `:1218–1221`, `:1363–1400`, `:1445–1458` | A pending founder split now meets the vendor's rows for re-dates, as AR2-RF-1 already had it meet them for conflicts. (1) `redateMatchOf` matches it only against what is unsettled, and never against a row dated inside its record's gap (`inFounderGap`). A settled action explained a move of its own (fix-round row T2D-11). A row inside the gap is an account of the same move and explains the record first (review B2, D5, NF-1). (2) The vendor's own rows of its id, replaced because they agreed, are checked as the feed rows they are, against everything the ledger has seen (`vendorMatch`). (3) In S-1 ③, the pending founder split, and the vendor's replaced rows of its id, pair with the call's unsettled rows. A match records the id as a possible re-date and refuses the split (`refuseFounderSplit`, `'possible_redate'`). |
+| **4 · SOAK-R3-2** | 253ea451 | `ledger.js:1315` (`causesOf`) | An item of a founder split found moot earlier in the call holds nothing after it, as a suspicion retired in the call already held nothing (`retiredHere`). |
+| **5 · AR3-RF-2** | 53cc2396 | `ledger.js:1410` (the gate) | A pending founder split under an id the call found ambiguous by any path is refused (`'id_ambiguous'`). Before, a held vendor row revising it (S-1 ②) left it pending. After `none` on the conflict, `price_move` got 409 and the holding was locked. A 3:2 chosen instead marked the founder's ruling `applied` though her 2:1 never applied. |
+| **6 · AR3-RF-5** | e1da1a64 | `ledger.js:1192–1193`, `:1363–1364` | A founder coverage-gap row, which is a backfill row the founder picked, is matched for re-dates against the full pool and paired in S-1 ③ as the feed row it is. Conflict rulings stay exempt. |
+
+`git diff --stat fccf5dfd..e1da1a64 -- . ':!*.test.js' ':!**/__testsupport__/**'` lists only `practiceField/ledger.js` and `practiceField/close.js`. `mandateUniverseSnapshot.js`, `mandateCorporateActions.js`, `holdRulings.js`, every fenced file, flag, pin, rule and index are untouched. `PRACTICE_FIELD_MODE` is `'off'` (`src/config/practiceFieldFlags.js:33`).
+
+**Readings stated, and new stricter holds, for T1a-2b-4's review.**
+- **R-1.** A pending founder split is refused, not left pending, whenever a close finds its id ambiguous: a conflict, a revision, or a possible re-date. The founder then rules the conflict or re-date record, and the suspicion takes a new ruling if the move is still unexplained. Before, it applied (D02, SOAK-R3-1) or locked (AR3-RF-2).
+- **R-2.** A founder split meets only unsettled rows outside its record's gap (its own matching). The vendor's rows of its id meet everything, as feed rows. Two exceptions are deliberate and pinned: an in-gap row explains the move (B2, D5, NF-1, D6), and a settled earlier split is a move of its own (T2D-11).
+- **R-3.** A founder coverage-gap row and the vendor's same payload under another date in one close now **both wait** for a ruling. In one order (vendor first) both used to be paid. In the other order the founder's row used to be paid once and the vendor's held. The new hold does not depend on the order the rows arrive (S-1 ③'s own rationale). It is a stricter hold in the second order.
+- These are the only behaviour changes. On complete, unambiguous data none of them can fire.
+
+### 12.3 The strengthened oracle, and the generator
+
+**I-2's oracle** is `api/_utils/practiceField/__testsupport__/caOracle.js`, class `InputOracle`. It is wired into `run()` in `__testsupport__/caSequences.js` and checked after every close and after every re-run of it. Astra found that the old check accepted any truthy `founderRuling`, a `suspicion` one included, and had to be told when an id became ambiguous.
+- **Ambiguity is read from the inputs** (`close()`, `caOracle.js:92`). The inputs are the rows each close listed (a catch-up's stored backfill joined to its archive) and the founder requests the harness made. An id is ambiguous from the first close at which those show for it:
+  - a conflict: two payloads in one close, whether from the vendor, from an archive and a backfill, or from a vendor row against the founder's pending split;
+  - a revision: a payload not listed for it before, which includes a vendor ratio listed at an earlier close that differs from the founder's pending split (AR3-O2);
+  - a possible re-date: a payload listed, now or earlier, for another id of the same symbol and type dated within five sessions. Both ids are marked. The founder's pending split counts as an account here too (AR3-O1), with the two exceptions the product applies by design: an in-gap row, and an action the feed settled before the ruling.
+- The payload is ratio, amount, a delisting's cash and a rename's target (AR3-O3, `caOracle.js:38`).
+- **Authorization comes from the harness's own log of requests** (`authorizing()`, `caOracle.js:216`). A movement under an id that is ambiguous by the inputs, at or after that close, needs an accepted (200) `conflict` ruling the harness made for that id, choosing that payload. Nothing else authorizes it: not a `suspicion` split, a coverage-gap row, `none` or a rejected request.
+- **Movement is accounted for by conservation** (`check()`, `caOracle.js:224`):
+  - each ledger's dividends equal the sum of its applied receipts' income;
+  - each holding's count is the chain of its share-basis receipts from the entry count;
+  - each dividend's income is its own amount times the count held when it was applied, or its recorded ex-date count (AR3-O3: before, any count the holding ever had passed).
+- **Where it reads the product's state, and why that cannot authorize anything.** Every such read can only excuse a mark, never authorize a movement:
+  - the carve-out (`carvedOut()`, `:190`) reads the ledger's feed-settled receipts. It excuses a re-date through a correction of a feed-settled id, which is T2D-05's class, carried to T1a-2b-4;
+  - `founderSettledFirst()` (`:204`) reads the ledger's settled receipts, by the feed or by the founder, to apply the T2D-11 exception. It first counted only the feed's; the final soak showed three histories where the founder had settled the earlier id herself (§12.4), and the product treats those alike;
+  - the harness reads the stored ruling's `appliedOn` (to stop counting an account the product no longer supplies) and its `covers` (the record's gap).
+  - Both excuses are **counted** in the soak (§12.4).
+- **Its own rows.** `caOracle.test.js` has 11 rows: the D01 and D02 shapes, a coverage-gap row, a conflict ruling choosing another payload, a rejected request, each conservation breach, AR3-O1 (and its two exceptions), AR3-O2 and AR3-O3.
+- **On 8c3d5939** (a `git archive` of it with only the final test support overlaid), Astra's `d01` and `d02` plans, with her hand-supplied ambiguity marks and her expected money removed so that only this oracle can fail them, **both fail**:
+  - D01 on `cash_dividend_AAPL_2026-11-19` moved $3 on 19 Nov, "ambiguous since 2026-11-19 by the inputs";
+  - D02 on `split_AAPL_2026-11-17` moved 2:1 on 19 Nov, "ambiguous since 2026-11-18 … (receipt names suspicion)".
+  - **Both pass at e1da1a64.**
+- **Calibration.** Calibrated on the unfixed product over every fixed case, the 48 narrow seeds and 300 of the original wide seeds, the oracle found a natural D01 in the ORIGINAL soak range. Wide seed **1184872769** paid $74.98 on 24 Nov, and the old check passed it. On 47afe4ae the strengthened oracle fails the refuter's F1 (×4) by itself.
+
+**The generator** (`__testsupport__/caSequences.js`).
+- `generateWide(seed, { ordered: true })` adds one chain of ordered events on one AAPL id to every non-clean history (`orderedChain`). The chain is drawn from a second random stream, so every old seed's history is unchanged: 452 old plans (the 48 narrow, 400 wide and 4 default) hash identically before and after (`e19b2f73…a8f2`). There are three chains:
+  - **C03**: an ex-date conflict; then the old id overlapping its re-date (uncovered half the time); then the new row only; then the old row only; then sometimes the founder's ruling.
+  - **D01**: a conflict the founder settles (`none` or a payload); then, in one close and in either order, a payload of it not yet seen and that payload re-dated; or, as a control, the correction one close before its re-date.
+  - **D02**: a halving no row explains; the founder's 2:1 for it; then same-id vendor splits on a close whose data fails for AAPL 80% of the time. The vendor's splits are two that disagree, one that disagrees, one that agrees, or none.
+- In ordered histories the harness's random rulings may also be a suspicion `split` at the record's own ratio. Before, they were only ever `price_move`, so D02's class was unreachable.
+- `shapes()` counts the shapes reached on one id. `orderedPairs()` counts ordered pairs of events on one id and one ledger.
+- `corporateActionSequences.ordered.test.js` runs 60 ordered seeds (1,911,190,000–1,911,190,059) and requires each shape to be reached at least three times: C03 3, D01 10, D02 4.
+- **Astra's independent generator, rebuilt** (`generateAstraR2`, seeds 19,112,000–19,112,031). Her harness was not attached, so it was rebuilt from her Run:100:
+  - even seeds are cash (D01's class) and odd seeds are splits (D02's);
+  - residues 0 and 1 mod 4 are challenges, 2 and 3 controls;
+  - bits 2–3 choose the unseen amount ($3, $3.25, $4, $4.50) and, in the rebuild, the split ratios;
+  - bit 4 reverses the rows;
+  - her controls are the correction one close before its re-date, an agreeing 2:1, and the disagreeing ratios with no founder split.
+  - **On 8c3d5939 exactly the 16 challenges fail (8 cash, 8 split) and the 16 controls pass. At e1da1a64 all 32 pass**, each ending with the founder's later ruling on the moved or disputed id accepted (200).
+
+### 12.4 The soak
+
+**What ran.** Every history runs through the real close, catch-up and founder action against the fake store, with parsed vendor rows. After every close and every re-run, these are checked: I-1; I-2 against the product's records, the generator's marks and the independent oracle, with conservation; I-3; I-5. A clean history must also pass I-4. Runs were in a private WSL worktree, CI-shaped (Node 20.20.2, `TZ=UTC`, empty vendor key), one single-worker shard per range, under the shared suite lock.
+
+| Run | Seeds | Generator | Code | Sequences · sessions · closes checked | Result |
+|---|---|---|---|---|---|
+| 1 | **1,911,200,000–1,911,205,999** (new) | ordered | 47afe4ae | 6,000 · 62,956 · 119,205 | **37 failed**: SOAK-R3-1 (35) and SOAK-R3-2 (2), below |
+| 2 | Astra's **2,026,111,900–2,026,112,299** | stock wide, as she ran it | 47afe4ae | 400 · 4,216 · 8,032 | 400/400. Her counts reproduce exactly (4,216 sessions, 8,032 closes, 120 clean) |
+| 3 | 1,911,200,000–1,911,205,999 | ordered | 253ea451 (fixes 3, 4; the oracle before AR3-O1–O3) | 6,000 · 62,956 · 119,912 | 6,000/6,000 |
+| 4 | 1,911,200,000–1,911,205,999 | ordered | b0f4c907 (fixes 5, 6; oracle AR3-O1–O3) | 6,000 · 62,956 · 119,849 | **3 failed: the oracle, not the product.** In 1911200850, 1911203378 and 1911205662, a founder split for a later halving shared its ratio with an earlier split's payload that the founder had settled herself. In 1911203378 she chose 1.25 over the vendor's 2. The oracle's T2D-11 exception counted only feed-settled ids; the product treats any settled action as a move of its own. Fixed in the tests (6391bde8) |
+| **5** | 1,911,200,000–1,911,205,999 | ordered | **6391bde8, the final code** | 6,000 · 62,956 · **119,912** | **6,000/6,000 passed**, vitest 6,004/6,004, 370 s |
+| **6** | 2,026,111,900–2,026,112,299 | stock wide | **6391bde8** | 400 · 4,216 · **8,032** | **400/400 passed**, 94 s |
+| fixed | Astra's **19,112,000–19,112,031** (her generator, rebuilt) | `generateAstraR2` | final | 32 | **32/32**. On 8c3d5939 exactly the 16 challenges fail (residues 0 and 1 mod 4: 8 cash, 8 split) |
+| fixed | Astra's `d01`, `d02` (verbatim) and 11 rows around them | `ASTRA_R2` | final | 13 | 13/13 |
+| fixed | the soak's and the refuter's rows and seeds | `SOAK_R3`, Ordered, Sticky | final | 18 | 18/18 (10 plans, 6 seeds, 2 Sticky rows); each fails at the commit before its fix |
+
+(Runs 1 and 4 stop each failing history at its first failure. That is why their close counts are lower.)
+
+**The violations, and their fixes.**
+- **SOAK-R3-1** (I-2; 35 histories, e.g. 1911201905, 1911200342). A pending founder split moved the count, under a `suspicion` ruling, while the vendor's rows made its id a possible re-date:
+  - 1911201905: the vendor's agreeing 2:1 for its id, with 2:1 the next day inside a 3:2/2:1 conflict;
+  - 1911200342: the vendor's 2:1 for its id repeating a purchase-day 2:1 declined as not entitled (the agreed Q10).
+  - Without the ruling, both would have been held as possible re-dates. **Fixed by fix 3.**
+  - A first, letter-strict version also paired the founder split with in-gap and settled rows. It turned five reviewed rows red (B2, D5, D6, NF-1, T2D-11), which is why the fix keeps those exceptions.
+- **SOAK-R3-2** (I-5; 1911205903, 1911202882). A held founder split went moot partway through a close, and its item still held a later split for that close. The move was authorized and came one close late; a re-run of the close applied it. **Fixed by fix 4.**
+- **Both exist on 8c3d5939's product.** 1911201905, 1911205903 and 1911202882 were run there and fail. Only the new generator reaches them.
+
+**Coverage table 1 — kind labels** (the final ordered run: histories containing each kind, and each pair; as §11.9). The three `chain_*` labels are the chains. One history carries one chain at most, and same-stock and frozen basket exclude each other, so those four pairs are empty by construction.
+
+| Kind | Code | Histories | on AAPL | on SPY |
+|---|---|---|---|---|
+| purchase on ex date | ExD | 2,045 | 1,018 | 1,027 |
+| dividend | Div | 5,849 | 5,141 | 5,105 |
+| split | Spl | 4,990 | 3,635 | 3,624 |
+| conflict | Cnf | 3,636 | 2,771 | 2,694 |
+| revision | Rev | 3,074 | 2,099 | 2,083 |
+| redate | Rdt | 3,046 | 2,082 | 2,082 |
+| split shaped move | Shp | 3,503 | 2,488 | 2,531 |
+| coverage failure | Cov | 4,012 | 3,679 | 2,869 |
+| backfill agrees | BfA | 984 | — | — |
+| backfill disagrees | BfD | 1,246 | 703 | 654 |
+| backfill empty | BfE | 935 | — | — |
+| founder ruling | Rul | 4,073 | — | — |
+| c04 chain | C04 | 828 | 828 | — |
+| chain c03 | Ch3 | 1,037 | 1,037 | — |
+| chain d01 | Ch1 | 1,035 | 1,035 | — |
+| chain d02 | Ch2 | 2,103 | 2,103 | — |
+| comparison same stock | SSt | 3,024 | — | — |
+| comparison frozen basket | FBk | 2,976 | — | — |
+
+| | ExD | Div | Spl | Cnf | Rev | Rdt | Shp | Cov | BfA | BfD | BfE | Rul | C04 | Ch3 | Ch1 | Ch2 | SSt | FBk |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **ExD** | · | 1994 | 1692 | 1281 | 1077 | 1090 | 1069 | 1344 | 320 | 414 | 312 | 1362 | 302 | 359 | 325 | 711 | 1014 | 1031 |
+| **Div** | 1994 | · | 4871 | 3567 | 3022 | 2997 | 3429 | 3927 | 965 | 1227 | 920 | 3984 | 810 | 1016 | 999 | 2067 | 2947 | 2902 |
+| **Spl** | 1692 | 4871 | · | 3066 | 2652 | 2616 | 2929 | 3352 | 861 | 1098 | 806 | 3408 | 677 | 876 | 860 | 1740 | 2524 | 2466 |
+| **Cnf** | 1281 | 3567 | 3066 | · | 2712 | 2711 | 3025 | 3504 | 891 | 1121 | 857 | 3555 | 723 | 897 | 895 | 1844 | 1828 | 1808 |
+| **Rev** | 1077 | 3022 | 2652 | 2712 | · | 2330 | 2591 | 2974 | 759 | 994 | 734 | 3014 | 635 | 781 | 763 | 1530 | 1528 | 1546 |
+| **Rdt** | 1090 | 2997 | 2616 | 2711 | 2330 | · | 2555 | 2942 | 751 | 985 | 728 | 2982 | 610 | 753 | 760 | 1533 | 1518 | 1528 |
+| **Shp** | 1069 | 3429 | 2929 | 3025 | 2591 | 2555 | · | 3371 | 841 | 1079 | 795 | 3416 | 683 | 867 | 877 | 1759 | 1780 | 1723 |
+| **Cov** | 1344 | 3927 | 3352 | 3504 | 2974 | 2942 | 3371 | · | 952 | 1199 | 911 | 3917 | 828 | 999 | 954 | 2059 | 2016 | 1996 |
+| **BfA** | 320 | 965 | 861 | 891 | 759 | 751 | 841 | 952 | · | 302 | 218 | 955 | 156 | 236 | 262 | 486 | 525 | 459 |
+| **BfD** | 414 | 1227 | 1098 | 1121 | 994 | 985 | 1079 | 1199 | 302 | · | 280 | 1218 | 209 | 320 | 316 | 610 | 617 | 629 |
+| **BfE** | 312 | 920 | 806 | 857 | 734 | 728 | 795 | 911 | 218 | 280 | · | 913 | 157 | 247 | 217 | 471 | 462 | 473 |
+| **Rul** | 1362 | 3984 | 3408 | 3555 | 3014 | 2982 | 3416 | 3917 | 955 | 1218 | 913 | · | 814 | 1014 | 1006 | 2053 | 2046 | 2027 |
+| **C04** | 302 | 810 | 677 | 723 | 635 | 610 | 683 | 828 | 156 | 209 | 157 | 814 | · | 225 | 182 | 421 | 402 | 426 |
+| **Ch3** | 359 | 1016 | 876 | 897 | 781 | 753 | 867 | 999 | 236 | 320 | 247 | 1014 | 225 | · | 0 | 0 | 536 | 501 |
+| **Ch1** | 325 | 999 | 860 | 895 | 763 | 760 | 877 | 954 | 262 | 316 | 217 | 1006 | 182 | 0 | · | 0 | 527 | 508 |
+| **Ch2** | 711 | 2067 | 1740 | 1844 | 1530 | 1533 | 1759 | 2059 | 486 | 610 | 471 | 2053 | 421 | 0 | 0 | · | 1040 | 1063 |
+| **SSt** | 1014 | 2947 | 2524 | 1828 | 1528 | 1518 | 1780 | 2016 | 525 | 617 | 462 | 2046 | 402 | 536 | 527 | 1040 | · | 0 |
+| **FBk** | 1031 | 2902 | 2466 | 1808 | 1546 | 1528 | 1723 | 1996 | 459 | 629 | 473 | 2027 | 426 | 501 | 508 | 1063 | 0 | · |
+
+The other **149 pairs** all occur, between **156** and **4,871** times.
+
+**Coverage table 2 — ordered pairs of events on one id and one ledger** (the final ordered run). Each cell counts the ids, on that ledger, on which the row's event came strictly before the column's. Codes: Lst listed; Cnf conflict; CwR conflict with the founder's pending split; Rev revision; Rdt re-date; RdS re-date in the same close as its partner's payload; Drp dropped from the feed; Ret returned to it; Unc uncovered close; BfD archive/backfill disagreement; RuN `none`; RuP payload ruling; RuS suspicion split.
+
+**idea** (row → column: ids on which the row's event came strictly before the column's)
+
+| first ↓ then → | Lst | Cnf | CwR | Rev | Rdt | RdS | Drp | Ret | Unc | BfD | RuN | RuP | RuS |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **Lst** | 0 | 9455 | 583 | 4973 | 15263 | 8358 | 5680 | 1145 | 12773 | 759 | 1991 | 3329 | 131 |
+| **Cnf** | 0 | 6252 | 6 | 4047 | 6532 | 3660 | 2465 | 1145 | 3518 | 755 | 1089 | 2372 | 6 |
+| **CwR** | 0 | 12 | 54 | 68 | 142 | 91 | 479 | 0 | 48 | 4 | 45 | 99 | 10 |
+| **Rev** | 0 | 2073 | 70 | 378 | 3396 | 1541 | 941 | 1 | 1217 | 105 | 269 | 331 | 7 |
+| **Rdt** | 0 | 4419 | 19 | 2108 | 11778 | 1964 | 3299 | 323 | 4357 | 253 | 1317 | 1781 | 12 |
+| **RdS** | 0 | 2576 | 7 | 1316 | 8059 | 494 | 2059 | 274 | 2489 | 137 | 835 | 1123 | 4 |
+| **Drp** | 0 | 0 | 15 | 376 | 523 | 291 | 1119 | 1145 | 172 | 0 | 284 | 615 | 9 |
+| **Ret** | 0 | 0 | 0 | 376 | 523 | 291 | 1119 | 0 | 172 | 0 | 45 | 345 | 0 |
+| **Unc** | 0 | 4340 | 439 | 2150 | 7945 | 2226 | 2813 | 477 | 3421 | 210 | 718 | 1367 | 41 |
+| **BfD** | 0 | 319 | 5 | 501 | 534 | 163 | 57 | 0 | 232 | 20 | 27 | 62 | 1 |
+| **RuN** | 250 | 799 | 17 | 670 | 1509 | 521 | 696 | 267 | 700 | 51 | 201 | 0 | 23 |
+| **RuP** | 292 | 1452 | 9 | 874 | 2065 | 605 | 1255 | 352 | 1057 | 78 | 0 | 3 | 12 |
+| **RuS** | 642 | 15 | 583 | 72 | 179 | 113 | 620 | 0 | 576 | 5 | 61 | 115 | 10 |
+
+idea: 147 of 169 ordered pairs reached; min 1, median 494.
+
+**comparison** (row → column: ids on which the row's event came strictly before the column's)
+
+| first ↓ then → | Lst | Cnf | CwR | Rev | Rdt | RdS | Drp | Ret | Unc | BfD | RuN | RuP | RuS |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **Lst** | 0 | 9455 | 583 | 4973 | 15263 | 8358 | 5680 | 1145 | 12773 | 759 | 1991 | 3329 | 131 |
+| **Cnf** | 0 | 6252 | 6 | 4047 | 6532 | 3660 | 2465 | 1145 | 3518 | 755 | 1089 | 2372 | 6 |
+| **CwR** | 0 | 12 | 54 | 68 | 142 | 91 | 479 | 0 | 48 | 4 | 45 | 99 | 10 |
+| **Rev** | 0 | 2073 | 70 | 378 | 3396 | 1541 | 941 | 1 | 1217 | 105 | 269 | 331 | 7 |
+| **Rdt** | 0 | 4419 | 19 | 2108 | 11778 | 1964 | 3299 | 323 | 4357 | 253 | 1317 | 1781 | 12 |
+| **RdS** | 0 | 2576 | 7 | 1316 | 8059 | 494 | 2059 | 274 | 2489 | 137 | 835 | 1123 | 4 |
+| **Drp** | 0 | 0 | 15 | 376 | 523 | 291 | 1119 | 1145 | 172 | 0 | 284 | 615 | 9 |
+| **Ret** | 0 | 0 | 0 | 376 | 523 | 291 | 1119 | 0 | 172 | 0 | 45 | 345 | 0 |
+| **Unc** | 0 | 4340 | 439 | 2150 | 7945 | 2226 | 2813 | 477 | 3421 | 210 | 718 | 1367 | 41 |
+| **BfD** | 0 | 319 | 5 | 501 | 534 | 163 | 57 | 0 | 232 | 20 | 27 | 62 | 1 |
+| **RuN** | 250 | 799 | 17 | 670 | 1509 | 521 | 696 | 267 | 700 | 51 | 201 | 0 | 23 |
+| **RuP** | 292 | 1452 | 9 | 874 | 2065 | 605 | 1255 | 352 | 1057 | 78 | 0 | 3 | 12 |
+| **RuS** | 642 | 15 | 583 | 72 | 179 | 113 | 620 | 0 | 576 | 5 | 61 | 115 | 10 |
+
+comparison: 147 of 169 ordered pairs reached; min 1, median 494.
+
+**spy** (row → column: ids on which the row's event came strictly before the column's)
+
+| first ↓ then → | Lst | Cnf | CwR | Rev | Rdt | RdS | Drp | Ret | Unc | BfD | RuN | RuP | RuS |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **Lst** | 0 | 6364 | 12 | 3522 | 9678 | 5146 | 1503 | 0 | 6713 | 694 | 1105 | 1782 | 15 |
+| **Cnf** | 0 | 5016 | 2 | 2572 | 3671 | 1730 | 490 | 0 | 1737 | 694 | 560 | 1152 | 2 |
+| **CwR** | 0 | 0 | 3 | 2 | 2 | 0 | 1 | 0 | 3 | 0 | 0 | 0 | 1 |
+| **Rev** | 0 | 1644 | 3 | 287 | 1816 | 563 | 207 | 0 | 656 | 99 | 159 | 292 | 2 |
+| **Rdt** | 0 | 2907 | 1 | 1238 | 7794 | 528 | 522 | 0 | 2392 | 164 | 716 | 1012 | 1 |
+| **RdS** | 0 | 1613 | 0 | 730 | 5048 | 173 | 276 | 0 | 1420 | 87 | 461 | 639 | 0 |
+| **Drp** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 60 | 67 | 0 |
+| **Ret** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| **Unc** | 0 | 2251 | 4 | 1008 | 3713 | 657 | 347 | 0 | 1352 | 128 | 271 | 470 | 3 |
+| **BfD** | 0 | 252 | 1 | 469 | 400 | 114 | 46 | 0 | 150 | 13 | 29 | 67 | 1 |
+| **RuN** | 185 | 556 | 0 | 190 | 852 | 112 | 67 | 0 | 351 | 40 | 54 | 0 | 0 |
+| **RuP** | 295 | 1080 | 0 | 271 | 1252 | 190 | 132 | 0 | 515 | 49 | 0 | 0 | 0 |
+| **RuS** | 1 | 0 | 12 | 2 | 3 | 0 | 1 | 0 | 4 | 0 | 0 | 1 | 1 |
+
+spy: 108 of 169 ordered pairs reached; min 1, median 287.
+
+- **On the idea ledger, 147 of 169 ordered pairs are reached** (the comparison is the same). Of the 22 not reached:
+  - 10 put another event before an id's first listing ("→ Lst");
+  - 2 are impossible because a settled record takes no conflict ruling of the other kind (RuN → RuP, RuP → RuN);
+  - 10 follow an id's drop or return (e.g. Drp → Cnf, Ret → Ret). The only return is C03's, a single-payload re-listing, so these are not generated.
+- **On the SPY line, 108.** The ordered chains run on AAPL; SPY carries the wide generator's random events.
+- **For comparison, Astra's 400 stock histories (run 6)** reach 82 of 169 on the idea ledger. The named shapes reached on one id there are C03 **0**, D01 **8**, D02 **0**. In run 5 they are C03 **546**, D01 **933** and D02 **418** histories.
+- **The oracle's excuses, counted.**
+  - The carve-out (a re-date through a correction of a feed-settled id, T2D-05's class, carried) applied 820 times in 684 histories of run 5, and 51 times in 43 of run 6.
+  - The T2D-11 exception (a founder split and an id settled before the ruling) was taken in 59 histories of run 5 and none of run 6. Its raw tally, 1,876, counts every evaluation after every close, not distinct ids.
+  - Each is that class, not a pass.
+- **What run 5 reached in the product:** a re-date matched against an ambiguous record in 3,596 histories; a payload added to a record later in 2,448; a revision after a ruling in 1,294; an uncovered transition in 1,237.
+
+### 12.5 The mutation battery
+
+**How it ran.** `run-battery.mjs` in a private WSL worktree at **6391bde8**, under the shared suite lock. The row set is the same as §11.11's (the practice-field folder, `api/practice-field`, the two isolation files and the protected-store scan), now **1,066 rows**. The baseline was 0 failing. For each mutant:
+- every anchor must match exactly once, or the mutant is reported BROKEN and not run;
+- the file is mutated and the rows run;
+- the verdict is the exit code plus the failing rows' names;
+- the file is restored and checked.
+
+**Result: defined 173, ran 173, broken 0, killed 172, survived 1** (R3-M17). R3-M17 is killed by a row added afterwards, below. The definitions are the 155 of §11.11 and 18 new ones.
+- **Re-anchored.** AR1-M18 and AR2-M01 point at lines fixes 2 and 5 rewrote, with the same mutation. R3-M03, R3-M05 and R3-M06 were re-cut in the same way.
+- **No kill rests only on a load-sensitive timing row.** Every killing set contains a row about the mutated behaviour.
+
+| Mutant | What it undoes | Killed by |
+|---|---|---|
+| **AR2-M07** (survived §11.11) | the held row a re-date may repeat is not paired | Sticky "AR2-M07: … its re-date receipt links the not-entitled row" — exactly that one row |
+| **AR2-M11** (survived) | the hold set's dry run simulates an uncovered split | Sticky "AR2-M11: … names the gap and the split on BOTH the idea and the comparison" — exactly that one |
+| **AR2-M34** (survived) | any founder ruling kind passes the gate | Sticky "AR2-M34: … a backfill row … chosen by a coverage-gap ruling …", and 7 other rows (founder-split and coverage-row rows of fixes 3, 5 and 6) |
+| R3-M01 | fix 1: the ruled ids are checked only at the end of the call | Seq D01 rows, and Astra's rebuilt cash challenges (16 rows) |
+| R3-M02 | fix 2: a pending founder split replaces disagreeing vendor rows | Seq D02 rows, and Astra's rebuilt split challenges (17 rows) |
+| R3-M03 | fix 2: the founder split in a conflict group is left pending | Seq "Astra-R2-D02-conflict-ruled-three-for-two" |
+| R3-M04 | the strengthened I-2: any founder ruling authorizes again | `caOracle.test.js` (2 rows) |
+| R3-M05 | fix 3: a founder split is never re-date-matched | Seq "SOAK-R3-1-founder-split-meets-an-open-conflict", ordered seeds 73100109, 1911190043 |
+| R3-M06 | fix 3: S-1 ③ pairs no founder split | Seq "SOAK-R3-1-vendor-lists-the-founder-id-and-another-gap-day", "AR3-RF-1" (two) |
+| R3-M07 | fix 3: the vendor's replaced rows are not checked against the pool | Seq "SOAK-R3-1-redate-of-a-declined-split", "AR3-RF-3", ordered seed 1911200342 |
+| R3-M08 | fix 3: an in-gap row counts as the founder split's re-date | Finish "B2: …", and Seq "SOAK-R3-2-moot-founder-split-holds-nothing" |
+| R3-M09 | fix 3: a founder split is matched against settled actions | FixRound "feed splits, a held split applied late, a conflict payload and a founder split all write both counts" (T2D-11) |
+| R3-M10 | fix 3: the vendor's replaced rows pair with nothing | Seq "SOAK-R3-1-vendor-lists-the-founder-id-and-another-gap-day" |
+| R3-M11 | fix 4: a moot founder split still holds what follows | ordered seeds 1911205903, 1911202882, 73100236 (I-5), and the R3-2 row |
+| R3-M12 | fix 5: a founder split under an ambiguous id is left pending | Seq "AR3-RF-2 …" (two) |
+| R3-M13 | AR3-O1: no re-date through a founder split account | `caOracle.test.js` "AR3-O1 …" (two) |
+| R3-M14 | AR3-O2: no revision against the founder's pending split | `caOracle.test.js` "AR3-O2 …" |
+| R3-M15 | AR3-O1: every founder re-date excused | `caOracle.test.js` "AR3-O1 …" (two) |
+| R3-M16 | AR3-O3: income checked against any count | `caOracle.test.js` (two) |
+| **R3-M17** | fix 6: a coverage-gap row exempt from re-date matching | **Survived the battery.** The in-call pairing caught every history the rows built. Then a row was added (a53f338d): Sticky "AR3-RF-5: a coverage-gap row repeating a dividend already PAID …". It fails with R3-M17 installed, and at 53cc2396 ($199.94, paid twice). On a Windows snapshot of 6391bde8 plus that row, the Sticky file passes 56 of 56 pristine, and with R3-M17 installed only that row fails. **The full battery was not re-run after the row** |
+| R3-M18 | fix 6: S-1 ③ pairs no coverage-gap row | Sticky "AR3-RF-5 …" (both orders) |
+
+Every new fix and the strengthened I-2 has at least one mutant, and every mutant is killed by the rows written for it.
+
+### 12.6 The independent refuter
+
+- **Set-up.** One refuter, on a read-only `git archive` tree of **47afe4ae** (fixes 1 and 2 and the test changes), was told to find a reachable history the strengthened I-2 misses. It made no git writes. Its two scratch mutations of `ledger.js` were restored, and the file's hash matches the commit.
+- **Its own soak.** It ran 1,500 ordered histories on a range of its own (73,100,000–73,101,499; 29,736 closes). **14 failed**: 13 were I-2 failures of SOAK-R3-1's class and 1 was an I-5 failure. All 14 pass at the final head.
+- **Rows.** Every finding is a row (`__testsupport__/caSequences.js` `SOAK_R3`, "AR3-RF-…"; `caOracle.test.js` "AR3-O…"), and each fix and oracle change has a mutant (§12.5).
+
+| Id | What it showed (at 47afe4ae) | Severity | Done |
+|---|---|---|---|
+| AR3-RF-1 (its F1) | A halving at S2; the founder's 2:1 for it; at the close that applies it the vendor lists the same 2:1 dated S1. Both applied: **×4** (399.880032 shares), and the oracle was silent at every close | money at full quality | Fixed by fix 3 (d64ac782): the two are possible re-dates of each other, and nothing moves until the founder rules. Rows: the history, then her 2:1 and `none` (×2 once); the reverse split (it was ÷4). The oracle now fails it on 47afe4ae (AR3-O1) |
+| AR3-RF-2 (its F2) | A vendor 3:2 for the record's split id held at an uncovered close; then the founder's 2:1. The id became ambiguous through the held row (S-1 ②), but the founder split stayed pending. After `none` on the conflict, `price_move` got 409 and the holding was locked for good. With 3:2 chosen instead, her ruling was marked `applied` though her 2:1 never applied | liveness lock, wrong audit record (no money) | **Fixed in fix 5 (53cc2396)**: the gate refuses a pending founder split under any ambiguous id (`'id_ambiguous'`). Two rows; they fail at bb6157f4 |
+| AR3-RF-3 (its F3; 13 of its 14 soak seeds) | A founder split applied under an id the vendor made a possible re-date (an agreeing row of its id repeating an applied split) | money at full quality | SOAK-R3-1's class; fixed by fix 3. Row, and seed 73100109 kept |
+| AR3-RF-4 (its seed 73100236) | I-5 on the SPY line: re-running a close applied a split the first run held | a one-close delay | SOAK-R3-2's class; fixed by fix 4. Seed kept |
+| AR3-RF-5 (not tried by the refuter; my probe of its F1 analogue) | A founder coverage-gap row and the vendor's same $1 under the gap's other session: with the vendor's row dated first, both paid ($199.94) | money at full quality | **Fixed in fix 6 (e1da1a64)**: the row is matched and paired as the feed row it is; both wait for a ruling, then $99.97 once. Two rows (both orders); they fail at 53cc2396 |
+| AR3-O1 | The oracle never treated the founder's split as an account of its id, so it was blind to F1, and to a mutant dropping founder receipts from the re-date pool | oracle gap | The pending founder split is an account for re-dates, with the two as-built exceptions (in-gap rows, T2D-11). Rows, and mutants R3-M13 and R3-M15 |
+| AR3-O2 | A pending founder split was compared only with same-close rows of its id, not with a vendor ratio held from an earlier close | oracle gap | A differing vendor ratio listed at any close makes the id ambiguous. Row, and R3-M14 |
+| AR3-O3 | The payload key lacked a delisting's cash and a rename's target, and income was accepted against any count ever held | oracle gap (no delisting or rename feed yet) | Both fixed. Rows, and R3-M16 |
+
+**What it found to hold.** These are the D01 variants (a catch-up with the correction in the archive and the move in the backfill, and the reverse; a payload ruling held behind coverage; the ruling applied in the same close as the correction, for both `none` and a payload; a frozen basket; a not-entitled old id; the move dated earlier; the reverse-split analogue; a founder-split-settled id). Also: the D02 variants (founder split held, then a disagreeing row; agreeing while uncovered, then disagreeing; two disagreeing rows with a dividend); the early `checkRulingRevisions()` call (no case marks clean data or blocks an authorized move); and the oracle's carve-out (no way found for it to hide a violation outside T2D-05's class). It did not try a coverage-gap `row` analogue of F1, or re-dates across a rename.
+
+**No reviewer has seen fixes 3 to 6.** They are pinned by their rows (each fails at the commit before it), by mutants R3-M05 to M12, M17 and M18 (§12.5), and by the final soak.
+
+### 12.7 The checks
+
+The code is final at **6391bde8**. a53f338d adds one test row (R3-M17's), and the commit after it adds documents only. Every Linux step ran in a private WSL worktree of `~/pd-ci` at the stated commit, CI-shaped: Node 20.20.2, `TZ=UTC`, empty vendor key, 8 workers, the full suite under `flock /tmp/pd-suite.lock`. The branch already has `origin/main` eb34d2fd merged (fccf5dfd), and `main` had not moved at the last fetch. The exit codes and lines below are read directly from the logs.
+
+| Check | Where, and the command | Exit | Log lines |
+|---|---|---|---|
+| Full suite (Linux) | **a53f338d** (the final code with its last row): `TZ=UTC flock /tmp/pd-suite.lock npx vitest run --maxWorkers=8` | **0** | `Test Files  1582 passed \| 13 skipped (1595)` · `Tests  36247 passed \| 179 skipped (36426)`. A run meant for 6391bde8 is **void**: the next job checked a53f338d out into the same worktree before taking the suite lock, while that run was still reading files, and its JSON already holds a53f338d's row. The a53f338d run started on a settled tree |
+| Lint gate | `npm run lint:gate`, at 6391bde8 and again at a53f338d | **0**, **0** | no error, no warning (`--max-warnings 0`) |
+| Build | `npx vite build` at 6391bde8 (a53f338d changes one test file); and at the pushed head (documents only after a53f338d) | **0** | `✓ built in 19.48s`; the pushed head is built again before the push, and the PR description records that build |
+| Rules suite | WSL at 6391bde8, JDK 21 emulator: `npm run test:rules` | **0** | `Test Files  46 passed (46)` · `Tests  839 passed (839)`. (A Windows run at bb6157f4 gave 838/839. `agentEvalRunsDenials.rules.mjs` read the `firestore.rules` text with CRLF line endings, so the comment stripper kept "// Admin SDK only". This round touches no rule, and the LF tree passes.) |
+| Seventeen-scenario differential | Astra's harness (`astra-differential.test.js`, byte-identical to her probe), base `git archive` of `origin/main` **eb34d2fd** against e1da1a64 (and before: 47afe4ae, 253ea451, 53cc2396; 6391bde8 and a53f338d change only test files) | **0** | **34/34 identical**; 4,000 default build sets identical; the quarterly prompts byte-identical in 4 cases, the positive control detecting a leak. The evidence file is byte-identical on every head (`b6d71e76…`) |
+| 40-case traced differential | `astra-cron-trace.test.js`, the same run | **0** | **40/40 identical** (`6c169f26…` every head) |
+| Backfill isolation (rule 5) | Astra's `plant.test.js`, the same trees | **0** | **4/4**: 100 shares and $90,000 in both modes; the vendor's split gives 200 (control) |
+| End-to-end pin | `endToEnd.test.js` with `PF_E2E_DUMP`, on 8c3d5939, 47afe4ae, 253ea451, 53cc2396 and e1da1a64 | **0** | Every dump is **byte-identical** to 8c3d5939's: 443,533 bytes, SHA-256 `abcf842026a3d5c4ce4f2c3a858dbd5fcabad2a3388df6c73b3f944ce7c24ed9`. With complete data no money leaf changed |
+| Soak | §12.4 runs 5 and 6, at 6391bde8 | **0** | 6,000/6,000 (119,912 closes) and 400/400 (8,032 closes) |
+| Mutation battery | §12.5, at 6391bde8 | **0** | 1,066-row baseline, 0 failing; defined 173, ran 173, broken 0, killed 172, survived 1 (R3-M17, then killed by a53f338d's row) |
+| The fixed proofs on 8c3d5939 | §12.3 | — | the strengthened oracle alone fails `d01` and `d02`; exactly the 16 challenge seeds of Astra's rebuilt generator fail |
+
+No vendor, model or Firestore call was made. Every store is the in-memory fake or the local emulator. The vendor key was empty, and `fetch` was stubbed to refuse.
+
+### 12.8 The register, and where this leaves the verdicts
+
+§7.4 is updated:
+- T2D-D01 and T2D-D02 are **fixed**, and so are SOAK-R3-1 and -2 and AR3-RF-1, -2, -3, -4 and -5.
+- **T2D-03, T2D-04, T2D-05 and T2D-12 are still carried to T1a-2b-4**, before the switch. T2D-11, -13 and -14 stay with T5.
+
+- **The dark merge.** Both of Astra's blockers are fixed, with her replay seeds verbatim and the rows she asked for. The oracle she found trusting the system's records is replaced by one that reads the inputs and the founder's own requests. It fails both of her seeds on 8c3d5939, and it fails the refuter's F1 on 47afe4ae. The generator writes C03, D01 and D02 on one id. The final soak of 6,000 new histories, her 400 and her 32 rebuilt seeds all pass on the final code. Her three survivors are distinguished. With complete data, money and the quarterly product are unchanged. The founder merges this PR, still switched off.
+- **The founder allowlist stays NOT READY.** T1a-2b-4's four items remain, and so does its review.
+
+**Astra to re-check D01 and D02 in T1a-2b-4's review, before the switch** — and, since no reviewer has seen them, fixes 3 to 6 (SOAK-R3-1, SOAK-R3-2, AR3-RF-2, AR3-RF-5) and readings R-1 to R-3 above.
