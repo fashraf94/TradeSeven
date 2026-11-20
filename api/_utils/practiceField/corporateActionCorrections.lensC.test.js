@@ -857,6 +857,7 @@ describe('the refuters\' rows — RF4, RF5, RF6 (each failed at 994ccc2e)', () =
     await windowAt(c.db, c.bookId, { date: S[2], slot: 'open30', quotes: q(66.67) });
     expect(ideaOf(c).ledger.holdings.AAPL).toBeUndefined();
     const sold = ideaOf(c).ledger.saleReceipts[0];
+    const lineThen = structuredClone(ideaOf(c).lines.find((l) => l.symbol === 'AAPL'));
     await close(c, 2, 66.67);
     await close(c, 3, 66.67, [spl(1, '3/2')]);
     expect((await rules(c, { kind: 'conflict', recordId: `split_AAPL_${S[1]}`, decision: 'payload', payload: { ratio: 1.5 } }, 'fix')).status).toBe(200);
@@ -865,5 +866,31 @@ describe('the refuters\' rows — RF4, RF5, RF6 (each failed at 994ccc2e)', () =
     const rec = ideaOf(c).ledger.adjustments.find((a) => a.kind === ADJUSTMENT_KIND.RULED_CORRECTION && a.actionId === `split_AAPL_${S[1]}`);
     expect(rec.soldBeforeCorrection).toEqual([{ sessionDate: sold.sessionDate, shares: sold.shares, sharesIfCorrected: roundShares(sold.shares * 1.2) }]);
     expect(ideaOf(c).ledger.saleReceipts[0]).toEqual(sold);
+    // …and the line that triggered the sale keeps the level it was breached at: a correction moves the line only of a
+    // stock the ledger still holds (the record names what the corrected count would have sold).
+    expect(ideaOf(c).lines.find((l) => l.symbol === 'AAPL')).toEqual(lineThen);
+  });
+
+  it('A dividend correction a doubt defers keeps the row below full quality while it waits (CORRECTION_WAITING), and the row is full quality once it posts', async () => {
+    const { omitParseReport, storeCloseSnapshot } = await import('./__testsupport__/fixtures.js');
+    const c = await start({ comparison: { type: 'sector_fund', symbols: ['XLK'] } });
+    await close(c, 0);
+    await close(c, 1, 100, [div(1, 1)]);
+    const p = belowLine(c);
+    await close(c, 2, p, [div(1, 2)]); // the $2 revision; AAPL below its line
+    expect((await rules(c, { kind: 'conflict', recordId: `cash_dividend_AAPL_${S[1]}`, decision: 'payload', payload: { amount: 2 } }, 'fix-div')).status).toBe(200);
+    await windowAt(c.db, c.bookId, { date: S[3], slot: 'open30', quotes: q(p) }); // AAPL sold; MSFT still held
+    expect(ideaOf(c).ledger.holdings.AAPL).toBeUndefined();
+    await storeCloseSnapshot(c.db, S[3], q(p));
+    omitParseReport(c.db, S[3], ['AAPL']); // the sold symbol's data does not cover S[3]: the correction waits
+    const out = await closeIdeaBook(c.db, c.bookRef, { date: S[3], now: closeNowOf(S[3]) });
+    expect(pendingKeys(c)).toEqual(['fix-div']);
+    expect(openAmbiguities(ideaOf(c).ledger)).toEqual([]);
+    expect(rowOf(c, 3).fullQuality).toBe(false);
+    expect(out.alerts.some((a) => a.startsWith('PRACTICE_FIELD_CORRECTION_WAITING'))).toBe(true);
+    await close(c, 4, p);
+    expect(pendingKeys(c)).toEqual([]);
+    expect(rowOf(c, 4).fullQuality).toBe(true);
+    expect(ideaOf(c).ledger.dividendsUsd).toBe(roundUsd(SH * 2));
   });
 });
