@@ -124,6 +124,10 @@ describe('S-6 extended — the shapes Astra found missing (T2E-01 to T2E-08), ev
     seen[plan.shape] = (seen[plan.shape] || 0) + 1;
     await run(plan);
   }, 120_000);
+  // (The final soak's findings at 477ae3fb, kept: 2120005408 — a split the founder ruled within the sold holding after its
+  // pair just past the sale showed no longer holds the dividend owed on it (product); 2120005580 — a late entitlement the
+  // founder's ruling chose, deferred a close by a doubt, is the ruling's posting, not an approval's (oracle).)
+  it.each([2120005408, 2120005580])('shape soak seed %i', async (seed) => { await run(generateLate(seed, { shapes: true })); }, 120_000);
   afterAll(() => { for (const sh of LATE_SHAPES) expect(seen[sh] ?? 0, sh).toBeGreaterThan(0); });
 });
 

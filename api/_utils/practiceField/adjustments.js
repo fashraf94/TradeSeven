@@ -751,7 +751,11 @@ export function planLedgerAdjustments(ledger, ctx) {
       && isDate(r.effectiveDate) && r.effectiveDate <= c.through && (c.openedAt === null || r.effectiveDate > c.openedAt));
     for (const x of cur().closedOutsideRows || []) {
       if (upper(x.ticker) !== sym || !SHARE_BASIS_TYPES.has(x.type) || settledNow().has(x.actionId) || openRecordOf(cur(), x.actionId) !== null) continue;
-      const r = inside.find((y) => y.actionId !== x.actionId && y.type === x.type && actionPayloadOf(y) === actionPayloadOf(x) && withinSessions(y.effectiveDate, x.effectiveDate, REDATE_WINDOW_SESSIONS)) ?? null;
+      // (A pairing the founder already answered is not asked again: the action within the holding applied by the founder's
+      // ruling made after the outside row was first seen — the soak's 2120005408: ruled 1.5 for the split of 11-18 after the
+      // vendor's 1.5 of 11-20 showed, the dividend owed on that count waited for good.)
+      const answered = (y) => Boolean(y.founderRuling) && isDate(y.appliedOn) && isDate(x.seenOn) && y.appliedOn > x.seenOn;
+      const r = inside.find((y) => y.actionId !== x.actionId && y.type === x.type && actionPayloadOf(y) === actionPayloadOf(x) && withinSessions(y.effectiveDate, x.effectiveDate, REDATE_WINDOW_SESSIONS) && !answered(y)) ?? null;
       if (!r) continue;
       const l = edit();
       const rec = { actionId: x.actionId, type: x.type, ticker: sym, effectiveDate: x.effectiveDate, ratio: x.ratio ?? null, amount: x.amount ?? null, cashPerShare: null, source: null, applied: false, reason: POSSIBLE_REDATE, redateOf: r.actionId, seenOn: date, rows: [payloadRow(x, x.seenOn ?? null)], kinds: ['possible_redate'], closedHolding: true, outsideHolding: true };

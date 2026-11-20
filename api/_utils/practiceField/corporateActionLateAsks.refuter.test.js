@@ -785,3 +785,17 @@ describe('O-4 — the oracle: a ruling made before a pairing showed never answer
     expect(() => e.checkAuthority(idea, 6, 'unit')).toThrow(/L-2 at posting/);
   });
 });
+
+describe('the proposal the founder is told about is owed on the ex-date count (battery survivor L03-count-at-close-not-ex-date)', () => {
+  it('a sold holding: a 2-for-1 dated after the dividend, listed after the sale, then the dividend listed late — the alert and the proposal say $99.97, never the closing count\'s $199.94', async () => {
+    const c = await opened({ comparison: xlk });
+    const p = await soldAtWith(c, 4);
+    await closeAt(c, 5, p, [spl(2, '2/1')]);
+    const out = await closeAt(c, 6, p, [div(1, 1)]);
+    expect(proposalOf(c, D(1))).toMatchObject({ kind: 'late_entitlement', status: 'open', owedUsd: 99.97, netUsd: 99.97 });
+    expect(proposalOf(c, D(1)).updatedOn, 'made once, on the right count').toBeUndefined();
+    const told = (out.alerts || []).filter((a) => a.startsWith('PRACTICE_FIELD_LATE_PROPOSED'));
+    expect(told).toHaveLength(1);
+    expect(told[0]).toContain('late_entitlement of $99.97 (owed $99.97 on 99.970008 shares');
+  });
+});

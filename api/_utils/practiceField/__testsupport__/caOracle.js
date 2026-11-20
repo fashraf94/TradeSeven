@@ -489,9 +489,11 @@ export class EntitlementOracle {
         const auth = this.authoritiesFor(f, a.actionId).filter((x) => x.at <= at
           && (x.kind === 'approval' || keyOf(x.r.body.payload) === keyOf({ amount: a.amountPerShare })));
         expect(auth.length > 0, `${label} ${this.S[k]} I-7 ${f} ${a.actionId}: a ${a.kind} of $${a.amountUsd} posted on ${a.postedOn} with no founder approval or ruling for this ledger and id in the inputs`).toBe(true);
-        // (A ruling applied at this very close is the founder's answer for the id — the closed path's ruled row posts then. Any
-        // other posting — an approval's, or one whose only ruling paid the id long before its late facts — meets L-2.)
-        if (!auth.some((x) => x.kind === 'ruling' && x.at === at)) this.checkRefusalAtPosting(l, f, a, at, k, label, holdings?.[f] ?? null);
+        // (A late ENTITLEMENT the founder's conflict ruling chose is the ruling's: the closed path posts it on the ruling — at its
+        // close, or later where a doubt deferred it and a ledger still holding the stock kept the ruling pending (the soak's
+        // 2120005580). A ruling never posts a `late_basis`: every one of those, like every approval's posting, meets L-2 —
+        // including one whose id a ruling paid before its late facts.)
+        if (!(a.kind === 'late_entitlement' && auth.some((x) => x.kind === 'ruling'))) this.checkRefusalAtPosting(l, f, a, at, k, label, holdings?.[f] ?? null);
         lateCount.set(a.actionId, (lateCount.get(a.actionId) || 0) + 1);
       }
       for (const [id, n] of lateCount) {
