@@ -41,10 +41,43 @@ export function shiftCalendarDate(date, days) {
   return new Date(Date.parse(`${date}T00:00:00Z`) + days * DAY_MS).toISOString().slice(0, 10);
 }
 
-/** Why a held symbol is not covered by a session's daily layer (F-6), in admission's refusal words. */
+/** Why a held symbol is not covered by a session's daily layer (F-6), in admission's refusal words. T1a-2b-4 (T2D-12)
+ *  adds `ca_parse_incomplete`: the session's parse report is missing, or shows a rejected row or a malformed envelope. */
 export const DAILY_COVERAGE_REFUSAL = Object.freeze({
   DAILY_MISSING: 'ca_daily_missing', COVERAGE_MISSING: 'ca_coverage_missing', FETCH_FAILED: 'ca_fetch_failed',
+  PARSE_INCOMPLETE: 'ca_parse_incomplete',
 });
+
+// ── T1a-2b-4 (Astra T2D-12): THE PARSE REPORT'S CONDITION (caParseReport.js writes the report) ────────────────────────
+
+/** The vendor's two legs, in the order the base fetcher asks them. */
+export const PARSE_LEGS = Object.freeze(['splits', 'dividends']);
+
+/**
+ * THE COVERAGE CONDITION for one parse-report entry: a plain object whose two legs were both answered with a LIST, with
+ * no row rejected and no malformed envelope. A missing entry is not clean — a missing report counts as uncovered (the
+ * founder's fail-closed lean). Pure.
+ * @returns {{ clean: boolean, reason: string|null }}
+ *   reason: 'parse_report_missing' | 'parse_envelope_malformed' | 'parse_rejected' | 'parse_leg_unanswered'
+ */
+export function parseEntryVerdict(entry) {
+  if (!isPlainObject(entry)) return { clean: false, reason: 'parse_report_missing' };
+  if (entry.malformedEnvelope !== false) return { clean: false, reason: 'parse_envelope_malformed' };
+  if (entry.rowsRejected !== 0) return { clean: false, reason: 'parse_rejected' };
+  for (const name of PARSE_LEGS) {
+    const leg = entry.legs?.[name];
+    if (!isPlainObject(leg) || leg.answered !== true || leg.envelope !== 'list' || leg.rejected !== 0) return { clean: false, reason: 'parse_leg_unanswered' };
+  }
+  return { clean: true, reason: null };
+}
+
+/** The entry of `symbol` in a stored report document of `session` (`practiceFieldCaParseReports/{session}`; own
+ *  properties only, and the document's own `session` must be its key), or undefined. */
+export function parseReportEntry(report, session, symbol) {
+  if (!isPlainObject(report) || !isDate(session) || report.session !== session || !isPlainObject(report.symbols)) return undefined;
+  const sym = String(symbol || '').trim().toUpperCase();
+  return Object.hasOwn(report.symbols, sym) ? report.symbols[sym] : undefined;
+}
 
 /**
  * F-6: the daily document as stored (`data`), as THE daily layer of `session` — or null when it counts as missing: it is
@@ -62,15 +95,22 @@ function ownEntry(daily, symbol) {
 }
 
 /**
- * F-6: does a daily layer cover `symbol`? `daily` is dailyDocOf's answer (null: missing).
- * @returns {{ covered: boolean, fetchSucceeded: boolean|null, refusal: string|null }}
+ * F-6: does a daily layer cover `symbol`? `daily` is dailyDocOf's answer (null: missing). `parseReport` is the stored
+ * `practiceFieldCaParseReports/{session}` document as read in the same transaction (null or undefined: none) — T1a-2b-4
+ * (T2D-12) adds the condition that the session's report has a CLEAN entry for the symbol (parseEntryVerdict). It is a
+ * required argument: a caller that hands none is told the symbol is not covered.
+ * @returns {{ covered: boolean, fetchSucceeded: boolean|null, refusal: string|null, parse?: string }}
  */
-export function dailyCoverageOf(daily, symbol) {
+export function dailyCoverageOf(daily, symbol, parseReport) {
   if (daily === null || daily === undefined) return { covered: false, fetchSucceeded: null, refusal: DAILY_COVERAGE_REFUSAL.DAILY_MISSING };
   const entry = ownEntry(daily, symbol);
   if (!isPlainObject(entry)) return { covered: false, fetchSucceeded: null, refusal: DAILY_COVERAGE_REFUSAL.COVERAGE_MISSING };
   const flag = Object.hasOwn(entry, 'caFetchFailed') ? entry.caFetchFailed : undefined;
   if (flag !== undefined && flag !== false) return { covered: true, fetchSucceeded: false, refusal: DAILY_COVERAGE_REFUSAL.FETCH_FAILED };
+  // T2D-12: the fetch "succeeded", but a row the parser rejected, or an envelope that was not a list, was dropped
+  // silently — or no report was written. The rows that parsed are still the session's rows (F-2); the symbol is in doubt.
+  const verdict = parseEntryVerdict(parseReportEntry(parseReport, daily.date, symbol));
+  if (!verdict.clean) return { covered: false, fetchSucceeded: true, refusal: DAILY_COVERAGE_REFUSAL.PARSE_INCOMPLETE, parse: verdict.reason };
   return { covered: true, fetchSucceeded: true, refusal: null };
 }
 
@@ -153,6 +193,9 @@ export const backfillIdOf = (symbol) => upper(symbol);
  */
 export function successfulBackfill(data, symbol, from) {
   if (!isPlainObject(data) || data.symbol !== upper(symbol) || data.failed !== false || !isDate(data.from) || !isDate(data.to) || !Array.isArray(data.actions)) return null;
+  // T1a-2b-4 (T2D-12): the backfill records the same parse report as the daily build (caBackfill.js); one whose report
+  // is missing, or shows a rejected row or a malformed envelope, is not a success — it covers nothing.
+  if (!parseEntryVerdict(data.parseReport).clean) return null;
   if (isDate(from) && data.from > from) return null;
   return { from: data.from, to: data.to, actions: data.actions.filter((a) => isPlainObject(a) && upper(a.ticker) === upper(symbol)) };
 }
@@ -181,12 +224,15 @@ export function coveredThroughOf(idea, symbol) {
  * to the day after `coveredThrough`: the session's own valid entry (from its window's first day), joined by a
  * successful backfill whose range reaches the day before that window (or covers the session itself).
  *
+ * `parseReport`: the session's `practiceFieldCaParseReports/{session}` document as read (T1a-2b-4, T2D-12; required —
+ * none given reads as a missing report, which is uncovered).
+ *
  * @returns {{ covered: boolean, reason: string|null, from: string|null, readBackfill: boolean, needsBackfill: boolean, viaBackfill: boolean }}
  *   `reason`: null, or 'snapshot_daily_mismatch' | DAILY_COVERAGE_REFUSAL.* | 'gap_beyond_window'
  *   `readBackfill`: the session's own layer does not cover the symbol, so a stored backfill could (the close reads one)
  *   `needsBackfill`: the gap is longer than any daily window reaches: only a backfill (or the founder) can clear it
  */
-export function sessionCoverage({ symbol, session, coveredThrough, daily, dailyRefOk, backfill = null }) {
+export function sessionCoverage({ symbol, session, coveredThrough, daily, dailyRefOk, backfill = null, parseReport }) {
   const none = { readBackfill: false, needsBackfill: false, viaBackfill: false };
   if (!isDate(coveredThrough)) return { covered: false, reason: 'covered_through_unknown', from: null, ...none };
   const from = shiftCalendarDate(coveredThrough, 1);
@@ -200,7 +246,8 @@ export function sessionCoverage({ symbol, session, coveredThrough, daily, dailyR
   const needFrom = coveredThrough >= session ? session : from;
   const usable = backfill !== null && isDate(backfill.from) && backfill.from <= needFrom;
   const beyondAnyWindow = needFrom < shiftCalendarDate(session, -MANDATE_CA_FETCH_LOOKBACK_DAYS);
-  const entry = dailyCoverageOf(daily, symbol);
+  // (T1a-2b-4, T2D-12: the session's parse report is part of its own entry's evidence — dailyCoverageOf.)
+  const entry = dailyCoverageOf(daily, symbol, parseReport);
   if (entry.refusal !== null) {
     // The session's own layer does not cover the symbol: only a backfill that covers the session itself does.
     const viaBackfill = usable && backfill.to >= session;

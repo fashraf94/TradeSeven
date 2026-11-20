@@ -17,8 +17,7 @@ import { ledgerDoubts } from './settlement.js';
 import { nextSessionDate } from './windows.js';
 import {
   seedBook, admitAndEnter, closeOn, contractOf, getBook, getIdea, getRow, closeNowOf, storeCloseSnapshot, founderRules, admitAllThenEnter,
-  takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults,
-} from './__testsupport__/fixtures.js';
+  takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, vendorAnswering , CLEAN_PARSE_ENTRY } from './__testsupport__/fixtures.js';
 
 const S = ['2026-11-16'];
 while (S.length < 30) S.push(nextSessionDate(S.at(-1)));
@@ -128,7 +127,7 @@ describe('T2D-C02 — an open archive/backfill disagreement settles only by the 
     await close(c, 0);
     for (let i = 1; i < 23; i += 1) await storeCloseSnapshot(c.db, S[i], q(i >= 4 ? 80 : 100, i === 4 ? [spl(4, '5/4')] : (i === 5 ? archivedS5 : [])));
     const fetchCorporateActions = async (sym) => ({ failed: false, calls: 2, actions: sym === 'AAPL' ? [spl(4, '3/2')] : [] });
-    const args = { before: S[23], now: closeNowOf(S[23]), fetchCorporateActions };
+    const args = { before: S[23], now: closeNowOf(S[23]), ...vendorAnswering(fetchCorporateActions) };
     await catchUpIdeaBook(c.db, c.bookRef, args);
     recon(c);
     await catchUpIdeaBook(c.db, c.bookRef, args);
@@ -249,7 +248,7 @@ describe('T2D-C05 — an idea-only conflict leaves a genuine backfill row to the
     idea.comparisonLedger.corporateActionReceipts = idea.comparisonLedger.corporateActionReceipts.filter((r) => r.reason !== 'conflicting_action');
     await c.db.doc(`mandates/${c.bookId}/ideas/${c.ideaId}`).set(idea);
     // A successful stored backfill whose genuine row for that id is $1.50 (the catch-up reads it at every session).
-    await c.db.doc('practiceFieldCaBackfill/AAPL').set({ schemaVersion: 1, symbol: 'AAPL', from: S[1], to: S[2], failed: false, actions: [div(1, 1.5)], calls: 2, fetchedAt: '2026-11-18T23:00:00.000Z', source: 'idea_book_backfill' });
+    await c.db.doc('practiceFieldCaBackfill/AAPL').set({ schemaVersion: 1, symbol: 'AAPL', from: S[1], to: S[2], failed: false, actions: [div(1, 1.5)], calls: 2, fetchedAt: '2026-11-18T23:00:00.000Z', source: 'idea_book_backfill' , parseReport: CLEAN_PARSE_ENTRY });
     return c;
   }
   it('the founder picks $2 for the idea: on the ruling close the idea is credited $399.88 and the comparison its own $149.96 — cash and value dated that close', async () => {
@@ -361,8 +360,10 @@ describe('Amendment F rev 1 — S-2: once ambiguous, only the founder settles it
     expect(divs(idea)).toEqual([99.97, 99.97]);
     expect(rowOf(c, 4).fullQuality).toBe(false);
     expect(out.alerts.some((a) => a.includes(`cash_dividend_AAPL_${S[1]} — revised_after_ruling`))).toBe(true);
-    // An answer that would undo the money (an adjustment, T1a-2b-4's) is refused; the ruled outcome again closes it.
-    const undo = await rule(c, { kind: 'conflict', recordId: `cash_dividend_AAPL_${S[1]}`, decision: 'payload', payload: { amount: 3 } }, 'r2', false);
+    // An answer that would UNDO the money (`none` after a paid payload) is refused; the ruled outcome again closes it.
+    // (Re-pinned in T1a-2b-4: choosing the recorded $3 is now the founder's CORRECTION — one ruled_correction adjustment,
+    // T2D-05 — pinned in corporateActionCorrections.test.js. Before, any other answer was refused here.)
+    const undo = await rule(c, { kind: 'conflict', recordId: `cash_dividend_AAPL_${S[1]}`, decision: 'none' }, 'r2', false);
     expect(undo).toMatchObject({ status: 422, body: { error: 'ruling_needs_adjustment' } });
     await rule(c, { kind: 'conflict', recordId: `cash_dividend_AAPL_${S[1]}`, decision: 'payload', payload: { amount: 1 } }, 'r3');
     await close(c, 5, 100, [div(1, 3)]);
@@ -435,7 +436,7 @@ describe('AR2 — the review of fix round 2: each probe as a row', () => {
     await raw(c, i);
     recon(c);
   }
-  const backfill = (c, from, to, actions, failedFetch = false) => c.db.doc('practiceFieldCaBackfill/AAPL').set({ schemaVersion: 1, symbol: 'AAPL', from: S[from], to: S[to], failed: failedFetch, actions, calls: 2, fetchedAt: '2026-11-18T23:00:00.000Z', source: 'idea_book_backfill' });
+  const backfill = (c, from, to, actions, failedFetch = false) => c.db.doc('practiceFieldCaBackfill/AAPL').set({ schemaVersion: 1, symbol: 'AAPL', from: S[from], to: S[to], failed: failedFetch, actions, calls: 2, fetchedAt: '2026-11-18T23:00:00.000Z', source: 'idea_book_backfill' , parseReport: CLEAN_PARSE_ENTRY });
   const ID1 = `cash_dividend_AAPL_${S[1]}`;
 
   it('AR2-C-1: a payload listed at the very close a ruling applies is one the ruling did not see — a new ambiguity, alerted, below full quality', async () => {
@@ -601,7 +602,7 @@ describe('AR2-RF — the final refuter on the fixes: each probe as a row', () =>
   const dl = (i, cash) => ({ type: 'delisting', ticker: 'AAPL', effectiveDate: S[i], cashPerShare: cash, source: 'eodhd' });
   const qx = (p = 100, a = []) => ({ ...q(p, a), AAPX: { price: 100, marketCap: 3e12 }, AAPY: { price: 120, marketCap: 3e12 } });
   const closeX = async (c, i, p = 100, a = []) => { const out = await closeOn(c.db, c.bookId, S[i], qx(p, a)); recon(c); return out; };
-  const backfill = (c, actions) => c.db.doc('practiceFieldCaBackfill/AAPL').set({ schemaVersion: 1, symbol: 'AAPL', from: S[1], to: S[1], failed: true, actions, calls: 2, fetchedAt: '2026-11-18T23:00:00.000Z', source: 'idea_book_backfill' });
+  const backfill = (c, actions) => c.db.doc('practiceFieldCaBackfill/AAPL').set({ schemaVersion: 1, symbol: 'AAPL', from: S[1], to: S[1], failed: true, actions, calls: 2, fetchedAt: '2026-11-18T23:00:00.000Z', source: 'idea_book_backfill' , parseReport: CLEAN_PARSE_ENTRY });
   const ID1 = `cash_dividend_AAPL_${S[1]}`;
   const RID = `ticker_change_AAPL_${S[1]}`;
 
@@ -638,7 +639,7 @@ describe('AR2-RF — the final refuter on the fixes: each probe as a row', () =>
     await close(c, 0);
     await uncoveredClose(c, 1, 100, []);
     await uncoveredClose(c, 2, 100, []);
-    await c.db.doc('practiceFieldCaBackfill/AAPL').set({ schemaVersion: 1, symbol: 'AAPL', from: S[1], to: S[2], failed: true, actions: [div(fi, 1)], calls: 2, fetchedAt: '2026-11-18T23:00:00.000Z', source: 'idea_book_backfill' });
+    await c.db.doc('practiceFieldCaBackfill/AAPL').set({ schemaVersion: 1, symbol: 'AAPL', from: S[1], to: S[2], failed: true, actions: [div(fi, 1)], calls: 2, fetchedAt: '2026-11-18T23:00:00.000Z', source: 'idea_book_backfill' , parseReport: CLEAN_PARSE_ENTRY });
     await rule(c, { kind: 'coverage_gap', recordId: `ca_coverage_gap_AAPL_${S[0]}`, decision: 'row', actionId: `cash_dividend_AAPL_${S[fi]}` }, 'rf5');
     await close(c, 3, 100, [div(vi_, 1)]);
     await close(c, 4, 100, [div(vi_, 1)]);
@@ -660,7 +661,7 @@ describe('AR2-RF — the final refuter on the fixes: each probe as a row', () =>
     await close(c, 1, 100, [div(1, 1)]);
     expect(divs(ideaOf(c))).toEqual([99.97, 99.97]);
     await uncoveredClose(c, 2, 100, []);
-    await c.db.doc('practiceFieldCaBackfill/AAPL').set({ schemaVersion: 1, symbol: 'AAPL', from: S[2], to: S[2], failed: true, actions: [div(2, 1)], calls: 2, fetchedAt: '2026-11-18T23:00:00.000Z', source: 'idea_book_backfill' });
+    await c.db.doc('practiceFieldCaBackfill/AAPL').set({ schemaVersion: 1, symbol: 'AAPL', from: S[2], to: S[2], failed: true, actions: [div(2, 1)], calls: 2, fetchedAt: '2026-11-18T23:00:00.000Z', source: 'idea_book_backfill' , parseReport: CLEAN_PARSE_ENTRY });
     expect((await rule(c, { kind: 'coverage_gap', recordId: `ca_coverage_gap_AAPL_${S[1]}`, decision: 'row', actionId: `cash_dividend_AAPL_${S[2]}` }, 'rf5s')).status).toBe(200);
     await close(c, 3, 100, []);
     expect(divs(ideaOf(c))).toEqual([99.97, 99.97]);
@@ -776,7 +777,7 @@ describe('the battery\'s rows (AR2-M05, -M06, -M07, -M13, -M31, -M34)', () => {
     const c = await start();
     await close(c, 0);
     await uncoveredClose(c, 1, 100 / 1.5, [spl(1, '3/2'), spl(1, '5/4')]);
-    await c.db.doc('practiceFieldCaBackfill/AAPL').set({ schemaVersion: 1, symbol: 'AAPL', from: S[1], to: S[1], failed: true, actions: [div(1, 1)], calls: 2, fetchedAt: '2026-11-18T23:00:00.000Z', source: 'idea_book_backfill' });
+    await c.db.doc('practiceFieldCaBackfill/AAPL').set({ schemaVersion: 1, symbol: 'AAPL', from: S[1], to: S[1], failed: true, actions: [div(1, 1)], calls: 2, fetchedAt: '2026-11-18T23:00:00.000Z', source: 'idea_book_backfill' , parseReport: CLEAN_PARSE_ENTRY });
     await rule(c, { kind: 'coverage_gap', recordId: `ca_coverage_gap_AAPL_${S[0]}`, decision: 'row', actionId: ID_DIV1 }, 'm34');
     await close(c, 2, 100 / 1.5, [spl(1, '3/2'), spl(1, '5/4')]);
     expect(heldActionRecords(ideaOf(c).ledger).map((r) => [r.actionId, r.amount])).toEqual([[ID_DIV1, 1]]);
@@ -828,7 +829,7 @@ describe('Astra round 2 — the distinguishing histories of AR2-M07, AR2-M11 and
     const c = await start();
     await close(c, 0);
     await uncoveredClose(c, 1, 100, [div(1, 1)]);
-    await c.db.doc('practiceFieldCaBackfill/AAPL').set({ schemaVersion: 1, symbol: 'AAPL', from: S[1], to: S[1], failed: true, actions: [div(1, 2)], calls: 2, fetchedAt: '2026-11-18T23:00:00.000Z', source: 'idea_book_backfill' });
+    await c.db.doc('practiceFieldCaBackfill/AAPL').set({ schemaVersion: 1, symbol: 'AAPL', from: S[1], to: S[1], failed: true, actions: [div(1, 2)], calls: 2, fetchedAt: '2026-11-18T23:00:00.000Z', source: 'idea_book_backfill' , parseReport: CLEAN_PARSE_ENTRY });
     await rule(c, { kind: 'coverage_gap', recordId: `ca_coverage_gap_AAPL_${S[0]}`, decision: 'row', actionId: ID_DIV1 }, 'r2-m34');
     await close(c, 2, 100, []);
     const idea = ideaOf(c);
@@ -898,7 +899,7 @@ describe('AR2-IR — the independent refuter on the unreviewed fixes: each probe
     const c = await start();
     await close(c, 0);
     await uncoveredClose(c, 1, 100 / 1.5, [spl(1, '3/2'), spl(1, '5/4')]);
-    await c.db.doc('practiceFieldCaBackfill/AAPL').set({ schemaVersion: 1, symbol: 'AAPL', from: S[1], to: S[1], failed: true, actions: [div(1, 1)], calls: 2, fetchedAt: '2026-11-18T23:00:00.000Z', source: 'idea_book_backfill' });
+    await c.db.doc('practiceFieldCaBackfill/AAPL').set({ schemaVersion: 1, symbol: 'AAPL', from: S[1], to: S[1], failed: true, actions: [div(1, 1)], calls: 2, fetchedAt: '2026-11-18T23:00:00.000Z', source: 'idea_book_backfill' , parseReport: CLEAN_PARSE_ENTRY });
     await rule(c, { kind: 'coverage_gap', recordId: `ca_coverage_gap_AAPL_${S[0]}`, decision: 'row', actionId: ID1 }, 'ir3');
     await close(c, 2, 100 / 1.5, [spl(1, '3/2'), spl(1, '5/4')]);
     await close(c, 3, 100 / 1.5, [spl(1, '3/2'), spl(1, '5/4'), div(1, 2), div(1, 3)]);
@@ -930,7 +931,7 @@ describe('AR2-IR — the independent refuter on the unreviewed fixes: each probe
     const c = await start();
     await close(c, 0);
     await uncoveredClose(c, 1, 100, []);
-    await c.db.doc('practiceFieldCaBackfill/AAPL').set({ schemaVersion: 1, symbol: 'AAPL', from: S[1], to: S[1], failed: true, actions: [div(1, 1)], calls: 2, fetchedAt: '2026-11-18T23:00:00.000Z', source: 'idea_book_backfill' });
+    await c.db.doc('practiceFieldCaBackfill/AAPL').set({ schemaVersion: 1, symbol: 'AAPL', from: S[1], to: S[1], failed: true, actions: [div(1, 1)], calls: 2, fetchedAt: '2026-11-18T23:00:00.000Z', source: 'idea_book_backfill' , parseReport: CLEAN_PARSE_ENTRY });
     await rule(c, { kind: 'coverage_gap', recordId: `ca_coverage_gap_AAPL_${S[0]}`, decision: 'row', actionId: ID1 }, 'ir5');
     await close(c, 2, 100, [div(1, 1), div(1, 2)]);
     expect(unsettledConflicts(ideaOf(c).ledger).find((r) => r.actionId === ID1).rows.map((r) => r.amount)).toEqual([1, 2]);

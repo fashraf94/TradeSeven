@@ -16,6 +16,7 @@ import { nextSessionDate } from '../windows.js';
 import { InputOracle } from './caOracle.js';
 import {
   seedBook, admitAndEnter, contractOf, getBook, getIdea, getRow, closeNowOf, storeCloseSnapshot, founderRules, takeSeededDbs,
+  vendorAnswering, CLEAN_PARSE_ENTRY,
 } from './fixtures.js';
 
 export const S = ['2026-11-16'];
@@ -193,6 +194,9 @@ const money = (c) => {
     book: { cash: book.portfolio.cash, shares: Object.fromEntries(Object.entries(book.portfolio.positions).map(([s, p]) => [s, p.shares])) },
   });
 };
+
+/** T1a-2b-4: how many histories generated as clean carried a vendor correction of a settled id (reclassified; see run). */
+export const reclassifiedAsCorrected = { count: 0 };
 
 /** What the generated histories actually REACHED in the product (counted, asserted at the end). */
 export const reached = { payloadAddedLater: 0, redateOfAmbiguous: 0, uncoveredTransition: 0, revisedAfterRuling: 0 };
@@ -388,10 +392,10 @@ async function runInner(plan, expose) {
     if (step.kind === 'catchup') {
       const bySym = step.backfillBySym ?? { AAPL: step.backfill };
       for (const [sym, rows] of Object.entries(bySym)) {
-        plant(c.db, `practiceFieldCaBackfill/${sym}`, { schemaVersion: 1, symbol: sym, from: S[0], to: date, failed: false, actions: rows, calls: 2, fetchedAt: '2026-11-18T23:00:00.000Z', source: 'idea_book_backfill' });
+        plant(c.db, `practiceFieldCaBackfill/${sym}`, { schemaVersion: 1, symbol: sym, from: S[0], to: date, failed: false, actions: rows, calls: 2, fetchedAt: '2026-11-18T23:00:00.000Z', source: 'idea_book_backfill', parseReport: CLEAN_PARSE_ENTRY });
       }
       const fetchCorporateActions = async (sym) => ({ failed: false, calls: 2, actions: bySym[sym] ?? [] });
-      await catchUpIdeaBook(c.db, c.bookRef, { before: S[step.i + 1], now: closeNowOf(S[step.i + 1]), fetchCorporateActions });
+      await catchUpIdeaBook(c.db, c.bookRef, { before: S[step.i + 1], now: closeNowOf(S[step.i + 1]), ...vendorAnswering(fetchCorporateActions) });
     } else {
       const uncoveredSyms = step.uncoveredSyms ?? (step.uncovered ? ['AAPL'] : []);
       if (uncoveredSyms.length > 0) {
@@ -410,7 +414,19 @@ async function runInner(plan, expose) {
   }
   const idea = getIdea(c.db, c.bookId, c.ideaId);
   if (typeof plan.seed === 'number') tallyReached(idea);
-  if (plan.clean) {
+  // T1a-2b-4 (Astra T2D-05; FQ-11): a "clean" history whose feed listed an id with a SECOND payload at a later close is a
+  // vendor CORRECTION of a settled id — the product now records it (`revised_after_ruling`, `settledBy: 'feed'`) and waits
+  // for the founder, so the history is not clean data in the product's sense. Its only open ambiguities must be exactly
+  // those records, of exactly those ids; I-4 is not asked of it (a corrected split holds what follows it). Counted.
+  const correctedIds = plan.clean ? [...(plan.feed || new Map())].filter(([, e]) => (e.payloads || []).length > 1).map(([id]) => id) : [];
+  if (correctedIds.length > 0) {
+    reclassifiedAsCorrected.count += 1;
+    for (const f of LEDGERS) {
+      for (const r of openAmbiguities(idea[f])) {
+        expect([r.reason, r.settledBy ?? null, correctedIds.includes(r.actionId)], `seed ${plan.seed} corrected-only ambiguity ${f} ${r.actionId}`).toEqual(['revised_after_ruling', 'feed', true]);
+      }
+    }
+  } else if (plan.clean) {
     // I-4: complete coverage and no ambiguity — the engine's own applier, over the same rows.
     for (const f of LEDGERS) expect(openAmbiguities(idea[f]).map((r) => [r.reason, r.actionId, r.redateOf ?? null]), `seed ${plan.seed} clean has no ambiguity`).toEqual([]);
     if (!plan.wide) {

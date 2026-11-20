@@ -24,8 +24,7 @@ import { backfillNeeds, ensureCoverageBackfills } from './caBackfill.js';
 import {
   seedBook, admitAndEnter, closeOn, windowAt, contractOf, getBook, getIdea, getRow, closeNowOf, etIso,
   tickSnapshot, closeSnapshot, storeTickSnapshot, storeCloseSnapshot, takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults,
-  withoutWindowAlerts, moneyStoreBytes, founderRules,
-} from './__testsupport__/fixtures.js';
+  withoutWindowAlerts, moneyStoreBytes, founderRules, vendorAnswering, CLEAN_PARSE_ENTRY } from './__testsupport__/fixtures.js';
 
 const S = ['2026-11-16', '2026-11-17', '2026-11-18', '2026-11-19', '2026-11-20', '2026-11-23', '2026-11-24', '2026-11-25', '2026-11-27', '2026-11-30', '2026-12-01', '2026-12-02', '2026-12-03', '2026-12-04', '2026-12-07'];
 const BASE = { AAPL: 231.47, MSFT: 418.13, NVDA: 141.29, SPY: 597.31, XLK: 233.59 };
@@ -98,16 +97,21 @@ const ODD = [
   ['an entry of {}', {}, true],
 ];
 
+/** T1a-2b-4 (T2D-12): a session's parse report with a clean entry for AAPL — what the daily build writes for a held name. */
+const reportOf = (date) => ({ schemaVersion: 1, session: date, symbols: { AAPL: CLEAN_PARSE_ENTRY } });
+
 describe('Amendment F-6 — one rule for a daily entry', () => {
   it('the rule itself (pure): a plain object, `caFetchFailed` absent or exactly false; anything else is not covered; an own property only; a document whose date is not its key is missing', () => {
     const doc = (symbols, date = S[1]) => ({ date, symbols });
-    const of = (entry) => dailyCoverageOf(dailyDocOf(doc({ AAPL: entry }), S[1]), 'AAPL');
+    const of = (entry) => dailyCoverageOf(dailyDocOf(doc({ AAPL: entry }), S[1]), 'AAPL', reportOf(S[1]));
+    // (T1a-2b-4, T2D-12: the session's parse report is part of the rule — without a clean entry nothing is covered.)
+    expect(dailyCoverageOf(dailyDocOf(doc({ AAPL: {} }), S[1]), 'AAPL')).toMatchObject({ covered: false, refusal: DAILY_COVERAGE_REFUSAL.PARSE_INCOMPLETE, parse: 'parse_report_missing' });
     for (const v of [false, 0, '', 'x', [], null, ['caFetchFailed']]) expect(of(v), JSON.stringify(v)).toMatchObject({ covered: false, refusal: DAILY_COVERAGE_REFUSAL.COVERAGE_MISSING });
     for (const f of [true, 'true', 1, 0, '', null, [], 'false', {}]) expect(of({ caFetchFailed: f }), JSON.stringify(f)).toMatchObject({ covered: true, fetchSucceeded: false, refusal: DAILY_COVERAGE_REFUSAL.FETCH_FAILED });
     for (const ok of [{}, { caFetchFailed: false }, { sector: 'Technology' }, { caFetchFailed: undefined }]) expect(of(ok)).toEqual({ covered: true, fetchSucceeded: true, refusal: null });
     // An entry inherited through the object's prototype is not the symbol's own.
     const inherited = Object.create({ AAPL: { sector: 'Technology' } });
-    expect(dailyCoverageOf(dailyDocOf(doc(inherited), S[1]), 'AAPL').refusal).toBe(DAILY_COVERAGE_REFUSAL.COVERAGE_MISSING);
+    expect(dailyCoverageOf(dailyDocOf(doc(inherited), S[1]), 'AAPL', reportOf(S[1])).refusal).toBe(DAILY_COVERAGE_REFUSAL.COVERAGE_MISSING);
     // …and `caFetchFailed: true` inherited by an entry does not make it failed, nor does one of its own pass through.
     expect(of(Object.create({ caFetchFailed: true })).refusal).toBeNull();
     // The document: its own `date` must be its key; not a plain object, it is missing.
@@ -358,7 +362,7 @@ describe('Amendment F-3 — the gap screen dates a gap from the mark\'s own sess
 async function closeWithAaplFailed(ctx, date, over = {}, { fetchCorporateActions } = {}) {
   await storeCloseSnapshot(ctx.db, date, quotes(over));
   plantDaily(ctx.db, date, { symbol: 'AAPL', entry: { sector: null, caFetchFailed: true } });
-  const out = await closeIdeaBook(ctx.db, ctx.bookRef, { date, now: closeNowOf(date), ...(fetchCorporateActions ? { fetchCorporateActions } : {}) });
+  const out = await closeIdeaBook(ctx.db, ctx.bookRef, { date, now: closeNowOf(date), ...(fetchCorporateActions ? vendorAnswering(fetchCorporateActions) : {}) });
   recon(ctx);
   return out;
 }
@@ -406,7 +410,7 @@ describe('Amendment F-1 — a session with no corporate-action data is a session
     // the doubt stays, and the failed attempt is recorded.
     const failedFetch = vi.fn(async () => ({ actions: [], calls: 2, failed: true }));
     await storeCloseSnapshot(ctx.db, S[7], quotes({ AAPL: { price: 290.01, corporateActions: [dividend(0.5, S[5])] } }));
-    const first = await closeIdeaBook(ctx.db, ctx.bookRef, { date: S[7], now: closeNowOf(S[7]), fetchCorporateActions: failedFetch });
+    const first = await closeIdeaBook(ctx.db, ctx.bookRef, { date: S[7], now: closeNowOf(S[7]), ...vendorAnswering(failedFetch) });
     recon(ctx);
     expect(failedFetch).toHaveBeenCalledWith('AAPL', { from: '2026-11-17', to: S[7] });
     expect(first.alerts.some((a) => a.startsWith('PRACTICE_FIELD_CA_BACKFILL_FAILED'))).toBe(true);
@@ -418,7 +422,7 @@ describe('Amendment F-1 — a session with no corporate-action data is a session
     // S[8]: the backfill succeeds — the split on S[2]. The close applies it, then the held dividend on the count it leaves.
     const fetch = vi.fn(async (sym) => ({ actions: sym === 'AAPL' ? [reverseSplit(0.8, S[2]), dividend(0.5, S[5])] : [], calls: 2, failed: false }));
     await storeCloseSnapshot(ctx.db, S[8], quotes({ AAPL: 290.55 }));
-    await closeIdeaBook(ctx.db, ctx.bookRef, { date: S[8], now: closeNowOf(S[8]), fetchCorporateActions: fetch });
+    await closeIdeaBook(ctx.db, ctx.bookRef, { date: S[8], now: closeNowOf(S[8]), ...vendorAnswering(fetch) });
     recon(ctx);
     expect(fetch.mock.calls).toEqual([['AAPL', { from: '2026-11-17', to: S[8] }]]); // only the symbol in doubt
     expect(ctx.db._get('practiceFieldCaBackfill/AAPL')).toMatchObject({ symbol: 'AAPL', from: '2026-11-17', to: S[8], failed: false, calls: 2, source: 'idea_book_backfill' });
@@ -438,7 +442,7 @@ describe('Amendment F-1 — a session with no corporate-action data is a session
     // A later close fetches nothing (the data is continuous again) and pays nothing twice.
     const again = vi.fn();
     await storeCloseSnapshot(ctx.db, S[9], quotes({ AAPL: { price: 290.6, corporateActions: [dividend(0.5, S[5])] } }));
-    await closeIdeaBook(ctx.db, ctx.bookRef, { date: S[9], now: closeNowOf(S[9]), fetchCorporateActions: again });
+    await closeIdeaBook(ctx.db, ctx.bookRef, { date: S[9], now: closeNowOf(S[9]), ...vendorAnswering(again) });
     expect(again).not.toHaveBeenCalled();
     expect(ideaOf(ctx).ledger.dividendsUsd).toBe(Math.round(after * 0.5 * 100) / 100);
   });
@@ -472,7 +476,7 @@ describe('Amendment F-1 — a session with no corporate-action data is a session
     // On again at S[8]: the window of S[8]'s own layer starts Nov 22 — the dividend of Nov 18 (S[2]) is outside it.
     const fetch = vi.fn(async (sym) => ({ actions: sym === 'AAPL' ? [dividend(0.75, S[2])] : [], calls: 2, failed: false }));
     await storeCloseSnapshot(ctx.db, S[8], quotes());
-    const out = await closeIdeaBook(ctx.db, ctx.bookRef, { date: S[8], now: closeNowOf(S[8]), fetchCorporateActions: fetch });
+    const out = await closeIdeaBook(ctx.db, ctx.bookRef, { date: S[8], now: closeNowOf(S[8]), ...vendorAnswering(fetch) });
     recon(ctx);
     expect(out).toMatchObject({ closed: true, session: S[8] });
     expect(out.caughtUp.map((c) => c.date)).toEqual(S.slice(1, 8));
@@ -505,7 +509,7 @@ describe('Amendment F-1 — a session with no corporate-action data is a session
     const versionsBefore = new Map([...ctx.db._store.entries()].map(([p, e]) => [p, e.version]));
     const shared = [...ctx.db._store.keys()].filter((p) => p.startsWith('mandateUniverseDaily/') || p.startsWith('mandateUniverseSnapshots/'));
     const sharedBytes = JSON.stringify(shared.map((p) => [p, ctx.db._store.get(p)]));
-    const res = await ensureCoverageBackfills(ctx.db, ctx.bookRef, { through: S[7], now: closeNowOf(S[7]), fetchCorporateActions: async () => ({ actions: [], calls: 2, failed: false }) });
+    const res = await ensureCoverageBackfills(ctx.db, ctx.bookRef, { through: S[7], now: closeNowOf(S[7]), ...vendorAnswering(async () => ({ actions: [], calls: 2, failed: false })) });
     expect(res).toMatchObject({ needed: 1, fetched: 1, failed: 0, upstreamCalls: 2 });
     const changed = [...ctx.db._store.entries()].filter(([p, e]) => versionsBefore.get(p) !== e.version).map(([p]) => p).sort();
     expect(changed).toEqual(['mandateUpstreamCalls/2026-11-25', 'practiceFieldCaBackfill/AAPL']);
@@ -517,16 +521,16 @@ describe('Amendment F-1 — a session with no corporate-action data is a session
 
   it('(pure) sessionCoverage: the window reaches the day after; else a backfill joins it; a failed entry is covered only by a backfill through the session; a snapshot naming another layer covers nothing', () => {
     const daily = (date) => ({ date, caWindow: { from: new Date(Date.parse(`${date}T00:00:00Z`) - 5 * 864e5).toISOString().slice(0, 10) }, symbols: { AAPL: {} } });
-    expect(sessionCoverage({ symbol: 'AAPL', session: S[4], coveredThrough: S[0], daily: daily(S[4]), dailyRefOk: true })).toMatchObject({ covered: true, viaBackfill: false });
-    expect(sessionCoverage({ symbol: 'AAPL', session: S[7], coveredThrough: S[0], daily: daily(S[7]), dailyRefOk: true })).toMatchObject({ covered: false, reason: 'gap_beyond_window', needsBackfill: true });
-    expect(sessionCoverage({ symbol: 'AAPL', session: S[7], coveredThrough: S[0], daily: daily(S[7]), dailyRefOk: true, backfill: { from: '2026-11-17', to: '2026-11-19', actions: [] } })).toMatchObject({ covered: true, viaBackfill: true });
-    expect(sessionCoverage({ symbol: 'AAPL', session: S[7], coveredThrough: S[0], daily: daily(S[7]), dailyRefOk: true, backfill: { from: '2026-11-17', to: '2026-11-18', actions: [] } })).toMatchObject({ covered: false });
+    expect(sessionCoverage({ parseReport: reportOf(S[4]), symbol: 'AAPL', session: S[4], coveredThrough: S[0], daily: daily(S[4]), dailyRefOk: true })).toMatchObject({ covered: true, viaBackfill: false });
+    expect(sessionCoverage({ parseReport: reportOf(S[7]), symbol: 'AAPL', session: S[7], coveredThrough: S[0], daily: daily(S[7]), dailyRefOk: true })).toMatchObject({ covered: false, reason: 'gap_beyond_window', needsBackfill: true });
+    expect(sessionCoverage({ parseReport: reportOf(S[7]), symbol: 'AAPL', session: S[7], coveredThrough: S[0], daily: daily(S[7]), dailyRefOk: true, backfill: { from: '2026-11-17', to: '2026-11-19', actions: [] } })).toMatchObject({ covered: true, viaBackfill: true });
+    expect(sessionCoverage({ parseReport: reportOf(S[7]), symbol: 'AAPL', session: S[7], coveredThrough: S[0], daily: daily(S[7]), dailyRefOk: true, backfill: { from: '2026-11-17', to: '2026-11-18', actions: [] } })).toMatchObject({ covered: false });
     const failed = { ...daily(S[2]), symbols: { AAPL: { caFetchFailed: true } } };
-    expect(sessionCoverage({ symbol: 'AAPL', session: S[2], coveredThrough: S[0], daily: failed, dailyRefOk: true, backfill: { from: '2026-11-17', to: S[2], actions: [] } })).toMatchObject({ covered: true, viaBackfill: true });
-    expect(sessionCoverage({ symbol: 'AAPL', session: S[2], coveredThrough: S[0], daily: failed, dailyRefOk: true, backfill: { from: '2026-11-17', to: S[1], actions: [] } })).toMatchObject({ covered: false, reason: 'ca_fetch_failed' });
-    expect(sessionCoverage({ symbol: 'AAPL', session: S[1], coveredThrough: S[0], daily: daily(S[1]), dailyRefOk: false })).toMatchObject({ covered: false, reason: 'snapshot_daily_mismatch' });
+    expect(sessionCoverage({ parseReport: reportOf(S[2]), symbol: 'AAPL', session: S[2], coveredThrough: S[0], daily: failed, dailyRefOk: true, backfill: { from: '2026-11-17', to: S[2], actions: [] } })).toMatchObject({ covered: true, viaBackfill: true });
+    expect(sessionCoverage({ parseReport: reportOf(S[2]), symbol: 'AAPL', session: S[2], coveredThrough: S[0], daily: failed, dailyRefOk: true, backfill: { from: '2026-11-17', to: S[1], actions: [] } })).toMatchObject({ covered: false, reason: 'ca_fetch_failed' });
+    expect(sessionCoverage({ parseReport: reportOf(S[1]), symbol: 'AAPL', session: S[1], coveredThrough: S[0], daily: daily(S[1]), dailyRefOk: false })).toMatchObject({ covered: false, reason: 'snapshot_daily_mismatch' });
     // A layer that claims a wider window than the builder fetches is not taken on trust.
-    expect(sessionCoverage({ symbol: 'AAPL', session: S[7], coveredThrough: S[0], daily: { ...daily(S[7]), caWindow: { from: '2026-10-01' } }, dailyRefOk: true })).toMatchObject({ covered: false, reason: 'gap_beyond_window' });
+    expect(sessionCoverage({ parseReport: reportOf(S[7]), symbol: 'AAPL', session: S[7], coveredThrough: S[0], daily: { ...daily(S[7]), caWindow: { from: '2026-10-01' } }, dailyRefOk: true })).toMatchObject({ covered: false, reason: 'gap_beyond_window' });
   });
 });
 
@@ -1112,7 +1116,7 @@ describe('F-1 beside the gap screen, and C-12', () => {
     for (const f of ['ledger', 'comparisonLedger']) expect(ideaOf(ctx)[f].holdings.AAPL.basisSuspicion, f).toBeUndefined();
     const fetch = vi.fn(async (sym) => ({ actions: sym === 'AAPL' ? [split(2, S[2])] : [], calls: 2, failed: false }));
     await storeCloseSnapshot(ctx.db, S[7], quotes({ AAPL: 115.8 }));
-    await closeIdeaBook(ctx.db, ctx.bookRef, { date: S[7], now: closeNowOf(S[7]), fetchCorporateActions: fetch });
+    await closeIdeaBook(ctx.db, ctx.bookRef, { date: S[7], now: closeNowOf(S[7]), ...vendorAnswering(fetch) });
     recon(ctx);
     for (const f of ['ledger', 'comparisonLedger']) {
       const h = ideaOf(ctx)[f].holdings.AAPL;
@@ -1262,7 +1266,7 @@ describe('the review\'s fix round — re-dated and late actions (lens C); covera
     const ctx = await setup();
     for (let i = 1; i <= 6; i += 1) await closeWithAaplFailed(ctx, S[i], {}, { fetchCorporateActions: noFetch });
     await storeTickSnapshot(ctx.db, S[7], 'open30', quotes());
-    expect(dailyCoverageOf(ctx.db._get(`mandateUniverseDaily/${S[7]}`), 'AAPL')).toMatchObject({ covered: true, refusal: null }); // the day's own entry is clean
+    expect(dailyCoverageOf(ctx.db._get(`mandateUniverseDaily/${S[7]}`), 'AAPL', ctx.db._get(`practiceFieldCaParseReports/${S[7]}`))).toMatchObject({ covered: true, refusal: null }); // the day's own entry is clean
     const res = await admitIdea(ctx.db, { bookId: ctx.bookId, contract: contractOf({ slot: 'medium', names: ['NVDA'], capitalUsd: 1000 }), opId: 'f1', nowIso: etIso(S[7], 11, 0) });
     expect(res.refusals).toEqual([expect.objectContaining({ code: 'admission_marks_unavailable', unavailable: [expect.objectContaining({ symbol: 'AAPL', reason: 'ca_coverage_gap' })] })]);
   });
@@ -1273,7 +1277,7 @@ describe('the review\'s fix round — re-dated and late actions (lens C); covera
     ctx.db._store.set('practiceFieldCaBackfill/AAPL', { data: { schemaVersion: 1, symbol: 'AAPL', from: '2026-11-20', to: S[7], failed: false, actions: [], calls: 2, fetchedAt: etIso(S[7], 8, 0), source: 'idea_book_backfill' }, version: 9 });
     await storeCloseSnapshot(ctx.db, S[7], quotes());
     const fetch = vi.fn(async () => ({ actions: [], calls: 2, failed: false }));
-    await ensureCoverageBackfills(ctx.db, ctx.bookRef, { through: S[7], now: closeNowOf(S[7]), fetchCorporateActions: fetch });
+    await ensureCoverageBackfills(ctx.db, ctx.bookRef, { through: S[7], now: closeNowOf(S[7]), ...vendorAnswering(fetch) });
     expect(fetch.mock.calls).toEqual([['AAPL', { from: '2026-11-17', to: S[7] }]]);
     expect(ctx.db._get('practiceFieldCaBackfill/AAPL')).toMatchObject({ from: '2026-11-17', to: S[7], failed: false });
   });
@@ -1283,7 +1287,7 @@ describe('the review\'s fix round — re-dated and late actions (lens C); covera
     const shares = sharesOf(ctx);
     await storeCloseSnapshot(ctx.db, S[1], quotes({ AAPL: 289.34 }));
     plantDaily(ctx.db, S[1], { symbol: 'AAPL', entry: { sector: null, caFetchFailed: true, corporateActions: [reverseSplit(0.8, S[1])] } });
-    await closeIdeaBook(ctx.db, ctx.bookRef, { date: S[1], now: closeNowOf(S[1]), fetchCorporateActions: noFetch });
+    await closeIdeaBook(ctx.db, ctx.bookRef, { date: S[1], now: closeNowOf(S[1]), ...vendorAnswering(noFetch) });
     recon(ctx);
     for (const f of ['ledger', 'comparisonLedger']) {
       expect(ideaOf(ctx)[f].holdings.AAPL.shares, f).toBe(shares);
@@ -1556,7 +1560,7 @@ describe('the review\'s fix round — coverage (lens A)', () => {
     const ctx = await missedOutage();
     const shares = sharesOf(ctx);
     const fetch = vi.fn(async (sym) => ({ actions: sym === 'AAPL' ? [dividend(0.75, S[2])] : [], calls: 2, failed: false }));
-    const out = await catchUpIdeaBook(ctx.db, ctx.bookRef, { before: S[7], now: new Date(`${S[7]}T15:00:00Z`), fetchCorporateActions: fetch });
+    const out = await catchUpIdeaBook(ctx.db, ctx.bookRef, { before: S[7], now: new Date(`${S[7]}T15:00:00Z`), ...vendorAnswering(fetch) });
     recon(ctx);
     expect(out.caughtUp.map((c) => c.date)).toEqual([S[1], S[2], S[3], S[4], S[5], S[6]]);
     expect(fetch).toHaveBeenCalledWith('AAPL', { from: '2026-11-17', to: S[7] });
@@ -1576,7 +1580,7 @@ describe('the review\'s fix round — coverage (lens A)', () => {
     }
     expect(getBook(db, bookId).execState?.lastCloseKey ?? null).toBeNull();
     const fetch = vi.fn(async () => ({ actions: [], calls: 2, failed: false }));
-    const out = await catchUpIdeaBook(db, bookRef, { before: S[7], now: new Date(`${S[7]}T15:00:00Z`), fetchCorporateActions: fetch, lastCloseKey: null });
+    const out = await catchUpIdeaBook(db, bookRef, { before: S[7], now: new Date(`${S[7]}T15:00:00Z`), ...vendorAnswering(fetch), lastCloseKey: null });
     expect(out.caughtUp.map((c) => c.date)).toEqual([S[0], S[1], S[2], S[3], S[4], S[5], S[6]]);
     expect(fetch).toHaveBeenCalledWith('AAPL', { from: '2026-11-17', to: S[7] });
     expect(getIdea(db, bookId, e.ideaId).caCoveredThrough.AAPL).toBe(S[6]);
@@ -1586,13 +1590,13 @@ describe('the review\'s fix round — coverage (lens A)', () => {
     const ctx = await missedOutage();
     await storeCloseSnapshot(ctx.db, S[7], quotes());
     const hung = vi.fn(() => new Promise(() => {}));
-    const res = await ensureCoverageBackfills(ctx.db, ctx.bookRef, { through: S[7], now: closeNowOf(S[7]), fetchCorporateActions: hung, fetchTimeoutMs: 20 });
+    const res = await ensureCoverageBackfills(ctx.db, ctx.bookRef, { through: S[7], now: closeNowOf(S[7]), ...vendorAnswering(hung), fetchTimeoutMs: 20 });
     expect(res.failed).toBe(res.needed);
     expect(res.fetched).toBe(0);
     expect(res.alerts.some((a) => a.includes('no answer in 20 ms'))).toBe(true);
     expect(ctx.db._get('practiceFieldCaBackfill/AAPL')).toMatchObject({ failed: true });
     const asked = vi.fn(async () => ({ actions: [], calls: 2, failed: false }));
-    const spent = await ensureCoverageBackfills(ctx.db, ctx.bookRef, { through: S[7], now: closeNowOf(S[7]), fetchCorporateActions: asked, passBudgetMs: 0 });
+    const spent = await ensureCoverageBackfills(ctx.db, ctx.bookRef, { through: S[7], now: closeNowOf(S[7]), ...vendorAnswering(asked), passBudgetMs: 0 });
     expect(asked).not.toHaveBeenCalled();
     expect(spent.alerts.some((a) => a.includes('budget was spent'))).toBe(true);
   });
@@ -1600,14 +1604,14 @@ describe('the review\'s fix round — coverage (lens A)', () => {
   it('N4: an answer whose rows are not a list is a FAILED backfill, whatever it says — the doubt stays', async () => {
     const ctx = await missedOutage();
     await storeCloseSnapshot(ctx.db, S[7], quotes());
-    await ensureCoverageBackfills(ctx.db, ctx.bookRef, { through: S[7], now: closeNowOf(S[7]), fetchCorporateActions: async () => ({ actions: 'garbage', calls: 2, failed: false }) });
+    await ensureCoverageBackfills(ctx.db, ctx.bookRef, { through: S[7], now: closeNowOf(S[7]), ...vendorAnswering(async () => ({ actions: 'garbage', calls: 2, failed: false })) });
     expect(ctx.db._get('practiceFieldCaBackfill/AAPL')).toMatchObject({ failed: true, actions: [] });
   });
 
   it('A4 (pure): a snapshot naming another session\'s layer covers nothing — on the entry session too, where the data already covers the session', () => {
     const daily = { date: S[0], caWindow: { from: '2026-11-11', to: '2026-11-18' }, symbols: { AAPL: { sector: null } } };
-    expect(sessionCoverage({ symbol: 'AAPL', session: S[0], coveredThrough: S[0], daily, dailyRefOk: true })).toMatchObject({ covered: true });
-    expect(sessionCoverage({ symbol: 'AAPL', session: S[0], coveredThrough: S[0], daily, dailyRefOk: false })).toMatchObject({ covered: false, reason: 'snapshot_daily_mismatch' });
+    expect(sessionCoverage({ parseReport: reportOf(S[0]), symbol: 'AAPL', session: S[0], coveredThrough: S[0], daily, dailyRefOk: true })).toMatchObject({ covered: true });
+    expect(sessionCoverage({ parseReport: reportOf(S[0]), symbol: 'AAPL', session: S[0], coveredThrough: S[0], daily, dailyRefOk: false })).toMatchObject({ covered: false, reason: 'snapshot_daily_mismatch' });
   });
 
   it('the vendor is never reached from a row (lens A N3): the key is empty, so a backfill the rows did not stub fails at once', async () => {

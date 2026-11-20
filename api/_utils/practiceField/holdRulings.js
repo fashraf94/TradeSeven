@@ -43,6 +43,9 @@ import {
 } from './ledger.js';
 import { coverageGapIdOf } from './dailyCoverage.js';
 import { roundShares } from '../mandateRounding.js';
+import { ADJUSTMENT_KIND, correctShareBasisOn, postedAdjustments } from './adjustments.js';
+
+const SHARE_BASIS = new Set(['split', 'reverse_split', 'stock_distribution']);
 
 export const HOLD_KINDS = Object.freeze(['suspicion', 'conflict', 'coverage_gap']);
 const DECISIONS = Object.freeze({ suspicion: ['price_move', 'split'], conflict: ['payload', 'none'], coverage_gap: ['no_action', 'row'] });
@@ -122,6 +125,26 @@ function ruledOutcomeOn(ledger, recordId) {
 }
 
 /**
+ * T1a-2b-4 (T2D-05): THE OUTCOME IN FORCE for a settled id on a ledger — the founder's (ruledOutcomeOn), else the payload
+ * the FEED settled it with (an applied receipt, or a late entitlement); a founder's later CORRECTION of it (a posted
+ * ruled_correction adjustment) is the outcome then. Null when nothing settled it there.
+ */
+function settledOutcomeOn(ledger, recordId) {
+  let outcome = ruledOutcomeOn(ledger, recordId);
+  if (outcome === null) {
+    const r = (ledger?.corporateActionReceipts || []).find((x) => x?.actionId === recordId && x.applied === true && x.historyOnly !== true);
+    if (r) outcome = payloadOf(r);
+    else {
+      const a = postedAdjustments(ledger).find((x) => x.actionId === recordId && x.kind === ADJUSTMENT_KIND.LATE_ENTITLEMENT);
+      if (a) outcome = payloadOf({ amount: a.amountPerShare });
+    }
+  }
+  if (outcome === null || outcome === 'none') return outcome;
+  const corrections = postedAdjustments(ledger).filter((x) => x.actionId === recordId && x.kind === ADJUSTMENT_KIND.RULED_CORRECTION && x.payload);
+  return corrections.length > 0 ? payloadOf(corrections[corrections.length - 1].payload) : outcome;
+}
+
+/**
  * THE FOUNDER ACTION'S CHECK (Amendment F-5): does `recordId` name an open record of this idea of this `kind`, and is
  * `decision` a ruling it can take? Pure.
  * @returns {{ ruling: object } | { error: string, status: number }}
@@ -177,16 +200,39 @@ export function planHoldRuling(idea, { kind, recordId, decision, ratio, payload,
       const revised = LEDGERS.flatMap((f) => openRulingRevisions(idea?.[f]).filter((x) => x.actionId === recordId).map((x) => [f, x]));
       if (revised.length > 0) {
         const fields = [...new Set(revised.map(([f]) => f))];
-        for (const f of fields) {
-          const ruled = ruledOutcomeOn(idea[f], recordId);
-          const same = decision === 'none' ? ruled === 'none' : (ruled !== null && ruled !== 'none' && isPlain(payload) && samePayload(ruled, payload));
-          if (!same) return { error: 'ruling_needs_adjustment', status: 422 };
-        }
         const [, x] = revised[0];
+        // (T1a-2b-4: the outcome in force — the founder's, the feed's, or a correction since — on each ledger.)
+        const inForce = fields.map((f) => settledOutcomeOn(idea[f], recordId));
+        const keeps = inForce.every((ruled) => (decision === 'none' ? ruled === 'none' : (ruled !== null && ruled !== 'none' && isPlain(payload) && samePayload(ruled, payload))));
+        if (keeps) {
+          return {
+            ruling: {
+              ...base, symbol: upper(x.ticker), type: x.type, effectiveDate: x.effectiveDate, recordReason: REVISED_AFTER_RULING, ledgers: fields, confirms: true,
+              ...(decision === 'payload' ? { payload: payloadOf(payload) } : {}),
+            },
+          };
+        }
+        // T1a-2b-4 (Astra T2D-05): THE CORRECTION. The founder may choose a payload the revision records saw in place of the
+        // one in force - a cash dividend's amount or a split's ratio, on an id each named ledger settled WITH a payload.
+        // The close applies it as ONE linked adjustment per ledger (adjustments.js): a dividend's difference, or a split's
+        // count corrected and every dividend paid since recomputed. `none` after a payload, or a payload after `none`, is
+        // not a correction this build makes (FQ-6 stands for those: it would undo or create a settlement, not adjust it).
+        if (decision !== 'payload' || !isPlain(payload)) return { error: 'ruling_needs_adjustment', status: 422 };
+        if (!(SHARE_BASIS.has(x.type) || x.type === 'cash_dividend')) return { error: 'ruling_needs_adjustment', status: 422 };
+        if (inForce.some((o) => o === null || o === 'none')) return { error: 'ruling_needs_adjustment', status: 422 };
+        const recorded = [...new Map([...inForce, ...revised.flatMap(([, rec]) => (rec.rows || []).map(payloadOf))].map((p) => [JSON.stringify(p), p])).values()];
+        const chosen = recorded.find((p) => samePayload(p, payloadOf(payload))) ?? null;
+        if (chosen === null) return { error: 'payload_not_recorded', status: 422 };
+        if (SHARE_BASIS.has(x.type)) {
+          if (!(Number(chosen.ratio) > 0)) return { error: 'payload_invalid', status: 400 };
+          if (unrepresentableOn(idea, fields, upper(x.ticker), chosen.ratio / Number(inForce[0].ratio))) return { error: 'ruling_unrepresentable', status: 422 };
+        } else if (!(Number(chosen.amount) > 0)) return { error: 'payload_invalid', status: 400 };
         return {
           ruling: {
-            ...base, symbol: upper(x.ticker), type: x.type, effectiveDate: x.effectiveDate, recordReason: REVISED_AFTER_RULING, ledgers: fields, confirms: true,
-            ...(decision === 'payload' ? { payload: payloadOf(payload) } : {}),
+            ...base, symbol: upper(x.ticker), type: x.type, effectiveDate: x.effectiveDate, recordReason: REVISED_AFTER_RULING, ledgers: fields,
+            corrects: true, payload: chosen, from: inForce[0],
+            // (FQ-5: the ruling covers exactly what it saw - a payload outside it, later, is a new ambiguity.)
+            seen: recorded,
           },
         };
       }
@@ -256,12 +302,15 @@ export function applyFounderRulings(idea, { date }) {
     // map for "every ledger": a ruling's action belongs to the ledgers whose record it covers.
     extraActionsByLedger: perLedger(() => ({})), ruledIdsByLedger: perLedger(() => new Set()), replacedIdsByLedger: perLedger(() => new Set()),
     coveredThroughOverrides: new Map(), applied: [], alerts: [],
+    // T1a-2b-4 (T2D-05): the founder's corrections of settled ids - a split's, applied here (the close mirrors it on the
+    // book and the line), and a dividend's, by ledger, for the close's adjustments.
+    shareCorrections: [], amountCorrectionsByLedger: perLedger(() => []),
   };
   if (pending.length === 0) return out;
   const next = { ...idea };
   for (const f of LEDGERS) if (next[f]) next[f] = cloneLedger(next[f]);
   const appliedNow = new Set();
-  const receiptOf = (r) => ({ requestKey: r.requestKey, kind: r.kind, recordId: r.recordId, decision: r.decision, by: r.by, at: r.at, ...(Array.isArray(r.seen) ? { seen: r.seen } : {}) });
+  const receiptOf = (r) => ({ requestKey: r.requestKey, kind: r.kind, recordId: r.recordId, decision: r.decision, by: r.by, at: r.at, ...(Array.isArray(r.seen) ? { seen: r.seen } : {}), ...(r.corrects === true ? { corrects: true, payload: r.payload, from: r.from ?? null } : {}) });
   const addAction = (sym, action, r, fields) => {
     const a = { ...action, ticker: sym, source: 'founder_ruling', founderRuling: receiptOf(r) };
     const id = a.actionId ?? deriveActionId(a);
@@ -317,6 +366,37 @@ export function applyFounderRulings(idea, { date }) {
       continue;
     }
 
+    if (r.kind === 'conflict' && r.corrects === true) {
+      // T1a-2b-4 (T2D-05): THE FOUNDER'S CORRECTION of a settled id. The revision records it answers are closed (naming the
+      // ruling) on the ledgers it names. A split's ratio is corrected here, before this close's actions - the holding's
+      // count, cost and carried mark (adjustments.js correctShareBasisOn) - so a dividend held behind the revision replays
+      // on the corrected count; the dividends paid since are recomputed by the close (late_basis). A dividend's amount is
+      // corrected by the close (one ruled_correction adjustment per ledger): the ruling stays pending until it is posted
+      // everywhere (markRulingsApplied), so a doubt at this close defers it, never drops it.
+      const named = namedLedgers(r).filter((f) => next[f]);
+      for (const f of named) {
+        const l = next[f];
+        l.corporateActionReceipts = l.corporateActionReceipts.map((x) => (x?.reason === REVISED_AFTER_RULING && x.actionId === r.recordId && x.closedBy == null
+          ? { ...x, closedBy: receiptOf(r), closedOn: date } : x));
+      }
+      if (SHARE_BASIS.has(r.type)) {
+        for (const f of named) {
+          const done = postedAdjustments(next[f]).some((a) => a.kind === ADJUSTMENT_KIND.RULED_CORRECTION && a.ruling?.requestKey === r.requestKey);
+          if (done) continue;
+          const c = correctShareBasisOn(next[f], {
+            ideaId: idea.ideaId, ledgerKind: f === 'ledger' ? 'idea' : (f === 'comparisonLedger' ? 'comparison' : 'spy'),
+            actionId: r.recordId, ratio: Number(r.payload.ratio), from: r.from, ruling: receiptOf(r), date,
+          });
+          if (!c) continue;
+          next[f] = c.ledger;
+          out.shareCorrections.push({ field: f, symbol: c.symbol, actionId: r.recordId, factor: c.factor, sharesBefore: c.sharesBefore, sharesAfter: c.sharesAfter, record: c.record });
+        }
+        appliedNow.add(r.requestKey);
+      } else {
+        for (const f of named) out.amountCorrectionsByLedger[f].push({ actionId: r.recordId, amount: Number(r.payload.amount), from: r.from, ruling: receiptOf(r) });
+      }
+      continue;
+    }
     if (r.kind === 'conflict' && r.confirms === true) {
       // Rev 1, S-2: the founder's answer to a ruled id revised since — the ruled outcome again. It closes the open revision
       // records on the ledgers it names; nothing is applied or replaced.
@@ -378,6 +458,12 @@ export function markRulingsApplied(idea, { date, skips = new Set(), refusals = n
   const fieldsOf = (r) => (Array.isArray(r.ledgers) ? LEDGERS.filter((f) => r.ledgers.includes(f)) : LEDGERS);
   const marked = rulings.map((r) => {
     if (!r || r.appliedOn != null) return r;
+    // T1a-2b-4 (T2D-05): a dividend's correction is applied once its ruled_correction adjustment is posted on every
+    // ledger the ruling names (a doubt at a close defers it there).
+    if (r.kind === 'conflict' && r.corrects === true) {
+      const done = fieldsOf(r).every((f) => !idea[f] || postedAdjustments(idea[f]).some((a) => a.kind === ADJUSTMENT_KIND.RULED_CORRECTION && a.ruling?.requestKey === r.requestKey));
+      return done ? { ...r, appliedOn: date, outcome: 'applied' } : r;
+    }
     // Astra T2D-10: the applier REFUSED the ruling's action for good on a ledger it names (`refusals`:
     // `<requestKey>@<ledger field>` → reason, applyActions' founderRefusals). The ruling is closed with its reason — not
     // left pending — so its request lock is released: the record it covers is still open and takes another ruling

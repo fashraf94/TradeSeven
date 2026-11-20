@@ -118,7 +118,9 @@
 
 import { markBook } from '../mandateValuation.js';
 import { snapshotExcluding, caActionsBySymbol } from '../mandateUniverseSnapshot.js';
-import { pendingActionsFor, applyCorporateAction, classifyOvernightGaps, deriveActionId } from '../mandateCorporateActions.js';
+import {
+  pendingActionsFor, applyCorporateAction, classifyOvernightGaps, deriveActionId, parseSplitsPayload, parseDividendsPayload,
+} from '../mandateCorporateActions.js';
 import { MANDATE_CA_RATIO_TOLERANCE, MANDATE_CA_RATIO_MAX_N } from '../mandateConfig.js';
 import { roundUsd, roundShares } from '../mandateRounding.js';
 import { MARK_QUALITY } from './constants.js';
@@ -132,6 +134,12 @@ export const LEDGER_KIND = Object.freeze({ IDEA: 'idea', COMPARISON: 'comparison
 /** The engine's action id (type, ticker, effective date), for a module that must not import the engine's applier itself
  *  (the founder's rulings, holdRulings.js — exits.test.js rule 7 keeps that import to this file and the close). */
 export const actionIdOf = (action) => deriveActionId(action);
+
+/** The engine's two vendor parsers (mandateCorporateActions.js, called, never edited), for the parse report
+ *  (caParseReport.js, T1a-2b-4 T2D-12) — re-exported here so the engine-import guard (exits.test.js rule 7) still names
+ *  only this file and the close as the engine's corporate-action importers. */
+export const parseVendorSplits = (symbol, rows) => parseSplitsPayload(symbol, rows);
+export const parseVendorDividends = (symbol, rows) => parseDividendsPayload(symbol, rows);
 
 /** A new ledger holding `reservedCapitalUsd` in cash and nothing else. */
 export function newLedger(kind, reservedCapitalUsd) {
@@ -176,7 +184,7 @@ export function mirrorLedger(kind, source) {
   return { ...copy, kind };
 }
 
-const SHARE_BASIS_TYPES = new Set(['split', 'reverse_split', 'stock_distribution']);
+export const SHARE_BASIS_TYPES = new Set(['split', 'reverse_split', 'stock_distribution']);
 const APPLICABLE_TYPES = new Set([...SHARE_BASIS_TYPES, 'cash_dividend', 'ticker_change', 'delisting']);
 
 /** A delisting's cash per share, only when it is a real positive amount. */
@@ -220,8 +228,8 @@ export const NOT_ENTITLED = 'not_entitled';
 /** Two effective dates this many trading sessions apart, or fewer, can be one action re-dated by the vendor. */
 export const REDATE_WINDOW_SESSIONS = 5;
 
-/** Are two session dates within `n` trading sessions of each other? */
-function withinSessions(a, b, n) {
+/** Are two session dates within `n` trading sessions of each other? (Exported for the adjustments, T1a-2b-4.) */
+export function withinSessions(a, b, n) {
   if (typeof a !== 'string' || typeof b !== 'string') return false;
   let [lo, hi] = a <= b ? [a, b] : [b, a];
   for (let i = 0; i < n && lo < hi; i += 1) {
@@ -587,7 +595,7 @@ function quoteSeenOf(closeSnapshot, sym, date) {
 
 /** What makes two feed rows of one id the same action. The id already fixes the type, ticker and effective date. */
 // (A rename's target compares in upper case — AR2-RF-3: `aapx` and `AAPX` are one target, and a ruling that saw one saw both.)
-const actionPayloadOf = (row) => JSON.stringify([row.ratio ?? null, row.amount ?? null, row.renamedTo != null ? upper(row.renamedTo) : null, row.cashPerShare ?? null]);
+export const actionPayloadOf = (row) => JSON.stringify([row.ratio ?? null, row.amount ?? null, row.renamedTo != null ? upper(row.renamedTo) : null, row.cashPerShare ?? null]);
 
 /**
  * The ids, among this call's due rows, that the feed lists more than once with different payloads.
@@ -642,6 +650,28 @@ function kindsOf(record, rows, add) {
 function founderSettledIds(ledger) {
   const out = new Map();
   const receipts = ledger?.corporateActionReceipts || [];
+  // T1a-2b-4 (Astra T2D-05; FQ-11): AN ID THE FEED SETTLED — applied with one payload, never ambiguous — is covered by that
+  // payload alone. A later different payload under it was discarded before (the settled id never reached the gate); it is
+  // now the same new ambiguity a ruled id's revision is (`revised_after_ruling`, `ruling: null`, `settledBy: 'feed'`):
+  // alerted, below full quality, a split's count in doubt again, and only the founder answers it — keeping the original,
+  // or choosing the correction, which the close applies as ONE linked adjustment (adjustments.js). Cash dividends and
+  // share-basis actions only: the classes the adjustment can correct. A ruling's later correction of it (a ruled_correction
+  // adjustment) covers what that ruling saw, and is the outcome now.
+  for (const r of receipts) {
+    if (r?.applied !== true || r.founderRuling || r.historyOnly === true) continue;
+    if (!(SHARE_BASIS_TYPES.has(r.type) || r.type === 'cash_dividend') || out.has(r.actionId)) continue;
+    const keys = new Set([actionPayloadOf(r)]);
+    for (const x of receipts) if (x?.actionId === r.actionId && x.reason === REVISED_AFTER_RULING && x.closedBy != null) for (const p of x.rows || []) keys.add(actionPayloadOf(p));
+    out.set(r.actionId, { keys, ruling: null, ruled: { ratio: r.ratio ?? null, amount: r.amount ?? null }, settledBy: 'feed' });
+  }
+  for (const a of ledger?.adjustments || []) {
+    if (a?.kind !== 'ruled_correction' || !a.ruling || !out.has(a.actionId)) continue;
+    const prior = out.get(a.actionId);
+    const keys = new Set(prior.keys);
+    for (const p of a.ruling.seen || []) keys.add(actionPayloadOf(p));
+    keys.add(actionPayloadOf(a.payload || {}));
+    out.set(a.actionId, { keys, ruling: a.ruling.requestKey ?? null, ruled: { ratio: a.payload?.ratio ?? null, amount: a.payload?.amount ?? null }, settledBy: 'feed' });
+  }
   for (const r of receipts) {
     const ruling = r?.founderRuling;
     if (!ruling) continue;
@@ -1134,7 +1164,7 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
       const fresh = [];
       for (const row of unseen) if (!known.has(actionPayloadOf(row))) { known.add(actionPayloadOf(row)); fresh.push(rowOfPayload(row, date)); }
       if (fresh.length === 0) continue;
-      const meta = listed[0] ?? (next.corporateActionReceipts || []).find((r) => r?.actionId === id && r.founderRuling);
+      const meta = listed[0] ?? (next.corporateActionReceipts || []).find((r) => r?.actionId === id && (r.founderRuling || r.applied === true));
       if (SHARE_BASIS_TYPES.has(meta.type) || meta.type === 'ticker_change') unresolved.add(upper(meta.ticker));
       if (prior) {
         const k = next.corporateActionReceipts.indexOf(prior);
@@ -1144,6 +1174,7 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
         next.corporateActionReceipts.push({
           actionId: id, type: meta.type, ticker: meta.ticker, effectiveDate: meta.effectiveDate, applied: false, reason: REVISED_AFTER_RULING,
           rows: fresh, seenOn: date, ruling: covered.ruling, ruled: covered.ruled, closedBy: null,
+          ...(covered.settledBy === 'feed' ? { settledBy: 'feed' } : {}),
         });
         ambiguities.push({ actionId: id, ticker: upper(meta.ticker), type: meta.type, how: 'revised_after_ruling', payloads: fresh.length });
       }

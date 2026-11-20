@@ -82,7 +82,7 @@ import { assertReconciled } from './reconcile.js';
 import { readLines, buildEndpoint, foldCloseIntoTrack, pendingSaleOf, completedLiquidation, ENDPOINT_KIND } from './settlement.js';
 import { firstUnclosedSessionBefore } from './sessions.js';
 import { toCents, fromCents } from './money.js';
-import { buildResultEvidence, evidenceRefOf, EVIDENCE_PACKET, firestoreDocumentBytes } from './evidence.js';
+import { buildResultEvidence, evidenceRefOf, EVIDENCE_PACKET, firestoreDocumentBytes, sealAdjustment } from './evidence.js';
 import {
   windowsRefOf, expectedIntradayWindows, buildCloseWindowRow, windowOnlySessionsBefore, readWindowOnlySessions, writeWindowOnlySessions,
   WINDOW_ONLY_SESSIONS_PER_TX, WINDOWS_ACCOUNTED_FIELD, writeWindowActionReceipts, WINDOW_ACTION_KIND,
@@ -94,6 +94,11 @@ import {
 } from './dailyCoverage.js';
 import { ensureCoverageBackfills } from './caBackfill.js';
 import { applyFounderRulings, markRulingsApplied } from './holdRulings.js';
+import {
+  planLedgerAdjustments, closedHoldingsOf, resultAdjustmentView, adjustmentDocIdOf, ADJUSTMENT_POSTED_TO, heldAdjustments,
+} from './adjustments.js';
+import { dailyCoverageOf } from './dailyCoverage.js';
+import { MANDATE_CA_FETCH_LOOKBACK_DAYS } from '../mandateConfig.js';
 
 /**
  * Amendment F-9 (T2C-04): THE IDEA DOCUMENT'S SIZE. Every close rewrites a changed idea whole — its three ledgers and
@@ -209,7 +214,7 @@ export { firstUnclosedSessionBefore };
  */
 function closeFilledIdea(idea, {
   date, closeSnapshot, actionsBySymbol: sessionActions, heldByOthers = new Set(), sinceDate, snapshotMeta, nowIso, catchUp,
-  daily = null, dailyRefOk = false, coverageInputs = new Map(),
+  daily = null, dailyRefOk = false, coverageInputs = new Map(), parseReport = null,
 }) {
   // `heldByOthers`: the symbols another idea of the book holds, or would hold had its waiting rename applied (R-36).
   const observed = closeSnapshot !== null;
@@ -237,7 +242,7 @@ function closeFilledIdea(idea, {
     for (const [sym, input] of coverageInputs) {
       // F-5: a coverage-gap ruling counts the symbol's data as covered through the gap's last session.
       const coveredThrough = ruled?.coveredThroughOverrides.get(sym) ?? input.coveredThrough;
-      const r = sessionCoverage({ symbol: sym, session: date, coveredThrough, daily, dailyRefOk, backfill: input.backfill });
+      const r = sessionCoverage({ symbol: sym, session: date, coveredThrough, daily, dailyRefOk, backfill: input.backfill, parseReport });
       coverage.set(sym, { ...r, coveredThrough });
       if (!r.covered) uncovered.add(sym);
       // The rows of a SUCCESSFUL backfill the close read join this idea's rows for the symbol — when it covers the gap,
@@ -371,6 +376,27 @@ function closeFilledIdea(idea, {
   const cmp = observed ? applyLedgerActions(ledgers[1], actionsOf.comparisonLedger, opts('comparisonLedger')) : noActions(ledgers[1]);
   const spy = observed ? applyLedgerActions(ledgers[2], actionsOf.spyLedger, opts('spyLedger')) : noActions(ledgers[2]);
 
+  // T1a-2b-4: LATE AND CORRECTED DATA (adjustments.js) — each ledger's adjustments, after its actions and before its
+  // marks: a dividend first listed after the idea sold the stock (late_entitlement, T2D-03), a dividend a late split
+  // predates recomputed (late_basis, T2D-04), and the founder's corrections of settled ids (ruled_correction, T2D-05).
+  // Each posts into the ledger's own cash (the idea is open); none while the symbol is in doubt on the idea.
+  const adjusted = { ledger: null, comparisonLedger: null, spyLedger: null };
+  if (observed) {
+    const closedDoubt = (sym) => !dailyRefOk || dailyCoverageOf(daily, sym, parseReport).refusal !== null;
+    for (const [f, out, name] of [['ledger', own, 'idea'], ['comparisonLedger', cmp, 'comparison'], ['spyLedger', spy, 'spy']]) {
+      const closed = f === 'ledger' ? closedHoldingsOf(out.ledger, { entrySession: idea.entry?.sessionDate ?? null }) : new Map();
+      const doubtOn = (sym) => uncovered.has(sym) || (holds?.get(sym) || []).length > 0 || out.unresolved.has(sym) || (closed.has(sym) && closedDoubt(sym));
+      const plan = planLedgerAdjustments(out.ledger, {
+        ideaId: idea.ideaId, ledgerKind: name, date, rows: actionsOf[f], ruledIds: ruledIdsOf(f), closed, doubtOn,
+        postedTo: ADJUSTMENT_POSTED_TO.LEDGER, corrections: ruled?.amountCorrectionsByLedger?.[f] ?? [],
+      });
+      out.ledger = plan.ledger;
+      adjusted[f] = plan;
+      alerts.push(...plan.alerts);
+      for (const h of heldAdjustments(plan.ledger)) if (!plan.held.some((x) => x.id === h.id)) alerts.push(`PRACTICE_FIELD_ADJUSTMENT_HELD ${idea.ideaId} ${name} ${h.actionId} — a ${h.kind} debit of $${-h.amountUsd} still waits (${h.reason}), for the founder`);
+    }
+  }
+
   for (const [name, out] of [['idea', own], ['comparison', cmp], ['spy', spy]]) {
     const blocked = new Set([...renameBlocked, ...out.renamesBlocked.map((b) => b.from)]);
     for (const sym of blocked) {
@@ -406,6 +432,12 @@ function closeFilledIdea(idea, {
   for (const change of own.shareBasisChanges) {
     lines = lines.map((l) => (l.symbol === change.ticker
       ? { ...l, level: l.level / change.ratio, adjustments: [...(l.adjustments || []), { actionId: change.actionId, ratio: change.ratio, appliedOn: date }] }
+      : l));
+  }
+  // T1a-2b-4 (T2D-05): the founder's correction of a split's ratio moves the line's level by the same factor as the count.
+  for (const c of (ruled?.shareCorrections || []).filter((x) => x.field === 'ledger')) {
+    lines = lines.map((l) => (l.symbol === c.symbol
+      ? { ...l, level: l.level / c.factor, adjustments: [...(l.adjustments || []), { actionId: c.actionId, ratio: c.factor, appliedOn: date, correction: true }] }
       : l));
   }
   // A ticker change renames the line and its unobserved record with the holding (E11). No cash moves.
@@ -475,6 +507,12 @@ function closeFilledIdea(idea, {
     const m = markRulingsApplied(next, { date, skips, refusals });
     next = m.idea;
     alerts.push(...m.alerts);
+  }
+  // T1a-2b-4: an idea that already carries a result (settled, waiting for its settlement sale) keeps it; its readers show
+  // the adjustments posted after its endpoint beside it, with `wouldChangeLabel` (adjustments.js resultAdjustmentView).
+  if (next.result) {
+    const view = resultAdjustmentView(next);
+    if (view !== null) next.resultAdjustments = view;
   }
   // F-1: the coverage record, after this close (coverageAfterClose).
   {
@@ -638,10 +676,78 @@ function closeFilledIdea(idea, {
       statusHistory: [...(next.statusHistory || []), { status: IDEA_STATUS.RESULTED, at: nowIso }],
       ledger: { ...next.ledger, cash: 0 },
     };
-    return { nextIdea: next, row, endpointRow, returnedCents: done.returnedCents, resolved: true, ownApplied: own.applied, ownFrozen: ownV.frozen, alerts, coverageChanged: false };
+    return { nextIdea: next, row, endpointRow, returnedCents: done.returnedCents, resolved: true, ownApplied: own.applied, ownFrozen: ownV.frozen, alerts, coverageChanged: false, adjusted, shareCorrections: ruled?.shareCorrections ?? [] };
   }
   const coverageChanged = own.renames.length + cmp.renames.length + spy.renames.length > 0;
-  return { nextIdea: next, row, endpointRow, returnedCents: 0, resolved: false, ownApplied: own.applied, ownFrozen: ownV.frozen, alerts, coverageChanged };
+  return { nextIdea: next, row, endpointRow, returnedCents: 0, resolved: false, ownApplied: own.applied, ownFrozen: ownV.frozen, alerts, coverageChanged, adjusted, shareCorrections: ruled?.shareCorrections ?? [] };
+}
+
+/**
+ * T1a-2b-4: THE IDEAS OF A BOOK THAT RESULTED within the daily layer's look-back of `through` — the only ones a row first
+ * listed at that close can still be owed to (a row is listed for MANDATE_CA_FETCH_LOOKBACK_DAYS calendar days after its
+ * date, and a resulted idea held nothing after its liquidation completed). One single-field range query on the book's
+ * own `ideas` (`liquidation.completedSession`, which completedLiquidation writes on every resulted idea): served by the
+ * automatic single-field index, so no index is added. Read OUTSIDE any transaction; the close re-reads each one in its
+ * own. Shared with the daily build's inputs (sweep.js), which keep these ideas' symbols covered.
+ * @returns {Promise<Array<object>>}
+ */
+export async function recentlyResultedIdeas(bookRef, { through }) {
+  if (typeof through !== 'string') return [];
+  const cutoff = shiftCalendarDate(through, -(MANDATE_CA_FETCH_LOOKBACK_DAYS + 1));
+  const page = await bookRef.collection('ideas').where('liquidation.completedSession', '>=', cutoff).get();
+  return page.docs.map((d) => d.data()).filter((i) => i?.status === IDEA_STATUS.RESULTED && typeof i.ideaId === 'string');
+}
+
+/** T1a-2b-4: every symbol a resulted idea's ledgers held — what it sold, and what its paper ledgers held at its end. */
+export function resultedIdeaSymbols(idea) {
+  const out = new Set();
+  for (const r of idea?.ledger?.saleReceipts || []) if (typeof r?.symbol === 'string') out.add(upperSym(r.symbol));
+  for (const f of LEDGER_FIELDS) for (const sym of Object.keys(idea?.[f]?.holdings || {})) out.add(upperSym(sym));
+  return [...out].sort();
+}
+
+/**
+ * T1a-2b-4: ONE RESULTED IDEA at an observed close — its late adjustments only (adjustments.js). Every holding of every
+ * ledger is CLOSED: the idea's own, at its sales; its comparison's and SPY line's, at its last close (`lastClosedOn`). Its
+ * own ledger's cash goes to the book's treasury (`treasuryCents` is what a debit may come from); its paper ledgers'
+ * adjustments are recorded beside the result. A symbol whose data this session does not cover (its daily entry and parse
+ * report), or with an open ambiguity on the ledger, waits. Its founder rulings are not applied here (a resulted idea
+ * takes none in this build: an ambiguous late row on it is recorded and alerted, and waits). Pure.
+ * @returns {null | { nextIdea: object, adjusted: object, treasuryCents: number, alerts: string[] }}
+ */
+function closeResultedIdea(idea, { date, actionsBySymbol, daily, dailyRefOk, parseReport, treasuryCents }) {
+  if (idea?.status !== IDEA_STATUS.RESULTED) return null;
+  const alerts = [];
+  const adjusted = {};
+  let changed = false;
+  let toTreasury = 0;
+  const next = { ...idea };
+  const uncoveredHere = (sym) => !dailyRefOk || dailyCoverageOf(daily, sym, parseReport).refusal !== null;
+  for (const [f, name] of [['ledger', 'idea'], ['comparisonLedger', 'comparison'], ['spyLedger', 'spy']]) {
+    const ledger = idea[f];
+    if (!ledger) continue;
+    const closed = closedHoldingsOf(ledger, { entrySession: idea.entry?.sessionDate ?? null, closedOn: f === 'ledger' ? null : (idea.lastClosedOn ?? null) });
+    if (closed.size === 0) continue;
+    const ambiguousSyms = new Set(openAmbiguities(ledger).map((r) => upperSym(r.ticker)));
+    const plan = planLedgerAdjustments(ledger, {
+      ideaId: idea.ideaId, ledgerKind: name, date, rows: actionsBySymbol, ruledIds: null, closed,
+      doubtOn: (sym) => uncoveredHere(sym) || ambiguousSyms.has(sym),
+      postedTo: f === 'ledger' ? ADJUSTMENT_POSTED_TO.TREASURY : ADJUSTMENT_POSTED_TO.PAPER_AFTER_RESULT,
+      availableCents: f === 'ledger' ? treasuryCents + toTreasury : Number.POSITIVE_INFINITY,
+    });
+    adjusted[f] = plan;
+    alerts.push(...plan.alerts);
+    if (plan.ledger !== ledger) { next[f] = plan.ledger; changed = true; }
+    if (f === 'ledger') for (const a of plan.posted) toTreasury += toCents(a.amountUsd);
+  }
+  if (!changed) return null;
+  const view = resultAdjustmentView(next);
+  if (view !== null) next.resultAdjustments = view;
+  next.revision = (idea.revision || 0) + 1;
+  for (const [f, plan] of Object.entries(adjusted)) {
+    for (const a of plan.posted) alerts.push(`PRACTICE_FIELD_ADJUSTMENT_POSTED ${idea.ideaId} ${f} ${a.actionId} ${a.kind} $${a.amountUsd} — after the idea's result (${a.postedTo}); the result stands, its view shows it${view?.wouldChangeLabel ? ' — and it WOULD change the label' : ''}`);
+  }
+  return { nextIdea: next, adjusted, treasuryCents: toTreasury, alerts };
 }
 
 /**
@@ -678,6 +784,17 @@ async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false, w
     }
     // E12: the session this transaction closes — the first one the book has missed, or the requested date.
     const missed = firstUnclosedSessionBefore(book, ideas, date);
+    // T1a-2b-4: the ideas that RESULTED within the daily layer's look-back of the session (recentlyResultedIdeas — a query,
+    // then each one read in this transaction), for their late adjustments below. An open idea is never one of them.
+    const resultedIdeas = [];
+    {
+      const through = missed ?? date;
+      for (const found of await recentlyResultedIdeas(bookRef, { through })) {
+        if ((book.openIdeaIds || []).includes(found.ideaId)) continue;
+        const snap = await tx.get(bookRef.collection('ideas').doc(found.ideaId));
+        if (snap.exists && snap.data()?.status === IDEA_STATUS.RESULTED) resultedIdeas.push(snap.data());
+      }
+    }
     // T2B-02 — THE WINDOW LEDGER'S OWN CURSOR (windowLedger.js). Every session the book was due since its creation is
     // accounted for, in order, before the cursor passes it: a session BEFORE the one this transaction values — before
     // any idea filled, or any close ran — gets its close row here (`valued: false`), with its missing windows and their
@@ -725,10 +842,16 @@ async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false, w
     // and carried. The collection by its literal name, for the protected-store scan.
     let daily = null;
     let dailyRefOk = false;
+    let parseReport = null;
     if (observed) {
       const dailySnap = await tx.get(db.collection('mandateUniverseDaily').doc(session));
       daily = dailyDocOf(dailySnap.exists ? dailySnap.data() : null, session);
       dailyRefOk = snapshotNamesDaily(closeSnapshot, session);
+      // T1a-2b-4 (T2D-12): THE SESSION'S PARSE REPORT (caParseReport.js), read in the same transaction — part of each held
+      // symbol's coverage (dailyCoverage.js dailyCoverageOf): a missing report, a rejected row or a malformed envelope is
+      // a session of doubt. The collection by its literal name, for the protected-store scan.
+      const reportSnap = await tx.get(db.collection('practiceFieldCaParseReports').doc(session));
+      parseReport = reportSnap.exists ? reportSnap.data() : null;
     }
     const actionsBySymbol = !observed ? {}
       : (dailyRefOk ? unionActionsBySymbol(caActionsBySymbol(closeSnapshot), dailyActionsBySymbol(daily)) : unionActionsBySymbol(dailyActionsBySymbol(daily)));
@@ -749,7 +872,7 @@ async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false, w
           // the vendor added since (a split, a dividend): without it a 20-session catch-up closed every session on
           // the old rows and valued the book as if neither existed, at full quality.
           if (typeof coveredThrough === 'string'
-            && (catchUp || sessionCoverage({ symbol: sym, session, coveredThrough, daily, dailyRefOk }).readBackfill)) {
+            && (catchUp || sessionCoverage({ symbol: sym, session, coveredThrough, daily, dailyRefOk, parseReport }).readBackfill)) {
             const snap = await tx.get(db.collection('practiceFieldCaBackfill').doc(backfillIdOf(sym)));
             const data = snap.exists ? snap.data() : null;
             backfill = successfulBackfill(data, sym, shiftCalendarDate(coveredThrough, 1));
@@ -791,6 +914,8 @@ async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false, w
     const bookActionDocs = [];
     const frozenBookSymbols = new Set();
     let allFullQuality = observed;
+    // T1a-2b-4: every adjustment this close posts or holds, [ideaId, ledger field, record], for its evidence document.
+    const adjustmentDocs = [];
     for (const idea of ideas) {
       if (!FILLED_IDEA_STATUSES.includes(idea.status)) continue;
       const heldByOthers = new Set(Object.entries(positions).filter(([, p]) => p?.ideaId !== idea.ideaId).map(([sym]) => sym));
@@ -804,7 +929,7 @@ async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false, w
       }
       const out = closeFilledIdea(idea, {
         date: session, closeSnapshot, actionsBySymbol, heldByOthers, sinceDate, snapshotMeta, nowIso, catchUp,
-        daily, dailyRefOk, coverageInputs: coverageInputsOf.get(idea.ideaId) ?? new Map(),
+        daily, dailyRefOk, coverageInputs: coverageInputsOf.get(idea.ideaId) ?? new Map(), parseReport,
       });
       nextIdeas.set(idea.ideaId, out.nextIdea);
       ideaRows[idea.ideaId] = out.row;
@@ -836,6 +961,21 @@ async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false, w
           note: applied.note,
         }]);
       }
+      // T1a-2b-4: the idea's own ADJUSTMENTS are cash of the book's too (an open idea's cash is part of the book's), and
+      // the founder's correction of a split's ratio moves the book's position as it moved the idea's holding — the same
+      // count, average cost and carried mark (reconcile.js rules 2 and 7). Each adjustment of each ledger is recorded
+      // beside the idea (its evidence document, created below).
+      for (const a of out.adjusted?.ledger?.posted || []) bookCash = fromCents(toCents(bookCash) + toCents(a.amountUsd));
+      for (const c of (out.shareCorrections || []).filter((x) => x.field === 'ledger')) {
+        const pos = positions[c.symbol];
+        if (!pos) continue;
+        const lastMark = Number(pos.lastMark);
+        positions = { ...positions, [c.symbol]: { ...pos, shares: c.sharesAfter, avgCost: (Number(pos.costBasisTotal) || 0) / c.sharesAfter, lastMark: Number.isFinite(lastMark) ? lastMark / c.factor : pos.lastMark } };
+      }
+      for (const [f, plan] of Object.entries(out.adjusted || {})) {
+        for (const a of plan?.posted || []) adjustmentDocs.push([idea.ideaId, f, a]);
+      }
+      for (const c of out.shareCorrections || []) adjustmentDocs.push([idea.ideaId, c.field, c.record]);
       if (out.endpointRow) endpoints[idea.ideaId] = out.endpointRow;
       const ideaRefKey = coverageRef(idea.bookId, idea.ideaId);
       if (out.resolved) {
@@ -853,6 +993,28 @@ async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false, w
         // E11: a renamed symbol is what the idea needs a price for from now on.
         coverageData = coverageWithRef(coverageData, ideaRefKey, ideaCoveragePlanFromLedgers(out.nextIdea), nowIso);
         coverageWrite = true;
+      }
+    }
+
+    // T1a-2b-4 (Astra T2D-03, T2D-04 after a result): THE IDEAS THAT RESULTED within the daily layer's look-back. Their
+    // result is never rewritten; a row first listed now that they were owed while they held the stock is posted as an
+    // adjustment — the idea's own ledger to the book's TREASURY (its cash went back there), its paper ledgers recorded
+    // beside the result (nothing moves on paper after a result) — with the view beside the result.
+    const resultedNext = new Map();
+    if (observed) {
+      for (const idea of resultedIdeas) {
+        const done = closeResultedIdea(idea, {
+          date: session, actionsBySymbol, daily, dailyRefOk, parseReport,
+          treasuryCents: toCents(working.treasury.unreservedCash),
+        });
+        if (done === null) continue;
+        alerts.push(...done.alerts);
+        resultedNext.set(idea.ideaId, done.nextIdea);
+        if (done.treasuryCents !== 0) {
+          working = { ...working, treasury: { ...working.treasury, unreservedCash: fromCents(toCents(working.treasury.unreservedCash) + done.treasuryCents) } };
+          bookCash = fromCents(toCents(bookCash) + done.treasuryCents);
+        }
+        for (const [f, plan] of Object.entries(done.adjusted)) for (const a of plan.posted) adjustmentDocs.push([idea.ideaId, f, a]);
       }
     }
 
@@ -1004,8 +1166,20 @@ async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false, w
       if (alert !== null) alerts.push(alert);
     }
 
+    // T1a-2b-4: each adjustment's evidence document, read first (every read before the first write): create-once — one
+    // already there under its deterministic id is the same correction, and a second write of it would abort the close.
+    const adjustmentWrites = [];
+    for (const [ideaId, field, a] of adjustmentDocs) {
+      const ref = evidenceRefOf(bookRef.collection('ideas').doc(ideaId), adjustmentDocIdOf(a.id));
+      const snap = await tx.get(ref);
+      if (snap.exists) continue;
+      adjustmentWrites.push([ref, sealAdjustment({ schemaVersion: 1, packet: 'adjustment', bookId: bookRef.id, ideaId, field, session, writtenAt: nowIso, ...a })]);
+    }
+
     // Commit.
     for (const [ref, doc] of bookActionDocs) tx.set(ref, doc);
+    for (const [ideaId, next] of resultedNext) tx.set(bookRef.collection('ideas').doc(ideaId), next);
+    for (const [ref, doc] of adjustmentWrites) tx.create(ref, doc);
     for (const [ideaId, next] of nextIdeas) {
       const prior = ideas.find((i) => i.ideaId === ideaId);
       if (next !== prior) tx.set(bookRef.collection('ideas').doc(ideaId), next);
@@ -1099,7 +1273,7 @@ async function closeNextSessionKeepingAlerts(db, bookRef, args, committedAlerts)
  * @returns {Promise<{ complete: boolean, skipped?: string, caughtUp: Array<{ date: string, observed: boolean }>,
  *                     cancelled: string[], resulted: string[], alerts: string[] }>}
  */
-export async function catchUpIdeaBook(db, bookRef, { before, now = new Date(), tick = null, fetchCorporateActions = undefined, lastCloseKey = undefined } = {}) {
+export async function catchUpIdeaBook(db, bookRef, { before, now = new Date(), tick = null, fetchCorporateActions = undefined, caFetchImpl = undefined, lastCloseKey = undefined } = {}) {
   if (!db || !bookRef) throw new Error('catchUpIdeaBook: db and bookRef required');
   if (typeof before !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(before)) throw new Error('catchUpIdeaBook: before required');
   const out = { complete: false, caughtUp: [], windowsAccounted: [], cancelled: [], resulted: [], alerts: [] };
@@ -1112,7 +1286,7 @@ export async function catchUpIdeaBook(db, bookRef, { before, now = new Date(), t
   // Fix-round refuter NF-2.)
   const nothingMissed = typeof lastCloseKey === 'string' && !(nextSessionDate(lastCloseKey) < before);
   if (!nothingMissed) {
-    const backfill = await ensureCoverageBackfills(db, bookRef, { through: before, now, ...(fetchCorporateActions ? { fetchCorporateActions } : {}) });
+    const backfill = await ensureCoverageBackfills(db, bookRef, { through: before, now, ...(fetchCorporateActions ? { fetchCorporateActions } : {}), ...(caFetchImpl ? { fetchImpl: caFetchImpl } : {}) });
     out.alerts.push(...backfill.alerts);
   }
   for (;;) {
@@ -1142,7 +1316,7 @@ export async function catchUpIdeaBook(db, bookRef, { before, now = new Date(), t
  * @returns {Promise<{ closed: boolean, skipped?: string, row?: object, ideaRows?: object, endpoints?: object,
  *                     cancelled?: string[], resulted?: string[], caughtUp: Array<{ date: string, observed: boolean }>, alerts: string[] }>}
  */
-export async function closeIdeaBook(db, bookRef, { date, now = new Date(), fetchCorporateActions = undefined } = {}) {
+export async function closeIdeaBook(db, bookRef, { date, now = new Date(), fetchCorporateActions = undefined, caFetchImpl = undefined } = {}) {
   if (!db || !bookRef) throw new Error('closeIdeaBook: db and bookRef required');
   if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('closeIdeaBook: date required');
   // 'off': no Practice Field code path runs, whoever calls. Before any read.
@@ -1154,7 +1328,9 @@ export async function closeIdeaBook(db, bookRef, { date, now = new Date(), fetch
   // Amendment F-1: BEFORE any session is closed, the backfill each long coverage gap needs, fetched through `date`
   // (caBackfill.js; outside the transactions, fenced — a failure only leaves the doubt). The first close after an
   // outage — the flag's time 'off' included — finds the gap and closes it from the backfill, in order.
-  const backfill = await ensureCoverageBackfills(db, bookRef, { through: date, now, ...(fetchCorporateActions ? { fetchCorporateActions } : {}) });
+  // (T1a-2b-4: `caFetchImpl`, the HTTP fetch under the backfill's parse report — the global fetch in production; a row
+  // hands a vendor fake, so the report observes what that fake answers.)
+  const backfill = await ensureCoverageBackfills(db, bookRef, { through: date, now, ...(fetchCorporateActions ? { fetchCorporateActions } : {}), ...(caFetchImpl ? { fetchImpl: caFetchImpl } : {}) });
   alerts.push(...backfill.alerts);
   const cancelled = [];
   const resulted = [];

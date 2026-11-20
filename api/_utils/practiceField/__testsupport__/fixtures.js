@@ -9,7 +9,7 @@
 import { makeMandateFakeDb } from '../../__testsupport__/mandateFakeFirestore.js';
 import { etWallClockToMs } from '../../../../src/utils/marketCalendar.js';
 import { resolveSessionSlots } from '../../mandateSessionSlots.js';
-import { SNAPSHOT_COLLECTION } from '../../mandateUniverseSnapshot.js';
+import { SNAPSHOT_COLLECTION, fetchCorporateActionsEODHD } from '../../mandateUniverseSnapshot.js';
 
 if (SNAPSHOT_COLLECTION !== 'mandateUniverseSnapshots') throw new Error('fixtures.js: the close-snapshot collection was renamed; update storeCloseSnapshot');
 import { PRACTICE_FIELD_FUNDS } from '../../../../src/data/practiceFieldFunds.js';
@@ -232,6 +232,59 @@ const fixtureDailyOf = (db) => { if (!FIXTURE_DAILY.has(db)) FIXTURE_DAILY.set(d
 function writeFixtureDaily(db, path, doc, cur, omitted) {
   db._store.set(path, { data: structuredClone(doc), version: (cur?.version || 0) + 1 });
   fixtureDailyOf(db).set(path, omitted ?? fixtureDailyOf(db).get(path) ?? new Set());
+  ensureFixtureParseReport(db, doc.date, Object.keys(doc.symbols || {}));
+}
+
+/**
+ * T1a-2b-4 (T2D-12): THE PARSE REPORT a daily build that covered a symbol writes beside its layer
+ * (`practiceFieldCaParseReports/{date}`, caParseReport.js) — production writes one wherever an idea book's coverage asks
+ * for the symbol, and a missing one is a day of doubt. So the fixtures write a CLEAN entry for every symbol they write a
+ * daily entry for (each answer parsed whole), straight into the fake's store; a row about a rejected row, a malformed
+ * envelope or a missing report writes its own (storeParseReport, omitParseReport), which a later stored snapshot never
+ * replaces.
+ */
+export const CLEAN_PARSE_LEG = Object.freeze({ answered: true, status: 200, envelope: 'list', received: 0, accepted: 0, noOp: 0, rejected: 0 });
+export const CLEAN_PARSE_ENTRY = Object.freeze({
+  rowsReceived: 0, rowsAccepted: 0, rowsNoOp: 0, rowsRejected: 0, rejects: [], malformedEnvelope: false,
+  legs: { splits: { ...CLEAN_PARSE_LEG }, dividends: { ...CLEAN_PARSE_LEG } }, at: null,
+});
+const FIXTURE_REPORT = new WeakMap(); // db → Map(date → Set of symbols a ROW wrote or removed: never overwritten)
+const rowOwnedReports = (db) => { if (!FIXTURE_REPORT.has(db)) FIXTURE_REPORT.set(db, new Map()); return FIXTURE_REPORT.get(db); };
+function ensureFixtureParseReport(db, date, symbols) {
+  if (typeof date !== 'string' || !db?._store) return;
+  const path = `practiceFieldCaParseReports/${date}`;
+  const cur = db._store.get(path);
+  const owned = rowOwnedReports(db).get(date) || new Set();
+  const entries = { ...(cur?.data?.symbols || {}) };
+  let added = false;
+  for (const sym of symbols) {
+    if (owned.has(sym) || Object.hasOwn(entries, sym)) continue;
+    entries[sym] = structuredClone(CLEAN_PARSE_ENTRY);
+    added = true;
+  }
+  if (!added && cur) return;
+  db._store.set(path, { data: { schemaVersion: 1, session: date, symbols: entries }, version: (cur?.version || 0) + 1 });
+}
+/** A row's own parse-report entry for one symbol of one session (a rejected row, a malformed envelope…). */
+export function storeParseReport(db, date, symbol, entry) {
+  const path = `practiceFieldCaParseReports/${date}`;
+  const cur = db._store.get(path);
+  const owned = rowOwnedReports(db).get(date) || new Set();
+  owned.add(symbol);
+  rowOwnedReports(db).set(date, owned);
+  const entries = { ...(cur?.data?.symbols || {}), [symbol]: structuredClone(entry) };
+  db._store.set(path, { data: { schemaVersion: 1, session: date, symbols: entries }, version: (cur?.version || 0) + 1 });
+}
+/** No parse report for `symbols` of a session (the build wrote none for them): removed, and kept out. */
+export function omitParseReport(db, date, symbols) {
+  const path = `practiceFieldCaParseReports/${date}`;
+  const cur = db._store.get(path);
+  const owned = rowOwnedReports(db).get(date) || new Set();
+  for (const sym of symbols) owned.add(sym);
+  rowOwnedReports(db).set(date, owned);
+  const entries = { ...(cur?.data?.symbols || {}) };
+  for (const sym of symbols) delete entries[sym];
+  db._store.set(path, { data: { schemaVersion: 1, session: date, symbols: entries }, version: (cur?.version || 0) + 1 });
 }
 
 /**
@@ -263,8 +316,12 @@ export function mergeDailyLayerOf(db, snap) {
   const date = snap.sessionDate;
   const path = `mandateUniverseDaily/${date}`;
   const cur = db._store.get(path);
-  // A layer a row wrote itself (not through the fixtures) is the engine's document as the row gives it: left alone.
-  if (cur && !fixtureDailyOf(db).has(path)) return cur.data;
+  // A layer a row wrote itself (not through the fixtures) is the engine's document as the row gives it: left alone (its
+  // parse report, as production's build would write it, is still ensured for its symbols — T1a-2b-4).
+  if (cur && !fixtureDailyOf(db).has(path)) {
+    ensureFixtureParseReport(db, date, Object.keys(cur.data?.symbols || {}));
+    return cur.data;
+  }
   const entries = { ...(cur?.data?.symbols || {}) };
   const omitted = fixtureDailyOf(db).get(path) || new Set();
   const covered = new Set(Object.keys(db._store.get('practiceFieldCoverage/current')?.data?.symbols || {}));
@@ -369,7 +426,7 @@ export async function entryPassWith(db, { snapshot, ...rest }) {
  * no Practice Field path writes, and which a row using the shims above places for the fill to read (a stored snapshot
  * writes its session's daily layer, mergeDailyLayerOf). What a money path wrote, or did not.
  */
-export const moneyStoreBytes = (db) => JSON.stringify([...db._store.entries()].filter(([path]) => !path.startsWith('mandateUniverseSnapshots/') && !path.startsWith('mandateUniverseDaily/')));
+export const moneyStoreBytes = (db) => JSON.stringify([...db._store.entries()].filter(([path]) => !path.startsWith('mandateUniverseSnapshots/') && !path.startsWith('mandateUniverseDaily/') && !path.startsWith('practiceFieldCaParseReports/')));
 
 /** The instant a fixture window runs: two minutes into the slot. */
 export function slotNowOf(date, slot = 'open30') {
@@ -505,6 +562,45 @@ export async function founderRules(db, bookId, ideaId, body, { uid = 'owner-1', 
     if (prev === undefined) delete process.env.MANDATE_FOUNDER_UIDS;
     else process.env.MANDATE_FOUNDER_UIDS = prev;
   }
+}
+
+
+/**
+ * T1a-2b-4 (T2D-12): A VENDOR FAKE BEHIND A ROW'S STUB. The backfill now records a parse report of what the vendor
+ * answered (caBackfill.js, caParseReport.js): it observes the HTTP answers through the daily builder's own fetch. A row
+ * that hands a stub — `(sym, { from, to }) => ({ actions, calls, failed })` — gets back the pair the close takes:
+ * `fetchCorporateActions`, the daily builder's own fetch (with a fixture key), and `caFetchImpl`, an HTTP fake that answers
+ * each leg with the stub's rows written back in the vendor's shape (`{ date, split: 'r/1' }`, `{ date, unadjustedValue }`).
+ * A failed stub fails the leg its rows do not need (both, with none); a non-list `actions` is served as the envelope.
+ * `onCall(sym, opts)` — the stub's own calls are made once per symbol and window.
+ */
+export function vendorAnswering(stub) {
+  const memo = new Map();
+  const answerOf = (sym, from, to) => {
+    const key = `${sym}|${from}|${to}`;
+    if (!memo.has(key)) memo.set(key, Promise.resolve().then(() => stub(sym, { from, to })));
+    return memo.get(key);
+  };
+  const caFetchImpl = async (url) => {
+    const u = new URL(url);
+    const leg = u.pathname.includes('/splits/') ? 'splits' : 'dividends';
+    const sym = decodeURIComponent(u.pathname.split('/').pop()).replace(/\.US$/, '');
+    const res = await answerOf(sym, u.searchParams.get('from'), u.searchParams.get('to'));
+    const actions = res?.actions;
+    if (!Array.isArray(actions)) return { ok: true, status: 200, json: async () => actions ?? null };
+    const splits = actions.filter((a) => ['split', 'reverse_split', 'stock_distribution'].includes(a?.type));
+    const divs = actions.filter((a) => a?.type === 'cash_dividend');
+    if (res?.failed !== false) {
+      const failLeg = splits.length > 0 && divs.length === 0 ? 'dividends' : (divs.length > 0 && splits.length === 0 ? 'splits' : 'both');
+      if (failLeg === 'both' || failLeg === leg) return { ok: false, status: 503, json: async () => ({}) };
+    }
+    const body = leg === 'splits'
+      ? splits.map((a) => ({ date: a.effectiveDate, split: `${a.ratio}/1` }))
+      : divs.map((a) => ({ date: a.effectiveDate, unadjustedValue: a.amount }));
+    return { ok: true, status: 200, json: async () => body };
+  };
+  const fetchCorporateActions = (sym, opts = {}) => fetchCorporateActionsEODHD(sym, { ...opts, apiKey: 'fixture-vendor-key', fetchImpl: opts.fetchImpl ?? caFetchImpl });
+  return { fetchCorporateActions, caFetchImpl, fetchImpl: caFetchImpl };
 }
 
 /** Read helpers. */
