@@ -152,7 +152,7 @@ This was one masked read of `agentBattles` (`ownerId`, `gameMode`, `isCpu`, `sta
 
 The `off`-baseline comparison of the first build no longer drives any line; the stage read's own tables (`--detail`) still show it. The verdict ranks STOP over PAUSE, PAUSE over CHECK, and CHECK over ok. It is `no data` only when no line could judge anything.
 
-**One reading of Q-1 to confirm.** "Below 60 checks, print CHECK with the counts" is built as: the same above-2 % rate, over fewer than 60 checks, prints CHECK instead of STOP. Under 60 checks with no timeouts, or at most 2 %, the line is `ok` and still shows the counts (Nov 19: 0 timeouts in 32 checks). The other reading would print CHECK on every day with fewer than 60 checks in the window. That changes one line (`beta-daily-readout.mjs`, the `cockpitTimeouts` CHECK branch) if the founder wants it.
+**One reading of Q-1, confirmed by the founder on 20 Nov ("keep it as built").** "Below 60 checks, print CHECK with the counts" is built as: the same above-2 % rate, over fewer than 60 checks, prints CHECK instead of STOP. Under 60 checks with no timeouts, or at most 2 %, the line is `ok` and still shows the counts (Nov 19: 0 timeouts in 32 checks). The other reading, CHECK on every day with fewer than 60 checks in the window, was not taken.
 
 **Tests** (`scripts/beta-daily-readout.test.js`, 57 rows; the neighbours `cockpit-release-read.test.js` and `eval-capacity-read.limits.test.js` are unchanged and green):
 - **Thresholds.** Every rule on both sides of its line and at the line itself, including the timeout STOP's 2 % and 60-check edges, its window, and that `invalid_tool_result`, 400s and the sweep lag never STOP; each constant against a value between it and a nearby wrong value; every `no data` path, including NaN and null.
@@ -311,7 +311,7 @@ Optional hygiene. Each `evalSessionDaily` document carries a three-day `expiresA
 
 ## 7. Founder questions, answered 20 Nov 2026 and built
 
-- **Q-1. The cockpit STOP rule had no `off` baseline once `shareBp` is 10000.** Ruled: absolute limits, only for what the cockpit can cause (verbatim in §2). Built (§4): one STOP, for `on` timeouts above 2 % over three sessions with at least 60 checks. `invalid_tool_result` and 400s are CHECK lines. One reading is noted in §4 for confirmation.
+- **Q-1. The cockpit STOP rule had no `off` baseline once `shareBp` is 10000.** Ruled: absolute limits, only for what the cockpit can cause (verbatim in §2). Built (§4): one STOP, for `on` timeouts above 2 % over three sessions with at least 60 checks. `invalid_tool_result` and 400s are CHECK lines. The founder confirmed the one reading noted in §4.
 - **Q-2. The sweep-lag bound.** Ruled: 30 minutes, as a CHECK line, not STOP. Built as `CHECK_SWEEP_LAG_MS`.
 
 ## 8. Part E: verification reads (appended each time the control document changes)
