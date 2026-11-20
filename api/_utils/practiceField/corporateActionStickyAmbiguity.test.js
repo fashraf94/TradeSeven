@@ -651,6 +651,22 @@ describe('AR2-RF — the final refuter on the fixes: each probe as a row', () =>
     expect(divs(ideaOf(c))).toEqual([99.97, 99.97]);
   });
 
+  // …and against what is already SETTLED (the battery's R3-M17 survived without this row: the pairing above caught every
+  // in-call case): the vendor's $1 was paid at a covered close; the founder then picks a backfill row of the same $1 under
+  // the next session through a coverage-gap ruling — a possible re-date of the paid one, held; it was paid again.
+  it('AR3-RF-5: a coverage-gap row repeating a dividend already PAID under the session before is a possible re-date — not paid twice', async () => {
+    const c = await start();
+    await close(c, 0);
+    await close(c, 1, 100, [div(1, 1)]);
+    expect(divs(ideaOf(c))).toEqual([99.97, 99.97]);
+    await uncoveredClose(c, 2, 100, []);
+    await c.db.doc('practiceFieldCaBackfill/AAPL').set({ schemaVersion: 1, symbol: 'AAPL', from: S[2], to: S[2], failed: true, actions: [div(2, 1)], calls: 2, fetchedAt: '2026-11-18T23:00:00.000Z', source: 'idea_book_backfill' });
+    expect((await rule(c, { kind: 'coverage_gap', recordId: `ca_coverage_gap_AAPL_${S[1]}`, decision: 'row', actionId: `cash_dividend_AAPL_${S[2]}` }, 'rf5s')).status).toBe(200);
+    await close(c, 3, 100, []);
+    expect(divs(ideaOf(c))).toEqual([99.97, 99.97]);
+    expect(unsettledRedates(ideaOf(c).ledger).map((r) => [r.actionId, r.redateOf])).toEqual([[`cash_dividend_AAPL_${S[2]}`, `cash_dividend_AAPL_${S[1]}`]]);
+  });
+
   it('AR2-RF-2: a founder rename into a ticker another idea holds is refused at the close — the ruling closes with its reason and the record takes another', async () => {
     const ctx = await seedBook();
     const [a] = await admitAllThenEnter(ctx.db, ctx.bookId, [
