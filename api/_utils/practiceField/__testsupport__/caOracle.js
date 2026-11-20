@@ -199,11 +199,13 @@ export class InputOracle {
     return false;
   }
 
-  /** A re-date through a founder split's account, where the other row's id was settled by the FEED on this ledger before the
+  /** A re-date through a founder split's account, where the other row's id was settled on this ledger before the
    *  ruling: excused, as built (T2D-11: a settled action explained a move of its own; the founder answered a later one). */
   founderSettledFirst(l, m) {
     const { other, at } = m.via.founder;
-    const settled = (l.corporateActionReceipts || []).some((r) => r?.actionId === other && !r.founderRuling && (r.applied === true || r.reason === 'not_entitled')
+    // (Settled by the feed OR by the founder — a conflict ruling's payload or `none` — before the split ruling: the final soak's
+    // 1911203378, where the founder had chosen 1.25 over the vendor's 2 for an earlier split, then ruled 2:1 for a later halving.)
+    const settled = (l.corporateActionReceipts || []).some((r) => r?.actionId === other && (r.applied === true || r.reason === 'not_entitled' || r.reason === 'founder_ruled_none')
       && typeof (r.appliedOn ?? r.seenOn) === 'string' && (at == null || (r.appliedOn ?? r.seenOn) < this.S[at]));
     if (settled) this.founderExcused += 1;
     return settled;

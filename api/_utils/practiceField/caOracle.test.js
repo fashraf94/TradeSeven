@@ -129,6 +129,11 @@ describe('the independent I-2 oracle — ambiguity from the inputs, authorizatio
     const l = ideaWith([split(SPLIT1, 2, S[1])], { shares: 199.940016 }).ledger;
     expect(settled.ambiguousSinceOn(l, SPLIT2)).toBeNull();
     expect(settled.founderExcused).toBeGreaterThan(0);
+    // …settled by the founder's own conflict ruling too (the final soak's 1911203378: she chose another ratio for that id).
+    const byFounder = ideaWith([split(SPLIT1, 1.25, S[1], { founderRuling: { kind: 'conflict' } })], { shares: 124.96251 }).ledger;
+    expect(settled.ambiguousSinceOn(byFounder, SPLIT2)).toBeNull();
+    // …but not by one settled only AFTER the ruling: then the two are possible re-dates of each other.
+    expect(settled.ambiguousSinceOn(ideaWith([split(SPLIT1, 2, S[3])], { shares: 199.940016 }).ledger, SPLIT2)).toBe(3);
   });
   it('AR3-O2: a vendor ratio listed for the id at an EARLIER close that differs from the founder\'s pending split makes the id ambiguous', () => {
     const o = new InputOracle(S);
