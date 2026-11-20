@@ -1134,5 +1134,10 @@ export const FIXED_LATE = [
 /** T1a-2b-4: the late soak's findings, kept as fixed seeds of the late generator (each failed at the commit before its fix):
  *  1911240021 a late entitlement's place among the receipts; 1795727711, 1795727357 the book's mirror of a ruled split
  *  correction; 1795729395, 1795728065 a closed holding's row that waited on a doubt; 1795731088, 1795732944, 1795729025 a
- *  closed holding's re-date screen and the rows dated outside its holding. */
-export const LATE_SOAK_SEEDS = [1911240021, 1795727711, 1795727357, 1795729395, 1795728065, 1795731088, 1795732944, 1795729025];
+ *  closed holding's re-date screen and the rows dated outside its holding; 1795727403, 1795729529, 1795731153, 1795731607
+ *  a ruled id left in the hold set (the final soak). */
+export const LATE_SOAK_SEEDS = [1911240021, 1795727711, 1795727357, 1795729395, 1795728065, 1795731088, 1795732944, 1795729025,
+  // The final soak at de858e26 (I-5): a ruling that settles a sold holding's split record at its close left that record in
+  // the hold set the other ledgers' appliers read, so the comparison's later dividend waited at the ruling's close and the
+  // re-run paid it. Each failed at de858e26.
+  1795727403, 1795729529, 1795731153, 1795731607];

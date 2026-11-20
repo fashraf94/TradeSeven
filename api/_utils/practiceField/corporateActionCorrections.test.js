@@ -595,6 +595,17 @@ describe('the battery\'s rows — each a behaviour of this build no other row pi
     expect(got).toEqual({ [S[3]]: [roundUsd(199.940016 * 0.5), 199.940016], [S[1]]: [roundUsd(199.940016 * 2), 199.940016] });
   });
 
+  it('T2D-03: a dividend dated after the purchase and BEFORE a split applied while held, first listed after the sale, is paid on the count before the split (the ex-date count, not the count at the sale)', async () => {
+    const c = await start();
+    await close(c, 0);
+    await close(c, 1);
+    await close(c, 2, 50, [spl(2, '2/1')]); // a 2-for-1 dated Nov 18, listed on time: 199.940016 shares
+    expect(ideaOf(c).ledger.holdings.AAPL.shares).toBe(199.940016);
+    await sellOnLine(c, 3); // below the line Nov 19, sold Nov 20
+    await close(c, 4, belowLine(c), [div(1, 1)]); // $1 dated Nov 17, listed Nov 20
+    expect(adjustmentsOf(c).map((a) => [a.kind, a.amountUsd, a.entitledShares])).toEqual([[ADJUSTMENT_KIND.LATE_ENTITLEMENT, 99.97, SH]]);
+  });
+
   it('T2D-03: the late row waits while the session\'s data does not cover the sold symbol (its parse report missing), and is paid at the first close that covers it', async () => {
     const c = await start();
     await close(c, 0);

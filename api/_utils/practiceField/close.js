@@ -374,6 +374,15 @@ function closeFilledIdea(idea, {
   const screen = (ledger, f) => (observed ? withBasisSuspicions(ledger, closeSnapshot, actionsOf[f], { sinceDate, date, delistingWaiting, skip: uncovered, ruledIds: ruledIdsOf(f), pricesUsable: dailyRefOk, holds: dryHolds }).ledger : ledger);
   const ledgers = LEDGER_FIELDS.map((f) => screen(idea[f], f));
   const holds = observed ? shareBasisHolds(ledgers, LEDGER_FIELDS.map((f) => actionsOf[f]), { date, ruledIds: LEDGER_FIELDS.map(ruledIdsOf), holds: dryHolds }) : null;
+  // (T1a-2b-4 — the late soak's 1795727403, I-5: an id a pending ruling settles at this close is the ruling's on a holding
+  // since closed too, where the plan below applies it. For a held symbol the dry run already applied it; for a closed one
+  // it stood in the hold set and held the comparison's later dividend at the ruling's own close — and a re-run paid it.)
+  if (holds) {
+    for (const [sym, items] of [...holds]) {
+      const kept = items.filter((i) => !LEDGER_FIELDS.some((g) => ruledIdsOf(g)?.has(i.actionId)));
+      if (kept.length === 0) holds.delete(sym); else if (kept.length !== items.length) holds.set(sym, kept);
+    }
+  }
   for (const [sym, items] of coverageHolds) holds.set(sym, [...(holds.get(sym) || []), ...items]);
   // (AR2-IR-2: a rename waits idea-wide while its symbol has an open ambiguity on any ledger — a cash one too.)
   const deferRenames = holds ? new Set([...holds.keys(), ...ledgers.flatMap((l) => openAmbiguities(l).filter((r) => r.type !== 'ticker_change' && !LEDGER_FIELDS.some((g) => ruledIdsOf(g)?.has(r.actionId))).map((r) => String(r.ticker || '').trim().toUpperCase()))]) : null;
