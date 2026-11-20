@@ -383,6 +383,9 @@ async function runInner(plan, expose) {
     ...(Number(initialOf.spyLedger?.shares) > 0 ? { spyLedger: { sym: 'SPY', entryShares: Number(initialOf.spyLedger.shares), boughtAt: 0, soldAt: null } } : {}),
   });
   const entryOf = Object.fromEntries(LEDGERS.map((f) => [f, Object.fromEntries(Object.entries(entered[f].holdings).map(([s, h]) => [s, { shares: h.shares }]))]));
+  // (The ledgers an accepted ruling covers, as the endpoint recorded it — Astra T2D-09: a conflict ruling belongs to the
+  // ledgers whose record it covers; a ledger that never carried the record keeps the feed's rows of the id.)
+  const ledgersRuled = (requestKey) => getIdea(c.db, c.bookId, c.ideaId).founderRulings?.find((x) => x?.requestKey === requestKey)?.ledgers ?? null;
   const nextCloseOf = (n) => plan.steps.slice(n).find((s) => s.kind === 'close' || s.kind === 'catchup')?.i ?? null;
   let closes = 0;
   const keep = {};
@@ -394,7 +397,7 @@ async function runInner(plan, expose) {
     if (step.kind === 'expectIdea') { step.fn(getIdea(c.db, c.bookId, c.ideaId), getBook(c.db, c.bookId), `${plan.seed} step ${n}`, { row: (date) => getRow(c.db, c.bookId, c.ideaId, date), keep }); continue; }
     if (step.kind === 'rule') {
       const asked = await ruleSomething(c, step.pick, step.decision, step.splitOk === true);
-      if (asked) inputs.ruling(asked.body, asked.out, asked.requestKey, nextCloseOf(n));
+      if (asked) inputs.ruling(asked.body, asked.out, asked.requestKey, nextCloseOf(n), ledgersRuled(asked.requestKey));
       continue;
     }
     // T1a-2b-4: a WINDOW of S[i] — the idea's line sale fills here (the close before it found the price below the line).
@@ -412,13 +415,13 @@ async function runInner(plan, expose) {
     }
     if (step.kind === 'lateExact') {
       const out = await founderRules(c.db, c.bookId, c.ideaId, step.body, { requestKey: `fixed-${n}`, expectOk: false });
-      inputs.ruling(step.body, out, `fixed-${n}`, nextCloseOf(n));
+      inputs.ruling(step.body, out, `fixed-${n}`, nextCloseOf(n), ledgersRuled(`fixed-${n}`));
       expect(out.status, `${plan.seed} late ${n} ${JSON.stringify(out.body ?? out)}`).toBe(step.status ?? 200);
       continue;
     }
     if (step.kind === 'ruleExact' || step.kind === 'ruleTry') {
       const out = await founderRules(c.db, c.bookId, c.ideaId, step.body, { requestKey: `fixed-${n}`, expectOk: false });
-      inputs.ruling(step.body, out, `fixed-${n}`, nextCloseOf(n));
+      inputs.ruling(step.body, out, `fixed-${n}`, nextCloseOf(n), ledgersRuled(`fixed-${n}`));
       if (step.kind === 'ruleExact') expect(out.status, `${plan.seed} ruling ${n}`).toBe(step.status ?? 200);
       continue;
     }
@@ -1015,7 +1018,7 @@ export const LATE_KINDS = ['sale', 'late_after_sale', 'late_after_sale_ambiguous
   'coverage_failure', 'dividend_on_time', 'spy_dividend', 'founder_ruling', 'comparison_same_stock', 'comparison_frozen_basket', 'comparison_sector_fund'];
 const LATE_AMOUNTS = [0.31, 0.47, 0.62, 0.83, 1, 1.07, 1.19, 1.38, 1.66, 2.14, 0.58, 0.94];
 
-export function generateLate(seed, { shapes = false } = {}) {
+export function generateLate(seed, { shapes = false, refuter = false } = {}) {
   const r = rng(seed);
   const n = 8 + r.int(5);
   let comparison = r.pick([{ type: 'same_stock_held' }, { type: 'frozen_basket', symbols: ['AAPL', 'MSFT'] }, { type: 'sector_fund', symbols: ['XLK'] }]);
@@ -1105,15 +1108,22 @@ export function generateLate(seed, { shapes = false } = {}) {
   //   out_of_order_splits_round    T2E-04: a 4-for-5 and a 2-for-1 a session apart, the first listed after the second, a dividend
   //   opposite_same_date_ids       T2E-06: a 10-for-1 and a 1-for-10 of one date, a dividend of it, the price at ×0.10–0.104
   //   rejected_before_sale_sector  T2E-08: a sector comparison, a rejected row dated in the sold holding, then a dividend of it
+  // and (`refuter: true`, a mode of its own so the six keep their seeds) THE FIX ROUND REFUTER'S SHAPES, each with the
+  // founder's approval of the proposal asked for after the close that made it:
+  //   proposal_then_pair           R-1: a sold holding's proposal, then dropped and its payload listed under two other dates
+  //   proposal_moved_past_sale     R-3: a sold holding's proposal, then dropped and its payload listed dated after the sale
+  //   paid_then_pairs_held         R-1b: a dividend paid on time, a split before it listed late (late_basis), then two rows
+  //                                of its payload under other dates within the window
   let shape = null;
   let noBelowLine = false;
   const priceFactor = new Map(); // session → a factor on the split-following price (T2E-06's drift)
-  const o = shapes ? rng((seed ^ 0x2e7a1c3b) >>> 0) : null;
-  if (shapes) {
-    shape = o.pick(LATE_SHAPES);
+  const o = shapes || refuter ? rng((seed ^ 0x2e7a1c3b) >>> 0) : null;
+  if (shapes || refuter) {
+    shape = refuter ? o.pick(REFUTER_SHAPES) : o.pick(LATE_SHAPES);
     kinds.add(`shape_${shape}`);
     const amountO = () => { const free = LATE_AMOUNTS.filter((a) => !used.includes(a)); const a = free.length > 0 ? o.pick(free) : o.pick(LATE_AMOUNTS); used.push(a); return a; };
-    const needSale = ['two_dates_one_close', 'moved_across_sale', 'rejected_before_sale_sector'].includes(shape);
+    const approveAfter = (i) => rulesAfter.set(i, [...(rulesAfter.get(i) || []), { kind: 'late', pick: o.next(), decision: o.next() * 0.7 }]);
+    const needSale = ['two_dates_one_close', 'moved_across_sale', 'rejected_before_sale_sector', 'proposal_then_pair', 'proposal_moved_past_sale'].includes(shape);
     if (needSale && (sk < 0 || sk > n - 5)) { sk = 2 + o.int(2); kinds.add('sale'); }
     if (shape === 'rejected_before_sale_sector') { comparison = { type: 'sector_fund', symbols: ['XLK'] }; kinds.delete('comparison_same_stock'); kinds.delete('comparison_frozen_basket'); kinds.add('comparison_sector_fund'); }
     if (shape === 'two_dates_one_close') {
@@ -1164,6 +1174,39 @@ export function generateLate(seed, { shapes = false } = {}) {
       parseAt.set(at, { reject: rd });
       const dd = Math.max(rd, at + 1 - WINDOW);
       if (dd <= sk + 1) list('AAPL', 'cash_dividend', dd, at + 1, [amountO()]);
+    } else if (shape === 'proposal_then_pair') {
+      const x = amountO();
+      const d1 = 1 + o.int(sk);
+      const l1 = sk + 2;
+      const l2 = l1 + 1 + o.int(2);
+      if (l2 <= n - 1 && l2 - d1 <= WINDOW) {
+        const id1 = list('AAPL', 'cash_dividend', d1, l1, [x]);
+        feed.get(id1).versions.push({ from: l2, payloads: [] });
+        for (const d of new Set([d1 + 1, o.chance(0.5) ? d1 - 1 : sk + 2])) if (d >= 1 && d !== d1 && d <= l2 && l2 - d <= WINDOW) list('AAPL', 'cash_dividend', d, l2, [x]);
+        approveAfter(l1);
+      }
+    } else if (shape === 'proposal_moved_past_sale') {
+      const x = amountO();
+      const d1 = sk + o.int(2);
+      const l1 = sk + 2 + o.int(2);
+      const l2 = l1 + 1;
+      const after = sk + 2 + o.int(2);
+      if (l2 <= n - 1 && l2 - d1 <= WINDOW) {
+        const id1 = list('AAPL', 'cash_dividend', d1, l1, [x]);
+        feed.get(id1).versions.push({ from: l2, payloads: [] });
+        list('AAPL', 'cash_dividend', after, l2, [x]);
+        approveAfter(l1);
+      }
+    } else if (shape === 'paid_then_pairs_held') {
+      sk = -1; kinds.delete('sale');
+      const d = 2 + o.int(Math.max(1, n - 6));
+      const x = amountO();
+      list('AAPL', 'cash_dividend', d, d, [x]);
+      const ratio = o.pick(RATIOS);
+      list('AAPL', 'split', d - 1, d + 1, [ratio]);
+      truthSplits.push({ d: d + 1, ratio: ratioOf(ratio) }); // (the price follows when the split is listed, as in T2E-03)
+      if (d + 2 <= n - 1) for (const dd of [d + 1, d + 2]) list('AAPL', 'cash_dividend', dd, d + 2, [x]);
+      approveAfter(d + 1);
     }
   }
   const priceAt = (i) => {
@@ -1188,12 +1231,14 @@ export function generateLate(seed, { shapes = false } = {}) {
     for (const x of rulesAfter.get(i) || []) steps.push(x);
     if (i > 0 && r.chance(0.15)) { steps.push({ kind: 'rule', pick: r.next(), decision: r.next() }); kinds.add('founder_ruling'); }
     // (The founder's decisions on late proposals — approve 70%, decline 30% — after a close, in shape histories.)
-    if (shapes && i > 0 && o.chance(0.4)) { steps.push({ kind: 'late', pick: o.next(), decision: o.next() }); kinds.add('late_decision'); }
+    if ((shapes || refuter) && i > 0 && o.chance(0.4)) { steps.push({ kind: 'late', pick: o.next(), decision: o.next() }); kinds.add('late_decision'); }
   }
   return { seed, steps, comparison, kinds: [...kinds].sort(), clean: false, late: true, n, saleAt: sk >= 0 ? sk + 1 : null, ...(shape ? { shape } : {}) };
 }
 /** T1a-2b-4 fix round: the shapes Astra found missing (generateLate's `shapes`). */
 export const LATE_SHAPES = ['two_dates_one_close', 'moved_across_sale', 'late_split_pending_revision', 'out_of_order_splits_round', 'opposite_same_date_ids', 'rejected_before_sale_sector'];
+/** T1a-2b-4 fix round: the independent refuter's shapes (generateLate's `refuter`). */
+export const REFUTER_SHAPES = ['proposal_then_pair', 'proposal_moved_past_sale', 'paid_then_pairs_held'];
 
 // ── T1a-2b-4: ASTRA'S FOUR REPRODUCTIONS, AS FIXED CASES through every check (I-1 to I-6) ────────────────────────────
 const lc = (i, aapl, rows = [], extra = {}) => ({ kind: 'close', i, prices: { AAPL: aapl, SPY: 500 }, rowsBySym: { AAPL: rows, SPY: [] }, uncoveredSyms: [], ...extra });

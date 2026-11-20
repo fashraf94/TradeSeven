@@ -73,9 +73,9 @@ export class InputOracle {
   }
 
   /** A founder request the harness made, before the close of index `nextClose`. */
-  ruling(body, out, requestKey, nextClose) {
+  ruling(body, out, requestKey, nextClose, ledgers = null) {
     const status = out?.status ?? null;
-    this.rulings.push({ at: nextClose, body, status, requestKey });
+    this.rulings.push({ at: nextClose, body, status, requestKey, ...(Array.isArray(ledgers) ? { ledgers } : {}) });
     // (T1a-2b-4 fix round, L-1: a `late_adjustment` approval or decline names one proposal — its ledger and action id are in
     // its record id, `late_<ledger>_<actionId>[_n]`.)
     if (body?.kind === 'late_adjustment') {
@@ -396,6 +396,9 @@ export class InputOracle {
 // `ruled_correction` an accepted conflict ruling for the id choosing its payload; a late adjustment an accepted
 // `late_adjustment` approval naming that ledger and id (or, for a closed holding's row the founder settled, the conflict
 // ruling choosing its payload), each made before the close that posted it — and never more postings than approvals.
+// The fix round's refuter found I-7 accepted an approval L-2 must refuse (two rows of one close pairing only with each
+// other, and the proposal they both paired with posted): an approval alone authorizes a posting only while the inputs show
+// no ambiguity of the id at or before that close, unless the founder's conflict ruling answered it (checkRefusalAtPosting).
 
 /** A proposal's record id, `late_<ledger>_<actionId>[_<n>]` → { ledger field, actionId }, or null. */
 const PROPOSAL_LEDGER = { idea: 'ledger', comparison: 'comparisonLedger', spy: 'spyLedger' };
@@ -414,13 +417,18 @@ export class EntitlementOracle {
     this.refused = 0;
     this.nothingOwed = 0;
     this.authorityChecks = 0;
+    this.refusalChecks = 0;
     this.byKind = { late_entitlement: 0, late_basis: 0, ruled_correction: 0 };
   }
 
   /** The payload in force for `id` by the inputs: the founder's accepted payload ruling (the latest), else its one listed
    *  payload if it was never ambiguous; `undefined` while it waits; null when ruled `none`. */
-  payloadOf(id) {
-    const ruled = [...this.inputs.rulings].reverse().find((r) => r.status === 200 && r.body?.kind === 'conflict' && r.body.recordId === id);
+  payloadOf(id, f = null) {
+    // (A conflict ruling belongs to the ledgers whose record it covers — Astra T2D-09; recorded with it where the endpoint
+    // named them. On another ledger the id stands as the inputs listed it: the refuter shapes' 2121900008 — the comparison,
+    // still holding the stock, paid a dividend the idea's sold holding later found ambiguous and the founder ruled `none`.)
+    const covers = (r) => f === null || !Array.isArray(r.ledgers) || r.ledgers.includes(f);
+    const ruled = [...this.inputs.rulings].reverse().find((r) => r.status === 200 && r.body?.kind === 'conflict' && r.body.recordId === id && covers(r));
     if (ruled) return ruled.body.decision === 'none' ? null : ruled.body.payload;
     if ((this.inputs.marks.get(id) || []).length > 0) return undefined;
     const e = this.inputs.ids.get(id);
@@ -440,7 +448,7 @@ export class EntitlementOracle {
         const p = proposalOf(r.body.recordId);
         if (p && p.field === f && p.actionId === id) out.push({ at: r.at, kind: 'approval', r });
       }
-      if (r.body?.kind === 'conflict' && r.body.recordId === id && r.body.decision === 'payload') {
+      if (r.body?.kind === 'conflict' && r.body.recordId === id && r.body.decision === 'payload' && (f === null || !Array.isArray(r.ledgers) || r.ledgers.includes(f))) {
         // (A CORRECTING ruling chooses a payload the id's first listing did not show — the founder's correction of a settled
         // id, which posts the net. A ruling keeping the first payload posts nothing, and authorizes nothing late.)
         const e = this.inputs.ids.get(id);
@@ -465,7 +473,7 @@ export class EntitlementOracle {
         const at = this.S.indexOf(a.postedOn);
         this.authorityChecks += 1;
         if (a.kind === 'ruled_correction') {
-          const ok = this.inputs.rulings.find((r) => r.status === 200 && r.body?.kind === 'conflict' && r.body.recordId === a.actionId && r.body.decision === 'payload'
+          const ok = this.inputs.rulings.find((r) => r.status === 200 && r.body?.kind === 'conflict' && r.body.recordId === a.actionId && r.body.decision === 'payload' && (!Array.isArray(r.ledgers) || r.ledgers.includes(f))
             && keyOf(r.body.payload) === keyOf(a.payload || {}) && r.at <= at) ?? null;
           expect(ok, `${label} ${this.S[k]} I-7 ${f} ${a.actionId}: a ruled_correction of ${keyOf(a.payload || {})} posted on ${a.postedOn} with no accepted conflict ruling choosing that payload`).not.toBeNull();
           continue;
@@ -473,12 +481,37 @@ export class EntitlementOracle {
         const auth = this.authoritiesFor(f, a.actionId).filter((x) => x.at <= at
           && (x.kind === 'approval' || keyOf(x.r.body.payload) === keyOf({ amount: a.amountPerShare })));
         expect(auth.length > 0, `${label} ${this.S[k]} I-7 ${f} ${a.actionId}: a ${a.kind} of $${a.amountUsd} posted on ${a.postedOn} with no founder approval or ruling for this ledger and id in the inputs`).toBe(true);
+        // (A ruling applied at this very close is the founder's answer for the id — the closed path's ruled row posts then. Any
+        // other posting — an approval's, or one whose only ruling paid the id long before its late facts — meets L-2.)
+        if (!auth.some((x) => x.kind === 'ruling' && x.at === at)) this.checkRefusalAtPosting(l, f, a, at, k, label);
         lateCount.set(a.actionId, (lateCount.get(a.actionId) || 0) + 1);
       }
       for (const [id, n] of lateCount) {
         const allowed = this.authoritiesFor(f, id).filter((x) => x.at <= k).length;
         expect(n <= allowed, `${label} ${this.S[k]} I-7 ${f} ${id}: ${n} late postings for ${allowed} approvals or rulings`).toBe(true);
       }
+    }
+  }
+
+  /**
+   * I-7, L-2 AT POSTING (the fix round's refuter: an approval was accepted where L-2 must refuse). A late adjustment the
+   * founder's APPROVAL alone authorizes posts only while nothing the inputs show refuses it: no ambiguity of its id by the
+   * inputs at or before the posting close — its own conflict or revision, or a re-date pairing with another id of its symbol
+   * — unless the founder's accepted conflict ruling answered it by then: of the id itself, made after that ambiguity showed
+   * (a ruling the founder made before a later pairing did not answer it), or, for a pairing, of every other id it pairs with
+   * (a settled id stands for nothing, whenever it was settled). (A carved-out re-date — the T2D-05 class, as I-2 excuses it
+   * on this ledger — is none.) Derived from the inputs alone.
+   */
+  checkRefusalAtPosting(l, f, a, at, k, label) {
+    const ruledBy = (id, after = -Infinity, own = false) => this.inputs.rulings.some((r) => r.status === 200 && r.body?.kind === 'conflict' && r.body.recordId === id && r.at > after && r.at <= at
+      && (!own || !Array.isArray(r.ledgers) || r.ledgers.includes(f)));
+    for (const m of this.inputs.marks.get(a.actionId) || []) {
+      if (m.k > at) continue;
+      if (m.how === 'redate' && this.inputs.carvedOut(l, m)) continue;
+      const others = (m.how === 'redate' || m.how === 'same_date') ? [...new Set((m.via?.sides || []).map(([s]) => s).filter((s) => s !== a.actionId))] : [];
+      const answered = ruledBy(a.actionId, m.k, true) || (others.length > 0 && others.every((x) => ruledBy(x)));
+      this.refusalChecks += 1;
+      expect(answered, `${label} ${this.S[k]} I-7 (L-2 at posting) ${f} ${a.actionId}: a ${a.kind} of $${a.amountUsd} posted on ${a.postedOn} on an approval alone, while the inputs show the id ambiguous since ${this.S[m.k]} (${m.how}${others.length > 0 ? ` with ${others.join(', ')}` : ''}) and no accepted conflict ruling answered it`).toBe(true);
     }
   }
 
@@ -522,6 +555,20 @@ export class EntitlementOracle {
     const within = (d) => typeof d !== 'string' || (d > start && d <= end);
     const openOn = (x, r) => ((r.reason === 'conflicting_action' || r.reason === 'possible_redate') && !new Set([...(x.appliedActionIds || []), ...(x.declinedActionIds || [])]).has(r.actionId)) || (r.reason === 'revised_after_ruling' && r.closedBy == null);
     if ((l?.corporateActionReceipts || []).some((r) => r?.reason === 'possible_redate' && r.redateOf === id && openOn(l, r))) return true;
+    // (Fix-round refuter R-1, R-3: any open candidate of the id's type and payload within the window, wherever it waits on
+    // this ledger — a record carrying the payload, a waiting or held row, a row kept outside the holding, another open late
+    // entitlement.)
+    const pay = this.payloadOf(id, f);
+    const e = this.inputs.ids.get(id);
+    if (pay && e && l) {
+      const key = keyOf({ amount: pay.amount });
+      const near = (x) => Boolean(x) && x.actionId !== id && String(x.ticker).toUpperCase() === sym && x.type === 'cash_dividend' && typeof x.effectiveDate === 'string'
+        && this.S.indexOf(x.effectiveDate) >= 0 && Math.abs(this.S.indexOf(x.effectiveDate) - e.d) <= REDATE_WINDOW;
+      const settledHere = new Set([...(l.appliedActionIds || []), ...(l.declinedActionIds || [])]);
+      if ((l.corporateActionReceipts || []).some((r) => near(r) && openOn(l, r) && [r, ...(r.rows || [])].some((x) => keyOf(x) === key))) return true;
+      if ([...(l.closedHeldRows || []), ...(l.closedOutsideRows || []), ...(l.holdings?.[sym]?.heldActions || [])].some((x) => near(x) && !settledHere.has(x.actionId) && keyOf(x) === key)) return true;
+      if ((l.lateProposals || []).some((q) => q.status === 'open' && q.kind === 'late_entitlement' && near(q) && !settledHere.has(q.actionId) && keyOf({ amount: q.amountPerShare }) === key)) return true;
+    }
     for (const g of LEDGERS) {
       const x = idea?.[g];
       if (!x) continue;
@@ -547,7 +594,7 @@ export class EntitlementOracle {
       let splitsWait = Infinity; // the earliest date of a split that waits (its ex-date counts depend on it)
       for (const [id, e] of this.inputs.ids) {
         if (e.sym !== sym || !SHARE_BASIS.has(e.type) || !entitledAt(e.d)) continue;
-        const p = this.payloadOf(id);
+        const p = this.payloadOf(id, f);
         if (p === undefined) { splitsWait = Math.min(splitsWait, e.d); continue; }
         if (p === null || !(Number(p.ratio) > 0)) continue;
         // (When the count this split gives became known: its first listing — or, a founder's CORRECTING ruling of its ratio, the
@@ -580,7 +627,7 @@ export class EntitlementOracle {
           expect(received, `${label} ${this.S[k]} I-6 ${f} ${id} is owed nothing (bought ${this.S[h.boughtAt]}, sold ${h.soldAt == null ? '—' : this.S[h.soldAt]}) but received $${received}`).toBe(0);
           continue;
         }
-        const p = this.payloadOf(id);
+        const p = this.payloadOf(id, f);
         if (p === undefined || e.d >= splitsWait || this.scopedDoubt(idea, f, sym, id, this.S[e.d]) || uncoveredNow.includes(sym)) { this.excused += 1; continue; }
         // LATE FACTS (L-1): the id first listed after the ledger sold the stock; or a split dated on or before its ex-date
         // first listed after the close that paid it on time.

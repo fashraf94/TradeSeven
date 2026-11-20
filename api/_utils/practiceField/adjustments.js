@@ -214,6 +214,37 @@ export const proposalIdOf = (ledgerKind, actionId, n = 1) => `late_${ledgerKind}
 export const openProposals = (ledger) => (ledger?.lateProposals || []).filter((p) => p && p.status === LATE_PROPOSAL_STATUS.OPEN);
 
 /**
+ * L-2 ② (fix-round refuter R-1, R-3): THE OPEN CANDIDATES THAT PAIR WITH PROPOSAL `p` UNDER THE RE-DATE RULE on its ledger —
+ * another id of its symbol and type, dated within the window of it, whose payload is the proposal's, still standing: an open
+ * ambiguity record carrying that payload (a conflict, a possible re-date, an unanswered revision), a row waiting on a doubt
+ * (a sold holding's or a held one's), a row kept just outside a sold holding, another open late entitlement. A settled id
+ * (applied, declined, ruled) stands for nothing. (Two rows of one close that paired only with each other never named the
+ * proposal they both also paired with — R-1, held and sold; a row the vendor moved past the sale never met a proposal it
+ * no longer listed — R-3.) Pure.
+ * @returns {string[]} the candidates' ids, sorted
+ */
+export function pairingCandidatesOf(ledger, p) {
+  const sym = upper(p?.ticker);
+  const type = p?.type || 'cash_dividend';
+  const key = actionPayloadOf({ amount: p?.amountPerShare });
+  const near = (x) => Boolean(x) && x.actionId !== p.actionId && upper(x.ticker) === sym && x.type === type && isDate(x.effectiveDate)
+    && withinSessions(x.effectiveDate, p.effectiveDate, REDATE_WINDOW_SESSIONS);
+  const settled = new Set([...(ledger?.appliedActionIds || []), ...(ledger?.declinedActionIds || [])]);
+  const out = new Set();
+  for (const r of ledger?.corporateActionReceipts || []) {
+    if (!near(r)) continue;
+    const open = ((r.reason === CONFLICTING_ACTION || r.reason === POSSIBLE_REDATE) && !settled.has(r.actionId)) || (r.reason === REVISED_AFTER_RULING && r.closedBy == null);
+    if (open && recordedPayloadsOf(r).some((x) => actionPayloadOf(x) === key)) out.add(r.actionId);
+  }
+  const waiting = [...(ledger?.closedHeldRows || []), ...(ledger?.closedOutsideRows || []), ...(ledger?.holdings?.[sym]?.heldActions || [])];
+  for (const r of waiting) if (near(r) && !settled.has(r.actionId) && actionPayloadOf(r) === key) out.add(r.actionId);
+  for (const q of openProposals(ledger)) {
+    if (q.kind === ADJUSTMENT_KIND.LATE_ENTITLEMENT && near(q) && !settled.has(q.actionId) && actionPayloadOf({ amount: q.amountPerShare }) === key) out.add(q.actionId);
+  }
+  return [...out].sort();
+}
+
+/**
  * PLAN ONE LEDGER'S LATE DATA at one close (see the header). Pure.
  *
  * @param {object} ledger
@@ -221,6 +252,7 @@ export const openProposals = (ledger) => (ledger?.lateProposals || []).filter((p
  *   ideaId, ledgerKind ('idea' | 'comparison' | 'spy'), date (the session), rows (`{ SYM: [rows] }` this ledger was
  *   handed, the founder's actions among them), ruledIds (Set: ids a pending conflict ruling supplies on this ledger),
  *   closed (closedHoldingsOf), doubtOn(sym, exDate) → boolean (a doubt in the count: nothing is computed on it),
+ *   rulingDoubtOn(sym, exDate) → boolean (a sold holding's sticky coverage doubt: what a ruling would post waits — R-5),
  *   blockersOf(sym, exDate, { end }) → string[] (the caller's refusals: uncovered dates, the idea's hold set),
  *   availableCents (what a debit may come from), corrections (the founder's amount corrections applied at this close:
  *   [{ actionId, amount, from, ruling }]), approvals (the founder's pending late_adjustment rulings on this ledger:
@@ -229,7 +261,7 @@ export const openProposals = (ledger) => (ledger?.lateProposals || []).filter((p
  *             proposed: Array<object>, closedProposals: Array<object>, standingReasons: Array<object>, alerts: string[] }}
  */
 export function planLedgerAdjustments(ledger, ctx) {
-  const { ideaId = null, ledgerKind, date, rows = {}, ruledIds = null, closed = new Map(), doubtOn = () => false, blockersOf = () => [], proposeOnly = false } = ctx;
+  const { ideaId = null, ledgerKind, date, rows = {}, ruledIds = null, closed = new Map(), doubtOn = () => false, rulingDoubtOn = () => false, blockersOf = () => [], proposeOnly = false } = ctx;
   let available = Number.isFinite(ctx.availableCents) ? ctx.availableCents : toCents(ledger?.cash || 0);
   const out = { ledger, posted: [], held: [], recorded: [], historyOnly: [], proposed: [], closedProposals: [], standingReasons: [], alerts: [] };
   if (!ledger) return out;
@@ -298,6 +330,11 @@ export function planLedgerAdjustments(ledger, ctx) {
     };
     const open = openProposalOf(entry.actionId);
     if (net === 0) { if (open) closeProposal(entry.actionId, LATE_PROPOSAL_STATUS.SETTLED, 'nothing_owed', { netUsd: 0 }); return null; }
+    // (Fix-round refuter R-2: A DECLINE STICKS. The founder declined this id's last proposal on these very facts — what the
+    // ledger is owed for it and what it has received: it is not asked again, and nothing waits. A new late fact — another
+    // count, another amount — is a new question.)
+    const last = (cur().lateProposals || []).filter((x) => x.actionId === entry.actionId).at(-1) ?? null;
+    if (!open && last?.status === LATE_PROPOSAL_STATUS.DECLINED && last.owedUsd === fields.owedUsd && last.receivedUsd === fields.receivedUsd) return null;
     if (open) {
       if (stableStringify(proposalFields(open)) === stableStringify(fields)) return open;
       const l = edit();
@@ -346,6 +383,13 @@ export function planLedgerAdjustments(ledger, ctx) {
     for (const r of cur().closedHeldRows || []) {
       if (upper(r.ticker) !== sym || byId.has(r.actionId) || !(r.effectiveDate <= c.through)) continue;
       byId.set(r.actionId, [{ type: r.type, ticker: sym, effectiveDate: r.effectiveDate, ...(r.ratio != null ? { ratio: r.ratio } : {}), ...(r.amount != null ? { amount: r.amount } : {}), source: r.source ?? null, actionId: r.actionId, fromHeld: true }]);
+    }
+    // (Fix-round refuter R-1, R-3: AN OPEN LATE ENTITLEMENT IS SCREENED AT EVERY CLOSE, listed now or not — its payload is
+    // one the ledger has seen. The rows of this close, and those kept just outside the holding, meet it as they meet a
+    // listed row: a pair makes its id an ambiguity for the founder's conflict ruling, and its approval waits.)
+    for (const p of openProposals(cur())) {
+      if (p.kind !== ADJUSTMENT_KIND.LATE_ENTITLEMENT || upper(p.ticker) !== sym || byId.has(p.actionId) || settledNow().has(p.actionId) || !inInterval(p)) continue;
+      byId.set(p.actionId, [{ type: 'cash_dividend', ticker: sym, effectiveDate: p.effectiveDate, amount: p.amountPerShare, source: null, actionId: p.actionId, fromHeld: true, fromProposal: true }]);
     }
     const dropHeld = (id) => { if (heldOf(id)) { const l = edit(); l.closedHeldRows = l.closedHeldRows.filter((r) => r.actionId !== id); if (l.closedHeldRows.length === 0) delete l.closedHeldRows; } };
     // L-3: THE ROWS JUST OUTSIDE THE HOLDING — listed now dated after it closed, or on or before it was bought, within the
@@ -527,6 +571,9 @@ export function planLedgerAdjustments(ledger, ctx) {
         }
       }
       const action = ruled ?? first;
+      // (Fix-round refuter R-5: what the founder's ruling would post waits while a sold holding's coverage doubt holds its
+      // count — the ruling is not kept here; it is re-made once the doubt clears.)
+      if (ruled && rulingDoubtOn(sym, action.effectiveDate)) return;
       if (doubtOn(sym, action.effectiveDate) || shareDoubtOn(sym, action.effectiveDate, id, SHARE_BASIS_TYPES.has(action.type))) {
         // Durable: the row waits on the closed holding (replayed at the first close without the doubt, revised if the feed
         // later lists it otherwise). A founder's action is re-supplied by its ruling: not kept here. (An open proposal of
@@ -614,7 +661,7 @@ export function planLedgerAdjustments(ledger, ctx) {
     const counted = countFor(sym, d.effectiveDate);
     if (!(counted.count > 0)) continue;
     if (amountCorrection) {
-      if (proposeOnly) continue;
+      if (proposeOnly || rulingDoubtOn(sym, d.effectiveDate)) continue; // (R-5: a ruled correction waits on the doubt too)
       // (b) the founder's correction this close — ruled_correction: the NET owed now (the ruled amount on the dated count)
       // less everything received for the id. It settles any open proposal of the id (T2E-03: $249.93 in all, posted once).
       const amount = Number(amountCorrection.amount);
@@ -663,8 +710,10 @@ export function planLedgerAdjustments(ledger, ctx) {
     const out2 = [];
     // L-2 ①: the id is unresolved on this ledger (an open conflict, re-date or revision of it, or a row of it waiting).
     if (openRecordOf(cur(), p.actionId) !== null || (cur().closedHeldRows || []).some((r) => r.actionId === p.actionId)) out2.push(`${LATE_BLOCKER.ID_UNRESOLVED}:${p.actionId}`);
-    // L-2 ②: another candidate of the symbol pairs with it under the re-date rule (an open possible re-date of it).
+    // L-2 ②: another candidate of the symbol pairs with it under the re-date rule — an open possible re-date of it, and
+    // (fix-round refuter R-1, R-3) any open candidate of the same type and payload within the window, wherever it waits.
     for (const r of cur().corporateActionReceipts || []) if (r?.reason === POSSIBLE_REDATE && r.redateOf === p.actionId && upper(r.ticker) === sym && openRecordOf(cur(), r.actionId) !== null) out2.push(`${LATE_BLOCKER.PAIRS}:${r.actionId}`);
+    for (const id of pairingCandidatesOf(cur(), p)) out2.push(`${LATE_BLOCKER.PAIRS}:${id}`);
     // L-2 ③: a share-basis id dated within the holding is unresolved (this ledger's own, and the caller's hold set).
     const end = c ? c.through : date;
     if (shareDoubtOn(sym, end) || (c !== null && (cur().closedHeldRows || []).some((r) => SHARE_BASIS_TYPES.has(r.type) && upper(r.ticker) === sym))) out2.push(`${LATE_BLOCKER.SHARE_BASIS}:${sym}`);

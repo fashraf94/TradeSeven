@@ -76,6 +76,15 @@ export function backfillNeeds(ideas, through) {
       const prior = needs.get(symbol);
       if (!prior || from < prior.from) needs.set(symbol, { symbol, from });
     }
+    // (T1a-2b-4 fix round, refuter R-4: A SOLD HOLDING'S STICKY COVERAGE DOUBT — `closedCoverageDoubts`, T2E-08 — clears only
+    // by a backfill with a clean report covering its earliest date through the sale; a session listing the symbol cleanly says
+    // nothing about that date, so the daily window never stands in. Needed from that date while the doubt stands.)
+    for (const [symbol, doubt] of Object.entries(idea.ledger?.closedCoverageDoubts || {})) {
+      const from = (doubt?.dates || []).map((x) => x?.date).filter((d) => typeof d === 'string').sort()[0];
+      if (typeof from !== 'string' || from > through) continue;
+      const prior = needs.get(symbol);
+      if (!prior || from < prior.from) needs.set(symbol, { symbol, from });
+    }
   }
   return [...needs.values()].sort((a, b) => a.symbol.localeCompare(b.symbol));
 }

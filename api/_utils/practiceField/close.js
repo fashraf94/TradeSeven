@@ -71,7 +71,7 @@ import {
 import { PracticeFieldError } from './errors.js';
 import { practiceFieldLive } from './mode.js';
 import {
-  applyLedgerActions, valueLedger, withCloseMarks, suspectedActionSymbols, markedEquityCents, openAmbiguities, cloneLedger, REDATE_WINDOW_SESSIONS,
+  applyLedgerActions, valueLedger, withCloseMarks, suspectedActionSymbols, markedEquityCents, openAmbiguities, cloneLedger, REDATE_WINDOW_SESSIONS, withinSessions,
   shareBasisHolds, heldActionRecords, withBasisSuspicions, basisSuspicionRecords, delistingWaitingSymbols, unresolvedShareBasis,
   markProvenance, MARK_PROVENANCE_SOURCE,
 } from './ledger.js';
@@ -302,6 +302,15 @@ function closeFilledIdea(idea, {
       const tagged = Array.isArray(rows) ? rows.filter((a) => a && typeof a === 'object').map((a) => ({ ...a, feedOrigin: 'backfill' })) : [];
       if (tagged.length > 0) feedActions = unionActionsBySymbol(feedActions, { [sym]: tagged });
     }
+    // (Fix-round refuter R-4: A SOLD HOLDING'S CLEAN BACKFILL — read because its coverage doubt stands — is data about that
+    // holding's history: its rows join the idea's rows for the symbol, tagged as the backfill's, so the row the daily build
+    // rejected reaches the closed path as the backfill lists it. Clearing the doubt without them would compute on a count
+    // that misses it.)
+    for (const [sym, bf] of closedBackfills) {
+      if (coverageInputs.has(sym)) continue;
+      const tagged = (Array.isArray(bf?.actions) ? bf.actions : []).filter((a) => a && typeof a === 'object').map((a) => ({ ...a, feedOrigin: 'backfill' }));
+      if (tagged.length > 0) feedActions = unionActionsBySymbol(feedActions, { [sym]: tagged });
+    }
   }
 
   // One name, one idea (B-SAME): a ticker change INTO a symbol another idea of the book holds would put one ticker in
@@ -459,6 +468,11 @@ function closeFilledIdea(idea, {
       const ownItems = observed ? unresolvedShareBasis(out.ledger, actionsOf[f], { date }) : new Map();
       const doubtOn = (sym, d) => uncovered.has(sym) || (closed.has(sym) && closedDoubt(sym))
         || [...(holds?.get(sym) || []), ...(ownItems.get(sym) || [])].some((i) => !ruledHere(i.actionId) && itemHolds(i, d));
+      // (Fix-round refuter R-5: a sold holding's STICKY coverage doubt holds what the founder's RULING would post — a rejected
+      // row dated on or before the ex-date, or within the re-date window of it, may be a split the count misses or the
+      // dividend itself moved. A proposal is still made and named, its approval refused while the doubt stands (L-2 ④).)
+      const rulingDoubtOn = (sym, d) => closed.has(sym) && (out.ledger.closedCoverageDoubts?.[sym]?.dates || [])
+        .some((x) => typeof d !== 'string' || x.date <= d || withinSessions(x.date, d, REDATE_WINDOW_SESSIONS));
       // L-2: the close's own refusals of an approval — an uncovered date, a share-basis id DATED WITHIN THE HOLDING unresolved
       // on any ledger (the idea's hold set; a suspicion whose move began within it) — named on each proposal.
       const within = (i, end, openedAt) => (typeof i.effectiveDate !== 'string' || ((openedAt === null || i.effectiveDate > openedAt) && i.effectiveDate <= end))
@@ -470,7 +484,7 @@ function closeFilledIdea(idea, {
         ...((out.ledger.closedCoverageDoubts?.[sym]?.dates || []).map((x) => `${LATE_BLOCKER.UNCOVERED}:${x.date}`)),
       ];
       const plan = planLedgerAdjustments(out.ledger, {
-        ideaId: idea.ideaId, ledgerKind: name, date, rows: actionsOf[f], ruledIds: ruledIdsOf(f), closed, doubtOn, blockersOf,
+        ideaId: idea.ideaId, ledgerKind: name, date, rows: actionsOf[f], ruledIds: ruledIdsOf(f), closed, doubtOn, rulingDoubtOn, blockersOf,
         corrections: ruled?.amountCorrectionsByLedger?.[f] ?? [], approvals: ruled?.lateApprovalsByLedger?.[f] ?? [],
       });
       out.ledger = plan.ledger;

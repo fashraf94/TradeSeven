@@ -43,7 +43,7 @@ import {
 } from './ledger.js';
 import { coverageGapIdOf } from './dailyCoverage.js';
 import { roundShares } from '../mandateRounding.js';
-import { ADJUSTMENT_KIND, correctShareBasisOn, postedAdjustments } from './adjustments.js';
+import { ADJUSTMENT_KIND, correctShareBasisOn, postedAdjustments, pairingCandidatesOf } from './adjustments.js';
 
 const SHARE_BASIS = new Set(['split', 'reverse_split', 'stock_distribution']);
 
@@ -168,7 +168,9 @@ export const rulingReceiptOf = (r) => ({ requestKey: r.requestKey, kind: r.kind,
  * T1a-2b-4 fix round (L-2): WHY THE FOUNDER'S APPROVAL OF PROPOSAL `p` ON LEDGER `f` IS REFUSED NOW, or null — from the idea
  * as stored, and the blockers the proposal's last close named:
  *   late_id_unresolved           the id has an open conflict, re-date or revision on the ledger, or a row of it waits;
- *   late_pairs_with_candidate    another candidate of the symbol is recorded as a possible re-date of it;
+ *   late_pairs_with_candidate    another candidate of the symbol pairs with it under the re-date rule: recorded as a
+ *                                possible re-date of it, or any open candidate of its type and payload within the window
+ *                                (pairingCandidatesOf — fix-round refuter R-1, R-3);
  *   late_share_basis_unresolved  a share-basis id of the symbol dated within the holding is unresolved on any ledger
  *                                (an open ambiguity, a held action, an open suspicion, a waiting row);
  *   late_date_uncovered          a date in the holding interval is uncovered (a coverage gap of the symbol, or a closed
@@ -184,7 +186,8 @@ export function lateApprovalRefusal(idea, f, p) {
   const receipts = l?.corporateActionReceipts || [];
   const stored = (prefix) => (p?.blockers || []).some((b) => String(b).startsWith(`${prefix}:`));
   if (stored('id_unresolved') || receipts.some((r) => r?.actionId === id && openOn(l, r)) || (l?.closedHeldRows || []).some((r) => r.actionId === id)) return LATE_REFUSAL.id_unresolved;
-  if (stored('pairs_with') || receipts.some((r) => r?.reason === POSSIBLE_REDATE && r.redateOf === id && !settled.has(r.actionId))) return LATE_REFUSAL.pairs_with;
+  // (Fix-round refuter R-1, R-3: any open candidate of the symbol's type and payload within the window — adjustments.js.)
+  if (stored('pairs_with') || receipts.some((r) => r?.reason === POSSIBLE_REDATE && r.redateOf === id && !settled.has(r.actionId)) || pairingCandidatesOf(l, p).length > 0) return LATE_REFUSAL.pairs_with;
   // (The holding's interval: bought after the entry session, and — sold — through the sale.)
   const sale = (l?.saleReceipts || []).filter((r) => upper(r?.symbol) === sym && typeof r.sessionDate === 'string').map((r) => r.sessionDate).sort().at(-1) ?? null;
   const end = Object.hasOwn(l?.holdings || {}, sym) ? null : sale;
