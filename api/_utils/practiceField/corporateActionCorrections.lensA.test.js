@@ -320,9 +320,15 @@ describe('AR4-A-1, A-2 — breadth and the result', () => {
       console.log('endpoint fullQuality', ep?.fullQuality, 'idea.fullQuality', ep?.idea?.fullQuality, 'unsettled', JSON.stringify(ep?.idea?.unsettledActions));
       console.log('result dataQuality', JSON.stringify(idea.result?.dataQuality), 'doubts', JSON.stringify(idea.result?.doubts ?? idea.result?.inDoubt ?? null), 'economic', idea.result?.economicResult);
       console.log('row S4 fullQuality', rowOf(c, 4).fullQuality);
+      // (The fix round: the waiting row is an unsettled action at the endpoint — the idea's value is in doubt by it.)
+      expect(ep.idea.unsettledActions).toContain(`cash_dividend_AAPL_${S[1]}`);
+      expect(ep.idea.fullQuality).toBe(false);
+      expect(idea.result.economicResult).toBe('unmeasurable');
+      expect(rowOf(c, 4).fullQuality).toBe(false);
       // Next close covers AAPL: the owed $99.97 is paid, after the result, to the treasury.
       const t0 = bookOf(c).treasury.unreservedCash;
       await close(c, 5, belowLine(c), [div(1, 1)], { msft: msftBelow });
+      expect(roundUsd(bookOf(c).treasury.unreservedCash - t0)).toBe(99.97);
       console.log('after S5', brief(c), 'treasury delta', roundUsd(bookOf(c).treasury.unreservedCash - t0), 'view', JSON.stringify(ideaOf(c).resultAdjustments && { ideaUsd: ideaOf(c).resultAdjustments.ideaUsd, would: ideaOf(c).resultAdjustments.wouldChangeLabel }));
     });
 
