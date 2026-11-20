@@ -536,6 +536,13 @@ describe('CP-3: today so far — the header\'s price against the record\'s marks
     const line = readLineOf(B.VALID_PULLBACK);
     expect(todayLineOf({ ...line, marks: line.marks.filter((m) => m.n !== 1 && m.n !== 2), session: SESSION }, { ...ON, headerPrice: '1.00' })).toBeNull();
   });
+  it('TD-1 (mutant TD-i): todayLineOf itself refuses a state with no checks, whatever marks it is handed', () => {
+    const line = readLineOf(B.VALID_PULLBACK);
+    for (const state of ['unknown', 'refused', 'absent', 'unknown_rule_set', 'unshown']) {
+      expect(todayLineOf({ state, marks: line.marks, session: SESSION }, { ...ON, headerPrice: '200.00' }), state).toBeNull();
+    }
+    expect(todayLineOf({ state: 'valid_pullback', marks: line.marks, session: SESSION }, { ...ON, headerPrice: '200.00' })).not.toBeNull();
+  });
   it('TD-1: each of its four conditions turned off alone hides the line', () => {
     const k = 'VALID_PULLBACK';
     const price = at(k, 1);

@@ -397,6 +397,8 @@ describe('CP-1: the checks on the page (PG-1 – PG-10)', () => {
     expect($$('[data-check-group]').map((g) => g.dataset.checkGroup)).toEqual(['uptrend', 'pullback_resume', 'stretch', 'breakout', 'context']);
     expect($$('[data-check-count]').map((c) => c.textContent)).toEqual(['3 of 3', '2 of 2', 'not present']);
     expect($$('[data-chart-read-hint]').map((h) => h.textContent)).toEqual(['tap a check to light its mark']);
+    // one hint on the whole page, by its words (mutant CHK-a)
+    expect(document.body.textContent.split('tap a check to light its mark').length - 1).toBe(1);
     expect($$('[data-other-reading]').length).toBe(2);
     expect($('[data-chart-read-foot]')).toBeTruthy();
     const view = $('[data-shell-scroll="chart"]');
