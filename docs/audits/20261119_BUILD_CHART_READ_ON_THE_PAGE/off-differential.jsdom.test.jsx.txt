@@ -1,0 +1,210 @@
+// @vitest-environment jsdom
+//
+// THE TWO-VIEW SHELL in the real modal (Amendment C; spec
+// docs/specs/RESEARCH_MODAL_SHELL_SPEC_V1.md SB-1–SB-14): the gate per mount,
+// the header control, the three views and their state machine, the Analysis
+// view's blocks in battle and in browse, the tab strip with today's components,
+// What's moving loaded on a tap, the Chart view, the 💣 view and the action row.
+// Build C's own content rows live in AssetResearchModal.sheetModeOn.jsdom.test.jsx;
+// the mode-off goldens hold 'off' byte for byte.
+//
+// Network and chart library faked and recorded; Ranks / Smart Money / Sector are
+// recorded stand-ins (today's components, mounted with today's props — their own
+// files test their content); RESEARCH_MODAL_SHEET_MODE is mocked per row.
+
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
+import React, { act } from 'react';
+import { createRoot } from 'react-dom/client';
+import { renderToStaticMarkup } from 'react-dom/server';
+
+vi.hoisted(() => { process.env.TZ = 'UTC'; });
+// The Chart view's read and the opening view (CP-2): 'off' here unless a row says otherwise, so the shell's own rows open
+// as they always have (OV-5); the opening view as shipped ('chart').
+const FLAG = vi.hoisted(() => ({ sheet: 'on', bomb: 'on', read: 'off', open: 'chart' }));
+const FLAGS = vi.hoisted(() => ({
+  get RESEARCH_MODAL_SHEET_MODE() { return FLAG.sheet; },
+  RESEARCH_MODAL_SHEET_MODES: Object.freeze(['off', 'allowlist', 'on']),
+  get RESEARCH_MODAL_BOMB_MODE() { return FLAG.bomb; },
+  RESEARCH_MODAL_BOMB_MODES: Object.freeze(['off', 'allowlist', 'on']),
+  get CHART_READ_MODE() { return FLAG.read; },
+  CHART_READ_MODES: Object.freeze(['off', 'allowlist', 'on']),
+  get RESEARCH_MODAL_OPENING_VIEW() { return FLAG.open; },
+  RESEARCH_MODAL_OPENING_VIEWS: Object.freeze(['analysis', 'chart']),
+}));
+vi.mock('../../config/researchModalFlags', () => FLAGS);
+vi.mock('../../config/researchModalFlags.js', () => FLAGS);
+
+const net = vi.hoisted(() => ({ calls: [], why: [], daily: null, whyGate: null, fail: false, thirty: null, whyFail: false }));
+const rec = vi.hoisted(() => ({ series: [], lines: [], markers: [], tabs: [], technical: [] }));
+vi.mock('../../services/eodhdAPI', () => ({
+  fetchHistoricalOHLCV: (symbol, timeframe, opts) => {
+    net.calls.push(['history', symbol, timeframe, opts ?? null]);
+    if (net.fail) return Promise.reject(new Error('down'));
+    if (timeframe === '30m' && net.thirty) return Promise.resolve(net.thirty);
+    if (timeframe === '1d' || timeframe === '1w') return Promise.resolve(net.daily ?? [
+      { date: '2026-10-14', open: 101, high: 104.1, low: 100.6, close: 103.2, volume: 1 },
+      { date: '2026-10-13', open: 99.4, high: 101.2, low: 99, close: 100.9, volume: 1 },
+      { date: '2026-10-12', open: 98.8, high: 99.9, low: 98.1, close: 99.3, volume: 1 },
+    ]);
+    return Promise.resolve([]);
+  },
+  getStockPrice: (symbol) => { net.calls.push(['quote', symbol]); return Promise.resolve({ symbol, price: 0 }); },
+}));
+vi.mock('../../services/fundamentalsService', () => ({ getCompanyProfile: (s) => { net.calls.push(['profile', s]); return Promise.resolve({ Name: s === 'CEG' ? 'Constellation Energy' : 'Apple Inc', sector: 'Technology', industry: 'Consumer Electronics', description: 'It makes things.', ratingText: 'Buy', analystConsensus: { totalAnalysts: 24 } }); } }));
+vi.mock('../../services/volatilityService', () => ({ getVolatilityThresholds: () => { net.calls.push(['thresholds']); return Promise.resolve({}); } }));
+vi.mock('../../services/websocketService', () => ({ getDailyHL: () => null }));
+const WHY = { catalyst: 'Apple rose on strong iPhone demand.', catalystType: 'news', signals: [{ type: 'bullish', label: 'Volume', detail: 'twice the average' }], peerContext: 'Peers rose too.', outlook: 'Watch the earnings date.', citations: ['https://www.reuters.com/a'], timestamp: '2026-10-14T17:00:00.000Z' };
+vi.mock('../../utils/fetchWithAuth', () => ({
+  fetchWithAuth: async (u, o) => {
+    net.calls.push(['fetchWithAuth', String(u), o?.method ?? null]);
+    if (String(u) === '/api/why-moving') {
+      net.why.push(JSON.parse(o.body));
+      if (net.whyFail) return { ok: true, status: 200, json: async () => ({ success: false, error: 'down' }) };
+      if (net.whyGate) {
+        const gate = net.whyGate;
+        await new Promise((resolve, reject) => {
+          gate.then(resolve);
+          o?.signal?.addEventListener?.('abort', () => { const e = new Error('aborted'); e.name = 'AbortError'; reject(e); });
+        });
+      }
+      return { ok: true, status: 200, json: async () => ({ success: true, data: WHY }) };
+    }
+    return { ok: true, status: 200, json: async () => ({ success: true }) };
+  },
+}));
+vi.mock('lightweight-charts', () => {
+  const series = (kind, opts) => ({
+    setData() {}, createPriceLine(o) { rec.lines.push(o); return o; }, removePriceLine() {}, setMarkers() {},
+    priceScale() { return { applyOptions() {} }; }, applyOptions() {}, kind, opts,
+  });
+  return {
+    createChart: () => ({ addSeries: (k, o) => { rec.series.push([k, o ?? null]); return series(k, o); }, removeSeries() {}, subscribeCrosshairMove() {}, timeScale() { return { applyOptions() {}, fitContent() {}, scrollToRealTime() {}, setVisibleLogicalRange() {}, getVisibleLogicalRange() { return null; } }; }, applyOptions() {}, remove() {} }),
+    createSeriesMarkers: (s, m) => { rec.markers.push(m); return { setMarkers(x) { rec.markers.push(x); }, detach() {} }; },
+    CandlestickSeries: 'Candlestick', HistogramSeries: 'Histogram', LineSeries: 'Line', AreaSeries: 'Area',
+  };
+});
+// Today's tabs, as recorded stand-ins: which mounted, with which props.
+vi.mock('./CompeteTab', () => ({ default: (p) => { rec.tabs.push(['ranks', p]); return <div data-stub="ranks"><button type="button" data-nav-etf onClick={() => p.onNavigateToStock('XLK', 'Technology Select Sector SPDR')}>nav</button><button type="button" data-nav-msft onClick={() => p.onNavigateToStock('MSFT', 'Microsoft')}>nav</button></div>; } }));
+vi.mock('./SectorTab', () => ({ default: (p) => { rec.tabs.push(['sector', p]); return <div data-stub="sector" />; } }));
+vi.mock('../Research/SmartMoneyTab', () => ({ default: (p) => { rec.tabs.push(['smartMoney', p]); return <div data-stub="smartMoney" />; } }));
+vi.mock('../Research/TechnicalTabV2', () => ({ default: (p) => { rec.technical.push(p); return <div data-stub="technical" />; } }));
+vi.mock('../Research/HoldingsTab', () => ({ default: (p) => <div data-stub="holdings"><button type="button" data-nav-stock onClick={() => p.onNavigateToStock('AAPL', 'Apple Inc')}>nav</button></div> }));
+vi.mock('../Research/SectorETFRanksTab', () => ({ default: () => null }));
+vi.mock('../Research/MarketContextTab', () => ({ default: () => null }));
+vi.mock('../Research/HealthTab', () => ({ default: () => <div data-stub="health" /> }));
+vi.mock('../../firebase/config', () => ({ db: {}, auth: { currentUser: null }, default: {} }));
+vi.mock('firebase/firestore', async (importOriginal) => ({
+  ...(await importOriginal()),
+  doc: (_db, ...path) => ({ path: path.join('/') }),
+  getDoc: (ref) => { net.calls.push(['getDoc', ref.path]); return Promise.resolve({ exists: () => false, data: () => null }); },
+}));
+
+import { measuredSheetBattle, SHEET_NOW, RANKINGS } from '../Research/Sheet/__fixtures__/sheetBattles.js';
+import { selectBombRecord } from '../Research/BombMode/selectBombRecord.js';
+import { enrichHeldPosition } from '../../screens/AgentBattleScreen.jsx';
+import { buildResearchAsset } from '../../utils/researchAssetBuilder.js';
+import ChartHeader from '../Research/ChartHeader';
+import AssetResearchModal from './AssetResearchModal';
+
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+if (!globalThis.ResizeObserver) globalThis.ResizeObserver = class { observe() {} disconnect() {} unobserve() {} };
+let BATTLE;
+const oldKey = process.env.EODHD_API_KEY;
+beforeAll(async () => { BATTLE = await measuredSheetBattle({ archetype: 'momentum_chaser' }); process.env.EODHD_API_KEY = 'isolated-key'; });
+afterAll(() => { if (oldKey === undefined) delete process.env.EODHD_API_KEY; else process.env.EODHD_API_KEY = oldKey; });
+
+let container, root;
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+  vi.setSystemTime(new Date(SHEET_NOW));
+  container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
+  net.calls.length = 0; net.why.length = 0; net.daily = null; net.whyGate = null; net.fail = false; net.thirty = null; net.whyFail = false;
+  for (const k of Object.keys(rec)) rec[k].length = 0;
+  FLAG.sheet = 'on'; FLAG.bomb = 'on'; FLAG.read = 'off'; FLAG.open = 'chart';
+  Element.prototype.scrollIntoView = vi.fn();
+  vi.spyOn(console, 'log').mockImplementation(() => {}); vi.spyOn(console, 'warn').mockImplementation(() => {});
+});
+afterEach(() => { act(() => root.unmount()); container.remove(); vi.restoreAllMocks(); vi.useRealTimers(); });
+const flush = async () => { for (let i = 0; i < 8; i++) await act(async () => { await vi.advanceTimersByTimeAsync(0); }); };
+const $ = (sel) => document.body.querySelector(sel);
+const $$ = (sel) => [...document.body.querySelectorAll(sel)];
+const click = async (el) => { expect(el).toBeTruthy(); await act(async () => { el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); }); await flush(); };
+const view = () => $('[data-shell-view]')?.dataset.shellView ?? null;
+const pill = (v) => $(`[data-shell-pill="${v}"]`);
+const pills = () => $$('[data-shell-pill]').map((b) => b.dataset.shellPill);
+const blocks = () => $$('[data-shell-block]').map((b) => b.dataset.shellBlock);
+// The view boxes actually displayed (review C1: the wrapper's data-shell-view alone is not the screen).
+const shown = () => $$('[data-shell-scroll]').filter((b) => b.style.display !== 'none').map((b) => b.dataset.shellScroll);
+const tfButton = (t) => $$('[data-shell-scroll="chart"] button').find((b) => b.textContent.trim() === t);
+// StockChart's active pill style (pillStyle(active)): the one timeframe the chart is on.
+const activeTf = () => ['1D', '1W'].find((t) => tfButton(t)?.style.background === 'rgba(0, 217, 255, 0.2)') ?? null;
+const history = () => net.calls.filter((c) => c[0] === 'history').map((c) => c[2]);
+const remount = () => { act(() => root.unmount()); container.remove(); container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container); };
+
+const heldAsset = () => buildResearchAsset(enrichHeldPosition(BATTLE.portfolio.star[0], 'star', { stockBattle: BATTLE, stockSide: 'agent', stockSlot: 0 }), { livePrices: { AAPL: 103.2 }, thresholds: { AAPL: { threshold: 2.5 } }, startingPrices: { AAPL: 100.75 }, useDefaultThreshold: true });
+const ctx = (over = {}) => ({ battleId: 'stock-battle', agentId: 'agent', archetype: 'momentum_chaser', agentName: 'Juno', row: { held: false, positionId: 'position-agent' }, battle: BATTLE, calls: [], rankings: RANKINGS, standing: { player: 62, opponent: 68, digits: 0 }, directive: BATTLE.directive, ...over });
+const bombCtx = () => ({ kind: 'agent', battleId: 'stock-battle', held: true, record: selectBombRecord(BATTLE, 'AAPL', SHEET_NOW) });
+const battle = async (over = {}) => {
+  await act(async () => { root.render(<AssetResearchModal asset={heldAsset()} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="baggerbomb" defaultTimeframe="bomb" wsPrice={103.2} sheetContext={ctx()} bombContext={bombCtx()} {...over} />); });
+  await flush();
+};
+const WATCH = vi.fn();
+const browse = async ({ symbol = 'CEG', name = 'Constellation Energy', price = 344.15, ...over } = {}) => {
+  await act(async () => { root.render(<AssetResearchModal asset={{ symbol, name, price, percentChange: 0.6 }} onClose={() => {}} version={2} actionConfig={{ label: 'Add to Watchlist', onClick: WATCH, variant: 'primary' }} {...over} />); });
+  await flush();
+};
+
+
+// ───────────────────────────── the flag-off differential (SCRATCH, never committed) ─────────────────────────────
+// Runs in two trees (origin/main and the build's head) with CHART_READ_MODE 'off' and writes one JSON trace; the two
+// traces must be identical. Per step: the DOM (React useId renumbered), every chart-library call, every request, focus.
+import { writeFileSync } from 'node:fs';
+const renumber = (html) => { const ids = new Map(); return html.replace(/_r_[0-9a-z]+_|:r[0-9a-z]+:/g, (m) => { if (!ids.has(m)) ids.set(m, `ID${ids.size}`); return ids.get(m); }); };
+const focusOf = () => { const a = document.activeElement; if (!a || a === document.body) return 'body'; return `${a.tagName}${[...a.attributes].filter((x) => x.name.startsWith('data-') || x.name === 'aria-label').map((x) => `[${x.name}=${x.value}]`).join('')}`; };
+const libLog = () => JSON.stringify([rec.series, rec.lines, rec.markers].map((l) => l.map((x) => { try { return JSON.parse(JSON.stringify(x)); } catch { return String(x); } })));
+const steps = [];
+let lastNet = 0;
+let lastLib = '';
+const snap = (name) => {
+  const lib = libLog();
+  steps.push({ name, html: renumber(document.body.innerHTML), lib: lib === lastLib ? 'same' : lib, net: JSON.stringify(net.calls.slice(lastNet)), focus: focusOf() });
+  lastLib = lib; lastNet = net.calls.length;
+};
+const btn = (t) => $$('button').find((b) => b.textContent.trim() === t);
+const keyDown = async (el, k) => { await act(async () => { el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true })); }); await flush(); };
+const tryClick = async (el, name) => { if (el) await click(el); snap(name + (el ? '' : ' (absent)')); };
+
+describe('OFF DIFFERENTIAL (scratch)', () => {
+  it('browse and battle mounts, CHART_READ_MODE off, 20 steps', async () => {
+    FLAG.read = 'off';
+    await browse();
+    snap('browse: open');
+    await tryClick(pill('chart'), 'browse: Chart');
+    await tryClick(btn('1W'), 'browse: 1W');
+    await tryClick(btn('SMA'), 'browse: SMA');
+    await tryClick(btn('S/R'), 'browse: S/R');
+    await tryClick(btn('1D'), 'browse: 1D');
+    await tryClick(pill('analysis'), 'browse: Analysis');
+    await tryClick(pill('chart'), 'browse: Chart again');
+    await keyDown(document.body, 'Escape');
+    snap('browse: Escape');
+    remount();
+    await battle();
+    snap('battle: open');
+    await tryClick(pill('chart'), 'battle: Chart');
+    await tryClick(btn('1W'), 'battle: 1W');
+    await tryClick(btn('SMA'), 'battle: SMA');
+    await tryClick(btn('S/R'), 'battle: S/R');
+    await tryClick(btn('1D'), 'battle: 1D');
+    await tryClick($('[data-record-day]'), 'battle: a record-day chip');
+    await tryClick($('[data-chart-pill="battle"]'), 'battle: Battle');
+    await tryClick($('[data-battle-back]') ?? btn('1D'), 'battle: back to 1D');
+    await tryClick(pill('analysis'), 'battle: Analysis');
+    await tryClick(pill('bomb'), 'battle: 💣');
+    await tryClick(pill('chart'), 'battle: Chart from 💣');
+    await keyDown(document.body, 'Escape');
+    snap('battle: Escape');
+    writeFileSync(process.env.OFF_DIFF_OUT, JSON.stringify(steps));
+    expect(steps.length).toBeGreaterThanOrEqual(20);
+  });
+});

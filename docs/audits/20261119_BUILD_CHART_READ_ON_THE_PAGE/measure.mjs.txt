@@ -1,0 +1,287 @@
+// The checks on the page in a real browser (headless Edge; the 18 Nov harness, adapted). SCRATCH ONLY.
+// node measure-b.mjs <shots dir>  → prints a JSON report and writes PNGs.
+import { chromium } from 'file:///C:/Users/fashr/portfolio-duel/node_modules/playwright-core/index.mjs';
+import fs from 'node:fs';
+const OUT = process.argv[2];
+fs.mkdirSync(OUT, { recursive: true });
+const BASE = 'http://127.0.0.1:5199';
+const browser = await chromium.launch({ headless: true, channel: 'msedge' });
+const report = { rows: [], fails: [] };
+const ok = (name, pass, detail) => { report.rows.push({ name, pass: !!pass, detail }); if (!pass) report.fails.push(name); };
+const SQUARE = 13;
+const AXIS_LABEL_H = 22;
+
+async function open(code, { w, h, reduced = false, mobile = true } = {}) {
+  const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 2, isMobile: mobile, hasTouch: mobile, reducedMotion: reduced ? 'reduce' : 'no-preference' });
+  const page = await ctx.newPage();
+  await page.goto(`${BASE}/?chartReadFixture=${code}`, { waitUntil: 'domcontentloaded', timeout: 120000 });
+  await page.waitForSelector('[data-shell-view]', { timeout: 120000 });
+  await page.waitForTimeout(700);
+  if (!(await page.$('[data-shell-scroll="chart"]'))) await page.locator('[data-shell-pill="chart"]').click();
+  await page.waitForSelector('[data-chart-read]', { timeout: 30000 });
+  await page.waitForTimeout(1500);
+  return { ctx, page };
+}
+const layout = (page) => page.evaluate(() => {
+  const box = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height, right: r.right, bottom: r.bottom }; };
+  const q = (s) => document.querySelector(s);
+  const view = q('[data-shell-scroll="chart"]');
+  const pin = q('[data-chart-pin]');
+  const plot = q('[data-basis-note]')?.parentElement ?? null;
+  const ohlc = [...document.querySelectorAll('[data-shell-scroll="chart"] div')].find((d) => /^O\s/.test(d.innerText || '') && d.style.position === 'absolute');
+  const rows = [...document.querySelectorAll('[data-chart-read-checks] button')].map((b) => { const r = b.getBoundingClientRect(); return { h: r.height, w: r.width }; });
+  return {
+    iw: innerWidth, ih: innerHeight, sw: document.documentElement.scrollWidth, viewSW: view?.scrollWidth, viewCW: view?.clientWidth, viewH: view?.clientHeight, scrollTop: view?.scrollTop,
+    view: box(view), pin: box(pin), pinMode: pin?.dataset.chartPin ?? null, pinPos: pin ? getComputedStyle(pin).position : null, plot: box(plot),
+    band: box(q('[data-chart-read]')), checks: box(q('[data-chart-read-checks]')), technical: box(q('[data-shell-technical]')), ohlc: box(ohlc), rule: box(q('[data-rule-pill]')),
+    rowMinH: rows.length ? Math.min(...rows.map((r) => r.h)) : null, rowMinW: rows.length ? Math.min(...rows.map((r) => r.w)) : null,
+    overflowing: [...(view?.querySelectorAll('*') || [])].filter((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && (r.right > innerWidth + 2 || r.left < -2); }).slice(0, 5).map((e) => `${e.tagName}.${[...e.attributes].map((a) => a.name).join(',')}`),
+  };
+});
+const alignment = (page) => page.evaluate(() => {
+  const p = window.__probe;
+  if (!p || !window.__lastDraw) return { ok: false, why: 'no draw' };
+  const ts = p.chart.timeScale();
+  const rows = window.__lastDraw.map((m) => ({ n: m.n, dx: Math.abs((ts.timeToCoordinate(m.time) ?? NaN) - m.x), dy: Math.abs((p.series.priceToCoordinate(m.value) ?? NaN) - m.y) }));
+  return { ok: rows.length > 0 && rows.every((r) => r.dx < 0.01 && r.dy < 0.01), n: rows.map((r) => r.n), draws: window.__draws };
+});
+/** FX-8 on the real chart's geometry: no line through another mark's square; squares and brackets inside the pane; lit labels a label apart. */
+const marksGeometry = (page) => page.evaluate(({ SQUARE, AXIS_LABEL_H }) => {
+  const ops = window.__ops || [];
+  const pane = window.__pane;
+  const sq = ops.filter((o) => o.op === 'square');
+  const segs = (o) => (o.op === 'line' ? [{ x0: o.x0, x1: o.x1, y0: o.y, y1: o.y, w: o.w }] : o.points.slice(1).map(([x, y], i) => ({ x0: Math.min(x, o.points[i][0]), x1: Math.max(x, o.points[i][0]), y0: Math.min(y, o.points[i][1]), y1: Math.max(y, o.points[i][1]), w: o.w })));
+  const through = [];
+  for (const s of sq) for (const o of ops.filter((x) => (x.op === 'line' || x.op === 'path') && x.n !== s.n)) {
+    if (segs(o).some((g) => g.x0 - g.w / 2 < s.x + SQUARE && g.x1 + g.w / 2 > s.x && g.y0 - g.w / 2 < s.y + SQUARE / 2 && g.y1 + g.w / 2 > s.y - SQUARE / 2)) through.push(`${o.n}→${s.n}`);
+  }
+  const lastLine = Math.max(...ops.map((o, i) => (o.op === 'line' || o.op === 'path' ? i : -1)));
+  const firstSquare = ops.findIndex((o) => o.op === 'square');
+  const zOrder = firstSquare < 0 || firstSquare > lastLine;
+  const onSquare = [];
+  for (const a of sq) for (const b of sq) if (a !== b && a.n < b.n && Math.abs(a.x - b.x) < SQUARE && Math.abs(a.y - b.y) < SQUARE) onSquare.push(`${a.n}/${b.n}`);
+  const STEP = SQUARE + 2;
+  const notBeside = sq.filter((s) => {
+    const own = ops.filter((o) => (o.op === 'line' || o.op === 'path') && o.n === s.n);
+    const xs = own.flatMap((o) => (o.op === 'line' ? [o.x0, o.x1] : o.points.map(([x]) => x)));
+    const ys = own.flatMap((o) => (o.op === 'line' ? [o.y] : o.points.map(([, y]) => y)));
+    const dx = Math.max(0, Math.min(...xs) - (s.x + SQUARE), s.x - Math.max(...xs));
+    const dy = Math.max(0, Math.min(...ys) - s.y, s.y - Math.max(...ys));
+    return !(dx <= 2 * STEP + 3 && dy <= STEP);
+  }).map((s) => s.n);
+  const offHeight = sq.filter((s) => {
+    const ys = ops.filter((o) => (o.op === 'line' || o.op === 'path') && o.n === s.n).flatMap((o) => (o.op === 'line' ? [o.y] : o.points.map(([, y]) => y)));
+    return Math.max(0, Math.min(...ys) - s.y, s.y - Math.max(...ys)) > STEP;
+  }).map((s) => s.n);
+  const outside = sq.filter((s) => s.x < 0 || s.x + SQUARE > pane.width || s.y - SQUARE / 2 < 0 || s.y + SQUARE / 2 > pane.height).map((s) => s.n);
+  const paths = ops.filter((o) => o.op === 'path').flatMap((o) => o.points).filter(([x]) => x < 0 || x > pane.width).length;
+  const views = window.__probe.prim.priceAxisViews().map((v) => v.fixedCoordinate()).sort((a, b) => a - b);
+  const gaps = views.slice(1).map((y, i) => y - views[i]);
+  return { through, zOrder, onSquare, notBeside, offHeight, outside, pathsOut: paths, labels: views, minGap: gaps.length ? Math.min(...gaps) : null, labelsInside: views.every((y) => y >= AXIS_LABEL_H / 2 - 0.5 && y <= pane.height - AXIS_LABEL_H / 2 + 0.5), lit: (window.__lastDraw || []).filter((m) => m.lit).map((m) => m.n), pane };
+}, { SQUARE, AXIS_LABEL_H });
+/** Scroll the Chart view by real wheel input until the checks reach the pinned chart (or `max` steps). */
+async function scrollIntoChecks(page) {
+  const v = await page.locator('[data-shell-scroll="chart"]').boundingBox();
+  for (let i = 0; i < 40; i++) {
+    const mode = await page.evaluate(() => document.querySelector('[data-chart-pin]')?.dataset.chartPin);
+    if (mode === 'compact') break;
+    await page.mouse.move(v.x + v.width / 2, v.y + v.height - 20);
+    await page.mouse.wheel(0, 80);
+    await page.waitForTimeout(90);
+  }
+  await page.waitForTimeout(700);
+}
+async function scrollToTop(page) {
+  const v = await page.locator('[data-shell-scroll="chart"]').boundingBox();
+  for (let i = 0; i < 60; i++) {
+    const top = await page.evaluate(() => document.querySelector('[data-shell-scroll="chart"]').scrollTop);
+    if (top <= 0) break;
+    await page.mouse.move(v.x + v.width / 2, v.y + v.height - 20);
+    await page.mouse.wheel(0, -120);
+    await page.waitForTimeout(60);
+  }
+  await page.waitForTimeout(700);
+}
+const tapTargets = (page) => page.evaluate(() => {
+  const els = [...document.querySelectorAll('[data-chart-read-checks] button, [data-rule-pill], [data-chart-read-retry]')];
+  return els.map((b) => { const r = b.getBoundingClientRect(); return { k: b.dataset.checkRow || b.dataset.checkGroup || (b.hasAttribute('data-rule-pill') ? 'rule' : 'other'), w: r.width, h: r.height }; }).filter((t) => t.h < 44 || t.w < 44);
+});
+
+const VIEWS = [[390, 844, true], [320, 640, true], [1280, 800, false]];
+const rowWidths = {};
+for (const [w, h, mobile] of VIEWS) {
+  for (const [code, tap] of [['A', 'touch'], ['C', 'closeAboveFast'], ['EXT', 'extension']]) {
+    const { ctx, page } = await open(code, { w, h, mobile });
+    const T = await layout(page);
+    await page.screenshot({ path: `${OUT}/${code}-${w}-top.png` });
+    ok(`${code}@${w}: opens on the Chart view (CP-2)`, await page.evaluate(() => document.querySelector('[data-shell-view]').dataset.shellView === 'chart'));
+    ok(`${code}@${w}: at the top — the chart pinned (sticky) at the shell's height`, T.pinPos === 'sticky' && T.pinMode === 'full' && Math.abs(T.pin.y - T.view.y) < 1, { pin: T.pin, view: T.view, mode: T.pinMode });
+    ok(`${code}@${w}: no sideways scroll`, T.sw <= T.iw && T.viewSW <= T.viewCW + 1 && T.overflowing.length === 0, { sw: T.sw, iw: T.iw, viewSW: T.viewSW, viewCW: T.viewCW, overflowing: T.overflowing });
+    ok(`${code}@${w}: the page in order — the chart, the read, the checks, the Technical content`, T.pin.bottom <= T.band.y + 0.5 && T.band.bottom <= T.checks.y + 0.5 && T.checks.bottom <= T.technical.y + 0.5, { pin: T.pin, band: T.band, checks: T.checks, technical: T.technical });
+    const small = await tapTargets(page);
+    ok(`${code}@${w}: every tap target 44 px+ (rows, expand, Rule)`, small.length === 0, small);
+    rowWidths[`${code}-${w}`] = T.rowMinW;
+    if (w === 1280) ok(`${code}@1280: one column, the checks across the modal's width (PG-10)`, T.checks.w >= T.view.w - 2 && T.rowMinW >= (rowWidths[`${code}-390`] ?? 0), { checks: T.checks, view: T.view, rowMinW: T.rowMinW, at390: rowWidths[`${code}-390`] });
+    const a0 = await alignment(page);
+    ok(`${code}@${w}: at full height the marks sit on their bars`, a0.ok, a0);
+    // into the checks: compact, still pinned, every mark that exists, on its bars — ONE change of height on the way
+    const watch = () => page.evaluate(() => { window.__modes = []; const pin = document.querySelector('[data-chart-pin]'); window.__mo?.disconnect(); window.__mo = new MutationObserver(() => window.__modes.push(pin.dataset.chartPin)); window.__mo.observe(pin, { attributes: true, attributeFilter: ['data-chart-pin'] }); });
+    await watch();
+    await scrollIntoChecks(page);
+    const inModes = await page.evaluate(() => window.__modes);
+    ok(`${code}@${w}: scrolling into the checks changes the height once (never back and forth)`, inModes.join() === 'compact', { inModes });
+    const C = await layout(page);
+    await page.screenshot({ path: `${OUT}/${code}-${w}-checks.png` });
+    const want = Math.min(T.plot.h, Math.max(180, Math.round((T.view.h) / 3)));
+    ok(`${code}@${w}: scrolled into the checks — compact (a third of the view, ≥ 180 px), still pinned at the top`, C.pinMode === 'compact' && Math.abs(C.plot.h - want) <= 1 && Math.abs(C.pin.y - C.view.y) < 1, { plot: C.plot.h, want, pin: C.pin, view: C.view });
+    const a1 = await alignment(page);
+    const nMarks = await page.evaluate(() => window.__probe?.prim?.scene?.items?.length ?? 0);
+    ok(`${code}@${w}: after the change of height the marks are re-drawn on their bars — every mark that exists`, a1.ok && a1.draws > a0.draws && nMarks >= a0.n.length, { a1, nMarks });
+    // a tapped check lights its mark in view, the chart still on top
+    await page.locator(`[data-check-row="${tap}"]`).scrollIntoViewIfNeeded();
+    const before = await page.evaluate(() => document.querySelector('[data-shell-scroll="chart"]').scrollTop);
+    await page.locator(`[data-check-row="${tap}"]`).click();
+    await page.waitForTimeout(400);
+    const lit = await page.evaluate(() => ({ lit: (window.__lastDraw || []).filter((m) => m.lit).map((m) => m.n), scrollTop: document.querySelector('[data-shell-scroll="chart"]').scrollTop, mode: document.querySelector('[data-chart-pin]').dataset.chartPin, pressed: document.querySelector('[data-check-row][aria-pressed="true"]')?.dataset.checkRow }));
+    const plotHit = await page.evaluate(() => { const p = document.querySelector('[data-basis-note]')?.parentElement ?? document.querySelector('[data-chart-pin] canvas'); const r = p.getBoundingClientRect(); const el = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return el?.tagName; });
+    ok(`${code}@${w}: a tapped check lights its mark in view (the pinned chart on top) and scrolls nothing`, lit.lit.length > 0 && lit.pressed === tap && lit.scrollTop === before && plotHit === 'CANVAS', { ...lit, before, plotHit });
+    await page.screenshot({ path: `${OUT}/${code}-${w}-lit.png` });
+    await watch();
+    await scrollToTop(page);
+    const outModes = await page.evaluate(() => window.__modes);
+    ok(`${code}@${w}: scrolling back to the top changes the height once`, outModes.join() === 'full', { outModes });
+    const F = await layout(page);
+    ok(`${code}@${w}: back at the top — the chart at its full height again`, F.pinMode === 'full' && Math.abs(F.plot.h - T.plot.h) <= 1, { plot: F.plot.h, top: T.plot.h });
+    await ctx.close();
+  }
+}
+
+// Pan, zoom and rotation (A at 390, compact): the marks re-drawn on their bars.
+{
+  const { ctx, page } = await open('A', { w: 390, h: 844 });
+  await scrollIntoChecks(page);
+  const canvas = page.locator('[data-shell-scroll="chart"] canvas').first();
+  const cb = await canvas.boundingBox();
+  const d0 = (await alignment(page)).draws;
+  await page.mouse.move(cb.x + cb.width * 0.5, cb.y + cb.height * 0.4);
+  await page.mouse.down();
+  await page.mouse.move(cb.x + cb.width * 0.3, cb.y + cb.height * 0.4, { steps: 8 });
+  await page.mouse.up();
+  await page.waitForTimeout(400);
+  const aPan = await alignment(page);
+  ok('A (compact): after a pan the marks are re-drawn on their bars', aPan.ok && aPan.draws > d0, aPan);
+  await page.mouse.move(cb.x + cb.width * 0.6, cb.y + cb.height * 0.4);
+  await page.mouse.wheel(0, -600);
+  await page.waitForTimeout(400);
+  const aZoom = await alignment(page);
+  ok('A (compact): after a zoom the marks are re-drawn on their bars', aZoom.ok && aZoom.draws > aPan.draws, aZoom);
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.waitForTimeout(900);
+  const aRot = await alignment(page);
+  const Lr = await layout(page);
+  ok('A: after rotation (844×390) the marks are re-drawn on their bars, no sideways scroll', aRot.ok && aRot.draws > aZoom.draws && Lr.sw <= Lr.iw, { aRot, sw: Lr.sw, iw: Lr.iw });
+  await page.screenshot({ path: `${OUT}/A-rotated.png` });
+  await ctx.close();
+}
+
+// FX-8 on real geometry at 390, 320 and 1280: the screenshot's pair lit (P23: marks 2 and 3 $1.11 apart), and the touch
+// bracket under the latest three bars (AW: the record is the chart's last bar).
+for (const [w, h, mobile] of VIEWS) {
+  {
+    const { ctx, page } = await open('P23', { w, h, mobile });
+    await page.locator('[data-check-row="slowRising"]').click();
+    await page.waitForTimeout(500);
+    const G = await marksGeometry(page);
+    await page.screenshot({ path: `${OUT}/FX8-pair-${w}.png` });
+    ok(`FX-8@${w} (2 and 3 lit, $1.11 apart; compact, every mark): no line drawn across a number — every square over every line, none on another`, G.zOrder && G.onSquare.length === 0 && G.lit.join() === '2,3', G);
+    ok(`FX-8@${w}: every square at its own mark's height (within one square)`, G.offHeight.length === 0, { offHeight: G.offHeight, notBeside: G.notBeside });
+    ok(`FX-8@${w}: the two lit labels a full label apart, inside the pane`, G.labels.length === 2 && G.minGap >= AXIS_LABEL_H - 0.01 && G.labelsInside, G);
+    ok(`FX-8@${w}: no square or bracket cut off`, G.outside.length === 0 && G.pathsOut === 0, G);
+    await ctx.close();
+  }
+  {
+    const { ctx, page } = await open('AW', { w, h, mobile });
+    await page.locator('[data-check-row="touch"]').click();
+    await page.waitForTimeout(500);
+    const G = await marksGeometry(page);
+    await page.screenshot({ path: `${OUT}/FX8-bracket-${w}.png` });
+    ok(`FX-8@${w} (the touch under the latest bars): its square and bracket inside the pane, left of the price scale`, G.outside.length === 0 && G.pathsOut === 0 && G.lit.includes(4), G);
+    ok(`FX-8@${w}: no line drawn across a number — every square over every line, none on another; each beside its own mark`, G.zOrder && G.onSquare.length === 0 && G.notBeside.length === 0, G);
+    await ctx.close();
+  }
+}
+
+// Reduced motion: the page under the chart moves by the change of height only without it.
+for (const reduced of [false, true]) {
+  const { ctx, page } = await open('A', { w: 390, h: 844, reduced });
+  await page.evaluate(() => { window.__frames = []; const tick = () => { const s = document.querySelector('[data-chart-read-page]'); if (s) window.__frames.push(getComputedStyle(s).transform); if (window.__frames.length < 40) requestAnimationFrame(tick); }; requestAnimationFrame(tick); });
+  await scrollIntoChecks(page);
+  const frames = await page.evaluate(() => window.__frames);
+  const moved = frames.some((t) => t && t !== 'none' && t !== 'matrix(1, 0, 0, 1, 0, 0)');
+  ok(`reduced motion ${reduced ? 'on' : 'off'}: the page under the chart ${reduced ? 'moves at once' : 'eases'} into place`, reduced ? !moved : moved, { frames: frames.filter((t) => t !== 'none').slice(0, 6) });
+  await ctx.close();
+}
+
+// Focus order: Tab through the checks while compact — a focused row is never under the pinned chart; the chart's own
+// controls focus without moving the page.
+{
+  const { ctx, page } = await open('A', { w: 390, h: 844, mobile: false });
+  await scrollIntoChecks(page);
+  const pinBottom = await page.evaluate(() => document.querySelector('[data-chart-pin]').getBoundingClientRect().bottom);
+  const bad = [];
+  await page.locator('[data-check-row="slowRising"]').focus();
+  for (let i = 0; i < 9; i++) {
+    await page.keyboard.press(i < 5 ? 'Tab' : 'Shift+Tab');
+    await page.waitForTimeout(150);
+    const f = await page.evaluate(() => { const a = document.activeElement; const r = a.getBoundingClientRect(); return { row: a.dataset.checkRow || a.dataset.checkGroup || a.tagName, top: r.top, inChecks: !!a.closest('[data-chart-read-checks]') }; });
+    if (f.inChecks && f.top < pinBottom - 1) bad.push(f);
+  }
+  ok('focus: Tab and Shift+Tab never leave a focused check under the pinned chart', bad.length === 0, { bad, pinBottom });
+  const st0 = await page.evaluate(() => document.querySelector('[data-shell-scroll="chart"]').scrollTop);
+  await page.locator('[data-rule-pill]').focus();
+  await page.waitForTimeout(200);
+  const st1 = await page.evaluate(() => ({ top: document.querySelector('[data-shell-scroll="chart"]').scrollTop, mode: document.querySelector('[data-chart-pin]').dataset.chartPin }));
+  ok('focus: the pinned chart\'s own Rule chip focuses without moving the page', st1.top === st0 && st1.mode === 'compact', { st0, st1 });
+  await ctx.close();
+}
+
+// FX-10 and the Battle chart at 320 (and 390): the battle mount's control bar wraps and runs past nothing; the OHLC row
+// stops before the price scale; the checks stay on the page; on Battle only the stub.
+for (const [w, h] of [[320, 640], [390, 844]]) {
+  const { ctx, page } = await open('F1', { w, h });
+  const B = await page.evaluate(() => {
+    const pin = document.querySelector('[data-chart-pin]') ?? document.querySelector('[data-shell-scroll="chart"]');
+    const bar = document.querySelector('[data-chart-pill="battle"]').parentElement.parentElement; // the pill group → the control bar
+    const buttons = [...bar.querySelectorAll('button')].map((b) => b.getBoundingClientRect());
+    const ohlc = [...document.querySelectorAll('[data-shell-scroll="chart"] div')].find((d) => /^O\s/.test(d.innerText || '') && d.style.position === 'absolute');
+    const plot = ohlc.parentElement.getBoundingClientRect();
+    const axisW = window.__probe?.chart?.priceScale('right').width() ?? null;
+    const spans = [...ohlc.children].map((s) => s.getBoundingClientRect().right);
+    return { iw: innerWidth, barSW: bar.scrollWidth, barCW: bar.clientWidth, wraps: getComputedStyle(bar).flexWrap, btnRight: Math.max(...buttons.map((r) => r.right)), ohlcRight: Math.max(...spans), plotRight: plot.right, axisW, sw: document.documentElement.scrollWidth };
+  });
+  await page.screenshot({ path: `${OUT}/F1-${w}.png` });
+  ok(`FX-10@${w}: the battle mount's control bar wraps and runs past nothing`, B.wraps === 'wrap' && B.barSW <= B.barCW + 1 && B.btnRight <= B.iw && B.sw <= B.iw, B);
+  ok(`FX-10@${w}: the OHLC row (Vol included) stops before the price scale`, B.axisW > 0 && B.ohlcRight <= B.plotRight - B.axisW + 0.5, B);
+  await page.locator('[data-chart-pill="battle"]').click();
+  await page.waitForTimeout(2200);
+  const F2 = await page.evaluate(() => ({ checks: !!document.querySelector('[data-chart-read-checks]'), scene: window.__probe?.prim?.scene ?? null, sw: document.documentElement.scrollWidth, iw: innerWidth }));
+  await page.screenshot({ path: `${OUT}/F2-${w}.png` });
+  ok(`PG-8@${w}: on the Battle chart the checks stay on the page; the one stub, no daily mark`, F2.checks && F2.scene && F2.scene.items.length === 0 && F2.scene.stub && F2.sw <= F2.iw, { checks: F2.checks, items: F2.scene?.items?.length, stub: F2.scene?.stub?.label });
+  await ctx.close();
+}
+// FX-10 on a browse mount at 320: the OHLC row stops before the price scale.
+{
+  const { ctx, page } = await open('A', { w: 320, h: 640 });
+  const O = await page.evaluate(() => {
+    const ohlc = [...document.querySelectorAll('[data-shell-scroll="chart"] div')].find((d) => /^O\s/.test(d.innerText || '') && d.style.position === 'absolute');
+    const plot = ohlc.parentElement.getBoundingClientRect();
+    return { ohlcRight: Math.max(...[...ohlc.children].map((s) => s.getBoundingClientRect().right)), plotRight: plot.right, axisW: window.__probe?.chart?.priceScale('right').width() ?? null, vol: /Vol/.test(ohlc.innerText) };
+  });
+  ok('FX-10@320 (browse): the OHLC row, Vol included, stops before the price scale', O.vol && O.axisW > 0 && O.ohlcRight <= O.plotRight - O.axisW + 0.5, O);
+  await ctx.close();
+}
+
+await browser.close();
+fs.writeFileSync(`${OUT}/report.json`, JSON.stringify(report, null, 1));
+console.log(JSON.stringify({ total: report.rows.length, fails: report.fails }, null, 1));
+for (const r of report.rows) if (!r.pass) console.log('FAIL', r.name, JSON.stringify(r.detail).slice(0, 700));

@@ -1,0 +1,2364 @@
+{
+ "rows": [
+  {
+   "name": "A@390: opens on the Chart view (CP-2)",
+   "pass": true
+  },
+  {
+   "name": "A@390: at the top — the chart pinned (sticky) at the shell's height",
+   "pass": true,
+   "detail": {
+    "pin": {
+     "x": 1,
+     "y": 110,
+     "w": 388,
+     "h": 591,
+     "right": 389,
+     "bottom": 701
+    },
+    "view": {
+     "x": 1,
+     "y": 110,
+     "w": 388,
+     "h": 650,
+     "right": 389,
+     "bottom": 760
+    },
+    "mode": "full"
+   }
+  },
+  {
+   "name": "A@390: no sideways scroll",
+   "pass": true,
+   "detail": {
+    "sw": 390,
+    "iw": 390,
+    "viewSW": 388,
+    "viewCW": 388,
+    "overflowing": []
+   }
+  },
+  {
+   "name": "A@390: the page in order — the chart, the read, the checks, the Technical content",
+   "pass": true,
+   "detail": {
+    "pin": {
+     "x": 1,
+     "y": 110,
+     "w": 388,
+     "h": 591,
+     "right": 389,
+     "bottom": 701
+    },
+    "band": {
+     "x": 1,
+     "y": 701,
+     "w": 388,
+     "h": 189.359375,
+     "right": 389,
+     "bottom": 890.359375
+    },
+    "checks": {
+     "x": 1,
+     "y": 890.359375,
+     "w": 388,
+     "h": 1368.28125,
+     "right": 389,
+     "bottom": 2258.640625
+    },
+    "technical": {
+     "x": 1,
+     "y": 2258.640625,
+     "w": 388,
+     "h": 650.875,
+     "right": 389,
+     "bottom": 2909.515625
+    }
+   }
+  },
+  {
+   "name": "A@390: every tap target 44 px+ (rows, expand, Rule)",
+   "pass": true,
+   "detail": []
+  },
+  {
+   "name": "A@390: at full height the marks sit on their bars",
+   "pass": true,
+   "detail": {
+    "ok": true,
+    "n": [
+     1,
+     4,
+     5,
+     6
+    ],
+    "draws": 3
+   }
+  },
+  {
+   "name": "A@390: scrolling into the checks changes the height once (never back and forth)",
+   "pass": true,
+   "detail": {
+    "inModes": [
+     "compact"
+    ]
+   }
+  },
+  {
+   "name": "A@390: scrolled into the checks — compact (a third of the view, ≥ 180 px), still pinned at the top",
+   "pass": true,
+   "detail": {
+    "plot": 217,
+    "want": 217,
+    "pin": {
+     "x": 1,
+     "y": 110,
+     "w": 388,
+     "h": 274,
+     "right": 389,
+     "bottom": 384
+    },
+    "view": {
+     "x": 1,
+     "y": 110,
+     "w": 388,
+     "h": 650,
+     "right": 389,
+     "bottom": 760
+    }
+   }
+  },
+  {
+   "name": "A@390: after the change of height the marks are re-drawn on their bars — every mark that exists",
+   "pass": true,
+   "detail": {
+    "a1": {
+     "ok": true,
+     "n": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+     ],
+     "draws": 6
+    },
+    "nMarks": 7
+   }
+  },
+  {
+   "name": "A@390: a tapped check lights its mark in view (the pinned chart on top) and scrolls nothing",
+   "pass": true,
+   "detail": {
+    "lit": [
+     1,
+     4
+    ],
+    "scrollTop": 306,
+    "mode": "compact",
+    "pressed": "touch",
+    "before": 306,
+    "plotHit": "CANVAS"
+   }
+  },
+  {
+   "name": "A@390: scrolling back to the top changes the height once",
+   "pass": true,
+   "detail": {
+    "outModes": [
+     "full"
+    ]
+   }
+  },
+  {
+   "name": "A@390: back at the top — the chart at its full height again",
+   "pass": true,
+   "detail": {
+    "plot": 534,
+    "top": 534
+   }
+  },
+  {
+   "name": "C@390: opens on the Chart view (CP-2)",
+   "pass": true
+  },
+  {
+   "name": "C@390: at the top — the chart pinned (sticky) at the shell's height",
+   "pass": true,
+   "detail": {
+    "pin": {
+     "x": 1,
+     "y": 110,
+     "w": 388,
+     "h": 591,
+     "right": 389,
+     "bottom": 701
+    },
+    "view": {
+     "x": 1,
+     "y": 110,
+     "w": 388,
+     "h": 650,
+     "right": 389,
+     "bottom": 760
+    },
+    "mode": "full"
+   }
+  },
+  {
+   "name": "C@390: no sideways scroll",
+   "pass": true,
+   "detail": {
+    "sw": 390,
+    "iw": 390,
+    "viewSW": 388,
+    "viewCW": 388,
+    "overflowing": []
+   }
+  },
+  {
+   "name": "C@390: the page in order — the chart, the read, the checks, the Technical content",
+   "pass": true,
+   "detail": {
+    "pin": {
+     "x": 1,
+     "y": 110,
+     "w": 388,
+     "h": 591,
+     "right": 389,
+     "bottom": 701
+    },
+    "band": {
+     "x": 1,
+     "y": 701,
+     "w": 388,
+     "h": 189.359375,
+     "right": 389,
+     "bottom": 890.359375
+    },
+    "checks": {
+     "x": 1,
+     "y": 890.359375,
+     "w": 388,
+     "h": 845.515625,
+     "right": 389,
+     "bottom": 1735.875
+    },
+    "technical": {
+     "x": 1,
+     "y": 1735.875,
+     "w": 388,
+     "h": 650.875,
+     "right": 389,
+     "bottom": 2386.75
+    }
+   }
+  },
+  {
+   "name": "C@390: every tap target 44 px+ (rows, expand, Rule)",
+   "pass": true,
+   "detail": []
+  },
+  {
+   "name": "C@390: at full height the marks sit on their bars",
+   "pass": true,
+   "detail": {
+    "ok": true,
+    "n": [
+     1,
+     2,
+     3
+    ],
+    "draws": 3
+   }
+  },
+  {
+   "name": "C@390: scrolling into the checks changes the height once (never back and forth)",
+   "pass": true,
+   "detail": {
+    "inModes": [
+     "compact"
+    ]
+   }
+  },
+  {
+   "name": "C@390: scrolled into the checks — compact (a third of the view, ≥ 180 px), still pinned at the top",
+   "pass": true,
+   "detail": {
+    "plot": 217,
+    "want": 217,
+    "pin": {
+     "x": 1,
+     "y": 110,
+     "w": 388,
+     "h": 274,
+     "right": 389,
+     "bottom": 384
+    },
+    "view": {
+     "x": 1,
+     "y": 110,
+     "w": 388,
+     "h": 650,
+     "right": 389,
+     "bottom": 760
+    }
+   }
+  },
+  {
+   "name": "C@390: after the change of height the marks are re-drawn on their bars — every mark that exists",
+   "pass": true,
+   "detail": {
+    "a1": {
+     "ok": true,
+     "n": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+     ],
+     "draws": 6
+    },
+    "nMarks": 7
+   }
+  },
+  {
+   "name": "C@390: a tapped check lights its mark in view (the pinned chart on top) and scrolls nothing",
+   "pass": true,
+   "detail": {
+    "lit": [
+     1
+    ],
+    "scrollTop": 240,
+    "mode": "compact",
+    "pressed": "closeAboveFast",
+    "before": 240,
+    "plotHit": "CANVAS"
+   }
+  },
+  {
+   "name": "C@390: scrolling back to the top changes the height once",
+   "pass": true,
+   "detail": {
+    "outModes": [
+     "full"
+    ]
+   }
+  },
+  {
+   "name": "C@390: back at the top — the chart at its full height again",
+   "pass": true,
+   "detail": {
+    "plot": 534,
+    "top": 534
+   }
+  },
+  {
+   "name": "EXT@390: opens on the Chart view (CP-2)",
+   "pass": true
+  },
+  {
+   "name": "EXT@390: at the top — the chart pinned (sticky) at the shell's height",
+   "pass": true,
+   "detail": {
+    "pin": {
+     "x": 1,
+     "y": 110,
+     "w": 388,
+     "h": 591,
+     "right": 389,
+     "bottom": 701
+    },
+    "view": {
+     "x": 1,
+     "y": 110,
+     "w": 388,
+     "h": 650,
+     "right": 389,
+     "bottom": 760
+    },
+    "mode": "full"
+   }
+  },
+  {
+   "name": "EXT@390: no sideways scroll",
+   "pass": true,
+   "detail": {
+    "sw": 390,
+    "iw": 390,
+    "viewSW": 388,
+    "viewCW": 388,
+    "overflowing": []
+   }
+  },
+  {
+   "name": "EXT@390: the page in order — the chart, the read, the checks, the Technical content",
+   "pass": true,
+   "detail": {
+    "pin": {
+     "x": 1,
+     "y": 110,
+     "w": 388,
+     "h": 591,
+     "right": 389,
+     "bottom": 701
+    },
+    "band": {
+     "x": 1,
+     "y": 701,
+     "w": 388,
+     "h": 190.796875,
+     "right": 389,
+     "bottom": 891.796875
+    },
+    "checks": {
+     "x": 1,
+     "y": 891.796875,
+     "w": 388,
+     "h": 1388.578125,
+     "right": 389,
+     "bottom": 2280.375
+    },
+    "technical": {
+     "x": 1,
+     "y": 2280.375,
+     "w": 388,
+     "h": 650.875,
+     "right": 389,
+     "bottom": 2931.25
+    }
+   }
+  },
+  {
+   "name": "EXT@390: every tap target 44 px+ (rows, expand, Rule)",
+   "pass": true,
+   "detail": []
+  },
+  {
+   "name": "EXT@390: at full height the marks sit on their bars",
+   "pass": true,
+   "detail": {
+    "ok": true,
+    "n": [
+     1,
+     7
+    ],
+    "draws": 3
+   }
+  },
+  {
+   "name": "EXT@390: scrolling into the checks changes the height once (never back and forth)",
+   "pass": true,
+   "detail": {
+    "inModes": [
+     "compact"
+    ]
+   }
+  },
+  {
+   "name": "EXT@390: scrolled into the checks — compact (a third of the view, ≥ 180 px), still pinned at the top",
+   "pass": true,
+   "detail": {
+    "plot": 217,
+    "want": 217,
+    "pin": {
+     "x": 1,
+     "y": 110,
+     "w": 388,
+     "h": 274,
+     "right": 389,
+     "bottom": 384
+    },
+    "view": {
+     "x": 1,
+     "y": 110,
+     "w": 388,
+     "h": 650,
+     "right": 389,
+     "bottom": 760
+    }
+   }
+  },
+  {
+   "name": "EXT@390: after the change of height the marks are re-drawn on their bars — every mark that exists",
+   "pass": true,
+   "detail": {
+    "a1": {
+     "ok": true,
+     "n": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+     ],
+     "draws": 7
+    },
+    "nMarks": 7
+   }
+  },
+  {
+   "name": "EXT@390: a tapped check lights its mark in view (the pinned chart on top) and scrolls nothing",
+   "pass": true,
+   "detail": {
+    "lit": [
+     7
+    ],
+    "scrollTop": 671,
+    "mode": "compact",
+    "pressed": "extension",
+    "before": 671,
+    "plotHit": "CANVAS"
+   }
+  },
+  {
+   "name": "EXT@390: scrolling back to the top changes the height once",
+   "pass": true,
+   "detail": {
+    "outModes": [
+     "full"
+    ]
+   }
+  },
+  {
+   "name": "EXT@390: back at the top — the chart at its full height again",
+   "pass": true,
+   "detail": {
+    "plot": 534,
+    "top": 534
+   }
+  },
+  {
+   "name": "A@320: opens on the Chart view (CP-2)",
+   "pass": true
+  },
+  {
+   "name": "A@320: at the top — the chart pinned (sticky) at the shell's height",
+   "pass": true,
+   "detail": {
+    "pin": {
+     "x": 1,
+     "y": 110,
+     "w": 318,
+     "h": 387,
+     "right": 319,
+     "bottom": 497
+    },
+    "view": {
+     "x": 1,
+     "y": 110,
+     "w": 318,
+     "h": 446,
+     "right": 319,
+     "bottom": 556
+    },
+    "mode": "full"
+   }
+  },
+  {
+   "name": "A@320: no sideways scroll",
+   "pass": true,
+   "detail": {
+    "sw": 320,
+    "iw": 320,
+    "viewSW": 318,
+    "viewCW": 318,
+    "overflowing": []
+   }
+  },
+  {
+   "name": "A@320: the page in order — the chart, the read, the checks, the Technical content",
+   "pass": true,
+   "detail": {
+    "pin": {
+     "x": 1,
+     "y": 110,
+     "w": 318,
+     "h": 387,
+     "right": 319,
+     "bottom": 497
+    },
+    "band": {
+     "x": 1,
+     "y": 497,
+     "w": 318,
+     "h": 210.359375,
+     "right": 319,
+     "bottom": 707.359375
+    },
+    "checks": {
+     "x": 1,
+     "y": 707.359375,
+     "w": 318,
+     "h": 1545.203125,
+     "right": 319,
+     "bottom": 2252.5625
+    },
+    "technical": {
+     "x": 1,
+     "y": 2252.5625,
+     "w": 318,
+     "h": 650.875,
+     "right": 319,
+     "bottom": 2903.4375
+    }
+   }
+  },
+  {
+   "name": "A@320: every tap target 44 px+ (rows, expand, Rule)",
+   "pass": true,
+   "detail": []
+  },
+  {
+   "name": "A@320: at full height the marks sit on their bars",
+   "pass": true,
+   "detail": {
+    "ok": true,
+    "n": [
+     1,
+     4,
+     5,
+     6
+    ],
+    "draws": 3
+   }
+  },
+  {
+   "name": "A@320: scrolling into the checks changes the height once (never back and forth)",
+   "pass": true,
+   "detail": {
+    "inModes": [
+     "compact"
+    ]
+   }
+  },
+  {
+   "name": "A@320: scrolled into the checks — compact (a third of the view, ≥ 180 px), still pinned at the top",
+   "pass": true,
+   "detail": {
+    "plot": 180,
+    "want": 180,
+    "pin": {
+     "x": 1,
+     "y": 110,
+     "w": 318,
+     "h": 237,
+     "right": 319,
+     "bottom": 347
+    },
+    "view": {
+     "x": 1,
+     "y": 110,
+     "w": 318,
+     "h": 446,
+     "right": 319,
+     "bottom": 556
+    }
+   }
+  },
+  {
+   "name": "A@320: after the change of height the marks are re-drawn on their bars — every mark that exists",
+   "pass": true,
+   "detail": {
+    "a1": {
+     "ok": true,
+     "n": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+     ],
+     "draws": 6
+    },
+    "nMarks": 7
+   }
+  },
+  {
+   "name": "A@320: a tapped check lights its mark in view (the pinned chart on top) and scrolls nothing",
+   "pass": true,
+   "detail": {
+    "lit": [
+     1,
+     4
+    ],
+    "scrollTop": 579,
+    "mode": "compact",
+    "pressed": "touch",
+    "before": 579,
+    "plotHit": "CANVAS"
+   }
+  },
+  {
+   "name": "A@320: scrolling back to the top changes the height once",
+   "pass": true,
+   "detail": {
+    "outModes": [
+     "full"
+    ]
+   }
+  },
+  {
+   "name": "A@320: back at the top — the chart at its full height again",
+   "pass": true,
+   "detail": {
+    "plot": 330,
+    "top": 330
+   }
+  },
+  {
+   "name": "C@320: opens on the Chart view (CP-2)",
+   "pass": true
+  },
+  {
+   "name": "C@320: at the top — the chart pinned (sticky) at the shell's height",
+   "pass": true,
+   "detail": {
+    "pin": {
+     "x": 1,
+     "y": 110,
+     "w": 318,
+     "h": 387,
+     "right": 319,
+     "bottom": 497
+    },
+    "view": {
+     "x": 1,
+     "y": 110,
+     "w": 318,
+     "h": 446,
+     "right": 319,
+     "bottom": 556
+    },
+    "mode": "full"
+   }
+  },
+  {
+   "name": "C@320: no sideways scroll",
+   "pass": true,
+   "detail": {
+    "sw": 320,
+    "iw": 320,
+    "viewSW": 318,
+    "viewCW": 318,
+    "overflowing": []
+   }
+  },
+  {
+   "name": "C@320: the page in order — the chart, the read, the checks, the Technical content",
+   "pass": true,
+   "detail": {
+    "pin": {
+     "x": 1,
+     "y": 110,
+     "w": 318,
+     "h": 387,
+     "right": 319,
+     "bottom": 497
+    },
+    "band": {
+     "x": 1,
+     "y": 497,
+     "w": 318,
+     "h": 246.59375,
+     "right": 319,
+     "bottom": 743.59375
+    },
+    "checks": {
+     "x": 1,
+     "y": 743.59375,
+     "w": 318,
+     "h": 897.703125,
+     "right": 319,
+     "bottom": 1641.296875
+    },
+    "technical": {
+     "x": 1,
+     "y": 1641.296875,
+     "w": 318,
+     "h": 650.875,
+     "right": 319,
+     "bottom": 2292.171875
+    }
+   }
+  },
+  {
+   "name": "C@320: every tap target 44 px+ (rows, expand, Rule)",
+   "pass": true,
+   "detail": []
+  },
+  {
+   "name": "C@320: at full height the marks sit on their bars",
+   "pass": true,
+   "detail": {
+    "ok": true,
+    "n": [
+     1,
+     2,
+     3
+    ],
+    "draws": 3
+   }
+  },
+  {
+   "name": "C@320: scrolling into the checks changes the height once (never back and forth)",
+   "pass": true,
+   "detail": {
+    "inModes": [
+     "compact"
+    ]
+   }
+  },
+  {
+   "name": "C@320: scrolled into the checks — compact (a third of the view, ≥ 180 px), still pinned at the top",
+   "pass": true,
+   "detail": {
+    "plot": 180,
+    "want": 180,
+    "pin": {
+     "x": 1,
+     "y": 110,
+     "w": 318,
+     "h": 237,
+     "right": 319,
+     "bottom": 347
+    },
+    "view": {
+     "x": 1,
+     "y": 110,
+     "w": 318,
+     "h": 446,
+     "right": 319,
+     "bottom": 556
+    }
+   }
+  },
+  {
+   "name": "C@320: after the change of height the marks are re-drawn on their bars — every mark that exists",
+   "pass": true,
+   "detail": {
+    "a1": {
+     "ok": true,
+     "n": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+     ],
+     "draws": 6
+    },
+    "nMarks": 7
+   }
+  },
+  {
+   "name": "C@320: a tapped check lights its mark in view (the pinned chart on top) and scrolls nothing",
+   "pass": true,
+   "detail": {
+    "lit": [
+     1
+    ],
+    "scrollTop": 299,
+    "mode": "compact",
+    "pressed": "closeAboveFast",
+    "before": 299,
+    "plotHit": "CANVAS"
+   }
+  },
+  {
+   "name": "C@320: scrolling back to the top changes the height once",
+   "pass": true,
+   "detail": {
+    "outModes": [
+     "full"
+    ]
+   }
+  },
+  {
+   "name": "C@320: back at the top — the chart at its full height again",
+   "pass": true,
+   "detail": {
+    "plot": 330,
+    "top": 330
+   }
+  },
+  {
+   "name": "EXT@320: opens on the Chart view (CP-2)",
+   "pass": true
+  },
+  {
+   "name": "EXT@320: at the top — the chart pinned (sticky) at the shell's height",
+   "pass": true,
+   "detail": {
+    "pin": {
+     "x": 1,
+     "y": 110,
+     "w": 318,
+     "h": 387,
+     "right": 319,
+     "bottom": 497
+    },
+    "view": {
+     "x": 1,
+     "y": 110,
+     "w": 318,
+     "h": 446,
+     "right": 319,
+     "bottom": 556
+    },
+    "mode": "full"
+   }
+  },
+  {
+   "name": "EXT@320: no sideways scroll",
+   "pass": true,
+   "detail": {
+    "sw": 320,
+    "iw": 320,
+    "viewSW": 318,
+    "viewCW": 318,
+    "overflowing": []
+   }
+  },
+  {
+   "name": "EXT@320: the page in order — the chart, the read, the checks, the Technical content",
+   "pass": true,
+   "detail": {
+    "pin": {
+     "x": 1,
+     "y": 110,
+     "w": 318,
+     "h": 387,
+     "right": 319,
+     "bottom": 497
+    },
+    "band": {
+     "x": 1,
+     "y": 497,
+     "w": 318,
+     "h": 207.46875,
+     "right": 319,
+     "bottom": 704.46875
+    },
+    "checks": {
+     "x": 1,
+     "y": 704.46875,
+     "w": 318,
+     "h": 1545.203125,
+     "right": 319,
+     "bottom": 2249.671875
+    },
+    "technical": {
+     "x": 1,
+     "y": 2249.671875,
+     "w": 318,
+     "h": 650.875,
+     "right": 319,
+     "bottom": 2900.546875
+    }
+   }
+  },
+  {
+   "name": "EXT@320: every tap target 44 px+ (rows, expand, Rule)",
+   "pass": true,
+   "detail": []
+  },
+  {
+   "name": "EXT@320: at full height the marks sit on their bars",
+   "pass": true,
+   "detail": {
+    "ok": true,
+    "n": [
+     1,
+     7
+    ],
+    "draws": 3
+   }
+  },
+  {
+   "name": "EXT@320: scrolling into the checks changes the height once (never back and forth)",
+   "pass": true,
+   "detail": {
+    "inModes": [
+     "compact"
+    ]
+   }
+  },
+  {
+   "name": "EXT@320: scrolled into the checks — compact (a third of the view, ≥ 180 px), still pinned at the top",
+   "pass": true,
+   "detail": {
+    "plot": 180,
+    "want": 180,
+    "pin": {
+     "x": 1,
+     "y": 110,
+     "w": 318,
+     "h": 237,
+     "right": 319,
+     "bottom": 347
+    },
+    "view": {
+     "x": 1,
+     "y": 110,
+     "w": 318,
+     "h": 446,
+     "right": 319,
+     "bottom": 556
+    }
+   }
+  },
+  {
+   "name": "EXT@320: after the change of height the marks are re-drawn on their bars — every mark that exists",
+   "pass": true,
+   "detail": {
+    "a1": {
+     "ok": true,
+     "n": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+     ],
+     "draws": 7
+    },
+    "nMarks": 7
+   }
+  },
+  {
+   "name": "EXT@320: a tapped check lights its mark in view (the pinned chart on top) and scrolls nothing",
+   "pass": true,
+   "detail": {
+    "lit": [
+     7
+    ],
+    "scrollTop": 859,
+    "mode": "compact",
+    "pressed": "extension",
+    "before": 859,
+    "plotHit": "CANVAS"
+   }
+  },
+  {
+   "name": "EXT@320: scrolling back to the top changes the height once",
+   "pass": true,
+   "detail": {
+    "outModes": [
+     "full"
+    ]
+   }
+  },
+  {
+   "name": "EXT@320: back at the top — the chart at its full height again",
+   "pass": true,
+   "detail": {
+    "plot": 330,
+    "top": 330
+   }
+  },
+  {
+   "name": "A@1280: opens on the Chart view (CP-2)",
+   "pass": true
+  },
+  {
+   "name": "A@1280: at the top — the chart pinned (sticky) at the shell's height",
+   "pass": true,
+   "detail": {
+    "pin": {
+     "x": 190,
+     "y": 149,
+     "w": 900,
+     "h": 469,
+     "right": 1090,
+     "bottom": 618
+    },
+    "view": {
+     "x": 190,
+     "y": 149,
+     "w": 900,
+     "h": 528,
+     "right": 1090,
+     "bottom": 677
+    },
+    "mode": "full"
+   }
+  },
+  {
+   "name": "A@1280: no sideways scroll",
+   "pass": true,
+   "detail": {
+    "sw": 1280,
+    "iw": 1280,
+    "viewSW": 900,
+    "viewCW": 900,
+    "overflowing": []
+   }
+  },
+  {
+   "name": "A@1280: the page in order — the chart, the read, the checks, the Technical content",
+   "pass": true,
+   "detail": {
+    "pin": {
+     "x": 190,
+     "y": 149,
+     "w": 900,
+     "h": 469,
+     "right": 1090,
+     "bottom": 618
+    },
+    "band": {
+     "x": 190,
+     "y": 618,
+     "w": 900,
+     "h": 115.453125,
+     "right": 1090,
+     "bottom": 733.453125
+    },
+    "checks": {
+     "x": 190,
+     "y": 733.453125,
+     "w": 900,
+     "h": 1172.546875,
+     "right": 1090,
+     "bottom": 1906
+    },
+    "technical": {
+     "x": 190,
+     "y": 1906,
+     "w": 900,
+     "h": 634.9375,
+     "right": 1090,
+     "bottom": 2540.9375
+    }
+   }
+  },
+  {
+   "name": "A@1280: every tap target 44 px+ (rows, expand, Rule)",
+   "pass": true,
+   "detail": []
+  },
+  {
+   "name": "A@1280: one column, the checks across the modal's width (PG-10)",
+   "pass": true,
+   "detail": {
+    "checks": {
+     "x": 190,
+     "y": 733.453125,
+     "w": 900,
+     "h": 1172.546875,
+     "right": 1090,
+     "bottom": 1906
+    },
+    "view": {
+     "x": 190,
+     "y": 149,
+     "w": 900,
+     "h": 528,
+     "right": 1090,
+     "bottom": 677
+    },
+    "rowMinW": 888,
+    "at390": 376
+   }
+  },
+  {
+   "name": "A@1280: at full height the marks sit on their bars",
+   "pass": true,
+   "detail": {
+    "ok": true,
+    "n": [
+     1,
+     4,
+     5,
+     6
+    ],
+    "draws": 3
+   }
+  },
+  {
+   "name": "A@1280: scrolling into the checks changes the height once (never back and forth)",
+   "pass": true,
+   "detail": {
+    "inModes": [
+     "compact"
+    ]
+   }
+  },
+  {
+   "name": "A@1280: scrolled into the checks — compact (a third of the view, ≥ 180 px), still pinned at the top",
+   "pass": true,
+   "detail": {
+    "plot": 180,
+    "want": 180,
+    "pin": {
+     "x": 190,
+     "y": 149,
+     "w": 900,
+     "h": 237,
+     "right": 1090,
+     "bottom": 386
+    },
+    "view": {
+     "x": 190,
+     "y": 149,
+     "w": 900,
+     "h": 528,
+     "right": 1090,
+     "bottom": 677
+    }
+   }
+  },
+  {
+   "name": "A@1280: after the change of height the marks are re-drawn on their bars — every mark that exists",
+   "pass": true,
+   "detail": {
+    "a1": {
+     "ok": true,
+     "n": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+     ],
+     "draws": 6
+    },
+    "nMarks": 7
+   }
+  },
+  {
+   "name": "A@1280: a tapped check lights its mark in view (the pinned chart on top) and scrolls nothing",
+   "pass": true,
+   "detail": {
+    "lit": [
+     1,
+     4
+    ],
+    "scrollTop": 355,
+    "mode": "compact",
+    "pressed": "touch",
+    "before": 355,
+    "plotHit": "CANVAS"
+   }
+  },
+  {
+   "name": "A@1280: scrolling back to the top changes the height once",
+   "pass": true,
+   "detail": {
+    "outModes": [
+     "full"
+    ]
+   }
+  },
+  {
+   "name": "A@1280: back at the top — the chart at its full height again",
+   "pass": true,
+   "detail": {
+    "plot": 412,
+    "top": 412
+   }
+  },
+  {
+   "name": "C@1280: opens on the Chart view (CP-2)",
+   "pass": true
+  },
+  {
+   "name": "C@1280: at the top — the chart pinned (sticky) at the shell's height",
+   "pass": true,
+   "detail": {
+    "pin": {
+     "x": 190,
+     "y": 149,
+     "w": 900,
+     "h": 469,
+     "right": 1090,
+     "bottom": 618
+    },
+    "view": {
+     "x": 190,
+     "y": 149,
+     "w": 900,
+     "h": 528,
+     "right": 1090,
+     "bottom": 677
+    },
+    "mode": "full"
+   }
+  },
+  {
+   "name": "C@1280: no sideways scroll",
+   "pass": true,
+   "detail": {
+    "sw": 1280,
+    "iw": 1280,
+    "viewSW": 900,
+    "viewCW": 900,
+    "overflowing": []
+   }
+  },
+  {
+   "name": "C@1280: the page in order — the chart, the read, the checks, the Technical content",
+   "pass": true,
+   "detail": {
+    "pin": {
+     "x": 190,
+     "y": 149,
+     "w": 900,
+     "h": 469,
+     "right": 1090,
+     "bottom": 618
+    },
+    "band": {
+     "x": 190,
+     "y": 618,
+     "w": 900,
+     "h": 132.125,
+     "right": 1090,
+     "bottom": 750.125
+    },
+    "checks": {
+     "x": 190,
+     "y": 750.125,
+     "w": 900,
+     "h": 740.40625,
+     "right": 1090,
+     "bottom": 1490.53125
+    },
+    "technical": {
+     "x": 190,
+     "y": 1490.53125,
+     "w": 900,
+     "h": 634.9375,
+     "right": 1090,
+     "bottom": 2125.46875
+    }
+   }
+  },
+  {
+   "name": "C@1280: every tap target 44 px+ (rows, expand, Rule)",
+   "pass": true,
+   "detail": []
+  },
+  {
+   "name": "C@1280: one column, the checks across the modal's width (PG-10)",
+   "pass": true,
+   "detail": {
+    "checks": {
+     "x": 190,
+     "y": 750.125,
+     "w": 900,
+     "h": 740.40625,
+     "right": 1090,
+     "bottom": 1490.53125
+    },
+    "view": {
+     "x": 190,
+     "y": 149,
+     "w": 900,
+     "h": 528,
+     "right": 1090,
+     "bottom": 677
+    },
+    "rowMinW": 868,
+    "at390": 356
+   }
+  },
+  {
+   "name": "C@1280: at full height the marks sit on their bars",
+   "pass": true,
+   "detail": {
+    "ok": true,
+    "n": [
+     1,
+     2,
+     3
+    ],
+    "draws": 3
+   }
+  },
+  {
+   "name": "C@1280: scrolling into the checks changes the height once (never back and forth)",
+   "pass": true,
+   "detail": {
+    "inModes": [
+     "compact"
+    ]
+   }
+  },
+  {
+   "name": "C@1280: scrolled into the checks — compact (a third of the view, ≥ 180 px), still pinned at the top",
+   "pass": true,
+   "detail": {
+    "plot": 180,
+    "want": 180,
+    "pin": {
+     "x": 190,
+     "y": 149,
+     "w": 900,
+     "h": 237,
+     "right": 1090,
+     "bottom": 386
+    },
+    "view": {
+     "x": 190,
+     "y": 149,
+     "w": 900,
+     "h": 528,
+     "right": 1090,
+     "bottom": 677
+    }
+   }
+  },
+  {
+   "name": "C@1280: after the change of height the marks are re-drawn on their bars — every mark that exists",
+   "pass": true,
+   "detail": {
+    "a1": {
+     "ok": true,
+     "n": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+     ],
+     "draws": 6
+    },
+    "nMarks": 7
+   }
+  },
+  {
+   "name": "C@1280: a tapped check lights its mark in view (the pinned chart on top) and scrolls nothing",
+   "pass": true,
+   "detail": {
+    "lit": [
+     1
+    ],
+    "scrollTop": 160,
+    "mode": "compact",
+    "pressed": "closeAboveFast",
+    "before": 160,
+    "plotHit": "CANVAS"
+   }
+  },
+  {
+   "name": "C@1280: scrolling back to the top changes the height once",
+   "pass": true,
+   "detail": {
+    "outModes": [
+     "full"
+    ]
+   }
+  },
+  {
+   "name": "C@1280: back at the top — the chart at its full height again",
+   "pass": true,
+   "detail": {
+    "plot": 412,
+    "top": 412
+   }
+  },
+  {
+   "name": "EXT@1280: opens on the Chart view (CP-2)",
+   "pass": true
+  },
+  {
+   "name": "EXT@1280: at the top — the chart pinned (sticky) at the shell's height",
+   "pass": true,
+   "detail": {
+    "pin": {
+     "x": 190,
+     "y": 149,
+     "w": 900,
+     "h": 469,
+     "right": 1090,
+     "bottom": 618
+    },
+    "view": {
+     "x": 190,
+     "y": 149,
+     "w": 900,
+     "h": 528,
+     "right": 1090,
+     "bottom": 677
+    },
+    "mode": "full"
+   }
+  },
+  {
+   "name": "EXT@1280: no sideways scroll",
+   "pass": true,
+   "detail": {
+    "sw": 1280,
+    "iw": 1280,
+    "viewSW": 900,
+    "viewCW": 900,
+    "overflowing": []
+   }
+  },
+  {
+   "name": "EXT@1280: the page in order — the chart, the read, the checks, the Technical content",
+   "pass": true,
+   "detail": {
+    "pin": {
+     "x": 190,
+     "y": 149,
+     "w": 900,
+     "h": 469,
+     "right": 1090,
+     "bottom": 618
+    },
+    "band": {
+     "x": 190,
+     "y": 618,
+     "w": 900,
+     "h": 132.125,
+     "right": 1090,
+     "bottom": 750.125
+    },
+    "checks": {
+     "x": 190,
+     "y": 750.125,
+     "w": 900,
+     "h": 1172.546875,
+     "right": 1090,
+     "bottom": 1922.671875
+    },
+    "technical": {
+     "x": 190,
+     "y": 1922.671875,
+     "w": 900,
+     "h": 634.9375,
+     "right": 1090,
+     "bottom": 2557.609375
+    }
+   }
+  },
+  {
+   "name": "EXT@1280: every tap target 44 px+ (rows, expand, Rule)",
+   "pass": true,
+   "detail": []
+  },
+  {
+   "name": "EXT@1280: one column, the checks across the modal's width (PG-10)",
+   "pass": true,
+   "detail": {
+    "checks": {
+     "x": 190,
+     "y": 750.125,
+     "w": 900,
+     "h": 1172.546875,
+     "right": 1090,
+     "bottom": 1922.671875
+    },
+    "view": {
+     "x": 190,
+     "y": 149,
+     "w": 900,
+     "h": 528,
+     "right": 1090,
+     "bottom": 677
+    },
+    "rowMinW": 888,
+    "at390": 376
+   }
+  },
+  {
+   "name": "EXT@1280: at full height the marks sit on their bars",
+   "pass": true,
+   "detail": {
+    "ok": true,
+    "n": [
+     1,
+     7
+    ],
+    "draws": 3
+   }
+  },
+  {
+   "name": "EXT@1280: scrolling into the checks changes the height once (never back and forth)",
+   "pass": true,
+   "detail": {
+    "inModes": [
+     "compact"
+    ]
+   }
+  },
+  {
+   "name": "EXT@1280: scrolled into the checks — compact (a third of the view, ≥ 180 px), still pinned at the top",
+   "pass": true,
+   "detail": {
+    "plot": 180,
+    "want": 180,
+    "pin": {
+     "x": 190,
+     "y": 149,
+     "w": 900,
+     "h": 237,
+     "right": 1090,
+     "bottom": 386
+    },
+    "view": {
+     "x": 190,
+     "y": 149,
+     "w": 900,
+     "h": 528,
+     "right": 1090,
+     "bottom": 677
+    }
+   }
+  },
+  {
+   "name": "EXT@1280: after the change of height the marks are re-drawn on their bars — every mark that exists",
+   "pass": true,
+   "detail": {
+    "a1": {
+     "ok": true,
+     "n": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+     ],
+     "draws": 6
+    },
+    "nMarks": 7
+   }
+  },
+  {
+   "name": "EXT@1280: a tapped check lights its mark in view (the pinned chart on top) and scrolls nothing",
+   "pass": true,
+   "detail": {
+    "lit": [
+     7
+    ],
+    "scrollTop": 574,
+    "mode": "compact",
+    "pressed": "extension",
+    "before": 574,
+    "plotHit": "CANVAS"
+   }
+  },
+  {
+   "name": "EXT@1280: scrolling back to the top changes the height once",
+   "pass": true,
+   "detail": {
+    "outModes": [
+     "full"
+    ]
+   }
+  },
+  {
+   "name": "EXT@1280: back at the top — the chart at its full height again",
+   "pass": true,
+   "detail": {
+    "plot": 412,
+    "top": 412
+   }
+  },
+  {
+   "name": "A (compact): after a pan the marks are re-drawn on their bars",
+   "pass": true,
+   "detail": {
+    "ok": true,
+    "n": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "draws": 17
+   }
+  },
+  {
+   "name": "A (compact): after a zoom the marks are re-drawn on their bars",
+   "pass": true,
+   "detail": {
+    "ok": true,
+    "n": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "draws": 19
+   }
+  },
+  {
+   "name": "A: after rotation (844×390) the marks are re-drawn on their bars, no sideways scroll",
+   "pass": true,
+   "detail": {
+    "aRot": {
+     "ok": true,
+     "n": [
+      1,
+      4,
+      5,
+      6
+     ],
+     "draws": 26
+    },
+    "sw": 844,
+    "iw": 844
+   }
+  },
+  {
+   "name": "FX-8@390 (2 and 3 lit, $1.11 apart; compact, every mark): no line drawn across a number — every square over every line, none on another",
+   "pass": true,
+   "detail": {
+    "through": [
+     "1→4",
+     "2→4",
+     "3→4",
+     "7→4"
+    ],
+    "zOrder": true,
+    "onSquare": [],
+    "notBeside": [
+     5,
+     7
+    ],
+    "offHeight": [],
+    "outside": [],
+    "pathsOut": 0,
+    "labels": [
+     126.10095704234584,
+     148.10095704234584
+    ],
+    "minGap": 22,
+    "labelsInside": true,
+    "lit": [
+     2,
+     3
+    ],
+    "pane": {
+     "height": 188,
+     "width": 330
+    }
+   }
+  },
+  {
+   "name": "FX-8@390: every square at its own mark's height (within one square)",
+   "pass": true,
+   "detail": {
+    "offHeight": [],
+    "notBeside": [
+     5,
+     7
+    ]
+   }
+  },
+  {
+   "name": "FX-8@390: the two lit labels a full label apart, inside the pane",
+   "pass": true,
+   "detail": {
+    "through": [
+     "1→4",
+     "2→4",
+     "3→4",
+     "7→4"
+    ],
+    "zOrder": true,
+    "onSquare": [],
+    "notBeside": [
+     5,
+     7
+    ],
+    "offHeight": [],
+    "outside": [],
+    "pathsOut": 0,
+    "labels": [
+     126.10095704234584,
+     148.10095704234584
+    ],
+    "minGap": 22,
+    "labelsInside": true,
+    "lit": [
+     2,
+     3
+    ],
+    "pane": {
+     "height": 188,
+     "width": 330
+    }
+   }
+  },
+  {
+   "name": "FX-8@390: no square or bracket cut off",
+   "pass": true,
+   "detail": {
+    "through": [
+     "1→4",
+     "2→4",
+     "3→4",
+     "7→4"
+    ],
+    "zOrder": true,
+    "onSquare": [],
+    "notBeside": [
+     5,
+     7
+    ],
+    "offHeight": [],
+    "outside": [],
+    "pathsOut": 0,
+    "labels": [
+     126.10095704234584,
+     148.10095704234584
+    ],
+    "minGap": 22,
+    "labelsInside": true,
+    "lit": [
+     2,
+     3
+    ],
+    "pane": {
+     "height": 188,
+     "width": 330
+    }
+   }
+  },
+  {
+   "name": "FX-8@390 (the touch under the latest bars): its square and bracket inside the pane, left of the price scale",
+   "pass": true,
+   "detail": {
+    "through": [
+     "2→4",
+     "3→4"
+    ],
+    "zOrder": true,
+    "onSquare": [],
+    "notBeside": [],
+    "offHeight": [],
+    "outside": [],
+    "pathsOut": 0,
+    "labels": [
+     53.582439930900875,
+     75.58243993090088
+    ],
+    "minGap": 22,
+    "labelsInside": true,
+    "lit": [
+     1,
+     4
+    ],
+    "pane": {
+     "height": 188,
+     "width": 330
+    }
+   }
+  },
+  {
+   "name": "FX-8@390: no line drawn across a number — every square over every line, none on another; each beside its own mark",
+   "pass": true,
+   "detail": {
+    "through": [
+     "2→4",
+     "3→4"
+    ],
+    "zOrder": true,
+    "onSquare": [],
+    "notBeside": [],
+    "offHeight": [],
+    "outside": [],
+    "pathsOut": 0,
+    "labels": [
+     53.582439930900875,
+     75.58243993090088
+    ],
+    "minGap": 22,
+    "labelsInside": true,
+    "lit": [
+     1,
+     4
+    ],
+    "pane": {
+     "height": 188,
+     "width": 330
+    }
+   }
+  },
+  {
+   "name": "FX-8@320 (2 and 3 lit, $1.11 apart; compact, every mark): no line drawn across a number — every square over every line, none on another",
+   "pass": true,
+   "detail": {
+    "through": [
+     "1→4",
+     "2→4",
+     "3→4"
+    ],
+    "zOrder": true,
+    "onSquare": [],
+    "notBeside": [
+     7
+    ],
+    "offHeight": [],
+    "outside": [],
+    "pathsOut": 0,
+    "labels": [
+     99.70169121181664,
+     121.70169121181664
+    ],
+    "minGap": 22,
+    "labelsInside": true,
+    "lit": [
+     2,
+     3
+    ],
+    "pane": {
+     "height": 152,
+     "width": 260
+    }
+   }
+  },
+  {
+   "name": "FX-8@320: every square at its own mark's height (within one square)",
+   "pass": true,
+   "detail": {
+    "offHeight": [],
+    "notBeside": [
+     7
+    ]
+   }
+  },
+  {
+   "name": "FX-8@320: the two lit labels a full label apart, inside the pane",
+   "pass": true,
+   "detail": {
+    "through": [
+     "1→4",
+     "2→4",
+     "3→4"
+    ],
+    "zOrder": true,
+    "onSquare": [],
+    "notBeside": [
+     7
+    ],
+    "offHeight": [],
+    "outside": [],
+    "pathsOut": 0,
+    "labels": [
+     99.70169121181664,
+     121.70169121181664
+    ],
+    "minGap": 22,
+    "labelsInside": true,
+    "lit": [
+     2,
+     3
+    ],
+    "pane": {
+     "height": 152,
+     "width": 260
+    }
+   }
+  },
+  {
+   "name": "FX-8@320: no square or bracket cut off",
+   "pass": true,
+   "detail": {
+    "through": [
+     "1→4",
+     "2→4",
+     "3→4"
+    ],
+    "zOrder": true,
+    "onSquare": [],
+    "notBeside": [
+     7
+    ],
+    "offHeight": [],
+    "outside": [],
+    "pathsOut": 0,
+    "labels": [
+     99.70169121181664,
+     121.70169121181664
+    ],
+    "minGap": 22,
+    "labelsInside": true,
+    "lit": [
+     2,
+     3
+    ],
+    "pane": {
+     "height": 152,
+     "width": 260
+    }
+   }
+  },
+  {
+   "name": "FX-8@320 (the touch under the latest bars): its square and bracket inside the pane, left of the price scale",
+   "pass": true,
+   "detail": {
+    "through": [],
+    "zOrder": true,
+    "onSquare": [],
+    "notBeside": [],
+    "offHeight": [],
+    "outside": [],
+    "pathsOut": 0,
+    "labels": [
+     41.17602732555094,
+     63.17602732555094
+    ],
+    "minGap": 22,
+    "labelsInside": true,
+    "lit": [
+     1,
+     4
+    ],
+    "pane": {
+     "height": 152,
+     "width": 260
+    }
+   }
+  },
+  {
+   "name": "FX-8@320: no line drawn across a number — every square over every line, none on another; each beside its own mark",
+   "pass": true,
+   "detail": {
+    "through": [],
+    "zOrder": true,
+    "onSquare": [],
+    "notBeside": [],
+    "offHeight": [],
+    "outside": [],
+    "pathsOut": 0,
+    "labels": [
+     41.17602732555094,
+     63.17602732555094
+    ],
+    "minGap": 22,
+    "labelsInside": true,
+    "lit": [
+     1,
+     4
+    ],
+    "pane": {
+     "height": 152,
+     "width": 260
+    }
+   }
+  },
+  {
+   "name": "FX-8@1280 (2 and 3 lit, $1.11 apart; compact, every mark): no line drawn across a number — every square over every line, none on another",
+   "pass": true,
+   "detail": {
+    "through": [
+     "1→4",
+     "2→4",
+     "3→4"
+    ],
+    "zOrder": true,
+    "onSquare": [],
+    "notBeside": [
+     7
+    ],
+    "offHeight": [],
+    "outside": [],
+    "pathsOut": 0,
+    "labels": [
+     99.70169121181664,
+     121.70169121181664
+    ],
+    "minGap": 22,
+    "labelsInside": true,
+    "lit": [
+     2,
+     3
+    ],
+    "pane": {
+     "height": 152,
+     "width": 842
+    }
+   }
+  },
+  {
+   "name": "FX-8@1280: every square at its own mark's height (within one square)",
+   "pass": true,
+   "detail": {
+    "offHeight": [],
+    "notBeside": [
+     7
+    ]
+   }
+  },
+  {
+   "name": "FX-8@1280: the two lit labels a full label apart, inside the pane",
+   "pass": true,
+   "detail": {
+    "through": [
+     "1→4",
+     "2→4",
+     "3→4"
+    ],
+    "zOrder": true,
+    "onSquare": [],
+    "notBeside": [
+     7
+    ],
+    "offHeight": [],
+    "outside": [],
+    "pathsOut": 0,
+    "labels": [
+     99.70169121181664,
+     121.70169121181664
+    ],
+    "minGap": 22,
+    "labelsInside": true,
+    "lit": [
+     2,
+     3
+    ],
+    "pane": {
+     "height": 152,
+     "width": 842
+    }
+   }
+  },
+  {
+   "name": "FX-8@1280: no square or bracket cut off",
+   "pass": true,
+   "detail": {
+    "through": [
+     "1→4",
+     "2→4",
+     "3→4"
+    ],
+    "zOrder": true,
+    "onSquare": [],
+    "notBeside": [
+     7
+    ],
+    "offHeight": [],
+    "outside": [],
+    "pathsOut": 0,
+    "labels": [
+     99.70169121181664,
+     121.70169121181664
+    ],
+    "minGap": 22,
+    "labelsInside": true,
+    "lit": [
+     2,
+     3
+    ],
+    "pane": {
+     "height": 152,
+     "width": 842
+    }
+   }
+  },
+  {
+   "name": "FX-8@1280 (the touch under the latest bars): its square and bracket inside the pane, left of the price scale",
+   "pass": true,
+   "detail": {
+    "through": [],
+    "zOrder": true,
+    "onSquare": [],
+    "notBeside": [],
+    "offHeight": [],
+    "outside": [],
+    "pathsOut": 0,
+    "labels": [
+     41.17602732555094,
+     63.17602732555094
+    ],
+    "minGap": 22,
+    "labelsInside": true,
+    "lit": [
+     1,
+     4
+    ],
+    "pane": {
+     "height": 152,
+     "width": 842
+    }
+   }
+  },
+  {
+   "name": "FX-8@1280: no line drawn across a number — every square over every line, none on another; each beside its own mark",
+   "pass": true,
+   "detail": {
+    "through": [],
+    "zOrder": true,
+    "onSquare": [],
+    "notBeside": [],
+    "offHeight": [],
+    "outside": [],
+    "pathsOut": 0,
+    "labels": [
+     41.17602732555094,
+     63.17602732555094
+    ],
+    "minGap": 22,
+    "labelsInside": true,
+    "lit": [
+     1,
+     4
+    ],
+    "pane": {
+     "height": 152,
+     "width": 842
+    }
+   }
+  },
+  {
+   "name": "reduced motion off: the page under the chart eases into place",
+   "pass": true,
+   "detail": {
+    "frames": [
+     "matrix(1, 0, 0, 1, 0, 290.991)",
+     "matrix(1, 0, 0, 1, 0, 207.352)",
+     "matrix(1, 0, 0, 1, 0, 187.035)",
+     "matrix(1, 0, 0, 1, 0, 169.057)",
+     "matrix(1, 0, 0, 1, 0, 147.711)",
+     "matrix(1, 0, 0, 1, 0, 126.084)"
+    ]
+   }
+  },
+  {
+   "name": "reduced motion on: the page under the chart moves at once into place",
+   "pass": true,
+   "detail": {
+    "frames": []
+   }
+  },
+  {
+   "name": "focus: Tab and Shift+Tab never leave a focused check under the pinned chart",
+   "pass": true,
+   "detail": {
+    "bad": [],
+    "pinBottom": 384
+   }
+  },
+  {
+   "name": "focus: the pinned chart's own Rule chip focuses without moving the page",
+   "pass": true,
+   "detail": {
+    "st0": 556,
+    "st1": {
+     "top": 556,
+     "mode": "compact"
+    }
+   }
+  },
+  {
+   "name": "FX-10@320: the battle mount's control bar wraps and runs past nothing",
+   "pass": true,
+   "detail": {
+    "iw": 320,
+    "barSW": 318,
+    "barCW": 318,
+    "wraps": "wrap",
+    "btnRight": 307,
+    "ohlcRight": 238.6875,
+    "plotRight": 319,
+    "axisW": 58,
+    "sw": 320
+   }
+  },
+  {
+   "name": "FX-10@320: the OHLC row (Vol included) stops before the price scale",
+   "pass": true,
+   "detail": {
+    "iw": 320,
+    "barSW": 318,
+    "barCW": 318,
+    "wraps": "wrap",
+    "btnRight": 307,
+    "ohlcRight": 238.6875,
+    "plotRight": 319,
+    "axisW": 58,
+    "sw": 320
+   }
+  },
+  {
+   "name": "PG-8@320: on the Battle chart the checks stay on the page; the one stub, no daily mark",
+   "pass": true,
+   "detail": {
+    "checks": true,
+    "items": 0,
+    "stub": "20-day · daily · Tue close"
+   }
+  },
+  {
+   "name": "FX-10@390: the battle mount's control bar wraps and runs past nothing",
+   "pass": true,
+   "detail": {
+    "iw": 390,
+    "barSW": 388,
+    "barCW": 388,
+    "wraps": "wrap",
+    "btnRight": 377,
+    "ohlcRight": 311.203125,
+    "plotRight": 389,
+    "axisW": 58,
+    "sw": 390
+   }
+  },
+  {
+   "name": "FX-10@390: the OHLC row (Vol included) stops before the price scale",
+   "pass": true,
+   "detail": {
+    "iw": 390,
+    "barSW": 388,
+    "barCW": 388,
+    "wraps": "wrap",
+    "btnRight": 377,
+    "ohlcRight": 311.203125,
+    "plotRight": 389,
+    "axisW": 58,
+    "sw": 390
+   }
+  },
+  {
+   "name": "PG-8@390: on the Battle chart the checks stay on the page; the one stub, no daily mark",
+   "pass": true,
+   "detail": {
+    "checks": true,
+    "items": 0,
+    "stub": "20-day · daily · Tue close"
+   }
+  },
+  {
+   "name": "FX-10@320 (browse): the OHLC row, Vol included, stops before the price scale",
+   "pass": true,
+   "detail": {
+    "ohlcRight": 238.6875,
+    "plotRight": 319,
+    "axisW": 58,
+    "vol": true
+   }
+  }
+ ],
+ "fails": []
+}

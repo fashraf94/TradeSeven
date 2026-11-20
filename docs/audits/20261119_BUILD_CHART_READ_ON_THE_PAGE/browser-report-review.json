@@ -1,0 +1,134 @@
+{
+ "rows": [
+  {
+   "name": "L2B-1 (full, panned back): every square sits by a mark in view, none on another",
+   "pass": true,
+   "detail": {
+    "squares": [],
+    "strays": [],
+    "onEach": [],
+    "pane": {
+     "height": 506,
+     "width": 330
+    }
+   }
+  },
+  {
+   "name": "L2B-1 (full, zoomed in on the latest bars): every square sits by a mark in view, none on another",
+   "pass": true,
+   "detail": {
+    "squares": [
+     1,
+     5
+    ],
+    "strays": [],
+    "onEach": [],
+    "pane": {
+     "height": 506,
+     "width": 330
+    }
+   }
+  },
+  {
+   "name": "L2B-1 (compact, panned back): every square sits by a mark in view, none on another",
+   "pass": true,
+   "detail": {
+    "squares": [],
+    "strays": [],
+    "onEach": [],
+    "pane": {
+     "height": 188,
+     "width": 330
+    }
+   }
+  },
+  {
+   "name": "L2B-1 (compact, zoomed in on the latest bars): every square sits by a mark in view, none on another",
+   "pass": true,
+   "detail": {
+    "squares": [
+     1,
+     2,
+     4,
+     5,
+     7
+    ],
+    "strays": [],
+    "onEach": [],
+    "pane": {
+     "height": 188,
+     "width": 330
+    }
+   }
+  },
+  {
+   "name": "L2B-2: Battle loading while compact — the pinned block never grows back toward its full height",
+   "pass": true,
+   "detail": {
+    "before": {
+     "mode": "compact",
+     "pinH": 312
+    },
+    "during": {
+     "state": "battle-loading",
+     "mode": "compact",
+     "pinH": 265,
+     "viewH": 662
+    }
+   }
+  },
+  {
+   "name": "L2B-3 (844 × 390): the chart is not pinned, and every check row comes into view (and is the element under the finger)",
+   "pass": true,
+   "detail": {
+    "mode": "none",
+    "pos": "static",
+    "viewH": 159,
+    "seen": [
+     "closeAboveFast",
+     "fastAboveSlow",
+     "slowRising",
+     "touch",
+     "pullbackClose",
+     "extension",
+     "breakoutClose",
+     "volumeFloor"
+    ]
+   }
+  },
+  {
+   "name": "L2B-4: Shift+Tab up through the Technical content and the checks — no focused element is left under the pinned chart",
+   "pass": true,
+   "detail": {
+    "bad": [],
+    "steps": 11,
+    "pinBottom": 384
+   }
+  },
+  {
+   "name": "L2B-5: 12 px of scroll 30 ms after returning to full height stays full (the ease is not read as position)",
+   "pass": true,
+   "detail": {
+    "after": "full"
+   }
+  },
+  {
+   "name": "L2B-5: 60 px of scroll 30 ms after returning to full height stays full (the ease is not read as position)",
+   "pass": true,
+   "detail": {
+    "after": "full"
+   }
+  },
+  {
+   "name": "L2B-6: a read that lands after the player scrolled compacts at once",
+   "pass": true,
+   "detail": {
+    "scrollTop": 400,
+    "mode": "compact",
+    "visibleBelowPin": 376,
+    "viewH": 650
+   }
+  }
+ ],
+ "fails": []
+}

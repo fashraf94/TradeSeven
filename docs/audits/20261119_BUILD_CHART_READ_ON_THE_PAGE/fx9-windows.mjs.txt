@@ -1,0 +1,43 @@
+process.env.TZ = process.argv[2];
+// FX-9 Phase 0 point 7: today's 1D live-candle rule (useResearchData.js, non-controlled) vs the ET session date.
+// Run once per TZ: TZ=<zone> node sim.mjs. Prints the hours (ET) in which the two rules give a different last candle.
+const ET = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' });
+const etHM = (ms) => new Date(ms).toLocaleString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: 'numeric', hour12: false, weekday: 'short', month: 'short', day: 'numeric' });
+const HOLIDAYS = new Set(['2026-11-26']);
+const isSession = (d) => { const dow = new Date(`${d}T12:00:00Z`).getUTCDay(); return dow !== 0 && dow !== 6 && !HOLIDAYS.has(d); };
+// The series' last daily bar at `ms`: the latest session whose 16:00 ET close has passed.
+function lastBar(ms) {
+  let d = ET.format(new Date(ms));
+  const etH = Number(new Date(ms).toLocaleString('en-US', { timeZone: 'America/New_York', hour: 'numeric', hour12: false })) % 24;
+  if (!(isSession(d) && etH >= 16)) { do { const t = new Date(`${d}T12:00:00Z`); t.setUTCDate(t.getUTCDate() - 1); d = t.toISOString().slice(0, 10); } while (!isSession(d)); }
+  return d;
+}
+function today(lastKey, nowMs) {
+  const [ly, lm, ld] = lastKey.split('-').map(Number);
+  const lastDate = new Date(ly, lm - 1, ld);
+  const t = new Date(nowMs); t.setHours(0, 0, 0, 0);
+  const dow = t.getDay(); const weekend = dow === 0 || dow === 6;
+  if (lastDate < t && !weekend) return `append ${t.toISOString().split('T')[0]}`;
+  if (lastDate.getTime() === t.getTime()) return `patch ${lastKey}`;
+  return 'none';
+}
+function etRule(lastKey, nowMs) {
+  const t = ET.format(new Date(nowMs));
+  const dow = new Date(`${t}T00:00:00Z`).getUTCDay(); const weekend = dow === 0 || dow === 6;
+  if (lastKey < t && !weekend) return `append ${t}`;
+  if (lastKey === t) return `patch ${lastKey}`;
+  return 'none';
+}
+const start = Date.parse('2026-11-23T05:00:00Z'); // Mon Nov 23 00:00 ET
+const rows = [];
+let run = null;
+for (let h = 0; h < 24 * 8; h++) {
+  const ms = start + h * 3600_000 + 30 * 60_000; // each half past
+  const lk = lastBar(ms);
+  const a = today(lk, ms); const b = etRule(lk, ms);
+  if (a !== b) { if (!run) run = { from: etHM(ms), a, b, n: 0 }; run.n++; run.to = etHM(ms); run.lastA = a; run.lastB = b; }
+  else if (run) { rows.push(run); run = null; }
+}
+if (run) rows.push(run);
+console.log(process.env.TZ, rows.length ? '' : 'no difference');
+for (const r of rows) console.log(`  ${r.from} .. ${r.to} ET (${r.n} h): today ${r.a} | ET ${r.b}${r.lastA !== r.a ? ` … ${r.lastA} | ${r.lastB}` : ''}`);
