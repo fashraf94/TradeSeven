@@ -626,6 +626,31 @@ describe('AR2-RF — the final refuter on the fixes: each probe as a row', () =>
     expect((await rule(c, { kind: 'conflict', recordId: id, decision: 'payload', payload: p }, 'rf1b')).status).toBe(200);
   });
 
+  // AR3-RF-5 (the final fix, the coordinator's probe of the refuter's untried analogue of its F1): the founder picks a backfill
+  // row through a coverage-gap ruling, and the vendor lists the same $1 under the other session of the gap. The founder's
+  // row met no re-date check: with the vendor's row dated first, BOTH paid ($199.94). Now it is matched as the feed row it
+  // is: both are possible re-dates of each other (S-1 ③), nothing is paid, and the founder rules which.
+  it.each([
+    ['the vendor\'s row dated a session BEFORE the founder\'s (it paid both, $199.94)', 2, 1],
+    ['the vendor\'s row dated a session AFTER the founder\'s', 1, 2],
+  ])('AR3-RF-5: a coverage-gap row and the vendor\'s same payload under the gap\'s other session — %s: nothing paid until ruled', async (_name, fi, vi_) => {
+    const c = await start();
+    await close(c, 0);
+    await uncoveredClose(c, 1, 100, []);
+    await uncoveredClose(c, 2, 100, []);
+    await c.db.doc('practiceFieldCaBackfill/AAPL').set({ schemaVersion: 1, symbol: 'AAPL', from: S[1], to: S[2], failed: true, actions: [div(fi, 1)], calls: 2, fetchedAt: '2026-11-18T23:00:00.000Z', source: 'idea_book_backfill' });
+    await rule(c, { kind: 'coverage_gap', recordId: `ca_coverage_gap_AAPL_${S[0]}`, decision: 'row', actionId: `cash_dividend_AAPL_${S[fi]}` }, 'rf5');
+    await close(c, 3, 100, [div(vi_, 1)]);
+    await close(c, 4, 100, [div(vi_, 1)]);
+    expect(divs(ideaOf(c))).toEqual([0, 0]);
+    expect(unsettledRedates(ideaOf(c).ledger).map((r) => r.actionId).sort()).toEqual([`cash_dividend_AAPL_${S[1]}`, `cash_dividend_AAPL_${S[2]}`]);
+    // The founder rules one of them, and $99.97 is paid once.
+    expect((await rule(c, { kind: 'conflict', recordId: `cash_dividend_AAPL_${S[fi]}`, decision: 'payload', payload: { amount: 1 } }, 'rf5b')).status).toBe(200);
+    expect((await rule(c, { kind: 'conflict', recordId: `cash_dividend_AAPL_${S[vi_]}`, decision: 'none' }, 'rf5c')).status).toBe(200);
+    await close(c, 5, 100);
+    expect(divs(ideaOf(c))).toEqual([99.97, 99.97]);
+  });
+
   it('AR2-RF-2: a founder rename into a ticker another idea holds is refused at the close — the ruling closes with its reason and the record takes another', async () => {
     const ctx = await seedBook();
     const [a] = await admitAllThenEnter(ctx.db, ctx.bookId, [

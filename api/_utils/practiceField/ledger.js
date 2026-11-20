@@ -1187,7 +1187,10 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
   const redateMatchOf = (action, sym, { unsettledOnly = false } = {}) => {
     // The founder applied it (resolve_hold): not a re-date — except a founder SPLIT, which answered a price move, not the
     // vendor's rows: its payload is matched as a feed row's is (the final soak's SOAK-R3-1, below).
-    if (isFounderAction(action) && !isFounderSplit(action)) return null;
+    // (…and a founder's COVERAGE-GAP row, which is a backfill row the founder picked: matched as the feed row it is — the
+    // coordinator's probe after the refuter, AR3-RF-5: the vendor's same $1 a session earlier and the founder's row both paid.)
+    const coverageRow = isFounderAction(action) && action.founderRuling.kind === 'coverage_gap';
+    if (isFounderAction(action) && !isFounderSplit(action) && !coverageRow) return null;
     const settledNow = settledIdsOf(next);
     // (AR2-IR-6: a holding renamed from an older ticker owns that ticker's records too — a row the vendor re-lists under
     // the new ticker matches them; before, a dividend ambiguous under the old ticker was paid when re-listed under the new.)
@@ -1357,7 +1360,8 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
   // one waited: which of the two was paid depended on the order the vendor's rows happened to reach the close.
   {
     // (A pending founder split is one of these rows — SOAK-R3-1 — while its record stands: refused if it pairs.)
-    const open = candidates.filter((a) => !isRuled(a) && (a.founderRuling == null || (isFounderSplit(a) && isFounderAction(a) && founderSplitMoot(next, upper(a.ticker), a, date) === null))
+    const open = candidates.filter((a) => !isRuled(a) && (a.founderRuling == null || (isFounderSplit(a) && isFounderAction(a) && founderSplitMoot(next, upper(a.ticker), a, date) === null)
+      || (isFounderAction(a) && a.founderRuling.kind === 'coverage_gap'))
       && !ambiguity.has(a.actionId) && !conflicting.has(a.actionId)
       && APPLICABLE_TYPES.has(a.type) && a.type !== 'ticker_change' && !(a.type === 'delisting' && delistingCashOf(a) === null));
     const paired = new Set();
