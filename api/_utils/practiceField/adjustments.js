@@ -261,12 +261,17 @@ export function planLedgerAdjustments(ledger, ctx) {
   // close did not hold a later-dated dividend of the same close, and it was paid on a count the founder had not settled).
   // A row waiting on a doubt (`closedHeldRows`) of a share-basis type holds them too. An id a ruling settles at this close
   // is the ruling's, never a doubt.
-  const shareDoubtOn = (sym, d, selfId = null) => {
+  // (The held path's order — ledger.js applyActions, `byDatePhaseId`: date, then phase, then id. A cash row waits on a
+  // share-basis one dated on or before it; a share-basis row waits only on one that PRECEDES it in that order, never on
+  // itself or one after it — fix-round refuter RFX-2: a split and a reverse split of one date, both waiting, each held the
+  // other for good. The held path applies the two in that order, as `main` does.)
+  const shareDoubtOn = (sym, d, selfId = null, selfShare = false) => {
     const l = cur();
-    const waiting = (l.closedHeldRows || []).some((r) => SHARE_BASIS_TYPES.has(r.type) && upper(r.ticker) === sym && r.actionId !== selfId && isDate(r.effectiveDate) && r.effectiveDate <= d);
+    const precedes = (r) => isDate(r.effectiveDate) && (r.effectiveDate < d || (r.effectiveDate === d && (!selfShare || String(r.actionId) < String(selfId))));
+    const waiting = (l.closedHeldRows || []).some((r) => SHARE_BASIS_TYPES.has(r.type) && upper(r.ticker) === sym && r.actionId !== selfId && precedes(r));
     if (waiting) return true;
     return (l.corporateActionReceipts || []).some((r) => SHARE_BASIS_TYPES.has(r?.type) && upper(r.ticker) === sym && r.actionId !== selfId
-      && !ruledIds?.has(r.actionId) && isDate(r.effectiveDate) && r.effectiveDate <= d && openRecordOf(l, r.actionId) !== null);
+      && !ruledIds?.has(r.actionId) && precedes(r) && openRecordOf(l, r.actionId) !== null);
   };
 
   // ── 1. CLOSED HOLDINGS (T2D-03; T2D-04 after a sale or a result): rows first listed after the ledger stopped holding the
@@ -401,7 +406,7 @@ export function planLedgerAdjustments(ledger, ctx) {
         }
       }
       const action = ruled ?? first;
-      if (doubtOn(sym, action.effectiveDate) || shareDoubtOn(sym, action.effectiveDate, id)) {
+      if (doubtOn(sym, action.effectiveDate) || shareDoubtOn(sym, action.effectiveDate, id, SHARE_BASIS_TYPES.has(action.type))) {
         // Durable: the row waits on the closed holding (replayed at the first close without the doubt, revised if the feed
         // later lists it otherwise). A founder's action is re-supplied by its ruling: not kept here.
         if (!action.founderRuling && !held) {

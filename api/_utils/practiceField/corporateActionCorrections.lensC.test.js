@@ -827,6 +827,29 @@ describe('the refuters\' rows — RF4, RF5, RF6 (each failed at 994ccc2e)', () =
     expect(rowOf(c, 3).fullQuality).toBe(true);
   });
 
+  it('AR4-C-8 (RFX note): a correction still pending at the endpoint is an unsettled action there, as a waiting closed row is — the result is unmeasurable, and the correction posts after it', async () => {
+    const { omitParseReport, storeCloseSnapshot } = await import('./__testsupport__/fixtures.js');
+    const c = await start({ names: ['AAPL'], capitalUsd: 10000, comparison: { type: 'sector_fund', symbols: ['XLK'] } });
+    await close(c, 0);
+    await close(c, 1, 100, [div(1, 1)]);
+    const p = belowLine(c);
+    await close(c, 2, p, [div(1, 2)]);
+    expect((await rules(c, { kind: 'conflict', recordId: `cash_dividend_AAPL_${S[1]}`, decision: 'payload', payload: { amount: 2 } }, 'fix-div')).status).toBe(200);
+    await windowAt(c.db, c.bookId, { date: S[3], slot: 'open30', quotes: q(p) });
+    await storeCloseSnapshot(c.db, S[3], q(p));
+    omitParseReport(c.db, S[3], ['AAPL']); // the sold symbol's data does not cover the result close: the correction waits
+    await closeIdeaBook(c.db, c.bookRef, { date: S[3], now: closeNowOf(S[3]) });
+    let idea = ideaOf(c);
+    expect(idea.status).toBe('resulted');
+    expect(pendingKeys(c)).toEqual(['fix-div']);
+    expect(idea.result.economicResult).toBe('unmeasurable');
+    expect(JSON.stringify(idea.result)).toContain('idea_unsettled_corporate_action');
+    for (const i of [4, 5]) await close(c, i, p);
+    idea = ideaOf(c);
+    expect(pendingKeys(c)).toEqual([]);
+    expect(idea.resultAdjustments).toMatchObject({ ideaUsd: 99.97 });
+  });
+
   it('AR4-C-11 (RF4, realistic price): a split correction after the line sold the stock is flagged — the alert and the record say what the corrected count would have sold; the sale stands', async () => {
     const c = await start();
     await close(c, 0);

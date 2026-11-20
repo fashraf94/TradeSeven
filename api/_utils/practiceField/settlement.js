@@ -193,7 +193,7 @@ export function exitTierOf(symbol, holding) {
  *   `fullQuality` is `marksFullQuality` (every mark is `vendor_time`) AND no unsettled conflicting corporate action:
  *   the two are kept apart so a result can say WHICH it lacked (review RH-7).
  */
-export function ledgerEndpoint(ledger, valuation, { coverageGaps = null } = {}) {
+export function ledgerEndpoint(ledger, valuation, { coverageGaps = null, pendingCorrections = [] } = {}) {
   const cashCents = toCents(ledger.cash);
   let grossCents = 0;
   let netCents = 0;
@@ -211,6 +211,9 @@ export function ledgerEndpoint(ledger, valuation, { coverageGaps = null } = {}) 
     // …and (T1a-2b-4, review AR4-A-2) every row listed for a holding since closed that waits on a doubt: money the idea
     // may be owed and was not paid by its endpoint.
     ...(ledger.closedHeldRows || []).map((r) => r.actionId),
+    // …and every founder correction naming this ledger not yet posted on it (fix-round refuter, on AR4-C-8): money the
+    // ruling moves and has not moved — counted as a waiting closed row is.
+    ...pendingCorrections,
   ];
   let marksFullQuality = true;
   let costTiersStored = true;
@@ -368,9 +371,11 @@ export function trackStatistics(track) {
  */
 export function buildEndpoint({ idea, valuations, date, kind, observed, caughtUp = false, snapshotMeta, nowIso }) {
   const gaps = { coverageGaps: idea.caCoverageGaps ?? null };
-  const own = ledgerEndpoint(idea.ledger, valuations.idea, gaps);
-  const cmp = ledgerEndpoint(idea.comparisonLedger, valuations.comparison, gaps);
-  const spy = ledgerEndpoint(idea.spyLedger, valuations.spy, gaps);
+  // (T1a-2b-4: a founder correction pending on a ledger it names — `corrects`, not yet applied.)
+  const pendingOn = (f) => (idea.founderRulings || []).filter((r) => r && r.appliedOn == null && r.kind === 'conflict' && r.corrects === true && (!Array.isArray(r.ledgers) || r.ledgers.includes(f))).map((r) => r.recordId);
+  const own = ledgerEndpoint(idea.ledger, valuations.idea, { ...gaps, pendingCorrections: pendingOn('ledger') });
+  const cmp = ledgerEndpoint(idea.comparisonLedger, valuations.comparison, { ...gaps, pendingCorrections: pendingOn('comparisonLedger') });
+  const spy = ledgerEndpoint(idea.spyLedger, valuations.spy, { ...gaps, pendingCorrections: pendingOn('spyLedger') });
   const reservedCents = toCents(idea.contract.capitalUsd);
   const gapCents = own.valueCents - cmp.valueCents;
   const spyGapCents = own.valueCents - spy.valueCents;

@@ -99,6 +99,7 @@ import {
 } from './adjustments.js';
 import { dailyCoverageOf, rejectedRowDatesOf } from './dailyCoverage.js';
 import { MANDATE_CA_FETCH_LOOKBACK_DAYS } from '../mandateConfig.js';
+import { stableStringify } from '../canonicalHash.js';
 
 /**
  * Amendment F-9 (T2C-04): THE IDEA DOCUMENT'S SIZE. Every close rewrites a changed idea whole — its three ledgers and
@@ -250,7 +251,10 @@ function closeFilledIdea(idea, {
       if (!ruled?.coveredThroughOverrides.has(sym) && typeof coveredThrough === 'string') {
         const rejected = rejectedRowDatesOf(parseReport, date, sym);
         const ruledThrough = (idea.founderRulings || []).filter((x) => x?.kind === 'coverage_gap' && x.symbol === sym && x.appliedOn != null && typeof x.coversThrough === 'string').map((x) => x.coversThrough).sort().at(-1) ?? null;
-        const dates = rejected.dates.filter((d) => ruledThrough === null || d > ruledThrough);
+        // (Fix-round refuter RFX-1: only a row dated while the idea held the stock — after its entry session — is one it can
+        // be owed; one dated on or before the entry never reaches back, as `coveredThroughOf` already says.)
+        const entry = idea.entry?.sessionDate ?? null;
+        const dates = rejected.dates.filter((d) => (ruledThrough === null || d > ruledThrough) && (entry === null || d > entry));
         const floor = rejected.undated && ruledThrough === null ? (idea.entry?.sessionDate ?? null) : (dates.length > 0 ? shiftCalendarDate(dates[0], -1) : null);
         if (typeof floor === 'string' && floor < coveredThrough) coveredThrough = floor;
       }
@@ -812,7 +816,9 @@ function closeResultedIdea(idea, { date, actionsBySymbol, daily, dailyRefOk, par
   for (const r of next.founderRulings || []) if (r && r.appliedOn == null && r.corrects === true) waiting.push({ ledger: null, actionId: r.recordId, kind: 'correction_pending', requestKey: r.requestKey });
   const readUntil = lastLookbackSessionOf(idea.liquidation?.completedSession ?? null);
   const unsettled = waiting.length > 0 ? { actions: waiting, readUntil } : null;
-  if (JSON.stringify(unsettled) !== JSON.stringify(idea.lateDataUnsettled ?? null)) {
+  // (Key order free — fix-round refuter RFX-3: Firestore does not keep a map's key order, so a plain JSON comparison read a
+  // stored, unchanged record as changed and rewrote the idea at every close of its look-back.)
+  if (stableStringify(unsettled) !== stableStringify(idea.lateDataUnsettled ?? null)) {
     if (unsettled) next.lateDataUnsettled = unsettled; else delete next.lateDataUnsettled;
     changed = true;
   }
