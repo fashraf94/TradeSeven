@@ -102,8 +102,48 @@ describe('the independent I-2 oracle — ambiguity from the inputs, authorizatio
     expect(() => o.check(ideaWith([], { dividendsUsd: 99.97 }), S[1], 't', ENTRY)).toThrow(/dividends = Σ receipts/);
     expect(() => o.check(ideaWith([], { shares: 199.940016 }), S[1], 't', ENTRY)).toThrow(/shares = receipt chain/);
     const wrong = { ...paid(ID1, 1, S[1]), incomeUsd: 199.94 };
-    expect(() => o.check(ideaWith([wrong]), S[1], 't', ENTRY)).toThrow(/income = amount × a count held/);
+    expect(() => o.check(ideaWith([wrong]), S[1], 't', ENTRY)).toThrow(/income = amount × the count held when applied/);
     expect(() => o.check(ideaWith([paid(ID1, 1, S[1])]), S[1], 't', ENTRY)).not.toThrow();
+  });
+
+  // The final fix's refuter (AR3-O1 to O3): the founder's split was never an account of its id; a pending one met only rows of
+  // its id in the same close; and a payload key without a delisting's cash or a rename's target, an income check against any
+  // count the holding ever had.
+  const SPLIT2 = `split_AAPL_${S[2]}`;
+  const pendingAt = (ratio, since, at = 3) => new Map([[SPLIT2, { ratio, since, suspectedOn: S[2], at }]]);
+  it('AR3-O1: a pending founder split and the vendor\'s same ratio under another date (outside the gap) are possible re-dates of each other — either moving is rejected', () => {
+    const o = new InputOracle(S);
+    o.close(2, []);
+    o.close(3, [spl(1, '2/1')], { pendingSplits: pendingAt(2, S[1]) });
+    expect(o.ambiguousSinceOn(ideaWith([]).ledger, SPLIT1)).toBe(3);
+    expect(o.ambiguousSinceOn(ideaWith([]).ledger, SPLIT2)).toBe(3);
+    expect(() => o.check(ideaWith([split(SPLIT1, 2, S[3])], { shares: 199.940016 }), S[3], 't', ENTRY)).toThrow(/I-2 \(inputs\)/);
+  });
+  it('AR3-O1, as built: a row inside the record\'s gap explains the move (B2), and an action the feed settled before the ruling is a move of its own (T2D-11) — neither is marked', () => {
+    const inGap = new InputOracle(S);
+    inGap.close(3, [spl(1, '2/1')], { pendingSplits: pendingAt(2, S[0]) });
+    expect(inGap.ambiguousSinceOn(ideaWith([]).ledger, SPLIT1)).toBeNull();
+    const settled = new InputOracle(S);
+    settled.close(1, [spl(1, '2/1')]);
+    settled.close(3, [spl(1, '2/1')], { pendingSplits: pendingAt(2, S[1]) });
+    const l = ideaWith([split(SPLIT1, 2, S[1])], { shares: 199.940016 }).ledger;
+    expect(settled.ambiguousSinceOn(l, SPLIT2)).toBeNull();
+    expect(settled.founderExcused).toBeGreaterThan(0);
+  });
+  it('AR3-O2: a vendor ratio listed for the id at an EARLIER close that differs from the founder\'s pending split makes the id ambiguous', () => {
+    const o = new InputOracle(S);
+    o.close(2, [spl(2, '3/2')]);
+    o.close(3, [], { pendingSplits: pendingAt(2, S[1]) });
+    expect(o.ambiguousSinceOn(ideaWith([]).ledger, SPLIT2)).toBe(3);
+  });
+  it('AR3-O3: a delisting\'s cash is part of its payload, and a dividend\'s income must use the count held when it was applied', () => {
+    const o = new InputOracle(S);
+    const del = (v) => ({ type: 'delisting', ticker: 'AAPL', effectiveDate: S[2], cashPerShare: v });
+    o.close(2, [del(10), del(12)]);
+    expect(o.ambiguousSinceOn(ideaWith([]).ledger, `delisting_AAPL_${S[2]}`)).toBe(2);
+    // A $1 dividend paid AFTER a 2:1 on the pre-split count (99.97, not 199.94) is rejected, though that count was held once.
+    const after = [split(SPLIT1, 2, S[1]), paid(ID3, 1, S[3])];
+    expect(() => o.check(ideaWith(after, { shares: 199.940016 }), S[3], 't', ENTRY)).toThrow(/income = amount × the count held when applied/);
   });
 
   it('C03\'s order on one id: an ex-date conflict; the old id overlapping its re-date; the new row only; the old row only', () => {

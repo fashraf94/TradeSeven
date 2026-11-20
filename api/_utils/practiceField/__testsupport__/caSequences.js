@@ -246,7 +246,7 @@ function checkAfterClose(c, date, oracleSince = null, tied = true, inputs = null
   for (const [id, since] of Object.entries(oracleSince || {})) {
     for (const f of LEDGERS) {
       for (const x of idea[f].corporateActionReceipts.filter((r) => r.actionId === id && r.applied === true && r.appliedOn >= S[since])) {
-        expect(inputs?.authorizing(id, JSON.stringify([x.ratio ?? null, x.amount ?? null])) ?? null, `${date} I-2 oracle ${f} ${id} (ambiguous since ${S[since]}) moved without an accepted conflict ruling choosing its payload`).not.toBeNull();
+        expect((inputs ? inputs.authorizing(id, inputs.keyOf(x)) : null), `${date} I-2 oracle ${f} ${id} (ambiguous since ${S[since]}) moved without an accepted conflict ruling choosing its payload`).not.toBeNull();
       }
     }
   }
@@ -378,7 +378,8 @@ async function runInner(plan, expose) {
         const doc = stored.find((x) => x.requestKey === r.requestKey);
         if (doc && doc.appliedOn != null && doc.appliedOn < date) continue;
         const id = inputs.splitIdOf(r.body);
-        if (id) pendingSplits.set(id, Number(r.body.ratio));
+        // (Its record's gap, from the stored ruling, and the close after it was made — AR3-O1's two as-built exceptions.)
+        if (id) pendingSplits.set(id, { ratio: Number(r.body.ratio), since: doc?.covers?.since ?? null, suspectedOn: doc?.covers?.suspectedOn ?? null, at: r.at });
       }
       const uncoveredSyms = step.kind === 'catchup' ? [] : (step.uncoveredSyms ?? (step.uncovered ? ['AAPL'] : []));
       inputs.close(step.i, [...archived, ...backfilled], { pendingSplits, uncoveredSyms, disagreeIds });

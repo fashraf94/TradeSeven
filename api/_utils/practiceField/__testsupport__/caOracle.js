@@ -34,7 +34,8 @@ import { deriveActionId } from '../../mandateCorporateActions.js';
 import { addUsd } from '../money.js';
 
 const REDATE_WINDOW = 5; // sessions (the product's REDATE_WINDOW_SESSIONS, restated here on purpose — the oracle imports no policy)
-const keyOf = (row) => JSON.stringify([row?.ratio ?? null, row?.amount ?? null]);
+// (The refuter's AR3-O3: a delisting's cash and a rename's target are payloads too — two of either under one id differ.)
+const keyOf = (row) => JSON.stringify([row?.ratio ?? null, row?.amount ?? null, row?.cashPerShare ?? null, row?.renamedTo != null ? String(row.renamedTo).toUpperCase() : null]);
 const SHARE_BASIS = new Set(['split', 'reverse_split', 'stock_distribution']);
 const LEDGERS = ['ledger', 'comparisonLedger', 'spyLedger'];
 
@@ -50,6 +51,11 @@ export class InputOracle {
     this.closesSeen = [];
     this.carveOuts = 0;
     this.carvedIds = new Set();
+    // The founder's pending splits as ACCOUNTS of their ids (the refuter's AR3-O1, O2): id → { key, sym, type, d, since,
+    // suspectedOn, at }. And the re-date marks through one that the as-built rule excuses (an action the feed settled before
+    // the ruling explained a move of its own: fix-round row T2D-11), counted.
+    this.founder = new Map();
+    this.founderExcused = 0;
   }
 
   event(id, k, kind) {
@@ -85,6 +91,9 @@ export class InputOracle {
    */
   close(k, rows, { pendingSplits = new Map(), uncoveredSyms = [], disagreeIds = new Set() } = {}) {
     this.closesSeen.push(k);
+    // (A pending split is `ratio`, or `{ ratio, since, suspectedOn, at }` — its record's gap, and the close after the ruling.)
+    const pend = new Map([...pendingSplits].map(([id, v]) => [id, typeof v === 'number' ? { ratio: v } : v]));
+    pendingSplits = new Map([...pend].map(([id, v]) => [id, v.ratio]));
     if (!this.listedAt) this.listedAt = new Map();
     const byId = new Map();
     for (const row of rows || []) {
@@ -123,6 +132,28 @@ export class InputOracle {
       this.ids.set(id, e);
       this.lastListed.set(id, k);
     }
+    // THE FOUNDER'S PENDING SPLIT AS AN ACCOUNT of its id (AR3-O2): a payload the vendor listed for that id at any close that
+    // differs from the founder's makes the id ambiguous (a held vendor row revising the founder's split, refuter F2); and
+    // (AR3-O1) a row listed now under ANOTHER date with the founder's payload is a possible re-date of it — both ids marked —
+    // unless that row is dated inside the record's gap (an account of the same move: review B2), refuter F1.
+    for (const [id, v] of pend) {
+      const m = /^(split|reverse_split)_([A-Z.]+)_(\d{4}-\d{2}-\d{2})$/.exec(id);
+      if (!m) continue;
+      const key = keyOf({ ratio: v.ratio });
+      const f = this.founder.get(id) || { key, sym: m[2], type: m[1], d: this.S.indexOf(m[3]), since: v.since ?? null, suspectedOn: v.suspectedOn ?? m[3], at: v.at ?? k, first: k };
+      this.founder.set(id, f);
+      const e = this.ids.get(id);
+      if (e && [...e.payloads.keys()].some((x) => x !== key)) { this.mark(id, k, 'conflict'); this.event(id, k, 'conflict_with_ruling'); }
+      for (const [other, cur] of byId) {
+        if (other === id || cur.sym !== f.sym || cur.type !== f.type || Math.abs(cur.d - f.d) > REDATE_WINDOW || !cur.keys.has(key)) continue;
+        const od = this.S[cur.d];
+        if ((typeof f.since !== 'string' || od > f.since) && od <= f.suspectedOn) continue;
+        const via = { key, sides: [[other, this.ids.get(other).payloads.get(key)], [id, f.first]], founder: { other, at: f.at } };
+        this.mark(other, k, 'redate', via);
+        this.mark(id, k, 'redate', via);
+        this.event(other, k, 'redate');
+      }
+    }
     // A possible re-date: a payload listed now that another id of the same symbol and type, dated within the window, has
     // been listed with (now or before). Both ids are marked; the match is kept for the per-ledger carve-out.
     for (const [id, cur] of byId) {
@@ -145,6 +176,7 @@ export class InputOracle {
   ambiguousSinceOn(l, id) {
     let first = null;
     for (const m of this.marks.get(id) || []) {
+      if (m.how === 'redate' && m.via.founder && this.founderSettledFirst(l, m)) continue;
       if (m.how === 'redate' && this.carvedOut(l, m)) continue;
       if (first === null || m.k < first) first = m.k;
     }
@@ -166,6 +198,19 @@ export class InputOracle {
     }
     return false;
   }
+
+  /** A re-date through a founder split's account, where the other row's id was settled by the FEED on this ledger before the
+   *  ruling: excused, as built (T2D-11: a settled action explained a move of its own; the founder answered a later one). */
+  founderSettledFirst(l, m) {
+    const { other, at } = m.via.founder;
+    const settled = (l.corporateActionReceipts || []).some((r) => r?.actionId === other && !r.founderRuling && (r.applied === true || r.reason === 'not_entitled')
+      && typeof (r.appliedOn ?? r.seenOn) === 'string' && (at == null || (r.appliedOn ?? r.seenOn) < this.S[at]));
+    if (settled) this.founderExcused += 1;
+    return settled;
+  }
+
+  /** The payload key the oracle compares (a receipt's, a row's or a ruling's payload). */
+  keyOf(row) { return keyOf(row); }
 
   /** The accepted conflict ruling the harness made for `id` choosing `payloadKey`, or null. */
   authorizing(id, payloadKey) {
@@ -195,12 +240,15 @@ export class InputOracle {
         counts.set(sym, chain);
       }
       for (const [sym, chain] of counts) if (l.holdings?.[sym]) expect(l.holdings[sym].shares, `${label} ${date} conservation ${f} ${sym} shares = receipt chain`).toBe(chain.at(-1));
-      // …income: each dividend receipt's income is ITS amount times a count the holding had (its ex-date count included).
+      // …income: each dividend receipt's income is ITS amount times the count the holding had WHEN it was applied (receipts
+      // are kept in the order applied), or its recorded ex-date count (AR3-O3: before, any count in the chain passed).
+      const now = new Map([...Object.entries(initialOf?.[f] || {})].map(([sym, h]) => [sym, Number(h.shares)]));
       for (const r of applied) {
-        if (r.type !== 'cash_dividend') continue;
         const sym = String(r.ticker).toUpperCase();
-        const ns = [...(counts.get(sym) || []), ...(r.entitledShares != null ? [Number(r.entitledShares)] : [])];
-        expect(ns.some((n) => Math.abs(Number(r.incomeUsd) - Number(r.amount) * n) <= 0.0051), `${label} ${date} conservation ${f} ${r.actionId} income = amount × a count held`).toBe(true);
+        if (SHARE_BASIS.has(r.type)) { now.set(sym, r.sharesAfter); continue; }
+        if (r.type !== 'cash_dividend') continue;
+        const n = r.entitledShares != null ? Number(r.entitledShares) : now.get(sym);
+        expect(Math.abs(Number(r.incomeUsd) - Number(r.amount) * n) <= 0.0051, `${label} ${date} conservation ${f} ${r.actionId} income = amount × the count held when applied`).toBe(true);
       }
       // I-2, INDEPENDENT: a movement under an id ambiguous by the inputs, at a close on or after that, is authorized only by
       // an accepted conflict ruling for the id choosing the moved payload.
