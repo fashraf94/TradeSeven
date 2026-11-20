@@ -654,6 +654,19 @@ const AssetResearchModal = ({
     }
     return () => { if (controls && typeof controls.stop === 'function') controls.stop(); };
   }, [compact]); // eslint-disable-line react-hooks/exhaustive-deps -- acts on the change of height only
+  // Focus order (no layer now): a row Tab reaches is brought out from under the pinned chart — the chart block's own
+  // measured height (its control row grows with the Rule chip, and wraps on a narrow battle mount), never a guess.
+  const [readPinH, setReadPinH] = useState(null);
+  React.useLayoutEffect(() => {
+    const el = chartPinRef.current;
+    if (!checksShown || !el) return undefined;
+    const measure = () => setReadPinH((h) => (h === el.offsetHeight ? h : el.offsetHeight));
+    measure();
+    if (typeof ResizeObserver !== 'function') return undefined;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [checksShown]);
   // (Build C's drawer geometry — the shorter chart above the drawer, its mid snap and
   // footer — is replaced by the shell, R-28: the sheet now lives only in the shell.)
 
@@ -992,7 +1005,10 @@ const AssetResearchModal = ({
           </div>
         </div>
         {shownView === 'chart' && (
-          <motion.div key="chart" ref={chartViewRef} data-shell-scroll="chart" {...fadeIn} style={viewScroll} {...(chartRead.status !== 'off' ? { onScroll: onChartScroll } : {})}>
+          // PG-2: while the checks show, no scroll anchoring — when the pinned chart changes height the page under it moves
+          // by the difference (the browser's anchoring would undo that by moving the scroll position instead, to the top,
+          // and the chart would change height straight back: measured in Edge, 240 → 0 → full → compact).
+          <motion.div key="chart" ref={chartViewRef} data-shell-scroll="chart" {...fadeIn} style={checksShown ? { ...viewScroll, overflowAnchor: 'none' } : viewScroll} {...(chartRead.status !== 'off' ? { onScroll: onChartScroll } : {})}>
             {(() => {
               const chartBlock = (<>
             {battleShown && battleSeries.status !== 'ready' && (
@@ -1097,8 +1113,9 @@ const AssetResearchModal = ({
                 onExpand={() => setReadExpanded(true)}
                 // FX-4: on 1W with SMA on, one quiet line in the checks' head says where marks 1 – 3 went.
                 note={!battleShown && weeklyAveragesHideMarks({ timeframe: researchData.timeframe, smaOn }) ? CHART_READ_COPY.weeklyAveragesNote : null}
-                // Tab never leaves a row under the pinned chart: its control row (44 px) and plot, and a little air.
-                scrollMarginTop={44 + (compact ? compactChartH : shellChartH) + 8}
+                // Tab never leaves a row under the pinned chart: the chart block's measured height (before the first
+                // measure, its 44 px control row and plot), and a little air.
+                scrollMarginTop={(readPinH > 0 ? readPinH : 44 + (compact ? compactChartH : shellChartH)) + 8}
               />
             )}
             {/* SQ-1: today's Technical tab, below the chart in the same scroll; a level tapped here still lights on the chart */}

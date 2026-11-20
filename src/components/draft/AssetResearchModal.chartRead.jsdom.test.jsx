@@ -522,6 +522,16 @@ describe('PG-2: the chart pinned, two heights', () => {
     expect(pin.dataset.chartPin).toBe('full');
     expect(plotH()).toBe('240px');
   });
+  it('no scroll anchoring while the checks show (the browser would undo the change of height by moving to the top — measured in Edge); none added otherwise', async () => {
+    await browse();
+    await toChart();
+    expect($('[data-shell-scroll="chart"]').style.overflowAnchor).toBe('none');
+    act(() => root.unmount()); container.remove(); container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
+    net.read = answer(200, B.SPLIT);
+    await browse();
+    await toChart();
+    expect($('[data-shell-scroll="chart"]').style.overflowAnchor).toBe('');
+  });
   it('one change of height, not a resize per scroll frame: one rebuild into compact, none while it stays, one back', async () => {
     await browse();
     await toChart();
