@@ -6,7 +6,7 @@
 // switch and the timeframe it needs land in one render.
 //
 //   views     Analysis · Chart, and 💣 when the mount has Bomb mode (a bombContext).
-//   open      'analysis' — except FQ-9: a measured held stock inside a zone's band at
+//   open      'analysis' — or 'chart' under CP-2 (opensOnChart, OV-1 – OV-5) — except FQ-9: a measured held stock inside a zone's band at
 //             open (opensInRedZone, decided once) or the Battle View's "See all levels ›"
 //             door (BD-7, opensOnBomb) opens on 'bomb'; so does a mount with Bomb mode but
 //             no sheet whose own defaultTab / defaultTimeframe asks for the bomb (BS-1).
@@ -15,16 +15,44 @@
 //             LAST timeframe (1D or 1W). Analysis ↔ Chart touches no timeframe, so the hook
 //             refetches nothing it holds.
 
+import { RESEARCH_MODAL_OPENING_VIEW, RESEARCH_MODAL_OPENING_VIEWS } from '../../../config/researchModalFlags.js';
+
 export const SHELL_VIEWS = Object.freeze(['analysis', 'chart', 'bomb']);
+
+/**
+ * OV-4: the opening view's one named constant, read at call time — 'chart' or 'analysis'; any other value, or a mock of
+ * the flags module without it, reads 'analysis' (today's opening). Never throws.
+ */
+export function resolveOpeningView() {
+  try {
+    const views = RESEARCH_MODAL_OPENING_VIEWS;
+    const view = RESEARCH_MODAL_OPENING_VIEW;
+    return Array.isArray(views) && views.includes(view) ? view : 'analysis';
+  } catch {
+    return 'analysis';
+  }
+}
+
+/**
+ * CP-2, OV-1 – OV-5: does a stock open on the Chart view? Only where the shell is on (the caller's gate), the opening
+ * view is 'chart', the Chart view's read is not 'off' (OV-5: 'off' opens exactly as before), and the modal was not
+ * opened from Battle Research — a row of a research question (state 2, `research`) or of the opening's list (state 1,
+ * `rankings`), whose content is the Analysis view's (OV-2). 💣's openings are decided before this (openingView).
+ * @param {{ chartReadMode: string, openingView?: string, fromBattleResearch?: boolean }} p
+ */
+export function opensOnChart({ chartReadMode, openingView = resolveOpeningView(), fromBattleResearch = false }) {
+  return openingView === 'chart' && typeof chartReadMode === 'string' && chartReadMode !== 'off' && fromBattleResearch !== true;
+}
 
 /** The pills a mount shows: three with Bomb mode, two without (browse). */
 export function shellViewsFor({ bomb }) {
   return bomb ? ['analysis', 'chart', 'bomb'] : ['analysis', 'chart'];
 }
 
-/** Where the shell opens: Analysis, or 💣 when FQ-9 / BD-7 decided so at open. */
-export function openingView({ opensOnBomb }) {
-  return opensOnBomb === true ? 'bomb' : 'analysis';
+/** Where the shell opens: 💣 when FQ-9 / BD-7 / BS-1 decided so at open; else Chart when CP-2 says so (opensOnChart); else Analysis. */
+export function openingView({ opensOnBomb, onChart = false }) {
+  if (opensOnBomb === true) return 'bomb';
+  return onChart === true ? 'chart' : 'analysis';
 }
 
 /** The Chart view's own timeframes (the 💣 view's are 'bomb' and 'spectate'). */

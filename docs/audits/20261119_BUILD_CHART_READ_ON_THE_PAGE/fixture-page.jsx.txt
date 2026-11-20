@@ -1,0 +1,62 @@
+// SCRATCH ONLY (never committed): the Chart view's read on fixture data, for real-browser measurement (the 18 Nov page,
+// adapted to the checks on the page). The flags are forced on in this tree only.
+import React from 'react';
+
+export async function start(root) {
+  const code = new URLSearchParams(window.location.search).get('chartReadFixture');
+  const realFetch = window.fetch.bind(window);
+  const fx = await (await realFetch(`/chartread/${code}.json`)).json();
+  const base = Date.parse(fx.now);
+  const t0 = performance.now();
+  const RealDate = Date;
+  class FixedDate extends RealDate {
+    constructor(...a) { if (a.length === 0) super(base + (performance.now() - t0)); else super(...a); }
+    static now() { return base + (performance.now() - t0); }
+  }
+  window.Date = FixedDate;
+  try { for (const k of Object.keys(localStorage)) if (/ohlcv_/.test(k)) localStorage.removeItem(k); } catch { /* none */ }
+  window.__fetches = [];
+  window.fetch = async (url) => {
+    const u = new URL(String(url), window.location.origin);
+    window.__fetches.push(u.pathname + u.search);
+    const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+    if (u.pathname === '/api/stocks/historical') {
+      const tf = u.searchParams.get('timeframe');
+      const data = tf === '1d' ? fx.daily : tf === '1w' ? fx.weekly : (fx.thirty || []);
+      return json(200, { success: true, data, timeframe: tf, requestedTimeframe: tf });
+    }
+    if (u.pathname === '/api/research/setup-read') return json(200, fx.body);
+    if (u.pathname === '/api/stocks/prices') { const t = fx.daily[0]; return json(200, { success: true, count: 1, prices: { [fx.symbol]: { price: fx.price, open: t.open, high: Math.max(t.high, fx.price), low: Math.min(t.low, fx.price), close: fx.price, previousClose: fx.daily[1].close, change: fx.price - fx.daily[1].close, changePercent: ((fx.price / fx.daily[1].close) - 1) * 100 } } }); }
+    return json(404, { error: 'fixture' });
+  };
+  // The probe: every draw records each mark's x / y and the layout it drew (ops, labels, pane size), with the chart.
+  const RMP = await import('./components/Research/ChartRead/ruleMarksPrimitive.js');
+  const orig = RMP.RuleMarksPrimitive.prototype._draw;
+  RMP.RuleMarksPrimitive.prototype._draw = function probe(target) {
+    orig.call(this, target);
+    const a = this.attachedTo;
+    if (!a) return;
+    const ts = a.chart.timeScale();
+    const pane = a.chart.paneSize();
+    const toY = (p) => a.series.priceToCoordinate(p);
+    const spacing = Math.abs(ts.logicalToCoordinate(1) - ts.logicalToCoordinate(0));
+    window.__probe = { chart: a.chart, series: a.series, prim: this };
+    window.__draws = (window.__draws || 0) + 1;
+    window.__lastDraw = this.scene.items.map((m) => ({ n: m.n, time: m.time, value: m.value, lit: m.lit, x: ts.timeToCoordinate(m.time), y: toY(m.value) }));
+    window.__ops = RMP.layoutRuleMarks(this.scene, { toX: (t) => ts.timeToCoordinate(t), toY, spacing, width: pane.width, height: pane.height });
+    window.__labels = RMP.axisLabels(this.scene, { toY, format: this.format, height: pane.height });
+    window.__pane = pane;
+  };
+  const { default: AssetResearchModal } = await import('./components/draft/AssetResearchModal');
+  const b = fx.battle;
+  root.render(
+    <AssetResearchModal
+      asset={b ? b.asset : { symbol: fx.symbol, name: 'Sample Co', price: fx.price, percentChange: 0.39 }}
+      onClose={() => {}}
+      version={2}
+      {...(b
+        ? { showActionButton: false, isGameContext: true, defaultTab: 'baggerbomb', defaultTimeframe: 'bomb', wsPrice: fx.price, sheetContext: b.ctx, bombContext: b.bomb }
+        : { actionConfig: { label: 'Add to Watchlist', onClick() {}, variant: 'primary' } })}
+    />,
+  );
+}

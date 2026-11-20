@@ -1,0 +1,66 @@
+// SCRATCH ONLY (never committed): the fixture page's JSON, from the store's own evaluator (the 18 Nov harness, adapted).
+import { it } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
+import { STATE_ROWS, bodyFor, previousFor } from '../components/Research/ChartRead/__fixtures__/chartReadRecords.js';
+import { recordFor } from '../../api/_utils/setupRead/__fixtures__/readRecords.js';
+import { answerOf, projectSetupRecord } from '../../api/_utils/setupRead/projection.js';
+import { measuredSheetBattle, RANKINGS } from '../components/Research/Sheet/__fixtures__/sheetBattles.js';
+import { selectBombRecord } from '../components/Research/BombMode/selectBombRecord.js';
+import { enrichHeldPosition } from '../screens/AgentBattleScreen.jsx';
+import { buildResearchAsset } from '../utils/researchAssetBuilder.js';
+
+const OUT = path.resolve(__dirname, '../../public/chartread');
+const SESSION = '2026-11-17';
+const weekStart = (d) => { const x = new Date(`${d}T00:00:00Z`); x.setUTCDate(x.getUTCDate() - ((x.getUTCDay() + 6) % 7)); return x.toISOString().slice(0, 10); };
+const weekly = (daily) => {
+  const by = new Map();
+  for (const r of [...daily].reverse()) {
+    const k = weekStart(r.date);
+    const w = by.get(k);
+    if (!w) by.set(k, { date: k, open: r.open, high: r.high, low: r.low, close: r.close, volume: r.volume });
+    else { w.high = Math.max(w.high, r.high); w.low = Math.min(w.low, r.low); w.close = r.close; w.volume += r.volume; }
+  }
+  return [...by.values()].reverse();
+};
+const dailyOf = (rows, today, scale = 1) => {
+  const s = (v) => Number((v * scale).toFixed(2));
+  const base = rows.map((r, i) => ({ date: r.date, open: s(r.open), high: s(r.high), low: s(r.low), close: s(r.close), adjusted_close: Number((s(r.close) * (i >= 40 ? 0.5 : 1)).toFixed(4)), volume: r.volume }));
+  if (!today) return base;
+  const c0 = base[0].close;
+  return [{ date: today, open: c0, high: Number((c0 * 1.006).toFixed(2)), low: Number((c0 * 0.997).toFixed(2)), close: Number((c0 * 1.004).toFixed(2)), adjusted_close: Number((c0 * 1.004).toFixed(2)), volume: 400_000 }, ...base];
+};
+
+it('writes the fixtures', async () => {
+  fs.mkdirSync(OUT, { recursive: true });
+  const states = { A: 'VALID_PULLBACK', C: 'REGIME_AC', RC: 'REGIME_C', D: 'NO_SETUP', EXT: 'EXTENDED', UNK: 'UNKNOWN_V', REF: 'SPLIT', BRK: 'VALID_BREAKOUT', DOWN: 'DOWNTREND' };
+  for (const [code, state] of Object.entries(states)) {
+    const body = await bodyFor(state, { session: SESSION, symbol: 'ABC' });
+    const daily = dailyOf(STATE_ROWS[state](SESSION), '2026-11-18');
+    fs.writeFileSync(path.join(OUT, `${code}.json`), JSON.stringify({ now: '2026-11-18T18:44:00.000Z', symbol: 'ABC', price: daily[0].close, body, daily, weekly: weekly(daily) }));
+  }
+  // AW: valid · Pullback on a Saturday — the record is Friday's and Friday is the chart's last bar (FX-8 fault 3: the touch
+  // bracket under the latest three bars).
+  {
+    const fri = '2026-11-20';
+    const body = await bodyFor('VALID_PULLBACK', { session: fri, symbol: 'ABC' });
+    const daily = dailyOf(STATE_ROWS.VALID_PULLBACK(fri), null);
+    fs.writeFileSync(path.join(OUT, 'AW.json'), JSON.stringify({ now: '2026-11-21T17:00:00.000Z', symbol: 'ABC', price: daily[0].close, body, daily, weekly: weekly(daily) }));
+  }
+  // F1: in a battle, held, 1D — the Build C fixture battle (AAPL, Oct 14 2026), its read for Oct 13 on AAPL-scale rows.
+  const BATTLE = await measuredSheetBattle({ archetype: 'momentum_chaser' });
+  BATTLE.timing = { ...(BATTLE.timing || {}), tradingDays: ['2026-10-12', '2026-10-13', '2026-10-14'] };
+  const thirty = [];
+  for (const [di, day] of ['2026-10-12', '2026-10-13', '2026-10-14'].entries()) for (let k = 0; k < 13; k++) { const ms = Date.parse(day + 'T13:30:00Z') + k * 1800000; if (ms > Date.parse('2026-10-14T17:00:00Z')) break; const c = 101.37 + di * 0.61 + k * 0.07; thirty.push({ timestamp: ms / 1000, datetime: new Date(ms).toISOString(), open: c - 0.05, high: c + 0.19, low: c - 0.21, close: c, volume: 50000 }); }
+  const scale = 0.515;
+  const rows = STATE_ROWS.VALID_PULLBACK('2026-10-13').map((r) => ({ ...r, open: Number((r.open * scale).toFixed(2)), high: Number((r.high * scale).toFixed(2)), low: Number((r.low * scale).toFixed(2)), close: Number((r.close * scale).toFixed(2)), adjusted_close: Number((r.close * scale).toFixed(2)) }));
+  const { record } = await recordFor({ session: '2026-10-13', symbol: 'AAPL', fetchedAt: '2026-10-13T22:31:00.000Z', rows });
+  const body = { answer: answerOf(record), symbol: 'AAPL', servedAt: 1, sessionsTried: ['2026-10-13'], read: projectSetupRecord(record, { session: '2026-10-13', symbol: 'AAPL', behind: false }), previous: null };
+  const daily = dailyOf(rows, '2026-10-14');
+  const asset = buildResearchAsset(enrichHeldPosition(BATTLE.portfolio.star[0], 'star', { stockBattle: BATTLE, stockSide: 'agent', stockSlot: 0 }), { livePrices: { AAPL: 103.2 }, thresholds: { AAPL: { threshold: 2.5 } }, startingPrices: { AAPL: 100.75 }, useDefaultThreshold: true });
+  const ctx = { battleId: 'stock-battle', agentId: 'agent', archetype: 'momentum_chaser', agentName: 'Juno', row: { held: true, positionId: 'position-agent' }, battle: BATTLE, calls: [], rankings: RANKINGS, standing: { player: 62, opponent: 68, digits: 0 }, directive: BATTLE.directive };
+  const bomb = { kind: 'agent', battleId: 'stock-battle', held: true, record: selectBombRecord(BATTLE, 'AAPL', Date.parse('2026-10-14T17:07:00.000Z')) };
+  fs.writeFileSync(path.join(OUT, 'F1.json'), JSON.stringify({ now: '2026-10-14T17:07:00.000Z', symbol: 'AAPL', price: 103.2, body, daily, weekly: weekly(daily), thirty: thirty.reverse(), battle: { asset, ctx, bomb } }));
+  void previousFor;
+  console.log('wrote', fs.readdirSync(OUT));
+});

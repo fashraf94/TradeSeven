@@ -1,0 +1,124 @@
+// The build's mutation battery (SCRATCH). node mutants.mjs <tree> [ids…] — each mutant: one exact replacement (its
+// `from` must occur exactly once, else SKIPPED/AMBIGUOUS — never silently), the named test files run with a JSON
+// reporter (deleted first), the file restored from the saved original. KILLED = a test failed; SURVIVED = all passed;
+// BROKEN = a file failed to load (no row ran: a false kill).
+import { readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import path from 'node:path';
+
+const TREE = process.argv[2];
+const ONLY = new Set(process.argv.slice(3));
+const CR = 'src/components/Research/ChartRead/';
+const T = {
+  cr: `${CR}chartRead.test.js`, cp: `${CR}chartProps.test.js`, pm: `${CR}placeMarks.test.js`, mk: `${CR}marks.test.js`,
+  modal: 'src/components/draft/AssetResearchModal.chartRead.jsdom.test.jsx', shell: 'src/components/draft/AssetResearchModal.shell.jsdom.test.jsx',
+  narrow: 'src/components/Research/StockChart.narrow.jsdom.test.jsx', sv: 'src/components/Research/Sheet/shellView.test.js',
+  br: 'src/screens/AgentBattleScreen.battleResearch.jsdom.test.jsx', hon: 'src/components/Research/Sheet/sheetCopy.honesty.test.jsx',
+};
+const M = [
+  // FX-1
+  ['FX1-a', `${CR}chartRead.js`, `&& Array.isArray(p.patternsSatisfied) && p.patternsSatisfied.includes(r.pattern);`, `&& Array.isArray(p.patternsSatisfied);`, [T.cr]],
+  ['FX1-b', `${CR}chartRead.js`, `r.pattern === 'pullback_resume' && !backWithinLimit(p, r) }),`, `r.pattern === 'pullback_resume' }),`, [T.cr]],
+  ['FX1-c', `${CR}chartRead.js`, `  Object.freeze({ key: 'backWithinLimit', when: backWithinLimit }),\n`, ``, [T.cr]],
+  ['FX1-d', `${CR}chartRead.js`, `const backWithinLimit = (p, r) => p.verdict === 'invalid' && p.reason === 'extended'`, `const backWithinLimit = (p, r) => p.verdict === 'invalid'`, [T.cr]],
+  // FX-2
+  ['FX2-a', `${CR}chartRead.js`, `[close.result === false && N.close, fast.result === false && N.fast, slow.result === false && N.slow]`, `[close.result === false && N.close, slow.result === false && N.slow, fast.result === false && N.fast]`, [T.cr]],
+  ['FX2-b', `${CR}chartRead.js`, `\${read.regime === 'downtrend' ? '' : words.notDowntrend}`, `\${words.notDowntrend}`, [T.cr]],
+  ['FX2-c', `${CR}chartRead.js`, `fast.result === false && N.fast`, `fast.result !== true && N.fast`, [T.cr]],
+  // FX-3
+  ['FX3-a', `${CR}chartRead.js`, ` && read.session < todayEt && read.behind !== true;`, ` && read.session < todayEt;`, [T.cr]],
+  // FX-6
+  ['FX6-a', `${CR}chartRead.js`, `words.other[state === 'regime' && read.regime === 'downtrend' ? 'regime_downtrend' : state]`, `words.other[state]`, [T.cr]],
+  // CP-3 (today so far)
+  ['TD-a', `${CR}chartRead.js`, `!(line.session < todayEt)`, `!(line.session <= todayEt)`, [T.cr]],
+  ['TD-b', `${CR}chartRead.js`, `if (todayIsSession !== true || sessionOpened !== true ||`, `if (todayIsSession !== true ||`, [T.cr]],
+  ['TD-c', `${CR}chartRead.js`, `return x === y ? 0 : x > y ? 1 : -1;`, `return x === y ? 0 : x > y ? -1 : 1;`, [T.cr]],
+  ['TD-d', `${CR}chartRead.js`, `return x === y ? 0 : x > y ? 1 : -1;`, `return x >= y ? 1 : -1;`, [T.cr]],
+  ['TD-e', `${CR}chartRead.js`, `if (high && sideOf(high) === T.above) parts.push(T.high(day));`, `if (high && sideOf(high) !== T.below) parts.push(T.high(day));`, [T.cr]],
+  ['TD-f', `${CR}chartRead.js`, `if (low && sideOf(low) === T.below) parts.push(T.low(day));`, `if (low && sideOf(low) !== T.above) parts.push(T.low(day));`, [T.cr]],
+  ['TD-g', `${CR}chartRead.js`, `const c = comparePrinted(headerPrice, decimalString(m.value, 2));`, `const c = comparePrinted(headerPrice, String(m.value));`, [T.cr]],
+  ['TD-h', `${CR}chartRead.js`, `notes: today && sessionNoteDue && !battle ? notes.filter((n) => n !== C.sessionNote(weekdayLong(read.session))) : notes,`, `notes,`, [T.cr]],
+  ['TD-i', `${CR}chartRead.js`, `  if (!line || !CHECK_STATES.includes(line.state)) return null;\n  if (todayIsSession`, `  if (!line) return null;\n  if (todayIsSession`, [T.cr]],
+  ['TD-j', `${CR}chartRead.js`, `  if (!parts.length) return null;\n  const high`, `  const high`, [T.cr]],
+  ['TD-k', `${CR}chartRead.js`, `  const today = todayLineOf({ state, marks, session: read.session }, { todayEt, todayIsSession, sessionOpened, headerPrice });`, `  const today = battle ? null : todayLineOf({ state, marks, session: read.session }, { todayEt, todayIsSession, sessionOpened, headerPrice });`, [T.cr]],
+  // PG-3, FX-4 (chartProps)
+  ['PG3-a', `${CR}chartProps.js`, `const shown = [...new Set([...base, ...tapped])]`, `const shown = [...new Set([...base])]`, [T.cp]],
+  ['PG3-b', `${CR}chartProps.js`, `const base = compact === true ? shownMarkNumbers(line.state, line.marks, { compact: true }) : ruleOn === true ? line.shown : [];`, `const base = ruleOn === true ? line.shown : [];`, [T.cp]],
+  ['PG3-c', `${CR}chartProps.js`, `disabled: compact === true };`, `disabled: false };`, [T.cp]],
+  ['PG3-d', `${CR}chartProps.js`, `const tapped = (Array.isArray(lit) ? lit : []).filter((n) => exist.has(n));`, `const tapped = Array.isArray(lit) ? lit : [];`, [T.cp]],
+  ['FX4-a', `${CR}chartProps.js`, `lit: tapped.filter(keep)`, `lit: tapped`, [T.cp]],
+  ['FX4-b', `${CR}chartProps.js`, `export const weeklyAveragesHideMarks = ({ timeframe, smaOn }) => timeframe === '1W' && smaOn === true;`, `export const weeklyAveragesHideMarks = ({ timeframe, smaOn }) => timeframe === '1W';`, [T.cp, T.modal]],
+  ['MK3-a', `${CR}marks.js`, `  if (compact) return [...exist].sort((a, b) => a - b);`, `  if (compact) return (DEFAULT_MARKS[state] || []).filter((n) => exist.has(n));`, [T.mk, T.cp]],
+  // FX-8 (ruleMarksPrimitive)
+  ['FX8-a', `${CR}ruleMarksPrimitive.js`, `const ops = [...lines, ...squares];`, `const ops = [...squares, ...lines];`, [T.pm]],
+  ['FX8-b', `${CR}ruleMarksPrimitive.js`, `const clear = ([px, py]) => inside(px) && !onSquare(px, py) && !onLine(px, py);`, `const clear = ([px, py]) => inside(px) && !onSquare(px, py);`, [T.pm]],
+  ['FX8-c', `${CR}ruleMarksPrimitive.js`, `const near = at([[a, 0], [b, 0], [a, -1], [a, 1], [b, -1], [b, 1], [a + out, 0], [a + 2 * out, 0]]);`, `const near = at([[a, 0], [a + out, 0], [a + 2 * out, 0]]);`, [T.pm]],
+  ['FX8-d', `${CR}ruleMarksPrimitive.js`, `const [x, cy] = near.find(clear) ?? near.find(noSquare) ?? far.find(clear) ?? far.find(noSquare)`, `const [x, cy] = near.find(clear) ?? far.find(clear) ?? near.find(noSquare) ?? far.find(noSquare)`, [T.pm]],
+  ['FX8-e', `${CR}ruleMarksPrimitive.js`, `      if (groups[i].at(-1).labelY + AXIS_LABEL_H > groups[i + 1][0].labelY) {`, `      if (false) {`, [T.pm]],
+  ['FX8-f', `${CR}ruleMarksPrimitive.js`, `coordinate: () => l.labelY, fixedCoordinate: () => l.labelY,`, `coordinate: () => l.labelY,`, [T.pm]],
+  ['FX8-g', `${CR}ruleMarksPrimitive.js`, `visible: () => true, tickVisible: () => Math.abs(l.labelY - l.y) <= 0.5,`, `visible: () => true, tickVisible: () => true,`, [T.pm]],
+  ['FX8-h', `${CR}ruleMarksPrimitive.js`, `const x1 = W === null ? Math.max(...xs) + pitch / 2 : clamp(Math.max(...xs) + pitch / 2, 0.5, W - 0.5);`, `const x1 = Math.max(...xs) + pitch / 2;`, [T.pm]],
+  ['FX8-i', `${CR}ruleMarksPrimitive.js`, `const inside = (x) => x >= 0 && (W === null || x + SQUARE <= W);`, `const inside = (x) => x >= 0 && (W === null || x <= W);`, [T.pm]],
+  ['FX8-j', `${CR}ruleMarksPrimitive.js`, `const fit = (y) => (H === null ? y : clamp(y, SQUARE / 2, H - SQUARE / 2));`, `const fit = (y) => y;`, [T.pm]],
+  ['FX8-k', `${CR}ruleMarksPrimitive.js`, `return (labels || []).filter((l) => Math.abs(l.labelY - l.y) > 0.5)`, `return (labels || [])`, [T.pm]],
+  ['FX8-l', `${CR}ruleMarksPrimitive.js`, `if (H !== null) top = clamp(top, AXIS_LABEL_H / 2,`, `if (false) top = clamp(top, AXIS_LABEL_H / 2,`, [T.pm]],
+  // FX-10
+  ['FX10-a', 'src/components/shared/OHLCDisplay.jsx', `...(bound ? { right: \`\${right}px\`, flexWrap: 'wrap', rowGap: '2px' } : {}),`, `...(bound ? { right: \`\${right}px\` } : {}),`, [T.narrow]],
+  ['FX10-b', 'src/components/Research/StockChart.jsx', `...(ruleChip || battlePill ? { flexWrap: 'wrap', rowGap: '6px' } : {}),`, `...(ruleChip ? { flexWrap: 'wrap', rowGap: '6px' } : {}),`, [T.narrow]],
+  ['FX10-c', 'src/components/Research/StockChart.jsx', `if (Number.isFinite(w) && w > 0) setAxisWidth`, `if (Number.isFinite(w)) setAxisWidth`, [T.narrow]],
+  ['FX10-d', 'src/components/Research/StockChart.jsx', `{...(axisWidth !== null ? { right: axisWidth + 8 } : {})}`, `{...(axisWidth !== null ? { right: axisWidth } : {})}`, [T.narrow]],
+  ['FX4-c', 'src/components/Research/StockChart.jsx', `setShowSMA(v => !v); onToggleSMA?.(!showSMA);`, `setShowSMA(v => !v);`, [T.modal]],
+  // PR B: the modal
+  ['PG2-a', 'src/components/draft/AssetResearchModal.jsx', `checks.getBoundingClientRect().top <= pin.getBoundingClientRect().bottom + 0.5) setReadCompact(true);`, `checks.getBoundingClientRect().top < pin.getBoundingClientRect().top) setReadCompact(true);`, [T.modal]],
+  ['PG2-b', 'src/components/draft/AssetResearchModal.jsx', `    } else if (view.scrollTop <= 0) {\n      setReadCompact(false);\n    }`, `    }`, [T.modal]],
+  ['PG2-c', 'src/components/draft/AssetResearchModal.jsx', `style={checksShown ? { position: 'sticky', top: 0, zIndex: 3, background: ST.bg } : undefined}`, `style={checksShown ? { zIndex: 3, background: ST.bg } : undefined}`, [T.modal]],
+  ['PG2-d', 'src/components/draft/AssetResearchModal.jsx', `style={checksShown ? { ...viewScroll, overflowAnchor: 'none' } : viewScroll}`, `style={viewScroll}`, [T.modal]],
+  ['PG2-e', 'src/components/draft/AssetResearchModal.jsx', `const compactChartH = Math.min(shellChartH, Math.max(180, Math.round(shellBodyHeight / 3)));`, `const compactChartH = Math.min(shellChartH, Math.round(shellBodyHeight / 3));`, [T.modal]],
+  ['PG2-f', 'src/components/draft/AssetResearchModal.jsx', `if (!checksShown) return;\n    const view = e.currentTarget;`, `const view = e.currentTarget;`, [T.modal]],
+  ['PG4-a', 'src/components/draft/AssetResearchModal.jsx', `setReadFor(currentAsset?.symbol ?? null); setReadLit(null); setReadExpanded(false); setReadCompact(false); }`, `setReadFor(currentAsset?.symbol ?? null); setReadLit(null); setReadExpanded(false); }`, [T.modal]],
+  ['PG4-b', 'src/components/draft/AssetResearchModal.jsx', `    if (to !== 'chart') { setReadLit(null); setReadCompact(false); }`, `    if (to !== 'chart') { setReadCompact(false); }`, [T.modal]],
+  ['PG6-a', 'src/components/draft/AssetResearchModal.jsx', `setReadFor(currentAsset?.symbol ?? null); setReadLit(null); setReadExpanded(false); setReadCompact(false); }`, `setReadFor(currentAsset?.symbol ?? null); setReadLit(null); setReadCompact(false); }`, [T.modal]],
+  ['PG7-a', 'src/components/draft/AssetResearchModal.jsx', `const checksShown = readReady && readLine?.hasChecks === true && shellView === 'chart';`, `const checksShown = readReady && shellView === 'chart';`, [T.modal]],
+  ['FOC-a', 'src/components/draft/AssetResearchModal.jsx', `scrollMarginTop={(readPinH > 0 ? readPinH : 44 + (compact ? compactChartH : shellChartH)) + 8}`, `scrollMarginTop={44 + compactChartH + 8}`, [T.modal]],
+  ['TD2-a', 'src/components/draft/AssetResearchModal.jsx', `headerPrice: Number(enrichedAsset?.price) > 0 ? priceText(enrichedAsset.price) ?? null : null,`, `headerPrice: Number(enrichedAsset?.price) > 0 ? String(enrichedAsset.price) : null,`, [T.modal]],
+  ['TD1-a', 'src/components/draft/AssetResearchModal.jsx', `sessionOpened: readSession?.isTradingDay === true && Number.isFinite(readSession.openMs) && readNowMs >= readSession.openMs,`, `sessionOpened: true,`, [T.modal]],
+  ['TD1-b', 'src/components/draft/AssetResearchModal.jsx', `headerPrice: Number(enrichedAsset?.price) > 0 ? priceText(enrichedAsset.price) ?? null : null,`, `headerPrice: priceText(enrichedAsset?.price) ?? null,`, [T.modal]],
+  ['OV-a', 'src/components/Research/Sheet/shellView.js', `return openingView === 'chart' && typeof chartReadMode === 'string' && chartReadMode !== 'off' && fromBattleResearch !== true;`, `return openingView === 'chart' && fromBattleResearch !== true;`, [T.sv, T.modal]],
+  ['OV-b', 'src/components/Research/Sheet/shellView.js', `return openingView === 'chart' && typeof chartReadMode === 'string' && chartReadMode !== 'off' && fromBattleResearch !== true;`, `return openingView === 'chart' && typeof chartReadMode === 'string' && chartReadMode !== 'off';`, [T.sv, T.shell]],
+  ['OV-c', 'src/components/Research/Sheet/shellView.js', `return Array.isArray(views) && views.includes(view) ? view : 'analysis';`, `return 'chart';`, [T.sv, T.modal]],
+  ['OV-d', 'src/components/Research/Sheet/shellView.js', `  if (opensOnBomb === true) return 'bomb';\n  return onChart`, `  return onChart === true ? 'chart' : opensOnBomb === true ? 'bomb' : 'analysis';\n  return onChart`, [T.sv, T.shell]],
+  ['OV-e', 'src/screens/AgentBattleScreen.jsx', `    ...(brOn && brRow && brRow.symbol === symbol ? { openedFromResearch: true } : {}),\n`, ``, [T.br]],
+  ['OV-f', 'src/components/draft/AssetResearchModal.jsx', `fromBattleResearch: battleSheet && (sheetContext.openedFromResearch === true || (sheetContext.research != null && typeof sheetContext.research === 'object')) }),`, `fromBattleResearch: false }),`, [T.shell]],
+  ['BAND-a', `${CR}ChartReadBand.jsx`, `{line.today && <span data-chart-read-today`, `{false && <span data-chart-read-today`, [T.modal]],
+  ['CHK-a', `${CR}ChartReadChecks.jsx`, `<span data-chart-read-hint style={mono(10.5, ST.ink2)}>{model.hint}</span>`, `<span data-chart-read-hint style={mono(10.5, ST.ink2)}>{model.hint}</span><span>{model.hint}</span>`, [T.modal]],
+];
+
+const results = [];
+const vitest = path.join(TREE, 'node_modules', 'vitest', 'vitest.mjs');
+for (const [id, file, from, to, tests] of M) {
+  if (ONLY.size && !ONLY.has(id)) continue;
+  const abs = path.join(TREE, file);
+  const orig = readFileSync(abs, 'utf8');
+  const n = orig.split(from).length - 1;
+  if (n !== 1) { results.push({ id, verdict: n === 0 ? 'SKIPPED (anchor missing)' : `AMBIGUOUS (${n})` }); console.log(id, results.at(-1).verdict); continue; }
+  writeFileSync(abs, orig.replace(from, () => to));
+  const out = path.join(TREE, `mut-${id}.json`);
+  if (existsSync(out)) rmSync(out);
+  let code = 0;
+  try {
+    execFileSync(process.execPath, [vitest, 'run', ...tests, '--reporter=json', `--outputFile=${out}`, '--no-cache'], { cwd: TREE, stdio: 'pipe', timeout: 600000 });
+  } catch (e) { code = e.status ?? 1; }
+  writeFileSync(abs, orig);
+  let verdict;
+  try {
+    const j = JSON.parse(readFileSync(out, 'utf8'));
+    const loadFail = j.testResults.filter((r) => r.status === 'failed' && (r.assertionResults || []).length === 0).length;
+    if (loadFail) verdict = `BROKEN (${loadFail} file(s) failed to load)`;
+    else verdict = j.numFailedTests > 0 ? `KILLED (${j.numFailedTests} failed)` : (code ? `? exit ${code}, 0 failed` : 'SURVIVED');
+  } catch { verdict = `BROKEN (no report, exit ${code})`; }
+  results.push({ id, verdict });
+  console.log(id, verdict);
+}
+writeFileSync(path.join(TREE, 'mutants-report.json'), JSON.stringify(results, null, 1));
+const tally = results.reduce((t, r) => { const k = r.verdict.split(' ')[0]; t[k] = (t[k] || 0) + 1; return t; }, {});
+console.log(JSON.stringify(tally));

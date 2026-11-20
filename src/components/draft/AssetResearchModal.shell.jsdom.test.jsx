@@ -18,12 +18,18 @@ import { createRoot } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 vi.hoisted(() => { process.env.TZ = 'UTC'; });
-const FLAG = vi.hoisted(() => ({ sheet: 'on', bomb: 'on' }));
+// The Chart view's read and the opening view (CP-2): 'off' here unless a row says otherwise, so the shell's own rows open
+// as they always have (OV-5); the opening view as shipped ('chart').
+const FLAG = vi.hoisted(() => ({ sheet: 'on', bomb: 'on', read: 'off', open: 'chart' }));
 const FLAGS = vi.hoisted(() => ({
   get RESEARCH_MODAL_SHEET_MODE() { return FLAG.sheet; },
   RESEARCH_MODAL_SHEET_MODES: Object.freeze(['off', 'allowlist', 'on']),
   get RESEARCH_MODAL_BOMB_MODE() { return FLAG.bomb; },
   RESEARCH_MODAL_BOMB_MODES: Object.freeze(['off', 'allowlist', 'on']),
+  get CHART_READ_MODE() { return FLAG.read; },
+  CHART_READ_MODES: Object.freeze(['off', 'allowlist', 'on']),
+  get RESEARCH_MODAL_OPENING_VIEW() { return FLAG.open; },
+  RESEARCH_MODAL_OPENING_VIEWS: Object.freeze(['analysis', 'chart']),
 }));
 vi.mock('../../config/researchModalFlags', () => FLAGS);
 vi.mock('../../config/researchModalFlags.js', () => FLAGS);
@@ -114,7 +120,7 @@ beforeEach(() => {
   container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
   net.calls.length = 0; net.why.length = 0; net.daily = null; net.whyGate = null; net.fail = false; net.thirty = null; net.whyFail = false;
   for (const k of Object.keys(rec)) rec[k].length = 0;
-  FLAG.sheet = 'on'; FLAG.bomb = 'on';
+  FLAG.sheet = 'on'; FLAG.bomb = 'on'; FLAG.read = 'off'; FLAG.open = 'chart';
   Element.prototype.scrollIntoView = vi.fn();
   vi.spyOn(console, 'log').mockImplementation(() => {}); vi.spyOn(console, 'warn').mockImplementation(() => {});
 });
@@ -296,6 +302,52 @@ describe('SB-3 — the header control (H1): filled pills of equal width; no Why?
     expect(renderToStaticMarkup(<ChartHeader {...props} shell={null} />)).toBe(today);
     expect(today).toContain('Why?');
     expect(today).not.toContain('data-shell');
+  });
+});
+
+describe('CP-2: where a stock opens on the Battle View\'s mounts and in browse (OV-1 – OV-5; the 19 Nov build)', () => {
+  it('OV-1 / OV-3: a battle row outside a zone opens on the Chart view, at 1D, when the read is not off', async () => {
+    FLAG.read = 'allowlist';
+    await battle();
+    expect(view()).toBe('chart');
+    expect(shown()).toEqual(['chart']);
+    expect(history()[0]).toBe('1d');
+    expect(history()).not.toContain('30m');
+  });
+  it('OV-1: a browse mount under the shell opens on the Chart view too', async () => {
+    FLAG.read = 'on';
+    await browse();
+    expect(view()).toBe('chart');
+  });
+  it('OV-2: a row opened from Battle Research (the screen says openedFromResearch) opens on Analysis', async () => {
+    FLAG.read = 'allowlist';
+    await battle({ sheetContext: ctx({ openedFromResearch: true }) });
+    expect(view()).toBe('analysis');
+  });
+  it('OV-2: FQ-9 (inside the band at open) and the "See all levels ›" door still open on 💣', async () => {
+    FLAG.read = 'allowlist';
+    await battle({ wsPrice: 103.4 });
+    expect(view()).toBe('bomb');
+    remount();
+    await battle({ opensOnBomb: true });
+    expect(view()).toBe('bomb');
+  });
+  it('OV-5 and OV-4: with the read off, or the constant at analysis, every mount opens on Analysis as before', async () => {
+    FLAG.read = 'off';
+    await battle();
+    expect(view()).toBe('analysis');
+    remount();
+    FLAG.read = 'allowlist';
+    FLAG.open = 'analysis';
+    await battle();
+    expect(view()).toBe('analysis');
+  });
+  it('a late shell appearance is not an open: a stock reached from a sector ETF keeps viewOnShellAppear\'s view', async () => {
+    FLAG.read = 'on';
+    await browse({ symbol: 'XLK', name: 'Technology Select Sector SPDR', price: 230.15 });
+    expect(view()).toBeNull(); // a fund: no shell
+    await click($('[data-nav-stock]') ?? $('[data-stub="holdings"] button'));
+    expect(view()).toBe('analysis');
   });
 });
 

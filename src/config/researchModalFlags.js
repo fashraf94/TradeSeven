@@ -215,3 +215,30 @@ export const CHART_READ_MODES = Object.freeze(['off', 'allowlist', 'on']);
  */
 // Pinned by: chartReadFlag.test.js (the pin and this value move together — BUILD_RULES §2).
 export const CHART_READ_MODE = 'allowlist';
+
+/** The views a stock's research modal can open on when no rule below asks for another (OV-4). */
+export const RESEARCH_MODAL_OPENING_VIEWS = Object.freeze(['analysis', 'chart']);
+
+/**
+ * RESEARCH_MODAL_OPENING_VIEW — where a stock's research modal opens (the founder's
+ * ruling CP-2 of 19 Nov 2026; the build "the checks on the page, the Chart view
+ * first", OV-1 – OV-5; spec docs/specs/CHART_READ_SPEC_V1.md V1.1).
+ *
+ *   'chart'     a stock opens on the Chart view (1D) wherever the two-view shell is
+ *               on AND CHART_READ_MODE resolves to anything but 'off' (OV-1, OV-3),
+ *               except: 💣 by FQ-9 / BD-7 / BS-1, and a row opened from Battle
+ *               Research, which open as they do today (OV-2). Crypto, an index and
+ *               a sector fund are never in the shell.
+ *   'analysis'  the shell opens on Analysis as it did before CP-2.
+ *
+ * ONE LINE puts it back to Analysis (OV-4): change the literal and its pin
+ * together. Read through resolveOpeningView() (Sheet/shellView.js), which maps
+ * any other value, or a missing export, to 'analysis'. With CHART_READ_MODE 'off'
+ * the modal opens exactly as before at either value (OV-5).
+ *
+ * Phase 0 point 1 (the build report §2): a cold-cache open on Chart makes no more
+ * provider requests than one on Analysis (0 more; 1 each, the 1D/400-day daily
+ * series every shell open already fetches).
+ */
+// Pinned by: researchModalOpeningView.test.js (the pin and this value move together — BUILD_RULES §2).
+export const RESEARCH_MODAL_OPENING_VIEW = 'chart';

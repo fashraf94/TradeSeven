@@ -1,0 +1,151 @@
+// The review's lens-2 findings, re-run as rows after their fixes (headless Edge). SCRATCH ONLY.
+// node measure-review.mjs <shots dir>
+import { chromium } from 'file:///C:/Users/fashr/portfolio-duel/node_modules/playwright-core/index.mjs';
+import fs from 'node:fs';
+const OUT = process.argv[2];
+fs.mkdirSync(OUT, { recursive: true });
+const BASE = 'http://127.0.0.1:5199';
+const browser = await chromium.launch({ headless: true, channel: 'msedge' });
+const report = { rows: [], fails: [] };
+const ok = (name, pass, detail) => { report.rows.push({ name, pass: !!pass, detail }); if (!pass) report.fails.push(name); };
+const SQUARE = 13;
+const hold = (pathPart, ms) => `(() => { const wrap = () => { const f0 = window.fetch; if (!f0 || f0.__held) return false; const f = async (u, o) => { if (new RegExp(${JSON.stringify(pathPart)}).test(String(u))) await new Promise((r) => setTimeout(r, ${ms})); return f0(u, o); }; f.__held = true; window.fetch = f; return true; }; const t = setInterval(() => { if (window.__fetches && wrap()) clearInterval(t); }, 5); })();`;
+async function open(code, { w = 390, h = 844, mobile = true, init = null, waitRead = true } = {}) {
+  const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 2, isMobile: mobile, hasTouch: mobile });
+  const page = await ctx.newPage();
+  if (init) await page.addInitScript(init);
+  await page.goto(`${BASE}/?chartReadFixture=${code}`, { waitUntil: 'domcontentloaded', timeout: 120000 });
+  await page.waitForSelector('[data-shell-view]', { timeout: 120000 });
+  await page.waitForTimeout(700);
+  if (!(await page.$('[data-shell-scroll="chart"]'))) await page.locator('[data-shell-pill="chart"]').click();
+  if (waitRead) { await page.waitForSelector('[data-chart-read]', { timeout: 30000 }); await page.waitForTimeout(1500); }
+  return { ctx, page };
+}
+async function intoChecks(page) {
+  for (let i = 0; i < 60; i++) {
+    const m = await page.evaluate(() => { const v = document.querySelector('[data-shell-scroll="chart"]'); v.scrollTop += 40; return document.querySelector('[data-chart-pin]')?.dataset.chartPin; });
+    if (m === 'compact') break;
+    await page.waitForTimeout(60);
+  }
+  await page.waitForTimeout(800);
+}
+const geometry = (page) => page.evaluate((SQUARE) => {
+  const ops = window.__ops || [];
+  const pane = window.__pane;
+  const sq = ops.filter((o) => o.op === 'square');
+  const meets = (n) => ops.filter((o) => (o.op === 'line' || o.op === 'path') && o.n === n).some((o) => (o.op === 'line' ? o.x1 >= 0 && o.x0 <= pane.width && o.y >= 0 && o.y <= pane.height : o.points.some(([x, y]) => x >= 0 && x <= pane.width && y >= 0 && y <= pane.height)));
+  const strays = sq.filter((s) => !meets(s.n)).map((s) => s.n);
+  const onEach = [];
+  for (let i = 0; i < sq.length; i++) for (let j = i + 1; j < sq.length; j++) if (Math.abs(sq[i].x - sq[j].x) < SQUARE && Math.abs(sq[i].y - sq[j].y) < SQUARE) onEach.push(`${sq[i].n}/${sq[j].n}`);
+  return { squares: sq.map((s) => s.n), strays, onEach, pane };
+}, SQUARE);
+
+// L2B-1: panned back in time (and zoomed in on the latest bars), at full height and compact
+for (const compactFirst of [false, true]) {
+  const { ctx, page } = await open('A');
+  if (compactFirst) await intoChecks(page);
+  for (const [label, range] of [['panned back', { from: 0, to: 35 }], ['zoomed in on the latest bars', { from: 170, to: 182 }]]) {
+    await page.evaluate((r) => window.__probe.chart.timeScale().setVisibleLogicalRange(r), range);
+    await page.waitForTimeout(500);
+    const G = await geometry(page);
+    ok(`L2B-1 (${compactFirst ? 'compact' : 'full'}, ${label}): every square sits by a mark in view, none on another`, G.strays.length === 0 && G.onEach.length === 0, G);
+  }
+  await page.screenshot({ path: `${OUT}/L2B1-${compactFirst ? 'compact' : 'full'}-panned.png` });
+  await ctx.close();
+}
+
+// L2B-2: Battle while compact, its bars held 3 s — the pinned block keeps the compact height
+{
+  const { ctx, page } = await open('F1', { init: hold('timeframe=(5m|30m)', 3000) });
+  await intoChecks(page);
+  const before = await page.evaluate(() => ({ mode: document.querySelector('[data-chart-pin]').dataset.chartPin, pinH: document.querySelector('[data-chart-pin]').getBoundingClientRect().height }));
+  await page.locator('[data-chart-pill="battle"]').click();
+  await page.waitForTimeout(500);
+  const during = await page.evaluate(() => ({ state: document.querySelector('[data-shell-chart-state]')?.dataset.shellChartState ?? null, mode: document.querySelector('[data-chart-pin]').dataset.chartPin, pinH: document.querySelector('[data-chart-pin]').getBoundingClientRect().height, viewH: document.querySelector('[data-shell-scroll="chart"]').clientHeight }));
+  await page.screenshot({ path: `${OUT}/L2B2-battle-loading-compact.png` });
+  // the placeholder has always assumed a 44 px control row (a wrapped battle bar is ~91): it may be shorter, never taller
+  ok('L2B-2: Battle loading while compact — the pinned block never grows back toward its full height', before.mode === 'compact' && during.mode === 'compact' && /^battle-/.test(during.state || '') && during.pinH <= before.pinH + 2, { before, during });
+  await ctx.close();
+}
+
+// L2B-3: a short view (844 × 390): no pin; the checks scroll into view
+{
+  const { ctx, page } = await open('A', { w: 844, h: 390 });
+  const r = await page.evaluate(async () => {
+    const view = document.querySelector('[data-shell-scroll="chart"]');
+    const pin = document.querySelector('[data-chart-pin]');
+    const seen = [];
+    for (let top = 0; top < view.scrollHeight; top += 60) {
+      view.scrollTop = top;
+      await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+      const vb = view.getBoundingClientRect();
+      for (const row of document.querySelectorAll('[data-check-row]')) {
+        const b = row.getBoundingClientRect();
+        if (b.top >= vb.top && b.bottom <= vb.bottom && document.elementFromPoint(b.left + 20, b.top + b.height / 2)?.closest('[data-check-row]') === row) seen.push(row.dataset.checkRow);
+      }
+    }
+    return { mode: pin.dataset.chartPin, pos: getComputedStyle(pin).position, viewH: view.clientHeight, seen: [...new Set(seen)] };
+  });
+  await page.screenshot({ path: `${OUT}/L2B3-landscape.png` });
+  ok('L2B-3 (844 × 390): the chart is not pinned, and every check row comes into view (and is the element under the finger)', r.mode === 'none' && r.pos !== 'sticky' && r.seen.length >= 6, r);
+  await ctx.close();
+}
+
+// L2B-4: keyboard focus through the page under the pinned chart (compact) — never left under it
+{
+  const { ctx, page } = await open('A', { mobile: false });
+  await intoChecks(page);
+  const pinBottom = await page.evaluate(() => document.querySelector('[data-chart-pin]').getBoundingClientRect().bottom);
+  // from the last focusable of the view, Shift+Tab back up the page
+  await page.evaluate(() => { const f = [...document.querySelectorAll('[data-shell-scroll="chart"] [data-shell-technical] button, [data-shell-scroll="chart"] [data-chart-read-checks] button')]; f.at(-1).focus(); });
+  const bad = [];
+  const seen = [];
+  for (let i = 0; i < 24; i++) {
+    await page.keyboard.press('Shift+Tab');
+    await page.waitForTimeout(120);
+    const f = await page.evaluate(() => { const a = document.activeElement; const pin = document.querySelector('[data-chart-pin]'); const r = a.getBoundingClientRect(); return { tag: a.tagName, txt: (a.innerText || '').slice(0, 24), top: r.top, inPin: !!pin?.contains(a), mode: pin?.dataset.chartPin, pinBottom: pin?.getBoundingClientRect().bottom }; });
+    seen.push(f);
+    if (!f.inPin && f.mode === 'compact' && f.top < f.pinBottom - 1) bad.push(f);
+    if (f.inPin) break;
+  }
+  ok('L2B-4: Shift+Tab up through the Technical content and the checks — no focused element is left under the pinned chart', bad.length === 0 && seen.length > 3, { bad, steps: seen.length, pinBottom });
+  await ctx.close();
+}
+
+// L2B-5: a small scroll right after the chart returned to full height stays full
+for (const nudge of [12, 60]) {
+  const { ctx, page } = await open('A');
+  await intoChecks(page);
+  const r = await page.evaluate(async (nudge) => {
+    const view = document.querySelector('[data-shell-scroll="chart"]');
+    const pin = document.querySelector('[data-chart-pin]');
+    const full = new Promise((res) => { const mo = new MutationObserver(() => { if (pin.dataset.chartPin === 'full') { mo.disconnect(); res(); } }); mo.observe(pin, { attributes: true }); });
+    view.scrollTop = 0;
+    await full;
+    await new Promise((res) => setTimeout(res, 30));
+    view.scrollTop = nudge;
+    await new Promise((res) => setTimeout(res, 400));
+    return { after: pin.dataset.chartPin };
+  }, nudge);
+  ok(`L2B-5: ${nudge} px of scroll 30 ms after returning to full height stays full (the ease is not read as position)`, r.after === 'full', r);
+  await ctx.close();
+}
+
+// L2B-6: the read lands (held 3 s) after the player scrolled to 400 — it lands compact
+{
+  const { ctx, page } = await open('A', { init: hold('/api/research/setup-read', 3000), waitRead: false });
+  await page.waitForSelector('[data-shell-scroll="chart"]', { timeout: 30000 });
+  await page.waitForTimeout(900);
+  await page.evaluate(() => { document.querySelector('[data-shell-scroll="chart"]').scrollTop = 400; });
+  await page.waitForSelector('[data-chart-read]', { timeout: 20000 });
+  await page.waitForTimeout(900);
+  const r = await page.evaluate(() => { const v = document.querySelector('[data-shell-scroll="chart"]'); const pin = document.querySelector('[data-chart-pin]'); const vb = v.getBoundingClientRect(); const pb = pin.getBoundingClientRect(); return { scrollTop: v.scrollTop, mode: pin.dataset.chartPin, visibleBelowPin: Math.round(vb.bottom - pb.bottom), viewH: Math.round(vb.height) }; });
+  await page.screenshot({ path: `${OUT}/L2B6-read-lands-after-scroll.png` });
+  ok('L2B-6: a read that lands after the player scrolled compacts at once', r.mode === 'compact' && r.visibleBelowPin > r.viewH / 2, r);
+  await ctx.close();
+}
+
+await browser.close();
+fs.writeFileSync(`${OUT}/report-review.json`, JSON.stringify(report, null, 1));
+console.log(JSON.stringify({ total: report.rows.length, fails: report.fails }, null, 1));
+for (const r of report.rows) if (!r.pass) console.log('FAIL', r.name, JSON.stringify(r.detail).slice(0, 900));

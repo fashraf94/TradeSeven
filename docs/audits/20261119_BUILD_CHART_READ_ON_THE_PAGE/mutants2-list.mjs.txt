@@ -1,0 +1,22 @@
+// The second battery: the review's fixes, and the earlier mutants whose lines moved (run on B's head 6d40d36e).
+const CR = 'src/components/Research/ChartRead/';
+const T = {
+  cr: `${CR}chartRead.test.js`, pm: `${CR}placeMarks.test.js`,
+  modal: 'src/components/draft/AssetResearchModal.chartRead.jsdom.test.jsx',
+};
+const MOD = 'src/components/draft/AssetResearchModal.jsx';
+export const M2 = [
+  ['R1', `${CR}ruleMarksPrimitive.js`, `    if (inPane(x0, x1, y, y)) wants.push({ n: m.n, lit: !!m.lit, y, sides: [x0 - SQUARE - 3, x1 + 3] });`, `    wants.push({ n: m.n, lit: !!m.lit, y, sides: [x0 - SQUARE - 3, x1 + 3] });`, [T.pm]],
+  ['R2', `${CR}ruleMarksPrimitive.js`, `const seen = inPane(Math.min(rx0, lx0), Math.max(rx1, lx1), y, yb);`, `const seen = true;`, [T.pm]],
+  ['R4', MOD, `shellBodyHeight - (56 + compactChartH) >= 160);`, `shellBodyHeight - (56 + compactChartH) >= 0);`, [T.modal]],
+  ['R5', MOD, `const pinned = checksShown && (!(shellBodyHeight > 0) || shellBodyHeight - (56 + compactChartH) >= 160);`, `const pinned = checksShown && shellBodyHeight - (56 + compactChartH) >= 160;`, [T.modal]],
+  ['R6', MOD, `<div data-shell-chart-state="error" style={{ height: \`\${plotH + 44}px\`,`, `<div data-shell-chart-state="error" style={{ height: \`\${shellChartH + 44}px\`,`, [T.modal]],
+  ['R8', MOD, `  React.useLayoutEffect(() => { if (pinned) decideCompact(); }, [pinned]); // eslint-disable-line react-hooks/exhaustive-deps -- once, as the pinned checks appear\n`, ``, [T.modal]],
+  ['R10', `${CR}chartRead.js`, `  if (typeof headerPrice !== 'string' || !CENT_RE.test(headerPrice)) return null;`, `  if (typeof headerPrice !== 'string' || !DECIMAL_RE.test(headerPrice)) return null;`, [T.cr]],
+  ['R11', MOD, ` && barsMatchTimeframe(researchData.ohlcvData, '1W') ? CHART_READ_COPY.weeklyAveragesNote : null}`, ` ? CHART_READ_COPY.weeklyAveragesNote : null}`, [T.modal]],
+  ['R12', MOD, `if (checks.getBoundingClientRect().top - easing <= pin.getBoundingClientRect().bottom + 0.5) setReadCompact(true);`, `if (checks.getBoundingClientRect().top - easing < pin.getBoundingClientRect().top) setReadCompact(true);`, [T.modal]],
+  ['R13', MOD, `    } else if (view.scrollTop <= 0) {\n      setReadCompact(false);\n    }\n  };\n  const onChartScroll`, `    }\n  };\n  const onChartScroll`, [T.modal]],
+  ['R14', `${CR}ruleMarksPrimitive.js`, `const spot = near.find(clear) ?? near.find(noSquare) ?? far.find(clear) ?? far.find(noSquare) ?? null;`, `const spot = near.find(clear) ?? far.find(clear) ?? near.find(noSquare) ?? far.find(noSquare) ?? null;`, [T.pm]],
+  ['R16', MOD, `scrollMarginTop={pinned ? (readPinH > 0 ? readPinH : 44 + plotH) + 8 : 0}`, `scrollMarginTop={pinned ? 44 + compactChartH + 8 : 0}`, [T.modal]],
+  ['R17', MOD, `style={pinned ? { position: 'sticky', top: 0, zIndex: 3, background: ST.bg } : undefined}`, `style={checksShown ? { position: 'sticky', top: 0, zIndex: 3, background: ST.bg } : undefined}`, [T.modal]],
+];

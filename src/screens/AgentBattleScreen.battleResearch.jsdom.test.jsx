@@ -356,6 +356,7 @@ describe('BATTLE_RESEARCH_MODE on — the surface in the screen', () => {
     await click(q(`[data-br-surface] [data-br-row="${cand}"]`));
     expect(q(`[data-research-modal="${cand}"]`)).toBeTruthy();
     const ctx = MODAL.last.sheetContext;
+    expect(ctx.openedFromResearch).toBe(true); // CP-2 (OV-2): the modal opens on Analysis, not the Chart view
     expect(ctx.research.question.text).toBe('Compare alternatives to EQIX');
     expect(MODAL.last.asset.symbol).toBe(cand);
     expect(ctx.research.refinements).toEqual(moveThen); // the step the row was opened from: the move order
@@ -444,6 +445,14 @@ describe('BATTLE_RESEARCH_MODE on — the surface in the screen', () => {
     await click(q('[data-cockpit-browse]'));
     expect(q('[data-cockpit-bench-sheet]')).toBeTruthy();
     expect(q('[data-br-surface]')).toBeNull();
+    // Review L2B-8 (CP-2, OV-2): a stock opened from the bench sheet — outside Battle Research — carries no
+    // openedFromResearch, so it opens like any battle row (on the Chart view, where the read is on).
+    const door = q('[data-cockpit-bench-research]');
+    expect(door).toBeTruthy();
+    await click(door);
+    expect(q(`[data-research-modal="${door.getAttribute('data-cockpit-bench-research')}"]`)).toBeTruthy();
+    expect(MODAL.last.sheetContext).toBeTruthy();
+    expect('openedFromResearch' in MODAL.last.sheetContext).toBe(false);
   }, ROW_MS);
 
   it('the battle leaving active closes the surface (BRS-1)', async () => {
@@ -476,6 +485,7 @@ describe('review round on PR B (lens 2), at the screen', () => {
     expect(q('[data-research-modal="PLTR"]')).toBeTruthy();
     const ctx = MODAL.last.sheetContext;
     expect(ctx.research).toBeUndefined();
+    expect(ctx.openedFromResearch).toBe(true); // CP-2 (OV-2): state 1's list opens on Analysis too
     expect(ctx.atrSeed).toEqual({ pct: 4.06, asOfMs: Date.parse('2026-10-14T17:01:00.000Z') });
     expect(ctx.rankings.stocks).toHaveLength(rankingsDoc().stocks.length);
   }, ROW_MS);
@@ -507,5 +517,6 @@ describe('the reference line opens the holding as itself (row added after the ba
     await click(ref.tagName === 'BUTTON' ? ref : ref.querySelector('button'));
     expect(q('[data-research-modal="EQIX"]')).toBeTruthy();
     expect(MODAL.last.sheetContext.research).toBeUndefined();
+    expect(MODAL.last.sheetContext.openedFromResearch).toBe(true); // opened from the surface (CP-2, OV-2)
   }, ROW_MS);
 });

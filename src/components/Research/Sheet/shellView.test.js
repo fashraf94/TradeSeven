@@ -5,7 +5,7 @@
 // modal (AssetResearchModal.shell.jsdom.test.jsx).
 
 import { describe, it, expect } from 'vitest';
-import { shellViewsFor, openingView, bombOnlyOpensOnBomb, switchView, seeOnChartTimeframe, isChartTimeframe, shellChartHeight, isLiveZoneMode, viewOnShellAppear } from './shellView.js';
+import { shellViewsFor, openingView, opensOnChart, resolveOpeningView, bombOnlyOpensOnBomb, switchView, seeOnChartTimeframe, isChartTimeframe, shellChartHeight, isLiveZoneMode, viewOnShellAppear } from './shellView.js';
 
 describe('the warm 💣 pill and the shell appearing on an open modal', () => {
   it('warm only in a live zone: the red zone (its approach, its banked moment) and the Danger Zone; never frozen, never the Fuse', () => {
@@ -29,6 +29,21 @@ describe('the pills and the opening view', () => {
     expect(openingView({ opensOnBomb: false })).toBe('analysis');
     expect(openingView({ opensOnBomb: undefined })).toBe('analysis');
     expect(openingView({ opensOnBomb: true })).toBe('bomb');
+  });
+  it('CP-2: Chart when the caller says so (opensOnChart); 💣 still wins (OV-2)', () => {
+    expect(openingView({ opensOnBomb: false, onChart: true })).toBe('chart');
+    expect(openingView({ opensOnBomb: true, onChart: true })).toBe('bomb');
+    expect(openingView({ opensOnBomb: false, onChart: 'yes' })).toBe('analysis');
+  });
+  it('OV-1 / OV-2 / OV-4 / OV-5: opensOnChart — the opening view is chart, the read is not off, not from Battle Research', () => {
+    expect(opensOnChart({ chartReadMode: 'allowlist', openingView: 'chart' })).toBe(true);
+    expect(opensOnChart({ chartReadMode: 'on', openingView: 'chart' })).toBe(true);
+    expect(opensOnChart({ chartReadMode: 'off', openingView: 'chart' })).toBe(false); // OV-5
+    expect(opensOnChart({ chartReadMode: undefined, openingView: 'chart' })).toBe(false);
+    expect(opensOnChart({ chartReadMode: 'on', openingView: 'analysis' })).toBe(false); // OV-4: one line puts it back
+    expect(opensOnChart({ chartReadMode: 'on', openingView: 'chart', fromBattleResearch: true })).toBe(false); // OV-2
+    expect(resolveOpeningView()).toBe('chart'); // the constant as shipped (its pin: researchModalOpeningView.test.js)
+    expect(opensOnChart({ chartReadMode: 'allowlist' })).toBe(true); // reads the constant by default
   });
   it('BS-1: a Bomb-only mount asks for 💣 by its own defaultTab or defaultTimeframe, else Analysis', () => {
     expect(bombOnlyOpensOnBomb({ defaultTab: 'baggerbomb', defaultTimeframe: '1D' })).toBe(true);

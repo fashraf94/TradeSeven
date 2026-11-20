@@ -17,7 +17,7 @@ const count = (src, re) => (src.match(re) || []).length;
 
 describe('the Chart view\'s read: no colour literal and no inline motion', () => {
   it('the scan covers the read\'s modules', () => {
-    expect(SOURCES).toEqual(expect.arrayContaining(['ChartReadBand.jsx', 'ChartReadSheet.jsx', 'chartRead.js', 'chartReadCopy.js', 'format.js', 'marks.js', 'placeMarks.js', 'ruleMarksPrimitive.js', 'useChartRead.js']));
+    expect(SOURCES).toEqual(expect.arrayContaining(['ChartReadBand.jsx', 'ChartReadChecks.jsx', 'chartRead.js', 'chartReadCopy.js', 'format.js', 'marks.js', 'placeMarks.js', 'ruleMarksPrimitive.js', 'useChartRead.js']));
   });
   for (const f of SOURCES) {
     it(`${f}: zero hex, zero rgb()/rgba(), zero transition={{`, () => {

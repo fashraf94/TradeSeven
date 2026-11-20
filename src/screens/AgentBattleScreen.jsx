@@ -3165,6 +3165,9 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     row: { held, ...ids },
     ...(sheetIncumbent && sheetIncumbent.symbol === symbol ? { incumbent: sheetIncumbent.incumbent } : {}),
     ...(brOn ? brResearchFor(symbol) : {}),
+    // CP-2 (OV-2): a row opened from the Battle Research surface — a research question (state 2) or the opening's list
+    // (state 1) — opens the modal on Analysis, where its content is, never on the Chart view.
+    ...(brOn && brRow && brRow.symbol === symbol ? { openedFromResearch: true } : {}),
     ...(sheetCockpitDoor ? { onOpenCockpit: sheetCockpitDoor } : {}),
     battle: agentBattle,
     ...(cockpitOn && cockpitCallsRead.status === 'ready' && Array.isArray(cockpitCallsRead.value) ? { calls: cockpitCallsRead.value } : {}),

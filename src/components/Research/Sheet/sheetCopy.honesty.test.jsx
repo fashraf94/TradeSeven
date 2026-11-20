@@ -111,7 +111,9 @@ describe('every template of the copy module', () => {
 // The Chart view's read (RD-13): never "will", "likely", "should buy", "live", and never a stop or a target beside
 // a price — on top of every term the sheet's own copy is held to.
 const CHART_READ_FORBIDDEN = [...ALL, 'will', 'likely', 'should buy', 'live'];
-const CR_ARG = { day: 'Tue Nov 17', weekday: 'Tue', why: 'a split or dividend inside the window', ruleSet: 'tf-setup-v2', asOf: 'as of Tue Nov 17 close', n: 73, of: 3, time: 'Wed 1:44 PM ET', names: '20-day, 50-day', sma: '$141.10', high: '$148.90', x: '1.6', parts: ['closed below its 20-day ($141.10)', 'the 50-day is falling'], fact: 'the close', facts: 'the 50-day and the close', avg: '5.3M', many: true };
+const CR_ARG = { day: 'Tue Nov 17', weekday: 'Tue', why: 'a split or dividend inside the window', ruleSet: 'tf-setup-v2', asOf: 'as of Tue Nov 17 close', n: 73, of: 3, time: 'Wed 1:44 PM ET', names: '20-day, 50-day', sma: '$141.10', high: '$148.90', x: '1.6', parts: ['closed below its 20-day ($141.10)', 'the 50-day is falling'], fact: 'the close', facts: 'the 50-day and the close', avg: '5.3M', many: true, price: '$361.78', side: 'above' };
+// CP-3 (TD-5): the "today so far" line never reads as a result — on top of every term above, never these.
+const TODAY_FORBIDDEN = ['holds', 'hold', 'passes', 'pass', 'would', 'count', 'counts', 'confirmed', 'valid', 'signal'];
 function chartReadTemplates() {
   const out = [];
   const walk = (prefix, obj) => {
@@ -164,6 +166,19 @@ describe('the Chart view\'s read: every template and every literal of its copy m
     expect(hit('The live price.', 'live')).toBe(true);
     expect(STOP_PRICE.test('A stop at $141.10.')).toBe(true);
     expect(hit('It delivers.', 'live')).toBe(false); // a word boundary, not a substring
+  });
+  it('CP-3 (TD-5): every template of the "today so far" line — with every side — never reads as a result', () => {
+    const T = CHART_READ_COPY.today;
+    const outs = [];
+    for (const side of [T.above, T.below, T.at]) outs.push(T.lead('$361.78'), T.fast(side, 'Wed'), T.slow(side, 'Wed'));
+    outs.push(T.high('Wed'), T.low('Wed'), T.tail);
+    expect(outs.length).toBe(12);
+    for (const s of outs) {
+      for (const term of [...CHART_READ_FORBIDDEN, ...TODAY_FORBIDDEN]) expect(hit(s, term), `${term}: ${s}`).toBe(false);
+      expect(STOP_PRICE.test(s), s).toBe(false);
+      expect(/[✓✗•●]/.test(s), s).toBe(false); // no glyph
+    }
+    expect(hit('The check holds today.', 'holds')).toBe(true); // the sweep bites
   });
 });
 
