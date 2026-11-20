@@ -535,3 +535,47 @@ describe('T2D-12 — parse coverage: a rejected row, a malformed envelope or a m
     expect(onBook.report.symbols.AAPL).toMatchObject({ rowsRejected: 1 });
   });
 });
+
+describe('the adjustment record (pure): a debit larger than its cash is held, and the result view', () => {
+  const ledgerPaid = (cash) => ({
+    kind: 'idea', cash, dividendsUsd: 99.97, holdings: { AAPL: { shares: 79.976006, costBasisTotal: 10000 } }, appliedActionIds: ['cash_dividend_AAPL_2026-11-18', 'reverse_split_AAPL_2026-11-17'], declinedActionIds: [], saleReceipts: [],
+    corporateActionReceipts: [
+      { actionId: 'cash_dividend_AAPL_2026-11-18', type: 'cash_dividend', ticker: 'AAPL', effectiveDate: '2026-11-18', amount: 1, incomeUsd: 99.97, applied: true, appliedOn: '2026-11-18' },
+      { actionId: 'reverse_split_AAPL_2026-11-17', type: 'reverse_split', ticker: 'AAPL', effectiveDate: '2026-11-17', ratio: 0.8, incomeUsd: 0, applied: true, appliedOn: '2026-11-19', sharesBefore: SH, sharesAfter: 79.976006 },
+    ],
+  });
+  it('a late-basis DEBIT larger than the cash it would come from is not posted: held, `adjustment_exceeds_cash`, alerted; with the cash later, posted once', async () => {
+    const { planLedgerAdjustments } = await import('./adjustments.js');
+    const ctx = { ideaId: 'i', ledgerKind: 'idea', date: '2026-11-19', rows: {}, closed: new Map(), doubtOn: () => false };
+    const short = planLedgerAdjustments(ledgerPaid(5), ctx);
+    expect(short.posted).toEqual([]);
+    expect(short.held).toEqual([expect.objectContaining({ kind: ADJUSTMENT_KIND.LATE_BASIS, held: true, reason: 'adjustment_exceeds_cash', amountUsd: -19.99 })]);
+    expect(short.ledger.cash).toBe(5);
+    expect(short.alerts.some((a) => /PRACTICE_FIELD_ADJUSTMENT_HELD .*(adjustment_exceeds_cash)/.test(a))).toBe(true);
+    const later = planLedgerAdjustments({ ...short.ledger, cash: 50 }, { ...ctx, date: '2026-11-20' });
+    expect(later.posted).toEqual([expect.objectContaining({ kind: ADJUSTMENT_KIND.LATE_BASIS, amountUsd: -19.99 })]);
+    expect(later.ledger.adjustments.filter((a) => a.held)).toEqual([]);
+    expect([later.ledger.cash, later.ledger.dividendsUsd]).toEqual([30.01, 79.98]);
+    expect(planLedgerAdjustments(later.ledger, { ...ctx, date: '2026-11-23' }).posted).toEqual([]);
+  });
+  it('a doubt on the symbol defers it (durable: posted at the first close without the doubt)', async () => {
+    const { planLedgerAdjustments } = await import('./adjustments.js');
+    const ctx = { ideaId: 'i', ledgerKind: 'idea', date: '2026-11-19', rows: {}, closed: new Map() };
+    const waiting = planLedgerAdjustments(ledgerPaid(500), { ...ctx, doubtOn: () => true });
+    expect([waiting.posted, waiting.held]).toEqual([[], []]);
+    expect(planLedgerAdjustments(waiting.ledger, { ...ctx, doubtOn: () => false }).posted).toEqual([expect.objectContaining({ amountUsd: -19.99 })]);
+  });
+  it('the result view: `wouldChangeLabel` is computed from the figures — an idea-only adjustment that moves the gap past the band changes it; one dated after the endpoint is not counted', async () => {
+    const { resultAdjustmentView } = await import('./adjustments.js');
+    const idea = (adjs, cmp = []) => ({
+      result: { endpointSession: '2026-11-20', economicResult: 'within_band', economic: { gapUsd: 50, bandUsd: 100 } },
+      ledger: { adjustments: adjs }, comparisonLedger: { adjustments: cmp }, spyLedger: { adjustments: [] },
+    });
+    const a = (amountUsd, effectiveDate = '2026-11-18', postedOn = '2026-11-23') => ({ kind: 'late_entitlement', actionId: 'x', amountUsd, effectiveDate, postedOn, postedTo: 'treasury' });
+    expect(resultAdjustmentView(idea([a(99.97)]))).toMatchObject({ gapUsdIfIncluded: 149.97, economicResultIfIncluded: 'ahead', wouldChangeLabel: true });
+    expect(resultAdjustmentView(idea([a(99.97)], [a(99.97)]))).toMatchObject({ gapUsdIfIncluded: 50, wouldChangeLabel: false });
+    expect(resultAdjustmentView(idea([a(99.97, '2026-11-23')]))).toBeNull(); // dated after the endpoint: not what it measured
+    expect(resultAdjustmentView(idea([a(99.97, '2026-11-18', '2026-11-20')]))).toBeNull(); // posted at the endpoint: already in it
+    expect(resultAdjustmentView({ ...idea([a(99.97)]), result: { ...idea([]).result, economicResult: 'unmeasurable' } })).toMatchObject({ wouldChangeLabel: false });
+  });
+});
