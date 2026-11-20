@@ -8,9 +8,11 @@
 // EVAL_POOL_START_CUTOFF_MS are numeric; flagPinGuard.test.js checks them
 // through its named numeric-settings list.
 //
-// Everything ships with today's behaviour: K = 1 (the sequential loop), the
+// Everything shipped with today's behaviour: K = 1 (the sequential loop), the
 // EODHD guard off (bare fetch, counted), the market-data cuts off. A flip PR
-// moves the matching row below in its own commit.
+// moves the matching row below in its own commit. Flipped since: the
+// market-data cuts (on, 20 Nov 2026 — founder ruling S-5; flip order cuts →
+// guard → K = 2).
 
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -35,14 +37,14 @@ describe('capacity Build 1 settings — the pins', () => {
     expect(EODHD_FETCH_GUARD_ENABLED).toBe(false);
   });
 
-  it('EVAL_MARKET_DATA_CUTS_ENABLED ships DARK', () => {
-    expect(EVAL_MARKET_DATA_CUTS_ENABLED).toBe(false);
+  it('EVAL_MARKET_DATA_CUTS_ENABLED is ON (flipped 20 Nov 2026, founder ruling S-5: cuts → guard → K = 2)', () => {
+    expect(EVAL_MARKET_DATA_CUTS_ENABLED).toBe(true);
   });
 
   it('each is a plain literal export with a Pinned-by pointer naming this file', () => {
     for (const [name, literal] of [
       ['EVAL_POOL_K', '1'], ['EVAL_POOL_START_CUTOFF_MS', '200_000'],
-      ['EODHD_FETCH_GUARD_ENABLED', 'false'], ['EVAL_MARKET_DATA_CUTS_ENABLED', 'false'],
+      ['EODHD_FETCH_GUARD_ENABLED', 'false'], ['EVAL_MARKET_DATA_CUTS_ENABLED', 'true'],
     ]) {
       expect(SRC).toContain(`\nexport const ${name} = ${literal};`);
       const idx = SRC.indexOf(`export const ${name} = `);
@@ -51,9 +53,9 @@ describe('capacity Build 1 settings — the pins', () => {
     }
   });
 
-  it('the two booleans are registered DARK_BY_DESIGN — the entries a deliberate flip drops in the same commit', () => {
+  it('the guard is still registered DARK_BY_DESIGN; the cuts\' entry is gone — the flip dropped it in the same commit (a rollback restores it)', () => {
     expect(GUARD).toMatch(/^\s*EODHD_FETCH_GUARD_ENABLED:/m);
-    expect(GUARD).toMatch(/^\s*EVAL_MARKET_DATA_CUTS_ENABLED:/m);
+    expect(GUARD).not.toMatch(/^\s*EVAL_MARKET_DATA_CUTS_ENABLED:/m);
   });
 
   it('the numeric two are on the guard\'s named numeric-settings list', () => {
