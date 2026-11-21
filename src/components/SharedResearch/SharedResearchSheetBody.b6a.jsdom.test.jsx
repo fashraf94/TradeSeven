@@ -149,6 +149,62 @@ describe('X-5 startNow: the open goes at once, and the preview is not drawn firs
   });
 });
 
+describe('X-5 startNow after the open (review HB-1): a later story preview is the preview, never the opening line', () => {
+  const FT_ITEM = storyOf(); // the fixture's own story: openStory's session names it, so New investigation picks it again
+  const ended = (status, terminalReason) => {
+    const b = A.openStory.body;
+    return { status: 200, body: { ...b, session: { ...b.session, status, updatedAt: '2026-11-12T15:00:00.000Z' }, record: { ...b.record, state: status, terminalReason, endedAt: '2026-11-12T15:00:00.000Z' } } };
+  };
+  for (const [name, open, close, toWork] of [
+    ['opened → Conclude → New investigation', A.openStory, ended('completed', 'concluded'), null],
+    ['opened → Discard → yes → New investigation', A.openStory, ended('abandoned', 'user_close'), 'discard'],
+    ['existing → Continue → Conclude → New investigation', { status: 200, body: { ...A.openStory.body, existing: true } }, ended('completed', 'concluded'), 'continue'],
+  ]) {
+    it(name, async () => {
+      server.set('open', open);
+      server.set('close', close);
+      keep(mount(<Body mode="item" item={FT_ITEM} startNow agentName="Atlas" phone onClose={vi.fn()} />));
+      await flush();
+      if (toWork === 'continue') { click($('[data-sr-continue-existing]')); await flush(); }
+      if (toWork === 'discard') {
+        click(kit.buttonNamed(COPY.discard));
+        await flush();
+        click($('[data-sr-discard-yes]'));
+      } else click($('[data-sr-conclude]'));
+      await flush();
+      click(kit.buttonNamed(COPY.newInv));
+      await flush(20);
+      expect($(PREVIEW)).not.toBeNull();
+      expect($('#sr-item-q')).not.toBeNull();
+      expect(opens()).toHaveLength(1); // nothing re-sent: the new investigation waits for Investigate
+    });
+  }
+});
+
+describe('X-5 under the app\'s root StrictMode (its development effect replay): one open, no preview while it runs', () => {
+  for (const [name, answer, after] of [['opened', () => A.openStory, '[data-screen-label^="Work"]'], ['refused', () => A.attribution_unavailable, PREVIEW]]) {
+    it(name, async () => {
+      const { StrictMode, act } = await import('react');
+      const { createRoot } = await import('react-dom/client');
+      const { ThemeProvider } = await import('../../contexts/ThemeContext');
+      const held = deferred();
+      server.set('open', held.promise);
+      const host = document.createElement('div');
+      document.body.appendChild(host);
+      const root = createRoot(host);
+      act(() => { root.render(<StrictMode><ThemeProvider><Body mode="item" item={EXPLORE_ITEM} startNow phone onClose={() => {}} /></ThemeProvider></StrictMode>); });
+      await flush();
+      const during = Boolean($(PREVIEW));
+      held.resolve(answer());
+      await flush(20);
+      const shown = Boolean($(after));
+      act(() => root.unmount());
+      host.remove();
+      expect([during, shown, opens().length]).toEqual([false, true, 1]);
+    });
+  }
+});
+
 describe('X-5 startNow absent (or false): today\'s sheet', () => {
   for (const props of [{}, { startNow: false }]) {
     it(`${JSON.stringify(props)}: the preview first, and no open until Investigate`, async () => {
@@ -194,6 +250,12 @@ describe('X-5b words: the own-words box opens holding them; nothing is sent unti
     click($('[data-sr-start-thesis]'));
     await flush();
     expect(opens()[0].entry).toEqual({ kind: 'observation', observation: 'power gear' });
+  });
+  it('words with another mode are not used: mode \'item\' with no item draws Start with the box empty (review M2)', async () => {
+    keep(mount(<Body mode="item" item={null} words="power gear" phone onClose={vi.fn()} />));
+    await flush();
+    expect($('[data-screen-label="Start"]')).not.toBeNull();
+    expect($('#sr-own').value).toBe('');
   });
   it('absent: the box opens empty, as before; words with another mode are not used', async () => {
     const a = keep(mount(<Body mode="start" phone onClose={vi.fn()} />));

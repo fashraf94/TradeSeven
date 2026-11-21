@@ -62,11 +62,11 @@ vi.mock('../_utils/sharedResearch/retrieval.js', async (importOriginal) => {
 
 const { default: handler } = await import('./shared-research.js');
 const { resetUidRateLimits } = await import('../_utils/sharedResearch/gate.js');
-const { EXPLORE_READ_MAX, EXPLORE_DOCS_MAX } = await import('../_utils/sharedResearch/explore.js');
+const { EXPLORE_OPEN_READ, EXPLORE_RECORDS_READ, EXPLORE_DOCS_MAX } = await import('../_utils/sharedResearch/explore.js');
 const { openSessionOf } = await import('../_utils/sharedResearch/session.js');
 const { emptyCard } = await import('../_utils/sharedResearch/thesis.js');
 const { findingLabelOf } = await import('../../src/constants/sharedResearch.js');
-const { buildRecord, researchWorkIdFor, manualFunnel, emptyTelemetry, RECORD_SCHEMA_VERSION } = await import('../_utils/researchRecords/model.js');
+const { buildRecord, buildFinding, findingAppendPatch, FINDING_ID_PREFIX, researchWorkIdFor, manualFunnel, emptyTelemetry, RECORD_SCHEMA_VERSION } = await import('../_utils/researchRecords/model.js');
 
 const UID = 'u1';
 const AGENT = { ownerId: UID, name: 'Atlas', archetype: 'contrarian', loadouts: { baggerbomb: { archetype: 'momentum_chaser', book: null } } };
@@ -208,7 +208,11 @@ describe('X-2: an Explore story opens as its own kind', () => {
   });
 });
 
-/** One session and its record, written straight to the store (a read's fixture: the open's own quota allows three a day). */
+/**
+ * One session and its record, written straight to the store as the route leaves them (a read's fixture: the open's own
+ * quota allows three a day): the record carries the story's opening coverage finding, and a completed or abandoned one
+ * is closed with its terminal reason and end time.
+ */
 function plant({ n, storyId, status = 'open', createdAt, updatedAt = createdAt, adoption = null, builder = false, thesis = null, kind = 'exploreStories', stepsUsed = 0, version = 1 }) {
   const sessionId = uuid(500 + n);
   const s = {
@@ -219,15 +223,24 @@ function plant({ n, storyId, status = 'open', createdAt, updatedAt = createdAt, 
     status, updatedAt, adoption, stepsUsed,
     ...(builder ? { shape: 'builder', thesis: thesis ?? emptyCard() } : {}),
   };
-  const record = buildRecord({
+  const minted = buildRecord({
     researchWorkId: s.researchWorkId, userId: UID, origin: 'shared_research', host: { collection: 'sharedResearchSessions', id: sessionId }, createdAt,
     question: `Question ${n}`, funnel: manualFunnel(), budget: null, telemetry: emptyTelemetry(),
   });
+  const coverage = buildFinding({
+    kind: 'coverage', symbol: null, fact: `Story ${storyId}`, source: { recordKind: kind, recordId: storyId, label: 'FantasyTimes · Kim' },
+    at: createdAt, asOf: null, status: 'unverified', statusReason: 'reporter_content',
+  }, { findingId: `${FINDING_ID_PREFIX}${uuid(900 + n)}`, nowIso: createdAt });
+  const record = { ...minted, ...findingAppendPatch(minted, coverage, { nowIso: createdAt }) };
+  const ended = status === 'open' ? {} : {
+    state: status === 'abandoned' ? 'abandoned' : 'completed',
+    terminalReason: status === 'abandoned' ? 'user_close' : adoption ? 'saved_to_list' : 'concluded', endedAt: updatedAt,
+  };
   env.store.set(`sharedResearchSessions/${sessionId}`, s);
-  env.store.set(`researchWork/${s.researchWorkId}`, status === 'open' ? record : { ...record, state: status === 'abandoned' ? 'abandoned' : 'completed' });
+  env.store.set(`researchWork/${s.researchWorkId}`, { ...record, ...ended });
   return s;
 }
-const at = (minute) => `2026-11-20T15:${String(minute).padStart(2, '0')}:00.000Z`;
+const at = (minute) => new Date(Date.parse('2026-11-20T15:00:00.000Z') + minute * 60_000).toISOString();
 
 describe('X-1: GET ?list=explore', () => {
   it('no investigations: { quota, items: [] } — the quota as every answer carries it', async () => {
@@ -274,6 +287,7 @@ describe('X-1: GET ?list=explore', () => {
   });
   it('one concluded (a real close): last { ended: \'concluded\', at: the close }, open null', async () => {
     const o = await opened();
+    await tick(); // the close a moment after the open: last.at must be the close, never the creation (review M1)
     const c = await post({ action: 'close', sessionId: o.session.sessionId, reason: 'concluded' });
     expect(c.statusCode).toBe(200);
     const { items } = await exploreRead();
@@ -295,6 +309,7 @@ describe('X-1: GET ?list=explore', () => {
   });
   it('an open one and an earlier closed one on the same story: both, each in its place; a later discard does not hide an earlier conclusion', async () => {
     const first = await opened();
+    await tick(); // the close a moment after the open: last.at must be the close, never the creation (review M1)
     const closed = await post({ action: 'close', sessionId: first.session.sessionId, reason: 'concluded' });
     await tick();
     const second = await opened({ question: Q2, requestId: 'req-x2' });
@@ -340,25 +355,41 @@ describe('X-1: GET ?list=explore', () => {
     state.user = { uid: 'u2' };
     expect((await exploreRead()).items).toEqual([]);
   });
-  it('the document bound: at most EXPLORE_READ_MAX sessions per query and one record per open story — 91 documents with the quota; no write', async () => {
-    for (let n = 0; n < 40; n++) plant({ n, storyId: `story-open-${n}`, createdAt: at(n % 60) });
-    for (let n = 40; n < 80; n++) plant({ n, storyId: `story-done-${n}`, status: 'completed', createdAt: at(n % 60) });
+  it('the document bound: the open query, its records outside the window, the window, the sessions of stories ended only — 161 documents with the quota; no write', async () => {
+    // 40 open investigations, the oldest; 60 ended, newer — so the window holds none of the open ones' records
+    for (let n = 0; n < 40; n++) plant({ n, storyId: `story-open-${n}`, createdAt: at(n) });
+    for (let n = 40; n < 100; n++) plant({ n, storyId: `story-done-${n}`, status: 'completed', createdAt: at(n), updatedAt: at(n) });
     let docs = 0;
     const real = env.db;
     const wrapQ = (q) => ({
       ...q, where: (...a) => wrapQ(q.where(...a)), orderBy: (...a) => wrapQ(q.orderBy(...a)), limit: (n) => wrapQ(q.limit(n)),
-      get: async () => { const s = await q.get(); docs += s.docs.length; return s; },
+      get: async () => { const snap = await q.get(); docs += snap.docs.length; return snap; },
       ...(q.doc ? { doc: (id) => { const d = q.doc(id); return { ...d, get: async () => { docs += 1; return d.get(); } }; } } : {}),
     });
     state.db = { ...real, collection: (name) => wrapQ(real.collection(name)) };
     const writes = env.writes.length;
     const b = await exploreRead();
-    expect(EXPLORE_READ_MAX).toBe(30);
-    expect(EXPLORE_DOCS_MAX).toBe(91);
+    expect([EXPLORE_OPEN_READ, EXPLORE_RECORDS_READ, EXPLORE_DOCS_MAX]).toEqual([30, 50, 161]);
     expect(docs).toBe(EXPLORE_DOCS_MAX);
     expect(b.items.filter((i) => i.open)).toHaveLength(30);
-    expect(b.items.filter((i) => i.last)).toHaveLength(30);
+    expect(b.items.filter((i) => i.last)).toHaveLength(50);
+    expect(b.items.every((i) => Number.isSafeInteger(i.itemVersion))).toBe(true);
     expect(env.writes.length).toBe(writes);
+  });
+  it('past the window, newest first (review HB-2): a story\'s last is its newest ended investigation whatever the session ids; the oldest stories age out; an open one is found at any age', async () => {
+    // the story's older conclusion has the higher session id and its newer save the lower one: ids never decide
+    const newer = plant({ n: 1, storyId: 'st-0', status: 'completed', createdAt: at(90), updatedAt: at(91), adoption: { watchlistId: 'wl-1', version: 1, at: at(91) } });
+    plant({ n: 99, storyId: 'st-0', status: 'completed', createdAt: at(10), updatedAt: at(11) });
+    for (let n = 20; n < 80; n++) plant({ n, storyId: `st-${n}`, status: 'completed', createdAt: at(n), updatedAt: at(n) });
+    const old = plant({ n: 2, storyId: 'st-open', createdAt: at(0) }); // open, older than every record in the window
+    const { items } = await exploreRead();
+    expect(items.find((i) => i.itemRef.recordId === 'st-0').last).toEqual({ sessionId: newer.sessionId, ended: 'saved', at: at(91) });
+    expect(items.find((i) => i.itemRef.recordId === 'st-open').open.sessionId).toBe(old.sessionId);
+    // the window: the newest 50 records — st-0's save, st-31…st-79; st-20…st-30 and st-0's old conclusion are older
+    const ended = items.filter((i) => i.last).map((i) => i.itemRef.recordId);
+    expect(ended).toHaveLength(EXPLORE_RECORDS_READ);
+    expect(ended).toContain('st-31');
+    expect(ended).not.toContain('st-30');
   });
   it('a read writes nothing, and a second read answers the same', async () => {
     await opened();
@@ -493,7 +524,7 @@ describe('X-7: the statement saved is recorded on the session\'s adoption, and t
     expect((await get({ sessionId: o.session.sessionId })).body.session.adoption.statement).toBe(saved.statement);
   });
   it('a session saved before B6a carries no statement: the view is unchanged', async () => {
-    const s = plant({ n: 1, storyId: EXPLORE.id, status: 'completed', createdAt: at(1), adoption: { watchlistId: 'wl-old', version: 1, at: at(2) } });
+    const s = plant({ n: 1, storyId: EXPLORE.id, status: 'completed', createdAt: at(1), updatedAt: at(2), adoption: { watchlistId: 'wl-old', version: 1, at: at(2) } });
     const g = await get({ sessionId: s.sessionId });
     expect(g.body.session.adoption).toEqual({ watchlistId: 'wl-old', version: 1, at: at(2) });
     const { items } = await exploreRead();

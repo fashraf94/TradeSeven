@@ -49,7 +49,7 @@ import {
 import { companiesOf } from './companies.js';
 import { CLAIMS_READ_LIMIT } from './opening.js';
 import { EXPLORE_RECORD_KIND } from '../../../src/constants/sharedResearch.js';
-import { EXPLORE_READ_MAX, livePerStoryOf, lastPerStoryOf, exploreItemsOf } from './explore.js';
+import { EXPLORE_OPEN_READ, EXPLORE_RECORDS_READ, livePerStoryOf, lastPerStoryOf, exploreItemsOf } from './explore.js';
 
 export const AGENTS_COLLECTION = 'agents';
 /** The environment variable that overrides the app's daily step ceiling — read at call time (spec §6.12 control 4). */
@@ -191,26 +191,40 @@ export async function readExploreStory(db, storyId) {
 
 /**
  * The Explore read (B6a X-1, GET ?list=explore): the caller's investigations of Explore stories, shaped by explore.js.
- * Two queries on the sessions collection — `userId ==`, `entry.itemRef.recordKind == 'exploreStories'` and
- * `status == 'open'` or `== 'completed'` — equality filters only, which Firestore serves by merging the automatic
- * single-field indexes (no composite index; the same merge `open`'s itemKey query uses), each at most EXPLORE_READ_MAX
- * sessions; then the record of each story's open investigation. At most EXPLORE_DOCS_MAX documents with the quota.
- * No write.
+ * No new index, no write. Two queries, in parallel:
+ *   - the OPEN Explore sessions: `userId ==`, `entry.itemRef.recordKind == 'exploreStories'`, `status == 'open'` —
+ *     equality filters only, which Firestore serves by merging the automatic single-field indexes (the same merge
+ *     `open`'s own itemKey query uses), at most EXPLORE_OPEN_READ;
+ *   - the newest research records: the deployed (userId, createdAt desc) index listOpen reads, at most
+ *     EXPLORE_RECORDS_READ — each story's last ended investigation is its newest record there that closed saved or
+ *     concluded (review HB-2: newest first, never an arbitrary subset).
+ * Then, by key: the record of each open investigation the window does not hold, and the session of each story reported
+ * with only an ended investigation (its story version). At most EXPLORE_DOCS_MAX documents with the quota.
  */
 export async function readExploreInvestigations(db, { uid }) {
-  const mine = db.collection(SESSIONS_COLLECTION).where('userId', '==', uid).where('entry.itemRef.recordKind', '==', EXPLORE_RECORD_KIND);
-  const [openSnap, closedSnap] = await Promise.all([
-    mine.where('status', '==', 'open').limit(EXPLORE_READ_MAX).get(),
-    mine.where('status', '==', 'completed').limit(EXPLORE_READ_MAX).get(),
+  const [openSnap, recordSnap] = await Promise.all([
+    db.collection(SESSIONS_COLLECTION).where('userId', '==', uid).where('entry.itemRef.recordKind', '==', EXPLORE_RECORD_KIND)
+      .where('status', '==', 'open').limit(EXPLORE_OPEN_READ).get(),
+    db.collection(RESEARCH_WORK_COLLECTION).where('userId', '==', uid).orderBy('createdAt', 'desc').limit(EXPLORE_RECORDS_READ).get(),
   ]);
-  const owned = (snap) => snap.docs.map((d) => d.data()).filter((s) => isOwnedSession(s, uid));
-  const live = livePerStoryOf(owned(openSnap));
-  const last = lastPerStoryOf(owned(closedSnap));
-  const records = new Map(await Promise.all([...live.values()].map(async (s) => {
-    const r = s.researchWorkId ? dataOf(await researchWorkRefOf(db, s.researchWorkId).get()) : null;
-    return [s.sessionId, isOwnedRecord(r, uid) ? r : null];
-  })));
-  return exploreItemsOf({ live, last, records });
+  const live = livePerStoryOf(openSnap.docs.map((d) => d.data()).filter((s) => isOwnedSession(s, uid)));
+  const newest = new Map(recordSnap.docs.map((d) => d.data()).filter((r) => isOwnedRecord(r, uid)).map((r) => [r.researchWorkId, r]));
+  const last = lastPerStoryOf([...newest.values()]);
+  const ownedRecord = async (id) => {
+    if (!id) return null;
+    if (newest.has(id)) return newest.get(id);
+    const r = dataOf(await researchWorkRefOf(db, id).get());
+    return isOwnedRecord(r, uid) ? r : null;
+  };
+  const ownedSession = async (id) => {
+    const s = dataOf(await sessionRefOf(db, id).get());
+    return isOwnedSession(s, uid) ? s : null;
+  };
+  const [records, sessions] = await Promise.all([
+    Promise.all([...live.values()].map(async (s) => [s.sessionId, await ownedRecord(s.researchWorkId)])),
+    Promise.all([...last].filter(([key]) => !live.has(key)).map(async ([, r]) => [r.host.id, await ownedSession(r.host.id)])),
+  ]);
+  return exploreItemsOf({ live, last, records: new Map(records), sessions: new Map(sessions) });
 }
 
 /** The caller's OWN drop, or null — another owner's drop is not found (spec §6.3). */

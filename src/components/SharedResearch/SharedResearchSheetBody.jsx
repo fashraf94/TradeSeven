@@ -161,8 +161,10 @@ export default function SharedResearchSheetBody({
   if (!open) return null;
 
   const current = sr.inv?.session?.sessionId ?? null;
-  const toStart = (text = '') => { setPrefill(text); setStory(null); setDrop(null); setEarlier(null); sr.clearFailure(); setView('start'); if (sr.list.status !== 'loading') sr.loadList(); };
-  const pickStory = (s) => { sr.beginPreview(); setStory(s); setView('item'); };
+  // X-5 (review HB-1): `starting` belongs to the open sent on mount only — any move to another screen ends it, so a story
+  // picked later (New investigation, the story list) shows its preview, never the opening line with nothing running
+  const toStart = (text = '') => { setStarting(false); setPrefill(text); setStory(null); setDrop(null); setEarlier(null); sr.clearFailure(); setView('start'); if (sr.list.status !== 'loading') sr.loadList(); };
+  const pickStory = (s) => { setStarting(false); sr.beginPreview(); setStory(s); setView('item'); };
   const frame = (text) => { setPrefill(text); sr.frame(text); setView('framing'); };
   // K-3: with the builder mode on, own words open at once as a thesis builder (DR-6) — no framing screen. A 400
   // invalid_entry means the mode rolled back on the server (W-4): today's framing path, with the words kept.
