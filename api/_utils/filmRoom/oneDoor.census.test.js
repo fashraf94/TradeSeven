@@ -45,6 +45,14 @@
 //   once hid live imports from the regex stripper this file used before (§2
 //   review L2-1), and a regex literal after an `if (…)` hid one from the
 //   hand lexer that replaced it (Astra's C2-F2). Twenty roots on nine paths.
+//
+// FILM ROOM D2 (D2 spec §10; DW-11): THE `debrief` MODEL PATH — the nightly job and its prompt builder — joins the
+// census, held to its whole closure like every other: no ledger, no `plays`, no excerpt, no named importer. Its known
+// reach is the model call, the day digest and the checks. THE RULE: no module reachable from any OTHER model path reads
+// a `debriefs` collection or path (DEBRIEFS_READ), proved on a synthetic graph as the `plays` rule is. And for the
+// `debrief` path, FAIL-CLOSED LOADS (Build C CF-11's cheap step, taken here first): a module of its closure that names
+// `eval`, calls `Function` (with or without `new`), or loads `node:vm` or `node:worker_threads` (either spelling) makes
+// the walk throw. Twenty-two roots on ten paths.
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
@@ -52,7 +60,9 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 // C2 (CE-2): imports read by @babel/parser, and the `@/` alias resolved, as vite resolves it
-import { stripComments, importSpecifiersOf, opaqueImportsOf, resolveImport } from './__fixtures__/jsSource.js';
+import { stripComments, importSpecifiersOf, opaqueImportsOf, resolveImport, PARSE_OPTIONS } from './__fixtures__/jsSource.js';
+// D2 (D2 spec §10): the debrief path's fail-closed loads are read with the same parser the census reads imports with
+import { parse } from '@babel/parser';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '..', '..', '..');
@@ -80,6 +90,8 @@ export const MODEL_PATHS = Object.freeze({
   tournament: Object.freeze(['api/cron/tournament-orchestrator.js', 'api/tournament/produce-agent-boards.js']),
   // Film Room C2 (Amendment C CC-1): the Mandate manager — its evaluation cron and its prompt assembler
   mandate: Object.freeze(['api/cron/mandate-evaluate.js', 'api/_utils/mandatePromptAssembly.js']),
+  // Film Room D2 (D2 spec §10, DW-11): the agent's words — the nightly job and its prompt builder
+  debrief: Object.freeze(['api/cron/film-room-debrief.js', 'api/_utils/filmRoom/debriefPrompt.js']),
 });
 
 /** Every root list, pinned whole (review L4-1): a root dropped from any path reds this, whatever the walk still reaches. */
@@ -93,6 +105,7 @@ export const MODEL_PATH_ROOTS = Object.freeze({
   debate: ['api/agent/debate.js'],
   tournament: ['api/cron/tournament-orchestrator.js', 'api/tournament/produce-agent-boards.js'],
   mandate: ['api/cron/mandate-evaluate.js', 'api/_utils/mandatePromptAssembly.js'],
+  debrief: ['api/cron/film-room-debrief.js', 'api/_utils/filmRoom/debriefPrompt.js'],
 });
 
 /** What each path's walk must reach — the non-vacuity oracle: modules the path is known to use, none of them a root of that path (review L2-3). */
@@ -107,6 +120,8 @@ const KNOWN_REACH = Object.freeze({
   tournament: ['api/_utils/tournamentAgentBoards.js', 'api/_utils/tournamentAgentDraft.js'],
   // C2: the manager's model call, its decision schema and its context block — none a root of the path
   mandate: ['api/_utils/mandateModelCall.js', 'api/_utils/mandateSchema.js', 'api/_utils/mandateContextBlock.js'],
+  // D2 (D2 spec §10): the model call, the day digest and the checks — none a root of the path
+  debrief: ['api/_utils/filmRoom/debriefModelCall.js', 'api/_utils/filmRoom/dayDigest.js', 'api/_utils/filmRoom/debriefChecks.js'],
 });
 /**
  * Per ROOT (review L2-3 / L4-1): a module ONLY that root reaches — dropping the root loses it from the whole census — or,
@@ -143,6 +158,9 @@ const EXCLUSIVE_REACH = Object.freeze({
   // C2: the manager's cron alone reaches its batch transport; the prompt assembler is covered whole by the cron
   'api/cron/mandate-evaluate.js': 'api/_utils/mandateBatchTransport.js',
   'api/_utils/mandatePromptAssembly.js': { coveredBy: ['api/cron/mandate-evaluate.js'] },
+  // D2: the job alone reaches its pass; the prompt builder is covered whole by the job
+  'api/cron/film-room-debrief.js': 'api/_utils/filmRoom/debriefPass.js',
+  'api/_utils/filmRoom/debriefPrompt.js': { coveredBy: ['api/cron/film-room-debrief.js'] },
 });
 
 // ── Film Room C2: the moment excerpt and its one named exception (Amendment C CC-1) ──────────────────────────────
@@ -337,12 +355,14 @@ describe('ONE DOOR — no model path reaches the ledger or reads plays', () => {
     expect(MODEL_PATHS.chat).toContain('api/agent/chat.js');
     expect(MODEL_PATHS.chat).toContain('api/agent/call-response.js');
     // C2 (CC-1): the Mandate manager's path joins the list — the one key added to this pin
-    expect(Object.keys(MODEL_PATHS).sort()).toEqual(['batchReview', 'chat', 'debate', 'deploy', 'evaluator', 'mandate', 'reflection', 'tournament', 'voice']);
+    expect(Object.keys(MODEL_PATHS).sort()).toEqual(['batchReview', 'chat', 'debate', 'debrief', 'deploy', 'evaluator', 'mandate', 'reflection', 'tournament', 'voice']);
     expect(MODEL_PATHS.mandate).toEqual(['api/cron/mandate-evaluate.js', 'api/_utils/mandatePromptAssembly.js']);
-    // CE-6: twenty roots on nine paths, as every record of this census states it
-    expect(Object.keys(MODEL_PATHS)).toHaveLength(9);
-    expect(Object.values(MODEL_PATHS).flat()).toHaveLength(20);
-    expect(new Set(Object.values(MODEL_PATHS).flat()).size).toBe(20);
+    // Film Room D2 (D2 spec §10, DW-11): the `debrief` path's two roots
+    expect(MODEL_PATHS.debrief).toEqual(['api/cron/film-room-debrief.js', 'api/_utils/filmRoom/debriefPrompt.js']);
+    // CE-6: twenty-two roots on ten paths (twenty on nine before D2), as every record of this census states it
+    expect(Object.keys(MODEL_PATHS)).toHaveLength(10);
+    expect(Object.values(MODEL_PATHS).flat()).toHaveLength(22);
+    expect(new Set(Object.values(MODEL_PATHS).flat()).size).toBe(22);
   });
 
   it('no non-vacuity oracle entry is a root of its own path (review L2-3), and every root either reaches a module no other root reaches, or is covered whole by another root', () => {
@@ -708,5 +728,140 @@ describe('the walker bites (a guard that cannot fail guards nothing)', () => {
     for (const r of reads) expect(PLAYS_READ.test(r), r).toBe(true);
     const clean = ["db.collection('playsheets')", "db.collection('replays')", 'const plays = 3;', "db.collection('agents').doc(id).collection('battlePatterns')"];
     for (const c of clean) expect(PLAYS_READ.test(c), c).toBe(false);
+  });
+});
+
+// ── Film Room D2 (D2 spec §10; DW-11): the `debriefs` rule and the debrief path's fail-closed loads ──────────────────
+
+/** A read of the agent's words by name: a `debriefs` collection, a collection group, a path segment — in code, comments stripped. */
+const DEBRIEFS_READ = /\b(?:collection|collectionGroup|doc)\s*\(\s*['"`]debriefs['"`]|['"`]debriefs['"`]|\/debriefs(?:\/|['"`]|$)/m;
+/** The specifiers that hand a module a second interpreter: the debrief path fails closed on each (either spelling). */
+const DEBRIEF_FORBIDDEN_SPECIFIERS = Object.freeze(['node:vm', 'vm', 'node:worker_threads', 'worker_threads']);
+const isMember = (n) => n?.type === 'MemberExpression' || n?.type === 'OptionalMemberExpression';
+/** `n` names `name`: the identifier itself, or a member by that static key (`x.name`, `x['name']`). */
+const namesIt = (n, name) => (n?.type === 'Identifier' && n.name === name)
+  || (isMember(n) && ((!n.computed && n.property?.name === name) || (n.computed && n.property?.type === 'StringLiteral' && n.property.value === name)));
+/**
+ * What the debrief path's walk fails closed on, in one module's source: `eval` named anywhere in code (a call, an alias, a
+ * member — `globalThis.eval`), `Function` called (with or without `new`, bare or as a member), and a load of `node:vm` or
+ * `node:worker_threads`. Read with the census's own parser: a string or a comment that says "eval" is no load.
+ */
+export function debriefLoadsOf(src, where) {
+  const found = new Set();
+  for (const spec of importSpecifiersOf(src, where)) if (DEBRIEF_FORBIDDEN_SPECIFIERS.includes(spec)) found.add(spec.startsWith('node:') ? spec : `node:${spec}`);
+  const ast = parse(String(src), { ...PARSE_OPTIONS, plugins: [...PARSE_OPTIONS.plugins] });
+  const stack = [ast.program];
+  while (stack.length) {
+    const n = stack.pop();
+    if (Array.isArray(n)) { for (const x of n) if (x && typeof x === 'object') stack.push(x); continue; }
+    if (n.type === 'Identifier' && n.name === 'eval') found.add('eval');
+    if (isMember(n) && namesIt(n, 'eval')) found.add('eval');
+    if ((n.type === 'NewExpression' || n.type === 'CallExpression' || n.type === 'OptionalCallExpression') && namesIt(n.callee, 'Function')) found.add('new Function');
+    for (const k of Object.keys(n)) {
+      if (k === 'loc' || k === 'extra' || k === 'comments' || k.endsWith('Comments')) continue;
+      const v = n[k];
+      if (v && typeof v === 'object') stack.push(v);
+    }
+  }
+  return [...found].sort();
+}
+/** The debrief path's walk: its closure, every module of it read for the fail-closed loads — the first found throws, naming it. */
+export function debriefClosureOf(roots, { read = readSource, repo = REPO } = {}) {
+  const walk = closureOf(roots, { read, repo });
+  for (const f of walk.seen) {
+    const loads = debriefLoadsOf(read(f), f);
+    if (loads.length) throw Object.assign(new Error(`one door (debrief): ${path.relative(repo, f)} loads by ${loads.join(', ')} — fails closed (${chainTo(walk.parent, f, repo)})`), { code: 'OPAQUE_LOAD', loads });
+  }
+  return walk;
+}
+
+describe('D2 — the `debrief` model path (D2 spec §10, DW-11)', () => {
+  it('reaches what it is known to use — the call, the digest, the checks — and the pass and the record\'s collection', () => {
+    const { seen } = closureOf(MODEL_PATHS.debrief.map(abs));
+    for (const known of [...KNOWN_REACH.debrief, 'api/_utils/filmRoom/debriefPass.js', 'src/utils/debriefSchedule.js']) expect([...seen].some((f) => path.resolve(f) === path.resolve(abs(known))), known).toBe(true);
+  });
+  it('the prompt builder\'s own closure reads the digest and the copy table — never the call, the pass or the record', () => {
+    const { seen } = closureOf([abs('api/_utils/filmRoom/debriefPrompt.js')]);
+    for (const not of ['api/_utils/filmRoom/debriefModelCall.js', 'api/_utils/filmRoom/debriefPass.js', 'src/utils/debriefSchedule.js']) expect([...seen].some((f) => path.resolve(f) === path.resolve(abs(not))), not).toBe(false);
+  });
+  it('it reaches neither the ledger, `plays`, the moment excerpt nor its named importer (its row in the loop above, stated by name)', () => {
+    expect(oneDoorDefectsOf('debrief', MODEL_PATHS.debrief.map(abs))).toEqual([]);
+    const { seen } = closureOf(MODEL_PATHS.debrief.map(abs));
+    for (const not of [...LEDGER_MODULES, EXCERPT_MODULE, NAMED_EXCEPTIONS[0].importer]) expect([...seen].some((f) => path.resolve(f) === path.resolve(abs(not))), not).toBe(false);
+  });
+});
+
+describe('D2 — THE RULE: no module reachable from any other model path reads `debriefs` (D2 spec §10)', () => {
+  for (const [name, roots] of Object.entries(MODEL_PATHS)) {
+    if (name === 'debrief') continue;
+    it(`${name}: no module reachable from its roots reads debriefs by name`, () => {
+      const { seen, parent } = closureOf(roots.map(abs));
+      const readers = [...seen].filter((f) => DEBRIEFS_READ.test(strippedOf(f)));
+      expect(readers.map((f) => `${path.relative(REPO, f)} (via ${chainTo(parent, f, REPO)})`)).toEqual([]);
+    });
+  }
+  it('the rule is not vacuous: the debrief path itself reads `debriefs` (the record\'s collection, src/utils/debriefSchedule.js)', () => {
+    const { seen } = closureOf(MODEL_PATHS.debrief.map(abs));
+    expect([...seen].filter((f) => DEBRIEFS_READ.test(strippedOf(f))).map((f) => path.relative(REPO, f).replace(/\\/g, '/'))).toContain('src/utils/debriefSchedule.js');
+  });
+  it('the walker bites: a synthetic graph whose root reaches a `debriefs` reader through a middle module; a comment is no read', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'one-door-d2-'));
+    try {
+      writeFileSync(path.join(root, 'reader.js'), "export const recordOf = (db, id, d) => db.collection('agentBattles').doc(id).collection('debriefs').doc(d).get();\n");
+      writeFileSync(path.join(root, 'mid.js'), "import { recordOf } from './reader.js';\nexport const x = recordOf;\n");
+      writeFileSync(path.join(root, 'root.js'), "export async function run() { const m = await import('./mid.js'); return m.x; }\n");
+      writeFileSync(path.join(root, 'clean.js'), "export const y = 1; // debriefs, in a comment only\n");
+      const { seen, parent } = closureOf([path.join(root, 'root.js')], { repo: root });
+      const readers = [...seen].filter((f) => DEBRIEFS_READ.test(stripComments(readFileSync(f, 'utf8'))));
+      expect(readers.map((f) => chainTo(parent, f, root))).toEqual(['root.js → mid.js → reader.js']);
+      expect(DEBRIEFS_READ.test(stripComments(readFileSync(path.join(root, 'clean.js'), 'utf8')))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+  it('every spelling of a `debriefs` read reads true — a template, the Admin path form, a concatenated path, the client\'s doc(), the name as a constant — and a neighbour name does not', () => {
+    for (const r of ['db.collection(`debriefs`)', 'db.collection(`agentBattles/${id}/debriefs`)', "db.collection('agentBattles/' + id + '/debriefs')", "doc(db, 'agentBattles', id, 'debriefs', etDate)", "db.collectionGroup('debriefs')", "export const DEBRIEFS_SUBCOLLECTION = 'debriefs';"]) expect(DEBRIEFS_READ.test(r), r).toBe(true);
+    for (const c of ["db.collection('debriefsArchive')", "db.collection('debrief')", 'const debriefs = 3;', "db.collection('reviews')"]) expect(DEBRIEFS_READ.test(c), c).toBe(false);
+  });
+});
+
+describe('D2 — the debrief path\'s FAIL-CLOSED LOADS: eval, new Function, node:vm, node:worker_threads (Build C CF-11\'s cheap step)', () => {
+  it('the real debrief path walks clean — none of its modules loads by any of them', () => {
+    expect(() => debriefClosureOf(MODEL_PATHS.debrief.map(abs))).not.toThrow();
+  });
+  /** A synthetic root reaching `bad` through a middle module: the error the walk throws, or null. */
+  const walkErrorOf = (bad) => {
+    const root = mkdtempSync(path.join(tmpdir(), 'one-door-d2-load-'));
+    try {
+      writeFileSync(path.join(root, 'bad.js'), bad);
+      writeFileSync(path.join(root, 'mid.js'), "export { z } from './bad.js';\n");
+      writeFileSync(path.join(root, 'root.js'), "import { z } from './mid.js';\nexport const run = () => z;\n");
+      let err = null;
+      try { debriefClosureOf([path.join(root, 'root.js')], { repo: root }); } catch (e) { err = e; }
+      return err;
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  };
+  it('each load, planted two modules down, makes the walk throw — naming it and its module', () => {
+    const plants = {
+      eval: ['export const z = (s) => eval(s);\n', 'export const z = (s) => globalThis.eval(s);\n', 'export const z = (s) => (0, eval)(s);\n', 'const e = eval; export const z = e;\n', "export const z = (s) => globalThis['eval'](s);\n"],
+      'new Function': ["export const z = new Function('return 1');\n", "export const z = Function('return 1');\n", "export const z = new globalThis.Function('return 1');\n"],
+      'node:vm': ["import vm from 'node:vm';\nexport const z = vm;\n", "import vm from 'vm';\nexport const z = vm;\n", "export const z = () => import('node:vm');\n"],
+      'node:worker_threads': ["import { Worker } from 'node:worker_threads';\nexport const z = Worker;\n", "export const z = () => import('worker_threads');\n"],
+    };
+    for (const [load, sources] of Object.entries(plants)) {
+      for (const src of sources) {
+        const err = walkErrorOf(src);
+        expect(err?.code, src).toBe('OPAQUE_LOAD');
+        expect(err.loads, src).toContain(load);
+        expect(err.message, src).toContain('bad.js');
+      }
+    }
+  });
+  it('a clean module that only SAYS "eval" or "Function" — in a string, a comment, a longer name, a typeof — passes', () => {
+    for (const src of ["export const z = 'eval';\n", '// eval(x) here\nexport const z = 1;\n', 'export const z = (evaluation) => evaluation;\n', "export const z = { kind: 'Function' };\n", 'export const z = typeof Function;\n']) {
+      expect(walkErrorOf(src), src).toBeNull();
+    }
   });
 });
