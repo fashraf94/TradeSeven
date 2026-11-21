@@ -476,7 +476,8 @@ export const FILM_ROOM_COPY = Object.freeze({
   // clock renders as an instant — so "Won by {n}" is `heading.won`, a space, then the bound margin. "Won", "Lost" and
   // "Draw" are the recorded result; no judgment word (§11).
   flow: {
-    heading: { won: 'Won by', lost: 'Lost by', draw: 'Draw', final: 'Final' },
+    // Amendment A DA-4 / Amendment B DB-1: the result word alone — two finals that display equal, or no CPU entry in the key
+    heading: { won: 'Won by', lost: 'Lost by', wonAlone: 'Won', lostAlone: 'Lost', draw: 'Draw', final: 'Final' },
     key: { you: 'You', cpu: 'CPU' },
     legend: { agent: "Agent's swap", other: 'Other swap', directive: 'Your directive' },
     low: 'Low',

@@ -91,7 +91,7 @@ describe('flowCopyDefects — the front\'s words are §11\'s', () => {
     expect(flowCopyDefects(plant(front()))).toEqual([]);
     host.remove();
     expect(flowCopyDefects(plant(front({ extra: '<p>A strong game</p>' })))).toEqual(['not the spec\'s copy: “A strong game”']);
-    expect(SPEC_FLOW_COPY).toHaveLength(39);
+    expect(SPEC_FLOW_COPY).toHaveLength(41);   // fix round item 1: "Won" and "Lost" (Amendment A DA-4; 39 before)
     expect(SPEC_FLOW_COPY).not.toContain('directives acted on');
   });
 });

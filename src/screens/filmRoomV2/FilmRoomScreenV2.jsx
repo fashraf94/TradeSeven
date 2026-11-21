@@ -488,6 +488,7 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
           <FilmRoomFlow
             key={day}
             tape={tape}
+            battle={battle}
             desktop={desktop}
             oneDay={days.length <= 1}
             moments={momentCount > 0 ? momentsCountOf(momentCount) : null}

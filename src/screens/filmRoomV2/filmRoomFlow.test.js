@@ -48,10 +48,11 @@ function seen(tape, flow = flowOf(tape)) {
 }
 
 describe('the dependency surface (BUILD_RULES §4): pure, no React, no reads', () => {
-  it('imports only the screen\'s model — no React, no Firestore, no fetch, no clock', () => {
+  it('imports only the screen\'s model and the validated timeline — no React, no Firestore, no fetch, no clock', () => {
     const src = readFileSync(path.join(process.cwd(), 'src', 'screens', 'filmRoomV2', 'filmRoomFlow.js'), 'utf8');
     const imports = [...src.matchAll(/^import .* from '([^']+)';$/gm)].map((m) => m[1]);
-    expect(imports).toEqual(['./filmRoomModel']);
+    // fix round item 1 (DB-2): the battle's validated final trading day, the one reading the writer and the screen share
+    expect(imports).toEqual(['./filmRoomModel', '../../utils/tapeSchedule.js']);
     const code = src.split('\n').map((l) => l.replace(/\/\/.*$/, '')).join('\n');
     expect(code).not.toMatch(/\bDate\.now\(|\bnew Date\(\)|\bfetch\(|getDoc|firebase|\breact\b|useState|useEffect/i);
   });
@@ -141,12 +142,14 @@ describe('F-AGREE — the margin is the difference of the two DISPLAYED finals (
   });
   it('draw, and the "anything else" rows: a missing final score, an unknown result, an earlier day', () => {
     expect(headingOf(finals(-10, -10, 'draw'))).toEqual({ kind: 'draw' });
+    // Amendment B DB-1 (fix round item 1): a recorded result with no CPU entry in the key — the result word, no margin
     const noOpp = finals(-47, null);
-    expect(headingOf(noOpp)).toEqual({ kind: 'final', total: { value: -47, cls: 'recorded', path: ['battle', 'final', 'total'] } });
-    expect(headingOf(finals(-47, -93, 'pending')).kind).toBe('final');
+    expect(headingOf(noOpp)).toEqual({ kind: 'won', margin: null });
+    expect(headingOf(finals(-47, -93, 'pending'))).toEqual({ kind: 'final', total: { value: -47, cls: 'recorded', path: ['battle', 'final', 'total'] } });
+    // Amendment A DA-9 (fix round item 1): no recorded final total — any other day
     const drawNoScore = finals(null, -10, 'draw');
-    expect(headingOf(drawNoScore)).toEqual({ kind: 'final', total: null });
-    const earlier = clone(sep23Tape); earlier.battle.status = 'active';
+    expect(headingOf(drawNoScore)).toEqual({ kind: 'date', date: 'Wed, Sep 23, 2026' });
+    const earlier = clone(sep23Tape); earlier.battle.status = 'active'; earlier.isFinalDay = false;
     expect(isFinalDayOf(earlier)).toBe(false);
     expect(headingOf(earlier)).toEqual({ kind: 'date', date: 'Wed, Sep 23, 2026' });
     expect(keyOf(earlier).you.path).toEqual(['score', 'lastCheck', 'total']);
@@ -210,7 +213,7 @@ describe('F-LOW — the low mark', () => {
   const day = (totals, { final = false, step = 900_000 } = {}) => {
     const t = clone(sep23Tape);
     t.checks = totals.map((v, i) => ({ at: new Date(ms('2026-09-23T14:00:00.000Z') + i * step).toISOString(), tickSeq: i + 1, state: 'completed', scores: v === null ? null : { total: v, opponent: -1 } }));
-    if (!final) t.battle.status = 'active';
+    if (!final) { t.battle.status = 'active'; t.isFinalDay = false; }   // an earlier day, as the writer records one (DB-2)
     return t;
   };
   it('a tie: the earliest check wins', () => {
@@ -418,9 +421,10 @@ describe('the review round — the chart and the day, as the tape records them',
     expect([flow.key.you.path, flow.key.cpu.path]).toEqual([['score', 'lastCheck', 'total'], ['score', 'lastCheck', 'opponent']]);
     expect(flow.lines.you.points.some((p) => p.final)).toBe(false);
     expect(flow.lines.you.points.at(-1)).toMatchObject({ v: -47, i: 22 });
-    // a tape that records no reading of its day (isFinalDay null: the timeline did not validate) reads as final when completed
+    // a tape that records no reading of its day (isFinalDay null: the timeline did not validate) is any other day —
+    // Amendment B DB-2 (Astra's F2), fix round item 1; it read as final when completed before
     const unknown = clone(sep23Tape); unknown.isFinalDay = null;
-    expect(isFinalDayOf(unknown)).toBe(true);
+    expect(isFinalDayOf(unknown)).toBe(false);
   });
   it('CH-1: a check that ran and left no record (the writer\'s gap row: a tickSeq, no instant, no score) breaks the line at its place — wherever the row sits in the array', () => {
     const t = clone(sep23Tape);
@@ -435,7 +439,7 @@ describe('the review round — the chart and the day, as the tape records them',
   it('CH-2: a pin in a break sits at the nearest check\'s height — never interpolated across the break', () => {
     const t = clone(sep23Tape);
     t.checks = checksOf([[1, at('14:00'), 0], [2, at('15:00'), -10], [3, at('16:00'), null], [4, at('17:00'), -90], [5, at('18:00'), -100]]);
-    t.battle.status = 'active';
+    t.battle.status = 'active'; t.isFinalDay = false;
     t.actions = [{ at: at('15:20'), mechanism: 'agent_decision', symbolOut: 'A', symbolIn: 'B' }, { at: at('16:40'), mechanism: 'agent_decision', symbolOut: 'C', symbolIn: 'D' }];
     t.directives = [];
     const pins = choosePins(t).pins;
@@ -462,7 +466,7 @@ describe("the review round — the tests' gaps (TI-2, TI-5)", () => {
   const dayOfTotals = (totals, step) => {
     const t = clone(sep23Tape);
     t.checks = totals.map((v, i) => ({ at: new Date(ms('2026-09-23T14:00:00.000Z') + i * step).toISOString(), tickSeq: i + 1, state: 'completed', scores: { total: v, opponent: -1 } }));
-    t.battle.status = 'active';
+    t.battle.status = 'active'; t.isFinalDay = false;
     t.actions = []; t.directives = [];
     return t;
   };

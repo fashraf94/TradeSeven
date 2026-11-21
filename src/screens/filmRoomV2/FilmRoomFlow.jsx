@@ -226,7 +226,8 @@ function FlowKey({ flow, size = 13.5 }) {
 function FlowHeading({ flow, size }) {
   const h = flow.heading;
   let text;
-  if (h.kind === 'won' || h.kind === 'lost') text = <>{F.heading[h.kind]} <FlowAgg a={h.margin} text={h.margin.text} /></>;
+  // DB-1 / DA-4: no margin to show (no CPU entry in the key, or two finals that display equal) — the result word alone
+  if (h.kind === 'won' || h.kind === 'lost') text = h.margin ? <>{F.heading[h.kind]} <FlowAgg a={h.margin} text={h.margin.text} /></> : F.heading[`${h.kind}Alone`];
   else if (h.kind === 'draw') text = F.heading.draw;
   else if (h.kind === 'final') text = <>{F.heading.final} <FlowNum num={h.total} /></>;
   else text = <When>{h.date ?? ''}</When>;
@@ -318,6 +319,8 @@ function Tiles({ counts, cols }) {
 /**
  * The front for one written tape day.
  * @param {object}   props.tape            the day's tape (written: `checks` is an array)
+ * @param {object}   [props.battle]        the battle document the shell holds — DB-2's evidence for a tape written
+ *                                         before `isFinalDay` (its validated final trading day); nothing else is read
  * @param {boolean}  props.desktop         the shell's ≥ 1024 px layout
  * @param {boolean}  props.oneDay          a one-day battle ("This game"), else "This day"
  * @param {object|null} props.moments      the cards line's count (a declared aggregate) — only when cards are on and the
@@ -327,10 +330,10 @@ function Tiles({ counts, cols }) {
  * @param {string}   props.doorId          the door's id — focus comes back to it from the tape (§10)
  * @param {Function} props.renderAgentMark the agent's mark at a size, beside its quoted reply
  */
-export default function FilmRoomFlow({ tape, desktop = false, oneDay = true, moments = null, onOpenTape, onOpenAt, doorId, renderAgentMark = () => null }) {
+export default function FilmRoomFlow({ tape, battle = null, desktop = false, oneDay = true, moments = null, onOpenTape, onOpenAt, doorId, renderAgentMark = () => null }) {
   const narrow = useNarrow() && !desktop;
   const L = desktop ? FLOW_LAYOUT.desktop : narrow ? FLOW_LAYOUT.narrow : FLOW_LAYOUT.phone;
-  const flow = flowOf(tape, { oneDay });
+  const flow = flowOf(tape, { oneDay, battle });
   const [selectedN, setSelectedN] = useState(() => flow.selected?.n ?? null);
   const pin = flow.pins.find((p) => p.n === selectedN) ?? flow.selected;
   // the chart's RENDERED width — measured once, here, on the chart's block (the chart is its full width): the chart

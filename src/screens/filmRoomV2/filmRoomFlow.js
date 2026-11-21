@@ -17,6 +17,7 @@
 // a quotation is a path, a word is a copy key (filmRoomCopy.js FILM_ROOM_COPY.flow).
 
 import { numberAt, exitMakerOf, directiveCardOf, sessionOf, etClock, etWhen, etDateLabel, fmtPoints, swapOrdinals, swapAnchor, SCREEN_AGGREGATE_CLASSES } from './filmRoomModel';
+import { validFinalTradingDay } from '../../utils/tapeSchedule.js';
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -49,13 +50,28 @@ const agg = (key, value) => ({ value, aggregate: FLOW_AGGREGATES[key], cls: SCRE
 // ── the day ─────────────────────────────────────────────────────────────────
 
 /**
- * A completed battle's FINAL DAY: the tape's own battle block says `completed` AND the tape records this day as the
- * battle's last (`isFinalDay`, the writer's one reading of the validated timeline — tapeAssemble.js). An earlier
- * day's tape can carry a completed battle block (a refresh re-merges the live battle onto it — the review's NUM-1 /
- * CH-4), and that day is "any other day" (§4.1): its date, the last check's values, no final point. A tape that
- * records no reading (`isFinalDay` null: the timeline did not validate) reads as final when its battle completed.
+ * THE BATTLE'S FINAL DAY, ONLY ON EVIDENCE (Amendment B DB-2; Astra's F2) — the one predicate the model, its tests and
+ * the harness share. The tape records this day as the battle's last (`isFinalDay` true: the writer's one reading of
+ * the validated timeline, tapeAssemble.js); or, for a tape written before that field existed (NO `isFinalDay` key at
+ * all), the tape's battle block says `completed` AND the battle document's validated final trading day
+ * (validFinalTradingDay, src/utils/tapeSchedule.js) is this date. `false` — an earlier day, whose tape can carry a
+ * completed battle block (the review's NUM-1 / CH-4) — and `null` — the timeline did not validate, the writer
+ * keeping its doubt — are any other day (§4.1): its date, the last check's values, no final point.
  */
-export const isFinalDayOf = (tape) => isObj(tape?.battle) && tape.battle.status === 'completed' && tape?.isFinalDay !== false;
+export function isFinalDayOf(tape, battle = null) {
+  if (!isObj(tape)) return false;
+  if (tape.isFinalDay === true) return true;
+  if (Object.prototype.hasOwnProperty.call(tape, 'isFinalDay')) return false;
+  return isObj(tape.battle) && tape.battle.status === 'completed' && typeof tape.etDate === 'string' && validFinalTradingDay(battle) === tape.etDate;
+}
+
+/**
+ * The day READS AS FINAL (Amendment A DA-9, as Astra qualified it in DB-14): the battle's final day (isFinalDayOf)
+ * with the player's final total recorded. A final day with no recorded final total reads as any other day — its
+ * date, the last check's values, and neither line's final point: one decision for the heading, the key and both
+ * lines' endings.
+ */
+export const readsAsFinal = (tape, battle = null) => isFinalDayOf(tape, battle) && numberAt(tape, ['battle', 'final', 'total']) !== null;
 
 /** The CPU condition (§4.2, FL-3): the tape's own basis is the CPU's portfolio. The value is checked where it is read. */
 const cpuBasisOf = (tape) => tape?.score?.opponentBasis === 'cpu_portfolio';
@@ -87,30 +103,32 @@ export function marginOf(total, opponent) {
 }
 
 /**
- * The heading (§4.1): on a completed battle's final day, the recorded result with both final scores recorded —
- * 'won' / 'lost' with the margin, 'draw' —, else 'final' with the final total (null when the tape records none);
- * on any other day, 'date' with the day's date (etDateLabel).
+ * The heading (§4.1), on a day that reads as final (readsAsFinal): the recorded result — 'won' / 'lost' with the
+ * margin ONLY when the key shows both finals (Amendment B DB-1: a margin from a final the key does not show would
+ * state a number the reader cannot check — Astra's F1) and they DISPLAY apart (Amendment A DA-4: the zero decision
+ * on the two displayed values' hundredths, so +0 and −0 agree); otherwise the result word alone, `margin` null and
+ * no margin node —, 'draw'; with no recorded result, 'final' with the final total. On any other day, 'date' with the
+ * day's date (etDateLabel).
  */
-export function headingOf(tape) {
-  if (!isFinalDayOf(tape)) return { kind: 'date', date: etDateLabel(tape?.etDate) };
-  const total = numberAt(tape, ['battle', 'final', 'total']);
-  const opponent = numberAt(tape, ['battle', 'final', 'opponent']);
-  const result = tape.battle.result?.value;
-  if (total && opponent && (result === 'win' || result === 'loss')) {
-    const h = marginOf(total.value, opponent.value);
-    if (h !== null) return { kind: result === 'win' ? 'won' : 'lost', margin: { ...agg('margin', h / 100), text: fmtMargin(h) } };
+export function headingOf(tape, battle = null) {
+  if (!readsAsFinal(tape, battle)) return { kind: 'date', date: etDateLabel(tape?.etDate) };
+  const key = keyOf(tape, battle);
+  const result = tape.battle?.result?.value;
+  if (result === 'draw') return { kind: 'draw' };
+  if (result === 'win' || result === 'loss') {
+    const h = key.you && key.cpu ? marginOf(key.you.value, key.cpu.value) : null;
+    return { kind: result === 'win' ? 'won' : 'lost', margin: h ? { ...agg('margin', h / 100), text: fmtMargin(h) } : null };
   }
-  if (total && opponent && result === 'draw') return { kind: 'draw' };
-  return { kind: 'final', total };
+  return { kind: 'final', total: key.you };
 }
 
 /**
- * The key (§4.2): "You {total}", then "CPU {opponent}" only under the CPU condition with a number to show. On a
- * completed battle's final day the values are `battle.final`'s; on any other day the last check's, as the tape
- * records it (`score.lastCheck` — the value the tape view's Glance shows). Each is a bound number or null.
+ * The key (§4.2): "You {total}", then "CPU {opponent}" only under the CPU condition with a number to show. On a day
+ * that reads as final (readsAsFinal) the values are `battle.final`'s; on any other day the last check's, as the
+ * tape records it (`score.lastCheck` — the value the tape view's Glance shows). Each is a bound number or null.
  */
-export function keyOf(tape) {
-  const at = isFinalDayOf(tape) ? ['battle', 'final'] : ['score', 'lastCheck'];
+export function keyOf(tape, battle = null) {
+  const at = readsAsFinal(tape, battle) ? ['battle', 'final'] : ['score', 'lastCheck'];
   const you = numberAt(tape, [...at, 'total']);
   const cpu = cpuBasisOf(tape) ? numberAt(tape, [...at, 'opponent']) : null;
   return { you, cpu };
@@ -185,13 +203,13 @@ export function axisLabelsOf(domain) {
 
 /**
  * The two lines (§5). The player's from `checks[].scores.total`, the opponent's from `checks[].scores.opponent` —
- * the latter only under the key's CPU condition (FL-3). On a completed battle's final day each line's last point
- * is `battle.final`'s value at the axis's end — joined to the last run only when the last placed check holds a
+ * the latter only under the key's CPU condition (FL-3). On a day that reads as final (readsAsFinal) each line's last
+ * point is `battle.final`'s value at the axis's end — joined to the last run only when the last placed check holds a
  * score (a check with no score still breaks it) — so the lines end at the values the key shows.
  */
-export function linesOf(tape, domain = domainOf(tape)) {
-  const key = keyOf(tape);
-  const final = isFinalDayOf(tape);
+export function linesOf(tape, domain = domainOf(tape), battle = null) {
+  const key = keyOf(tape, battle);
+  const final = readsAsFinal(tape, battle);
   const lineOf = (field, finalNum) => {
     const rows = orderedRows(tape, field);
     const runs = runsOf(rows);
@@ -291,7 +309,7 @@ const byPriority = (a, b) => (RANK[a.kind] - RANK[b.kind]) || byTime(a, b);
  * the rows past the five and any row with no instant. `frac` is each pin's place on the time axis (0 the open,
  * 1 the close; an instant outside the session sits at its edge), `v` its height on the player's line.
  */
-export function choosePins(tape, { domain = domainOf(tape), lines = linesOf(tape, domain) } = {}) {
+export function choosePins(tape, { domain = domainOf(tape), battle = null, lines = linesOf(tape, domain, battle) } = {}) {
   const all = allPinsOf(tape);
   const placeable = all.filter((p) => p.t !== null);
   const chosen = [...placeable].sort(byPriority).slice(0, FLOW_PIN_LIMIT).sort(byTime);
@@ -410,15 +428,18 @@ export const momentsCountOf = (n) => agg('moments', n);
 
 // ── the whole front ─────────────────────────────────────────────────────────
 
-/** Everything the front shows for one tape day, before the chart's width is known (layoutOf places it). */
-export function flowOf(tape, { oneDay = true } = {}) {
+/**
+ * Everything the front shows for one tape day, before the chart's width is known (layoutOf places it). `battle` is
+ * the battle document the screen holds — read only for DB-2's evidence on a tape written before `isFinalDay`.
+ */
+export function flowOf(tape, { oneDay = true, battle = null } = {}) {
   const domain = domainOf(tape);
-  const lines = linesOf(tape, domain);
-  const { pins, more } = choosePins(tape, { domain, lines });
+  const lines = linesOf(tape, domain, battle);
+  const { pins, more } = choosePins(tape, { domain, battle, lines });
   return {
-    final: isFinalDayOf(tape),
-    heading: headingOf(tape),
-    key: keyOf(tape),
+    final: readsAsFinal(tape, battle),
+    heading: headingOf(tape, battle),
+    key: keyOf(tape, battle),
     domain,
     axis: axisLabelsOf(domain),
     lines,

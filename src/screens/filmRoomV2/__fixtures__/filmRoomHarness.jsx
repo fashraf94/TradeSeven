@@ -28,6 +28,8 @@ import { createRoot } from 'react-dom/client';
 import { classOfNumber } from '../../../constants/filmTape';
 import { COMPANY_NAMES } from '../../../config/stockData';
 import { valueAt, etClock, tradingTimeline } from '../filmRoomModel';
+// Film Room D1 fix round (Amendment B DB-2): the ONE final-day reading the model, its tests and this harness share
+import { readsAsFinal } from '../filmRoomFlow.js';
 import { isOpenStage } from '../../../data/cardStages';
 import sep23Tape from './sep23.tape.json';
 import sep23Series from './sep23.series.json';
@@ -793,12 +795,12 @@ export const SPEC_FLOW_NUMBER_PATHS = Object.freeze([
 ]);
 /**
  * Where each of those tape numbers may sit, and on which day (the review's NUM-5: a path list alone let a key read the
- * wrong source pass) — PINNED HERE from §4.2 / §5 / §7: the finals only on a completed battle's FINAL day (the tape's
- * battle block completed and the tape not recording the day as an earlier one), in the key or "Final {total}"; the
- * last check's only on any other day, in the key; a check's total only as the low mark, and only the LOWEST scored
- * check's, the earliest on a tie (recomputed here); an exit price only in a fact line.
+ * wrong source pass) — PINNED HERE from §4.2 / §5 / §7: the finals only on a day that reads as the battle's final
+ * (the model's own readsAsFinal — Amendment B DB-2 has the model, its tests and the harness share ONE predicate; it
+ * reads `docs.battle` for a tape written before `isFinalDay`), in the key or "Final {total}"; the last check's only
+ * on any other day, in the key; a check's total only as the low mark, and only the LOWEST scored check's, the
+ * earliest on a tie (recomputed here); an exit price only in a fact line.
  */
-const finalDayOfTape = (tape) => tape?.battle?.status === 'completed' && tape?.isFinalDay !== false;
 function lowestCheckOf(tape) {
   let low = null;
   (Array.isArray(tape?.checks) ? tape.checks : []).forEach((c, i) => {
@@ -833,7 +835,7 @@ export const SPEC_FLOW_AGGREGATE_SITES = Object.freeze({
  * these, whole.
  */
 export const SPEC_FLOW_COPY = Object.freeze([
-  'Won by', 'Lost by', 'Draw', 'Final', 'You', 'CPU', "Agent's swap", 'Other swap', 'Your directive', 'Low',
+  'Won by', 'Lost by', 'Won', 'Lost', 'Draw', 'Final', 'You', 'CPU', "Agent's swap", 'Other swap', 'Your directive', 'Low',
   'Your agent', 'Stall rule', 'Risk rule', 'Guardrail', 'Gameplan meeting', 'Maker not recorded',
   ' · ', ' → ', 'sold at', 'not recorded', 'filed', 'not filed', 'Previous', 'Next', '+',
   'more on the full tape', 'Open this on the full tape', "Some of this day's record is incomplete. The full tape says what.",
@@ -857,13 +859,14 @@ function flowAggregateOracle(name, el, container, docs) {
   const members = [...container.querySelectorAll('[data-flow-pin-members]')].flatMap((b) => b.getAttribute('data-flow-pin-members').split(' '));
   switch (name) {
     case 'difference(the two displayed final scores)': {
-      // §4.1 / BUILD_RULES §9: the key's two DISPLAYED finals, as the player reads them; with no CPU entry in the key, the
-      // tape's two finals each read to two decimals
+      // §4.1 / BUILD_RULES §9: the key's two DISPLAYED finals, as the player reads them — BOTH bindings, or no margin
+      // (Amendment B DB-1, Astra's F1: never a fall back to the raw opponent the key does not show); two finals that
+      // display equal give none either (Amendment A DA-4)
       const shown = (p) => { const k = container.querySelector(`[data-flow-keyrow] [data-flow-num="${p}"]`); return k ? parseNumeral(k.textContent) : null; };
-      const raw = (p) => { const v = valueAt(tape, parsePath(p)); return typeof v === 'number' ? Number(v.toFixed(2)) : null; };
-      const a = shown('battle.final.total') ?? raw('battle.final.total');
-      const b = shown('battle.final.opponent') ?? raw('battle.final.opponent');
-      return a === null || b === null ? null : Math.round(Math.abs(a - b) * 100) / 100;
+      const a = shown('battle.final.total');
+      const b = shown('battle.final.opponent');
+      const d = a === null || b === null ? null : Math.round(Math.abs(a - b) * 100) / 100;
+      return d ? d : null;
     }
     case 'ordinal(pins in time order)': {
       const host = el.closest('[data-flow-pin], [data-flow-panel]');
@@ -888,8 +891,9 @@ function flowAggregateOracle(name, el, container, docs) {
 
 /**
  * Film Room D1 — the front's numbers (FL-12, BUILD_RULES §9): every number bound, classed, shown as its value, at its
- * site; no number-kind mark anywhere on the front; no stray digit. `docs.tape` is the day's tape; `docs.moments`, when
- * the suite passes it, the cards line's expected count.
+ * site; no number-kind mark anywhere on the front; no stray digit. `docs.tape` is the day's tape; `docs.battle`, when
+ * the suite passes it, the battle document (DB-2's evidence for a tape written before `isFinalDay`); `docs.moments`,
+ * when the suite passes it, the cards line's expected count.
  */
 export function sweepFlow(container, docs = {}) {
   const bad = [];
@@ -903,8 +907,8 @@ export function sweepFlow(container, docs = {}) {
     const rule = SPEC_FLOW_NUMBER_SITES.find((r) => r.re.test(where));
     if (rule) {
       if (!el.closest(rule.site)) bad.push(`${where}: outside its site`);
-      if (rule.day === 'final' && !finalDayOfTape(doc)) bad.push(`${where}: a final score on a day that is not the battle's final day`);
-      if (rule.day === 'other' && finalDayOfTape(doc)) bad.push(`${where}: the last check's value on the battle's final day`);
+      if (rule.day === 'final' && !readsAsFinal(doc, docs.battle ?? null)) bad.push(`${where}: a final score on a day that is not the battle's final day`);
+      if (rule.day === 'other' && readsAsFinal(doc, docs.battle ?? null)) bad.push(`${where}: the last check's value on the battle's final day`);
       if (rule.low && Number(rule.re.exec(where)[1]) !== lowestCheckOf(doc)) bad.push(`${where}: not the day's lowest scored check (checks[${lowestCheckOf(doc)}])`);
     }
     const path = parsePath(where);

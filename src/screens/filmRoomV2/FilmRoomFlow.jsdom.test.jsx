@@ -201,7 +201,7 @@ describe('F-COPY — the front says only the spec\'s §11 words, the tape\'s val
   const states = () => {
     const quiet = clone(sep23Tape); quiet.actions = []; quiet.directives = [];
     const partial = clone(sep23Tape); partial.coverage.actions.status = 'partial';
-    const earlier = clone(sep23Tape); earlier.battle.status = 'active';
+    const earlier = clone(sep23Tape); earlier.battle.status = 'active'; earlier.isFinalDay = false;
     const noCpu = clone(sep23Tape); noCpu.score.opponentBasis = 'none';
     const unrecorded = clone(sep23Tape); unrecorded.actions[0].mechanism = 'mystery'; delete unrecorded.actions[0].symbolIn; unrecorded.actions[0].exitPrice = null;
     const loss = clone(sep23Tape); loss.battle.result.value = 'loss';
