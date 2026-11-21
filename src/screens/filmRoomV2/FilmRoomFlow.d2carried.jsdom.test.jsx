@@ -112,3 +112,62 @@ describe('DC-8 — through the shell: the low mark on displayed hundredths (Amen
     expect(sweepFlow(m.container, { tape: t })).toEqual([]);
   });
 });
+
+describe('DD-2 — scrolling counts: a wheel or trackpad scroll, the document included (Amendment D; Astra\'s N2)', () => {
+  it('DD-2: a WHEEL over the pending tape, then the admission — the tape stays', async () => {
+    const h = heldApi();
+    await open({ cardsApi: h.api });
+    act(() => { m.q('main').dispatchEvent(wheel()); });
+    h.answer(true); await m.flush();
+    expect(onTape()).toBe(true);
+  });
+  it('DD-2: a wheel at the DOCUMENT level (outside the screen\'s own element), then the admission — the tape stays', async () => {
+    const h = heldApi();
+    await open({ cardsApi: h.api });
+    act(() => { document.dispatchEvent(wheel()); });
+    h.answer(true); await m.flush();
+    expect(onTape()).toBe(true);
+  });
+  it('DD-2: a wheel, then the viewer leaves while pending — marked; a remount of the same viewer shows no notice', async () => {
+    const h = heldApi();
+    await open({ cardsApi: h.api });
+    expect(notice()).toBeTruthy();
+    act(() => { m.q('main').dispatchEvent(wheel()); });
+    await m.flush();
+    expect(hasSeenFirstOpen('viewer-1')).toBe(true);
+    m.teardown(); m.setup();
+    flags.flow = 'off';
+    await open();
+    expect(notice()).toBeNull();
+  });
+  it("DD-2's control (passes at both heads): an untouched page — the admission opens the front", async () => {
+    const h = heldApi();
+    await open({ cardsApi: h.api });
+    h.answer(true); await m.flush();
+    expect(onFront()).toBe(true);
+  });
+  it("DD-2's control (passes at both heads): a SCROLL event alone — a programmatic scroll, or the page re-anchoring under a layout shift, with no wheel — holds nothing: the admission opens the front", async () => {
+    const h = heldApi();
+    await open({ cardsApi: h.api });
+    act(() => { document.dispatchEvent(new Event('scroll', { bubbles: true })); window.dispatchEvent(new Event('scroll')); });
+    h.answer(true); await m.flush();
+    expect(onFront()).toBe(true);
+  });
+  it("DD-2's control (passes at both heads): a touch swipe (a touch pointer-down) keeps the tape and marks the notice", async () => {
+    const h = heldApi();
+    await open({ cardsApi: h.api });
+    act(() => { m.q('main').dispatchEvent(pointer('pointerdown', { pointerType: 'touch' })); });
+    await m.flush();
+    expect(hasSeenFirstOpen('viewer-1')).toBe(true);
+    h.answer(true); await m.flush();
+    expect(onTape()).toBe(true);
+  });
+  it("DD-2's control (passes at both heads): a wheel after the front has shown holds nothing — the front stays", async () => {
+    const h = heldApi();
+    await open({ cardsApi: h.api });
+    h.answer(true); await m.flush();
+    act(() => { document.dispatchEvent(wheel()); m.q('[data-flow-front]').dispatchEvent(wheel()); });
+    await m.flush();
+    expect(onFront()).toBe(true);
+  });
+});

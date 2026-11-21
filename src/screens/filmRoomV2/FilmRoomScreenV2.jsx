@@ -23,7 +23,7 @@
 //             door, unchanged; back on the tape returns to the front ("Game
 //             flow"). Everywhere else the screen is the one above, byte for byte.
 
-import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { FILM_TAPE_WRITE_ENABLED, isAgentPresenceOn } from '../../config/featureFlags';
 import AgentPresenceMount from '../../components/AgentPresence/AgentPresenceMount';
 import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
@@ -308,7 +308,22 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
   // Once the front has shown, or on a settled page, nothing does but a door; an untouched page still opens on the
   // front when admitted.
   const unsettled = (flowMode === 'allowlist' && flowVerdict === undefined) || tapeState.status === 'loading';
-  const holdTape = () => { if (flowMode !== 'off' && !seenFront && !onTape && !front && unsettled) setOnTape(true); };
+  const holdable = flowMode !== 'off' && !seenFront && !onTape && !front && unsettled;
+  const holdTape = () => { if (holdable) setOnTape(true); };
+  // Amendment D DD-2 (Astra's N2; Amendment C DC-5): a WHEEL or TRACKPAD scroll is interaction too — of the tape's own
+  // scroll container, the document included (the page scrolls the document, not the screen's element), so it is heard
+  // on the window, and only while a hold is possible. A `scroll` event alone is not: a programmatic scroll or the page
+  // re-anchoring under a layout shift fires one with no viewer behind it. Layout effects, so the listener is gone in
+  // the same commit that shows the front — no wheel can land between the front's paint and its removal; the listener
+  // reads the hold's conditions of the latest render.
+  const holdRef = useRef(holdTape);
+  useLayoutEffect(() => { holdRef.current = holdTape; });
+  useLayoutEffect(() => {
+    if (!holdable || typeof window === 'undefined') return undefined;
+    const onWheel = () => holdRef.current();
+    window.addEventListener('wheel', onWheel, { capture: true, passive: true });
+    return () => window.removeEventListener('wheel', onWheel, { capture: true });
+  }, [holdable]);
   // BA-49, the first-open notice: marked seen once it has been SHOWN on the tape it qualifies — the tape layout, the
   // flow's answer in, the day's read done — never used up by a paint the front then replaces (the review's DR-3).
   // Where the flow is off for this owner — the mode 'off', or 'allowlist' answered no — that is the first paint it
