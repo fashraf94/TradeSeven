@@ -808,8 +808,10 @@ const flowMs = instantMs;
 function lowestCheckOf(tape) {
   let low = null;
   (Array.isArray(tape?.checks) ? tape.checks : []).forEach((c, i) => {
-    const v = c?.scores?.total; const t = flowMs(c?.at);
-    if (typeof v !== 'number' || !Number.isFinite(v) || t === null) return;
+    const raw = c?.scores?.total; const t = flowMs(c?.at);
+    if (typeof raw !== 'number' || !Number.isFinite(raw) || t === null) return;
+    // Build D Amendment C DC-8: lowest and tied on the DISPLAYED hundredths — the value to two places, as shown
+    const v = Math.round(Number(raw.toFixed(2)) * 100);
     if (!low || v < low.v || (v === low.v && t < low.t)) low = { i, v, t };
   });
   return low ? low.i : null;

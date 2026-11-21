@@ -250,7 +250,8 @@ export function linesOf(tape, domain = domainOf(tape), battle = null) {
 
 /**
  * The low mark (§5, FL-6): the player's lowest SCORED CHECK — the earliest wins a tie — with its value bound by
- * its path and its clock. `eligible` holds the day's rule: at least three scored checks, and the low is not the
+ * its path and its clock. Lowest and tied are decided on DISPLAYED hundredths (Amendment C DC-8, BUILD_RULES §9): two
+ * checks the label would show alike are a tie, whatever their raw values, and the final is compared the same way. `eligible` holds the day's rule: at least three scored checks, and the low is not the
  * line's lowest END. The line's last point is never the low; and the DRAWN FINAL takes part in the minimum (Amendment
  * A DA-8, as Astra qualified it in DB-14) — but not in the count of three: a final that displays at or below the
  * lowest check leaves no mark, since the line's lowest point is then its end ("Low −92" can't stand over a line
@@ -260,13 +261,16 @@ export function linesOf(tape, domain = domainOf(tape), battle = null) {
 export function lowOf(tape, lines = linesOf(tape)) {
   const rows = orderedRows(tape, 'total').filter(drawn);
   if (!rows.length) return null;
+  // every value as the reader compares them — the checks in the low's label, the final in the key: displayed hundredths
+  const shown = (v) => hundredthsOfShown(fmtPoints(v));
   let low = rows[0];
-  for (const r of rows) if (r.v < low.v || (r.v === low.v && r.t < low.t)) low = r;   // a tie: the earliest check
+  for (const r of rows) {
+    const a = shown(r.v); const b = shown(low.v);
+    if (a < b || (a === b && r.t < low.t)) low = r;   // a tie on what is shown: the earliest check (DC-8)
+  }
   const points = lines.you.points;
   const last = points[points.length - 1];
   const isLast = Boolean(last && last.i === low.i && !last.final);
-  // the two as the reader compares them: the final in the key, the low in its label — their displayed hundredths
-  const shown = (v) => hundredthsOfShown(fmtPoints(v));
   const end = points.find((p) => p.final);
   const endAtOrBelow = Boolean(end && shown(end.v) !== null && shown(low.v) !== null && shown(end.v) <= shown(low.v));
   return { index: low.i, t: low.t, value: numberAt(tape, ['checks', low.i, 'scores', 'total']), clock: etClock(tape.checks[low.i].at), eligible: rows.length >= 3 && !isLast && !endAtOrBelow };

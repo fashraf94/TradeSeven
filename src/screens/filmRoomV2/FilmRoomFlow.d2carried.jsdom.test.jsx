@@ -28,7 +28,7 @@ vi.mock('../../config/featureFlags', async (importOriginal) => ({
 import FilmRoomScreenV2 from './FilmRoomScreenV2.jsx';
 import { resetFilmRoomVerdicts } from '../../utils/filmRoomGate';
 import { hasSeenFirstOpen } from './filmRoomSeen';
-import { mounter, sep23Tape, sep23Series, battleOf, readersOf, NOW } from './__fixtures__/filmRoomHarness';
+import { mounter, sep23Tape, sep23Series, clone, battleOf, readersOf, NOW, sweepFlow } from './__fixtures__/filmRoomHarness';
 
 const m = mounter();
 beforeEach(() => { flags.flow = 'allowlist'; flags.cards = 'off'; resetFilmRoomVerdicts(); globalThis.localStorage.clear(); m.setup(); });
@@ -97,5 +97,18 @@ describe('DC-4 — a click is a fourth trigger (Amendment C)', () => {
     expect(onFront()).toBe(true);
     m.click(m.q('[data-flow-front]')); await m.flush();
     expect(onFront()).toBe(true);
+  });
+});
+
+describe('DC-8 — through the shell: the low mark on displayed hundredths (Amendment C)', () => {
+  it('DC-8: a day whose two lowest checks display alike ("−5") — the drawn low is the EARLIER one, and the harness\'s sweep agrees', async () => {
+    const t = clone(sep23Tape);
+    t.battle.status = 'active'; t.isFinalDay = false;
+    t.checks = [1, -5.001, 3, -5.004, 2].map((v, i) => ({ at: new Date(Date.parse('2026-09-23T14:00:00.000Z') + i * 900_000).toISOString(), tickSeq: i + 1, state: 'completed', scores: { total: v, opponent: -1 } }));
+    await open({ readers: readersOf({ [D]: t }, sep23Series), battle: battleOf(t, { ownerId: 'owner-1', status: 'active' }) });
+    expect(onFront()).toBe(true);
+    const low = m.q('[data-flow-low] [data-flow-num]');
+    expect(low?.getAttribute('data-flow-num')).toBe('checks[1].scores.total');
+    expect(sweepFlow(m.container, { tape: t })).toEqual([]);
   });
 });

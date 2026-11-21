@@ -36,3 +36,26 @@ describe('DC-1 — a final day also needs a completed battle (Amendment C)', () 
     expect(flowOf(sep23Tape, { battle: battleOf(sep23Tape) }).heading).toMatchObject({ kind: 'won', margin: { text: '46' } });
   });
 });
+
+describe('DC-8 — ties at the low on displayed hundredths (Amendment C; BUILD_RULES §9)', () => {
+  const day = (totals, { final = null } = {}) => {
+    const t = clone(sep23Tape);
+    t.checks = totals.map((v, i) => ({ at: new Date(Date.parse('2026-09-23T14:00:00.000Z') + i * 900_000).toISOString(), tickSeq: i + 1, state: 'completed', scores: { total: v, opponent: -1 } }));
+    if (final === null) { t.battle.status = 'active'; t.isFinalDay = false; } else t.battle.final.total = final;
+    return t;
+  };
+  it('DC-8: two checks whose raw values differ below a hundredth and DISPLAY equal — the earliest is the low', () => {
+    // −5.001 and −5.004 both display "−5"; the later one is lower by its raw value
+    const low = lowOf(day([1, -5.001, 3, -5.004, 2]));
+    expect([low.index, low.clock, low.eligible]).toEqual([1, '10:15 AM', true]);
+  });
+  it('DC-8\'s control (passes at both heads): the lower raw value FIRST — the earliest still (it is also the raw minimum)', () => {
+    expect(lowOf(day([1, -5.004, 3, -5.001, 2])).index).toBe(1);
+  });
+  it('DC-8\'s control (passes at both heads): values that display apart — the lower displayed value wins wherever it is', () => {
+    expect(lowOf(day([1, -5, 3, -5.01, 2])).index).toBe(3);
+  });
+  it('DC-8\'s control (passes at both heads): a final that displays equal to the low, above it by its raw value — the line ends at the low: no mark', () => {
+    expect(lowOf(day([1, -5.004, 3, 2], { final: -5.001 })).eligible).toBe(false);
+  });
+});
