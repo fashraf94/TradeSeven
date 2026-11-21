@@ -293,7 +293,7 @@ describe('X-1: GET ?list=explore', () => {
     expect(items).toEqual([{ itemRef: { recordKind: 'exploreStories', recordId: EXPLORE.id }, itemVersion: 3, open: null, last: { sessionId: id, ended: 'saved', at: sessionDoc(id).adoption.at } }]);
     expect(sessionDoc(id).adoption.watchlistId).toBe(saved.watchlistId);
   });
-  it('an open one and an earlier closed one on the same story: both, each in its place; a later discard does not hide an earlier save', async () => {
+  it('an open one and an earlier closed one on the same story: both, each in its place; a later discard does not hide an earlier conclusion', async () => {
     const first = await opened();
     const closed = await post({ action: 'close', sessionId: first.session.sessionId, reason: 'concluded' });
     await tick();
@@ -307,6 +307,16 @@ describe('X-1: GET ?list=explore', () => {
     await post({ action: 'close', sessionId: second.session.sessionId, reason: 'abandoned' });
     const after = (await exploreRead()).items;
     expect(after).toEqual([{ itemRef: { recordKind: 'exploreStories', recordId: EXPLORE.id }, itemVersion: 3, open: null, last: { sessionId: first.session.sessionId, ended: 'concluded', at: closed.body.record.endedAt } }]);
+  });
+  it('two ended on one story: the newer is the last — a saved one after a concluded one, and the other way round', async () => {
+    const older = plant({ n: 1, storyId: EXPLORE.id, status: 'completed', createdAt: at(1), updatedAt: at(2) });
+    const newer = plant({ n: 2, storyId: EXPLORE.id, status: 'completed', createdAt: at(3), updatedAt: at(4), adoption: { watchlistId: 'wl-2', version: 1, at: at(4), statement: 'x' } });
+    expect((await exploreRead()).items.map((i) => i.last)).toEqual([{ sessionId: newer.sessionId, ended: 'saved', at: at(4) }]);
+    plant({ n: 3, storyId: 'ai-power-2', status: 'completed', createdAt: at(5), updatedAt: at(6), adoption: { watchlistId: 'wl-3', version: 1, at: at(6) } });
+    const last = plant({ n: 4, storyId: 'ai-power-2', status: 'completed', createdAt: at(7), updatedAt: at(8) });
+    const { items } = await exploreRead();
+    expect(items.map((i) => [i.itemRef.recordId, i.last.sessionId, i.last.ended])).toEqual([['ai-power-2', last.sessionId, 'concluded'], [EXPLORE.id, newer.sessionId, 'saved']]);
+    expect(older.sessionId).not.toBe(newer.sessionId);
   });
   it('a FantasyTimes story and own words are not listed; two Explore stories are, newest activity first', async () => {
     state.builder = 'on';
