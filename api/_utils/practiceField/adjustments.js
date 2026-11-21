@@ -745,7 +745,14 @@ export function planLedgerAdjustments(ledger, ctx) {
     const { events } = shareBasisChain(cur(), sym);
     const late = events.filter((e) => e.index > d.index && e.effectiveDate <= d.effectiveDate).map((e) => e.actionId);
     const countCorrected = postedAdjustments(cur()).some((a) => a.kind === ADJUSTMENT_KIND.RULED_CORRECTION && SHARE_BASIS_TYPES.has(a.type) && upper(a.ticker) === sym && Number(a.seq) > d.index);
-    const amountCorrection = corrections.get(d.actionId) ?? null;
+    // (T1a-2b-4 final fix — found by the soak, through the oracle's one-request-one-posting check: A RULING'S CORRECTION POSTS
+    // ONCE ON A LEDGER. While a doubt defers it on another ledger the ruling stays pending and is handed to every close; here,
+    // where it already posted, it re-posted "owed now less received" — $0 while nothing changed, but a late split listed in
+    // between would have posted its difference under the old ruling with no approval (L-1). After its posting a count change
+    // is a late fact like any other: a late_basis proposal, below.)
+    const ruledHere = corrections.get(d.actionId) ?? null;
+    const amountCorrection = ruledHere && !postedAdjustments(cur()).some((a) => a.kind === ADJUSTMENT_KIND.RULED_CORRECTION && a.actionId === d.actionId
+      && a.ruling?.requestKey != null && a.ruling.requestKey === ruledHere.ruling?.requestKey) ? ruledHere : null;
     if (late.length === 0 && !countCorrected && !amountCorrection && !openProposalOf(d.actionId)) continue;
     if (doubtOn(sym, d.effectiveDate) || shareDoubtOn(sym, d.effectiveDate)) continue; // durable: re-examined at the next close
     const counted = countFor(sym, d.effectiveDate);
@@ -810,25 +817,6 @@ export function planLedgerAdjustments(ledger, ctx) {
       l.corporateActionReceipts = [...l.corporateActionReceipts, rec];
       out.recorded.push(rec);
       out.alerts.push(`PRACTICE_FIELD_CORPORATE_ACTION_REDATE ${ideaId} ${ledgerKind} ${x.actionId} — the same cash_dividend as the paid ${p.actionId}, dated just outside the sold holding: ${p.id} waits — the founder rules it (resolve_hold, conflict)`);
-    }
-  }
-  // (A-2, the founder's ruling of 21 Nov 2026: AN OPEN OBSERVATION — a row announced for a later date — that pairs with an open
-  // proposal under the re-date rule is RECORDED as a possible re-date of it, so the founder's conflict ruling can answer the
-  // pairing and the approval is refused meanwhile (L-2 ②, pairingCandidatesOf). The held path records such an observation at
-  // the close a pairing first shows (ledger.js, T2E-C02); this answers any proposal an observation reaches otherwise. One of
-  // the two dates has come — the proposal's — so the two are one ambiguity unless the switch was made before both, A-1.)
-  for (const p of openProposals(cur())) {
-    const sym = upper(p.ticker);
-    const key = actionPayloadOf({ amount: p.amountPerShare });
-    for (const e of listedAheadOf(cur())) {
-      if (e.actionId === p.actionId || upper(e.ticker) !== sym || e.type !== 'cash_dividend' || bareAnnouncementOf(cur(), e.actionId) === null) continue;
-      if (!(e.payloads || []).some((x) => actionPayloadOf(x) === key) || !withinSessions(e.effectiveDate, p.effectiveDate, REDATE_WINDOW_SESSIONS)) continue;
-      if (switchedBeforeDates(e, lastListedOf(e), e.effectiveDate, announcementOf(cur(), p.actionId), null, p.effectiveDate)) continue;
-      const l = edit();
-      const rec = { actionId: e.actionId, type: e.type, ticker: sym, effectiveDate: e.effectiveDate, ratio: null, amount: p.amountPerShare, cashPerShare: null, source: null, applied: false, reason: POSSIBLE_REDATE, redateOf: p.actionId, seenOn: date, rows: (e.payloads || []).map((x) => payloadRow(x, lastListedOf(e))), kinds: ['possible_redate'], announced: true };
-      l.corporateActionReceipts = [...l.corporateActionReceipts, rec];
-      out.recorded.push(rec);
-      out.alerts.push(`PRACTICE_FIELD_CORPORATE_ACTION_REDATE ${ideaId} ${ledgerKind} ${e.actionId} — the same cash_dividend as ${p.actionId}, announced for ${e.effectiveDate}: ${p.id} waits — the founder rules it (resolve_hold, conflict)`);
     }
   }
   // (…and — found by I-7's L-2 ③ check on shape seed 2119990011 — a SHARE-BASIS row kept outside the sold holding that pairs

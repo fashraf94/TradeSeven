@@ -641,17 +641,17 @@ export class EntitlementOracle {
         }
         const matched = this.inputs.rulings.find((r) => exact(r) && (
           (r.body?.kind === 'late_adjustment' && r.body.decision === 'approve' && r.body.recordId === a.proposal && proposalOf(r.body.recordId)?.field === f && proposalOf(r.body.recordId)?.actionId === a.actionId)
-          || (r.body?.kind === 'conflict' && r.body.recordId === a.actionId && r.body.decision === 'payload' && (!Array.isArray(r.ledgers) || r.ledgers.includes(f)) && keyOf(r.body.payload) === keyOf({ amount: a.amountPerShare })))) ?? null;
+          // (A conflict ruling authorizes only the late ENTITLEMENT it chose — a sold holding's row; it never posts a late_basis.)
+          || (a.kind === 'late_entitlement' && r.body?.kind === 'conflict' && r.body.recordId === a.actionId && r.body.decision === 'payload' && (!Array.isArray(r.ledgers) || r.ledgers.includes(f)) && keyOf(r.body.payload) === keyOf({ amount: a.amountPerShare })))) ?? null;
         expect(matched, `${label} ${this.S[k]} I-7 ${f} ${a.actionId}: a ${a.kind} of $${a.amountUsd} posted on ${a.postedOn} (proposal ${a.proposal ?? '—'}, request ${key ?? '—'}) matches no exact, unconsumed founder approval or ruling for this ledger and id in the inputs`).not.toBeNull();
         if (matched) consumed.add(matched.requestKey);
-        const auth = matched ? [{ at: matched.at, kind: matched.body.kind === 'late_adjustment' ? 'approval' : 'ruling', r: matched }] : [];
         // (The movement's NET, checked before any waiting-state excuse — I-6's excuses read the product's state.)
         this.checkNetAtPosting(idea, f, a, i, posted, k, label, holdings?.[f] ?? null);
         // (A late ENTITLEMENT the founder's conflict ruling chose is the ruling's: the closed path posts it on the ruling — at its
         // close, or later where a doubt deferred it and a ledger still holding the stock kept the ruling pending (the soak's
         // 2120005580). A ruling never posts a `late_basis`: every one of those, like every approval's posting, meets L-2 —
         // including one whose id a ruling paid before its late facts.)
-        if (!(a.kind === 'late_entitlement' && auth.some((x) => x.kind === 'ruling'))) this.checkRefusalAtPosting(l, f, a, at, k, label, holdings?.[f] ?? null);
+        if (matched?.body?.kind !== 'conflict') this.checkRefusalAtPosting(l, f, a, at, k, label, holdings?.[f] ?? null);
         lateCount.set(a.actionId, (lateCount.get(a.actionId) || 0) + 1);
       }
       for (const [id, n] of lateCount) {

@@ -334,26 +334,8 @@ describe('C01 — a held row listed before its date (A-1, A-2, A-3)', () => {
     expect(recordsOf(ctx)).toEqual([]);
   });
 
-  it('a switch made before both dates stays an update after the new id is paid: Friday $1 replaced by Wednesday $1 on Tuesday', async () => {
-    const ctx = await openIdea();
-    await session(ctx, 0, [dividend(4, 1)]);
-    await session(ctx, 1, [dividend(2, 1)]);
-    expect((await session(ctx, 2, [dividend(2, 1)])).dividendsUsd).toBe(99.97);
-    expect((await session(ctx, 3, [dividend(2, 1)])).dividendsUsd).toBe(99.97);
-    expect(recordsOf(ctx)).toEqual([]);
-    expect(row(ctx, 3).fullQuality).toBe(true);
-  });
-
-  it('…and the replaced id listed again after the other was paid is a re-date of it: it waits for the founder', async () => {
-    const ctx = await openIdea();
-    await session(ctx, 0, [dividend(4, 1)]);
-    await session(ctx, 1, [dividend(2, 1)]);
-    expect((await session(ctx, 2, [dividend(2, 1)])).dividendsUsd).toBe(99.97);
-    await session(ctx, 3, [dividend(2, 1), dividend(4, 1)]);
-    expect(recordsOf(ctx)).toEqual([['possible_redate', divId(4)]]);
-    expect((await session(ctx, 4, [dividend(2, 1), dividend(4, 1)])).dividendsUsd).toBe(99.97);
-    expect(row(ctx, 4).fullQuality).toBe(false);
-  });
+  // (The switch made before both dates — and the replaced id listed again — run in corporateActionSequences.ahead.test.js:
+  // this harness clips the vendor to the daily layer's two-day lookahead, where such a switch is rarely reachable.)
 
   it('two dates both announced at the last close before either: both wait from the first date (A-2)', async () => {
     const ctx = await openIdea();
@@ -699,6 +681,20 @@ describe('the oracle — A-1 and A-2 from the inputs alone', () => {
     p.close(3, [adv(4, 1)]);
     p.close(4, [adv(4, 1)]);
     expect([marksOf(p, 3), marksOf(p, 4)]).toEqual([[], []]);
+  });
+
+  it('withdrawn before its date and listed again on it is a revision; an announcement entering its date two ways is a conflict', () => {
+    const w = new InputOracle(S);
+    w.close(1, [adv(3, 1)]);
+    w.close(2, []);
+    w.close(3, [adv(3, 1)]);
+    expect(marksOf(w, 3)).toEqual([[3, 'revision']]);
+    const c2 = new InputOracle(S);
+    c2.close(1, [adv(3, 1), adv(3, 2)]);
+    c2.close(2, [adv(3, 1), adv(3, 2)]);
+    expect(marksOf(c2, 3)).toEqual([]);
+    c2.close(3, [adv(3, 1)]);
+    expect(marksOf(c2, 3)).toEqual([[3, 'conflict']]);
   });
 
   it('I-6: a dividend only ever announced — withdrawn before its date — is owed nothing; money received for it fails', () => {
