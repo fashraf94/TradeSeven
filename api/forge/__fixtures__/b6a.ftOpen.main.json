@@ -1,0 +1,1798 @@
+{
+  "ledger": {
+    "open": {
+      "status": 200,
+      "body": {
+        "session": {
+          "sessionId": "00000000-0000-4000-8000-000000000005",
+          "status": "open",
+          "entry": {
+            "kind": "item",
+            "itemRef": {
+              "recordKind": "fantasyTimesStories",
+              "recordId": "story-1"
+            },
+            "observation": null,
+            "direction": "utilities first",
+            "topic": null,
+            "names": [
+              "ETN",
+              "GEV"
+            ]
+          },
+          "frame": null,
+          "lastError": null,
+          "exchanges": [],
+          "stepsUsed": 0,
+          "stepBudget": 10,
+          "lastStep": null,
+          "researchWorkId": "sr_00000000-0000-4000-8000-000000000005",
+          "adoption": null,
+          "createdAt": "2026-11-20T15:00:00.000Z",
+          "updatedAt": "2026-11-20T15:00:00.000Z"
+        },
+        "record": {
+          "researchWorkId": "sr_00000000-0000-4000-8000-000000000005",
+          "question": "Which companies earn from the switchgear backlog?",
+          "state": "open",
+          "terminalReason": null,
+          "endedAt": null,
+          "createdAt": "2026-11-20T15:00:00.000Z",
+          "lastTurnAt": null,
+          "summary": null,
+          "answerStale": false,
+          "summaryRevisions": [],
+          "findings": [
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000001",
+              "kind": "coverage",
+              "symbol": "ETN",
+              "fact": "Switchgear backlogs stretch as data centers expand",
+              "source": {
+                "recordKind": "fantasyTimesStories",
+                "recordId": "story-1",
+                "label": "FantasyTimes · Kim · Sector Strategist"
+              },
+              "at": "2026-11-12T13:00:00.000Z",
+              "asOf": "2026-11-12T13:00:00.000Z",
+              "status": "unverified",
+              "statusReason": "reporter_content",
+              "supersedes": null
+            },
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000002",
+              "kind": "earnings_fact",
+              "symbol": "ETN",
+              "fact": "Analyst consensus growth for ETN: 12% for the current fiscal year and 15% for the next (20 analysts on the next year).",
+              "source": {
+                "recordKind": "estimatesCache",
+                "recordId": "latest",
+                "label": "Analyst consensus · the estimates cache"
+              },
+              "at": "2026-11-19T06:00:00.000Z",
+              "asOf": "2026-11-19T06:00:00.000Z",
+              "status": "verified",
+              "statusReason": null,
+              "supersedes": null
+            },
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000003",
+              "kind": "earnings_fact",
+              "symbol": "ETN",
+              "fact": "2 stored claims about ETN are in the app's records (earnings calls, Fed events and analyst commentary); the newest is dated November 10, 2026.",
+              "source": {
+                "recordKind": "ingestedClaims",
+                "recordId": "count:ETN",
+                "label": "Stored claims · ETN"
+              },
+              "at": "2026-11-10T00:00:00.000Z",
+              "asOf": "2026-11-10T00:00:00.000Z",
+              "status": "verified",
+              "statusReason": null,
+              "supersedes": null
+            },
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000004",
+              "kind": "next_action",
+              "symbol": null,
+              "fact": "Find the primary source of what this story reports — A story is reporter content; the first step looks for the filing, release or report it rests on.",
+              "source": {
+                "recordKind": "kb",
+                "recordId": "baseline@v0",
+                "label": "Baseline method v0"
+              },
+              "at": "2026-11-20T15:00:00.000Z",
+              "asOf": null,
+              "status": "unverified",
+              "statusReason": "proposed",
+              "supersedes": null
+            }
+          ],
+          "superseded": [],
+          "lines": {
+            "support": null,
+            "complication": null,
+            "missing": null
+          },
+          "nextAction": {
+            "findingId": "f_00000000-0000-4000-8000-000000000004",
+            "kind": "next_action",
+            "symbol": null,
+            "fact": "Find the primary source of what this story reports — A story is reporter content; the first step looks for the filing, release or report it rests on.",
+            "source": {
+              "recordKind": "kb",
+              "recordId": "baseline@v0",
+              "label": "Baseline method v0"
+            },
+            "at": "2026-11-20T15:00:00.000Z",
+            "asOf": null,
+            "status": "unverified",
+            "statusReason": "proposed",
+            "supersedes": null
+          },
+          "age": null
+        },
+        "companies": {
+          "supported": [],
+          "leads": []
+        },
+        "opening": {
+          "storedRows": [
+            {
+              "symbol": "ETN",
+              "name": "Eaton Corporation plc",
+              "peer": {
+                "sector": "Industrials",
+                "metrics": null,
+                "asOf": "2026-11-19T06:00:00.000Z"
+              },
+              "ranking": {
+                "score": 71,
+                "percentile": 88,
+                "tier": "A",
+                "asOf": "2026-11-19T06:00:00.000Z"
+              }
+            },
+            {
+              "symbol": "GEV",
+              "name": "GE Vernova Inc.",
+              "peer": {
+                "sector": "Industrials",
+                "metrics": null,
+                "asOf": "2026-11-19T06:00:00.000Z"
+              },
+              "ranking": null
+            }
+          ]
+        },
+        "quota": {
+          "investigationsToday": 1,
+          "perDay": 3,
+          "framingsToday": 0,
+          "framingsPerDay": 10,
+          "stepsToday": 0,
+          "stepsPerDay": 30
+        },
+        "previous": null
+      }
+    },
+    "read": {
+      "status": 200,
+      "body": {
+        "session": {
+          "sessionId": "00000000-0000-4000-8000-000000000005",
+          "status": "open",
+          "entry": {
+            "kind": "item",
+            "itemRef": {
+              "recordKind": "fantasyTimesStories",
+              "recordId": "story-1"
+            },
+            "observation": null,
+            "direction": "utilities first",
+            "topic": null,
+            "names": [
+              "ETN",
+              "GEV"
+            ]
+          },
+          "frame": null,
+          "lastError": null,
+          "exchanges": [],
+          "stepsUsed": 0,
+          "stepBudget": 10,
+          "lastStep": null,
+          "researchWorkId": "sr_00000000-0000-4000-8000-000000000005",
+          "adoption": null,
+          "createdAt": "2026-11-20T15:00:00.000Z",
+          "updatedAt": "2026-11-20T15:00:00.000Z"
+        },
+        "record": {
+          "researchWorkId": "sr_00000000-0000-4000-8000-000000000005",
+          "question": "Which companies earn from the switchgear backlog?",
+          "state": "open",
+          "terminalReason": null,
+          "endedAt": null,
+          "createdAt": "2026-11-20T15:00:00.000Z",
+          "lastTurnAt": null,
+          "summary": null,
+          "answerStale": false,
+          "summaryRevisions": [],
+          "findings": [
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000001",
+              "kind": "coverage",
+              "symbol": "ETN",
+              "fact": "Switchgear backlogs stretch as data centers expand",
+              "source": {
+                "recordKind": "fantasyTimesStories",
+                "recordId": "story-1",
+                "label": "FantasyTimes · Kim · Sector Strategist"
+              },
+              "at": "2026-11-12T13:00:00.000Z",
+              "asOf": "2026-11-12T13:00:00.000Z",
+              "status": "unverified",
+              "statusReason": "reporter_content",
+              "supersedes": null
+            },
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000002",
+              "kind": "earnings_fact",
+              "symbol": "ETN",
+              "fact": "Analyst consensus growth for ETN: 12% for the current fiscal year and 15% for the next (20 analysts on the next year).",
+              "source": {
+                "recordKind": "estimatesCache",
+                "recordId": "latest",
+                "label": "Analyst consensus · the estimates cache"
+              },
+              "at": "2026-11-19T06:00:00.000Z",
+              "asOf": "2026-11-19T06:00:00.000Z",
+              "status": "verified",
+              "statusReason": null,
+              "supersedes": null
+            },
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000003",
+              "kind": "earnings_fact",
+              "symbol": "ETN",
+              "fact": "2 stored claims about ETN are in the app's records (earnings calls, Fed events and analyst commentary); the newest is dated November 10, 2026.",
+              "source": {
+                "recordKind": "ingestedClaims",
+                "recordId": "count:ETN",
+                "label": "Stored claims · ETN"
+              },
+              "at": "2026-11-10T00:00:00.000Z",
+              "asOf": "2026-11-10T00:00:00.000Z",
+              "status": "verified",
+              "statusReason": null,
+              "supersedes": null
+            },
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000004",
+              "kind": "next_action",
+              "symbol": null,
+              "fact": "Find the primary source of what this story reports — A story is reporter content; the first step looks for the filing, release or report it rests on.",
+              "source": {
+                "recordKind": "kb",
+                "recordId": "baseline@v0",
+                "label": "Baseline method v0"
+              },
+              "at": "2026-11-20T15:00:00.000Z",
+              "asOf": null,
+              "status": "unverified",
+              "statusReason": "proposed",
+              "supersedes": null
+            }
+          ],
+          "superseded": [],
+          "lines": {
+            "support": null,
+            "complication": null,
+            "missing": null
+          },
+          "nextAction": {
+            "findingId": "f_00000000-0000-4000-8000-000000000004",
+            "kind": "next_action",
+            "symbol": null,
+            "fact": "Find the primary source of what this story reports — A story is reporter content; the first step looks for the filing, release or report it rests on.",
+            "source": {
+              "recordKind": "kb",
+              "recordId": "baseline@v0",
+              "label": "Baseline method v0"
+            },
+            "at": "2026-11-20T15:00:00.000Z",
+            "asOf": null,
+            "status": "unverified",
+            "statusReason": "proposed",
+            "supersedes": null
+          },
+          "age": null
+        },
+        "companies": {
+          "supported": [],
+          "leads": []
+        },
+        "adoptPreview": null,
+        "storedRows": [
+          {
+            "symbol": "ETN",
+            "name": "Eaton Corporation plc",
+            "peer": {
+              "sector": "Industrials",
+              "metrics": null,
+              "asOf": "2026-11-19T06:00:00.000Z"
+            },
+            "ranking": {
+              "score": 71,
+              "percentile": 88,
+              "tier": "A",
+              "asOf": "2026-11-19T06:00:00.000Z"
+            }
+          },
+          {
+            "symbol": "GEV",
+            "name": "GE Vernova Inc.",
+            "peer": {
+              "sector": "Industrials",
+              "metrics": null,
+              "asOf": "2026-11-19T06:00:00.000Z"
+            },
+            "ranking": null
+          }
+        ],
+        "previous": null,
+        "quota": {
+          "investigationsToday": 1,
+          "perDay": 3,
+          "framingsToday": 0,
+          "framingsPerDay": 10,
+          "stepsToday": 0,
+          "stepsPerDay": 30
+        }
+      }
+    },
+    "again": {
+      "status": 200,
+      "body": {
+        "session": {
+          "sessionId": "00000000-0000-4000-8000-000000000005",
+          "status": "open",
+          "entry": {
+            "kind": "item",
+            "itemRef": {
+              "recordKind": "fantasyTimesStories",
+              "recordId": "story-1"
+            },
+            "observation": null,
+            "direction": "utilities first",
+            "topic": null,
+            "names": [
+              "ETN",
+              "GEV"
+            ]
+          },
+          "frame": null,
+          "lastError": null,
+          "exchanges": [],
+          "stepsUsed": 0,
+          "stepBudget": 10,
+          "lastStep": null,
+          "researchWorkId": "sr_00000000-0000-4000-8000-000000000005",
+          "adoption": null,
+          "createdAt": "2026-11-20T15:00:00.000Z",
+          "updatedAt": "2026-11-20T15:00:00.000Z"
+        },
+        "record": {
+          "researchWorkId": "sr_00000000-0000-4000-8000-000000000005",
+          "question": "Which companies earn from the switchgear backlog?",
+          "state": "open",
+          "terminalReason": null,
+          "endedAt": null,
+          "createdAt": "2026-11-20T15:00:00.000Z",
+          "lastTurnAt": null,
+          "summary": null,
+          "answerStale": false,
+          "summaryRevisions": [],
+          "findings": [
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000001",
+              "kind": "coverage",
+              "symbol": "ETN",
+              "fact": "Switchgear backlogs stretch as data centers expand",
+              "source": {
+                "recordKind": "fantasyTimesStories",
+                "recordId": "story-1",
+                "label": "FantasyTimes · Kim · Sector Strategist"
+              },
+              "at": "2026-11-12T13:00:00.000Z",
+              "asOf": "2026-11-12T13:00:00.000Z",
+              "status": "unverified",
+              "statusReason": "reporter_content",
+              "supersedes": null
+            },
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000002",
+              "kind": "earnings_fact",
+              "symbol": "ETN",
+              "fact": "Analyst consensus growth for ETN: 12% for the current fiscal year and 15% for the next (20 analysts on the next year).",
+              "source": {
+                "recordKind": "estimatesCache",
+                "recordId": "latest",
+                "label": "Analyst consensus · the estimates cache"
+              },
+              "at": "2026-11-19T06:00:00.000Z",
+              "asOf": "2026-11-19T06:00:00.000Z",
+              "status": "verified",
+              "statusReason": null,
+              "supersedes": null
+            },
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000003",
+              "kind": "earnings_fact",
+              "symbol": "ETN",
+              "fact": "2 stored claims about ETN are in the app's records (earnings calls, Fed events and analyst commentary); the newest is dated November 10, 2026.",
+              "source": {
+                "recordKind": "ingestedClaims",
+                "recordId": "count:ETN",
+                "label": "Stored claims · ETN"
+              },
+              "at": "2026-11-10T00:00:00.000Z",
+              "asOf": "2026-11-10T00:00:00.000Z",
+              "status": "verified",
+              "statusReason": null,
+              "supersedes": null
+            },
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000004",
+              "kind": "next_action",
+              "symbol": null,
+              "fact": "Find the primary source of what this story reports — A story is reporter content; the first step looks for the filing, release or report it rests on.",
+              "source": {
+                "recordKind": "kb",
+                "recordId": "baseline@v0",
+                "label": "Baseline method v0"
+              },
+              "at": "2026-11-20T15:00:00.000Z",
+              "asOf": null,
+              "status": "unverified",
+              "statusReason": "proposed",
+              "supersedes": null
+            }
+          ],
+          "superseded": [],
+          "lines": {
+            "support": null,
+            "complication": null,
+            "missing": null
+          },
+          "nextAction": {
+            "findingId": "f_00000000-0000-4000-8000-000000000004",
+            "kind": "next_action",
+            "symbol": null,
+            "fact": "Find the primary source of what this story reports — A story is reporter content; the first step looks for the filing, release or report it rests on.",
+            "source": {
+              "recordKind": "kb",
+              "recordId": "baseline@v0",
+              "label": "Baseline method v0"
+            },
+            "at": "2026-11-20T15:00:00.000Z",
+            "asOf": null,
+            "status": "unverified",
+            "statusReason": "proposed",
+            "supersedes": null
+          },
+          "age": null
+        },
+        "companies": {
+          "supported": [],
+          "leads": []
+        },
+        "opening": {
+          "storedRows": [
+            {
+              "symbol": "ETN",
+              "name": "Eaton Corporation plc",
+              "peer": {
+                "sector": "Industrials",
+                "metrics": null,
+                "asOf": "2026-11-19T06:00:00.000Z"
+              },
+              "ranking": {
+                "score": 71,
+                "percentile": 88,
+                "tier": "A",
+                "asOf": "2026-11-19T06:00:00.000Z"
+              }
+            },
+            {
+              "symbol": "GEV",
+              "name": "GE Vernova Inc.",
+              "peer": {
+                "sector": "Industrials",
+                "metrics": null,
+                "asOf": "2026-11-19T06:00:00.000Z"
+              },
+              "ranking": null
+            }
+          ]
+        },
+        "quota": {
+          "investigationsToday": 1,
+          "perDay": 3,
+          "framingsToday": 0,
+          "framingsPerDay": 10,
+          "stepsToday": 0,
+          "stepsPerDay": 30
+        },
+        "existing": true,
+        "previous": null
+      }
+    },
+    "list": {
+      "status": 200,
+      "body": {
+        "open": [
+          {
+            "sessionId": "00000000-0000-4000-8000-000000000005",
+            "question": "Which companies earn from the switchgear backlog?",
+            "state": "open",
+            "lastTurnAt": null,
+            "findingsCount": 4
+          }
+        ],
+        "quota": {
+          "investigationsToday": 1,
+          "perDay": 3,
+          "framingsToday": 0,
+          "framingsPerDay": 10,
+          "stepsToday": 0,
+          "stepsPerDay": 30
+        }
+      }
+    },
+    "session": {
+      "schemaVersion": 1,
+      "sessionId": "00000000-0000-4000-8000-000000000005",
+      "userId": "u1",
+      "requestId": "req-ft-1",
+      "createdAt": "2026-11-20T15:00:00.000Z",
+      "updatedAt": "2026-11-20T15:00:00.000Z",
+      "status": "open",
+      "entry": {
+        "kind": "item",
+        "itemRef": {
+          "recordKind": "fantasyTimesStories",
+          "recordId": "story-1"
+        },
+        "observation": null,
+        "direction": "utilities first",
+        "topic": null,
+        "names": [
+          "ETN",
+          "GEV"
+        ]
+      },
+      "itemKey": "fantasyTimesStories/story-1",
+      "frame": null,
+      "lastError": null,
+      "exchanges": [],
+      "stepsUsed": 0,
+      "stepBudget": 10,
+      "lastStep": null,
+      "researchWorkId": "sr_00000000-0000-4000-8000-000000000005",
+      "retrieval": {
+        "calls": 0,
+        "costDollars": 0,
+        "elapsedMs": 0
+      },
+      "method": {
+        "id": "baseline",
+        "version": "v0",
+        "sha256": "72fb845a2d12be5d98195f1d9f451d3e8b7a323f269a94cc82a088cdcaeb95d1",
+        "source": "baseline",
+        "consumer": null,
+        "selectedAt": "2026-11-20T15:00:00.000Z"
+      },
+      "attribution": {
+        "agentId": "agent-1",
+        "archetypeCodeId": "contrarian",
+        "baggerbombArchetypeCodeId": "momentum_chaser",
+        "identityVersion": 2,
+        "at": "2026-11-20T15:00:00.000Z"
+      },
+      "adoption": null
+    },
+    "record": {
+      "schemaVersion": 1,
+      "researchWorkId": "sr_00000000-0000-4000-8000-000000000005",
+      "userId": "u1",
+      "origin": "shared_research",
+      "host": {
+        "collection": "sharedResearchSessions",
+        "id": "00000000-0000-4000-8000-000000000005"
+      },
+      "createdAt": "2026-11-20T15:00:00.000Z",
+      "watchlistId": null,
+      "hypothesisVersion": null,
+      "question": "Which companies earn from the switchgear backlog?",
+      "stages": {
+        "universeSize": null,
+        "matchedPreLimit": null,
+        "shortlisted": null,
+        "selectedForInvestigation": null,
+        "investigationsCompleted": null,
+        "eligible": null
+      },
+      "symbols": [],
+      "symbolsTruncated": false,
+      "budget": null,
+      "telemetry": {
+        "attempts": 0,
+        "completions": 0,
+        "failures": 0,
+        "cancellations": 0,
+        "elapsedMs": 0,
+        "firstTurnAt": null,
+        "lastTurnAt": null,
+        "tokens": {
+          "input": 0,
+          "output": 0
+        }
+      },
+      "state": "open",
+      "terminalReason": null,
+      "endedAt": null,
+      "updatedAt": "2026-11-20T15:00:00.000Z",
+      "symbolKeys": [
+        "ETN"
+      ],
+      "findings": [
+        {
+          "findingId": "f_00000000-0000-4000-8000-000000000001",
+          "kind": "coverage",
+          "symbol": "ETN",
+          "fact": "Switchgear backlogs stretch as data centers expand",
+          "source": {
+            "recordKind": "fantasyTimesStories",
+            "recordId": "story-1",
+            "label": "FantasyTimes · Kim · Sector Strategist"
+          },
+          "at": "2026-11-12T13:00:00.000Z",
+          "asOf": "2026-11-12T13:00:00.000Z",
+          "status": "unverified",
+          "statusReason": "reporter_content",
+          "pin": null,
+          "supersedes": null
+        },
+        {
+          "findingId": "f_00000000-0000-4000-8000-000000000002",
+          "kind": "earnings_fact",
+          "symbol": "ETN",
+          "fact": "Analyst consensus growth for ETN: 12% for the current fiscal year and 15% for the next (20 analysts on the next year).",
+          "source": {
+            "recordKind": "estimatesCache",
+            "recordId": "latest",
+            "label": "Analyst consensus · the estimates cache"
+          },
+          "at": "2026-11-19T06:00:00.000Z",
+          "asOf": "2026-11-19T06:00:00.000Z",
+          "status": "verified",
+          "statusReason": null,
+          "pin": null,
+          "supersedes": null
+        },
+        {
+          "findingId": "f_00000000-0000-4000-8000-000000000003",
+          "kind": "earnings_fact",
+          "symbol": "ETN",
+          "fact": "2 stored claims about ETN are in the app's records (earnings calls, Fed events and analyst commentary); the newest is dated November 10, 2026.",
+          "source": {
+            "recordKind": "ingestedClaims",
+            "recordId": "count:ETN",
+            "label": "Stored claims · ETN"
+          },
+          "at": "2026-11-10T00:00:00.000Z",
+          "asOf": "2026-11-10T00:00:00.000Z",
+          "status": "verified",
+          "statusReason": null,
+          "pin": null,
+          "supersedes": null
+        },
+        {
+          "findingId": "f_00000000-0000-4000-8000-000000000004",
+          "kind": "next_action",
+          "symbol": null,
+          "fact": "Find the primary source of what this story reports — A story is reporter content; the first step looks for the filing, release or report it rests on.",
+          "source": {
+            "recordKind": "kb",
+            "recordId": "baseline@v0",
+            "label": "Baseline method v0"
+          },
+          "at": "2026-11-20T15:00:00.000Z",
+          "asOf": null,
+          "status": "unverified",
+          "statusReason": "proposed",
+          "pin": null,
+          "supersedes": null
+        }
+      ]
+    },
+    "quota": {
+      "etDate": "2026-11-20",
+      "investigationsOpened": 1,
+      "framingsRun": 0,
+      "stepCalls": 0,
+      "updatedAt": "2026-11-20T15:00:00.000Z"
+    },
+    "writes": [
+      [
+        "tx.set",
+        "sharedResearchSessions/00000000-0000-4000-8000-000000000005"
+      ],
+      [
+        "tx.create",
+        "researchWork/sr_00000000-0000-4000-8000-000000000005"
+      ],
+      [
+        "tx.set",
+        "sharedResearchQuota/u1"
+      ]
+    ]
+  },
+  "builder": {
+    "open": {
+      "status": 200,
+      "body": {
+        "session": {
+          "sessionId": "00000000-0000-4000-8000-000000000004",
+          "status": "open",
+          "entry": {
+            "kind": "item",
+            "itemRef": {
+              "recordKind": "fantasyTimesStories",
+              "recordId": "story-1"
+            },
+            "observation": null,
+            "direction": "utilities first",
+            "topic": null,
+            "names": [
+              "ETN",
+              "GEV"
+            ]
+          },
+          "frame": null,
+          "lastError": null,
+          "exchanges": [],
+          "stepsUsed": 0,
+          "stepBudget": 10,
+          "lastStep": null,
+          "researchWorkId": "sr_00000000-0000-4000-8000-000000000004",
+          "adoption": null,
+          "createdAt": "2026-11-20T15:00:00.000Z",
+          "updatedAt": "2026-11-20T15:00:00.000Z",
+          "shape": "builder"
+        },
+        "record": {
+          "researchWorkId": "sr_00000000-0000-4000-8000-000000000004",
+          "question": "Which companies earn from the switchgear backlog?",
+          "state": "open",
+          "terminalReason": null,
+          "endedAt": null,
+          "createdAt": "2026-11-20T15:00:00.000Z",
+          "lastTurnAt": null,
+          "summary": null,
+          "answerStale": false,
+          "summaryRevisions": [],
+          "findings": [
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000001",
+              "kind": "coverage",
+              "symbol": "ETN",
+              "fact": "Switchgear backlogs stretch as data centers expand",
+              "source": {
+                "recordKind": "fantasyTimesStories",
+                "recordId": "story-1",
+                "label": "FantasyTimes · Kim · Sector Strategist"
+              },
+              "at": "2026-11-12T13:00:00.000Z",
+              "asOf": "2026-11-12T13:00:00.000Z",
+              "status": "unverified",
+              "statusReason": "reporter_content",
+              "supersedes": null
+            },
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000002",
+              "kind": "earnings_fact",
+              "symbol": "ETN",
+              "fact": "Analyst consensus growth for ETN: 12% for the current fiscal year and 15% for the next (20 analysts on the next year).",
+              "source": {
+                "recordKind": "estimatesCache",
+                "recordId": "latest",
+                "label": "Analyst consensus · the estimates cache"
+              },
+              "at": "2026-11-19T06:00:00.000Z",
+              "asOf": "2026-11-19T06:00:00.000Z",
+              "status": "verified",
+              "statusReason": null,
+              "supersedes": null
+            },
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000003",
+              "kind": "earnings_fact",
+              "symbol": "ETN",
+              "fact": "2 stored claims about ETN are in the app's records (earnings calls, Fed events and analyst commentary); the newest is dated November 10, 2026.",
+              "source": {
+                "recordKind": "ingestedClaims",
+                "recordId": "count:ETN",
+                "label": "Stored claims · ETN"
+              },
+              "at": "2026-11-10T00:00:00.000Z",
+              "asOf": "2026-11-10T00:00:00.000Z",
+              "status": "verified",
+              "statusReason": null,
+              "supersedes": null
+            }
+          ],
+          "superseded": [],
+          "lines": {
+            "support": null,
+            "complication": null,
+            "missing": null
+          },
+          "nextAction": null,
+          "age": null
+        },
+        "companies": {
+          "supported": [],
+          "leads": []
+        },
+        "thesis": {
+          "schemaVersion": 1,
+          "rev": 0,
+          "parts": {
+            "theme": {
+              "state": "unset",
+              "value": null,
+              "by": null,
+              "suggestion": null
+            },
+            "segment": {
+              "state": "unset",
+              "value": null,
+              "by": null,
+              "skipped": false,
+              "findingIds": [],
+              "map": null
+            },
+            "names": {
+              "state": "unset",
+              "value": [],
+              "by": null,
+              "blocked": null
+            },
+            "why": {
+              "state": "unset",
+              "by": null,
+              "shared": null,
+              "reasons": [],
+              "against": null,
+              "proposal": null
+            },
+            "wrongIf": {
+              "state": "unset",
+              "by": null,
+              "text": null,
+              "findingIds": [],
+              "options": [],
+              "priceLines": []
+            },
+            "timeFrame": {
+              "state": "unset",
+              "by": null,
+              "value": null,
+              "label": null,
+              "suggestion": null
+            }
+          },
+          "pick": null,
+          "filled": 0,
+          "saveIssue": null,
+          "ready": false,
+          "blockers": [
+            {
+              "part": "names",
+              "state": "unset"
+            },
+            {
+              "part": "why",
+              "state": "unset"
+            },
+            {
+              "part": "wrongIf",
+              "state": "unset"
+            },
+            {
+              "part": "timeFrame",
+              "state": "unset"
+            }
+          ],
+          "sentence": null,
+          "dependents": {
+            "segment": [
+              "names",
+              "why"
+            ],
+            "names": [
+              "why"
+            ]
+          },
+          "choices": {
+            "research": [
+              {
+                "goal": "verify_source"
+              },
+              {
+                "goal": "direction"
+              }
+            ],
+            "free": [
+              {
+                "op": "set",
+                "part": "theme",
+                "input": "text",
+                "max": 80
+              },
+              {
+                "op": "set",
+                "part": "segment",
+                "value": "skip"
+              },
+              {
+                "op": "set",
+                "part": "wrongIf",
+                "input": "text",
+                "max": 200
+              },
+              {
+                "op": "set",
+                "part": "timeFrame",
+                "value": "swing"
+              },
+              {
+                "op": "set",
+                "part": "timeFrame",
+                "value": "positional"
+              },
+              {
+                "op": "set",
+                "part": "timeFrame",
+                "value": "longterm"
+              }
+            ]
+          }
+        },
+        "opening": {
+          "storedRows": [
+            {
+              "symbol": "ETN",
+              "name": "Eaton Corporation plc",
+              "peer": {
+                "sector": "Industrials",
+                "metrics": null,
+                "asOf": "2026-11-19T06:00:00.000Z"
+              },
+              "ranking": {
+                "score": 71,
+                "percentile": 88,
+                "tier": "A",
+                "asOf": "2026-11-19T06:00:00.000Z"
+              }
+            },
+            {
+              "symbol": "GEV",
+              "name": "GE Vernova Inc.",
+              "peer": {
+                "sector": "Industrials",
+                "metrics": null,
+                "asOf": "2026-11-19T06:00:00.000Z"
+              },
+              "ranking": null
+            }
+          ]
+        },
+        "quota": {
+          "investigationsToday": 1,
+          "perDay": 3,
+          "framingsToday": 0,
+          "framingsPerDay": 10,
+          "stepsToday": 0,
+          "stepsPerDay": 30
+        },
+        "previous": null
+      }
+    },
+    "read": {
+      "status": 200,
+      "body": {
+        "session": {
+          "sessionId": "00000000-0000-4000-8000-000000000004",
+          "status": "open",
+          "entry": {
+            "kind": "item",
+            "itemRef": {
+              "recordKind": "fantasyTimesStories",
+              "recordId": "story-1"
+            },
+            "observation": null,
+            "direction": "utilities first",
+            "topic": null,
+            "names": [
+              "ETN",
+              "GEV"
+            ]
+          },
+          "frame": null,
+          "lastError": null,
+          "exchanges": [],
+          "stepsUsed": 0,
+          "stepBudget": 10,
+          "lastStep": null,
+          "researchWorkId": "sr_00000000-0000-4000-8000-000000000004",
+          "adoption": null,
+          "createdAt": "2026-11-20T15:00:00.000Z",
+          "updatedAt": "2026-11-20T15:00:00.000Z",
+          "shape": "builder"
+        },
+        "record": {
+          "researchWorkId": "sr_00000000-0000-4000-8000-000000000004",
+          "question": "Which companies earn from the switchgear backlog?",
+          "state": "open",
+          "terminalReason": null,
+          "endedAt": null,
+          "createdAt": "2026-11-20T15:00:00.000Z",
+          "lastTurnAt": null,
+          "summary": null,
+          "answerStale": false,
+          "summaryRevisions": [],
+          "findings": [
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000001",
+              "kind": "coverage",
+              "symbol": "ETN",
+              "fact": "Switchgear backlogs stretch as data centers expand",
+              "source": {
+                "recordKind": "fantasyTimesStories",
+                "recordId": "story-1",
+                "label": "FantasyTimes · Kim · Sector Strategist"
+              },
+              "at": "2026-11-12T13:00:00.000Z",
+              "asOf": "2026-11-12T13:00:00.000Z",
+              "status": "unverified",
+              "statusReason": "reporter_content",
+              "supersedes": null
+            },
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000002",
+              "kind": "earnings_fact",
+              "symbol": "ETN",
+              "fact": "Analyst consensus growth for ETN: 12% for the current fiscal year and 15% for the next (20 analysts on the next year).",
+              "source": {
+                "recordKind": "estimatesCache",
+                "recordId": "latest",
+                "label": "Analyst consensus · the estimates cache"
+              },
+              "at": "2026-11-19T06:00:00.000Z",
+              "asOf": "2026-11-19T06:00:00.000Z",
+              "status": "verified",
+              "statusReason": null,
+              "supersedes": null
+            },
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000003",
+              "kind": "earnings_fact",
+              "symbol": "ETN",
+              "fact": "2 stored claims about ETN are in the app's records (earnings calls, Fed events and analyst commentary); the newest is dated November 10, 2026.",
+              "source": {
+                "recordKind": "ingestedClaims",
+                "recordId": "count:ETN",
+                "label": "Stored claims · ETN"
+              },
+              "at": "2026-11-10T00:00:00.000Z",
+              "asOf": "2026-11-10T00:00:00.000Z",
+              "status": "verified",
+              "statusReason": null,
+              "supersedes": null
+            }
+          ],
+          "superseded": [],
+          "lines": {
+            "support": null,
+            "complication": null,
+            "missing": null
+          },
+          "nextAction": null,
+          "age": null
+        },
+        "companies": {
+          "supported": [],
+          "leads": []
+        },
+        "thesis": {
+          "schemaVersion": 1,
+          "rev": 0,
+          "parts": {
+            "theme": {
+              "state": "unset",
+              "value": null,
+              "by": null,
+              "suggestion": null
+            },
+            "segment": {
+              "state": "unset",
+              "value": null,
+              "by": null,
+              "skipped": false,
+              "findingIds": [],
+              "map": null
+            },
+            "names": {
+              "state": "unset",
+              "value": [],
+              "by": null,
+              "blocked": null
+            },
+            "why": {
+              "state": "unset",
+              "by": null,
+              "shared": null,
+              "reasons": [],
+              "against": null,
+              "proposal": null
+            },
+            "wrongIf": {
+              "state": "unset",
+              "by": null,
+              "text": null,
+              "findingIds": [],
+              "options": [],
+              "priceLines": []
+            },
+            "timeFrame": {
+              "state": "unset",
+              "by": null,
+              "value": null,
+              "label": null,
+              "suggestion": null
+            }
+          },
+          "pick": null,
+          "filled": 0,
+          "saveIssue": null,
+          "ready": false,
+          "blockers": [
+            {
+              "part": "names",
+              "state": "unset"
+            },
+            {
+              "part": "why",
+              "state": "unset"
+            },
+            {
+              "part": "wrongIf",
+              "state": "unset"
+            },
+            {
+              "part": "timeFrame",
+              "state": "unset"
+            }
+          ],
+          "sentence": null,
+          "dependents": {
+            "segment": [
+              "names",
+              "why"
+            ],
+            "names": [
+              "why"
+            ]
+          },
+          "choices": {
+            "research": [
+              {
+                "goal": "verify_source"
+              },
+              {
+                "goal": "direction"
+              }
+            ],
+            "free": [
+              {
+                "op": "set",
+                "part": "theme",
+                "input": "text",
+                "max": 80
+              },
+              {
+                "op": "set",
+                "part": "segment",
+                "value": "skip"
+              },
+              {
+                "op": "set",
+                "part": "wrongIf",
+                "input": "text",
+                "max": 200
+              },
+              {
+                "op": "set",
+                "part": "timeFrame",
+                "value": "swing"
+              },
+              {
+                "op": "set",
+                "part": "timeFrame",
+                "value": "positional"
+              },
+              {
+                "op": "set",
+                "part": "timeFrame",
+                "value": "longterm"
+              }
+            ]
+          }
+        },
+        "storedRows": [
+          {
+            "symbol": "ETN",
+            "name": "Eaton Corporation plc",
+            "peer": {
+              "sector": "Industrials",
+              "metrics": null,
+              "asOf": "2026-11-19T06:00:00.000Z"
+            },
+            "ranking": {
+              "score": 71,
+              "percentile": 88,
+              "tier": "A",
+              "asOf": "2026-11-19T06:00:00.000Z"
+            }
+          },
+          {
+            "symbol": "GEV",
+            "name": "GE Vernova Inc.",
+            "peer": {
+              "sector": "Industrials",
+              "metrics": null,
+              "asOf": "2026-11-19T06:00:00.000Z"
+            },
+            "ranking": null
+          }
+        ],
+        "previous": null,
+        "quota": {
+          "investigationsToday": 1,
+          "perDay": 3,
+          "framingsToday": 0,
+          "framingsPerDay": 10,
+          "stepsToday": 0,
+          "stepsPerDay": 30
+        }
+      }
+    },
+    "again": {
+      "status": 200,
+      "body": {
+        "session": {
+          "sessionId": "00000000-0000-4000-8000-000000000004",
+          "status": "open",
+          "entry": {
+            "kind": "item",
+            "itemRef": {
+              "recordKind": "fantasyTimesStories",
+              "recordId": "story-1"
+            },
+            "observation": null,
+            "direction": "utilities first",
+            "topic": null,
+            "names": [
+              "ETN",
+              "GEV"
+            ]
+          },
+          "frame": null,
+          "lastError": null,
+          "exchanges": [],
+          "stepsUsed": 0,
+          "stepBudget": 10,
+          "lastStep": null,
+          "researchWorkId": "sr_00000000-0000-4000-8000-000000000004",
+          "adoption": null,
+          "createdAt": "2026-11-20T15:00:00.000Z",
+          "updatedAt": "2026-11-20T15:00:00.000Z",
+          "shape": "builder"
+        },
+        "record": {
+          "researchWorkId": "sr_00000000-0000-4000-8000-000000000004",
+          "question": "Which companies earn from the switchgear backlog?",
+          "state": "open",
+          "terminalReason": null,
+          "endedAt": null,
+          "createdAt": "2026-11-20T15:00:00.000Z",
+          "lastTurnAt": null,
+          "summary": null,
+          "answerStale": false,
+          "summaryRevisions": [],
+          "findings": [
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000001",
+              "kind": "coverage",
+              "symbol": "ETN",
+              "fact": "Switchgear backlogs stretch as data centers expand",
+              "source": {
+                "recordKind": "fantasyTimesStories",
+                "recordId": "story-1",
+                "label": "FantasyTimes · Kim · Sector Strategist"
+              },
+              "at": "2026-11-12T13:00:00.000Z",
+              "asOf": "2026-11-12T13:00:00.000Z",
+              "status": "unverified",
+              "statusReason": "reporter_content",
+              "supersedes": null
+            },
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000002",
+              "kind": "earnings_fact",
+              "symbol": "ETN",
+              "fact": "Analyst consensus growth for ETN: 12% for the current fiscal year and 15% for the next (20 analysts on the next year).",
+              "source": {
+                "recordKind": "estimatesCache",
+                "recordId": "latest",
+                "label": "Analyst consensus · the estimates cache"
+              },
+              "at": "2026-11-19T06:00:00.000Z",
+              "asOf": "2026-11-19T06:00:00.000Z",
+              "status": "verified",
+              "statusReason": null,
+              "supersedes": null
+            },
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000003",
+              "kind": "earnings_fact",
+              "symbol": "ETN",
+              "fact": "2 stored claims about ETN are in the app's records (earnings calls, Fed events and analyst commentary); the newest is dated November 10, 2026.",
+              "source": {
+                "recordKind": "ingestedClaims",
+                "recordId": "count:ETN",
+                "label": "Stored claims · ETN"
+              },
+              "at": "2026-11-10T00:00:00.000Z",
+              "asOf": "2026-11-10T00:00:00.000Z",
+              "status": "verified",
+              "statusReason": null,
+              "supersedes": null
+            }
+          ],
+          "superseded": [],
+          "lines": {
+            "support": null,
+            "complication": null,
+            "missing": null
+          },
+          "nextAction": null,
+          "age": null
+        },
+        "companies": {
+          "supported": [],
+          "leads": []
+        },
+        "thesis": {
+          "schemaVersion": 1,
+          "rev": 0,
+          "parts": {
+            "theme": {
+              "state": "unset",
+              "value": null,
+              "by": null,
+              "suggestion": null
+            },
+            "segment": {
+              "state": "unset",
+              "value": null,
+              "by": null,
+              "skipped": false,
+              "findingIds": [],
+              "map": null
+            },
+            "names": {
+              "state": "unset",
+              "value": [],
+              "by": null,
+              "blocked": null
+            },
+            "why": {
+              "state": "unset",
+              "by": null,
+              "shared": null,
+              "reasons": [],
+              "against": null,
+              "proposal": null
+            },
+            "wrongIf": {
+              "state": "unset",
+              "by": null,
+              "text": null,
+              "findingIds": [],
+              "options": [],
+              "priceLines": []
+            },
+            "timeFrame": {
+              "state": "unset",
+              "by": null,
+              "value": null,
+              "label": null,
+              "suggestion": null
+            }
+          },
+          "pick": null,
+          "filled": 0,
+          "saveIssue": null,
+          "ready": false,
+          "blockers": [
+            {
+              "part": "names",
+              "state": "unset"
+            },
+            {
+              "part": "why",
+              "state": "unset"
+            },
+            {
+              "part": "wrongIf",
+              "state": "unset"
+            },
+            {
+              "part": "timeFrame",
+              "state": "unset"
+            }
+          ],
+          "sentence": null,
+          "dependents": {
+            "segment": [
+              "names",
+              "why"
+            ],
+            "names": [
+              "why"
+            ]
+          },
+          "choices": {
+            "research": [
+              {
+                "goal": "verify_source"
+              },
+              {
+                "goal": "direction"
+              }
+            ],
+            "free": [
+              {
+                "op": "set",
+                "part": "theme",
+                "input": "text",
+                "max": 80
+              },
+              {
+                "op": "set",
+                "part": "segment",
+                "value": "skip"
+              },
+              {
+                "op": "set",
+                "part": "wrongIf",
+                "input": "text",
+                "max": 200
+              },
+              {
+                "op": "set",
+                "part": "timeFrame",
+                "value": "swing"
+              },
+              {
+                "op": "set",
+                "part": "timeFrame",
+                "value": "positional"
+              },
+              {
+                "op": "set",
+                "part": "timeFrame",
+                "value": "longterm"
+              }
+            ]
+          }
+        },
+        "opening": {
+          "storedRows": [
+            {
+              "symbol": "ETN",
+              "name": "Eaton Corporation plc",
+              "peer": {
+                "sector": "Industrials",
+                "metrics": null,
+                "asOf": "2026-11-19T06:00:00.000Z"
+              },
+              "ranking": {
+                "score": 71,
+                "percentile": 88,
+                "tier": "A",
+                "asOf": "2026-11-19T06:00:00.000Z"
+              }
+            },
+            {
+              "symbol": "GEV",
+              "name": "GE Vernova Inc.",
+              "peer": {
+                "sector": "Industrials",
+                "metrics": null,
+                "asOf": "2026-11-19T06:00:00.000Z"
+              },
+              "ranking": null
+            }
+          ]
+        },
+        "quota": {
+          "investigationsToday": 1,
+          "perDay": 3,
+          "framingsToday": 0,
+          "framingsPerDay": 10,
+          "stepsToday": 0,
+          "stepsPerDay": 30
+        },
+        "existing": true,
+        "previous": null
+      }
+    },
+    "list": {
+      "status": 200,
+      "body": {
+        "open": [
+          {
+            "sessionId": "00000000-0000-4000-8000-000000000004",
+            "question": "Which companies earn from the switchgear backlog?",
+            "state": "open",
+            "lastTurnAt": null,
+            "findingsCount": 3
+          }
+        ],
+        "quota": {
+          "investigationsToday": 1,
+          "perDay": 3,
+          "framingsToday": 0,
+          "framingsPerDay": 10,
+          "stepsToday": 0,
+          "stepsPerDay": 30
+        }
+      }
+    },
+    "session": {
+      "schemaVersion": 1,
+      "sessionId": "00000000-0000-4000-8000-000000000004",
+      "userId": "u1",
+      "requestId": "req-ft-1",
+      "createdAt": "2026-11-20T15:00:00.000Z",
+      "updatedAt": "2026-11-20T15:00:00.000Z",
+      "status": "open",
+      "entry": {
+        "kind": "item",
+        "itemRef": {
+          "recordKind": "fantasyTimesStories",
+          "recordId": "story-1"
+        },
+        "observation": null,
+        "direction": "utilities first",
+        "topic": null,
+        "names": [
+          "ETN",
+          "GEV"
+        ]
+      },
+      "itemKey": "fantasyTimesStories/story-1",
+      "frame": null,
+      "lastError": null,
+      "exchanges": [],
+      "stepsUsed": 0,
+      "stepBudget": 10,
+      "lastStep": null,
+      "researchWorkId": "sr_00000000-0000-4000-8000-000000000004",
+      "retrieval": {
+        "calls": 0,
+        "costDollars": 0,
+        "elapsedMs": 0
+      },
+      "method": {
+        "id": "baseline",
+        "version": "v0",
+        "sha256": "72fb845a2d12be5d98195f1d9f451d3e8b7a323f269a94cc82a088cdcaeb95d1",
+        "source": "baseline",
+        "consumer": null,
+        "selectedAt": "2026-11-20T15:00:00.000Z"
+      },
+      "attribution": {
+        "agentId": "agent-1",
+        "archetypeCodeId": "contrarian",
+        "baggerbombArchetypeCodeId": "momentum_chaser",
+        "identityVersion": 2,
+        "at": "2026-11-20T15:00:00.000Z"
+      },
+      "adoption": null,
+      "shape": "builder",
+      "thesis": {
+        "schemaVersion": 1,
+        "rev": 0,
+        "theme": {
+          "state": "unset",
+          "value": null,
+          "by": null,
+          "suggestion": null
+        },
+        "segment": {
+          "state": "unset",
+          "value": null,
+          "by": null,
+          "findingIds": [],
+          "skipped": false,
+          "map": null
+        },
+        "names": {
+          "state": "unset",
+          "value": [],
+          "by": null,
+          "blocked": null
+        },
+        "why": {
+          "state": "unset",
+          "by": null,
+          "shared": null,
+          "reasons": [],
+          "against": null,
+          "proposal": null
+        },
+        "wrongIf": {
+          "state": "unset",
+          "by": null,
+          "text": null,
+          "findingIds": [],
+          "options": [],
+          "priceLines": []
+        },
+        "timeFrame": {
+          "state": "unset",
+          "by": null,
+          "value": null,
+          "suggestion": null
+        },
+        "pick": null,
+        "ops": []
+      }
+    },
+    "record": {
+      "schemaVersion": 1,
+      "researchWorkId": "sr_00000000-0000-4000-8000-000000000004",
+      "userId": "u1",
+      "origin": "shared_research",
+      "host": {
+        "collection": "sharedResearchSessions",
+        "id": "00000000-0000-4000-8000-000000000004"
+      },
+      "createdAt": "2026-11-20T15:00:00.000Z",
+      "watchlistId": null,
+      "hypothesisVersion": null,
+      "question": "Which companies earn from the switchgear backlog?",
+      "stages": {
+        "universeSize": null,
+        "matchedPreLimit": null,
+        "shortlisted": null,
+        "selectedForInvestigation": null,
+        "investigationsCompleted": null,
+        "eligible": null
+      },
+      "symbols": [],
+      "symbolsTruncated": false,
+      "budget": null,
+      "telemetry": {
+        "attempts": 0,
+        "completions": 0,
+        "failures": 0,
+        "cancellations": 0,
+        "elapsedMs": 0,
+        "firstTurnAt": null,
+        "lastTurnAt": null,
+        "tokens": {
+          "input": 0,
+          "output": 0
+        }
+      },
+      "state": "open",
+      "terminalReason": null,
+      "endedAt": null,
+      "updatedAt": "2026-11-20T15:00:00.000Z",
+      "symbolKeys": [
+        "ETN"
+      ],
+      "findings": [
+        {
+          "findingId": "f_00000000-0000-4000-8000-000000000001",
+          "kind": "coverage",
+          "symbol": "ETN",
+          "fact": "Switchgear backlogs stretch as data centers expand",
+          "source": {
+            "recordKind": "fantasyTimesStories",
+            "recordId": "story-1",
+            "label": "FantasyTimes · Kim · Sector Strategist"
+          },
+          "at": "2026-11-12T13:00:00.000Z",
+          "asOf": "2026-11-12T13:00:00.000Z",
+          "status": "unverified",
+          "statusReason": "reporter_content",
+          "pin": null,
+          "supersedes": null
+        },
+        {
+          "findingId": "f_00000000-0000-4000-8000-000000000002",
+          "kind": "earnings_fact",
+          "symbol": "ETN",
+          "fact": "Analyst consensus growth for ETN: 12% for the current fiscal year and 15% for the next (20 analysts on the next year).",
+          "source": {
+            "recordKind": "estimatesCache",
+            "recordId": "latest",
+            "label": "Analyst consensus · the estimates cache"
+          },
+          "at": "2026-11-19T06:00:00.000Z",
+          "asOf": "2026-11-19T06:00:00.000Z",
+          "status": "verified",
+          "statusReason": null,
+          "pin": null,
+          "supersedes": null
+        },
+        {
+          "findingId": "f_00000000-0000-4000-8000-000000000003",
+          "kind": "earnings_fact",
+          "symbol": "ETN",
+          "fact": "2 stored claims about ETN are in the app's records (earnings calls, Fed events and analyst commentary); the newest is dated November 10, 2026.",
+          "source": {
+            "recordKind": "ingestedClaims",
+            "recordId": "count:ETN",
+            "label": "Stored claims · ETN"
+          },
+          "at": "2026-11-10T00:00:00.000Z",
+          "asOf": "2026-11-10T00:00:00.000Z",
+          "status": "verified",
+          "statusReason": null,
+          "pin": null,
+          "supersedes": null
+        }
+      ]
+    },
+    "quota": {
+      "etDate": "2026-11-20",
+      "investigationsOpened": 1,
+      "framingsRun": 0,
+      "stepCalls": 0,
+      "updatedAt": "2026-11-20T15:00:00.000Z"
+    },
+    "writes": [
+      [
+        "tx.set",
+        "sharedResearchSessions/00000000-0000-4000-8000-000000000004"
+      ],
+      [
+        "tx.create",
+        "researchWork/sr_00000000-0000-4000-8000-000000000004"
+      ],
+      [
+        "tx.set",
+        "sharedResearchQuota/u1"
+      ]
+    ]
+  }
+}

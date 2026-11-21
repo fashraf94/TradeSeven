@@ -107,7 +107,8 @@ const writtenDate = (ymd) => { const [y, m, d] = ymd.split('-').map(Number); ret
  * The opening's findings, in record order (spec §4.2).
  * @param {object} p
  * @param {'item'|'observation'|'signaldrop'} p.entryKind
- * @param {object} [p.story]   { id, headline, reporterName, reporterBeat, publishedAt (instant), primaryTicker, tickers }
+ * @param {object} [p.story]   { id, headline, reporterName, reporterBeat, publishedAt (instant), primaryTicker, tickers,
+ *                              recordKind? } — `recordKind: 'exploreStories'` for an Explore story (store.js readExploreStory)
  * @param {object} [p.drop]    the stored drop record
  * @param {object} [p.playerExchange]  the observation's (or the drop's) player exchange { exchangeId, text, at }
  * @param {object} [p.frame]   the framing ({ check }) for an observation
@@ -130,7 +131,8 @@ export function openingFindingsOf({ entryKind, story = null, drop = null, player
     out.push({
       kind: 'coverage', symbol: resolveSymbol(story.primaryTicker, universe),
       fact: cut(maskStrayTickers(clean(story.headline), universe), FINDING_FACT_MAX_LEN),
-      source: { recordKind: 'fantasyTimesStories', recordId: story.id, label },
+      // the story's own kind: an Explore story (B6a X-2) says so; a FantasyTimes story carries none and cites as before
+      source: { recordKind: story.recordKind ?? 'fantasyTimesStories', recordId: story.id, label },
       at: published ?? nowIso, asOf: published ? before(published, nowIso) : null,
       status: 'unverified', statusReason: 'reporter_content',
     });

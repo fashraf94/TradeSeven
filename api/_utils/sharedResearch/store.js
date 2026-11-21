@@ -14,6 +14,7 @@
 //   closeInvestigation         `close`
 //   adoptIdea                  `adopt`: shared mechanics + one origin adapter
 //   readInvestigation, listOpen, readQuota, and the stored-fact reads
+//   readExploreStory, readExploreInvestigations   an Explore story at `open`; Explore's read (B6a X-2, X-1)
 //
 // The quota: `sharedResearchQuota/{uid}` (the player's day) and
 // `sharedResearchQuota/_global` (the app's day), both reset when the ET date
@@ -47,6 +48,8 @@ import {
 } from './thesis.js';
 import { companiesOf } from './companies.js';
 import { CLAIMS_READ_LIMIT } from './opening.js';
+import { EXPLORE_RECORD_KIND } from '../../../src/constants/sharedResearch.js';
+import { EXPLORE_READ_MAX, livePerStoryOf, lastPerStoryOf, exploreItemsOf } from './explore.js';
 
 export const AGENTS_COLLECTION = 'agents';
 /** The environment variable that overrides the app's daily step ceiling — read at call time (spec §6.12 control 4). */
@@ -160,6 +163,54 @@ export async function readStory(db, storyId) {
     id: storyId, headline: s.headline, reporterName: s.reporterName ?? null, reporterBeat: s.reporterBeat ?? null,
     publishedAt: isoOf(s.publishedAt), primaryTicker: s.primaryTicker ?? null, tickers: Array.isArray(s.tickers) ? s.tickers : [],
   };
+}
+
+/**
+ * An Explore story as `open` reads it (B6a X-2), with the server's own credentials, or null: missing, not `published`,
+ * or without a title or a whole-number version. It reads ONLY these fields of the story (Explore spec §5.1 names):
+ * `status`, `title`, `reporter.name`, `reporter.beat`, `publishedAt`, `tickers` and `version`. The body, the deck, the
+ * parts, the open question, the connections, the sources and the questions are never read. The answer has readStory's
+ * shape, plus `recordKind` (the source its opening finding cites) and `version` (stamped on the session at open).
+ */
+export async function readExploreStory(db, storyId) {
+  const s = dataOf(await db.collection(EXPLORE_RECORD_KIND).doc(storyId).get());
+  if (!s || s.status !== 'published') return null;
+  const title = s.title;
+  const version = s.version;
+  if (typeof title !== 'string' || !title.trim() || !Number.isSafeInteger(version) || version < 0) return null;
+  const reporter = s.reporter !== null && typeof s.reporter === 'object' ? s.reporter : null;
+  const name = reporter ? reporter.name : null;
+  const beat = reporter ? reporter.beat : null;
+  return {
+    id: storyId, recordKind: EXPLORE_RECORD_KIND, headline: title,
+    reporterName: typeof name === 'string' ? name : null, reporterBeat: typeof beat === 'string' ? beat : null,
+    publishedAt: isoOf(s.publishedAt), primaryTicker: null, tickers: Array.isArray(s.tickers) ? s.tickers : [],
+    version,
+  };
+}
+
+/**
+ * The Explore read (B6a X-1, GET ?list=explore): the caller's investigations of Explore stories, shaped by explore.js.
+ * Two queries on the sessions collection — `userId ==`, `entry.itemRef.recordKind == 'exploreStories'` and
+ * `status == 'open'` or `== 'completed'` — equality filters only, which Firestore serves by merging the automatic
+ * single-field indexes (no composite index; the same merge `open`'s itemKey query uses), each at most EXPLORE_READ_MAX
+ * sessions; then the record of each story's open investigation. At most EXPLORE_DOCS_MAX documents with the quota.
+ * No write.
+ */
+export async function readExploreInvestigations(db, { uid }) {
+  const mine = db.collection(SESSIONS_COLLECTION).where('userId', '==', uid).where('entry.itemRef.recordKind', '==', EXPLORE_RECORD_KIND);
+  const [openSnap, closedSnap] = await Promise.all([
+    mine.where('status', '==', 'open').limit(EXPLORE_READ_MAX).get(),
+    mine.where('status', '==', 'completed').limit(EXPLORE_READ_MAX).get(),
+  ]);
+  const owned = (snap) => snap.docs.map((d) => d.data()).filter((s) => isOwnedSession(s, uid));
+  const live = livePerStoryOf(owned(openSnap));
+  const last = lastPerStoryOf(owned(closedSnap));
+  const records = new Map(await Promise.all([...live.values()].map(async (s) => {
+    const r = s.researchWorkId ? dataOf(await researchWorkRefOf(db, s.researchWorkId).get()) : null;
+    return [s.sessionId, isOwnedRecord(r, uid) ? r : null];
+  })));
+  return exploreItemsOf({ live, last, records });
 }
 
 /** The caller's OWN drop, or null — another owner's drop is not found (spec §6.3). */
@@ -676,7 +727,9 @@ async function commitAdoption(db, { uid, sessionId, record, input, selected, ada
     tx.create(listRef.collection(VERSIONS_SUBCOLLECTION).doc(versionDocId(1)), version);
     tx.update(recordRef, close);
     tx.update(sessionRef, {
-      status: 'completed', adoption: { watchlistId, version: 1, at: nowIso },
+      // B6a X-7: the statement saved — the version's own, as normalized (the composed sentence or the player's edit),
+      // so a reopened saved investigation can show it. A session saved before B6a has none.
+      status: 'completed', adoption: { watchlistId, version: 1, at: nowIso, statement: input.statement },
       exchanges: [...(s.exchanges ?? []), confirmed], updatedAt: nowIso,
     });
     return { watchlistId, version: 1, researchWorkId: fresh.researchWorkId, idempotent: false };

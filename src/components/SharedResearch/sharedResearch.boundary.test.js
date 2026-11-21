@@ -3,17 +3,21 @@
 //   - no non-test file under src/components/SharedResearch/ imports from
 //     src/components/CommandCenter/ (the hub's mount guard walks every such file; the
 //     wrapper, HUB_SHEETS and the guard rows are the hub amendment's);
-//   - the sheet has ONE door (Command Center Amendment E V1.1 §3.2, E-2; ruling R-D3): the
-//     one src/ file outside this directory that imports it, and the one whose strings name
-//     the directory, is src/components/CommandCenter/hub/loadSharedResearch.js, a
-//     load-time import() (the hub graph's second load-time edge), test files aside;
+//   - the sheet has TWO doors (Command Center Amendment E V1.1 §3.2, E-2; ruling R-D3; B6a X-6):
+//     the src/ files outside this directory that import it, and those whose strings name the
+//     directory, are src/components/CommandCenter/hub/loadSharedResearch.js and, once the
+//     Explore build adds it, src/components/Explore/loadSharedResearch.js — each one
+//     load-time import() of the body — test files aside; a third fails;
+//   - the service has one reader outside this directory (B6a X-6):
+//     src/components/Explore/useExploreResearch.js, importing only readExploreInvestigations;
 //   - the body reaches the network only through src/services/sharedResearchService.js,
 //     and that service only through fetchWithAuth and the two existing equip calls —
 //     no model or provider anywhere here;
 //   - SR_DROP_LAYER sits above the hub sheet (hub/hubStyle.js HUB_LAYERS.sheet) and
 //     below the deploy ceremony (DeployCeremony.jsx Z_INDEX).
 
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, posix, relative, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -87,26 +91,144 @@ describe('the boundary (K-2)', () => {
   });
 });
 
-/** The sheet's one door: the hub's research loader (Amendment E V1.1 §3.2). */
+/**
+ * The sheet's doors (B6a X-6): the hub's research loader (Amendment E V1.1 §3.2), and Explore's own loader — each one
+ * load-time import() of the body. Explore's need not exist (it is the Explore build's); no third file may load the body.
+ */
 const THE_DOOR = 'src/components/CommandCenter/hub/loadSharedResearch.js';
+const EXPLORE_DOOR = 'src/components/Explore/loadSharedResearch.js';
+const DOORS = Object.freeze({
+  [THE_DOOR]: '../../SharedResearch/SharedResearchSheetBody.jsx',
+  [EXPLORE_DOOR]: '../SharedResearch/SharedResearchSheetBody.jsx',
+});
+/** The service's one reader outside this directory (B6a X-6): Explore's hook, and only its read. */
+const EXPLORE_READER = 'src/components/Explore/useExploreResearch.js';
+const SERVICE = /^src\/services\/sharedResearchService(\.js)?$/;
+const OUR_SERVICE_USER = 'src/components/SharedResearch/useSharedResearch.js';
 
-describe('one door (K-3; Command Center Amendment E V1.1 §3.2)', () => {
-  it('the one src/ file outside this directory that imports it is the hub\'s research loader, a load-time import, test files aside', () => {
-    const outside = walk(resolve(REPO, 'src')).filter((p) => !isTest(p) && !rel(p).startsWith('src/components/SharedResearch/'));
-    expect(outside.length).toBeGreaterThan(500);
-    // A cheap text filter first: a file that never writes the directory's name cannot import it (the src walk is slow).
-    const importers = outside.map((p) => [p, readFileSync(p, 'utf8')]).filter(([, c]) => c.includes('SharedResearch'))
-      .filter(([p, c]) => specifiersOf(c).map((s) => resolveFrom(p, s)).some((t) => t.startsWith('src/components/SharedResearch')));
-    expect(importers.map(([p]) => rel(p))).toEqual([THE_DOOR]);
-    // ...and that import is the loader's one import() of the body: no static import, nothing else of the directory
-    const door = readFileSync(resolve(REPO, THE_DOOR), 'utf8');
+/** A specifier resolved from a repo-relative file path (the walk's `resolveFrom`, for files given by path). */
+const resolveRel = (file, spec) => resolveFrom(resolve(REPO, file), spec);
+/** Every src/ file, test files aside, as { rel, code } — read once for the rows below (the src walk is slow). */
+let SRC_FILES = null;
+const srcFiles = () => {
+  if (!SRC_FILES) SRC_FILES = walk(resolve(REPO, 'src')).filter((p) => !isTest(p)).map((p) => ({ rel: rel(p), code: readFileSync(p, 'utf8') }));
+  return SRC_FILES;
+};
+/** Each import of the service a file makes: its clause (`{ a }`, `* as s`, `x`, '' for a bare or dynamic one) and its specifier. */
+function serviceImportsOf(file, code) {
+  const c = stripComments(code);
+  const forms = [
+    ...[...c.matchAll(/\bimport\b\s*([^'"`;]*?)\s*\bfrom\s*['"`]([^'"`]+)['"`]/g)].map((m) => ({ clause: m[1].replace(/\s+/g, ' ').trim(), spec: m[2] })),
+    ...[...c.matchAll(/\bexport\b\s*([^'"`;]*?)\s*\bfrom\s*['"`]([^'"`]+)['"`]/g)].map((m) => ({ clause: `export ${m[1].trim()}`, spec: m[2] })),
+  ];
+  const named = forms.filter((f) => SERVICE.test(resolveRel(file, f.spec)));
+  const other = specifiersOf(code).filter((s) => SERVICE.test(resolveRel(file, s))).length - named.length; // bare, dynamic, glob, require
+  return [...named, ...Array.from({ length: Math.max(0, other) }, () => ({ clause: '', spec: '(another form)' }))];
+}
+
+/**
+ * The doors' rule and the reader's, over `files` ({ rel, code }, test files aside): the problems found, none when it holds.
+ *   - the files outside this directory that import it are among the two doors, and the hub's door is one of them;
+ *   - each door present makes exactly one import of the directory, its load-time import() of the body;
+ *   - the files outside whose strings name the directory are the doors present, each naming only the body;
+ *   - the service is imported by useSharedResearch.js inside, and outside by Explore's reader at most, which imports
+ *     exactly `{ readExploreInvestigations }` and nothing else of it.
+ */
+export function doorProblemsOf(files) {
+  const problems = [];
+  const outside = files.filter((f) => !f.rel.startsWith('src/components/SharedResearch/'));
+  const importers = outside.filter((f) => f.code.includes('SharedResearch'))
+    .filter((f) => specifiersOf(f.code).map((s) => resolveRel(f.rel, s)).some((t) => t.startsWith('src/components/SharedResearch')))
+    .map((f) => f.rel);
+  for (const r of importers) if (!Object.hasOwn(DOORS, r)) problems.push(`not a door, yet loads the sheet: ${r}`);
+  if (!importers.includes(THE_DOOR)) problems.push(`the hub's door does not load the sheet: ${THE_DOOR}`);
+  for (const door of Object.keys(DOORS).filter((d) => importers.includes(d))) {
+    const code = outside.find((f) => f.rel === door).code;
+    const body = DOORS[door];
+    if (JSON.stringify(specifiersOf(code)) !== JSON.stringify([body])) problems.push(`${door} imports more than the body, or not by its path: ${JSON.stringify(specifiersOf(code))}`);
+    if (!stripComments(code).includes(`import('${body}')`)) problems.push(`${door} does not load the body with one load-time import(): ${body}`);
+  }
+  const naming = outside.filter((f) => f.code.includes('SharedResearch/') && namesInStrings(f.code, 'SharedResearch/').length > 0).map((f) => f.rel);
+  for (const r of naming) {
+    if (!Object.hasOwn(DOORS, r) || !importers.includes(r)) problems.push(`names the sheet's directory in a string: ${r}`);
+    else if (JSON.stringify(namesInStrings(outside.find((f) => f.rel === r).code, 'SharedResearch/')) !== JSON.stringify([`'${DOORS[r]}'`])) problems.push(`${r} names more of the directory than the body`);
+  }
+  const users = files.filter((f) => f.code.includes('sharedResearchService')).map((f) => ({ rel: f.rel, imports: serviceImportsOf(f.rel, f.code) })).filter((u) => u.imports.length > 0);
+  for (const u of users) {
+    if (u.rel === OUR_SERVICE_USER) continue;
+    if (u.rel !== EXPLORE_READER) { problems.push(`imports the service, and is neither the sheet's hook nor Explore's reader: ${u.rel}`); continue; }
+    if (u.imports.length !== 1 || u.imports[0].clause.replace(/\s+/g, '') !== '{readExploreInvestigations}') problems.push(`${u.rel} (Explore's reader) imports more of the service than its read: ${JSON.stringify(u.imports)}`);
+  }
+  if (!users.some((u) => u.rel === OUR_SERVICE_USER)) problems.push(`the sheet's hook no longer imports the service: ${OUR_SERVICE_USER}`);
+  return problems;
+}
+
+/** Stand-in files, written to a temp directory (never into src/, where a parallel scan of src/ could meet them) and read back. */
+function withStandIns(standIns, fn) {
+  const dir = mkdtempSync(join(tmpdir(), 'sr-doors-'));
+  try {
+    const files = Object.entries(standIns).map(([at, code]) => {
+      const p = join(dir, at.replace(/\//g, '__'));
+      writeFileSync(p, code);
+      return { rel: at, code: readFileSync(p, 'utf8') };
+    });
+    return fn(files);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+const EXPLORE_DOOR_CODE = "let pending = null;\nexport function loadSharedResearch() {\n  if (!pending) pending = import('../SharedResearch/SharedResearchSheetBody.jsx').catch((e) => { pending = null; throw e; });\n  return pending;\n}\n";
+const EXPLORE_READER_CODE = "import { readExploreInvestigations } from '../../services/sharedResearchService';\nexport default function useExploreResearch() { return readExploreInvestigations; }\n";
+
+describe('the doors (K-3; Command Center Amendment E V1.1 §3.2; B6a X-6)', () => {
+  it('the real tree holds: outside this directory only the doors load the sheet, only the hook and Explore\'s reader import the service', () => {
+    const files = srcFiles();
+    expect(files.length).toBeGreaterThan(500);
+    expect(doorProblemsOf(files)).toEqual([]);
+    const door = files.find((f) => f.rel === THE_DOOR).code;
     expect(specifiersOf(door)).toEqual(['../../SharedResearch/SharedResearchSheetBody.jsx']);
     expect(stripComments(door)).toMatch(/\bimport\('\.\.\/\.\.\/SharedResearch\/SharedResearchSheetBody\.jsx'\)/);
-    // ...and the one file whose strings name the directory, whatever form would load it (review d2: backticks, globs, '/src/…'), is that loader
-    const naming = outside.map((p) => [p, readFileSync(p, 'utf8')]).filter(([, c]) => c.includes('SharedResearch/'))
-      .filter(([, c]) => namesInStrings(c, 'SharedResearch/').length > 0);
-    expect(naming.map(([p]) => rel(p))).toEqual([THE_DOOR]);
     expect(namesInStrings(door, 'SharedResearch/')).toEqual(["'../../SharedResearch/SharedResearchSheetBody.jsx'"]);
+  }, 30_000);
+  it('with stand-ins for Explore\'s two files (created and removed here), the rule still holds', () => {
+    withStandIns({ [EXPLORE_DOOR]: EXPLORE_DOOR_CODE, [EXPLORE_READER]: EXPLORE_READER_CODE }, (standIns) => {
+      const files = [...srcFiles().filter((f) => !standIns.some((s) => s.rel === f.rel)), ...standIns];
+      expect(doorProblemsOf(files)).toEqual([]);
+    });
+  }, 30_000);
+  it('any third importer fails: of the body, of the directory, of the service — beside the two stand-ins', () => {
+    const third = {
+      'src/components/Explore/ExploreHome.jsx': "const B = () => import('../SharedResearch/SharedResearchSheetBody.jsx');\nexport default B;\n",
+      'src/components/Explore/ExploreCopy.js': "export { SR_COPY } from '../SharedResearch/sharedResearchCopy';\n",
+      'src/components/Explore/ExploreStory.jsx': "import { takeStep } from '../../services/sharedResearchService';\nexport default takeStep;\n",
+      'src/components/discover/DiscoverPanel.jsx': "const B = () => import(`../SharedResearch/SharedResearchSheetBody`);\nexport default B;\n",
+    };
+    for (const [at, code] of Object.entries(third)) {
+      withStandIns({ [EXPLORE_DOOR]: EXPLORE_DOOR_CODE, [EXPLORE_READER]: EXPLORE_READER_CODE, [at]: code }, (standIns) => {
+        const files = [...srcFiles().filter((f) => !standIns.some((s) => s.rel === f.rel)), ...standIns];
+        const problems = doorProblemsOf(files);
+        expect(problems.some((p) => p.includes(at)), `${at}: ${JSON.stringify(problems)}`).toBe(true);
+      });
+    }
+  }, 30_000);
+  it('the doors stay doors: a static import, a second import, or a reader that takes more than its read fails', () => {
+    const bad = [
+      [EXPLORE_DOOR, "import B from '../SharedResearch/SharedResearchSheetBody.jsx';\nexport default B;\n"],
+      [EXPLORE_DOOR, `${EXPLORE_DOOR_CODE}export { SR_COPY } from '../SharedResearch/sharedResearchCopy';\n`],
+      [EXPLORE_READER, "import * as service from '../../services/sharedResearchService';\nexport default service.readExploreInvestigations;\n"],
+      [EXPLORE_READER, "import { readExploreInvestigations, openInvestigation } from '../../services/sharedResearchService';\nexport default [readExploreInvestigations, openInvestigation];\n"],
+      [EXPLORE_READER, `${EXPLORE_READER_CODE}export const lazy = () => import('../../services/sharedResearchService');\n`],
+    ];
+    for (const [at, code] of bad) {
+      const standIns = { [EXPLORE_DOOR]: EXPLORE_DOOR_CODE, [EXPLORE_READER]: EXPLORE_READER_CODE, [at]: code };
+      withStandIns(standIns, (files0) => {
+        const files = [...srcFiles().filter((f) => !files0.some((s) => s.rel === f.rel)), ...files0];
+        expect(doorProblemsOf(files).some((p) => p.includes(at)), code).toBe(true);
+      });
+    }
+  }, 30_000);
+  it('the hub\'s door is required: a tree without it fails', () => {
+    expect(doorProblemsOf(srcFiles().filter((f) => f.rel !== THE_DOOR))).toContain(`the hub's door does not load the sheet: ${THE_DOOR}`);
   }, 30_000);
   it('the dark scans bite (planted: a backtick lazy import, a root-absolute import, a glob)', () => {
     const discover = resolve(REPO, 'src/components/discover/DiscoverPanel.jsx');
@@ -127,11 +249,10 @@ describe('one door (K-3; Command Center Amendment E V1.1 §3.2)', () => {
     expect(stripComments("return /'/.test(s) ? 'a' : 'b'; // gone")).toBe("return /'/.test(s) ? 'a' : 'b'; ");
     expect(stripComments('<p>a</p> {/* gone */}<X a={b}/> // gone\r\nnext')).toBe('<p>a</p> { }<X a={b}/> \r\nnext'); // JSX: no false regex
   });
-  it('nothing outside the directory reaches the service either (the body is its one importer)', () => {
-    const files = walk(resolve(REPO, 'src')).filter((p) => !isTest(p));
-    const importers = files.map((p) => [p, readFileSync(p, 'utf8')]).filter(([, c]) => c.includes('sharedResearchService'))
-      .filter(([p, c]) => specifiersOf(c).map((s) => resolveFrom(p, s)).some((t) => /src\/services\/sharedResearchService(\.js)?$/.test(t)));
-    expect(importers.map(([p]) => rel(p))).toEqual(['src/components/SharedResearch/useSharedResearch.js']);
+  it('the service\'s importers today: the sheet\'s hook only (Explore\'s reader joins it with the Explore build)', () => {
+    const importers = srcFiles().filter((f) => f.code.includes('sharedResearchService'))
+      .filter((f) => specifiersOf(f.code).map((s) => resolveRel(f.rel, s)).some((t) => SERVICE.test(t))).map((f) => f.rel);
+    expect(importers.filter((r) => r !== EXPLORE_READER)).toEqual([OUR_SERVICE_USER]);
   }, 30_000);
 });
 

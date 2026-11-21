@@ -30,6 +30,14 @@
 //   phone              boolean — the phone's single column
 //   onClose            () => void — "Continue later", "Return to Command Center"
 //   overlayStack       the hub's overlay stack, or null
+//   startNow           boolean (default false; B6a X-5) — with mode 'item' and an `item` whose question is not empty, the
+//                      open is sent on mount with that question (and `direction`, when given); the story preview is not
+//                      shown first. While it runs: the opening line. An existing investigation shows Continue; a
+//                      refusal, a failure, the daily limit or the gate shows the story preview with the question kept, so
+//                      the player can try again (a retry re-sends the same request id). Gated before mount: the preview
+//                      only, nothing sent.
+//   words              string (default ''; B6a X-5b) — with mode 'start', the "your own words" box opens holding it.
+//                      Nothing is sent until the player continues.
 
 import React, { useEffect, useId, useRef, useState } from 'react';
 import SignalDropEntry from '../SignalDrop/SignalDropEntry';
@@ -59,6 +67,7 @@ const initialView = (mode, item, sessionId) => {
 export default function SharedResearchSheetBody({
   open = true, mode = 'start', item = null, direction = null, sessionId = null, stories = [],
   agentName = null, agentId = null, equippedListLabel = null, gated = false, phone = false, onClose = () => {}, overlayStack = null,
+  startNow = false, words = '',
 }) {
   const sr = useSharedResearch({ gated });
   const name = agentNameOf(agentName, COPY.agentFallback);
@@ -69,7 +78,11 @@ export default function SharedResearchSheetBody({
   const [view, setView] = useState(() => initialView(mode, item, sessionId));
   const [story, setStory] = useState(mode === 'item' ? item : null);
   const [drop, setDrop] = useState(null);
-  const [prefill, setPrefill] = useState('');
+  // X-5b: the own-words box opens holding `words` (mode 'start' only); absent, it opens empty as before
+  const [prefill, setPrefill] = useState(() => (mode === 'start' && typeof words === 'string' ? words : ''));
+  // X-5: the open is sent at once, from the item's own question; the preview waits unless it answers no investigation
+  const startQuestion = typeof item?.question === 'string' ? item.question.trim() : '';
+  const [starting, setStarting] = useState(() => startNow === true && mode === 'item' && Boolean(item) && !gated && startQuestion.length > 0);
   const [preselect, setPreselect] = useState(null);
   const [adoptEpoch, setAdoptEpoch] = useState(0);
   const [earlier, setEarlier] = useState(null); // { returnTo } while the earlier investigation is on screen (ruling P-2)
@@ -105,6 +118,16 @@ export default function SharedResearchSheetBody({
   useEffect(() => {
     if (mode === 'session' && sessionId) sr.loadSession(sessionId);
     else sr.loadList();
+    // X-5: the item's open, sent now. An answer that opened nothing (a refusal, a failure, the gate) puts the story
+    // preview on screen with the question kept; an opened investigation (new or existing) goes to its work. No answer
+    // (null) means this open was not sent because one is already in flight (a development re-run of this effect): the
+    // one in flight decides.
+    if (starting) {
+      const given = typeof direction === 'string' ? direction.trim() : '';
+      sr.openItem({ itemRef: item.itemRef, question: startQuestion, direction: given || null }).then((answer) => {
+        if (answer && live.current && !(answer.ok && answer.body?.session)) setStarting(false);
+      });
+    }
     // After the sheet's own registration (a parent's effect runs after this child's): the modal then sits ABOVE the sheet
     // in the stack, so its close hands focus back into the sheet (review c2; HuddleSheetBody's microtask precedent).
     if (mode === 'signaldrop' && !gated) Promise.resolve().then(() => { if (live.current) openDropModal(null); });
@@ -173,7 +196,9 @@ export default function SharedResearchSheetBody({
   const backToCurrent = async () => { const to = earlier?.returnTo; if (!to) return; const answer = await sr.loadSession(to); if (answer?.ok) setEarlier(null); };
 
   let body;
-  if (view === 'item' && story) {
+  if (view === 'item' && story && starting) {
+    body = <Running>{COPY.opening}</Running>; // X-5: the open is running; the preview is not drawn first
+  } else if (view === 'item' && story) {
     body = <ItemPreview key={story.itemRef?.recordId} sr={sr} story={story} direction={direction} gated={sr.gated} phone={phone} onBack={() => toStart()} onClose={onClose} />;
   } else if (view === 'drop' && drop) {
     body = <DropPreview key={drop.dropId} sr={sr} drop={drop} gated={sr.gated} phone={phone} onBack={() => toStart()} onClose={onClose} />;
