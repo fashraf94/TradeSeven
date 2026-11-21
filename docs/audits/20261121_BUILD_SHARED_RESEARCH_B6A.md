@@ -155,7 +155,7 @@ No choices are drawn and nothing is sent but the one read. Two jsdom rows pin it
 | The sheet's existing test files | the four `SharedResearchSheetBody.*.jsdom` files and `useSharedResearch.uncertain` **unedited**, at their baseline counts (156 · 37 · 34 · 38 · 2) |
 | Mutants | **43 / 43** killed (§5) |
 | Review | two lenses and one refuter. 21 findings: 11 fixed, 9 kept with reasons, 1 settled by the Linux suite (A-7). One fix regressed (RF-2); the refuter found it, and it was fixed (§6) |
-| For the founder | two questions, Q-A and Q-B, each recommended "no" (§9) |
+| For the founder | Q-A **ruled Nov 21: thesis saves only** (as built). Q-B open, recommended "no" (§9) |
 
 ---
 
@@ -436,7 +436,7 @@ Lens A of the review checked this independently and found the same.
 | HB-3 | note | the read lists `open` for a story later unpublished, whose new `open` answers 404 | CONFIRMED | Note for the Explore chat (§1.1): continue with `mode: 'session'`. A FantasyTimes story behaves the same today. |
 | HB-4 | note | a builder whose record cannot be read reports `filled: null` | CONFIRMED (no code path produces it) | Kept. |
 | HB-5 | note | the saved screen shows "already saved", not the statement, on an idempotent save on this page; the ledger's `recovered` shows the page's input | CONFIRMED (also on main) | Kept: out of X-7's letter ("on a reopened investigation"). Founder question Q-B. |
-| A-1 / HB Q-a | blocker unless ruled | X-7 recorded the statement on **every** save, ledger included: a STOP-line area the waiver does not cover | CONFIRMED | **Fixed** `9d67eb32`: only the thesis builder's save records it (`store.js adoptionExtra`). The ledger's save is exactly main's: the parity golden now includes a FantasyTimes ledger save. Mutant A1 killed. The wider reading is founder question Q-A. |
+| A-1 / HB Q-a | blocker unless ruled | X-7 recorded the statement on **every** save, ledger included: a STOP-line area the waiver does not cover | CONFIRMED | **Fixed** `9d67eb32`: only the thesis builder's save records it (`store.js adoptionExtra`). The ledger's save is exactly main's: the parity golden now includes a FantasyTimes ledger save. Mutant A1 killed. The wider reading was founder question Q-A, ruled Nov 21: thesis saves only. |
 | HB Q-b | note | a `sample` story would open "From FantasyTimes"; the server does not read `sample` | CONFIRMED (not a defect) | Note for the Explore chat (§1.2). |
 | M1 | test gap | the `last.at` mutant survived some runs: the open and the close could share a millisecond | CONFIRMED | **Fixed:** a tick before each close. |
 | M2 | test gap | `words` used outside mode `start` survived | CONFIRMED | **Fixed:** a row. |
@@ -510,8 +510,8 @@ Minified `vite build` of the final code head `7f46415e` against `main` `cf35151b
 
 ## 9. Questions for the founder
 
-**Q-A. Should a ledger idea's save record its statement too?**
-- **Today:** X-7 is built for the **thesis builder's** save. Every thesis saved from now on records its statement on the session (own words, FantasyTimes, SignalDrop or Explore story), and the reopened saved screen shows it. The older "ledger" idea save is written exactly as on `main`.
+**Q-A. Should a ledger idea's save record its statement too?** — **Ruled by the founder (Nov 21): no, thesis saves only.** That is what is built; no change followed. The reasoning below is kept as the record.
+- **As built:** X-7 is built for the **thesis builder's** save. Every thesis saved from now on records its statement on the session (own words, FantasyTimes, SignalDrop or Explore story), and the reopened saved screen shows it. The older "ledger" idea save is written exactly as on `main`.
 - **Why not the ledger as well:** X-7's "A save now records…" could be read as every save. But the ledger's saved screen never shows the statement, and the waiver covers the schema number only (review A-1).
 - **Recommendation: no.** The builder mode is on, so every new investigation is a thesis builder.
 - **If yes:** a one-line change (`adoptIdea` passes the same `adoptionExtra`), plus flipping its row and the parity golden's ledger save.
@@ -552,6 +552,6 @@ Minified `vite build` of the final code head `7f46415e` against `main` `cf35151b
 
 **Bundle:** only the lazy Shared Research chunk changes, 149,453 → 149,957 B. The entry is identical apart from that chunk's hashed name, and the CSS is the same file.
 
-**Questions for the founder:** Q-A (record the statement on ledger saves too? recommended no) and Q-B (show it on an "already saved" answer? recommended no). Report §9.
+**Founder rulings and questions:** Q-A ruled Nov 21: the statement is recorded on thesis saves only, as built. Q-B is still open (show it on an "already saved" answer? recommended no). Report §9.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
