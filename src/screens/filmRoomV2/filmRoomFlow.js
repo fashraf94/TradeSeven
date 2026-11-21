@@ -239,8 +239,11 @@ export function linesOf(tape, domain = domainOf(tape), battle = null) {
 /**
  * The low mark (§5, FL-6): the player's lowest SCORED CHECK — the earliest wins a tie — with its value bound by
  * its path and its clock. `eligible` holds the day's rule: at least three scored checks, and the low is not the
- * line's last point. Whether it is drawn also depends on the chart (layoutOf: a label over a pin's touch area or
- * outside the chart is left out).
+ * line's lowest END. The line's last point is never the low; and the DRAWN FINAL takes part in the minimum (Amendment
+ * A DA-8, as Astra qualified it in DB-14) — but not in the count of three: a final that displays at or below the
+ * lowest check leaves no mark, since the line's lowest point is then its end ("Low −92" can't stand over a line
+ * that ends lower). A final above it changes nothing: the earliest tied check still wins. Whether the mark is drawn
+ * also depends on the chart (layoutOf: a label over a pin's touch area or outside the chart is left out).
  */
 export function lowOf(tape, lines = linesOf(tape)) {
   const rows = orderedRows(tape, 'total').filter(drawn);
@@ -250,14 +253,20 @@ export function lowOf(tape, lines = linesOf(tape)) {
   const points = lines.you.points;
   const last = points[points.length - 1];
   const isLast = Boolean(last && last.i === low.i && !last.final);
-  return { index: low.i, t: low.t, value: numberAt(tape, ['checks', low.i, 'scores', 'total']), clock: etClock(tape.checks[low.i].at), eligible: rows.length >= 3 && !isLast };
+  // the two as the reader compares them: the final in the key, the low in its label — their displayed hundredths
+  const shown = (v) => hundredthsOfShown(fmtPoints(v));
+  const end = points.find((p) => p.final);
+  const endAtOrBelow = Boolean(end && shown(end.v) !== null && shown(low.v) !== null && shown(end.v) <= shown(low.v));
+  return { index: low.i, t: low.t, value: numberAt(tape, ['checks', low.i, 'scores', 'total']), clock: etClock(tape.checks[low.i].at), eligible: rows.length >= 3 && !isLast && !endAtOrBelow };
 }
 
 /**
  * The player's line's height at an instant (§6), from its RUNS: inside a run, interpolated between the neighbouring
- * points of that run; outside every run — before the line, after it, or in a break where nothing is drawn — the
- * nearest point's height (the earlier on a tie). Never interpolated across a break (the review's CH-2: that would
- * be the join FL-7 forbids). With no line, the zero line.
+ * points of that run (the final point included, where it closes a run); before the line or after it, the nearest
+ * point's height. IN A BREAK — after the line has begun and before it ends, outside every run — the nearest SCORED
+ * CHECK's, from the check rows only: the final point is not a check (Amendment B DB-9, DA-3; Astra's F9). The earlier
+ * on a tie. Never interpolated across a break (the review's CH-2: that would be the join FL-7 forbids). With no
+ * line, the zero line.
  */
 export function heightAt(runs, t) {
   const points = runs.flat();
@@ -270,8 +279,12 @@ export function heightAt(runs, t) {
     }
     return run[0].v;   // a run of one point, at this instant
   }
-  let best = points[0];
-  for (const p of points) {
+  const ts = points.map((p) => p.t);
+  const inBreak = t > Math.min(...ts) && t < Math.max(...ts);
+  const checks = points.filter((p) => !p.final);
+  const pool = inBreak && checks.length ? checks : points;
+  let best = pool[0];
+  for (const p of pool) {
     const d = Math.abs(p.t - t); const e = Math.abs(best.t - t);
     if (d < e || (d === e && p.t < best.t)) best = p;
   }

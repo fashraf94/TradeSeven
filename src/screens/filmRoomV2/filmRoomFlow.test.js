@@ -229,7 +229,9 @@ describe('F-LOW — the low mark', () => {
   });
   it('the low as the line\'s last point: not shown; on a final day the line ends at the final point, so the last check is not its last point', () => {
     expect(lowOf(day([3, 2, 1, -4])).eligible).toBe(false);
-    expect(lowOf(day([3, 2, 1, -4], { final: true })).eligible).toBe(true);
+    // Amendment A DA-8 (fix round item 3): the final point counts in the minimum — so the final here is ABOVE the low
+    const above = day([3, 2, 1, -4], { final: true }); above.battle.final.total = 5;
+    expect(lowOf(above).eligible).toBe(true);
   });
   it('a label that would overlap a pin\'s touch area, or leave the chart, is left out; clear of both, it is drawn', () => {
     const t = day([0, -10, -40, -10, 0, 5], { step: 3_600_000 });   // 10 AM to 3 PM, the low at noon

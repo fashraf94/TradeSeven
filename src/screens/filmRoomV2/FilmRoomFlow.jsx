@@ -141,12 +141,28 @@ const hidden = { position: 'absolute', width: 1, height: 1, margin: -1, padding:
 
 // ── the chart (§5, §6) ──────────────────────────────────────────────────────
 
+/** A run of two points or more, as one SVG path through its points — and nothing past its ends (DB-7: butt caps). */
 function pathOf(run, lay) {
-  if (run.length === 1) {
-    const px = lay.x(run[0].t); const py = lay.y(run[0].v);
-    return `M${(px - 1).toFixed(1)} ${py.toFixed(1)} L${(px + 1).toFixed(1)} ${py.toFixed(1)}`;
-  }
   return run.map((p, k) => `${k ? 'L' : 'M'}${lay.x(p.t).toFixed(1)} ${lay.y(p.v).toFixed(1)}`).join(' ');
+}
+
+/** The line's stroke and its single points' dots (§5): the player's solid, the CPU's dashed. Caps are butt (DB-7). */
+const LINE = Object.freeze({
+  you: { path: { fill: 'none', stroke: C.ink, strokeWidth: 2.2, strokeLinecap: 'butt', strokeLinejoin: 'round' }, dot: { r: 2.4, style: { fill: C.ink } } },
+  cpu: { path: { fill: 'none', stroke: C.ink2, strokeWidth: 1.6, strokeDasharray: '5 4', strokeLinecap: 'butt' }, dot: { r: 2, style: { fill: C.ink2 } } },
+});
+
+/**
+ * One line's runs (Amendment B DB-7, Astra's F7): a run of two points or more is a path; a run of ONE scored check is
+ * a dot at its own instant — never a path, whose stub would reach across a neighbouring missing check; an isolated
+ * final point is drawn by its end dot (data-flow-end). Butt caps: no line's end reaches into the gap it stops at.
+ */
+function LineRuns({ line, who, lay }) {
+  return line.runs.map((run, k) => {
+    if (run.length > 1) return <path key={k} data-flow-line={who} d={pathOf(run, lay)} style={LINE[who].path} />;
+    if (run[0].final) return null;
+    return <circle key={k} data-flow-dot={who} cx={lay.x(run[0].t)} cy={lay.y(run[0].v)} r={LINE[who].dot.r} style={LINE[who].dot.style} />;
+  });
 }
 
 function FlowChart({ tape, flow, height, width, selectedN, onSelectGroup }) {
@@ -163,8 +179,8 @@ function FlowChart({ tape, flow, height, width, selectedN, onSelectGroup }) {
         {lay.guides.map((g) => <line key={g} data-flow-guide="" x1={0} x2={lay.width} y1={lay.y(g)} y2={lay.y(g)} style={{ stroke: C.hair, strokeWidth: 1 }} />)}
         <line data-flow-zero="" x1={0} x2={lay.width} y1={lay.zeroY} y2={lay.zeroY} style={{ stroke: tint('scrim', 0.24), strokeWidth: 1 }} />
         {sel ? <line data-flow-drop="" x1={sel.x} x2={sel.x} y1={sel.y + 14} y2={height} style={{ stroke: tint('teal', 0.55), strokeWidth: 1 }} /> : null}
-        {flow.lines.cpu ? flow.lines.cpu.runs.map((run, k) => <path key={`c${k}`} data-flow-line="cpu" d={pathOf(run, lay)} style={{ fill: 'none', stroke: C.ink2, strokeWidth: 1.6, strokeDasharray: '5 4', strokeLinecap: 'round' }} />) : null}
-        {flow.lines.you.runs.map((run, k) => <path key={`y${k}`} data-flow-line="you" d={pathOf(run, lay)} style={{ fill: 'none', stroke: C.ink, strokeWidth: 2.2, strokeLinecap: 'round', strokeLinejoin: 'round' }} />)}
+        {flow.lines.cpu ? <g data-flow-runs="cpu"><LineRuns line={flow.lines.cpu} who="cpu" lay={lay} /></g> : null}
+        <g data-flow-runs="you"><LineRuns line={flow.lines.you} who="you" lay={lay} /></g>
         {cpuEnd ? <circle data-flow-end="cpu" cx={lay.x(cpuEnd.t)} cy={lay.y(cpuEnd.v)} r="3" style={{ fill: C.bg, stroke: C.ink2, strokeWidth: 1.6 }} /> : null}
         {youEnd ? <circle data-flow-end="you" cx={lay.x(youEnd.t)} cy={lay.y(youEnd.v)} r="3.4" style={{ fill: C.ink }} /> : null}
         {lay.low && lay.low.shown ? <line data-flow-low-tick="" x1={lay.low.x} x2={lay.low.x} y1={lay.low.y + 1} y2={lay.low.y + 5} style={{ stroke: C.ink2, strokeWidth: 1.5 }} /> : null}

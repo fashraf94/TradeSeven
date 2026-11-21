@@ -9,6 +9,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import React from 'react';
 import FilmRoomFlow, { FLOW_LAYOUT } from './FilmRoomFlow.jsx';
+import { flowOf, layoutOf } from './filmRoomFlow.js';
 import { mounter, sep23Tape, clone, battleOf, sweepFlow, flowCopyDefects, sweepWords, quoteDefects } from './__fixtures__/filmRoomHarness';
 
 const m = mounter();
@@ -27,6 +28,9 @@ function mount(tape, props = {}) {
 }
 const text = (sel) => m.q(sel)?.textContent ?? null;
 const D = sep23Tape.etDate;
+const iso = (s) => `${D}T${s}:00.000Z`;
+const check = (seq, at, total, opponent = null) => ({ ...clone(sep23Tape.checks[0]), tickSeq: seq, tickId: `x:${seq}`, key: `seq:${seq}`, at, scores: total === null ? null : { active: total, banked: 0, total, opponent } });
+const ACTIVE = { status: 'active', completedAt: null, final: null, result: { value: null, basis: 'not_completed' }, completionMessage: null };
 const MARGIN = '[data-flow-agg="difference(the two displayed final scores)"]';
 const clean = (tape, extra = {}) => {
   const docs = { tape, battle: battleOf(tape), ...extra };
@@ -191,5 +195,60 @@ describe('item 2 — DB-8 / DB-6 on the front', () => {
     } finally {
       if (was === undefined) delete process.env.TZ; else process.env.TZ = was;
     }
+  });
+});
+
+describe('item 3 — F7: a single scored check is a point (DB-7)', () => {
+  it('F7: scores 8 / missing / 8 at 10:00, 10:01 and 10:02 AM ET, 350 px wide — no drawn path crosses the missing instant', () => {
+    const t = clone(sep23Tape);
+    t.isFinalDay = false;
+    t.battle = clone(ACTIVE);
+    t.checks = [check(1, iso('14:00'), 8, 2), check(2, iso('14:01'), null), check(3, iso('14:02'), 8, 2)];
+    t.actions = [];
+    t.directives = [];
+    t.score.lastCheck = { ...t.score.lastCheck, tickSeq: 3, at: iso('14:02'), total: 8, opponent: 2 };
+    stubChartWidth(FLOW_LAYOUT.phone.chartWidth);
+    mount(t);
+    const x = layoutOf(flowOf(t, { battle: battleOf(t) }), FLOW_LAYOUT.phone.chartWidth, FLOW_LAYOUT.phone.chartHeight).x;
+    const missX = x(Date.parse(iso('14:01')));
+    const spans = m.qa('path[data-flow-line]').map((p) => {
+      const xs = [...p.getAttribute('d').matchAll(/[ML]\s*(-?[\d.]+)/g)].map((mm) => Number(mm[1]));
+      return [Math.min(...xs), Math.max(...xs)];
+    });
+    expect(spans.filter(([a, b]) => a <= missX && missX <= b)).toEqual([]);
+    // both recorded scores can still be located: a dot at each one's own instant
+    const at = (s) => Math.round(x(Date.parse(iso(s))) * 10) / 10;
+    expect(m.qa('[data-flow-dot="you"]').map((c) => Math.round(Number(c.getAttribute('cx')) * 10) / 10)).toEqual([at('14:00'), at('14:02')]);
+  });
+});
+
+describe('item 3 — DB-7: dots and butt caps', () => {
+  it('a fifteen-minute break at 280 px wide stays visible — each line\'s stroke stops at its last check (butt caps)', () => {
+    const t = clone(sep23Tape);
+    t.isFinalDay = false;
+    t.battle = clone(ACTIVE);
+    t.checks = [check(1, iso('13:45'), 4, 1), check(2, iso('14:00'), 6, 1), check(3, iso('14:07'), null), check(4, iso('14:15'), 6, 1), check(5, iso('14:30'), 8, 1)];
+    t.actions = [];
+    t.directives = [];
+    t.score.lastCheck = { ...t.score.lastCheck, tickSeq: 5, at: iso('14:30'), total: 8, opponent: 1 };
+    stubChartWidth(280);
+    mount(t);
+    for (const who of ['you', 'cpu']) {
+      const paths = m.qa(`path[data-flow-line="${who}"]`);
+      expect(paths, who).toHaveLength(2);
+      expect(paths.every((p) => /stroke-linecap:\s*butt/.test(p.getAttribute('style'))), who).toBe(true);
+      const xs = (p) => [...p.getAttribute('d').matchAll(/[ML]\s*(-?[\d.]+)/g)].map((mm) => Number(mm[1]));
+      expect(Math.min(...xs(paths[1])) - Math.max(...xs(paths[0])), who).toBeGreaterThanOrEqual(8);
+    }
+    expect(m.q('[data-flow-dot]')).toBeNull();
+    clean(t);
+  });
+  it('an isolated final point is drawn once, by its end dot — never also as a single-check dot', () => {
+    const t = clone(sep23Tape);
+    t.checks[22].scores = null;   // the last check scoreless: the final stands alone
+    stubChartWidth(FLOW_LAYOUT.phone.chartWidth);
+    mount(t);
+    expect(m.qa('[data-flow-end="you"]')).toHaveLength(1);
+    expect(m.q('[data-flow-dot]')).toBeNull();
   });
 });

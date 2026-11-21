@@ -6,7 +6,7 @@
 // Amendment A (DA-4, DA-8, DA-9, DA-11, DA-15) and Amendment B (DB-1, DB-2, DB-6 – DB-9, DB-14).
 
 import { describe, it, expect } from 'vitest';
-import { flowOf, headingOf, keyOf, linesOf, isFinalDayOf, readsAsFinal, layoutOf, panelOf, domainOf } from './filmRoomFlow.js';
+import { flowOf, headingOf, keyOf, linesOf, lowOf, heightAt, isFinalDayOf, readsAsFinal, layoutOf, panelOf, domainOf } from './filmRoomFlow.js';
 import { sessionOf, etClock } from './filmRoomModel';
 import sep23Tape from './__fixtures__/sep23.tape.json';
 
@@ -311,5 +311,86 @@ describe('item 2 — DB-8: no time basis, no chart; with a session, the calendar
     expect(f.axis).toEqual(['9:30 AM', '12:45 PM', '4:00 PM']);
     expect(f.pins).toHaveLength(5);
     expect(etClock(new Date(f.domain.endMs).toISOString())).toBe('4:00 PM');
+  });
+});
+
+describe('item 3 — F9: two placement rules made exact (DB-9)', () => {
+  it('F9, case 1 (DA-3): a pin in a break takes the nearest SCORED CHECK — 3:55 PM between +80 at 2:30 PM and the isolated final +5 sits at +80', () => {
+    const t = clone(sep23Tape);   // the final day (isFinalDay true, completed)
+    t.checks = [check(1, iso('18:30'), 80, 10), check(2, iso('19:30'), null)];
+    t.battle.final = { total: 5, opponent: 1, at: iso('20:05') };
+    t.actions = [];
+    t.directives = [directive(iso('19:55'))];
+    const f = flowOf(t, { battle: battleOf(t) });
+    // the control: one scored check, the break, then the final alone at the axis's end
+    expect(f.lines.you.runs.map((r) => r.map((p) => [p.v, Boolean(p.final)]))).toEqual([[[80, false]], [[5, true]]]);
+    expect(f.pins[0].v).toBe(80);
+  });
+  it('F9, case 2 — DA-2 as clarified (DB-9): a 4:30 PM scored check extends the drawn axis; a 4:10 PM directive sits AT 4:10 PM (passes at both heads)', () => {
+    const t = clone(sep23Tape);
+    t.isFinalDay = false;
+    t.battle = clone(ACTIVE);
+    t.checks = [check(1, iso('19:00'), 10, 4), check(2, iso('20:30'), 12, 5)];
+    t.actions = [];
+    t.directives = [directive(iso('20:10'))];
+    const f = flowOf(t, { battle: battleOf(t) });
+    expect(f.domain.endMs).toBe(Date.parse(iso('20:30')));
+    expect(f.pins[0].frac).toBeCloseTo(400 / 420, 10);
+  });
+});
+
+describe('item 3 — DB-9: the ordinary placements stand beside the two made exact', () => {
+  it('inside a run: interpolated between its two checks; inside the run the final point closes, toward the final', () => {
+    const t = clone(sep23Tape);
+    t.checks = [check(1, iso('18:00'), 10, 1), check(2, iso('19:00'), 20, 1)];
+    t.battle.final = { total: 40, opponent: 1, at: iso('20:05') };
+    t.actions = [];
+    t.directives = [directive(iso('18:30'), 0), directive(iso('19:30'), 1)];
+    const f = flowOf(t, { battle: battleOf(t) });
+    expect(f.lines.you.runs.map((r) => r.map((p) => p.v))).toEqual([[10, 20, 40]]);
+    expect(f.pins.map((p) => p.v)).toEqual([15, 30]);
+  });
+  it('a pin filed before the open: at the axis\'s edge (frac 0), at the line\'s first point\'s height', () => {
+    const t = clone(sep23Tape);
+    t.actions = [];
+    t.directives = [directive('2026-09-23T00:30:00.000Z')];
+    const f = flowOf(t, { battle: battleOf(t) });
+    expect([f.pins[0].frac, f.pins[0].v]).toEqual([0, 11]);
+  });
+  it('heightAt: in a break, the final point is no candidate — before and after the line, the nearest point is', () => {
+    const runs = [[{ t: 0, v: 80 }], [{ t: 100, v: 5, final: true }]];
+    expect([heightAt(runs, 90), heightAt(runs, 50), heightAt(runs, -10), heightAt(runs, 120)]).toEqual([80, 80, 80, 5]);
+    expect(heightAt([[{ t: 0, v: 1 }, { t: 10, v: 3 }], [{ t: 30, v: 9 }, { t: 40, v: 7, final: true }]], 25)).toBe(9);   // a check on each side: the nearer
+  });
+});
+
+describe('item 3 — DA-8: the low counts the drawn final (as Astra qualified it, DB-14)', () => {
+  /** A final day's checks 10, −5, 3, 2 — the low −5 at 10:15 AM — and a final total of `fin` (no final: an earlier day). */
+  const day = (totals, fin) => {
+    const t = clone(sep23Tape);
+    t.checks = totals.map((v, i) => check(i + 1, new Date(Date.parse(iso('14:00')) + i * 900_000).toISOString(), v, 1));
+    t.actions = []; t.directives = [];
+    if (fin === undefined) { t.isFinalDay = false; t.battle = clone(ACTIVE); } else t.battle.final = { total: fin, opponent: 1, at: iso('20:05') };
+    return t;
+  };
+  const low = (t) => lowOf(t, linesOf(t, domainOf(t), battleOf(t)));
+  it('the final below the lowest check: no mark', () => {
+    expect(low(day([10, -5, 3, 2], -8))).toMatchObject({ index: 1, eligible: false });
+  });
+  it('the final equal to it — or displaying equal (−5.004 shows −5) — no mark', () => {
+    expect(low(day([10, -5, 3, 2], -5)).eligible).toBe(false);
+    expect(low(day([10, -5, 3, 2], -5.004)).eligible).toBe(false);
+  });
+  it('the final above it: the mark, at the earliest tied check — and drawn where its label is clear', () => {
+    const t = day([10, -5, 3, -5, 2], 0);
+    expect(low(t)).toMatchObject({ index: 1, eligible: true, clock: '10:15 AM' });
+    const lay = layoutOf(flowOf(t, { battle: battleOf(t) }), 600, 230, 'Low −5 · 10:15 AM');
+    expect(lay.low).toMatchObject({ shown: true, overlaps: false, leaves: false });
+  });
+  it('the final never counts toward three: two scored checks and a final above them — no mark', () => {
+    expect(low(day([10, -5], 20)).eligible).toBe(false);
+  });
+  it('an earlier day (no final point): the rule as before — the low −5, not the last point, three checks: the mark', () => {
+    expect(low(day([10, -5, 3, 2]))).toMatchObject({ index: 1, eligible: true });
   });
 });
