@@ -1238,7 +1238,7 @@ The rules suite was not run again at `9301f87f`: it reads `firestore.rules` only
 
 **What the proof found on the way, all fixed with rows.** The one refuter found an announcement updated from a day whose data was refused, when another book's backfill reached that day ($199.94 paid; RF-1). The soak found a founder's correction, waiting on one ledger, posting again on the other at every close — $0 in its histories, and **$93.97** without approval once a late split came in between (pre-existing since T2D-05; A-4 keeps the window open longer). The battery's survivors showed two rows that tested less than their titles said, and one loop of mine that was redundant (removed).
 
-**How it is proved.** Astra's five rows, verbatim (C01's expectation changed under A-1), and 30 more of her named histories and variants through her own harness — 21 red at `5fa63271`, 14 green there (the controls, and the A-1 updates the old code already paid). The oracle now models A-1 and A-2 from the inputs alone, matches every posting to one exact, unconsumed request and checks its net before any excuse; Astra's fabricated posting is refused. A new generator mode lists every on-time row 1–5 sessions ahead in 15 shapes; on the old product its first 120 histories fail 59 times, on the new one none. **The soak at the frozen head: 5,358 histories, 103,650 closes, no failure. The battery: 145 mutants, 144 killed; the one survivor, NL2c, is last round's proven equivalent.** The full Linux suite, lint, build and the rules suite pass (§12.11).
+**How it is proved.** Astra's five rows, verbatim (C01's expectation changed under A-1), and 30 more of her named histories and variants through her own harness — 21 red at `5fa63271`, 14 green there (the controls, and the A-1 updates the old code already paid — C01 among them: as Astra wrote it, expecting $0, it was red there at her figure, $199.94, which A-1 makes the right answer). The oracle now models A-1 and A-2 from the inputs alone, matches every posting to one exact, unconsumed request and checks its net before any excuse; Astra's fabricated posting is refused. A new generator mode lists every on-time row 1–5 sessions ahead in 15 shapes; on the old product its first 120 histories fail 59 times, on the new one none. **The soak at the frozen head: 5,358 histories, 103,650 closes, no failure. The battery: 145 mutants, 144 killed; the one survivor, NL2c, is last round's proven equivalent.** The full Linux suite, lint, build and the rules suite pass (§12.11).
 
 **What changed for complete, on-time, unambiguous data:** nothing. A row listed ahead and never changed pays on its date at full quality, as before (`H-baseline`); the end-to-end dump is byte-identical and the differentials identical.
 
@@ -1318,7 +1318,7 @@ None is a change for complete, on-time, unambiguous data.
 
 | Row | Was | Now | Why |
 |---|---|---|---|
-| `astraConfirmation.test.js` C01 `H-revise` (Astra's, verbatim otherwise) | $0 | **$199.94**, full quality | A-1: the $2 listed before the date is the announcement |
+| `astraConfirmation.test.js` C01 `H-revise` (Astra's, verbatim otherwise) | $0 | **$199.94**, full quality | A-1: the $2 listed before the date is the announcement. The old code already paid $199.94, so under A-1 this row passes at `5fa63271` too; it cannot fail there |
 | `corporateActionLateAsks.refuter.test.js` R-5 (conflict ruling under a sold holding's doubt) | a clean backfill cleared the doubt at S6; the ruling posted $99.97 at S7 | the backfill is evidence; the founder's `coverage_gap` ruling clears it at S7; $99.97 at S8, once | A-4 |
 | refuter R-5 (a ruled correction under the doubt) | $99.97 at S7 when the backfill cleared it | nothing at S7; the founder's ruling; $99.97 at S8 | A-4 |
 | refuter R-4 | a clean backfill listing the rejected 5/4 cleared the doubt, joined the closed path; $124.96 at S7 | the backfill is evidence (`rows: 2`); the proposal stays $99.97, refused (`date_uncovered`); the founder's `row` ruling takes the 5/4 and clears the doubt; $124.96 at S8 | A-4: R-4's join and clearing are gone |
@@ -1453,8 +1453,8 @@ It also confirmed, with probes: the date-close comparison runs before any held r
 
 | Check | At | Result |
 |---|---|---|
-| Astra's five rows, verbatim (C01 changed) | `5fa63271` · `90e2b220` | 5 red (her figures: $199.94, $124.96, $99.97, $99.97, 404) · **5 pass** |
-| Her named histories and variants (35 rows), the oracle rows (9), RF-1 (5), the harness rows (7) | `90e2b220` | **56 pass** (the 35 at `5fa63271`: 21 red, 14 green) |
+| Astra's five rows, verbatim (C01 changed) | `5fa63271` · `90e2b220` | as she wrote them, all five red at `5fa63271` at her figures ($199.94 where she expected $0, $124.96, $99.97, $99.97, 404); with C01 changed under A-1 to $199.94 — what the old code paid — **C01 passes at `5fa63271`, C02 to C05 red** (re-measured on the final rows) · **5 pass** |
+| Her named histories and variants (35 rows), the oracle rows (9), RF-1 (5), the harness rows (7) | `90e2b220` | **56 pass** (the 35 at `5fa63271`, red first and again on the final rows: 21 red, 14 green) |
 | The Practice Field folder (Windows) | `90e2b220` | **1,467 / 1,467** |
 | The end-to-end dump | `90e2b220` | byte-identical to `main`'s (the pinned `abcf8420…ed9`, after the parse-report check) |
 | Differentials against `cf35151b` (Astra's probes) | `90e2b220` | `astra-differential` **36/36** (35 scenarios + the prompt group), `astra-cron-trace` **40/40**, planted-backfill **4/4** (planted 100 shares, vendor 200, cash $90,000; `off` and `on`) |
