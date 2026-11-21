@@ -43,22 +43,22 @@ Item 8 was committed before item 4 so the front's tests could use its sweeps; it
 
 | # | Where it is built, or why it needs no code |
 |---|---|
-| FL-1 | No code: the purpose. The counts' definitions (§8) are fixed in `countsOf` (`filmRoomFlow.js:391`) so a later build counts the same thing across games. |
+| FL-1 | No code: the purpose. The counts' definitions (§8) are fixed in `countsOf` (`filmRoomFlow.js:395`) so a later build counts the same thing across games. |
 | FL-2 | The front is heading, key, chart, legend, panel, counts, cards line, door (`FilmRoomFlow.jsx:330`); no agent sentence under the result. |
-| FL-3 | The opponent's line from `checks[].scores.opponent`, drawn only under `score.opponentBasis === 'cpu_portfolio'` with a number to show (`keyOf`, `linesOf`: `filmRoomFlow.js:112`, `:188`). No tape field added. |
-| FL-4 | `groupPins(pins, width)` (`:311`): 44 px from the group's FIRST pin, at the measured width; the panel's stepper (`FilmRoomFlow.jsx:262`). |
-| FL-5 | `choosePins` (`:290`): agent's swaps, directives, other swaps, each in time order; shown and numbered in time order; the rest counted. |
-| FL-6 | `lowOf` (`:214`) and `layoutOf` (`:450`): the lowest scored check, the earliest on a tie; ≥ 3 scored checks; not the line's last point; left out over a pin's touch area or outside the chart. |
+| FL-3 | The opponent's line from `checks[].scores.opponent`, drawn only under `score.opponentBasis === 'cpu_portfolio'` with a number to show (`keyOf`, `linesOf`: `filmRoomFlow.js:112`, `:192`). No tape field added. |
+| FL-4 | `groupPins(pins, width)` (`:315`): 44 px from the group's FIRST pin, at the measured width; the panel's stepper (`FilmRoomFlow.jsx:262`). |
+| FL-5 | `choosePins` (`:294`): agent's swaps, directives, other swaps, each in time order; shown and numbered in time order; the rest counted. |
+| FL-6 | `lowOf` (`:218`) and `layoutOf` (`:454`): the lowest scored check, the earliest on a tie; ≥ 3 scored checks; not the line's last point; left out over a pin's touch area or outside the chart. |
 | FL-7 | `orderedRows` / `runsOf` (`:129`): the lines start at the first check; any check with no score or no instant breaks them. |
-| FL-8 | `allPinsOf` (`:274`): `exitMakerOf(a).by === 'agent'` filled, any other maker hollow; `MAKER_KEYS` (`:257`) the maker's words from the mechanism only. |
+| FL-8 | `allPinsOf` (`:278`): `exitMakerOf(a).by === 'agent'` filled, any other maker hollow; `MAKER_KEYS` (`:261`) the maker's words from the mechanism only. |
 | FL-9 | Two tiles only (`countsOf`). |
 | FL-10 | "directives filed" (`cardState === 'committed'`); the copy pins "acted on" absent (`filmRoomCopy.inventory`). |
 | FL-11 | Not built: no idea row. |
 | FL-12 | No number-kind mark on the front (`sweepFlow` fails on one); every number bound (`data-flow-num` path + class, `data-flow-agg` declared aggregate). |
-| FL-13 | `fmtPoints`, `fmtPrice`, `etClock` (through `etWhen` where a filing fell on another day — §3 Q-6). |
+| FL-13 | `fmtPoints`, `fmtPrice`, `etClock` (through `etWhen` where a filing fell on another day — §3 item 11, §10 Q-6). |
 | FL-14 | `FILM_ROOM_FLOW_MODE = 'allowlist'` (`featureFlags.js:3678`), resolved per owner through the cards' verdict seam (`FilmRoomScreenV2.jsx:265`). |
 | FL-15 | No code: a day with no tape shows the existing no-tape page (the opening rule requires a written tape). |
-| FL-16 | The cards line (`FilmRoomFlow.jsx:363`, `FilmRoomScreenV2.jsx:421`); the card regions stay on the tape. |
+| FL-16 | The cards line (`FilmRoomFlow.jsx:363`, `FilmRoomScreenV2.jsx:425`); the card regions stay on the tape. |
 
 ## 3. Where the build chose between the mock-up and the spec, beyond the spec's §12
 
@@ -96,7 +96,7 @@ Item 8 was committed before item 4 so the front's tests could use its sweeps; it
 
 ## 6. Fences
 
-- **Not in the diff:** anything under `api/`; `firestore.rules`, `firestore.indexes.json`, `vercel.json`, `package.json`, `package-lock.json`; `FilmRoomGlance.jsx`, `FilmRoomStudy.jsx`, `FilmRoomDeepDive.jsx`, `FilmRoomCheckDetail.jsx`, `FilmRoomRoute.jsx`, `filmRoomData.js`, `filmRoomCards.js`; `src/components/CommandCenter/**` and the Practice Field; every golden (`src/screens/__golden__/*.html`) and fixture (`__fixtures__/*.json`); every BUILD_RULES §1 file. Verified on the diff (§7).
+- **Not in the diff:** anything under `api/`; `firestore.rules`, `firestore.indexes.json`, `vercel.json`, `package.json`, `package-lock.json`; `FilmRoomGlance.jsx`, `FilmRoomStudy.jsx`, `FilmRoomDeepDive.jsx`, `FilmRoomCheckDetail.jsx`, `FilmRoomRoute.jsx`, `filmRoomData.js`, `filmRoomCards.js`; `src/components/CommandCenter/**` and the Practice Field; every golden (`src/screens/__golden__/*.html`) and fixture (`__fixtures__/*.json`); every BUILD_RULES §1 file. Verified on the diff (§7, the fences row).
 - **In the diff, as allowed:** `featureFlags.js` (the flag), `filmRoomGate.js` (the two functions), `filmRoomModel.js` (seven declarations only), `filmRoomCopy.js` (`flow`), `FilmRoomScreenV2.jsx`, `FilmRoomCardRegions.jsx` (CF-5 only), the harness. `filmRoomBack.js` was not needed: "Game flow" lives in the copy table.
 - **New files:** `filmRoomFlow.js`, `FilmRoomFlow.jsx` and their tests; the docs.
 - **Five existing suites** gained a `FILM_ROOM_FLOW_MODE` `'off'` pin in their feature-flag mock and nothing else: `FilmRoomCards.jsdom`, `FilmRoomRoute.golden.jsdom`, `FilmRoomRoute.untaped.jsdom`, `FilmRoomScreenV2.cardsOff.golden.jsdom` (four lines each), `FilmRoomSubjectLine.jsdom` (a seven-line mock block: it had none). They test the tape as it was; the flag merges at `'allowlist'`, which would open their admitted owners on the front. No assertion changed.
@@ -115,6 +115,7 @@ Item 8 was committed before item 4 so the front's tests could use its sweeps; it
 | `vite build` | the same tree | **exit 0** (17 s; the usual chunk-size warnings) |
 | `vite build` of the pushed head (this report's commit, docs only) | the same tree | recorded in the PR's description (this commit cannot hold its own run) |
 | The mutant battery | Windows, four LF `git archive` trees of `e2783b2b` (the frozen code; `bed627b5` adds one test row), each a shard; each mutant applied exactly once (else BROKEN), its rows run with a fresh JSON report, judged KILLED only on a non-zero exit WITH ≥ 1 failed assertion, the file restored and checked | **60 / 60 killed** (59 on the first pass; the survivor, the day picker's key, killed by the row `bed627b5` adds); a clean baseline of the 8 files (147 rows) first; every tree's six mutated files byte-identical to the commit afterwards |
+| The fences | `git diff --name-only origin/main...HEAD`: 30 files (+4,535 / −26) | **none fenced**: nothing under `api/`, no rules, indexes, `vercel.json` or `package*.json`, none of the seven untouchable screen files, nothing of the hub's or the Practice Field's, no golden (`__golden__/*.html`) or fixture (`__fixtures__/*.json`), no BUILD_RULES §1 file — the only `__fixtures__/` entries are the harness and its self-test, both allowed |
 | The front in a real browser | headless Edge (playwright-core) on a scratch fixture page served by vite, at 390 × 844, 320 × 568 and 1440 × 860, the app's CSS and font stack (Segoe UI here) | the chart lays out at **350 px at 390** and **296 px at 320** (639 on the 1440 desktop) — the widths F-FIXTURE's groups are pinned at; no horizontal scroll; the low mark, the quotations and the stepper looked at in screenshots |
 
 **Earlier runs:** the same four checks passed on Linux at `0c28084d` (1,593 files, 0 failing; rules 839 / 839) and `lint:gate` and `vite build` at `06450a82`. On Windows, the Film Room folder (39 files) passes at 6 workers; under the default 20 workers three jsdom suites (FilmRoomScreenV2.jsdom, FilmRoomFlow.screen, FilmRoomStudy.replay.writer) timed out rows under load and each passed alone — the Linux run at 8 workers is the record, and the new screen suite now carries the sibling suites' 30 s row bound.
