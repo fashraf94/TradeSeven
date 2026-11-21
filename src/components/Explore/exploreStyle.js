@@ -89,7 +89,7 @@ export const rowBtnStyle = {
 export const EXPLORE_CSS = `
 .ftx-root, .ftx-root *, .ftx-root *::before, .ftx-root *::after,
 .ftx-portal, .ftx-portal *, .ftx-portal *::before, .ftx-portal *::after { box-sizing: border-box; }
-.ftx-root { min-width: 0; color: ${T.ink}; }
+.ftx-root { min-width: 0; color: ${T.ink}; overflow-anchor: none; }
 .ftx-root :focus-visible, .ftx-portal :focus-visible { outline: 2px solid ${T.teal}; outline-offset: 2px; }
 .ftx-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .ftx-btn { transition: filter .15s ease; }

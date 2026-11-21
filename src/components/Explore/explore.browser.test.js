@@ -23,10 +23,10 @@ const ROW = 120_000;
 const SIZES = [[1280, 900], [393, 852], [320, 700]];
 let browser;
 
-async function sceneAt(scene, [w, h]) {
+async function sceneAt(scene, [w, h], delay = 0) {
   const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 1, isMobile: w < 768, hasTouch: w < 768 });
   const page = await ctx.newPage();
-  await page.goto(`${BASE}/?exploreFixture=${scene}&delay=0`, { waitUntil: 'domcontentloaded', timeout: ROW });
+  await page.goto(`${BASE}/?exploreFixture=${scene}&delay=${delay}`, { waitUntil: 'domcontentloaded', timeout: ROW });
   await page.waitForSelector('[data-explore-tab]', { timeout: ROW });
   await page.waitForTimeout(700); // the page's own entrance animation (framer, 0.3 s) settles
   return { ctx, page };
@@ -117,25 +117,31 @@ describe.skipIf(!BASE)('Explore in a real browser (spec §9 checks 1–5)', () =
     }, ROW * 3);
 
     it(`${w}×${h}: the walk — Work this idea opens the sheet, close leaves scrollY and returns focus; Continue research then`, async () => {
-      const { ctx, page } = await sceneAt('walk', size);
+      // every answer 600 ms late, so the close can be measured before the read after it lands
+      const { ctx, page } = await sceneAt('walk', size, 600);
       try {
-        await page.click('[data-explore-card="sample-ai-buildout"] [data-explore-card-read]');
+        await page.click('[data-explore-card="sample-ai-buildout"] [data-explore-card-primary="read"]');
         await page.waitForSelector('[data-explore-primary]', { timeout: ROW });
         await page.fill('[data-explore-question-input]', 'Which chip suppliers name a data-center buyer in a filing?');
         await page.evaluate(() => document.querySelector('[data-explore-primary]').scrollIntoView({ block: 'center' }));
         await page.waitForTimeout(250);
-        const before = await page.evaluate(() => window.scrollY);
+        const before = await page.evaluate(() => ({ y: window.scrollY, top: Math.round(document.querySelector('[data-explore-primary]').getBoundingClientRect().top) }));
         await page.click('[data-explore-primary]');
         await page.waitForSelector('[data-explore-sheet-close]', { timeout: ROW });
         await page.waitForSelector('[data-shared-research-body]', { timeout: ROW });
         await page.waitForTimeout(800);
         expect(await page.evaluate(() => document.activeElement?.hasAttribute('data-explore-sheet-close') ?? false)).toBe(true);
-        expect(await page.evaluate(() => window.scrollY)).toBe(before);
+        expect(await page.evaluate(() => window.scrollY)).toBe(before.y);
         await page.click('[data-explore-sheet-close]');
         await page.waitForSelector('[data-explore-sheet-overlay]', { state: 'detached', timeout: ROW });
+        // the close itself: the page where it was, focus on the opener, the read not yet answered (form A still)
+        const atClose = await page.evaluate(() => ({ y: window.scrollY, focus: document.activeElement?.hasAttribute('data-explore-primary') ?? false, form: document.querySelector('[data-explore-panel]')?.dataset.explorePanel }));
+        expect(atClose).toEqual({ y: before.y, focus: true, form: 'A' });
         await page.waitForFunction(() => document.querySelector('[data-explore-panel]')?.dataset.explorePanel === 'B', null, { timeout: ROW });
-        const after = await page.evaluate(() => ({ y: window.scrollY, focus: document.activeElement?.dataset?.explorePrimary ?? null, label: document.querySelector('[data-explore-primary]')?.textContent.trim() }));
-        expect(after).toEqual({ y: before, focus: 'continue', label: 'Continue research' });
+        await page.waitForTimeout(100);
+        // the read landed: form B above the SAME button, kept where it was on screen
+        const after = await page.evaluate(() => ({ top: Math.round(document.querySelector('[data-explore-primary]').getBoundingClientRect().top), focus: document.activeElement?.dataset?.explorePrimary ?? null, label: document.querySelector('[data-explore-primary]')?.textContent.trim() }));
+        expect(after).toEqual({ top: before.top, focus: 'continue', label: 'Continue research' });
         await page.click('[data-explore-back]');
         await page.waitForSelector('[data-explore-screen="home"]:not([hidden])', { timeout: ROW }).catch(() => {});
         const cardState = await page.evaluate(() => document.querySelector('[data-explore-card="sample-ai-buildout"] [data-explore-state]')?.textContent.trim());

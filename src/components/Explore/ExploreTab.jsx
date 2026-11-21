@@ -63,9 +63,22 @@ export default function ExploreTab({ explore = null, onOpenResearch, stocksData 
     focusQuietly(next.focus === 'title' ? titleRef.current : (storyOpener.current?.isConnected ? storyOpener.current : introRef.current));
   }, [view]);
 
+  // After a close, the read's answer can change what sits ABOVE the opener (form A becomes the shorter form B): the
+  // opener is kept where it was on screen, in every browser alike (Safari has no scroll anchoring; .ftx-root turns
+  // Chromium's off so the two never add up). The page's scroll is untouched by the close itself.
+  const research = explore?.research ?? null;
+  const keepOnScreen = useRef(null);
+  useLayoutEffect(() => {
+    const keep = keepOnScreen.current;
+    if (!keep || sheet || research === keep.research) return; // wait for the read's answer
+    keepOnScreen.current = null;
+    if (!keep.el?.isConnected) return;
+    const delta = keep.el.getBoundingClientRect().top - keep.top;
+    if (Math.abs(delta) > 0.5) window.scrollBy(0, delta);
+  }, [research, sheet]);
+
   // A control that held focus and left with the read after a close (a finished investigation's Continue row):
   // focus goes to the screen's own anchor, never to <body>.
-  const research = explore?.research ?? null;
   useEffect(() => {
     if (!afterClose.current || sheet) return;
     afterClose.current = false;
@@ -113,6 +126,8 @@ export default function ExploreTab({ explore = null, onOpenResearch, stocksData 
   const onOwnWords = (event, text) => openSheet({ way: 'words', words: text }, event);
   const closeSheet = () => {
     afterClose.current = true;
+    const el = sheet?.opener ?? null;
+    keepOnScreen.current = el?.isConnected ? { el, top: el.getBoundingClientRect().top, research: explore.research } : null;
     setSheet(null);
     explore.research.reread();
   };
