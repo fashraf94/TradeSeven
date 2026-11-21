@@ -18,10 +18,18 @@
 
 import { numberAt, exitMakerOf, directiveCardOf, sessionOf, etClock, etWhen, etDateLabel, fmtPoints, swapOrdinals, swapAnchor, SCREEN_AGGREGATE_CLASSES } from './filmRoomModel';
 import { validFinalTradingDay } from '../../utils/tapeSchedule.js';
+// Amendment B DB-6 (Astra's F6): THE one strict instant parser (Build C CE-3) — no second parser on the front
+import { instantMs } from '../../utils/filmRoomSubject.js';
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
-const toMs = (v) => { if (typeof v !== 'string') return null; const ms = Date.parse(v); return Number.isFinite(ms) ? ms : null; };
+/**
+ * Every instant the front reads — a check's, a swap's, a directive's — goes through instantMs (DB-6): a full ISO 8601
+ * date-time WITH its offset or Z, on a real date and clock (minutes without seconds kept). Anything looser — a time
+ * with no zone, which Date.parse would read in the viewer's own zone — is no instant: a check holding one breaks its
+ * line, an event holding one is counted in "{n} more on the full tape" (DA-10), and nothing is placed by it.
+ */
+const toMs = instantMs;
 const listOf = (tape, key) => (Array.isArray(tape?.[key]) ? tape[key] : []);
 
 /** The touch area of a pin, and the merge distance (§6): 44 px. */
@@ -178,20 +186,21 @@ function runsOf(rows) {
 /**
  * The time axis (§5): the day's session from the calendar, early closes included — widened only to hold a SCORED
  * check the tape records outside it, so every drawn point sits at its own instant inside the chart (the review's
- * CH-6; a row with no score draws nothing and never moves the axis — the refuter's N-3) —; else the first check to
- * the last.
+ * CH-6; a row with no score draws nothing and never moves the axis — the refuter's N-3) —; else, on a date the
+ * calendar does not know, the first check to the last — but ONLY across two distinct strict check instants.
+ * Fewer is NO TIME BASIS (Amendment B DB-8, Astra's F8): null — the front draws no chart and no legend, every event
+ * is counted in "{n} more on the full tape" (choosePins) and the key keeps a recorded final; nothing invents a
+ * minute to draw across.
  */
 export function domainOf(tape) {
   const session = sessionOf(tape?.etDate);
-  const ts = listOf(tape, 'checks').map((c) => toMs(c?.at)).filter((t) => t !== null);
   if (session) {
     const drawnTs = orderedRows(tape, 'total').filter(drawn).map((r) => r.t);
     return { startMs: Math.min(session.openMs, ...drawnTs), endMs: Math.max(session.closeMs, ...drawnTs), session: true };
   }
-  if (!ts.length) return null;
-  const startMs = Math.min(...ts);
-  const last = Math.max(...ts);
-  return { startMs, endMs: last > startMs ? last : startMs + 60_000, session: false };
+  const ts = [...new Set(listOf(tape, 'checks').map((c) => toMs(c?.at)).filter((t) => t !== null))];
+  if (ts.length < 2) return null;
+  return { startMs: Math.min(...ts), endMs: Math.max(...ts), session: false };
 }
 
 /** The axis's three labels (§5): the open, the midpoint and the close, as clocks. */
@@ -306,12 +315,13 @@ const byPriority = (a, b) => (RANK[a.kind] - RANK[b.kind]) || byTime(a, b);
 /**
  * The chosen pins (FL-5): at most five, chosen by priority — the agent's swaps, then the directives, then the other
  * swaps, each group in time order — then shown and NUMBERED in time order. `more` is every other row of the day:
- * the rows past the five and any row with no instant. `frac` is each pin's place on the time axis (0 the open,
- * 1 the close; an instant outside the session sits at its edge), `v` its height on the player's line.
+ * the rows past the five, any row with no strict instant (DB-6) and, with no time basis (domain null — DB-8), every
+ * row. `frac` is each pin's place on the time axis (0 the open, 1 the close; an instant outside the session sits at
+ * its edge), `v` its height on the player's line.
  */
 export function choosePins(tape, { domain = domainOf(tape), battle = null, lines = linesOf(tape, domain, battle) } = {}) {
   const all = allPinsOf(tape);
-  const placeable = all.filter((p) => p.t !== null);
+  const placeable = domain ? all.filter((p) => p.t !== null) : [];
   const chosen = [...placeable].sort(byPriority).slice(0, FLOW_PIN_LIMIT).sort(byTime);
   const span = domain ? domain.endMs - domain.startMs : 0;
   const pins = chosen.map((p, k) => ({
@@ -381,7 +391,7 @@ export function panelOf(tape, pin) {
       maker: makerKeyOf(a),
       out: sym('symbolOut'),
       in: sym('symbolIn'),
-      clock: etWhen(a.at, tape.etDate),
+      clock: toMs(a.at) === null ? null : etWhen(a.at, tape.etDate),
       price: numberAt(tape, ['actions', pin.index, 'exitPrice']),
       link: { anchor: swapAnchor(ordinal - 1) },
     };
@@ -392,7 +402,7 @@ export function panelOf(tape, pin) {
     kind: 'directive',
     src: 'directive',
     filed: directiveCardOf(d).filed,
-    clock: etWhen(d.filedAt, tape.etDate),
+    clock: toMs(d.filedAt) === null ? null : etWhen(d.filedAt, tape.etDate),
     player: words('playerText'),
     reply: d?.agentReplyDiffers === true ? null : words('agentReply'),
     link: { anchor: 'directives' },

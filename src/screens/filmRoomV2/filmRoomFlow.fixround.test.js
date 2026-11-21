@@ -6,7 +6,8 @@
 // Amendment A (DA-4, DA-8, DA-9, DA-11, DA-15) and Amendment B (DB-1, DB-2, DB-6 – DB-9, DB-14).
 
 import { describe, it, expect } from 'vitest';
-import { flowOf, headingOf, keyOf, linesOf, isFinalDayOf, readsAsFinal } from './filmRoomFlow.js';
+import { flowOf, headingOf, keyOf, linesOf, isFinalDayOf, readsAsFinal, layoutOf, panelOf, domainOf } from './filmRoomFlow.js';
+import { sessionOf, etClock } from './filmRoomModel';
 import sep23Tape from './__fixtures__/sep23.tape.json';
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
@@ -16,6 +17,20 @@ const D = sep23Tape.etDate;
 const D24 = '2026-09-24';
 const ACTIVE = { status: 'active', completedAt: null, final: null, result: { value: null, basis: 'not_completed' }, completionMessage: null };
 const finalEnds = (f) => [f.lines.you, f.lines.cpu].filter(Boolean).flatMap((l) => l.points.filter((p) => p.final));
+const iso = (s) => `${D}T${s}:00.000Z`;
+/** A check row of the fixture's shape at `at`, its scores `total` / `opponent` — or no scores block at all (null). */
+const check = (seq, at, total, opponent = null) => ({ ...clone(sep23Tape.checks[0]), tickSeq: seq, tickId: `x:${seq}`, key: `seq:${seq}`, at, scores: total === null ? null : { active: total, banked: 0, total, opponent } });
+const directive = (filedAt, k = 0) => ({ ...clone(sep23Tape.directives[k]), filedAt });
+/** Run `read` under each time zone in turn; the zone restored after. Returns each zone's result and its UTC offset. */
+function inZones(zones, read) {
+  const was = process.env.TZ;
+  const offset = () => new Date(Date.UTC(2026, 8, 23, 12)).getTimezoneOffset();
+  try {
+    return zones.map((z) => { process.env.TZ = z; return { offset: offset(), out: read() }; });
+  } finally {
+    if (was === undefined) delete process.env.TZ; else process.env.TZ = was;
+  }
+}
 
 describe('item 1 — F1: a margin needs both finals in the key (Amendment B DB-1)', () => {
   it('F1: a tape written before Build B1 (no score.opponentBasis) — the key shows no CPU entry, so the heading holds no margin', () => {
@@ -128,5 +143,173 @@ describe('item 1 — DA-9: a final day with no recorded final total reads as any
     const f = flowOf(t, { battle: battleOf(t, { status: 'active' }) });
     expect(f.heading.kind).toBe('date');
     expect(finalEnds(f)).toEqual([]);
+  });
+});
+
+describe('item 2 — F6: strict instants only (DB-6)', () => {
+  /** The review's saved document: a directive filed at a time with no zone, and one with an explicit Z. */
+  const zoneless = () => {
+    const t = clone(sep23Tape);
+    t.actions = [];
+    t.directives = [directive('2026-09-23T14:00', 0), directive('2026-09-23T16:00Z', 1)];
+    return t;
+  };
+  it('F6: the directive with no zone is never placed — counted in "more"; the Z form beside it is placed, at noon ET', () => {
+    const f = flowOf(zoneless(), { battle: battleOf(sep23Tape) });
+    expect(f.pins.map((p) => `${p.src}:${p.index}`)).toEqual(['directive:1']);
+    expect(f.more.value).toBe(1);
+    expect(etClock('2026-09-23T16:00Z')).toBe('12:00 PM');
+  });
+  it('F6: the same bytes under TZ=UTC and TZ=America/Chicago — identical pins, numbers, clocks and groups', () => {
+    const bytes = JSON.stringify(zoneless());
+    const read = () => {
+      const t = JSON.parse(bytes);
+      const f = flowOf(t, { battle: battleOf(t) });
+      const lay = layoutOf(f, 350, 150);
+      return {
+        pins: f.pins.map((p) => [p.src, p.index, p.n, p.frac, p.v]),
+        more: f.more.value,
+        clocks: f.pins.map((p) => panelOf(t, p).clock),
+        groups: lay.groups.map((g) => g.members.map((x) => x.n)),
+        axis: f.axis,
+      };
+    };
+    const was = process.env.TZ;
+    const offset = () => new Date(Date.UTC(2026, 8, 23, 12)).getTimezoneOffset();
+    try {
+      process.env.TZ = 'UTC';
+      const o0 = offset();
+      const a = read();
+      process.env.TZ = 'America/Chicago';
+      const o1 = offset();
+      const b = read();
+      expect([o0, o1]).toEqual([0, 300]);   // the control: the zone did change (CDT is UTC−5)
+      expect(b).toEqual(a);
+    } finally {
+      if (was === undefined) delete process.env.TZ; else process.env.TZ = was;
+    }
+  });
+});
+
+describe('item 2 — F8: no time basis, no chart (DB-8)', () => {
+  const D28 = '2028-03-15';   // a Wednesday past the calendar's maintained horizon (2027)
+  const unknownDay = (checks, directives) => {
+    const t = clone(sep23Tape);
+    t.etDate = D28;
+    t.isFinalDay = false;
+    t.battle = clone(ACTIVE);
+    t.checks = checks;
+    t.actions = [];
+    t.directives = directives;
+    return t;
+  };
+  it('F8: one check at 10:15 AM ET on a date the calendar does not know — no domain, no axis, no pin; the directive counted in "more"', () => {
+    expect(sessionOf(D28)).toBeNull();   // the control: the calendar does not know the date
+    const t = unknownDay([check(1, '2028-03-15T14:15:00.000Z', 12, 3)], [directive('2028-03-15T15:00:00.000Z')]);
+    const f = flowOf(t, { battle: battleOf(t) });
+    expect(f.domain).toBeNull();
+    expect(f.axis).toEqual([]);
+    expect(f.pins).toEqual([]);
+    expect(f.more.value).toBe(1);
+  });
+  it('F8: no checks, two directives three hours apart — never stacked at a fictitious origin: no pin, both counted', () => {
+    const t = unknownDay([], [directive('2028-03-15T14:00:00.000Z', 0), directive('2028-03-15T17:00:00.000Z', 1)]);
+    const f = flowOf(t, { battle: battleOf(t) });
+    expect(f.pins).toEqual([]);
+    expect(f.more.value).toBe(2);
+  });
+});
+
+describe('item 2 — DB-6: every instant the front reads is strict', () => {
+  it('the forms kept: Z with milliseconds, an offset, and minutes without seconds — each placed at the same instant', () => {
+    for (const at of ['2026-09-23T16:00:00.000Z', '2026-09-23T12:00:00-04:00', '2026-09-23T16:00Z']) {
+      const t = clone(sep23Tape);
+      t.actions = [];
+      t.directives = [directive(at)];
+      const f = flowOf(t, { battle: battleOf(t) });
+      expect(f.pins.map((p) => [p.t, p.frac]), at).toEqual([[Date.parse('2026-09-23T16:00:00.000Z'), 150 / 390]]);
+      expect(panelOf(t, f.pins[0]).clock, at).toBe('12:00 PM');
+    }
+  });
+  it('the refused forms — no zone, a date alone, an impossible clock, words — are never placed, each counted in "more"', () => {
+    const t = clone(sep23Tape);
+    t.actions = [];
+    t.directives = ['2026-09-23T14:00', '2026-09-23T14:00:00', '2026-09-23', '2026-09-23T24:00:00Z', '9/23/2026 10:00 AM'].map((at) => directive(at));
+    const f = flowOf(t, { battle: battleOf(t) });
+    expect(f.pins).toEqual([]);
+    expect(f.more.value).toBe(5);
+  });
+  it('a CHECK whose instant has no zone breaks its line (and is never the low); a SWAP whose instant has none is counted', () => {
+    const t = clone(sep23Tape);
+    t.checks[5].at = '2026-09-23T15:30:20';   // the writer's −41 at 11:30 AM, its zone lost
+    t.actions[1].at = '2026-09-23T18:00:05';  // the agent's swap, its zone lost
+    const f = flowOf(t, { battle: battleOf(t) });
+    expect(f.lines.you.runs.map((r) => r.length)).toEqual([5, 18]);
+    expect(f.pins.some((p) => p.src === 'action' && p.index === 1)).toBe(false);
+    expect(f.more.value).toBe(1);   // the zoneless swap — the five placeable rows left are all chosen
+  });
+  it('the same bytes under TZ=UTC and TZ=America/Chicago, zoneless checks and swaps included — identical pins, lines, low, clocks and groups', () => {
+    const t = clone(sep23Tape);
+    t.checks[5].at = '2026-09-23T15:30:20';
+    t.actions[1].at = '2026-09-23T18:00:05';
+    t.directives[0].filedAt = '2026-09-23T17:40';
+    const bytes = JSON.stringify(t);
+    const read = () => {
+      const x = JSON.parse(bytes);
+      const f = flowOf(x, { battle: battleOf(x) });
+      const lay = layoutOf(f, 350, 150, 'Low −92 · 1:30 PM');
+      return { pins: f.pins.map((p) => [p.src, p.index, p.n, p.frac, p.v]), more: f.more.value, runs: f.lines.you.runs.map((r) => r.map((p) => [p.t, p.v])), low: f.low && [f.low.index, f.low.clock], clocks: f.pins.map((p) => panelOf(x, p).clock), groups: lay.groups.map((g) => g.members.map((p) => p.n)), axis: f.axis };
+    };
+    const [a, b] = inZones(['UTC', 'America/Chicago'], read);
+    expect([a.offset, b.offset]).toEqual([0, 300]);
+    expect(b.out).toEqual(a.out);
+  });
+});
+
+describe('item 2 — DB-8: no time basis, no chart; with a session, the calendar\'s axis stands', () => {
+  const D28 = '2028-03-15';
+  const unknownDay = (checks, directives, final = false) => {
+    const t = clone(sep23Tape);
+    t.etDate = D28;
+    t.isFinalDay = final;
+    if (!final) t.battle = clone(ACTIVE);
+    t.checks = checks;
+    t.actions = [];
+    t.directives = directives;
+    return t;
+  };
+  const at28 = (hm) => `${D28}T${hm}:00.000Z`;
+  it.each([
+    ['zero checks', []],
+    ['one check', [check(1, at28('14:15'), 12, 3)]],
+    ['several checks at one instant', [check(1, at28('14:15'), 12, 3), check(2, at28('14:15'), 13, 3), check(3, at28('14:15'), null)]],
+  ])('%s: no domain — with no events nothing counted, with two events both counted', (_, checks) => {
+    const none = flowOf(unknownDay(clone(checks), []));
+    expect([none.domain, none.axis, none.pins, none.more.value, none.legend]).toEqual([null, [], [], 0, []]);
+    const two = flowOf(unknownDay(clone(checks), [directive(at28('15:00'), 0), directive(at28('18:00'), 1)]));
+    expect([two.domain, two.pins, two.more.value]).toEqual([null, [], 2]);
+  });
+  it('two distinct strict instants are a time basis: the first check to the last; a zoneless one does not count toward two', () => {
+    const t = unknownDay([check(1, at28('14:15'), 12, 3), check(2, at28('15:15'), 14, 3)], []);
+    expect(domainOf(t)).toEqual({ startMs: Date.parse(at28('14:15')), endMs: Date.parse(at28('15:15')), session: false });
+    t.checks[1].at = `${D28}T15:15:00`;
+    expect(domainOf(t)).toBeNull();
+  });
+  it('the final day on a date the calendar does not know, one check: no chart, the key keeps the recorded finals, the heading its result', () => {
+    const t = unknownDay([check(1, at28('14:15'), 12, 3)], [], true);
+    const f = flowOf(t, { battle: battleOf(t) });
+    expect(f.domain).toBeNull();
+    expect([f.key.you.path.join('.'), f.key.you.value, f.key.cpu.value]).toEqual(['battle.final.total', -47, -93]);
+    expect(f.heading).toMatchObject({ kind: 'won', margin: { text: '46' } });
+    expect(finalEnds(f)).toEqual([]);
+  });
+  it('a known session with no checks at all: the calendar\'s axis, 9:30 AM to 4:00 PM, and the pins placed on it', () => {
+    expect(sessionOf(D)).not.toBeNull();
+    const t = clone(sep23Tape);
+    t.checks = [];
+    const f = flowOf(t, { battle: battleOf(t) });
+    expect(f.axis).toEqual(['9:30 AM', '12:45 PM', '4:00 PM']);
+    expect(f.pins).toHaveLength(5);
+    expect(etClock(new Date(f.domain.endMs).toISOString())).toBe('4:00 PM');
   });
 });

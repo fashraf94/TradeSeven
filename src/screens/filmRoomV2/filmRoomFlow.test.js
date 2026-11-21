@@ -52,7 +52,8 @@ describe('the dependency surface (BUILD_RULES §4): pure, no React, no reads', (
     const src = readFileSync(path.join(process.cwd(), 'src', 'screens', 'filmRoomV2', 'filmRoomFlow.js'), 'utf8');
     const imports = [...src.matchAll(/^import .* from '([^']+)';$/gm)].map((m) => m[1]);
     // fix round item 1 (DB-2): the battle's validated final trading day, the one reading the writer and the screen share
-    expect(imports).toEqual(['./filmRoomModel', '../../utils/tapeSchedule.js']);
+    // … and item 2 (DB-6): the one strict instant parser (Build C CE-3) — already in the screen's bundle (FilmRoomScreenV2)
+    expect(imports).toEqual(['./filmRoomModel', '../../utils/tapeSchedule.js', '../../utils/filmRoomSubject.js']);
     const code = src.split('\n').map((l) => l.replace(/\/\/.*$/, '')).join('\n');
     expect(code).not.toMatch(/\bDate\.now\(|\bnew Date\(\)|\bfetch\(|getDoc|firebase|\breact\b|useState|useEffect/i);
   });

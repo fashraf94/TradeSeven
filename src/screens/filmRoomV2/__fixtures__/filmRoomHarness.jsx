@@ -30,6 +30,8 @@ import { COMPANY_NAMES } from '../../../config/stockData';
 import { valueAt, etClock, tradingTimeline } from '../filmRoomModel';
 // Film Room D1 fix round (Amendment B DB-2): the ONE final-day reading the model, its tests and this harness share
 import { readsAsFinal } from '../filmRoomFlow.js';
+// … and DB-6's one strict instant parser: the front's oracles read an instant as the front does (flowMs, below)
+import { instantMs } from '../../../utils/filmRoomSubject.js';
 import { isOpenStage } from '../../../data/cardStages';
 import sep23Tape from './sep23.tape.json';
 import sep23Series from './sep23.series.json';
@@ -801,10 +803,12 @@ export const SPEC_FLOW_NUMBER_PATHS = Object.freeze([
  * on any other day, in the key; a check's total only as the low mark, and only the LOWEST scored check's, the
  * earliest on a tie (recomputed here); an exit price only in a fact line.
  */
+/** An instant as the FRONT reads one (Amendment B DB-6): strict, or none — never Date.parse in the viewer's zone. */
+const flowMs = instantMs;
 function lowestCheckOf(tape) {
   let low = null;
   (Array.isArray(tape?.checks) ? tape.checks : []).forEach((c, i) => {
-    const v = c?.scores?.total; const t = msOf(c?.at);
+    const v = c?.scores?.total; const t = flowMs(c?.at);
     if (typeof v !== 'number' || !Number.isFinite(v) || t === null) return;
     if (!low || v < low.v || (v === low.v && t < low.t)) low = { i, v, t };
   });
@@ -847,7 +851,7 @@ export const SPEC_FLOW_COPY = Object.freeze([
 function memberMs(tape, member) {
   const [src, i] = member.split(':');
   const row = src === 'action' ? tape?.actions?.[Number(i)] : tape?.directives?.[Number(i)];
-  return msOf(src === 'action' ? row?.at : row?.filedAt);
+  return flowMs(src === 'action' ? row?.at : row?.filedAt);
 }
 
 /** Each computed number's value, recomputed HERE from the documents by what its name says it counts. */

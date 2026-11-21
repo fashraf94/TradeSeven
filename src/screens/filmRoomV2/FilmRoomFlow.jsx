@@ -344,7 +344,9 @@ export default function FilmRoomFlow({ tape, battle = null, desktop = false, one
 
   const heading = <FlowHeading flow={flow} size={desktop ? 56 : narrow ? 32 : 40} />;
   const key = <FlowKey flow={flow} size={desktop ? 15 : 13.5} />;
-  const chartBlock = (
+  // DB-8: no time basis (a date the calendar does not know, fewer than two distinct check instants) — no chart, no
+  // axis, no legend; the rows are counted below, and the key above keeps a recorded final
+  const chartBlock = !flow.domain ? null : (
     <div ref={chartRef} data-flow-chart-block="" style={{ display: 'flex', flexDirection: 'column', gap: L.bleed ? 5 : 7, margin: L.bleed ? `0 -${L.bleed}px` : 0, minWidth: 0 }}>
       <FlowChart tape={tape} flow={flow} height={L.chartHeight} width={width} selectedN={pin?.n ?? null} onSelectGroup={onSelectGroup} />
       <div data-flow-axis="" style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: C.ink2, ...NUM }}>{flow.axis.map((t, k) => <When key={k}>{t ?? ''}</When>)}</div>

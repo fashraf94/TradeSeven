@@ -125,3 +125,71 @@ describe('item 1 — F2 / DA-9 on the front: a day that does not read as final',
     expect(sweepFlow(m.container, { tape: t, battle: battleOf(t) })).toContain("battle.final.total: a final score on a day that is not the battle's final day");   // … against a day that is not final
   });
 });
+
+describe('item 2 — DB-8 / DB-6 on the front', () => {
+  const D28 = '2028-03-15';
+  const at28 = (hm) => `${D28}T${hm}:00.000Z`;
+  const unknownDay = (final) => {
+    const t = clone(sep23Tape);
+    t.etDate = D28;
+    t.isFinalDay = final;
+    if (!final) t.battle = { status: 'active', completedAt: null, final: null, result: { value: null, basis: 'not_completed' }, completionMessage: null };
+    t.checks = [{ ...clone(sep23Tape.checks[0]), tickSeq: 1, at: at28('14:15'), scores: { active: 12, banked: 0, total: 12, opponent: 3 } }];
+    t.actions = [];
+    t.directives = [{ ...clone(sep23Tape.directives[0]), filedAt: at28('15:00') }, { ...clone(sep23Tape.directives[1]), filedAt: at28('18:00') }];
+    t.score.lastCheck = { ...t.score.lastCheck, at: at28('14:15'), tickSeq: 1, total: 12, opponent: 3 };
+    return t;
+  };
+  it('F8 on the front: a date the calendar does not know, one check — no chart, no axis, no legend, no pin; "2 more on the full tape"', () => {
+    const t = unknownDay(false);
+    mount(t);
+    expect(m.q('[data-flow-chart-block], [data-flow-chart], [data-flow-axis], [data-flow-legend], [data-flow-pin]')).toBeNull();
+    expect(text('[data-flow-more]')).toBe('2 more on the full tape');
+    expect(m.q('[data-flow-quiet]')).toBeNull();
+    expect(m.qa('[data-flow-key]').map((e) => e.textContent)).toEqual(['You +12', 'CPU +3']);
+    clean(t);
+  });
+  it('the final day there: the heading and the key keep the recorded finals — no chart to draw them on', () => {
+    const t = unknownDay(true);
+    mount(t);
+    expect(text('[data-flow-heading]')).toBe('Won by 46');
+    expect(m.qa('[data-flow-key]').map((e) => e.textContent)).toEqual(['You −47', 'CPU −93']);
+    expect(m.q('[data-flow-chart]')).toBeNull();
+    clean(t);
+  });
+  it('desktop, no time basis: the panel\'s count still shows, the counts and the door below it', () => {
+    const t = unknownDay(false);
+    mount(t, { desktop: true });
+    expect(m.q('[data-flow-chart]')).toBeNull();
+    expect(text('[data-flow-more]')).toBe('2 more on the full tape');
+    expect(m.q('[data-flow-door]')).toBeTruthy();
+    clean(t);
+  });
+  it('DB-6: the front mounted from the same bytes under TZ=UTC and TZ=America/Chicago — the same pins, names, groups and panel', () => {
+    const t = clone(sep23Tape);
+    t.directives[0].filedAt = '2026-09-23T17:40';   // its zone lost
+    const bytes = JSON.stringify(t);
+    const was = process.env.TZ;
+    const offset = () => new Date(Date.UTC(2026, 8, 23, 12)).getTimezoneOffset();
+    const read = () => {
+      const x = JSON.parse(bytes);
+      stubChartWidth(FLOW_LAYOUT.phone.chartWidth);
+      mount(x);
+      const out = { pins: m.qa('[data-flow-pin]').map((b) => [b.getAttribute('data-flow-pin'), b.getAttribute('data-flow-pin-members'), b.style.left, b.textContent]), fact: text('[data-flow-fact]'), more: text('[data-flow-more]'), heading: text('[data-flow-heading]') };
+      clean(x);
+      m.teardown(); m.root = null; restoreWidth(); restoreWidth = null;
+      return out;
+    };
+    try {
+      process.env.TZ = 'UTC';
+      const o0 = offset(); const a = read();
+      process.env.TZ = 'America/Chicago';
+      const o1 = offset(); const b = read();
+      expect([o0, o1]).toEqual([0, 300]);
+      expect(b).toEqual(a);
+      expect(a.pins.some(([, members]) => members.split(' ').includes('directive:0'))).toBe(false);
+    } finally {
+      if (was === undefined) delete process.env.TZ; else process.env.TZ = was;
+    }
+  });
+});
