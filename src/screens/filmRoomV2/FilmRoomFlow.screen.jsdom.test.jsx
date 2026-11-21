@@ -347,6 +347,22 @@ describe('the review round — the doors, the focus and the notice', () => {
     expect(document.activeElement).toBe(chips()[0]);
   });
 
+  it('DR-1, the other ending: a day picked on the front that has NO tape — the frame while it is read, then the no-tape page, and the picked chip keeps the focus through both', async () => {
+    const r = heldReaders({ [D]: sep23Tape }, [D0]);
+    await mountWith(r, [D0, D]);
+    expect(onFront()).toBe(true);
+    const chip = chips()[0];
+    chip.focus();
+    m.click(chip);
+    await m.flush();
+    expect(m.q('[data-view="flow"] [data-flow-loading]')).toBeTruthy();
+    r.release(D0);
+    await m.flush();
+    expect(m.q('[data-state="missing"]')).toBeTruthy();
+    expect(chip.isConnected).toBe(true);
+    expect(document.activeElement).toBe(chip);
+  });
+
   it('DR-2: a depth tab on a no-tape page reached from the front does not cost the front — the next taped day is its front', async () => {
     const r = heldReaders({ [D]: sep23Tape }, []);
     await mountWith(r, [D0, D]);
