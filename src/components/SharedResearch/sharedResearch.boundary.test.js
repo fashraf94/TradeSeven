@@ -201,6 +201,8 @@ describe('the doors (K-3; Command Center Amendment E V1.1 §3.2; B6a X-6)', () =
       'src/components/Explore/ExploreHome.jsx': "const B = () => import('../SharedResearch/SharedResearchSheetBody.jsx');\nexport default B;\n",
       'src/components/Explore/ExploreCopy.js': "export { SR_COPY } from '../SharedResearch/sharedResearchCopy';\n",
       'src/components/Explore/ExploreStory.jsx': "import { takeStep } from '../../services/sharedResearchService';\nexport default takeStep;\n",
+      // a second reader, taking exactly the read: still a third importer of the service
+      'src/components/Explore/ExploreSearch.jsx': "import { readExploreInvestigations } from '../../services/sharedResearchService';\nexport default readExploreInvestigations;\n",
       'src/components/discover/DiscoverPanel.jsx': "const B = () => import(`../SharedResearch/SharedResearchSheetBody`);\nexport default B;\n",
     };
     for (const [at, code] of Object.entries(third)) {
