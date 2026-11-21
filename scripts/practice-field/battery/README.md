@@ -30,7 +30,7 @@ export const MUTANTS = [
    - If a run was killed mid-mutant and left a file mutated, that file is restored at the next start.
 2. **Baseline.** It runs the full row set **once**, sharded across the trees: tree *i* runs `--shard=i/N`, all at once. Every shard must be green, and together the shards are one full run.
    - The baseline gives the per-file times used for the quick cut.
-   - A shard whose only failures are vitest timeouts re-runs those files alone. If they pass, the baseline counts as green and the rows are logged as load-sensitive. At e8d51fd6 one `evidence.test.js` row times out under the battery's own load.
+   - A shard whose only failures are vitest timeouts re-runs those files alone, after every shard has finished. If they pass, the baseline counts as green and the rows are logged as load-sensitive. At e8d51fd6, rows seen timing out under the battery's own load include `evidence.test.js`'s 60-session packet row, `practiceFieldIsolation.test.js` IS-3, `exits.test.js` E15 and `admission.test.js` check 7.
    - Every run passes `--no-cache`, because all the trees share the install's `.vite/vitest` cache folder.
 3. **Import graph** (`importGraph.mjs`). It maps each test file to the files it can reach: static and dynamic imports, `vi.mock`/`importActual` paths and `__mocks__` siblings, read by the repo's own parser-based reader (`api/_utils/filmRoom/__fixtures__/jsSource.js`).
    - Some test files are related to **every** mutant: those that read source as text, spawn processes, or load anything a static reading cannot follow.
@@ -43,8 +43,11 @@ export const MUTANTS = [
    - **`full`**: the full row set, with the mutation still applied, judged exactly as the old runner judged.
 
    How a stage decides:
-   - **A kill in any stage is final.** A kill needs a non-zero exit **and** at least one failing row.
-   - If every failing row is a vitest timeout, those files are re-run alone with 1 worker before the kill counts. In the full stage, if they pass alone, the verdict is SURVIVED, because every row has then been seen to pass with the mutation in place.
+   - **A kill in any stage is final.** A kill needs a non-zero exit **and** at least one failing row that is not a vitest timeout.
+   - **A kill resting only on timeouts is never decided while other trees run.** The load can slow a row past its limit, and a re-run "alone" is not alone while three other trees are busy. (A run at e8d51fd6 on a loaded machine reported both known survivors as KILLED this way.)
+     - In `first` or `quick`, it is not decisive: the mutant moves on.
+     - In `full`, the timed-out files re-run alone with 1 worker in the same tree. A pass means SURVIVED, because every row has then been seen to pass with the mutation in place. A real failing row means KILLED.
+     - If they time out again, the mutant waits for the **quiet phase**. Once every tree is idle, each waiting mutant is applied again in `t0`, and its timed-out files run alone with 1 worker. A pass means SURVIVED. A timeout again means KILLED, flagged `look` as a likely hang. The suite's own row timeouts are never raised, because a mutation that slows a row past its limit is a real kill.
    - **Anything else** (survived, load failure, errored, timeout) moves on to the next stage, and the full stage decides it.
    - The mutated files are then restored and compared byte for byte.
 
@@ -58,15 +61,15 @@ export const MUTANTS = [
 
 Vitest runs each test file in isolation, so a file's rows fail the same way whatever else runs beside it.
 
-- If an early stage kills, the same rows fail in a full run. The old judge (exit ≠ 0 and a failing row) then says KILLED as well.
-- Every other verdict *is* a full-row-set verdict.
+- If an early stage kills, the same rows fail in a full run. The old judge (exit ≠ 0 and a failing row) then says KILLED as well. Early kills never rest on timeouts alone, so they do not depend on the load.
+- Every other verdict *is* a full-row-set verdict. A full run whose only failures are timeouts is settled by running those files with nothing else of the battery's running: in the same tree right away, or in the quiet phase if they time out again.
 
-So the battery never reports a survivor, or a broken mutant, that the full folder would not report.
+So the battery never reports a survivor, or a broken mutant, that the full folder would not report run on its own. Under the battery's load, the full folder can report false kills that the battery does not.
 
 The graph only decides speed. A file the graph missed is still covered by the stage-2 run. `--verify` checks the graph anyway: for each mutant it also runs the full row set and records three things:
 
 - whether the verdicts agree;
-- whether each early stage's failing rows equal the full run's failing rows on the same files;
+- whether each early stage's failing rows equal the full run's failing rows on the same files. Timed-out rows are left out of this check on both sides, because the load decides them, and they are counted in the summary;
 - whether every file that failed in the full run is inside the related set.
 
 **What "related" buys here.** In the idea book, every product file is reached by 35 of the 38 test files, which is 326 of 341 CPU-seconds at e8d51fd6. So `--mode related` (the plain "related files only" rule) costs about as much as the full row set. The time is saved by the parallel trees and the small first tier.
@@ -75,8 +78,8 @@ The graph only decides speed. A file the graph missed is still covered by the st
 
 | Verdict | Meaning |
 |---|---|
-| KILLED | non-zero exit and at least one failing row (`by`: the stage that decided it) |
-| SURVIVED | the full row set passes with the mutation in place |
+| KILLED | non-zero exit and at least one failing row (`by`: the stage that decided it; `quiet` when its rows time out even with the battery idle) |
+| SURVIVED | the full row set passes with the mutation in place (any timed-out rows passed alone) |
 | BROKEN | an anchor did not match, no JSON report was written, or the only failures were files that did not load |
 | ERRORED | non-zero exit with no failing row (an unhandled error). **The old runner called this SURVIVED.** |
 | TIMEOUT | a stage hit `--timeout` (default 900 s); the vitest process tree was killed |

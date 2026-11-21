@@ -167,20 +167,24 @@ function runVitest({ tree, vitest, files, workers, json, timeout }) {
     }, timeout * 1000);
     child.on('close', (exit) => {
       clearTimeout(timer);
-      const out = { exit, timedOut, seconds: Math.round((Date.now() - started) / 100) / 10, hasJson: existsSync(json), failed: [], loadFailures: [], ranFiles: [], timeoutOnly: false, total: 0, tail };
+      const out = { exit, timedOut, seconds: Math.round((Date.now() - started) / 100) / 10, hasJson: existsSync(json), failed: [], timedOutRows: [], loadFailures: [], ranFiles: [], timeoutOnly: false, total: 0, tail };
       if (out.hasJson) {
         let j = null;
         try { j = JSON.parse(readFileSync(json, 'utf8')); } catch { out.hasJson = false; }
         if (j) {
           out.total = j.numTotalTests;
-          const msgs = [];
           for (const f of j.testResults || []) {
             const name = relName(tree, f.name);
             out.ranFiles.push(name);
             if ((f.assertionResults || []).length === 0 && f.status === 'failed') out.loadFailures.push(name);
-            for (const a of f.assertionResults || []) if (a.status === 'failed') { out.failed.push(`${name} > ${a.fullName}`); msgs.push((a.failureMessages || []).join('\n')); }
+            for (const a of f.assertionResults || []) {
+              if (a.status !== 'failed') continue;
+              const row = `${name} > ${a.fullName}`;
+              out.failed.push(row);
+              if (TIMEOUT_SIGNATURE.test((a.failureMessages || []).join('\n'))) out.timedOutRows.push(row);
+            }
           }
-          out.timeoutOnly = out.failed.length > 0 && msgs.every((m) => TIMEOUT_SIGNATURE.test(m));
+          out.timeoutOnly = out.failed.length > 0 && out.timedOutRows.length === out.failed.length;
         }
       }
       resolve(out);
@@ -338,7 +342,17 @@ async function main() {
     const rest = related.filter((f) => dur(f) <= quickCut && !first.includes(f));
     return { related, tiers: [first.length ? ['first', first] : null, rest.length ? ['quick', rest] : null].filter(Boolean) };
   };
-  const summarize = (r) => ({ verdict: judge(r), exit: r.exit, seconds: r.seconds, failing: r.failed.length, first: r.failed.slice(0, 3), failedRows: r.failed, loadFailures: r.loadFailures, timeoutOnly: r.timeoutOnly, files: r.ranFiles.length });
+  const summarize = (r) => ({ verdict: judge(r), exit: r.exit, seconds: r.seconds, failing: r.failed.length, first: r.failed.slice(0, 3), failedRows: r.failed, timedOutRows: r.timedOutRows, loadFailures: r.loadFailures, timeoutOnly: r.timeoutOnly, files: r.ranFiles.length });
+  const filesOf = (rows) => [...new Set(rows.map((x) => x.split(' > ')[0]))];
+  const applyMutation = (t, plan) => { for (const [f, text] of plan.mutated) writeFileSync(path.join(t.dir, f), text); };
+  const restoreMutation = (t, plan) => {
+    for (const [f, text] of plan.originals) writeFileSync(path.join(t.dir, f), text);
+    for (const [f, text] of plan.originals) if (sha256(readFileSync(path.join(t.dir, f))) !== sha256(Buffer.from(text))) throw new Error(`restore failed: ${t.dir} ${f}`);
+  };
+  // a full stage whose only failures are timeouts that also time out alone while other trees run waits here for the
+  // quiet phase; --verify's inputs wait with it
+  const quiet = [];
+  const verifyInputs = new Map();
   const save = () => {
     const tmp = path.join(out, 'results.json.tmp');
     writeFileSync(tmp, JSON.stringify({ sha, mutants: mutantsPath, mode: args.mode, verify: args.verify, trees: args.trees, workers: args.workers, baseline: { rows: fullRows, files: fullFiles.length, slowest, quickCut, durations: Object.fromEntries(durations) }, results }, null, 1));
@@ -347,7 +361,7 @@ async function main() {
 
   async function runMutant(t, i, { m, plan }) {
     const rec = { id: m.id, item: m.item ?? null, named: m.named ?? null, tree: `t${i}`, stages: [] };
-    for (const [f, text] of plan.mutated) writeFileSync(path.join(t.dir, f), text);
+    applyMutation(t, plan);
     const run = async (label, files, workers = args.workers) => {
       const r = await runVitest({ tree: t.dir, vitest, files, workers, json: path.join(out, 'runs', `${m.id}.${label}.json`), timeout: args.timeout });
       const s = { stage: label, asked: files, ...summarize(r) };
@@ -362,55 +376,65 @@ async function main() {
         const { r, s } = await run(label, files);
         const inFull = r.ranFiles.every((f) => fullFiles.includes(f)) && files.every((f) => r.ranFiles.includes(f));
         if (!inFull) s.note = 'ran files differ from those asked for — not decisive';
-        else if (s.verdict === 'KILLED' && r.timeoutOnly) {
-          // a kill resting only on timed-out rows may be the load: those files again, alone, one worker
-          const alone = await run(`${label}-alone`, [...new Set(r.failed.map((x) => x.split(' > ')[0]))], 1);
-          if (alone.s.verdict === 'KILLED') {
-            decided = { verdict: 'KILLED', by: `${label} (confirmed alone)` };
-            if (alone.r.timeoutOnly) rec.warning = 'killed only by rows that time out even alone (a hang?) — look';
-          }
-        } else if (s.verdict === 'KILLED') decided = { verdict: 'KILLED', by: label };
+        // a kill resting only on timed-out rows may be the load, and a re-run "alone" is not alone while other trees
+        // run: never decisive here — the full stage, and if need be the quiet phase, settles it
+        else if (s.verdict === 'KILLED' && r.timeoutOnly) s.note = 'its only failures are timeouts — not decisive';
+        else if (s.verdict === 'KILLED') decided = { verdict: 'KILLED', by: label };
         if (decided) break;
       }
       if (!decided || args.verify) {
         const { r, s } = await run('full', args.rows);
         let full = { verdict: s.verdict, by: 'full' };
         if (s.verdict === 'KILLED' && r.timeoutOnly) {
-          // every other row passed with the mutation in place; if the timed-out rows pass alone too, nothing kills it
-          const alone = await run('full-alone', [...new Set(r.failed.map((x) => x.split(' > ')[0]))], 1);
+          // every other row passed with the mutation in place. The timed-out files again, alone, one worker: a pass
+          // settles it, and so does a real failing row; another timeout waits for the quiet phase
+          const alone = await run('full-alone', filesOf(r.failed), 1);
           if (alone.s.verdict === 'SURVIVED') full = { verdict: 'SURVIVED', by: 'full (its only failures were timeouts under load, which pass alone)' };
-          else if (alone.s.verdict === 'KILLED' && alone.r.timeoutOnly) rec.warning = 'killed only by rows that time out even alone (a hang?) — look';
+          else if (alone.s.verdict === 'KILLED' && !alone.r.timeoutOnly) full = { verdict: 'KILLED', by: 'full (a timed-out file fails alone)' };
+          else {
+            full = { verdict: 'PENDING', by: 'quiet' };
+            quiet.push({ rec, plan, files: filesOf(r.failed) });
+          }
         }
         if (!decided) decided = full;
-        if (args.verify) rec.verify = verifyOne(rec, related, r, full.verdict, decided.verdict);
+        if (args.verify) verifyInputs.set(m.id, { related, full: r, fullVerdict: full.verdict });
       }
       Object.assign(rec, decided);
       rec.seconds = Math.round(rec.stages.reduce((s, x) => s + x.seconds, 0));
-      if (rec.verdict === 'KILLED') countKill(new Set(rec.stages.filter((s) => s.verdict === 'KILLED').flatMap((s) => s.failedRows.map((x) => x.split(' > ')[0]))));
+      if (rec.verdict === 'KILLED') countKill(new Set(rec.stages.filter((s) => s.verdict === 'KILLED').flatMap((s) => filesOf(s.failedRows))));
+      const vi = verifyInputs.get(m.id);
+      if (vi && vi.fullVerdict !== 'PENDING') rec.verify = verifyOne(rec, vi);
     } finally {
-      for (const [f, text] of plan.originals) writeFileSync(path.join(t.dir, f), text);
-      for (const [f, text] of plan.originals) if (sha256(readFileSync(path.join(t.dir, f))) !== sha256(Buffer.from(text))) throw new Error(`restore failed: ${t.dir} ${f}`);
+      restoreMutation(t, plan);
     }
     return rec;
   }
 
   /** --verify: the battery's verdict against the full row set's, each early stage's failing rows against the full
-   *  run's rows on the same files, and every file that failed in the full run inside the related set. */
-  function verifyOne(rec, related, full, fullVerdict, batteryVerdict) {
-    const early = rec.stages.filter((s) => s.stage !== 'full' && !s.stage.endsWith('-alone'));
-    const failingFiles = [...new Set([...full.failed.map((x) => x.split(' > ')[0]), ...full.loadFailures])];
-    const rowsOf = (s) => full.failed.filter((x) => s.asked.includes(x.split(' > ')[0])).sort();
-    const rowDiffs = early.filter((s) => JSON.stringify([...s.failedRows].sort()) !== JSON.stringify(rowsOf(s))).map((s) => s.stage);
+   *  run's rows on the same files, and every file that failed in the full run inside the related set. Timed-out
+   *  rows are left out of the row check on both sides (the load decides them), and counted. */
+  function verifyOne(rec, { related, full, fullVerdict }) {
+    const early = rec.stages.filter((s) => s.stage !== 'full' && s.stage !== 'quiet' && !s.stage.endsWith('-alone'));
+    const failingFiles = [...new Set([...filesOf(full.failed), ...full.loadFailures])];
+    const timedOut = new Set([...full.timedOutRows, ...early.flatMap((s) => s.timedOutRows)]);
+    const mine = (s) => s.failedRows.filter((x) => !timedOut.has(x)).sort();
+    const rowsOf = (s) => full.failed.filter((x) => s.asked.includes(x.split(' > ')[0]) && !timedOut.has(x)).sort();
+    const rowDiffs = early.filter((s) => JSON.stringify(mine(s)) !== JSON.stringify(rowsOf(s))).map((s) => s.stage);
     return {
       fullVerdict,
-      batteryVerdict,
-      verdictsAgree: batteryVerdict === fullVerdict,
+      batteryVerdict: rec.verdict,
+      verdictsAgree: rec.verdict === fullVerdict,
       rowsAgree: rowDiffs.length === 0,
       rowDiffs,
+      timedOutRowsLeftOut: [...timedOut],
       contained: failingFiles.every((f) => related.includes(f)),
       missedFiles: failingFiles.filter((f) => !related.includes(f)),
     };
   }
+  const logRec = (rec, where) => {
+    const st = rec.stages.map((s) => `${s.stage} ${s.files}f ${s.seconds}s`).join(' → ');
+    log(`[${where} ${clock()}] ${rec.id}: ${rec.verdict} by ${rec.by} (${st}; ${rec.stages.at(-1).failing} failing) ${rec.stages.find((s) => s.verdict === 'KILLED')?.first[0] ?? ''}${rec.warning ? ` ⚠ ${rec.warning}` : ''}${rec.verify ? ` · verify: agree ${rec.verify.verdictsAgree}, rows ${rec.verify.rowsAgree}, contained ${rec.verify.contained}` : ''}`.slice(0, 600));
+  };
 
   // the trees pull from one queue
   let next = 0;
@@ -419,11 +443,38 @@ async function main() {
       const job = queue[next++];
       const rec = await runMutant(t, i, job);
       results.push(rec);
-      const st = rec.stages.map((s) => `${s.stage} ${s.files}f ${s.seconds}s`).join(' → ');
-      log(`[t${i} ${clock()}] ${rec.id}: ${rec.verdict} by ${rec.by} (${st}; ${rec.stages.at(-1).failing} failing) ${rec.stages.find((s) => s.verdict === 'KILLED')?.first[0] ?? ''}${rec.warning ? ` ⚠ ${rec.warning}` : ''}${rec.verify ? ` · verify: agree ${rec.verify.verdictsAgree}, rows ${rec.verify.rowsAgree}, contained ${rec.verify.contained}` : ''}`.slice(0, 600));
+      logRec(rec, `t${i}`);
       save();
     }
   }));
+
+  // the quiet phase: every tree is idle now. Each waiting mutant is re-applied in t0 and its timed-out files run
+  // alone, one worker, with nothing else of the battery's running. A pass: SURVIVED. A real failing row, or a timeout
+  // again: KILLED (a timeout again means the mutation hangs or slows a row past its limit — flagged to look at).
+  // The row timeouts are the suite's own; they are never raised.
+  if (quiet.length) log(`quiet phase: ${quiet.length} mutant(s) whose only failures timed out, and timed out again alone while other trees ran · ${clock()}`);
+  for (const q of quiet) {
+    const t = trees[0];
+    applyMutation(t, q.plan);
+    let s;
+    try {
+      const r = await runVitest({ tree: t.dir, vitest, files: q.files, workers: 1, json: path.join(out, 'runs', `${q.rec.id}.quiet.json`), timeout: args.timeout });
+      s = { stage: 'quiet', asked: q.files, ...summarize(r) };
+      q.rec.stages.push(s);
+    } finally {
+      restoreMutation(t, q.plan);
+    }
+    const settled = s.verdict === 'SURVIVED' ? { verdict: 'SURVIVED', by: 'quiet (its only failures were timeouts under load, which pass alone with the battery idle)' } : { verdict: s.verdict, by: 'quiet' };
+    if (q.rec.verdict === 'PENDING') {
+      Object.assign(q.rec, settled);
+      if (s.verdict === 'KILLED' && s.timeoutOnly) q.rec.warning = 'killed only by rows that time out alone with the battery idle (a hang, or a row slowed past its limit) — look';
+    }
+    q.rec.seconds = Math.round(q.rec.stages.reduce((sum, x) => sum + x.seconds, 0));
+    const v = verifyInputs.get(q.rec.id);
+    if (v) { v.fullVerdict = settled.verdict; q.rec.verify = verifyOne(q.rec, v); }
+    logRec(q.rec, 'quiet');
+    save();
+  }
 
   // the tally, and every defined id accounted for
   const tally = (v) => results.filter((r) => r.verdict === v).length;
@@ -433,10 +484,11 @@ async function main() {
   for (const r of results) if (r.by) { const k = r.by.split(' ')[0]; byStage[k] = (byStage[k] ?? 0) + 1; }
   log(`defined ${defined.length}, ran ${results.filter((r) => r.stages).length}, broken ${tally('BROKEN')}, killed ${tally('KILLED')}, survived ${tally('SURVIVED')}, errored ${tally('ERRORED')}, timeout ${tally('TIMEOUT')} · decided by ${Object.entries(byStage).map(([k, n]) => `${k} ${n}`).join(', ')} · ${clock()}`);
   if (missing.length) log(`NO VERDICT for ${missing.length}: ${missing.join(' ')}`);
-  for (const r of results.filter((x) => x.verdict === 'SURVIVED' || x.verdict === 'ERRORED' || x.verdict === 'TIMEOUT' || x.warning)) log(`  look: ${r.id} ${r.verdict}${r.warning ? ` ⚠ ${r.warning}` : ''}`);
+  for (const r of results.filter((x) => ['SURVIVED', 'ERRORED', 'TIMEOUT', 'PENDING'].includes(x.verdict) || x.warning)) log(`  look: ${r.id} ${r.verdict}${r.warning ? ` ⚠ ${r.warning}` : ''}`);
   if (args.verify) {
     const v = results.filter((r) => r.verify);
-    log(`verify: ${v.length} mutants · verdicts agree ${v.filter((r) => r.verify.verdictsAgree).length} · early-stage rows = full rows on those files ${v.filter((r) => r.verify.rowsAgree).length} · failing files inside the related set ${v.filter((r) => r.verify.contained).length}`);
+    const leftOut = v.reduce((n, r) => n + r.verify.timedOutRowsLeftOut.length, 0);
+    log(`verify: ${v.length} mutants · verdicts agree ${v.filter((r) => r.verify.verdictsAgree).length} · early-stage rows = full rows on those files ${v.filter((r) => r.verify.rowsAgree).length} (timed-out rows left out: ${leftOut}) · failing files inside the related set ${v.filter((r) => r.verify.contained).length}`);
   }
   save();
   for (const t of trees) for (const f of targets) if (!readFileSync(path.join(t.dir, f)).equals(git(repo, ['cat-file', 'blob', `${sha}:${f}`]))) throw new Error(`${t.dir} ${f} is not the commit's bytes at the end`);
