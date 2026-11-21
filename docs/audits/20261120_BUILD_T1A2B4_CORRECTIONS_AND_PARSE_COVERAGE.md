@@ -564,7 +564,7 @@ These are not fixed, or not fully fixed.
 | | |
 |---|---|
 | Prompt | "Fix T1a-2b-4: late data asks the founder (T2E-01 to T2E-08)", 20 Nov 2026 — Astra's review `docs/audits/20261120_ASTRA_REVIEW_T1A2B4.md` (committed byte-identical first, SHA-256 `ea2da300…1e86`) |
-| Branch, base | `claude/practice-field-t1a2b4-corrections` from `df9b7278`; `origin/main` still `41c04cd2` (fetched; nothing to merge) |
+| Branch, base | `claude/practice-field-t1a2b4-corrections` from `df9b7278`; `origin/main` was `41c04cd2` through the round. At the final push it is `cf35151b` (#1099 and #1100: flags and the cockpit readout, no Practice Field file); it merges cleanly and was not merged here |
 | Code head | `e8d51fd6` for the product code. After it, test files only: `0426efc9`, `8418716a`, `afd145f6` (the battery's last two survivors settled, §11.9); the report commits are documentation only. Final code head of this round: `afd145f6` |
 | Mode | `PRACTICE_FIELD_MODE` stays `'off'`. No fenced file, flag, pin, rules or index changed; `mandateUniverseSnapshot.js` and `mandateCorporateActions.js` untouched. Offline: the repository's test doubles only; no network request, no environment variable, `.env` file or credential read |
 
