@@ -470,6 +470,39 @@ export const FILM_ROOM_COPY = Object.freeze({
     readError: 'The cards could not be read.',
     openCard: 'Show',
   },
+
+  // Film Room D1 — THE FRONT, the game's flow (Build D spec §11, verbatim): every word the front says. A number is never
+  // inside a string here: it renders between two parts, bound to its tape path or its declared aggregate (FL-12), and a
+  // clock renders as an instant — so "Won by {n}" is `heading.won`, a space, then the bound margin. "Won", "Lost" and
+  // "Draw" are the recorded result; no judgment word (§11).
+  flow: {
+    heading: { won: 'Won by', lost: 'Lost by', draw: 'Draw', final: 'Final' },
+    key: { you: 'You', cpu: 'CPU' },
+    legend: { agent: "Agent's swap", other: 'Other swap', directive: 'Your directive' },
+    low: 'Low',
+    makers: { agent: 'Your agent', stall: 'Stall rule', risk: 'Risk rule', guardrail: 'Guardrail', meeting: 'Gameplan meeting', unrecorded: 'Maker not recorded' },
+    // the facts' joints — "{maker} · {out} → {in} · {clock}", " · sold at {price}", "Your directive · {clock} · filed"
+    dot: ' · ',
+    arrow: ' → ',
+    soldAt: 'sold at',
+    notRecorded: 'not recorded',
+    yourDirective: 'Your directive',
+    filed: 'filed',
+    notFiled: 'not filed',
+    speakerYou: 'You',
+    previous: 'Previous',
+    next: 'Next',
+    plus: '+',   // §6: a merged pin shows its lowest number followed by "+"
+    more: 'more on the full tape',   // "{n} more on the full tape"
+    openThis: 'Open this on the full tape',
+    incomplete: "Some of this day's record is incomplete. The full tape says what.",
+    nothing: 'Nothing stood out in this game.',
+    counts: { thisGame: 'This game', thisDay: 'This day', trading: 'Trading', withYou: 'Working with you', of: 'of', ownCall: 'swaps were its own call', filed: 'directives filed' },
+    // §9: "1 moment to take home, on the full tape" · "{n} moments to take home, on the full tape" — the count before it
+    moments: (n) => (n === 1 ? 'moment to take home, on the full tape' : 'moments to take home, on the full tape'),
+    door: 'Open the full tape',
+    back: 'Game flow',
+  },
 });
 
 /**
