@@ -35,12 +35,20 @@
 //
 // The idea book's own backfill (caBackfill.js) records the same report for what it fetches, on the backfill document
 // itself (`parseReport`), and a backfill whose report is not clean covers nothing.
+//
+// A REPORT THAT CHANGES AFTER ITS CLOSE (the founder's C-1, 21 Nov 2026; Astra T2E-R01, R02): two daily builds of one
+// session can race, and the loser's observation can merge in after an idea book has closed the session on the winner's.
+// When a write adds a rejection or a disagreement to a symbol's entry, and an idea book's close has already read the
+// session's report, the write logs PRACTICE_FIELD_REPORT_CHANGED_AFTER_CLOSE naming the symbol, the session and those
+// books. It does not reopen the closed session or hold money. (T5: a lease so one daily build runs per session.)
 
 import { parseVendorSplits, parseVendorDividends } from './ledger.js';
 import { fetchCorporateActionsEODHD } from '../mandateUniverseSnapshot.js';
 import { MANDATE_CA_FETCH_LOOKBACK_DAYS, MANDATE_CA_FETCH_LOOKAHEAD_DAYS } from '../mandateConfig.js';
 import { shiftCalendarDate, PARSE_LEGS, parseEntryVerdict, parseReportEntry, actionsHashOf } from './dailyCoverage.js';
 import { stableStringify } from '../canonicalHash.js';
+import { PRACTICE_FIELD_BOOK_REGISTRY_ID } from './constants.js';
+import { windowRowId, CLOSE_WINDOW } from './windows.js';
 
 export { PARSE_LEGS, parseEntryVerdict, parseReportEntry, actionsHashOf };
 /** A report write that has not settled in this long is given up (the symbol reads uncovered — review AR4-B-6). */
@@ -145,6 +153,39 @@ export function mergeParseEntries(prior, entry) {
 }
 
 /**
+ * T1a-2b-4 closeout (the founder's C-1, 21 Nov 2026; Astra T2E-R01, R02): WHAT A MERGE ADDED that a close reads as doubt —
+ * a rejected row the stored entry did not hold, or a disagreement it did not record. A first entry is measured against
+ * nothing: its rejections are all new. The same rejection observed again adds nothing. Pure.
+ * @param {object|undefined} stored  the entry stored for the symbol and session before this write
+ * @param {object} merged            the entry this write stores
+ * @returns {boolean}
+ */
+export function doubtGainedBy(stored, merged) {
+  const seen = new Set((Array.isArray(stored?.rejects) ? stored.rejects : []).map((r) => stableStringify(r)));
+  const newRejection = (Array.isArray(merged?.rejects) ? merged.rejects : []).some((r) => !seen.has(stableStringify(r)));
+  return newRejection || (merged?.observationsDisagree === true && stored?.observationsDisagree !== true);
+}
+
+/**
+ * C-1: the idea books whose close of `session` READ its report (the close's window row, `observed`; close.js reads the
+ * report and creates that row in one transaction) — read in the report's own transaction, so "closed before this change"
+ * is exact: a close that commits first is named, and one that commits after reads the changed report. Only the open and
+ * draining books are listed (the registry); a book closed for good is not. The collections by their literal names.
+ * @returns {Promise<string[]>}  book ids, sorted
+ */
+async function booksThatClosed(tx, db, session) {
+  const registry = await tx.get(db.collection('practiceFieldBooks').doc(PRACTICE_FIELD_BOOK_REGISTRY_ID));
+  const openBooks = registry.exists ? registry.data()?.openBooks : null;
+  const ids = openBooks && typeof openBooks === 'object' && !Array.isArray(openBooks) ? Object.keys(openBooks).sort() : [];
+  const out = [];
+  for (const bookId of ids) {
+    const row = await tx.get(db.collection('mandates').doc(bookId).collection('windows').doc(windowRowId(session, CLOSE_WINDOW)));
+    if (row.exists && row.data()?.observed === true) out.push(bookId);
+  }
+  return out;
+}
+
+/**
  * The session a base fetch's window belongs to: the base asks `[session − LOOKBACK, session + LOOKAHEAD]` calendar
  * days (mandateUniverseSnapshot.js ensureDailySnapshot). Null when the window is not that shape — no report is written
  * then, and a missing report is uncovered.
@@ -200,7 +241,13 @@ export function makeParseReportingFetcher(db, { symbols = [], base = fetchCorpor
     const snap = await tx.get(ref);
     const stored = snap.exists && snap.data()?.symbols && typeof snap.data().symbols === 'object' ? snap.data().symbols : {};
     const merged = Object.fromEntries(Object.entries(entries).map(([sym, e]) => [sym, mergeParseEntries(Object.hasOwn(stored, sym) ? stored[sym] : undefined, e)]));
+    // C-1 (closeout): A REPORT THAT CHANGES AFTER ITS CLOSE IS ALERTED — it reopens nothing and holds no money. Only when a
+    // symbol gained a doubt are the books read (every read before the write); otherwise this write reads what it did.
+    const gained = Object.keys(merged).filter((sym) => doubtGainedBy(Object.hasOwn(stored, sym) ? stored[sym] : undefined, merged[sym])).sort();
+    const closedBy = gained.length > 0 ? await booksThatClosed(tx, db, session) : [];
     tx.set(ref, { schemaVersion: PARSE_REPORT_SCHEMA_VERSION, session, symbols: merged }, { merge: true });
+    // (Returned, and logged once the transaction has committed — never inside the callback, which a retry runs again.)
+    return closedBy.length === 0 ? [] : gained.map((sym) => `${LOG_PREFIX} PRACTICE_FIELD_REPORT_CHANGED_AFTER_CLOSE ${sym} ${session} books=${closedBy.join(',')} — the session's parse report gained a rejection or a disagreement after these books closed it; nothing reopens and no money is held`);
   });
   // ONE WRITER AT A TIME, COALESCED (review AR4-B-6): the build fetches several symbols at once; their entries wait in
   // `pending` and go in one merge per round, never several writes to one document at once. Each symbol's fetch resolves
@@ -214,7 +261,8 @@ export function makeParseReportingFetcher(db, { symbols = [], base = fetchCorpor
       pending.delete(session);
       const entries = Object.fromEntries(Object.entries(batch).map(([sym, x]) => [sym, x.entry]));
       try {
-        await writeDoc(session, entries);
+        const alerts = await writeDoc(session, entries);
+        for (const line of alerts || []) console.error(line);
         for (const x of Object.values(batch)) x.settle(null);
       } catch (err) {
         for (const x of Object.values(batch)) x.settle(err);

@@ -708,3 +708,247 @@ describe('the oracle — A-1 and A-2 from the inputs alone', () => {
     expect(() => e.check({ ledger: { corporateActionReceipts: [], adjustments: [] } }, 3, { ledger: { sym: 'AAPL', entryShares: 99.970008, boughtAt: 0, soldAt: null } }, 'unit')).not.toThrow();
   });
 });
+
+// ── THE CLOSEOUT'S ROWS (the founder's ruling of 21 Nov 2026, C-1 and C-2; Astra's recheck T2E-R01 to R03) ──────────────
+// Astra's three executable seeds, appended as she wrote them. R03 is verbatim, in both vendor orders. R01 and R02 are
+// pinned to the ruled behaviour (C-1: a report that changes after its close is ALERTED, it reopens nothing and holds no
+// money): the money is as she observed it, and the alert fires exactly once, naming the symbol, the session and the book.
+import { planHoldRuling } from './holdRulings.js';
+import { shiftCalendarDate } from './dailyCoverage.js';
+import { sessionOfWindow } from './caParseReport.js';
+import { MANDATE_CA_FETCH_LOOKBACK_DAYS, MANDATE_CA_FETCH_LOOKAHEAD_DAYS } from '../mandateConfig.js';
+
+async function reviewClose(ctx, i, doc, price, backfillRows) {
+  await snapshot(ctx, i, 'close', price, doc);
+  const result = await closeIdeaBook(ctx.db, ctx.bookRef, {
+    date: S[i], now: closeNowOf(S[i]), fetchCorporateActions: parse,
+    caFetchImpl: vendor(backfillRows),
+  });
+  expect(result.closed).toBe(true);
+}
+
+async function reviewLateReport(ctx, i, clean, dirty, price) {
+  const paused = gate();
+  const loser = daily(ctx, i, dirty, '21:25', paused);
+  await paused.ready;
+  try {
+    const winner = await daily(ctx, i, clean, '21:25');
+    await reviewClose(ctx, i, winner, price, clean);
+  } finally {
+    paused.release();
+    await loser;
+  }
+  const report = ctx.db._get('practiceFieldCaParseReports/' + S[i]);
+  expect(report.symbols.AAPL).toMatchObject({ rowsRejected: 1, observationsDisagree: true });
+}
+
+async function reviewSale() {
+  const ctx = await openIdea();
+  await session(ctx, 0);
+  await session(ctx, 1, [], 94);
+  const sold = await session(ctx, 2, [], 94);
+  expect(sold.saleReceipts[0]).toMatchObject({ sessionDate: S[2], shares: 99.970008 });
+  await session(ctx, 3, [dividend(2, 1)], 94);
+  return ctx;
+}
+
+// C-1's alert, as logged (console.error), and the rows' spy on it — passed through, so every other line still prints.
+const REPORT_ALERT = 'PRACTICE_FIELD_REPORT_CHANGED_AFTER_CLOSE';
+function alertSpy() {
+  const spy = vi.spyOn(console, 'error');
+  return { lines: () => spy.mock.calls.map((c) => String(c[0])).filter((l) => l.includes(REPORT_ALERT)), restore: () => spy.mockRestore() };
+}
+const alertOf = (ctx, i) => expect.stringContaining(`${REPORT_ALERT} AAPL ${S[i]} books=${ctx.bookId} `);
+
+/** The loser's report committed BEFORE the close (the passing order of R01 and R02, as today). */
+async function reviewEarlyReport(ctx, i, clean, dirty, price) {
+  const paused = gate();
+  const loser = daily(ctx, i, dirty, '21:25', paused);
+  await paused.ready;
+  const winner = await daily(ctx, i, clean, '21:25');
+  paused.release();
+  await loser;
+  expect(ctx.db._get('practiceFieldCaParseReports/' + S[i]).symbols.AAPL).toMatchObject({ rowsRejected: 1, observationsDisagree: true });
+  await reviewClose(ctx, i, winner, price, clean);
+}
+
+/** One more observation of session S[i] through the daily builder's own wrapper (a third build, a retry). */
+async function lateObservation(ctx, i, rows) {
+  const from = shiftCalendarDate(S[i], -MANDATE_CA_FETCH_LOOKBACK_DAYS), to = shiftCalendarDate(S[i], MANDATE_CA_FETCH_LOOKAHEAD_DAYS);
+  expect(sessionOfWindow(from, to)).toBe(S[i]);
+  const now = new Date(S[i] + 'T21:27:00Z');
+  await makeParseReportingFetcher(ctx.db, { symbols, base: parse, fetchImpl: vendor(rows), now: () => now })('AAPL', { from, to });
+}
+
+it('R01 sold-report-after-close', async () => {
+  const alerts = alertSpy();
+  try {
+    const ctx = await reviewSale();
+    const clean = [dividend(2, 1)], dirty = [...clean, split(2, '3:2')];
+    await session(ctx, 4, clean, 94);
+    await reviewLateReport(ctx, 5, clean, dirty, 94);
+    // C-1: the loser's rejection reached Monday's report after the book closed Monday — alerted, once.
+    expect(alerts.lines()).toEqual([alertOf(ctx, 5)]);
+    // The same rejection observed again adds nothing to the report, so nothing is alerted again.
+    await lateObservation(ctx, 5, dirty);
+    expect(alerts.lines()).toHaveLength(1);
+    const answer = await approve(ctx, 2);
+    const next = await session(ctx, 6, dirty, 94);
+    // CHANGED EXPECTATION — C-1 (the founder's ruling, 21 Nov 2026): Astra's seed expected 0 and 409. The closed session is
+    // not reopened and no money is held: the approval is accepted and Tuesday posts the $99.97 she observed.
+    expect(next.dividendsUsd).toBe(99.97);
+    expect(answer.status).toBe(200);
+    expect(alerts.lines()).toHaveLength(1);
+  } finally {
+    alerts.restore();
+  }
+});
+
+it('R02 refused-announcement-after-close', async () => {
+  const alerts = alertSpy();
+  try {
+    const ctx = await openIdea();
+    for (let i = 0; i <= 4; i++) await session(ctx, i);
+    await session(ctx, 5, [dividend(7, 1)]);
+    const revised = [dividend(7, 2.37)];
+    await reviewLateReport(ctx, 6, revised, [...revised, split(7, '3:2')], 100);
+    expect(alerts.lines()).toEqual([alertOf(ctx, 6)]);
+    const due = await session(ctx, 7, revised);
+    // CHANGED EXPECTATION — C-1: Astra's seed expected 0. The announcement S6's close made stands, and S7 pays the $236.93
+    // she observed; the alert named the session whose report changed.
+    expect(due.dividendsUsd).toBe(236.93);
+    expect(alerts.lines()).toEqual([alertOf(ctx, 6)]);
+  } finally {
+    alerts.restore();
+  }
+});
+
+it.each([['5/4','2/1'], ['2/1','5/4']])('R03 refetch-order %s then %s', async (a, b) => {
+  const ctx = await reviewSale();
+  expect((await approve(ctx, 2)).status).toBe(200);
+  const bad = [dividend(2, 1), split(2, '5:4')];
+  await session(ctx, 4, bad, 94);
+  await session(ctx, 5, bad, 94);
+  const doc = await daily(ctx, 6, []);
+  await reviewClose(ctx, 6, doc, 94, [split(2, a), split(2, b), dividend(2, 1)]);
+  const stored = ctx.db._get('practiceFieldCaBackfill/AAPL');
+  expect(stored.failed).toBe(false);
+  expect(stored.actions.filter(r => r.type === 'split')).toHaveLength(2);
+  const body = {
+    kind: 'coverage_gap', recordId: 'ca_closed_doubt_AAPL_' + S[2],
+    decision: 'row', actionId: 'split_AAPL_' + S[2], payload: { ratio: 1.25 },
+  };
+  const answer = await ask(ctx, body, 'refetch-choice');
+  const next = await session(ctx, 7, [], 94);
+  if (answer.status === 200) {
+    expect(idea(ctx).founderRulings.at(-1).row.ratio).toBe(1.25);
+    expect(next.dividendsUsd).toBe(124.96);
+  } else {
+    expect([409, 422]).toContain(answer.status);
+    expect(next.dividendsUsd).toBe(0);
+  }
+});
+
+describe("C-1 — the passing order: the loser's report committed before the close (as today; nothing alerted)", () => {
+  it("R01's control: the standing doubt refuses the approval (409) and Tuesday pays nothing", async () => {
+    const alerts = alertSpy();
+    try {
+      const ctx = await reviewSale();
+      const clean = [dividend(2, 1)], dirty = [...clean, split(2, '3:2')];
+      await session(ctx, 4, clean, 94);
+      await reviewEarlyReport(ctx, 5, clean, dirty, 94);
+      const answer = await approve(ctx, 2);
+      expect((await session(ctx, 6, dirty, 94)).dividendsUsd).toBe(0);
+      expect(answer.status).toBe(409);
+      expect(alerts.lines()).toEqual([]);
+    } finally {
+      alerts.restore();
+    }
+  });
+
+  it("R02's control: S6 keeps the $1 announcement and S7 is a conflict that pays nothing", async () => {
+    const alerts = alertSpy();
+    try {
+      const ctx = await openIdea();
+      for (let i = 0; i <= 4; i++) await session(ctx, i);
+      await session(ctx, 5, [dividend(7, 1)]);
+      const revised = [dividend(7, 2.37)];
+      await reviewEarlyReport(ctx, 6, revised, [...revised, split(7, '3:2')], 100);
+      const due = await session(ctx, 7, revised);
+      expect(due.dividendsUsd).toBe(0);
+      expect(due.corporateActionReceipts.some((r) => r.reason === 'conflicting_action')).toBe(true);
+      expect(alerts.lines()).toEqual([]);
+    } finally {
+      alerts.restore();
+    }
+  });
+});
+
+describe('C-2 — `coverage_gap` / `row` takes only the payload the founder names (Astra T2E-R03)', () => {
+  /** R03's history up to the stored clean refetch: the sale, the approved dividend, the standing doubt, the refetch. */
+  async function refetchOf(rows) {
+    const ctx = await reviewSale();
+    expect((await approve(ctx, 2)).status).toBe(200);
+    const bad = [dividend(2, 1), split(2, '5:4')];
+    await session(ctx, 4, bad, 94);
+    await session(ctx, 5, bad, 94);
+    const doc = await daily(ctx, 6, []);
+    await reviewClose(ctx, 6, doc, 94, rows);
+    expect(ctx.db._get('practiceFieldCaBackfill/AAPL').failed).toBe(false);
+    return ctx;
+  }
+  const rowBody = (extra) => ({ kind: 'coverage_gap', recordId: 'ca_closed_doubt_AAPL_' + S[2], decision: 'row', actionId: 'split_AAPL_' + S[2], ...extra });
+
+  it.each([['5/4', '2/1'], ['2/1', '5/4']])('naming ratio 1.25 takes the 5/4 row with %s listed first, and the dividend posts once', async (a, b) => {
+    const ctx = await refetchOf([split(2, a), split(2, b), dividend(2, 1)]);
+    expect((await ask(ctx, rowBody({ payload: { ratio: 1.25 } }), 'named')).status).toBe(200);
+    expect(idea(ctx).founderRulings.at(-1).row).toMatchObject({ type: 'split', ratio: 1.25 });
+    const paid = await session(ctx, 7, [], 94);
+    expect(paid.dividendsUsd).toBe(124.96);
+    const after = await session(ctx, 8, [], 94);
+    expect(after.dividendsUsd).toBe(124.96);
+    expect(after.cash).toBe(paid.cash);
+  });
+
+  it.each([['5/4', '2/1'], ['2/1', '5/4']])('naming nothing while the id carries two payloads (%s first) is refused with 422 and pays nothing', async (a, b) => {
+    const ctx = await refetchOf([split(2, a), split(2, b), dividend(2, 1)]);
+    expect(await ask(ctx, rowBody({}), 'unnamed')).toMatchObject({ status: 422, body: { error: 'row_payload_ambiguous' } });
+    expect(idea(ctx).founderRulings.some((r) => r.recordId === 'ca_closed_doubt_AAPL_' + S[2])).toBe(false);
+    expect((await session(ctx, 7, [], 94)).dividendsUsd).toBe(0);
+  });
+
+  it('naming a ratio the refetch does not hold is refused with 422 and pays nothing — also when the id is unique', async () => {
+    const two = await refetchOf([split(2, '5/4'), split(2, '2/1'), dividend(2, 1)]);
+    expect(await ask(two, rowBody({ payload: { ratio: 1.5 } }), 'absent')).toMatchObject({ status: 422, body: { error: 'payload_not_recorded' } });
+    expect((await session(two, 7, [], 94)).dividendsUsd).toBe(0);
+    const one = await refetchOf([split(2, '5/4'), dividend(2, 1)]);
+    expect(await ask(one, rowBody({ payload: { ratio: 2 } }), 'absent-unique')).toMatchObject({ status: 422, body: { error: 'payload_not_recorded' } });
+    expect((await session(one, 7, [], 94)).dividendsUsd).toBe(0);
+  });
+
+  it('a unique row still works without naming a payload: the 5/4 split is taken and the dividend posts once', async () => {
+    const ctx = await refetchOf([split(2, '5/4'), dividend(2, 1)]);
+    expect((await ask(ctx, rowBody({}), 'unique')).status).toBe(200);
+    expect(idea(ctx).founderRulings.at(-1).row).toMatchObject({ type: 'split', ratio: 1.25 });
+    expect((await session(ctx, 7, [], 94)).dividendsUsd).toBe(124.96);
+    expect((await session(ctx, 8, [], 94)).dividendsUsd).toBe(124.96);
+  });
+
+  it("the open coverage gap's `row` takes the same care (pure): two payloads need a named one, taken in either order", () => {
+    const gapIdea = { ideaId: 'i', founderRulings: [], ledger: null, comparisonLedger: null, spyLedger: null, caCoverageGaps: { AAPL: { since: S[0], lastSession: S[3], sessions: 3 } } };
+    const splitRow = (ratio) => ({ type: 'split', ticker: 'AAPL', effectiveDate: S[2], ratio, source: 'eodhd_splits' });
+    const ruleOn = (actions, payload) => planHoldRuling(gapIdea, { kind: 'coverage_gap', recordId: 'ca_coverage_gap_AAPL_' + S[0], decision: 'row', actionId: 'split_AAPL_' + S[2], payload },
+      { uid: 'owner-1', requestKey: 'k', nowIso: S[4] + 'T13:00:00.000Z', backfill: { symbol: 'AAPL', actions } });
+    for (const actions of [[splitRow(1.25), splitRow(2)], [splitRow(2), splitRow(1.25)]]) {
+      expect(ruleOn(actions, null)).toEqual({ error: 'row_payload_ambiguous', status: 422 });
+      expect(ruleOn(actions, { ratio: 1.25 }).ruling.row).toMatchObject({ ratio: 1.25 });
+      expect(ruleOn(actions, { ratio: 2 }).ruling.row).toMatchObject({ ratio: 2 });
+      expect(ruleOn(actions, { ratio: 1.5 })).toEqual({ error: 'payload_not_recorded', status: 422 });
+    }
+    // The same payload listed twice is one payload: taken without naming. A unique row is taken without naming, and a
+    // named payload it does not carry is refused.
+    expect(ruleOn([splitRow(1.25), splitRow(1.25)], null).ruling.row).toMatchObject({ ratio: 1.25 });
+    expect(ruleOn([splitRow(2)], null).ruling.row).toMatchObject({ ratio: 2 });
+    expect(ruleOn([splitRow(2)], { ratio: 1.25 })).toEqual({ error: 'payload_not_recorded', status: 422 });
+  });
+});

@@ -30,7 +30,8 @@
 //   coverage_gap  (an open `ca_coverage_gap_SYM_<since>`, F-1)
 //     no_action   there was no action in the gap's dates: the doubt clears — the symbol's data counts as covered through
 //                 the gap's last session, so this close's own data covers it from there;
-//     row         one recorded backfill row (`practiceFieldCaBackfill/{SYM}`) is applied once, and the doubt clears.
+//     row         one recorded backfill row (`practiceFieldCaBackfill/{SYM}`) is applied once, and the doubt clears. An id
+//                 the backfill lists with two payloads needs the founder's `payload`, and only its row is taken (C-2).
 //
 // A ruling that cannot be applied at that close — its action held behind another doubt — stays pending and is applied
 // at the first close that can (`appliedOn` names it). Every ruling records who, when, the request key and the record.
@@ -73,6 +74,27 @@ const payloadOf = (row) => ({
 });
 const samePayload = (a, b) => (a?.ratio ?? null) === (b?.ratio ?? null) && (a?.amount ?? null) === (b?.amount ?? null)
   && (a?.cashPerShare ?? null) === (b?.cashPerShare ?? null) && (a?.renamedTo != null ? upper(a.renamedTo) : null) === (b?.renamedTo != null ? upper(b.renamedTo) : null);
+/**
+ * T1a-2b-4 closeout (the founder's C-2, 21 Nov 2026; Astra T2E-R03): THE ONE ROW a `coverage_gap` / `row` ruling takes.
+ * `candidates` are the stored refetch's rows of the requested id within the record's dates. An id names a type, a ticker
+ * and a date — never a payload — so a refetch can hold two rows of one id with different payloads (a 5/4 and a 2/1 split),
+ * and the first one listed used to win, whatever the founder named. Now, compared as a conflict ruling compares them
+ * (payloadOf, samePayload):
+ *   - a payload the founder names takes ONLY a row carrying exactly it — none does: 422 (even when the row is unique);
+ *   - with none named, the id must carry ONE distinct payload — two or more: 422, while the doubt stands.
+ * @returns {{ row: object } | { error: string, status: number }}
+ */
+function rowOfNamedPayload(candidates, payload) {
+  if (candidates.length === 0) return { error: 'row_not_recorded', status: 422 };
+  if (payload !== null && payload !== undefined) {
+    if (!isPlain(payload)) return { error: 'payload_invalid', status: 400 };
+    const named = candidates.find((x) => samePayload(payloadOf(x), payloadOf(payload)));
+    return named ? { row: named } : { error: 'payload_not_recorded', status: 422 };
+  }
+  const distinct = [];
+  for (const x of candidates) if (!distinct.some((p) => samePayload(p, payloadOf(x)))) distinct.push(payloadOf(x));
+  return distinct.length === 1 ? { row: candidates[0] } : { error: 'row_payload_ambiguous', status: 422 };
+}
 /** The economic fields of a chosen payload, as an action carries them. */
 const payloadFields = (p) => ({
   ...(p?.ratio != null ? { ratio: p.ratio } : {}), ...(p?.amount != null ? { amount: p.amount } : {}),
@@ -395,6 +417,8 @@ export function planHoldRuling(idea, { kind, recordId, decision, ratio, payload,
   //   row        one row of the stored clean refetch (`practiceFieldCaBackfill/{SYM}`), dated within the doubt, is what the
   //              rejected row was: it reaches the sold holding's path as the founder's (a split enters the dated count as
   //              history; a dividend is proposed, L-1) — the only way the refetch's rows reach it (R-4's join is gone).
+  //              When the id carries more than one payload there, the request must name one (`payload`), and only a row
+  //              carrying exactly it is taken (C-2, closeout; rowOfNamedPayload).
   const doubts = idea?.ledger?.closedCoverageDoubts || {};
   const doubtSym = Object.keys(doubts).find((k) => (doubts[k]?.dates || []).length > 0 && closedDoubtIdOf(k, doubts[k].dates[0].date) === recordId);
   if (doubtSym) {
@@ -404,9 +428,11 @@ export function planHoldRuling(idea, { kind, recordId, decision, ratio, payload,
       if (typeof actionId !== 'string') return { error: 'action_id_invalid', status: 400 };
       const rows = Array.isArray(backfill?.actions) && upper(backfill?.symbol) === doubtSym && backfill.failed !== true ? backfill.actions : [];
       const first = d.dates[0].date;
-      const a = rows.find((x) => isPlain(x) && upper(x.ticker) === doubtSym && deriveActionId(x) === actionId && typeof x.effectiveDate === 'string'
-        && x.effectiveDate >= first && (typeof d.through !== 'string' || x.effectiveDate <= d.through));
-      if (!a) return { error: 'row_not_recorded', status: 422 };
+      // (C-2: every row of the id within the doubt, and the one carrying the payload the founder named — rowOfNamedPayload.)
+      const taken = rowOfNamedPayload(rows.filter((x) => isPlain(x) && upper(x.ticker) === doubtSym && deriveActionId(x) === actionId && typeof x.effectiveDate === 'string'
+        && x.effectiveDate >= first && (typeof d.through !== 'string' || x.effectiveDate <= d.through)), payload);
+      if (taken.error) return taken;
+      const a = taken.row;
       if (ambiguousOnIdea(idea, actionId)) return { error: 'row_ambiguous_rule_conflict', status: 409 };
       row = { type: a.type, ticker: doubtSym, effectiveDate: a.effectiveDate, ...(a.ratio != null ? { ratio: a.ratio } : {}), ...(a.amount != null ? { amount: a.amount } : {}), source: a.source ?? null };
     }
@@ -428,11 +454,12 @@ export function planHoldRuling(idea, { kind, recordId, decision, ratio, payload,
   let row = null;
   if (decision === 'row') {
     if (typeof actionId !== 'string') return { error: 'action_id_invalid', status: 400 };
-    // One RECORDED backfill row of the symbol, dated inside the gap.
+    // One RECORDED backfill row of the symbol, dated inside the gap — the one carrying the payload the founder named (C-2).
     const rows = Array.isArray(backfill?.actions) && upper(backfill?.symbol) === sym ? backfill.actions : [];
-    const a = rows.find((x) => isPlain(x) && upper(x.ticker) === sym && deriveActionId(x) === actionId && typeof x.effectiveDate === 'string' && x.effectiveDate > gap.since
-      && (typeof gap.lastSession !== 'string' || x.effectiveDate <= gap.lastSession));
-    if (!a) return { error: 'row_not_recorded', status: 422 };
+    const taken = rowOfNamedPayload(rows.filter((x) => isPlain(x) && upper(x.ticker) === sym && deriveActionId(x) === actionId && typeof x.effectiveDate === 'string' && x.effectiveDate > gap.since
+      && (typeof gap.lastSession !== 'string' || x.effectiveDate <= gap.lastSession)), payload);
+    if (taken.error) return taken;
+    const a = taken.row;
     // Rev 1, S-2 (AR2-A-1 1b, 1c; AR2-C-2): a backfill row of an AMBIGUOUS id is not the founder's answer to its record —
     // only a `conflict` ruling on that record is. `no_action` stays open; the record governs its id either way.
     if (ambiguousOnIdea(idea, actionId)) return { error: 'row_ambiguous_rule_conflict', status: 409 };
