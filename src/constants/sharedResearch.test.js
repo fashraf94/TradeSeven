@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 import {
-  ENTRY_ITEM_RECORD_KINDS, BEAT_QUESTIONS, DEFAULT_BEAT_QUESTION, questionForBeat, ADOPTABLE_HORIZONS, HORIZON_SESSIONS,
+  ENTRY_ITEM_RECORD_KINDS, STORY_RECORD_KINDS, EXPLORE_RECORD_KIND, BEAT_QUESTIONS, DEFAULT_BEAT_QUESTION, questionForBeat, ADOPTABLE_HORIZONS, HORIZON_SESSIONS,
   HORIZON_LABELS, RELATIONSHIP_ROLES, STEP_BUDGET, PER_DAY, FRAMINGS_PER_DAY, GLOBAL_STEPS_PER_DAY_DEFAULT, AGE_DAYS,
   findingLabelOf, STATUS_REASON_LABELS,
 } from './sharedResearch.js';
@@ -24,7 +24,10 @@ describe('src/constants/sharedResearch.js', () => {
   });
 
   it('the spec §6.1 values', () => {
-    expect(ENTRY_ITEM_RECORD_KINDS).toEqual(['fantasyTimesStories', 'signalDrops']);
+    // B6a X-2 (moved from the two kinds): an Explore story is an item kind of its own, appended
+    expect(ENTRY_ITEM_RECORD_KINDS).toEqual(['fantasyTimesStories', 'signalDrops', 'exploreStories']);
+    expect(STORY_RECORD_KINDS).toEqual(['fantasyTimesStories', 'exploreStories']);
+    expect(EXPLORE_RECORD_KIND).toBe('exploreStories');
     expect([STEP_BUDGET, PER_DAY, FRAMINGS_PER_DAY, GLOBAL_STEPS_PER_DAY_DEFAULT, AGE_DAYS]).toEqual([10, 3, 10, 150, 2]);
     expect(RELATIONSHIP_ROLES).toEqual(['Product owner', 'Supplier', 'Customer', 'Partner', 'Competitor', 'Other']);
   });

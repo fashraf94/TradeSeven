@@ -78,7 +78,12 @@ export {
 };
 
 export const RESEARCH_WORK_COLLECTION = 'researchWork';
-export const RECORD_SCHEMA_VERSION = 1;
+/**
+ * The record's schema version, stamped once when a record is minted (buildRecord) and never rewritten. Version 2
+ * (Shared Research B6a; the founder's ruling of 21 Nov 2026) appends 'exploreStories' to the finding source list and
+ * changes nothing else; a record minted before it keeps 1. Nothing reads the number.
+ */
+export const RECORD_SCHEMA_VERSION = 2;
 export const SYMBOLS_MAX = 100;
 /** Per-turn screen entries kept on a screener record (its message budget is 30). */
 export const SCREENS_MAX = 40;

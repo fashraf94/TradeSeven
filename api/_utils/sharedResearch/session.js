@@ -222,6 +222,9 @@ export function openSessionOf({ sessionId, userId, requestId, entry, exchanges, 
       kind: entry.kind, itemRef: entry.itemRef ?? null, observation: entry.observation ?? null,
       direction: entry.direction ?? null, topic: entry.topic ?? null,
       names: Array.isArray(entry.names) ? entry.names : [],
+      // B6a X-2: the Explore story's version, stamped at open. Written only for an Explore story: every other entry is
+      // written exactly as before.
+      ...(Number.isSafeInteger(entry.itemVersion) ? { itemVersion: entry.itemVersion } : {}),
     },
     itemKey: itemKeyOf(entry.itemRef),
     frame: null, lastError: null,

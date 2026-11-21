@@ -91,9 +91,25 @@ describe('closed lists — defined once in the model, version 1 amended in place
       TERMINAL_REASONS: { savedToList: 'saved_to_list', playerAuthored: 'player_authored', concluded: 'concluded' },
     },
   };
+  // Version 2 (Shared Research B6a; the founder's ruling of 21 Nov 2026): version 1 plus 'exploreStories', appended to
+  // the finding source list (and so to the evidence-item list it derives). No other list moves.
+  LISTS_BY_SCHEMA[2] = {
+    ...LISTS_BY_SCHEMA[1],
+    FINDING_RECORD_KINDS: [...LISTS_BY_SCHEMA[1].FINDING_RECORD_KINDS, 'exploreStories'],
+    EVIDENCE_ITEM_RECORD_KINDS: [...LISTS_BY_SCHEMA[1].EVIDENCE_ITEM_RECORD_KINDS, 'exploreStories'],
+  };
+  it('version 2 is version 1 plus exploreStories, appended, and nothing else', () => {
+    const v1 = LISTS_BY_SCHEMA[1];
+    const v2 = LISTS_BY_SCHEMA[2];
+    expect(Object.keys(v2)).toEqual(Object.keys(v1));
+    for (const k of Object.keys(v1)) {
+      if (k === 'FINDING_RECORD_KINDS' || k === 'EVIDENCE_ITEM_RECORD_KINDS') expect(v2[k], k).toEqual([...v1[k], 'exploreStories']);
+      else expect(v2[k], k).toEqual(v1[k]);
+    }
+  });
   it('each list, exactly, for the current schema version — and frozen', () => {
     const lists = { FINDING_KINDS, FINDING_RECORD_KINDS, EVIDENCE_ITEM_RECORD_KINDS, FINDING_STATUSES, PIN_TYPES, EVIDENCE_REF_KINDS, RESEARCH_ORIGINS, TERMINAL_REASONS };
-    expect(RECORD_SCHEMA_VERSION).toBe(1);
+    expect(RECORD_SCHEMA_VERSION).toBe(2);
     expect(lists).toEqual(LISTS_BY_SCHEMA[RECORD_SCHEMA_VERSION]);
     for (const l of Object.values(lists)) expect(Object.isFrozen(l)).toBe(true);
   });

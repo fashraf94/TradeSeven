@@ -2,7 +2,8 @@
 //
 // Shared Research — THE THESIS, SAVED: today's state only (B4 build prompt K-14;
 // Amendment B DR-7; R3b T6 "Saved, today"). "Thesis saved" with the time the server
-// recorded (`session.adoption.at`, never the device's clock), the sentence saved,
+// recorded (`session.adoption.at`, never the device's clock), the sentence saved
+// (`session.adoption.statement` from B6a X-7, so a reopened sheet shows it too),
 // the names and the time frame, REVIEW_HONEST_LINE with the agent's name, and the
 // plain line that the idea book does not read saved theses yet. Done, and "Use it
 // in my next game" (optional; B2's two existing calls, only with an agentId).
@@ -28,9 +29,12 @@ export default function ThesisSaved({ sr, agentName, agentId, onClose }) {
   const watchlistId = outcome.watchlistId ?? session.adoption?.watchlistId ?? null;
   const when = formatWhen(session.adoption?.at);
   const alreadySaved = mine && sr.save.status === 'saved' && outcome.idempotent === true;
-  // the statement saved: the player's edit when this page sent one, else the composed sentence this page saved. No
-  // answer carries the statement (it lives on the list's thesisCard), so a reopened sheet shows none (review 4A-3).
-  const statement = !mine ? null : typeof sr.save.input?.statement === 'string' ? sr.save.input.statement : thesis?.sentence ?? null;
+  // the statement saved. B6a X-7: a save records it on the session's adoption (`session.adoption.statement`, what the
+  // server saved), so a reopened sheet shows it — and it wins here too, being the server's. A session saved before B6a
+  // carries none: then, as before, the player's edit when this page sent one, else the composed sentence this page saved,
+  // and nothing on a reopened sheet (review 4A-3).
+  const recorded = typeof session.adoption?.statement === 'string' && session.adoption.statement ? session.adoption.statement : null;
+  const statement = recorded ?? (!mine ? null : typeof sr.save.input?.statement === 'string' ? sr.save.input.statement : thesis?.sentence ?? null);
   const names = thesis?.parts?.names?.value ?? [];
   const eq = sr.equip;
   const canEquip = typeof agentId === 'string' && agentId.length > 0 && typeof watchlistId === 'string' && watchlistId.length > 0;

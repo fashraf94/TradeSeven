@@ -14,6 +14,7 @@
 //   closeInvestigation         `close`
 //   adoptIdea                  `adopt`: shared mechanics + one origin adapter
 //   readInvestigation, listOpen, readQuota, and the stored-fact reads
+//   readExploreStory, readExploreInvestigations   an Explore story at `open`; Explore's read (B6a X-2, X-1)
 //
 // The quota: `sharedResearchQuota/{uid}` (the player's day) and
 // `sharedResearchQuota/_global` (the app's day), both reset when the ET date
@@ -47,6 +48,10 @@ import {
 } from './thesis.js';
 import { companiesOf } from './companies.js';
 import { CLAIMS_READ_LIMIT } from './opening.js';
+import { EXPLORE_RECORD_KIND } from '../../../src/constants/sharedResearch.js';
+import {
+  EXPLORE_OPEN_READ, EXPLORE_ENDED_READ, EXPLORE_RECORDS_READ, sessionsToReadOf, sessionsByIdOf, livePerStoryOf, lastPerStoryOf, exploreItemsOf,
+} from './explore.js';
 
 export const AGENTS_COLLECTION = 'agents';
 /** The environment variable that overrides the app's daily step ceiling — read at call time (spec §6.12 control 4). */
@@ -160,6 +165,65 @@ export async function readStory(db, storyId) {
     id: storyId, headline: s.headline, reporterName: s.reporterName ?? null, reporterBeat: s.reporterBeat ?? null,
     publishedAt: isoOf(s.publishedAt), primaryTicker: s.primaryTicker ?? null, tickers: Array.isArray(s.tickers) ? s.tickers : [],
   };
+}
+
+/**
+ * An Explore story as `open` reads it (B6a X-2), with the server's own credentials, or null: missing, not `published`,
+ * or without a title or a whole-number version. It reads ONLY these fields of the story (Explore spec §5.1 names):
+ * `status`, `title`, `reporter.name`, `reporter.beat`, `publishedAt`, `tickers` and `version`. The body, the deck, the
+ * parts, the open question, the connections, the sources and the questions are never read. The answer has readStory's
+ * shape, plus `recordKind` (the source its opening finding cites) and `version` (stamped on the session at open).
+ */
+export async function readExploreStory(db, storyId) {
+  const s = dataOf(await db.collection(EXPLORE_RECORD_KIND).doc(storyId).get());
+  if (!s || s.status !== 'published') return null;
+  const title = s.title;
+  const version = s.version;
+  if (typeof title !== 'string' || !title.trim() || !Number.isSafeInteger(version) || version < 0) return null;
+  const reporter = s.reporter !== null && typeof s.reporter === 'object' ? s.reporter : null;
+  const name = reporter ? reporter.name : null;
+  const beat = reporter ? reporter.beat : null;
+  return {
+    id: storyId, recordKind: EXPLORE_RECORD_KIND, headline: title,
+    reporterName: typeof name === 'string' ? name : null, reporterBeat: typeof beat === 'string' ? beat : null,
+    publishedAt: isoOf(s.publishedAt), primaryTicker: null, tickers: Array.isArray(s.tickers) ? s.tickers : [],
+    version,
+  };
+}
+
+/**
+ * The Explore read (B6a X-1, GET ?list=explore): the caller's investigations of Explore stories, shaped by explore.js.
+ * No new index, no write. Three queries, in parallel:
+ *   - the OPEN and the COMPLETED Explore sessions: `userId ==`, `entry.itemRef.recordKind == 'exploreStories'`,
+ *     `status ==` — equality filters only, which Firestore serves by merging the automatic single-field indexes (the
+ *     same merge `open`'s own itemKey query uses), each at most EXPLORE_OPEN_READ / EXPLORE_ENDED_READ, in no order;
+ *   - the newest research records: the deployed (userId, createdAt desc) index listOpen reads, at most
+ *     EXPLORE_RECORDS_READ. The session of each open or completed Explore investigation there that the two queries did
+ *     not return is read by id — so the newest investigations are always held (review HB-2, RF-2, RF-3).
+ * Then the record of each open investigation the window does not hold. A session held twice counts once, ended if any
+ * read saw it ended (RF-4). At most EXPLORE_DOCS_MAX documents with the quota.
+ */
+export async function readExploreInvestigations(db, { uid }) {
+  const mine = db.collection(SESSIONS_COLLECTION).where('userId', '==', uid).where('entry.itemRef.recordKind', '==', EXPLORE_RECORD_KIND);
+  const [openSnap, endedSnap, recordSnap] = await Promise.all([
+    mine.where('status', '==', 'open').limit(EXPLORE_OPEN_READ).get(),
+    mine.where('status', '==', 'completed').limit(EXPLORE_ENDED_READ).get(),
+    db.collection(RESEARCH_WORK_COLLECTION).where('userId', '==', uid).orderBy('createdAt', 'desc').limit(EXPLORE_RECORDS_READ).get(),
+  ]);
+  const owned = (snap) => snap.docs.map((d) => d.data()).filter((s) => isOwnedSession(s, uid));
+  const queried = sessionsByIdOf([owned(openSnap), owned(endedSnap)]);
+  const newest = new Map(recordSnap.docs.map((d) => d.data()).filter((r) => isOwnedRecord(r, uid)).map((r) => [r.researchWorkId, r]));
+  const found = await Promise.all(sessionsToReadOf([...newest.values()], queried).map(async (id) => dataOf(await sessionRefOf(db, id).get())));
+  const sessions = [...sessionsByIdOf([[...queried.values()], found.filter((s) => isOwnedSession(s, uid))]).values()];
+  const live = livePerStoryOf(sessions);
+  const last = lastPerStoryOf(sessions);
+  const records = await Promise.all([...live.values()].map(async (s) => {
+    if (!s.researchWorkId) return [s.sessionId, null];
+    if (newest.has(s.researchWorkId)) return [s.sessionId, newest.get(s.researchWorkId)];
+    const r = dataOf(await researchWorkRefOf(db, s.researchWorkId).get());
+    return [s.sessionId, isOwnedRecord(r, uid) ? r : null];
+  }));
+  return exploreItemsOf({ live, last, records: new Map(records) });
 }
 
 /** The caller's OWN drop, or null — another owner's drop is not found (spec §6.3). */
@@ -624,8 +688,10 @@ const savedAs = (record) => (record?.state === 'completed' && record.terminalRea
  * checks before it are the shape's own (the ledger's preview and assertion; the builder's card); inside it, the
  * shape re-checks through `recheck(fresh, session)` and names its kept findings through `keptOf(fresh, session)`.
  * `listExtra(...)` adds the shape's own list fields (the builder's `thesisCard`; none for the ledger).
+ * `adoptionExtra({ statement })` adds the shape's own fields to the session's `adoption` (B6a X-7: the builder's
+ * statement saved; none for the ledger, whose session is written exactly as before).
  */
-async function commitAdoption(db, { uid, sessionId, record, input, selected, adapter, mintId, exchangeOf, nowIso, collisionCode, recheck, keptOf, listExtra = null }) {
+async function commitAdoption(db, { uid, sessionId, record, input, selected, adapter, mintId, exchangeOf, nowIso, collisionCode, recheck, keptOf, listExtra = null, adoptionExtra = null }) {
   const tickers = splitRetiredTickers(capTickersArray(selected.map((c) => ({
     symbol: c.symbol, reasoning: c.relationship, category: 'research', addedBy: 'user', addedAt: nowIso,
   })), nowIso)).kept;
@@ -676,7 +742,9 @@ async function commitAdoption(db, { uid, sessionId, record, input, selected, ada
     tx.create(listRef.collection(VERSIONS_SUBCOLLECTION).doc(versionDocId(1)), version);
     tx.update(recordRef, close);
     tx.update(sessionRef, {
-      status: 'completed', adoption: { watchlistId, version: 1, at: nowIso },
+      // B6a X-7: a thesis builder's save adds the statement saved (adoptThesis's adoptionExtra) — the version's own, as
+      // normalized — so a reopened saved thesis can show it. The ledger's adoption is written exactly as before.
+      status: 'completed', adoption: { watchlistId, version: 1, at: nowIso, ...(adoptionExtra ? adoptionExtra({ statement: input.statement }) : {}) },
       exchanges: [...(s.exchanges ?? []), confirmed], updatedAt: nowIso,
     });
     return { watchlistId, version: 1, researchWorkId: fresh.researchWorkId, idempotent: false };
@@ -795,6 +863,8 @@ export async function adoptThesis(db, { uid, sessionId, rev, statement = null, c
     listExtra: ({ watchlistId, fresh, session: s, keptFindingIds, statement: saved }) => ({
       [THESIS_CARD_FIELD]: savedCardOf(s.thesis, { watchlistId, sessionId, researchWorkId: fresh.researchWorkId, statement: saved, carried: keptFindingIds, savedAt: nowIso }),
     }),
+    // B6a X-7: the statement saved, on the session's adoption — what the saved screen shows on a reopened thesis
+    adoptionExtra: ({ statement: saved }) => ({ statement: saved }),
   });
 }
 
