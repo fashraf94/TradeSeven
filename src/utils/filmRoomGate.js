@@ -27,7 +27,7 @@
 // holds it in a module-scope const, so a featureFlags mock reaches every read.
 
 import { getAuth } from 'firebase/auth';
-import { FILM_ROOM_V2_MODE, FILM_ROOM_V2_MODES, FILM_ROOM_CARDS_MODE, FILM_ROOM_CARDS_MODES, FILM_ROOM_FLOW_MODE, FILM_ROOM_FLOW_MODES } from '../config/featureFlags';
+import { FILM_ROOM_V2_MODE, FILM_ROOM_V2_MODES, FILM_ROOM_CARDS_MODE, FILM_ROOM_CARDS_MODES, FILM_ROOM_FLOW_MODE, FILM_ROOM_FLOW_MODES, FILM_ROOM_DEBRIEF_MODE, FILM_ROOM_DEBRIEF_MODES } from '../config/featureFlags';
 
 /** The route the server answers on (the cockpit's own; no new endpoint). */
 export const FILM_ROOM_VERDICT_PATH = '/api/agent/cockpit-status';
@@ -247,4 +247,41 @@ export function filmRoomFlowOn(mode, verdict) {
   if (mode === 'on') return true;
   if (mode === 'allowlist') return verdict === true;
   return false;
+}
+
+// ── Film Room D2 — the WORDS gate (D2 spec §8; DW-9) ───────────────────────
+//
+// FILM_ROOM_DEBRIEF_MODE ('off' | 'allowlist' | 'on') resolves per battle owner
+// exactly as the flow mode does, and in 'allowlist' it reads THE SAME verdict
+// the flow holds — the cached readFilmRoomVerdict answer, kept by the screen
+// for one identity (Amendment D DD-3: the battle id and the nullable owner) —
+// never a request of its own for a battle the flow or the cards asked about.
+// The words show only where the flow AND the debrief both resolve on; while an
+// 'allowlist' verdict is on its way they read as off.
+
+/** The debrief mode, when it is one of the walked states, else 'off'. Never throws. */
+export function resolveFilmRoomDebriefMode() {
+  try {
+    const modes = FILM_ROOM_DEBRIEF_MODES;
+    const mode = FILM_ROOM_DEBRIEF_MODE;
+    return Array.isArray(modes) && modes.includes(mode) ? mode : OFF;
+  } catch {
+    return OFF;
+  }
+}
+
+/** Do the words resolve on for this battle, given the mode and (in 'allowlist') the verdict? Pure; undefined reads as off. */
+export function filmRoomDebriefOn(mode, verdict) {
+  if (mode === 'on') return true;
+  if (mode === 'allowlist') return verdict === true;
+  return false;
+}
+
+/**
+ * Does the front need the owner's verdict at all? Where the flow is 'allowlist' (the front itself waits on it), and —
+ * once the flow is 'on' — where the words are still 'allowlist' (the words wait on it). The flow 'off' shows no front,
+ * so no words: nothing is asked. Pure.
+ */
+export function filmRoomFrontVerdictAsked(flowMode, debriefMode) {
+  return flowMode === 'allowlist' || (flowMode === 'on' && debriefMode === 'allowlist');
 }
