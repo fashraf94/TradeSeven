@@ -1794,5 +1794,1560 @@
         "sharedResearchQuota/u1"
       ]
     ]
+  },
+  "ledgerSave": {
+    "open": {
+      "status": 200,
+      "body": {
+        "session": {
+          "sessionId": "00000000-0000-4000-8000-000000000005",
+          "status": "open",
+          "entry": {
+            "kind": "item",
+            "itemRef": {
+              "recordKind": "fantasyTimesStories",
+              "recordId": "story-1"
+            },
+            "observation": null,
+            "direction": null,
+            "topic": null,
+            "names": [
+              "ETN",
+              "GEV"
+            ]
+          },
+          "frame": null,
+          "lastError": null,
+          "exchanges": [],
+          "stepsUsed": 0,
+          "stepBudget": 10,
+          "lastStep": null,
+          "researchWorkId": "sr_00000000-0000-4000-8000-000000000005",
+          "adoption": null,
+          "createdAt": "2026-11-20T15:00:00.000Z",
+          "updatedAt": "2026-11-20T15:00:00.000Z"
+        },
+        "record": {
+          "researchWorkId": "sr_00000000-0000-4000-8000-000000000005",
+          "question": "Which companies earn from the switchgear backlog?",
+          "state": "open",
+          "terminalReason": null,
+          "endedAt": null,
+          "createdAt": "2026-11-20T15:00:00.000Z",
+          "lastTurnAt": null,
+          "summary": null,
+          "answerStale": false,
+          "summaryRevisions": [],
+          "findings": [
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000001",
+              "kind": "coverage",
+              "symbol": "ETN",
+              "fact": "Switchgear backlogs stretch as data centers expand",
+              "source": {
+                "recordKind": "fantasyTimesStories",
+                "recordId": "story-1",
+                "label": "FantasyTimes · Kim · Sector Strategist"
+              },
+              "at": "2026-11-12T13:00:00.000Z",
+              "asOf": "2026-11-12T13:00:00.000Z",
+              "status": "unverified",
+              "statusReason": "reporter_content",
+              "supersedes": null
+            },
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000002",
+              "kind": "earnings_fact",
+              "symbol": "ETN",
+              "fact": "Analyst consensus growth for ETN: 12% for the current fiscal year and 15% for the next (20 analysts on the next year).",
+              "source": {
+                "recordKind": "estimatesCache",
+                "recordId": "latest",
+                "label": "Analyst consensus · the estimates cache"
+              },
+              "at": "2026-11-19T06:00:00.000Z",
+              "asOf": "2026-11-19T06:00:00.000Z",
+              "status": "verified",
+              "statusReason": null,
+              "supersedes": null
+            },
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000003",
+              "kind": "earnings_fact",
+              "symbol": "ETN",
+              "fact": "2 stored claims about ETN are in the app's records (earnings calls, Fed events and analyst commentary); the newest is dated November 10, 2026.",
+              "source": {
+                "recordKind": "ingestedClaims",
+                "recordId": "count:ETN",
+                "label": "Stored claims · ETN"
+              },
+              "at": "2026-11-10T00:00:00.000Z",
+              "asOf": "2026-11-10T00:00:00.000Z",
+              "status": "verified",
+              "statusReason": null,
+              "supersedes": null
+            },
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000004",
+              "kind": "next_action",
+              "symbol": null,
+              "fact": "Find the primary source of what this story reports — A story is reporter content; the first step looks for the filing, release or report it rests on.",
+              "source": {
+                "recordKind": "kb",
+                "recordId": "baseline@v0",
+                "label": "Baseline method v0"
+              },
+              "at": "2026-11-20T15:00:00.000Z",
+              "asOf": null,
+              "status": "unverified",
+              "statusReason": "proposed",
+              "supersedes": null
+            }
+          ],
+          "superseded": [],
+          "lines": {
+            "support": null,
+            "complication": null,
+            "missing": null
+          },
+          "nextAction": {
+            "findingId": "f_00000000-0000-4000-8000-000000000004",
+            "kind": "next_action",
+            "symbol": null,
+            "fact": "Find the primary source of what this story reports — A story is reporter content; the first step looks for the filing, release or report it rests on.",
+            "source": {
+              "recordKind": "kb",
+              "recordId": "baseline@v0",
+              "label": "Baseline method v0"
+            },
+            "at": "2026-11-20T15:00:00.000Z",
+            "asOf": null,
+            "status": "unverified",
+            "statusReason": "proposed",
+            "supersedes": null
+          },
+          "age": null
+        },
+        "companies": {
+          "supported": [],
+          "leads": []
+        },
+        "opening": {
+          "storedRows": [
+            {
+              "symbol": "ETN",
+              "name": "Eaton Corporation plc",
+              "peer": {
+                "sector": "Industrials",
+                "metrics": null,
+                "asOf": "2026-11-19T06:00:00.000Z"
+              },
+              "ranking": {
+                "score": 71,
+                "percentile": 88,
+                "tier": "A",
+                "asOf": "2026-11-19T06:00:00.000Z"
+              }
+            },
+            {
+              "symbol": "GEV",
+              "name": "GE Vernova Inc.",
+              "peer": {
+                "sector": "Industrials",
+                "metrics": null,
+                "asOf": "2026-11-19T06:00:00.000Z"
+              },
+              "ranking": null
+            }
+          ]
+        },
+        "quota": {
+          "investigationsToday": 1,
+          "perDay": 3,
+          "framingsToday": 0,
+          "framingsPerDay": 10,
+          "stepsToday": 0,
+          "stepsPerDay": 30
+        },
+        "previous": null
+      }
+    },
+    "step": {
+      "status": 200,
+      "body": {
+        "session": {
+          "sessionId": "00000000-0000-4000-8000-000000000005",
+          "status": "open",
+          "entry": {
+            "kind": "item",
+            "itemRef": {
+              "recordKind": "fantasyTimesStories",
+              "recordId": "story-1"
+            },
+            "observation": null,
+            "direction": null,
+            "topic": null,
+            "names": [
+              "ETN",
+              "GEV"
+            ]
+          },
+          "frame": null,
+          "lastError": null,
+          "exchanges": [
+            {
+              "who": "partner",
+              "kind": "step",
+              "text": "Eaton and GE Vernova both sell power equipment to data-center builders.",
+              "at": "2026-11-20T15:00:00.000Z",
+              "stepId": "00000000-0000-4000-8000-0000000000aa",
+              "intent": "next"
+            }
+          ],
+          "stepsUsed": 1,
+          "stepBudget": 10,
+          "lastStep": {
+            "stepId": "00000000-0000-4000-8000-0000000000aa",
+            "intent": "next",
+            "status": "completed",
+            "startedAt": "2026-11-20T15:00:00.000Z",
+            "endedAt": "2026-11-20T15:00:00.000Z",
+            "error": null,
+            "query": "Find the primary source of what this story reports — ETN GEV",
+            "summaryWithheld": false
+          },
+          "researchWorkId": "sr_00000000-0000-4000-8000-000000000005",
+          "adoption": null,
+          "createdAt": "2026-11-20T15:00:00.000Z",
+          "updatedAt": "2026-11-20T15:00:00.000Z"
+        },
+        "record": {
+          "researchWorkId": "sr_00000000-0000-4000-8000-000000000005",
+          "question": "Which companies earn from the switchgear backlog?",
+          "state": "open",
+          "terminalReason": null,
+          "endedAt": null,
+          "createdAt": "2026-11-20T15:00:00.000Z",
+          "lastTurnAt": "2026-11-20T15:00:00.000Z",
+          "summary": {
+            "rev": 1,
+            "text": "Eaton sells switchgear to data-center builders; GE Vernova sells turbines to data centers.",
+            "at": "2026-11-20T15:00:00.000Z",
+            "basedOn": [
+              "f_00000000-0000-4000-8000-000000000007",
+              "f_00000000-0000-4000-8000-000000000008"
+            ]
+          },
+          "answerStale": false,
+          "summaryRevisions": [
+            {
+              "rev": 1,
+              "text": "Eaton sells switchgear to data-center builders; GE Vernova sells turbines to data centers.",
+              "at": "2026-11-20T15:00:00.000Z"
+            }
+          ],
+          "findings": [
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000001",
+              "kind": "coverage",
+              "symbol": "ETN",
+              "fact": "Switchgear backlogs stretch as data centers expand",
+              "source": {
+                "recordKind": "fantasyTimesStories",
+                "recordId": "story-1",
+                "label": "FantasyTimes · Kim · Sector Strategist"
+              },
+              "at": "2026-11-12T13:00:00.000Z",
+              "asOf": "2026-11-12T13:00:00.000Z",
+              "status": "unverified",
+              "statusReason": "reporter_content",
+              "supersedes": null
+            },
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000002",
+              "kind": "earnings_fact",
+              "symbol": "ETN",
+              "fact": "Analyst consensus growth for ETN: 12% for the current fiscal year and 15% for the next (20 analysts on the next year).",
+              "source": {
+                "recordKind": "estimatesCache",
+                "recordId": "latest",
+                "label": "Analyst consensus · the estimates cache"
+              },
+              "at": "2026-11-19T06:00:00.000Z",
+              "asOf": "2026-11-19T06:00:00.000Z",
+              "status": "verified",
+              "statusReason": null,
+              "supersedes": null
+            },
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000003",
+              "kind": "earnings_fact",
+              "symbol": "ETN",
+              "fact": "2 stored claims about ETN are in the app's records (earnings calls, Fed events and analyst commentary); the newest is dated November 10, 2026.",
+              "source": {
+                "recordKind": "ingestedClaims",
+                "recordId": "count:ETN",
+                "label": "Stored claims · ETN"
+              },
+              "at": "2026-11-10T00:00:00.000Z",
+              "asOf": "2026-11-10T00:00:00.000Z",
+              "status": "verified",
+              "statusReason": null,
+              "supersedes": null
+            },
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000007",
+              "kind": "relationship",
+              "symbol": "ETN",
+              "fact": "Supplier · Eaton sells switchgear to data-center builders.",
+              "source": {
+                "recordKind": "retrieval",
+                "recordId": "https://news.example.com/eaton",
+                "label": "news.example.com · Eaton books data-center orders",
+                "url": "https://news.example.com/eaton"
+              },
+              "at": "2026-11-06T00:00:00.000Z",
+              "asOf": "2026-11-06T00:00:00.000Z",
+              "status": "verified",
+              "statusReason": null,
+              "supersedes": null
+            },
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000008",
+              "kind": "relationship",
+              "symbol": "GEV",
+              "fact": "Supplier · GE Vernova sells turbines to data centers.",
+              "source": {
+                "recordKind": "retrieval",
+                "recordId": "https://news.example.com/gev",
+                "label": "news.example.com · GE Vernova sells turbines to data centers",
+                "url": "https://news.example.com/gev"
+              },
+              "at": "2026-11-07T00:00:00.000Z",
+              "asOf": "2026-11-07T00:00:00.000Z",
+              "status": "verified",
+              "statusReason": null,
+              "supersedes": null
+            },
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000009",
+              "kind": "next_action",
+              "symbol": null,
+              "fact": "Size Eaton's data-center sales — Significance is the weakest link.",
+              "source": {
+                "recordKind": "kb",
+                "recordId": "baseline@v0",
+                "label": "Baseline method v0"
+              },
+              "at": "2026-11-20T15:00:00.000Z",
+              "asOf": null,
+              "status": "unverified",
+              "statusReason": "proposed",
+              "supersedes": "f_00000000-0000-4000-8000-000000000004"
+            }
+          ],
+          "superseded": [
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000004",
+              "kind": "next_action",
+              "symbol": null,
+              "fact": "Find the primary source of what this story reports — A story is reporter content; the first step looks for the filing, release or report it rests on.",
+              "source": {
+                "recordKind": "kb",
+                "recordId": "baseline@v0",
+                "label": "Baseline method v0"
+              },
+              "at": "2026-11-20T15:00:00.000Z",
+              "asOf": null,
+              "status": "unverified",
+              "statusReason": "proposed",
+              "supersedes": null
+            }
+          ],
+          "lines": {
+            "support": "f_00000000-0000-4000-8000-000000000007",
+            "complication": null,
+            "missing": null
+          },
+          "nextAction": {
+            "findingId": "f_00000000-0000-4000-8000-000000000009",
+            "kind": "next_action",
+            "symbol": null,
+            "fact": "Size Eaton's data-center sales — Significance is the weakest link.",
+            "source": {
+              "recordKind": "kb",
+              "recordId": "baseline@v0",
+              "label": "Baseline method v0"
+            },
+            "at": "2026-11-20T15:00:00.000Z",
+            "asOf": null,
+            "status": "unverified",
+            "statusReason": "proposed",
+            "supersedes": "f_00000000-0000-4000-8000-000000000004"
+          },
+          "age": 0
+        },
+        "companies": {
+          "supported": [
+            {
+              "symbol": "ETN",
+              "name": "Eaton Corporation plc",
+              "role": "Supplier",
+              "relationship": "Eaton sells switchgear to data-center builders.",
+              "relationshipFindingId": "f_00000000-0000-4000-8000-000000000007",
+              "evidence": [
+                "f_00000000-0000-4000-8000-000000000002",
+                "f_00000000-0000-4000-8000-000000000003",
+                "f_00000000-0000-4000-8000-000000000007"
+              ],
+              "openQuestion": null,
+              "claim": null,
+              "eligibility": "eligible"
+            },
+            {
+              "symbol": "GEV",
+              "name": "GE Vernova Inc.",
+              "role": "Supplier",
+              "relationship": "GE Vernova sells turbines to data centers.",
+              "relationshipFindingId": "f_00000000-0000-4000-8000-000000000008",
+              "evidence": [
+                "f_00000000-0000-4000-8000-000000000008"
+              ],
+              "openQuestion": null,
+              "claim": null,
+              "eligibility": "eligible"
+            }
+          ],
+          "leads": []
+        },
+        "changed": {
+          "summary": true,
+          "findings": 3,
+          "summaryWithheld": false
+        },
+        "quota": {
+          "investigationsToday": 1,
+          "perDay": 3,
+          "framingsToday": 0,
+          "framingsPerDay": 10,
+          "stepsToday": 1,
+          "stepsPerDay": 30
+        }
+      }
+    },
+    "read": {
+      "status": 200,
+      "body": {
+        "session": {
+          "sessionId": "00000000-0000-4000-8000-000000000005",
+          "status": "open",
+          "entry": {
+            "kind": "item",
+            "itemRef": {
+              "recordKind": "fantasyTimesStories",
+              "recordId": "story-1"
+            },
+            "observation": null,
+            "direction": null,
+            "topic": null,
+            "names": [
+              "ETN",
+              "GEV"
+            ]
+          },
+          "frame": null,
+          "lastError": null,
+          "exchanges": [
+            {
+              "who": "partner",
+              "kind": "step",
+              "text": "Eaton and GE Vernova both sell power equipment to data-center builders.",
+              "at": "2026-11-20T15:00:00.000Z",
+              "stepId": "00000000-0000-4000-8000-0000000000aa",
+              "intent": "next"
+            }
+          ],
+          "stepsUsed": 1,
+          "stepBudget": 10,
+          "lastStep": {
+            "stepId": "00000000-0000-4000-8000-0000000000aa",
+            "intent": "next",
+            "status": "completed",
+            "startedAt": "2026-11-20T15:00:00.000Z",
+            "endedAt": "2026-11-20T15:00:00.000Z",
+            "error": null,
+            "query": "Find the primary source of what this story reports — ETN GEV",
+            "summaryWithheld": false
+          },
+          "researchWorkId": "sr_00000000-0000-4000-8000-000000000005",
+          "adoption": null,
+          "createdAt": "2026-11-20T15:00:00.000Z",
+          "updatedAt": "2026-11-20T15:00:00.000Z"
+        },
+        "record": {
+          "researchWorkId": "sr_00000000-0000-4000-8000-000000000005",
+          "question": "Which companies earn from the switchgear backlog?",
+          "state": "open",
+          "terminalReason": null,
+          "endedAt": null,
+          "createdAt": "2026-11-20T15:00:00.000Z",
+          "lastTurnAt": "2026-11-20T15:00:00.000Z",
+          "summary": {
+            "rev": 1,
+            "text": "Eaton sells switchgear to data-center builders; GE Vernova sells turbines to data centers.",
+            "at": "2026-11-20T15:00:00.000Z",
+            "basedOn": [
+              "f_00000000-0000-4000-8000-000000000007",
+              "f_00000000-0000-4000-8000-000000000008"
+            ]
+          },
+          "answerStale": false,
+          "summaryRevisions": [
+            {
+              "rev": 1,
+              "text": "Eaton sells switchgear to data-center builders; GE Vernova sells turbines to data centers.",
+              "at": "2026-11-20T15:00:00.000Z"
+            }
+          ],
+          "findings": [
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000001",
+              "kind": "coverage",
+              "symbol": "ETN",
+              "fact": "Switchgear backlogs stretch as data centers expand",
+              "source": {
+                "recordKind": "fantasyTimesStories",
+                "recordId": "story-1",
+                "label": "FantasyTimes · Kim · Sector Strategist"
+              },
+              "at": "2026-11-12T13:00:00.000Z",
+              "asOf": "2026-11-12T13:00:00.000Z",
+              "status": "unverified",
+              "statusReason": "reporter_content",
+              "supersedes": null
+            },
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000002",
+              "kind": "earnings_fact",
+              "symbol": "ETN",
+              "fact": "Analyst consensus growth for ETN: 12% for the current fiscal year and 15% for the next (20 analysts on the next year).",
+              "source": {
+                "recordKind": "estimatesCache",
+                "recordId": "latest",
+                "label": "Analyst consensus · the estimates cache"
+              },
+              "at": "2026-11-19T06:00:00.000Z",
+              "asOf": "2026-11-19T06:00:00.000Z",
+              "status": "verified",
+              "statusReason": null,
+              "supersedes": null
+            },
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000003",
+              "kind": "earnings_fact",
+              "symbol": "ETN",
+              "fact": "2 stored claims about ETN are in the app's records (earnings calls, Fed events and analyst commentary); the newest is dated November 10, 2026.",
+              "source": {
+                "recordKind": "ingestedClaims",
+                "recordId": "count:ETN",
+                "label": "Stored claims · ETN"
+              },
+              "at": "2026-11-10T00:00:00.000Z",
+              "asOf": "2026-11-10T00:00:00.000Z",
+              "status": "verified",
+              "statusReason": null,
+              "supersedes": null
+            },
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000007",
+              "kind": "relationship",
+              "symbol": "ETN",
+              "fact": "Supplier · Eaton sells switchgear to data-center builders.",
+              "source": {
+                "recordKind": "retrieval",
+                "recordId": "https://news.example.com/eaton",
+                "label": "news.example.com · Eaton books data-center orders",
+                "url": "https://news.example.com/eaton"
+              },
+              "at": "2026-11-06T00:00:00.000Z",
+              "asOf": "2026-11-06T00:00:00.000Z",
+              "status": "verified",
+              "statusReason": null,
+              "supersedes": null
+            },
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000008",
+              "kind": "relationship",
+              "symbol": "GEV",
+              "fact": "Supplier · GE Vernova sells turbines to data centers.",
+              "source": {
+                "recordKind": "retrieval",
+                "recordId": "https://news.example.com/gev",
+                "label": "news.example.com · GE Vernova sells turbines to data centers",
+                "url": "https://news.example.com/gev"
+              },
+              "at": "2026-11-07T00:00:00.000Z",
+              "asOf": "2026-11-07T00:00:00.000Z",
+              "status": "verified",
+              "statusReason": null,
+              "supersedes": null
+            },
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000009",
+              "kind": "next_action",
+              "symbol": null,
+              "fact": "Size Eaton's data-center sales — Significance is the weakest link.",
+              "source": {
+                "recordKind": "kb",
+                "recordId": "baseline@v0",
+                "label": "Baseline method v0"
+              },
+              "at": "2026-11-20T15:00:00.000Z",
+              "asOf": null,
+              "status": "unverified",
+              "statusReason": "proposed",
+              "supersedes": "f_00000000-0000-4000-8000-000000000004"
+            }
+          ],
+          "superseded": [
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000004",
+              "kind": "next_action",
+              "symbol": null,
+              "fact": "Find the primary source of what this story reports — A story is reporter content; the first step looks for the filing, release or report it rests on.",
+              "source": {
+                "recordKind": "kb",
+                "recordId": "baseline@v0",
+                "label": "Baseline method v0"
+              },
+              "at": "2026-11-20T15:00:00.000Z",
+              "asOf": null,
+              "status": "unverified",
+              "statusReason": "proposed",
+              "supersedes": null
+            }
+          ],
+          "lines": {
+            "support": "f_00000000-0000-4000-8000-000000000007",
+            "complication": null,
+            "missing": null
+          },
+          "nextAction": {
+            "findingId": "f_00000000-0000-4000-8000-000000000009",
+            "kind": "next_action",
+            "symbol": null,
+            "fact": "Size Eaton's data-center sales — Significance is the weakest link.",
+            "source": {
+              "recordKind": "kb",
+              "recordId": "baseline@v0",
+              "label": "Baseline method v0"
+            },
+            "at": "2026-11-20T15:00:00.000Z",
+            "asOf": null,
+            "status": "unverified",
+            "statusReason": "proposed",
+            "supersedes": "f_00000000-0000-4000-8000-000000000004"
+          },
+          "age": 0
+        },
+        "companies": {
+          "supported": [
+            {
+              "symbol": "ETN",
+              "name": "Eaton Corporation plc",
+              "role": "Supplier",
+              "relationship": "Eaton sells switchgear to data-center builders.",
+              "relationshipFindingId": "f_00000000-0000-4000-8000-000000000007",
+              "evidence": [
+                "f_00000000-0000-4000-8000-000000000002",
+                "f_00000000-0000-4000-8000-000000000003",
+                "f_00000000-0000-4000-8000-000000000007"
+              ],
+              "openQuestion": null,
+              "claim": null,
+              "eligibility": "eligible"
+            },
+            {
+              "symbol": "GEV",
+              "name": "GE Vernova Inc.",
+              "role": "Supplier",
+              "relationship": "GE Vernova sells turbines to data centers.",
+              "relationshipFindingId": "f_00000000-0000-4000-8000-000000000008",
+              "evidence": [
+                "f_00000000-0000-4000-8000-000000000008"
+              ],
+              "openQuestion": null,
+              "claim": null,
+              "eligibility": "eligible"
+            }
+          ],
+          "leads": []
+        },
+        "adoptPreview": {
+          "previewRev": "pr1.632fb8eb160c95dc497624c93250db96",
+          "companies": [
+            {
+              "symbol": "ETN",
+              "name": "Eaton Corporation plc",
+              "role": "Supplier",
+              "relationship": "Eaton sells switchgear to data-center builders.",
+              "eligibility": "eligible",
+              "fragment": "Supplier: Eaton sells switchgear to data-center builders.",
+              "carried": [
+                "f_00000000-0000-4000-8000-000000000002",
+                "f_00000000-0000-4000-8000-000000000003",
+                "f_00000000-0000-4000-8000-000000000007"
+              ],
+              "adoptable": true,
+              "reason": null
+            },
+            {
+              "symbol": "GEV",
+              "name": "GE Vernova Inc.",
+              "role": "Supplier",
+              "relationship": "GE Vernova sells turbines to data centers.",
+              "eligibility": "eligible",
+              "fragment": "Supplier: GE Vernova sells turbines to data centers.",
+              "carried": [
+                "f_00000000-0000-4000-8000-000000000008"
+              ],
+              "adoptable": true,
+              "reason": null
+            }
+          ],
+          "draft": "Supplier: Eaton sells switchgear to data-center builders. Supplier: GE Vernova sells turbines to data centers.",
+          "carried": [
+            "f_00000000-0000-4000-8000-000000000002",
+            "f_00000000-0000-4000-8000-000000000003",
+            "f_00000000-0000-4000-8000-000000000007",
+            "f_00000000-0000-4000-8000-000000000008"
+          ],
+          "keptMax": 28
+        },
+        "storedRows": [
+          {
+            "symbol": "ETN",
+            "name": "Eaton Corporation plc",
+            "peer": {
+              "sector": "Industrials",
+              "metrics": null,
+              "asOf": "2026-11-19T06:00:00.000Z"
+            },
+            "ranking": {
+              "score": 71,
+              "percentile": 88,
+              "tier": "A",
+              "asOf": "2026-11-19T06:00:00.000Z"
+            }
+          },
+          {
+            "symbol": "GEV",
+            "name": "GE Vernova Inc.",
+            "peer": {
+              "sector": "Industrials",
+              "metrics": null,
+              "asOf": "2026-11-19T06:00:00.000Z"
+            },
+            "ranking": null
+          }
+        ],
+        "previous": null,
+        "quota": {
+          "investigationsToday": 1,
+          "perDay": 3,
+          "framingsToday": 0,
+          "framingsPerDay": 10,
+          "stepsToday": 1,
+          "stepsPerDay": 30
+        }
+      }
+    },
+    "adopt": {
+      "status": 200,
+      "body": {
+        "watchlistId": "auto-1",
+        "version": 1,
+        "researchWorkId": "sr_00000000-0000-4000-8000-000000000005",
+        "idempotent": false
+      }
+    },
+    "after": {
+      "status": 200,
+      "body": {
+        "session": {
+          "sessionId": "00000000-0000-4000-8000-000000000005",
+          "status": "completed",
+          "entry": {
+            "kind": "item",
+            "itemRef": {
+              "recordKind": "fantasyTimesStories",
+              "recordId": "story-1"
+            },
+            "observation": null,
+            "direction": null,
+            "topic": null,
+            "names": [
+              "ETN",
+              "GEV"
+            ]
+          },
+          "frame": null,
+          "lastError": null,
+          "exchanges": [
+            {
+              "who": "partner",
+              "kind": "step",
+              "text": "Eaton and GE Vernova both sell power equipment to data-center builders.",
+              "at": "2026-11-20T15:00:00.000Z",
+              "stepId": "00000000-0000-4000-8000-0000000000aa",
+              "intent": "next"
+            },
+            {
+              "who": "player",
+              "kind": "confirm",
+              "text": "Saved as an idea · Eaton Corporation plc · positional",
+              "at": "2026-11-20T15:00:00.000Z"
+            }
+          ],
+          "stepsUsed": 1,
+          "stepBudget": 10,
+          "lastStep": {
+            "stepId": "00000000-0000-4000-8000-0000000000aa",
+            "intent": "next",
+            "status": "completed",
+            "startedAt": "2026-11-20T15:00:00.000Z",
+            "endedAt": "2026-11-20T15:00:00.000Z",
+            "error": null,
+            "query": "Find the primary source of what this story reports — ETN GEV",
+            "summaryWithheld": false
+          },
+          "researchWorkId": "sr_00000000-0000-4000-8000-000000000005",
+          "adoption": {
+            "watchlistId": "auto-1",
+            "version": 1,
+            "at": "2026-11-20T15:00:00.000Z"
+          },
+          "createdAt": "2026-11-20T15:00:00.000Z",
+          "updatedAt": "2026-11-20T15:00:00.000Z"
+        },
+        "record": {
+          "researchWorkId": "sr_00000000-0000-4000-8000-000000000005",
+          "question": "Which companies earn from the switchgear backlog?",
+          "state": "completed",
+          "terminalReason": "saved_to_list",
+          "endedAt": "2026-11-20T15:00:00.000Z",
+          "createdAt": "2026-11-20T15:00:00.000Z",
+          "lastTurnAt": "2026-11-20T15:00:00.000Z",
+          "summary": {
+            "rev": 1,
+            "text": "Eaton sells switchgear to data-center builders; GE Vernova sells turbines to data centers.",
+            "at": "2026-11-20T15:00:00.000Z",
+            "basedOn": [
+              "f_00000000-0000-4000-8000-000000000007",
+              "f_00000000-0000-4000-8000-000000000008"
+            ]
+          },
+          "answerStale": false,
+          "summaryRevisions": [
+            {
+              "rev": 1,
+              "text": "Eaton sells switchgear to data-center builders; GE Vernova sells turbines to data centers.",
+              "at": "2026-11-20T15:00:00.000Z"
+            }
+          ],
+          "findings": [
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000001",
+              "kind": "coverage",
+              "symbol": "ETN",
+              "fact": "Switchgear backlogs stretch as data centers expand",
+              "source": {
+                "recordKind": "fantasyTimesStories",
+                "recordId": "story-1",
+                "label": "FantasyTimes · Kim · Sector Strategist"
+              },
+              "at": "2026-11-12T13:00:00.000Z",
+              "asOf": "2026-11-12T13:00:00.000Z",
+              "status": "unverified",
+              "statusReason": "reporter_content",
+              "supersedes": null
+            },
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000002",
+              "kind": "earnings_fact",
+              "symbol": "ETN",
+              "fact": "Analyst consensus growth for ETN: 12% for the current fiscal year and 15% for the next (20 analysts on the next year).",
+              "source": {
+                "recordKind": "estimatesCache",
+                "recordId": "latest",
+                "label": "Analyst consensus · the estimates cache"
+              },
+              "at": "2026-11-19T06:00:00.000Z",
+              "asOf": "2026-11-19T06:00:00.000Z",
+              "status": "verified",
+              "statusReason": null,
+              "supersedes": null
+            },
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000003",
+              "kind": "earnings_fact",
+              "symbol": "ETN",
+              "fact": "2 stored claims about ETN are in the app's records (earnings calls, Fed events and analyst commentary); the newest is dated November 10, 2026.",
+              "source": {
+                "recordKind": "ingestedClaims",
+                "recordId": "count:ETN",
+                "label": "Stored claims · ETN"
+              },
+              "at": "2026-11-10T00:00:00.000Z",
+              "asOf": "2026-11-10T00:00:00.000Z",
+              "status": "verified",
+              "statusReason": null,
+              "supersedes": null
+            },
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000007",
+              "kind": "relationship",
+              "symbol": "ETN",
+              "fact": "Supplier · Eaton sells switchgear to data-center builders.",
+              "source": {
+                "recordKind": "retrieval",
+                "recordId": "https://news.example.com/eaton",
+                "label": "news.example.com · Eaton books data-center orders",
+                "url": "https://news.example.com/eaton"
+              },
+              "at": "2026-11-06T00:00:00.000Z",
+              "asOf": "2026-11-06T00:00:00.000Z",
+              "status": "verified",
+              "statusReason": null,
+              "supersedes": null
+            },
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000008",
+              "kind": "relationship",
+              "symbol": "GEV",
+              "fact": "Supplier · GE Vernova sells turbines to data centers.",
+              "source": {
+                "recordKind": "retrieval",
+                "recordId": "https://news.example.com/gev",
+                "label": "news.example.com · GE Vernova sells turbines to data centers",
+                "url": "https://news.example.com/gev"
+              },
+              "at": "2026-11-07T00:00:00.000Z",
+              "asOf": "2026-11-07T00:00:00.000Z",
+              "status": "verified",
+              "statusReason": null,
+              "supersedes": null
+            },
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000009",
+              "kind": "next_action",
+              "symbol": null,
+              "fact": "Size Eaton's data-center sales — Significance is the weakest link.",
+              "source": {
+                "recordKind": "kb",
+                "recordId": "baseline@v0",
+                "label": "Baseline method v0"
+              },
+              "at": "2026-11-20T15:00:00.000Z",
+              "asOf": null,
+              "status": "unverified",
+              "statusReason": "proposed",
+              "supersedes": "f_00000000-0000-4000-8000-000000000004"
+            }
+          ],
+          "superseded": [
+            {
+              "findingId": "f_00000000-0000-4000-8000-000000000004",
+              "kind": "next_action",
+              "symbol": null,
+              "fact": "Find the primary source of what this story reports — A story is reporter content; the first step looks for the filing, release or report it rests on.",
+              "source": {
+                "recordKind": "kb",
+                "recordId": "baseline@v0",
+                "label": "Baseline method v0"
+              },
+              "at": "2026-11-20T15:00:00.000Z",
+              "asOf": null,
+              "status": "unverified",
+              "statusReason": "proposed",
+              "supersedes": null
+            }
+          ],
+          "lines": {
+            "support": "f_00000000-0000-4000-8000-000000000007",
+            "complication": null,
+            "missing": null
+          },
+          "nextAction": {
+            "findingId": "f_00000000-0000-4000-8000-000000000009",
+            "kind": "next_action",
+            "symbol": null,
+            "fact": "Size Eaton's data-center sales — Significance is the weakest link.",
+            "source": {
+              "recordKind": "kb",
+              "recordId": "baseline@v0",
+              "label": "Baseline method v0"
+            },
+            "at": "2026-11-20T15:00:00.000Z",
+            "asOf": null,
+            "status": "unverified",
+            "statusReason": "proposed",
+            "supersedes": "f_00000000-0000-4000-8000-000000000004"
+          },
+          "age": 0
+        },
+        "companies": {
+          "supported": [
+            {
+              "symbol": "ETN",
+              "name": "Eaton Corporation plc",
+              "role": "Supplier",
+              "relationship": "Eaton sells switchgear to data-center builders.",
+              "relationshipFindingId": "f_00000000-0000-4000-8000-000000000007",
+              "evidence": [
+                "f_00000000-0000-4000-8000-000000000002",
+                "f_00000000-0000-4000-8000-000000000003",
+                "f_00000000-0000-4000-8000-000000000007"
+              ],
+              "openQuestion": null,
+              "claim": null,
+              "eligibility": "eligible"
+            },
+            {
+              "symbol": "GEV",
+              "name": "GE Vernova Inc.",
+              "role": "Supplier",
+              "relationship": "GE Vernova sells turbines to data centers.",
+              "relationshipFindingId": "f_00000000-0000-4000-8000-000000000008",
+              "evidence": [
+                "f_00000000-0000-4000-8000-000000000008"
+              ],
+              "openQuestion": null,
+              "claim": null,
+              "eligibility": "eligible"
+            }
+          ],
+          "leads": []
+        },
+        "adoptPreview": null,
+        "storedRows": [
+          {
+            "symbol": "ETN",
+            "name": "Eaton Corporation plc",
+            "peer": {
+              "sector": "Industrials",
+              "metrics": null,
+              "asOf": "2026-11-19T06:00:00.000Z"
+            },
+            "ranking": {
+              "score": 71,
+              "percentile": 88,
+              "tier": "A",
+              "asOf": "2026-11-19T06:00:00.000Z"
+            }
+          },
+          {
+            "symbol": "GEV",
+            "name": "GE Vernova Inc.",
+            "peer": {
+              "sector": "Industrials",
+              "metrics": null,
+              "asOf": "2026-11-19T06:00:00.000Z"
+            },
+            "ranking": null
+          }
+        ],
+        "previous": null,
+        "quota": {
+          "investigationsToday": 1,
+          "perDay": 3,
+          "framingsToday": 0,
+          "framingsPerDay": 10,
+          "stepsToday": 1,
+          "stepsPerDay": 30
+        }
+      }
+    },
+    "session": {
+      "schemaVersion": 1,
+      "sessionId": "00000000-0000-4000-8000-000000000005",
+      "userId": "u1",
+      "requestId": "req-ft-1",
+      "createdAt": "2026-11-20T15:00:00.000Z",
+      "updatedAt": "2026-11-20T15:00:00.000Z",
+      "status": "completed",
+      "entry": {
+        "kind": "item",
+        "itemRef": {
+          "recordKind": "fantasyTimesStories",
+          "recordId": "story-1"
+        },
+        "observation": null,
+        "direction": null,
+        "topic": null,
+        "names": [
+          "ETN",
+          "GEV"
+        ]
+      },
+      "itemKey": "fantasyTimesStories/story-1",
+      "frame": null,
+      "lastError": null,
+      "exchanges": [
+        {
+          "exchangeId": "00000000-0000-4000-8000-000000000006",
+          "who": "partner",
+          "kind": "step",
+          "text": "Eaton and GE Vernova both sell power equipment to data-center builders.",
+          "at": "2026-11-20T15:00:00.000Z",
+          "stepId": "00000000-0000-4000-8000-0000000000aa",
+          "intent": "next",
+          "lines": {
+            "support": "f_00000000-0000-4000-8000-000000000007",
+            "complication": null,
+            "missing": null
+          },
+          "method": {
+            "id": "baseline",
+            "version": "v0",
+            "sha256": "72fb845a2d12be5d98195f1d9f451d3e8b7a323f269a94cc82a088cdcaeb95d1",
+            "source": "baseline"
+          },
+          "findingIds": [
+            "f_00000000-0000-4000-8000-000000000007",
+            "f_00000000-0000-4000-8000-000000000008",
+            "f_00000000-0000-4000-8000-000000000009"
+          ],
+          "retrieval": {
+            "readAt": "2026-11-20T15:00:00.000Z",
+            "items": [
+              {
+                "index": 0,
+                "url": "https://news.example.com/eaton",
+                "host": "news.example.com",
+                "title": "Eaton books data-center orders",
+                "highlights": [
+                  "Eaton said data-center orders rose."
+                ],
+                "publishedDate": "2026-11-06T00:00:00.000Z",
+                "seenSha256": "39a2959c72fc36f5196f0b2e627b9eb018802a4038e411dcf392827d32f29745",
+                "findingIds": [
+                  "f_00000000-0000-4000-8000-000000000007"
+                ]
+              },
+              {
+                "index": 1,
+                "url": "https://news.example.com/gev",
+                "host": "news.example.com",
+                "title": "GE Vernova sells turbines to data centers",
+                "highlights": [
+                  "GE Vernova sells turbines."
+                ],
+                "publishedDate": "2026-11-07T00:00:00.000Z",
+                "seenSha256": "b95e34467249f7ed6b0b8a6cb7c8847e8e30733786bac18448184dc31a6ab8dd",
+                "findingIds": [
+                  "f_00000000-0000-4000-8000-000000000008"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "exchangeId": "00000000-0000-4000-8000-000000000010",
+          "who": "player",
+          "kind": "confirm",
+          "text": "Saved as an idea · Eaton Corporation plc · positional",
+          "at": "2026-11-20T15:00:00.000Z",
+          "methodsUsed": [
+            {
+              "id": "baseline",
+              "version": "v0",
+              "sha256": "72fb845a2d12be5d98195f1d9f451d3e8b7a323f269a94cc82a088cdcaeb95d1",
+              "source": "baseline"
+            }
+          ]
+        }
+      ],
+      "stepsUsed": 1,
+      "stepBudget": 10,
+      "lastStep": {
+        "stepId": "00000000-0000-4000-8000-0000000000aa",
+        "intent": "next",
+        "status": "completed",
+        "startedAt": "2026-11-20T15:00:00.000Z",
+        "endedAt": "2026-11-20T15:00:00.000Z",
+        "error": null,
+        "query": "Find the primary source of what this story reports — ETN GEV",
+        "summaryWithheld": false
+      },
+      "researchWorkId": "sr_00000000-0000-4000-8000-000000000005",
+      "retrieval": {
+        "calls": 1,
+        "costDollars": 0.005,
+        "elapsedMs": 300
+      },
+      "method": {
+        "id": "baseline",
+        "version": "v0",
+        "sha256": "72fb845a2d12be5d98195f1d9f451d3e8b7a323f269a94cc82a088cdcaeb95d1",
+        "source": "baseline",
+        "consumer": null,
+        "selectedAt": "2026-11-20T15:00:00.000Z"
+      },
+      "attribution": {
+        "agentId": "agent-1",
+        "archetypeCodeId": "contrarian",
+        "baggerbombArchetypeCodeId": "momentum_chaser",
+        "identityVersion": 2,
+        "at": "2026-11-20T15:00:00.000Z"
+      },
+      "adoption": {
+        "watchlistId": "auto-1",
+        "version": 1,
+        "at": "2026-11-20T15:00:00.000Z"
+      }
+    },
+    "record": {
+      "schemaVersion": 1,
+      "researchWorkId": "sr_00000000-0000-4000-8000-000000000005",
+      "userId": "u1",
+      "origin": "shared_research",
+      "host": {
+        "collection": "sharedResearchSessions",
+        "id": "00000000-0000-4000-8000-000000000005"
+      },
+      "createdAt": "2026-11-20T15:00:00.000Z",
+      "watchlistId": "auto-1",
+      "hypothesisVersion": 1,
+      "question": "Which companies earn from the switchgear backlog?",
+      "stages": {
+        "universeSize": null,
+        "matchedPreLimit": null,
+        "shortlisted": null,
+        "selectedForInvestigation": null,
+        "investigationsCompleted": null,
+        "eligible": null
+      },
+      "symbols": [],
+      "symbolsTruncated": false,
+      "budget": null,
+      "telemetry": {
+        "attempts": 1,
+        "completions": 1,
+        "failures": 0,
+        "cancellations": 0,
+        "elapsedMs": 900,
+        "firstTurnAt": "2026-11-20T15:00:00.000Z",
+        "lastTurnAt": "2026-11-20T15:00:00.000Z",
+        "tokens": {
+          "input": 9000,
+          "output": 700
+        }
+      },
+      "state": "completed",
+      "terminalReason": "saved_to_list",
+      "endedAt": "2026-11-20T15:00:00.000Z",
+      "updatedAt": "2026-11-20T15:00:00.000Z",
+      "symbolKeys": [
+        "ETN",
+        "GEV"
+      ],
+      "findings": [
+        {
+          "findingId": "f_00000000-0000-4000-8000-000000000001",
+          "kind": "coverage",
+          "symbol": "ETN",
+          "fact": "Switchgear backlogs stretch as data centers expand",
+          "source": {
+            "recordKind": "fantasyTimesStories",
+            "recordId": "story-1",
+            "label": "FantasyTimes · Kim · Sector Strategist"
+          },
+          "at": "2026-11-12T13:00:00.000Z",
+          "asOf": "2026-11-12T13:00:00.000Z",
+          "status": "unverified",
+          "statusReason": "reporter_content",
+          "pin": null,
+          "supersedes": null
+        },
+        {
+          "findingId": "f_00000000-0000-4000-8000-000000000002",
+          "kind": "earnings_fact",
+          "symbol": "ETN",
+          "fact": "Analyst consensus growth for ETN: 12% for the current fiscal year and 15% for the next (20 analysts on the next year).",
+          "source": {
+            "recordKind": "estimatesCache",
+            "recordId": "latest",
+            "label": "Analyst consensus · the estimates cache"
+          },
+          "at": "2026-11-19T06:00:00.000Z",
+          "asOf": "2026-11-19T06:00:00.000Z",
+          "status": "verified",
+          "statusReason": null,
+          "pin": null,
+          "supersedes": null
+        },
+        {
+          "findingId": "f_00000000-0000-4000-8000-000000000003",
+          "kind": "earnings_fact",
+          "symbol": "ETN",
+          "fact": "2 stored claims about ETN are in the app's records (earnings calls, Fed events and analyst commentary); the newest is dated November 10, 2026.",
+          "source": {
+            "recordKind": "ingestedClaims",
+            "recordId": "count:ETN",
+            "label": "Stored claims · ETN"
+          },
+          "at": "2026-11-10T00:00:00.000Z",
+          "asOf": "2026-11-10T00:00:00.000Z",
+          "status": "verified",
+          "statusReason": null,
+          "pin": null,
+          "supersedes": null
+        },
+        {
+          "findingId": "f_00000000-0000-4000-8000-000000000004",
+          "kind": "next_action",
+          "symbol": null,
+          "fact": "Find the primary source of what this story reports — A story is reporter content; the first step looks for the filing, release or report it rests on.",
+          "source": {
+            "recordKind": "kb",
+            "recordId": "baseline@v0",
+            "label": "Baseline method v0"
+          },
+          "at": "2026-11-20T15:00:00.000Z",
+          "asOf": null,
+          "status": "unverified",
+          "statusReason": "proposed",
+          "pin": null,
+          "supersedes": null
+        },
+        {
+          "findingId": "f_00000000-0000-4000-8000-000000000007",
+          "kind": "relationship",
+          "symbol": "ETN",
+          "fact": "Supplier · Eaton sells switchgear to data-center builders.",
+          "source": {
+            "recordKind": "retrieval",
+            "recordId": "https://news.example.com/eaton",
+            "label": "news.example.com · Eaton books data-center orders",
+            "url": "https://news.example.com/eaton"
+          },
+          "at": "2026-11-06T00:00:00.000Z",
+          "asOf": "2026-11-06T00:00:00.000Z",
+          "status": "verified",
+          "statusReason": null,
+          "pin": null,
+          "supersedes": null
+        },
+        {
+          "findingId": "f_00000000-0000-4000-8000-000000000008",
+          "kind": "relationship",
+          "symbol": "GEV",
+          "fact": "Supplier · GE Vernova sells turbines to data centers.",
+          "source": {
+            "recordKind": "retrieval",
+            "recordId": "https://news.example.com/gev",
+            "label": "news.example.com · GE Vernova sells turbines to data centers",
+            "url": "https://news.example.com/gev"
+          },
+          "at": "2026-11-07T00:00:00.000Z",
+          "asOf": "2026-11-07T00:00:00.000Z",
+          "status": "verified",
+          "statusReason": null,
+          "pin": null,
+          "supersedes": null
+        },
+        {
+          "findingId": "f_00000000-0000-4000-8000-000000000009",
+          "kind": "next_action",
+          "symbol": null,
+          "fact": "Size Eaton's data-center sales — Significance is the weakest link.",
+          "source": {
+            "recordKind": "kb",
+            "recordId": "baseline@v0",
+            "label": "Baseline method v0"
+          },
+          "at": "2026-11-20T15:00:00.000Z",
+          "asOf": null,
+          "status": "unverified",
+          "statusReason": "proposed",
+          "pin": null,
+          "supersedes": "f_00000000-0000-4000-8000-000000000004"
+        }
+      ],
+      "summary": {
+        "rev": 1,
+        "text": "Eaton sells switchgear to data-center builders; GE Vernova sells turbines to data centers.",
+        "at": "2026-11-20T15:00:00.000Z",
+        "basedOn": [
+          "f_00000000-0000-4000-8000-000000000007",
+          "f_00000000-0000-4000-8000-000000000008"
+        ]
+      },
+      "summaryRevisions": [
+        {
+          "rev": 1,
+          "text": "Eaton sells switchgear to data-center builders; GE Vernova sells turbines to data centers.",
+          "at": "2026-11-20T15:00:00.000Z",
+          "basedOn": [
+            "f_00000000-0000-4000-8000-000000000007",
+            "f_00000000-0000-4000-8000-000000000008"
+          ]
+        }
+      ]
+    },
+    "list": {
+      "watchlistId": "auto-1",
+      "userId": "u1",
+      "agentId": null,
+      "sourceSessionId": null,
+      "sourceDropId": null,
+      "sourceSharedResearchSessionId": "00000000-0000-4000-8000-000000000005",
+      "thesis": "",
+      "activationConditions": [],
+      "invalidationConditions": [],
+      "tickers": [
+        {
+          "symbol": "ETN",
+          "reasoning": "Eaton sells switchgear to data-center builders.",
+          "category": "research",
+          "addedBy": "user",
+          "addedAt": "2026-11-20T15:00:00.000Z"
+        }
+      ],
+      "name": "",
+      "notes": "",
+      "status": "committed",
+      "createdAt": "2026-11-20T15:00:00.000Z",
+      "updatedAt": "2026-11-20T15:00:00.000Z",
+      "committedAt": "2026-11-20T15:00:00.000Z",
+      "researchWorkId": "sr_00000000-0000-4000-8000-000000000005",
+      "currentHypothesisVersion": 1,
+      "hypothesisVersionCount": 1,
+      "attribution": {
+        "agentId": "agent-1",
+        "archetypeCodeId": "contrarian",
+        "baggerbombArchetypeCodeId": "momentum_chaser",
+        "identityVersion": 2,
+        "at": "2026-11-20T15:00:00.000Z"
+      }
+    },
+    "version": {
+      "version": 1,
+      "watchlistId": "auto-1",
+      "userId": "u1",
+      "opId": "adopt_00000000-0000-4000-8000-000000000005",
+      "opFingerprint": "bd184bd3d68f2a5eeb3483392c8e8390bdfb352ee06afdc8b84af99685c21253",
+      "createdAt": "2026-11-20T15:00:00.000Z",
+      "statement": "Supplier: Eaton sells switchgear to data-center builders.",
+      "horizonEnum": "positional",
+      "horizonSource": "player",
+      "activation": [],
+      "invalidation": [],
+      "evidenceRefs": [
+        {
+          "kind": "researchWork",
+          "id": "sr_00000000-0000-4000-8000-000000000005"
+        },
+        {
+          "kind": "evidenceItem",
+          "recordKind": "researchWork",
+          "recordId": "sr_00000000-0000-4000-8000-000000000005",
+          "itemId": "f_00000000-0000-4000-8000-000000000002"
+        },
+        {
+          "kind": "evidenceItem",
+          "recordKind": "researchWork",
+          "recordId": "sr_00000000-0000-4000-8000-000000000005",
+          "itemId": "f_00000000-0000-4000-8000-000000000003"
+        },
+        {
+          "kind": "evidenceItem",
+          "recordKind": "researchWork",
+          "recordId": "sr_00000000-0000-4000-8000-000000000005",
+          "itemId": "f_00000000-0000-4000-8000-000000000007"
+        },
+        {
+          "kind": "exchange",
+          "hostCollection": "sharedResearchSessions",
+          "hostId": "00000000-0000-4000-8000-000000000005",
+          "exchangeId": "00000000-0000-4000-8000-000000000010"
+        }
+      ],
+      "publishedAt": null,
+      "origin": "shared_research",
+      "contentHash": "1ea03c2bb7e90bd7a775fe4e0b0642cccd07ce2da4f017f09f90becb2292dc67",
+      "status": "researched",
+      "stateChangedAt": "2026-11-20T15:00:00.000Z",
+      "stateSource": "research",
+      "stateReason": "shared_research_completed",
+      "missingEvidence": null,
+      "successorVersion": null,
+      "firstDeployedAt": null,
+      "lastDeployedAt": null,
+      "lastDeployedBattleId": null,
+      "reviewDueAt": null
+    },
+    "quota": {
+      "etDate": "2026-11-20",
+      "investigationsOpened": 1,
+      "framingsRun": 0,
+      "stepCalls": 1,
+      "updatedAt": "2026-11-20T15:00:00.000Z"
+    },
+    "writes": [
+      [
+        "tx.set",
+        "sharedResearchSessions/00000000-0000-4000-8000-000000000005"
+      ],
+      [
+        "tx.create",
+        "researchWork/sr_00000000-0000-4000-8000-000000000005"
+      ],
+      [
+        "tx.set",
+        "sharedResearchQuota/u1"
+      ],
+      [
+        "tx.set",
+        "sharedResearchQuota/u1"
+      ],
+      [
+        "tx.set",
+        "sharedResearchQuota/_global"
+      ],
+      [
+        "tx.update",
+        "sharedResearchSessions/00000000-0000-4000-8000-000000000005"
+      ],
+      [
+        "tx.update",
+        "researchWork/sr_00000000-0000-4000-8000-000000000005"
+      ],
+      [
+        "tx.update",
+        "sharedResearchSessions/00000000-0000-4000-8000-000000000005"
+      ],
+      [
+        "tx.set",
+        "sharedResearchQuota/_global"
+      ],
+      [
+        "tx.set",
+        "watchlists/auto-1"
+      ],
+      [
+        "tx.create",
+        "watchlists/auto-1/hypothesisVersions/v1"
+      ],
+      [
+        "tx.update",
+        "researchWork/sr_00000000-0000-4000-8000-000000000005"
+      ],
+      [
+        "tx.update",
+        "sharedResearchSessions/00000000-0000-4000-8000-000000000005"
+      ]
+    ]
   }
 }

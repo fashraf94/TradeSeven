@@ -11,9 +11,10 @@
 //        names in scope, the version stamped; only six fields of the story read; a
 //        missing, unpublished or version-less story is not found; the same story twice
 //        answers the first. (A FantasyTimes story against main's: b6a.ftParity.test.js.)
-//   X-7  a save records the statement saved on the session's adoption — the player's
-//        edit, the composed sentence, the ledger's statement — and the view carries it;
-//        a session saved before B6a carries none.
+//   X-7  a thesis save records the statement saved on the session's adoption — the
+//        player's edit or the composed sentence — and the view carries it; a ledger
+//        idea's save is written as before (no statement, review A-1); a session saved
+//        before B6a carries none.
 //   The record schema (the founder's ruling of Nov 21): a record minted now is version 2.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -514,14 +515,15 @@ describe('X-7: the statement saved is recorded on the session\'s adoption, and t
     expect(sessionDoc(id).adoption.statement).toBe(sentence);
     expect(env.doc(`watchlists/${r.body.watchlistId}/hypothesisVersions/v1`).statement).toBe(sentence);
   });
-  it('a ledger idea records its statement as saved (trimmed by the idea builder\'s normalization)', async () => {
+  it('a ledger idea\'s save is written exactly as before: its adoption carries no statement (review A-1; the saved screen is the builder\'s)', async () => {
     state.builder = 'off';
     const o = await opened();
     const saved = await ledgerSave(o.session.sessionId);
-    const version = env.doc(`watchlists/${saved.watchlistId}/hypothesisVersions/v1`);
-    expect(sessionDoc(o.session.sessionId).adoption.statement).toBe(version.statement);
-    expect(version.statement).toBe(saved.statement);
-    expect((await get({ sessionId: o.session.sessionId })).body.session.adoption.statement).toBe(saved.statement);
+    const s = sessionDoc(o.session.sessionId);
+    expect(Object.keys(s.adoption)).toEqual(['watchlistId', 'version', 'at']);
+    expect(s.adoption).toEqual({ watchlistId: saved.watchlistId, version: 1, at: s.updatedAt });
+    expect(env.doc(`watchlists/${saved.watchlistId}/hypothesisVersions/v1`).statement).toBe(saved.statement); // the idea holds it, as before
+    expect((await get({ sessionId: o.session.sessionId })).body.session.adoption).toEqual({ watchlistId: saved.watchlistId, version: 1, at: s.updatedAt });
   });
   it('a session saved before B6a carries no statement: the view is unchanged', async () => {
     const s = plant({ n: 1, storyId: EXPLORE.id, status: 'completed', createdAt: at(1), updatedAt: at(2), adoption: { watchlistId: 'wl-old', version: 1, at: at(2) } });

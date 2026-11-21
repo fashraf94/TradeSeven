@@ -689,8 +689,10 @@ const savedAs = (record) => (record?.state === 'completed' && record.terminalRea
  * checks before it are the shape's own (the ledger's preview and assertion; the builder's card); inside it, the
  * shape re-checks through `recheck(fresh, session)` and names its kept findings through `keptOf(fresh, session)`.
  * `listExtra(...)` adds the shape's own list fields (the builder's `thesisCard`; none for the ledger).
+ * `adoptionExtra({ statement })` adds the shape's own fields to the session's `adoption` (B6a X-7: the builder's
+ * statement saved; none for the ledger, whose session is written exactly as before).
  */
-async function commitAdoption(db, { uid, sessionId, record, input, selected, adapter, mintId, exchangeOf, nowIso, collisionCode, recheck, keptOf, listExtra = null }) {
+async function commitAdoption(db, { uid, sessionId, record, input, selected, adapter, mintId, exchangeOf, nowIso, collisionCode, recheck, keptOf, listExtra = null, adoptionExtra = null }) {
   const tickers = splitRetiredTickers(capTickersArray(selected.map((c) => ({
     symbol: c.symbol, reasoning: c.relationship, category: 'research', addedBy: 'user', addedAt: nowIso,
   })), nowIso)).kept;
@@ -741,9 +743,9 @@ async function commitAdoption(db, { uid, sessionId, record, input, selected, ada
     tx.create(listRef.collection(VERSIONS_SUBCOLLECTION).doc(versionDocId(1)), version);
     tx.update(recordRef, close);
     tx.update(sessionRef, {
-      // B6a X-7: the statement saved — the version's own, as normalized (the composed sentence or the player's edit),
-      // so a reopened saved investigation can show it. A session saved before B6a has none.
-      status: 'completed', adoption: { watchlistId, version: 1, at: nowIso, statement: input.statement },
+      // B6a X-7: a thesis builder's save adds the statement saved (adoptThesis's adoptionExtra) — the version's own, as
+      // normalized — so a reopened saved thesis can show it. The ledger's adoption is written exactly as before.
+      status: 'completed', adoption: { watchlistId, version: 1, at: nowIso, ...(adoptionExtra ? adoptionExtra({ statement: input.statement }) : {}) },
       exchanges: [...(s.exchanges ?? []), confirmed], updatedAt: nowIso,
     });
     return { watchlistId, version: 1, researchWorkId: fresh.researchWorkId, idempotent: false };
@@ -862,6 +864,8 @@ export async function adoptThesis(db, { uid, sessionId, rev, statement = null, c
     listExtra: ({ watchlistId, fresh, session: s, keptFindingIds, statement: saved }) => ({
       [THESIS_CARD_FIELD]: savedCardOf(s.thesis, { watchlistId, sessionId, researchWorkId: fresh.researchWorkId, statement: saved, carried: keptFindingIds, savedAt: nowIso }),
     }),
+    // B6a X-7: the statement saved, on the session's adoption — what the saved screen shows on a reopened thesis
+    adoptionExtra: ({ statement: saved }) => ({ statement: saved }),
   });
 }
 
