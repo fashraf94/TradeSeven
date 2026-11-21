@@ -232,8 +232,11 @@ const DARK_BY_DESIGN = {
     'Eval-cron instrumentation D3 (docs/audits/20260923_BUILD_EVAL_DEFERRED_BEAT.md) — the `check_deferred` status-feed beat for each battle the evaluation loop did not reach (cap 25 per run, ≥ 5 s of the hard ceiling left) and its tape line. Built dark; flips in the founder\'s own flip PR, never a build PR, and only after the flip prerequisites its docstring and the build report §13 list (a copy ruling, a ruling on repeated beats, the other status-feed readers). The flip moves the pin in evalDeferredBeatFlags.test.js to true AND turns that file\'s registration row around to assert this entry is gone. Crons do not run on preview: the first beat is seen only in production. The run document agentEvalRuns/{runId} is NOT behind this flag — it is always on',
   EODHD_FETCH_GUARD_ENABLED:
     'Capacity Build 1 Part 2 (docs/audits/20261115_BUILD_EVAL_CAPACITY_1.md) — the EODHD fetch guard in marketDataCache.js: a 10 s timeout per request and a process-wide limit of 32 in flight. Built dark; flip 1 of the capacity lane, in its own PR, after at least one session\'s baseline from the run record\'s new `eodhd` block. The flip moves the pin in evalCapacityFlags.test.js to true and drops this entry in the same commit. The request COUNTS are not behind this flag — they are live from merge',
-  EVAL_MARKET_DATA_CUTS_ENABLED:
-    'Capacity Build 1 Part 3 (docs/audits/20261115_BUILD_EVAL_CAPACITY_1.md) — the evaluator\'s market-data cuts: daily bars once per ET session (evalSessionDaily) and SPY/QQQ/BTC-USD.CC once per run. Built dark; flip 1 of the capacity lane, with EODHD_FETCH_GUARD_ENABLED, in its own PR, measured with scripts/eval-capacity-read.mjs. The flip moves the pin in evalCapacityFlags.test.js to true and drops this entry in the same commit',
+  // EVAL_MARKET_DATA_CUTS_ENABLED intentionally ABSENT: the capacity lane's
+  // market-data cuts flipped true 2026-11-20 (founder ruling S-5, flip order
+  // cuts → guard → K = 2) — the deliberate flip drops it here in the same
+  // commit. Its pin in evalCapacityFlags.test.js now asserts true AND, turned
+  // around, that this entry is gone; a rollback moves both back together.
   // FILM_TAPE_WRITE_ENABLED intentionally ABSENT: the Film Room A1 tape writer
   // flipped true 2026-10-01 (founder-cited, Flash) — the deliberate flip drops
   // it here in the same commit, per the guard's own "if DELIBERATE"

@@ -2844,6 +2844,9 @@ export const EVAL_DEFERRED_BEAT_ENABLED = false;
  * docs/audits/20261115_PHASE0_EVAL_FANOUT.md, shape (d) "the pool").
  * Founder rulings R1–R6 of 15 Nov 2026. Four settings, each dark at merge:
  * with these values every battle runs exactly as before this build.
+ * Flipped since: EVAL_MARKET_DATA_CUTS_ENABLED (on, 20 Nov 2026 — founder
+ * ruling S-5 Q5, the flip order cuts → guard → K = 2;
+ * docs/audits/20261120_COCKPIT_STAGED_SWITCH_ON.md Part C).
  *
  * EVAL_POOL_K — how many battles one evaluation run checks AT ONCE
  * (api/_utils/evalPool.js, driven by the handler in api/cron/agent-evaluate.js).
@@ -2904,12 +2907,15 @@ export const EODHD_FETCH_GUARD_ENABLED = false;
  * its prior-session bar is the expected one, and reused by every later check;
  * any doubt falls back to the fetch as it was. (b) SPY, QQQ and BTC-USD.CC are
  * fetched once per run and handed to each battle that does not hold, bench or
- * score them itself. Registered DARK_BY_DESIGN in flagPinGuard.test.js. FLIP
- * MAP: the flip PR moves the pin in evalCapacityFlags.test.js to true and drops
- * the DARK_BY_DESIGN entry, in the same commit.
+ * score them itself. ON since 20 Nov 2026 (founder ruling S-5: the flip order
+ * is the cuts, then EODHD_FETCH_GUARD_ENABLED, then EVAL_POOL_K = 2): the flip
+ * moved the pin in evalCapacityFlags.test.js to true and dropped the
+ * DARK_BY_DESIGN entry in flagPinGuard.test.js, in the same commit. A rollback
+ * moves both back together: the value false, the pin false, and the
+ * DARK_BY_DESIGN entry restored.
  */
 // Pinned by: evalCapacityFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const EVAL_MARKET_DATA_CUTS_ENABLED = false;
+export const EVAL_MARKET_DATA_CUTS_ENABLED = true;
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════

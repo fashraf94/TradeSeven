@@ -293,3 +293,17 @@ The Windows checkout (CRLF, `core.autocrlf=true`) has three known platform-only 
 3. **A TTL policy for `evalSessionDaily`.** Each document carries `expiresAt` (session + 3 days); no policy exists, and creating one is a Firebase setting this build may not make. About 41 small documents a session today. Create it, or leave them?
 4. **The shared `marketDataCache/{SYM}_daily` document** is rewritten every check today; with the cuts on, at least once a session. Its other readers fetch on their own 4 h TTL; `compute-institutional-intelligence.js:213` reads its newest close directly. Acceptable?
 5. **Flip order.** Recommended from the review: the guard first (it changes no input, and it bounds the cuts' own first fetch, which the 15 s waiter bound only partly covers), then the cuts, then K = 2 only with the guard on (the 200 s cutoff's margin is ASSUMED at K > 1). The guard's flip PR must also move 38 test doubles to real Responses (review §6). Agree, or flip guard and cuts together?
+
+---
+
+## 14. Founder answers to §13 — dated note (20 Nov 2026, ruling S-5)
+
+Recorded from the build prompt of 20 Nov 2026 (`BUILD_PROMPT_COCKPIT_STAGED_SWITCH_ON_NOV20_2026`, ruling S-5), with the flip PR `flip(eval): the market-data cuts on` (branch `claude/eval-cuts-flip`); full record in `docs/audits/20261120_COCKPIT_STAGED_SWITCH_ON.md` Part C. Verbatim:
+
+- **Q1** the shared macro quote goes only to battles that don't own the instrument, as built.
+- **Q2** the three occasional fetches are not cut now.
+- **Q3** yes to a TTL policy on `evalSessionDaily` (`expiresAt`); the founder creates it in the console.
+- **Q4** rewriting `marketDataCache/{SYM}_daily` once a session is accepted.
+- **Q5** flip order: cuts, then the guard, then `EVAL_POOL_K = 2`.
+
+What this changes against §13: Q5 reverses the review's recommended order (the guard first). The cuts therefore go on while `EODHD_FETCH_GUARD_ENABLED` is still false: a check waiting on another check's first `/eod/` is bounded at 15 s (`SESSION_DAILY_WAIT_TIMEOUT_MS`, review GC-1), but the first fetch itself has no per-request timeout until the guard is on, exactly as every EODHD request has none today — the residual the review named, not a new one. Q3's TTL policy is optional hygiene: each document carries a three-day `expiresAt`, and nothing breaks without the policy.
