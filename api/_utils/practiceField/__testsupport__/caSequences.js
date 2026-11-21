@@ -13,9 +13,11 @@ import { parseSplitsPayload, parseDividendsPayload, applyCorporateAction, derive
 import { openAmbiguities, CONFLICTING_ACTION, POSSIBLE_REDATE } from '../ledger.js';
 import { addUsd } from '../money.js';
 import { nextSessionDate } from '../windows.js';
-import { InputOracle } from './caOracle.js';
+import { InputOracle, EntitlementOracle } from './caOracle.js';
+import { roundUsd } from '../../mandateRounding.js';
 import {
   seedBook, admitAndEnter, contractOf, getBook, getIdea, getRow, closeNowOf, storeCloseSnapshot, founderRules, takeSeededDbs,
+  vendorAnswering, CLEAN_PARSE_ENTRY, windowAt, storeParseReport, omitParseReport,
 } from './fixtures.js';
 
 export const S = ['2026-11-16'];
@@ -175,7 +177,8 @@ export function generate(seed) {
   return { seed, clean, steps, kinds: [...kinds], feed, ambiguousSince };
 }
 
-const quotes = (p, rows) => ({ AAPL: { price: p, marketCap: 3e12, corporateActions: rows }, MSFT: { price: 200, marketCap: 3e12 }, SPY: { price: 500 } });
+// (T1a-2b-4: XLK too, for the late generator's sector-fund comparison — a symbol no older plan holds.)
+const quotes = (p, rows) => ({ AAPL: { price: p, marketCap: 3e12, corporateActions: rows }, MSFT: { price: 200, marketCap: 3e12 }, SPY: { price: 500 }, XLK: { price: 200 } });
 /** A step's quotes: a narrow plan's AAPL price and rows, or a wide plan's per-symbol prices and rows (AAPL and SPY). */
 const quotesOf = (step) => {
   if (!step.prices) return quotes(step.price, step.rows);
@@ -183,6 +186,7 @@ const quotesOf = (step) => {
     AAPL: { price: step.prices.AAPL, marketCap: 3e12, corporateActions: step.rowsBySym.AAPL || [] },
     MSFT: { price: 200, marketCap: 3e12 },
     SPY: { price: step.prices.SPY, corporateActions: step.rowsBySym.SPY || [] },
+    XLK: { price: 200 },
   };
 };
 const money = (c) => {
@@ -193,6 +197,9 @@ const money = (c) => {
     book: { cash: book.portfolio.cash, shares: Object.fromEntries(Object.entries(book.portfolio.positions).map(([s, p]) => [s, p.shares])) },
   });
 };
+
+/** T1a-2b-4: how many histories generated as clean carried a vendor correction of a settled id (reclassified; see run). */
+export const reclassifiedAsCorrected = { count: 0 };
 
 /** What the generated histories actually REACHED in the product (counted, asserted at the end). */
 export const reached = { payloadAddedLater: 0, redateOfAmbiguous: 0, uncoveredTransition: 0, revisedAfterRuling: 0 };
@@ -239,7 +246,8 @@ function checkAfterClose(c, date, oracleSince = null, tied = true, inputs = null
       for (const h of Object.values(l.holdings)) for (const rec of h.heldActions || []) if (rec.actionId === id && !declined.has(id) && !l.appliedActionIds.includes(id)) expect(rec.founderRuling, `${date} I-2 ${f} ${id} replayable`).toBeTruthy();
     }
   }
-  if (LEDGERS.some((f) => openAmbiguities(idea[f]).length > 0)) expect(getRow(c.db, c.bookId, c.ideaId, date).fullQuality, `${date} I-2 quality`).toBe(false);
+  // (A resulted idea writes no row: what still waits on it is named on the idea instead — lateDataUnsettled.)
+  if (idea.status !== 'resulted' && LEDGERS.some((f) => openAmbiguities(idea[f]).length > 0)) expect(getRow(c.db, c.bookId, c.ideaId, date).fullQuality, `${date} I-2 quality`).toBe(false);
   // I-2 against the ORACLE (not the product's own predicate): an id the feed made ambiguous at session s moves cash or
   // shares at a close on or after s only by an ACCEPTED CONFLICT ruling the harness made for it, choosing the moved payload
   // (final fix, Astra round 2: before, any truthy `founderRuling` — a `suspicion` one included — passed).
@@ -269,10 +277,12 @@ async function rerunAdds(c, date, previous) {
   plant(c.db, `mandates/${c.bookId}`, { ...book, execState: { ...book.execState, lastCloseKey: previous } });
   // (The close's window record is created once — T1a-2b-1's window ledger — so the re-run needs it gone; it holds no money.)
   for (const path of [...c.db._store.keys()]) if (path.startsWith(`mandates/${c.bookId}/windows/${date}`)) c.db._store.delete(path);
-  const revision = getIdea(c.db, c.bookId, c.ideaId).revision;
+  const prior = getIdea(c.db, c.bookId, c.ideaId);
   await closeIdeaBook(c.db, c.bookRef, { date, now: closeNowOf(date) });
-  // (The re-run must actually have closed the idea again, or the check proves nothing.)
-  expect(getIdea(c.db, c.bookId, c.ideaId).revision, `${date} I-5 re-ran`).toBeGreaterThan(revision);
+  // (The re-run must actually have closed the idea again, or the check proves nothing. A resulted idea is rewritten only
+  // when something changes — the T1a-2b-4 fix round's 2011202706 — so the book's cursor is the proof there.)
+  if (prior.status === 'resulted') expect(getBook(c.db, c.bookId).execState.lastCloseKey, `${date} I-5 re-ran`).toBe(date);
+  else expect(getIdea(c.db, c.bookId, c.ideaId).revision, `${date} I-5 re-ran`).toBeGreaterThan(prior.revision);
   expect(money(c), `${date} I-5`).toBe(before);
 }
 
@@ -299,6 +309,26 @@ async function ruleSomething(c, pick, decision, splitOk = false) {
   const ask = { kind: 'conflict', recordId: r.actionId, ...body };
   const requestKey = `seq-${Math.round(pick * 1e9)}`;
   return { body: ask, requestKey, out: await founderRules(c.db, c.bookId, c.ideaId, ask, { requestKey, expectOk: false }) };
+}
+
+/**
+ * T1a-2b-4 fix round (L-1): THE FOUNDER DECIDES LATE PROPOSALS — the open proposal chosen by `pick` (by its action id), on
+ * every ledger that has one for that id (a same-stock pair is decided together, so it stays tied), approved when
+ * `decision` < 0.7 and declined otherwise. Returns the requests made, for the inputs.
+ */
+async function decideLate(c, pick, decision, n) {
+  const idea = getIdea(c.db, c.bookId, c.ideaId);
+  const open = LEDGERS.flatMap((f) => (idea[f]?.lateProposals || []).filter((p) => p.status === 'open'));
+  if (open.length === 0) return [];
+  const ids = [...new Set(open.map((p) => p.actionId))].sort();
+  const id = ids[Math.floor(pick * ids.length)];
+  const out = [];
+  for (const p of open.filter((x) => x.actionId === id)) {
+    const body = { kind: 'late_adjustment', recordId: p.id, decision: decision < 0.7 ? 'approve' : 'decline' };
+    const requestKey = `late-${n}-${p.id}`;
+    out.push({ body, requestKey, out: await founderRules(c.db, c.bookId, c.ideaId, body, { requestKey, expectOk: false }) });
+  }
+  return out;
 }
 
 /** I-4's oracle: the engine's own applier over the history's final rows, in date order, with entitlement. */
@@ -334,7 +364,8 @@ export async function run(plan) {
 }
 async function runInner(plan, expose) {
   const ctx = await seedBook();
-  const a = await admitAndEnter(ctx.db, ctx.bookId, { contract: contractOf({ names: ['AAPL', 'MSFT'], capitalUsd: 20000, ...(plan.comparison ? { comparison: plan.comparison } : {}) }), quotes: quotes(100, []), date: S[0] });
+  // (T1a-2b-4 fix round: `names` — a single-name idea, Astra's 2011202706, resulted once its one name is sold.)
+  const a = await admitAndEnter(ctx.db, ctx.bookId, { contract: contractOf({ names: plan.names ?? ['AAPL', 'MSFT'], capitalUsd: 20000, ...(plan.comparison ? { comparison: plan.comparison } : {}) }), quotes: quotes(100, []), date: S[0] });
   const c = { ...ctx, ideaId: a.ideaId };
   expose(c);
   const entered = getIdea(c.db, c.bookId, c.ideaId);
@@ -343,21 +374,64 @@ async function runInner(plan, expose) {
   const tied = (plan.comparison?.type ?? 'same_stock_held') === 'same_stock_held';
   // The independent oracle (caOracle.js): fed the rows each close lists and the founder requests the harness makes.
   const inputs = new InputOracle(S);
+  // T1a-2b-4, I-6: what each ledger was owed, from the inputs and its holding history alone (caOracle.js EntitlementOracle).
+  const entitlement = new EntitlementOracle(S, inputs);
+  let soldAt = null; // the session the idea's AAPL was sold at (a `window` step), its holding history's end
+  const holdingsOf = () => ({
+    ledger: { sym: 'AAPL', entryShares: Number(initialOf.ledger.shares), boughtAt: 0, soldAt },
+    ...(Number(initialOf.comparisonLedger?.shares) > 0 ? { comparisonLedger: { sym: 'AAPL', entryShares: Number(initialOf.comparisonLedger.shares), boughtAt: 0, soldAt: null } } : {}),
+    ...(Number(initialOf.spyLedger?.shares) > 0 ? { spyLedger: { sym: 'SPY', entryShares: Number(initialOf.spyLedger.shares), boughtAt: 0, soldAt: null } } : {}),
+  });
   const entryOf = Object.fromEntries(LEDGERS.map((f) => [f, Object.fromEntries(Object.entries(entered[f].holdings).map(([s, h]) => [s, { shares: h.shares }]))]));
+  // (The ledgers an accepted ruling covers, as the endpoint recorded it — Astra T2D-09: a conflict ruling belongs to the
+  // ledgers whose record it covers; a ledger that never carried the record keeps the feed's rows of the id.)
+  const ledgersRuled = (requestKey) => getIdea(c.db, c.bookId, c.ideaId).founderRulings?.find((x) => x?.requestKey === requestKey)?.ledgers ?? null;
   const nextCloseOf = (n) => plan.steps.slice(n).find((s) => s.kind === 'close' || s.kind === 'catchup')?.i ?? null;
   let closes = 0;
+  const keep = {};
+  let lastBelowLine = null;
   let previous = getBook(c.db, c.bookId).execState?.lastCloseKey ?? null;
   for (const [n, step] of plan.steps.entries()) {
     // (A fixed case's assertion on the stored idea at that point of its history.)
-    if (step.kind === 'expectIdea') { step.fn(getIdea(c.db, c.bookId, c.ideaId), getBook(c.db, c.bookId), `${plan.seed} step ${n}`); continue; }
+    // (T1a-2b-4 fix round: a fourth argument — the stored rows by date, and a bag the plan's steps share.)
+    if (step.kind === 'expectIdea') { step.fn(getIdea(c.db, c.bookId, c.ideaId), getBook(c.db, c.bookId), `${plan.seed} step ${n}`, { row: (date) => getRow(c.db, c.bookId, c.ideaId, date), keep }); continue; }
     if (step.kind === 'rule') {
       const asked = await ruleSomething(c, step.pick, step.decision, step.splitOk === true);
-      if (asked) inputs.ruling(asked.body, asked.out, asked.requestKey, nextCloseOf(n));
+      if (asked) inputs.ruling(asked.body, asked.out, asked.requestKey, nextCloseOf(n), ledgersRuled(asked.requestKey));
+      continue;
+    }
+    // T1a-2b-4: a WINDOW of S[i] — the idea's line sale fills here (the close before it found the price below the line).
+    if (step.kind === 'window') {
+      const p = lastBelowLine ?? (step.prices?.AAPL ?? step.price);
+      await windowAt(c.db, c.bookId, { date: S[step.i], slot: 'open30', quotes: quotesOf({ ...step, ...(step.prices ? { prices: { ...step.prices, AAPL: p } } : { price: p }) }) });
+      if (soldAt === null && !getIdea(c.db, c.bookId, c.ideaId).ledger.holdings.AAPL) soldAt = step.i;
+      continue;
+    }
+    // T1a-2b-4 fix round (L-1): the founder APPROVES or DECLINES a late proposal — one chosen by `pick` among those open (and,
+    // so a same-stock pair stays tied, the same id's proposal on every ledger with it), or one named exactly.
+    if (step.kind === 'late') {
+      for (const asked of await decideLate(c, step.pick, step.decision, n)) inputs.ruling(asked.body, asked.out, asked.requestKey, nextCloseOf(n));
+      continue;
+    }
+    // T1a-2b-4 final fix (A-4): the founder rules the sold holding's coverage doubt `no_action` — its only exit.
+    if (step.kind === 'ruleDoubt') {
+      const doubt = Object.values(getIdea(c.db, c.bookId, c.ideaId).ledger.closedCoverageDoubts || {})[0] ?? null;
+      if (doubt?.id) {
+        const body = { kind: 'coverage_gap', recordId: doubt.id, decision: 'no_action' };
+        const out = await founderRules(c.db, c.bookId, c.ideaId, body, { requestKey: `doubt-${n}`, expectOk: false });
+        inputs.ruling(body, out, `doubt-${n}`, nextCloseOf(n), ledgersRuled(`doubt-${n}`));
+      }
+      continue;
+    }
+    if (step.kind === 'lateExact') {
+      const out = await founderRules(c.db, c.bookId, c.ideaId, step.body, { requestKey: `fixed-${n}`, expectOk: false });
+      inputs.ruling(step.body, out, `fixed-${n}`, nextCloseOf(n), ledgersRuled(`fixed-${n}`));
+      expect(out.status, `${plan.seed} late ${n} ${JSON.stringify(out.body ?? out)}`).toBe(step.status ?? 200);
       continue;
     }
     if (step.kind === 'ruleExact' || step.kind === 'ruleTry') {
       const out = await founderRules(c.db, c.bookId, c.ideaId, step.body, { requestKey: `fixed-${n}`, expectOk: false });
-      inputs.ruling(step.body, out, `fixed-${n}`, nextCloseOf(n));
+      inputs.ruling(step.body, out, `fixed-${n}`, nextCloseOf(n), ledgersRuled(`fixed-${n}`));
       if (step.kind === 'ruleExact') expect(out.status, `${plan.seed} ruling ${n}`).toBe(step.status ?? 200);
       continue;
     }
@@ -382,16 +456,32 @@ async function runInner(plan, expose) {
         if (id) pendingSplits.set(id, { ratio: Number(r.body.ratio), since: doc?.covers?.since ?? null, suspectedOn: doc?.covers?.suspectedOn ?? null, at: r.at });
       }
       const uncoveredSyms = step.kind === 'catchup' ? [] : (step.uncoveredSyms ?? (step.uncovered ? ['AAPL'] : []));
-      inputs.close(step.i, [...archived, ...backfilled], { pendingSplits, uncoveredSyms, disagreeIds });
+      // (A-2: a close whose parse report refuses AAPL does not cover it either — no announcement is updated there.)
+      const parseUncoveredSyms = step.kind !== 'catchup' && step.parse ? ['AAPL'] : [];
+      inputs.close(step.i, [...archived, ...backfilled], { pendingSplits, uncoveredSyms, disagreeIds, parseUncoveredSyms });
     }
-    await storeCloseSnapshot(c.db, date, quotesOf(step));
+    // T1a-2b-4: a close BELOW THE LINE (the idea's AAPL, while it holds it) — a sale is queued for the next window.
+    let closeStep = step;
+    if (step.belowLine) {
+      const line = getIdea(c.db, c.bookId, c.ideaId).lines.find((l) => l.symbol === 'AAPL');
+      if (line && getIdea(c.db, c.bookId, c.ideaId).ledger.holdings.AAPL) {
+        lastBelowLine = roundUsd(line.level * 0.97);
+        closeStep = step.prices ? { ...step, prices: { ...step.prices, AAPL: lastBelowLine } } : { ...step, price: lastBelowLine };
+      }
+    }
+    await storeCloseSnapshot(c.db, date, quotesOf(closeStep));
+    // T1a-2b-4 (T2D-12): the session's parse report for AAPL shows a REJECTED row, or is MISSING.
+    // (T1a-2b-4 fix round: `parse: { reject: i }` dates the rejected row on S[i] — T2E-08's split of Tuesday, rejected Thursday.)
+    const rejectedOn = step.parse === 'reject' ? date : (step.parse?.reject !== undefined ? S[step.parse.reject] : null);
+    if (rejectedOn !== null) storeParseReport(c.db, date, 'AAPL', { ...CLEAN_PARSE_ENTRY, rowsReceived: 1, rowsRejected: 1, rejects: [{ leg: 'splits', reason: 'malformed_split', row: { date: rejectedOn, split: '5:4' } }], legs: { ...CLEAN_PARSE_ENTRY.legs, splits: { ...CLEAN_PARSE_ENTRY.legs.splits, received: 1, rejected: 1 } } });
+    if (step.parse === 'missing') omitParseReport(c.db, date, ['AAPL']);
     if (step.kind === 'catchup') {
       const bySym = step.backfillBySym ?? { AAPL: step.backfill };
       for (const [sym, rows] of Object.entries(bySym)) {
-        plant(c.db, `practiceFieldCaBackfill/${sym}`, { schemaVersion: 1, symbol: sym, from: S[0], to: date, failed: false, actions: rows, calls: 2, fetchedAt: '2026-11-18T23:00:00.000Z', source: 'idea_book_backfill' });
+        plant(c.db, `practiceFieldCaBackfill/${sym}`, { schemaVersion: 1, symbol: sym, from: S[0], to: date, failed: false, actions: rows, calls: 2, fetchedAt: '2026-11-18T23:00:00.000Z', source: 'idea_book_backfill', parseReport: CLEAN_PARSE_ENTRY });
       }
       const fetchCorporateActions = async (sym) => ({ failed: false, calls: 2, actions: bySym[sym] ?? [] });
-      await catchUpIdeaBook(c.db, c.bookRef, { before: S[step.i + 1], now: closeNowOf(S[step.i + 1]), fetchCorporateActions });
+      await catchUpIdeaBook(c.db, c.bookRef, { before: S[step.i + 1], now: closeNowOf(S[step.i + 1]), ...vendorAnswering(fetchCorporateActions) });
     } else {
       const uncoveredSyms = step.uncoveredSyms ?? (step.uncovered ? ['AAPL'] : []);
       if (uncoveredSyms.length > 0) {
@@ -403,14 +493,39 @@ async function runInner(plan, expose) {
     }
     expect(getBook(c.db, c.bookId).execState.lastCloseKey, `seed ${plan.seed} closed ${date}`).toBe(date);
     closes += 1;
-    checkAfterClose(c, date, plan.ambiguousSince, tied, inputs, entryOf, plan.seed);
+    // (The symbols this close's inputs leave uncovered: a failed fetch, or a dirty or missing parse report.)
+    const uncoveredNow = step.kind === 'catchup' ? [] : [...(step.uncoveredSyms ?? (step.uncovered ? ['AAPL'] : [])), ...(step.parse ? ['AAPL'] : [])];
+    // (The second refuter's O-2: the close's coverage facts, for I-7's L-2 ④ — the symbols it leaves uncovered, the row its
+    // parse report rejected, and whether it is a catch-up, which stores a backfill.)
+    inputs.coverage(step.i, { uncovered: uncoveredNow, rejected: rejectedOn !== null ? [{ sym: 'AAPL', date: rejectedOn }] : [], catchup: step.kind === 'catchup' });
+    // (T1a-2b-4 fix round: I-7, then I-6, then the rest — so each of the two oracle changes shows its own failure first.)
+    const moneyChecks = () => {
+      // I-7: every posted adjustment has its founder approval or ruling in the inputs.
+      entitlement.checkAuthority(getIdea(c.db, c.bookId, c.ideaId), step.i, plan.seed, holdingsOf());
+      entitlement.check(getIdea(c.db, c.bookId, c.ideaId), step.i, holdingsOf(), plan.seed, { uncoveredNow });
+      // (A sale breaks the same-stock tie, as it should: the comparison keeps the stock the idea sold.)
+      checkAfterClose(c, date, plan.ambiguousSince, tied && soldAt === null, inputs, entryOf, plan.seed);
+    };
+    moneyChecks();
     if (previous !== null) { await rerunAdds(c, date, previous); closes += 1; }
-    checkAfterClose(c, date, plan.ambiguousSince, tied, inputs, entryOf, plan.seed);
+    moneyChecks();
     previous = date;
   }
   const idea = getIdea(c.db, c.bookId, c.ideaId);
   if (typeof plan.seed === 'number') tallyReached(idea);
-  if (plan.clean) {
+  // T1a-2b-4 (Astra T2D-05; FQ-11): a "clean" history whose feed listed an id with a SECOND payload at a later close is a
+  // vendor CORRECTION of a settled id — the product now records it (`revised_after_ruling`, `settledBy: 'feed'`) and waits
+  // for the founder, so the history is not clean data in the product's sense. Its only open ambiguities must be exactly
+  // those records, of exactly those ids; I-4 is not asked of it (a corrected split holds what follows it). Counted.
+  const correctedIds = plan.clean ? [...(plan.feed || new Map())].filter(([, e]) => (e.payloads || []).length > 1).map(([id]) => id) : [];
+  if (correctedIds.length > 0) {
+    reclassifiedAsCorrected.count += 1;
+    for (const f of LEDGERS) {
+      for (const r of openAmbiguities(idea[f])) {
+        expect([r.reason, r.settledBy ?? null, correctedIds.includes(r.actionId)], `seed ${plan.seed} corrected-only ambiguity ${f} ${r.actionId}`).toEqual(['revised_after_ruling', 'feed', true]);
+      }
+    }
+  } else if (plan.clean) {
     // I-4: complete coverage and no ambiguity — the engine's own applier, over the same rows.
     for (const f of LEDGERS) expect(openAmbiguities(idea[f]).map((r) => [r.reason, r.actionId, r.redateOf ?? null]), `seed ${plan.seed} clean has no ambiguity`).toEqual([]);
     if (!plan.wide) {
@@ -431,11 +546,13 @@ async function runInner(plan, expose) {
       expect(getBook(c.db, c.bookId).portfolio.positions.AAPL.shares, `seed ${plan.seed} I-4 book`).toBe(oracle(initialOf.ledger, plan.feed, 'AAPL').shares);
     }
   }
-  if (plan.end) {
+  if (plan.end && plan.end.dividends !== undefined) {
     expect([idea.ledger.dividendsUsd, idea.comparisonLedger.dividendsUsd], `${plan.seed} dividends`).toEqual([plan.end.dividends, plan.end.dividends]);
     expect([idea.ledger.holdings.AAPL.shares, idea.comparisonLedger.holdings.AAPL.shares, getBook(c.db, c.bookId).portfolio.positions.AAPL.shares], `${plan.seed} shares`).toEqual([plan.end.shares, plan.end.shares, plan.end.shares]);
   }
-  return { idea, closes, inputs };
+  if (plan.end?.late) plan.end.late(idea, getBook(c.db, c.bookId), soldAt);
+  // (`store`: every document the history wrote — the fix round's equivalence rows compare it whole.)
+  return { idea, closes, inputs, entitlement, soldAt, store: c.db._store };
 }
 
 // ── EVERY REPRODUCTION FROM ASTRA'S REVIEWS, AS A FIXED CASE THROUGH THE SAME CHECKS (rev 1, S-6) ───────────────────────
@@ -896,3 +1013,563 @@ export function generateWide(seed, { trace = null, ordered = false } = {}) {
   }
   return { seed, wide: true, clean, comparison, steps, kinds: [...kinds], feed, ambiguousSince, ...(chain ? { chain: { kind: chain.kind, a: chain.a, ...(chain.variant ? { variant: chain.variant } : {}) } } : {}) };
 }
+
+
+// ── T1a-2b-4: THE LATE GENERATOR — late listings after a sale, late splits before paid dividends, settled-id revisions and
+//    parse rejections, on one id and one ledger (the build prompt, §6). A separate generator, so every older seed's history
+//    is unchanged. Each history: AAPL and MSFT bought on S[0] (the comparison same-stock, a frozen basket of AAPL and MSFT,
+//    or a sector fund that does not hold AAPL), 8 to 12 sessions, and several of these chains on AAPL:
+//      sale             a close below AAPL's line, then the next window sells it (the idea's holding history ends there);
+//      late_after_sale  a dividend dated while it held AAPL, first listed after the sale — one payload, or two (ambiguous);
+//      late_split       a split (forward, or a reverse 4-for-5) whose price move comes first, listed 1–3 sessions late,
+//                       after one or two dividends dated on or after it were paid on time;
+//      settled_revision a split or a dividend applied on time, then listed under the same id with another payload — and the
+//                       founder keeps the original, chooses the correction, or does nothing;
+//      parse            a session whose parse report for AAPL shows a rejected row, or is missing (its split, if any, listed
+//                       the session after);
+//    and background: on-time dividends, SPY dividends, coverage failures, the founder's random rulings.
+
+export const LATE_KINDS = ['sale', 'late_after_sale', 'late_after_sale_ambiguous', 'late_split', 'late_reverse_split', 'two_dividends_late_split',
+  'settled_revision_split', 'settled_revision_dividend', 'ruled_correction', 'ruled_keep', 'parse_rejection', 'parse_missing',
+  'coverage_failure', 'dividend_on_time', 'spy_dividend', 'founder_ruling', 'comparison_same_stock', 'comparison_frozen_basket', 'comparison_sector_fund'];
+const LATE_AMOUNTS = [0.31, 0.47, 0.62, 0.83, 1, 1.07, 1.19, 1.38, 1.66, 2.14, 0.58, 0.94];
+
+export function generateLate(seed, { shapes = false, refuter = false, ahead = false } = {}) {
+  const r = rng(seed);
+  const n = 8 + r.int(5);
+  let comparison = r.pick([{ type: 'same_stock_held' }, { type: 'frozen_basket', symbols: ['AAPL', 'MSFT'] }, { type: 'sector_fund', symbols: ['XLK'] }]);
+  const kinds = new Set([`comparison_${comparison.type === 'same_stock_held' ? 'same_stock' : (comparison.type === 'frozen_basket' ? 'frozen_basket' : 'sector_fund')}`]);
+  const feed = new Map(); // id → { sym, type, d, versions: [{ from, payloads }] }
+  const truthSplits = []; // { d, ratio } the price follows
+  const used = [];
+  const amount = () => { const free = LATE_AMOUNTS.filter((a) => !used.includes(a)); const a = free.length > 0 ? r.pick(free) : r.pick(LATE_AMOUNTS); used.push(a); return a; };
+  const list = (sym, type, d, from, payloads) => {
+    const row = rowOfSym(sym, type, S[d], payloads[0]);
+    const id = deriveActionId(row);
+    const e = feed.get(id) || { sym, type, d, versions: [] };
+    e.versions.push({ from, payloads });
+    e.versions.sort((a, b) => a.from - b.from);
+    feed.set(id, e);
+    return id;
+  };
+  const rulesAfter = new Map();
+  const rule = (i, body) => rulesAfter.set(i, [...(rulesAfter.get(i) || []), { kind: 'ruleTry', body }]);
+  let sk = -1;
+  if (r.chance(0.6)) {
+    sk = 2 + r.int(Math.max(1, n - 5));
+    kinds.add('sale');
+    if (r.chance(0.75)) {
+      const de = Math.max(1, sk - 1 + r.int(3));
+      const lf = Math.min(n - 1, sk + 2 + r.int(2));
+      if (lf > sk + 1 && lf - de <= WINDOW) {
+        const ambiguous = r.chance(0.25);
+        list('AAPL', 'cash_dividend', de, lf, ambiguous ? [amount(), amount()] : [amount()]);
+        kinds.add(ambiguous ? 'late_after_sale_ambiguous' : 'late_after_sale');
+      }
+    }
+  }
+  if (r.chance(0.5)) {
+    const reverse = r.chance(0.25);
+    const ds = 1 + r.int(Math.max(1, n - 4));
+    const lag = 1 + r.int(3);
+    if (ds + lag < n) {
+      const ratio = reverse ? '4/5' : r.pick(RATIOS);
+      list('AAPL', 'split', ds, ds + lag, [ratio]);
+      truthSplits.push({ d: ds, ratio: ratioOf(ratio) });
+      kinds.add(reverse ? 'late_reverse_split' : 'late_split');
+      const de = ds + r.int(lag);
+      list('AAPL', 'cash_dividend', de, de, [amount()]);
+      if (r.chance(0.35) && de + 1 < ds + lag) { list('AAPL', 'cash_dividend', de + 1, de + 1, [amount()]); kinds.add('two_dividends_late_split'); }
+    }
+  }
+  if (r.chance(0.45)) {
+    const split = r.chance(0.5);
+    const dr = 1 + r.int(Math.max(1, n - 4));
+    const g = 1 + r.int(3);
+    if (dr + g < n) {
+      const p1 = split ? r.pick(RATIOS) : amount();
+      let p2 = split ? r.pick(RATIOS) : amount();
+      if (p2 === p1) p2 = split ? RATIOS[(RATIOS.indexOf(p1) + 1) % RATIOS.length] : amount();
+      const id = list('AAPL', split ? 'split' : 'cash_dividend', dr, dr, [p1]);
+      feed.get(id).versions.push({ from: dr + g, payloads: [p2] });
+      if (split) truthSplits.push({ d: dr, ratio: ratioOf(p1) });
+      kinds.add(split ? 'settled_revision_split' : 'settled_revision_dividend');
+      const z = r.next();
+      const pay = (p) => (split ? { ratio: ratioOf(p) } : { amount: p });
+      if (z < 0.4) { rule(dr + g, { kind: 'conflict', recordId: id, decision: 'payload', payload: pay(p2) }); kinds.add('ruled_correction'); }
+      else if (z < 0.7) { rule(dr + g, { kind: 'conflict', recordId: id, decision: 'payload', payload: pay(p1) }); kinds.add('ruled_keep'); }
+    }
+  }
+  const parseAt = new Map();
+  if (r.chance(0.35)) {
+    const kp = 1 + r.int(Math.max(1, n - 2));
+    const how = r.chance(0.5) ? 'reject' : 'missing';
+    parseAt.set(kp, how);
+    kinds.add(how === 'reject' ? 'parse_rejection' : 'parse_missing');
+    if (r.chance(0.5) && kp + 1 < n) { const ratio = r.pick(RATIOS); list('AAPL', 'split', kp, kp + 1, [ratio]); truthSplits.push({ d: kp, ratio: ratioOf(ratio) }); }
+  }
+  for (let i = 1; i < n; i += 1) {
+    if (r.chance(0.2)) { list('AAPL', 'cash_dividend', i, i, [amount()]); kinds.add('dividend_on_time'); }
+    if (r.chance(0.15)) { list('SPY', 'cash_dividend', i, i, [r.pick([1.31, 1.62, 1.77, 1.9])]); kinds.add('spy_dividend'); }
+  }
+  const uncovered = new Set();
+  for (let i = 1; i < n; i += 1) if (i !== sk && r.chance(0.12)) uncovered.add(i);
+  if (uncovered.size > 0) kinds.add('coverage_failure');
+  // ── T1a-2b-4 FIX ROUND: THE SHAPES ASTRA FOUND MISSING (`shapes: true`; drawn from a SECOND stream, so every older seed of
+  // this generator writes the history it always wrote). One shape per history, and the founder's decisions on late
+  // proposals (`late` steps) through the real endpoint:
+  //   two_dates_one_close          T2E-01: two dividends of one payload dated in the sold holding, first listed in one close
+  //   moved_across_sale            T2E-02: a payload dated after the sale, dropped, then the same payload dated before it
+  //   late_split_pending_revision  T2E-03: a paid dividend revised (open), then a split dated before it listed with the revision
+  //   out_of_order_splits_round    T2E-04: a 4-for-5 and a 2-for-1 a session apart, the first listed after the second, a dividend
+  //   opposite_same_date_ids       T2E-06: a 10-for-1 and a 1-for-10 of one date, a dividend of it, the price at ×0.10–0.104
+  //   rejected_before_sale_sector  T2E-08: a sector comparison, a rejected row dated in the sold holding, then a dividend of it
+  // and (`refuter: true`, a mode of its own so the six keep their seeds) THE FIX ROUND REFUTER'S SHAPES, each with the
+  // founder's approval of the proposal asked for after the close that made it:
+  //   proposal_then_pair           R-1: a sold holding's proposal, then dropped and its payload listed under two other dates
+  //   proposal_moved_past_sale     R-3: a sold holding's proposal, then dropped and its payload listed dated after the sale
+  //   paid_then_pairs_held         R-1b: a dividend paid on time, a split before it listed late (late_basis), then two rows
+  //                                of its payload under other dates within the window
+  let shape = null;
+  let noBelowLine = false;
+  const priceFactor = new Map(); // session → a factor on the split-following price (T2E-06's drift)
+  const o = shapes || refuter ? rng((seed ^ 0x2e7a1c3b) >>> 0) : null;
+  if (shapes || refuter) {
+    shape = refuter ? o.pick(REFUTER_SHAPES) : o.pick(LATE_SHAPES);
+    kinds.add(`shape_${shape}`);
+    const amountO = () => { const free = LATE_AMOUNTS.filter((a) => !used.includes(a)); const a = free.length > 0 ? o.pick(free) : o.pick(LATE_AMOUNTS); used.push(a); return a; };
+    const approveAfter = (i) => rulesAfter.set(i, [...(rulesAfter.get(i) || []), { kind: 'late', pick: o.next(), decision: o.next() * 0.7 }]);
+    const needSale = ['two_dates_one_close', 'moved_across_sale', 'rejected_before_sale_sector', 'proposal_then_pair', 'proposal_moved_past_sale'].includes(shape);
+    if (needSale && (sk < 0 || sk > n - 5)) { sk = 2 + o.int(2); kinds.add('sale'); }
+    if (shape === 'rejected_before_sale_sector') { comparison = { type: 'sector_fund', symbols: ['XLK'] }; kinds.delete('comparison_same_stock'); kinds.delete('comparison_frozen_basket'); kinds.add('comparison_sector_fund'); }
+    if (shape === 'two_dates_one_close') {
+      const x = amountO();
+      const d1 = 1 + o.int(sk);
+      const d2 = d1 + 1;
+      const at = Math.min(n - 1, sk + 2 + o.int(2));
+      if (at - d1 <= WINDOW) {
+        const pair = o.chance(0.5) ? [d1, d2] : [d2, d1];
+        for (const d of pair) list('AAPL', 'cash_dividend', d, at, [x]);
+      }
+    } else if (shape === 'moved_across_sale') {
+      const x = amountO();
+      const after = sk + 2; // dated after the sale (the window of sk + 1)
+      const l2 = Math.min(n - 1, after + 1 + o.int(2));
+      const outId = list('AAPL', 'cash_dividend', after, after, [x]);
+      feed.get(outId).versions.push({ from: l2, payloads: [] });
+      list('AAPL', 'cash_dividend', sk + o.int(2), l2, [x]);
+    } else if (shape === 'late_split_pending_revision') {
+      sk = -1; kinds.delete('sale');
+      const d = 2 + o.int(Math.max(1, n - 5));
+      const [p1, p2] = [amountO(), amountO()];
+      const id = list('AAPL', 'cash_dividend', d, d, [p1]);
+      feed.get(id).versions.push({ from: d + 1, payloads: [p2] });
+      const ratio = o.pick(RATIOS);
+      list('AAPL', 'split', d - 1, d + 2, [ratio]);
+      truthSplits.push({ d: d + 2, ratio: ratioOf(ratio) }); // (the price follows when the split is listed, as in T2E-03)
+      if (o.chance(0.5)) rulesAfter.set(d + 2, [...(rulesAfter.get(d + 2) || []), { kind: 'ruleTry', body: { kind: 'conflict', recordId: id, decision: 'payload', payload: { amount: o.chance(0.5) ? p2 : p1 } } }]);
+    } else if (shape === 'out_of_order_splits_round') {
+      const a = 1 + o.int(Math.max(1, n - 4));
+      list('AAPL', 'split', a + 1, a + 1, ['2/1']);
+      truthSplits.push({ d: a, ratio: 0.8 }, { d: a + 1, ratio: 2 });
+      const divFirst = o.chance(0.5);
+      if (divFirst) list('AAPL', 'cash_dividend', a + 2, a + 2, [o.pick([3.23, 1.17, 2.71])]);
+      list('AAPL', 'reverse_split', a, a + 2, ['4/5']);
+      if (!divFirst) list('AAPL', 'cash_dividend', a + 2, a + 2, [o.pick([3.23, 1.17, 2.71])]);
+    } else if (shape === 'opposite_same_date_ids') {
+      const a = 1 + o.int(Math.max(1, n - 3));
+      const rows = o.chance(0.5) ? ['10/1', '1/10'] : ['1/10', '10/1'];
+      for (const v of rows) list('AAPL', 'split', a, a, [v]);
+      list('AAPL', 'cash_dividend', a, a, [amountO()]);
+      const drift = o.pick([0.1, 0.101, 0.102, 0.104]);
+      for (let i = a; i < n; i += 1) priceFactor.set(i, drift);
+      if (sk < 0 || sk > a) { sk = a; noBelowLine = true; kinds.add('sale'); }
+    } else if (shape === 'rejected_before_sale_sector') {
+      const at = Math.min(n - 2, sk + 2 + o.int(2));
+      const rd = 1 + o.int(sk + 1);
+      parseAt.set(at, { reject: rd });
+      const dd = Math.max(rd, at + 1 - WINDOW);
+      if (dd <= sk + 1) list('AAPL', 'cash_dividend', dd, at + 1, [amountO()]);
+    } else if (shape === 'proposal_then_pair') {
+      const x = amountO();
+      const d1 = 1 + o.int(sk);
+      const l1 = sk + 2;
+      const l2 = l1 + 1 + o.int(2);
+      if (l2 <= n - 1 && l2 - d1 <= WINDOW) {
+        const id1 = list('AAPL', 'cash_dividend', d1, l1, [x]);
+        feed.get(id1).versions.push({ from: l2, payloads: [] });
+        for (const d of new Set([d1 + 1, o.chance(0.5) ? d1 - 1 : sk + 2])) if (d >= 1 && d !== d1 && d <= l2 && l2 - d <= WINDOW) list('AAPL', 'cash_dividend', d, l2, [x]);
+        approveAfter(l1);
+      }
+    } else if (shape === 'proposal_moved_past_sale') {
+      const x = amountO();
+      const d1 = sk + o.int(2);
+      const l1 = sk + 2 + o.int(2);
+      const l2 = l1 + 1;
+      const after = sk + 2 + o.int(2);
+      if (l2 <= n - 1 && l2 - d1 <= WINDOW) {
+        const id1 = list('AAPL', 'cash_dividend', d1, l1, [x]);
+        feed.get(id1).versions.push({ from: l2, payloads: [] });
+        list('AAPL', 'cash_dividend', after, l2, [x]);
+        approveAfter(l1);
+      }
+    } else if (shape === 'paid_then_pairs_held') {
+      sk = -1; kinds.delete('sale');
+      const d = 2 + o.int(Math.max(1, n - 6));
+      const x = amountO();
+      list('AAPL', 'cash_dividend', d, d, [x]);
+      const ratio = o.pick(RATIOS);
+      list('AAPL', 'split', d - 1, d + 1, [ratio]);
+      truthSplits.push({ d: d + 1, ratio: ratioOf(ratio) }); // (the price follows when the split is listed, as in T2E-03)
+      if (d + 2 <= n - 1) for (const dd of [d + 1, d + 2]) list('AAPL', 'cash_dividend', dd, d + 2, [x]);
+      approveAfter(d + 1);
+    }
+  }
+  // ── T1a-2b-4 FINAL FIX (the founder's ruling of 21 Nov 2026, A-1 to A-5): ROWS LISTED BEFORE THEIR DATE (`ahead: true`,
+  // PF_LATE_SHAPES=3; a THIRD stream, so every older seed writes the history it always wrote). Every row the history lists on
+  // time is listed 1 to 5 sessions before its date — the common case (the real daily layer looks about two calendar days
+  // ahead: this is a deliberate superset) — and one advance-listing shape per history, held, sold or across the sale:
+  //   ahead_revised             $p1 announced, then $p2, both before the date (A-1: an update — $p2 pays)
+  //   ahead_revised_at_date     $p1 announced, $p2 listed on the date (a revision: waits)
+  //   ahead_revised_after_date  $p1 announced and paid, $p2 listed the session after (a settled id revised: waits)
+  //   ahead_conflict_resolves   [$p1, $p2] announced, then [$p1] before the date (an update)
+  //   ahead_conflict_at_date    [$p1, $p2] through the date (A-3: an ordinary conflict)
+  //   ahead_conflict_enters     [$p1, $p2] announced, [$p1] listed on the date (A-3: still a conflict)
+  //   ahead_withdrawn           announced, withdrawn before the date (nothing owed)
+  //   ahead_withdrawn_relisted  announced, withdrawn before the date, listed again on it (a revision: waits)
+  //   ahead_moved_before        one date announced, replaced by another before both (an update)
+  //   ahead_moved_on_date       one date announced, the payload listed under an earlier date on that date (H-move: waits)
+  //   ahead_both_announced      two dates of one payload announced together (A-2: one ambiguity at the first date)
+  //   ahead_split_revised       a 2-for-1 announced, a 3-for-2 instead before the date, and a dividend of that date (H-split)
+  //   ahead_partner_of_paid     a paid dividend's late_basis, and its payload announced under a later date (T2E-C02)
+  //   ahead_across_sale         announced while held, moved or revised after the sale (T2E-C03), or listed unchanged
+  //   ahead_sold_doubt          a sale, a late dividend's proposal, a rejected row dated in the holding — and the founder's
+  //                             coverage_gap ruling of the sold holding's doubt (A-4, T2E-C04)
+  let ahead_ = null;
+  const q = ahead ? rng((seed ^ 0x51d2a7e9) >>> 0) : null;
+  if (ahead) {
+    kinds.add('listed_ahead');
+    // Every row the history lists on time is announced 1–5 sessions before its date.
+    for (const [, e] of feed) {
+      const first = e.versions[0];
+      if (first && first.from === e.d && e.d >= 1) first.from = Math.max(0, e.d - (1 + q.int(5)));
+    }
+    ahead_ = q.pick(AHEAD_SHAPES);
+    kinds.add(`ahead_${ahead_}`);
+    const amountQ = () => { const free = LATE_AMOUNTS.filter((a) => !used.includes(a)); const a = free.length > 0 ? q.pick(free) : q.pick(LATE_AMOUNTS); used.push(a); return a; };
+    const leadTo = (d) => Math.max(0, d - (2 + q.int(4)));
+    const listV = (sym, type, d, versions) => {
+      const id = list(sym, type, d, versions[0].from, versions[0].payloads);
+      for (const v of versions.slice(1)) feed.get(id).versions.push(v);
+      feed.get(id).versions.sort((a, b) => a.from - b.from);
+      return id;
+    };
+    const d = 3 + q.int(Math.max(1, n - 5));
+    const L = leadTo(d);
+    const [p1, p2] = [amountQ(), amountQ()];
+    const mid = L + 1 + q.int(Math.max(1, d - L - 1)); // a close strictly between the first announcement and the date
+    const approveAfterQ = (i) => rulesAfter.set(i, [...(rulesAfter.get(i) || []), { kind: 'late', pick: q.next(), decision: q.next() * 0.7 }]);
+    if (ahead_ === 'ahead_revised') listV('AAPL', 'cash_dividend', d, [{ from: L, payloads: [p1] }, { from: Math.min(d - 1, mid), payloads: [p2] }]);
+    else if (ahead_ === 'ahead_revised_at_date') listV('AAPL', 'cash_dividend', d, [{ from: L, payloads: [p1] }, { from: d, payloads: [p2] }]);
+    else if (ahead_ === 'ahead_revised_after_date') listV('AAPL', 'cash_dividend', d, [{ from: L, payloads: [p1] }, { from: Math.min(n - 1, d + 1), payloads: [p2] }]);
+    else if (ahead_ === 'ahead_conflict_resolves') listV('AAPL', 'cash_dividend', d, [{ from: L, payloads: [p1, p2] }, { from: Math.min(d - 1, mid), payloads: [p1] }]);
+    else if (ahead_ === 'ahead_conflict_at_date') listV('AAPL', 'cash_dividend', d, [{ from: L, payloads: [p1, p2] }]);
+    else if (ahead_ === 'ahead_conflict_enters') listV('AAPL', 'cash_dividend', d, [{ from: L, payloads: [p1, p2] }, { from: d, payloads: [p1] }]);
+    else if (ahead_ === 'ahead_withdrawn') listV('AAPL', 'cash_dividend', d, [{ from: L, payloads: [p1] }, { from: Math.min(d - 1, mid), payloads: [] }]);
+    else if (ahead_ === 'ahead_withdrawn_relisted') listV('AAPL', 'cash_dividend', d, [{ from: L, payloads: [p1] }, { from: Math.min(d - 1, mid), payloads: [] }, { from: d, payloads: [p1] }]);
+    else if (ahead_ === 'ahead_moved_before') {
+      const d2 = Math.min(n - 1, d + 1 + q.int(2));
+      const s = Math.min(d - 1, mid);
+      listV('AAPL', 'cash_dividend', q.chance(0.5) ? d : d2, [{ from: L, payloads: [p1] }, { from: s, payloads: [] }]);
+      listV('AAPL', 'cash_dividend', q.chance(0.5) ? d2 : d, [{ from: s, payloads: [p1] }]);
+    } else if (ahead_ === 'ahead_moved_on_date') {
+      const earlier = Math.max(L + 1, d - 1 - q.int(2));
+      listV('AAPL', 'cash_dividend', d, [{ from: L, payloads: [p1] }, { from: earlier, payloads: q.chance(0.5) ? [] : [p1] }]);
+      listV('AAPL', 'cash_dividend', earlier, [{ from: earlier, payloads: [p1] }]);
+    } else if (ahead_ === 'ahead_both_announced') {
+      const d2 = Math.min(n - 1, d + 1 + q.int(2));
+      for (const dd of new Set([d, d2])) listV('AAPL', 'cash_dividend', dd, [{ from: L, payloads: [p1] }]);
+    } else if (ahead_ === 'ahead_split_revised') {
+      const second = q.pick(['3/2', '5/4', '3/1']);
+      listV('AAPL', 'split', d, [{ from: L, payloads: ['2/1'] }, { from: Math.min(d - 1, mid), payloads: [second] }]);
+      truthSplits.push({ d, ratio: ratioOf(second) });
+      listV('AAPL', 'cash_dividend', d, [{ from: L, payloads: [p1] }]);
+    } else if (ahead_ === 'ahead_partner_of_paid') {
+      sk = -1; kinds.delete('sale');
+      const d1 = 2 + q.int(Math.max(1, n - 6));
+      listV('AAPL', 'cash_dividend', d1, [{ from: leadTo(d1), payloads: [p1] }]);
+      const ratio = q.pick(RATIOS);
+      listV('AAPL', 'split', d1 - 1, [{ from: d1 + 1, payloads: [ratio] }]);
+      truthSplits.push({ d: d1 + 1, ratio: ratioOf(ratio) }); // (the price follows when the split is listed, as in T2E-03)
+      const dp = Math.min(n - 1, d1 + 2 + q.int(2));
+      listV('AAPL', 'cash_dividend', dp, [{ from: d1 + q.int(2), payloads: [p1] }, ...(q.chance(0.5) ? [{ from: dp, payloads: [] }] : [])]);
+      approveAfterQ(d1 + 1);
+      if (q.chance(0.6)) rulesAfter.set(dp - 1, [...(rulesAfter.get(dp - 1) || []), { kind: 'ruleTry', body: { kind: 'conflict', recordId: deriveActionId(rowOf('cash_dividend', S[dp], p1)), decision: 'none' } }]);
+    } else if (ahead_ === 'ahead_across_sale' || ahead_ === 'ahead_sold_doubt') {
+      if (sk < 0 || sk > n - 5) { sk = 2 + q.int(2); kinds.add('sale'); }
+      const through = sk + 1; // the sale's session: the holding's last day
+      if (ahead_ === 'ahead_across_sale') {
+        const how = q.pick(['moved', 'changed', 'unchanged']);
+        kinds.add(`across_sale_${how}`);
+        const da = how === 'moved' ? through + 1 + q.int(2) : through;
+        const la = Math.max(0, sk - 1 - q.int(2));
+        if (how === 'moved') {
+          listV('AAPL', 'cash_dividend', da, [{ from: la, payloads: [p1] }, { from: through, payloads: [] }]);
+          listV('AAPL', 'cash_dividend', through - q.int(2), [{ from: through + 1, payloads: [p1] }]);
+        } else {
+          listV('AAPL', 'cash_dividend', da, [{ from: la, payloads: [p1] }, { from: through, payloads: [] }, { from: through + 1, payloads: [how === 'changed' ? p2 : p1] }]);
+        }
+        approveAfterQ(through + 1);
+      } else {
+        const dd = Math.max(1, sk);
+        listV('AAPL', 'cash_dividend', dd, [{ from: through + 1, payloads: [p1] }]);
+        approveAfterQ(through + 1);
+        const at = Math.min(n - 2, through + 2);
+        parseAt.set(at, { reject: Math.max(1, sk - q.int(2)) });
+        const ra = at + q.int(2);
+        rulesAfter.set(ra, [...(rulesAfter.get(ra) || []), { kind: 'ruleDoubt' }]);
+      }
+    }
+  }
+  const priceAt = (i) => {
+    let p = 100;
+    for (const t of truthSplits) if (t.d <= i) p /= t.ratio;
+    if (priceFactor.has(i)) p *= priceFactor.get(i);
+    return Math.round(p * 100) / 100;
+  };
+  const steps = [];
+  for (let i = 0; i < n; i += 1) {
+    if (sk >= 0 && i === sk + 1) steps.push({ kind: 'window', i, prices: { AAPL: priceAt(i), SPY: 500 }, rowsBySym: {} });
+    const rowsBySym = { AAPL: [], SPY: [] };
+    for (const [, e] of feed) {
+      const v = [...e.versions].reverse().find((x) => x.from <= i);
+      // (`ahead`: a row is listed from the close its first version names — before its date, A-2.)
+      if (!v || (e.d > i && !ahead) || i - e.d > WINDOW) continue;
+      for (const p of v.payloads) rowsBySym[e.sym].push(rowOfSym(e.sym, e.type, S[e.d], p));
+    }
+    steps.push({
+      kind: 'close', i, prices: { AAPL: priceAt(i), SPY: 500 }, rowsBySym, uncoveredSyms: uncovered.has(i) ? ['AAPL'] : [],
+      ...(i === sk && !noBelowLine ? { belowLine: true } : {}), ...(parseAt.has(i) ? { parse: parseAt.get(i) } : {}),
+    });
+    for (const x of rulesAfter.get(i) || []) steps.push(x);
+    if (i > 0 && r.chance(0.15)) { steps.push({ kind: 'rule', pick: r.next(), decision: r.next() }); kinds.add('founder_ruling'); }
+    // (The founder's decisions on late proposals — approve 70%, decline 30% — after a close, in shape histories.)
+    if ((shapes || refuter) && i > 0 && o.chance(0.4)) { steps.push({ kind: 'late', pick: o.next(), decision: o.next() }); kinds.add('late_decision'); }
+    // (`ahead`: the founder's decisions on late proposals, and now and then the founder's coverage_gap ruling of a sold
+    // holding's doubt — A-4's only exit.)
+    if (ahead && i > 0 && q.chance(0.35)) { steps.push({ kind: 'late', pick: q.next(), decision: q.next() }); kinds.add('late_decision'); }
+    if (ahead && i > 0 && q.chance(0.1)) { steps.push({ kind: 'ruleDoubt' }); kinds.add('founder_doubt_ruling'); }
+  }
+  return { seed, steps, comparison, kinds: [...kinds].sort(), clean: false, late: true, n, saleAt: sk >= 0 ? sk + 1 : null, ...(shape ? { shape } : {}), ...(ahead_ ? { shape: ahead_ } : {}) };
+}
+/** T1a-2b-4 final fix: the advance-listing shapes (generateLate's `ahead`; the founder's ruling of 21 Nov 2026, A-1 to A-5). */
+export const AHEAD_SHAPES = ['ahead_revised', 'ahead_revised_at_date', 'ahead_revised_after_date', 'ahead_conflict_resolves', 'ahead_conflict_at_date', 'ahead_conflict_enters',
+  'ahead_withdrawn', 'ahead_withdrawn_relisted', 'ahead_moved_before', 'ahead_moved_on_date', 'ahead_both_announced', 'ahead_split_revised', 'ahead_partner_of_paid',
+  'ahead_across_sale', 'ahead_sold_doubt'];
+/** T1a-2b-4 fix round: the shapes Astra found missing (generateLate's `shapes`). */
+export const LATE_SHAPES = ['two_dates_one_close', 'moved_across_sale', 'late_split_pending_revision', 'out_of_order_splits_round', 'opposite_same_date_ids', 'rejected_before_sale_sector'];
+/** T1a-2b-4 fix round: the independent refuter's shapes (generateLate's `refuter`). */
+export const REFUTER_SHAPES = ['proposal_then_pair', 'proposal_moved_past_sale', 'paid_then_pairs_held'];
+
+// ── T1a-2b-4: ASTRA'S FOUR REPRODUCTIONS, AS FIXED CASES through every check (I-1 to I-6) ────────────────────────────
+const lc = (i, aapl, rows = [], extra = {}) => ({ kind: 'close', i, prices: { AAPL: aapl, SPY: 500 }, rowsBySym: { AAPL: rows, SPY: [] }, uncoveredSyms: [], ...extra });
+const lwin = (i, aapl) => ({ kind: 'window', i, prices: { AAPL: aapl, SPY: 500 }, rowsBySym: {} });
+const late = (fn) => ({ late: fn });
+// (T1a-2b-4 fix round, L-1: the founder approves a late proposal — `late_<ledger>_<actionId>` — through the real endpoint.)
+const approveLate = (ledger, actionId, status) => ({ kind: 'lateExact', ...(status ? { status } : {}), body: { kind: 'late_adjustment', recordId: `late_${ledger}_${actionId}`, decision: 'approve' } });
+export const FIXED_LATE = [
+  // T2D-03: held Nov 17, sold Nov 18 (the line), a $1 dividend listed Nov 19 dated Nov 17 — $99.97 to the idea, once.
+  // (Fix round, L-1: PROPOSED on Nov 19, posted at the close after the founder's approval.)
+  { seed: 'astra-T2D-03', steps: [lc(0, 100), lc(1, 100, [], { belowLine: true }), lwin(2, 100), lc(2, 94), lc(3, 94, [d(1, 1)]),
+    at((idea) => { expect(idea.ledger.dividendsUsd, 'proposed, not posted').toBe(0); }), approveLate('idea', `cash_dividend_AAPL_${S[1]}`), lc(4, 94, [d(1, 1)])],
+    end: late((idea, book, soldAt) => {
+      expect(soldAt).toBe(2);
+      expect((idea.ledger.adjustments || []).map((a) => [a.kind, a.amountUsd])).toEqual([['late_entitlement', 99.97]]);
+      expect(idea.ledger.dividendsUsd).toBe(99.97);
+    }) },
+  // …the comparison does not hold AAPL (a sector fund).
+  { seed: 'astra-T2D-03-sector-fund', comparison: { type: 'sector_fund', symbols: ['XLK'] }, steps: [lc(0, 100), lc(1, 100, [], { belowLine: true }), lwin(2, 100), lc(2, 94), lc(3, 94, [d(1, 1)]),
+    approveLate('idea', `cash_dividend_AAPL_${S[1]}`), lc(4, 94)],
+    end: late((idea) => { expect(idea.ledger.dividendsUsd).toBe(99.97); expect(idea.comparisonLedger.dividendsUsd).toBe(0); }) },
+  // T2D-04: a 5:4 dated Nov 17 (the price follows to $80), a $1 dated Nov 18 paid $99.97, the split listed Nov 19 — +$24.99.
+  // (Fix round, L-1: the +$24.99 is PROPOSED on each ledger at Nov 19 and posted after the founder approves both.)
+  { seed: 'astra-T2D-04', steps: [lc(0, 100), lc(1, 80), lc(2, 80, [d(2, 1)]), lc(3, 80, [d(2, 1), sp(1, '5/4')]),
+    at((idea) => { expect([idea.ledger.dividendsUsd, idea.comparisonLedger.dividendsUsd], 'proposed, not posted').toEqual([99.97, 99.97]); }),
+    approveLate('idea', `cash_dividend_AAPL_${S[2]}`), approveLate('comparison', `cash_dividend_AAPL_${S[2]}`), lc(4, 80, [d(2, 1), sp(1, '5/4')])],
+    end: late((idea, book) => {
+      for (const f of ['ledger', 'comparisonLedger']) { expect(idea[f].dividendsUsd, f).toBe(124.96); expect(idea[f].holdings.AAPL.shares, f).toBe(124.96251); }
+      expect(book.portfolio.positions.AAPL.shares).toBe(124.96251);
+    }) },
+  // …a reverse 4-for-5 listed late: a debit.
+  { seed: 'astra-T2D-04-reverse', steps: [lc(0, 100), lc(1, 125), lc(2, 125, [d(2, 1)]), lc(3, 125, [d(2, 1), sp(1, '4/5')]),
+    approveLate('idea', `cash_dividend_AAPL_${S[2]}`), approveLate('comparison', `cash_dividend_AAPL_${S[2]}`), lc(4, 125)],
+    end: late((idea) => { expect(idea.ledger.dividendsUsd).toBe(79.98); }) },
+  // T2D-05: 5:4 and $1 for Nov 17 settled, then 3:2 and $2 — ruled to the correction: 149.955012 shares and $299.91.
+  { seed: 'astra-T2D-05', steps: [lc(0, 100), lc(1, 80, [sp(1, '5/4'), d(1, 1)]), lc(2, 66.67, [sp(1, '3/2'), d(1, 2)]),
+    { kind: 'ruleExact', body: { kind: 'conflict', recordId: `split_AAPL_${S[1]}`, decision: 'payload', payload: { ratio: 1.5 } } },
+    { kind: 'ruleExact', body: { kind: 'conflict', recordId: `cash_dividend_AAPL_${S[1]}`, decision: 'payload', payload: { amount: 2 } } },
+    lc(3, 66.67), lc(4, 66.67, [sp(1, '3/2'), d(1, 2)])],
+    end: late((idea, book) => {
+      for (const f of ['ledger', 'comparisonLedger']) { expect(idea[f].holdings.AAPL.shares, f).toBe(149.955012); expect(idea[f].dividendsUsd, f).toBe(299.91); }
+      expect(book.portfolio.positions.AAPL.shares).toBe(149.955012);
+    }) },
+  // T2D-12: Nov 17's split written `5:4` is rejected — the session is uncovered; listed properly on Nov 18, applied once.
+  { seed: 'astra-T2D-12', steps: [lc(0, 100), lc(1, 80, [], { parse: 'reject' }),
+    // (The rejected session is a day of doubt: AAPL uncovered, never marked $80 on 99.970008 shares at full quality.)
+    at((idea) => { expect(idea.caCoverageGaps?.AAPL, 'S[1] is uncovered').toMatchObject({ reason: 'ca_parse_incomplete' }); expect(idea.ledger.holdings.AAPL.lastMark).not.toBe(80); }),
+    lc(2, 80, [sp(1, '5/4'), d(2, 1)]), lc(3, 80, [sp(1, '5/4'), d(2, 1)])],
+    end: late((idea) => { expect(idea.ledger.holdings.AAPL.shares).toBe(124.96251); expect(idea.ledger.dividendsUsd).toBe(124.96); }) },
+  // The fix round's reviewer cases (each failed at c08944d6). AR4-A-1 + A-4: after the sale, a split listed two ways and a
+  // dividend dated after it in ONE close — the dividend waits on the conflict; the founder's 5:4 enters the history and the
+  // dividend is paid on it, once.
+  { seed: 'review-AR4-A-1', comparison: { type: 'sector_fund', symbols: ['XLK'] }, steps: [lc(0, 100), lc(1, 100, [], { belowLine: true }), lwin(2, 100), lc(2, 94),
+    lc(3, 94, [sp(1, '5/4'), sp(1, '3/2'), d(2, 1)]),
+    at((idea) => { expect(idea.ledger.adjustments || [], 'nothing paid while the split is ambiguous').toEqual([]); }),
+    { kind: 'ruleExact', body: { kind: 'conflict', recordId: `split_AAPL_${S[1]}`, decision: 'payload', payload: { ratio: 1.25 } } },
+    lc(4, 94, [sp(1, '5/4'), sp(1, '3/2'), d(2, 1)]),
+    // (Fix round, L-1: the dividend is then PROPOSED on the ruled count, and posted after the founder's approval.)
+    at((idea) => { expect(idea.ledger.dividendsUsd, 'proposed, not posted').toBe(0); }), approveLate('idea', `cash_dividend_AAPL_${S[2]}`), lc(5, 94)],
+    end: late((idea) => { expect(idea.ledger.dividendsUsd).toBe(124.96); expect((idea.founderRulings || []).every((r) => r.appliedOn != null && r.outcome !== 'moot')).toBe(true); }) },
+  // AR4-C-1: 5:4 settled, a 2:1 dated later applied, the 5:4 corrected to 3:2, then a $1 dated between them listed late —
+  // paid on the corrected count (149.955012), as the other arrival order pays.
+  { seed: 'review-AR4-C-1', steps: [lc(0, 100), lc(1, 80, [sp(1, '5/4')]), lc(2, 80), lc(3, 40, [sp(3, '2/1')]), lc(4, 33.33, [sp(1, '3/2')]),
+    { kind: 'ruleExact', body: { kind: 'conflict', recordId: `split_AAPL_${S[1]}`, decision: 'payload', payload: { ratio: 1.5 } } },
+    lc(5, 33.33), lc(6, 33.33, [d(2, 1)]), lc(7, 33.33, [d(2, 1)])],
+    end: late((idea) => { for (const f of ['ledger', 'comparisonLedger']) expect(idea[f].dividendsUsd, f).toBe(149.96); }) },
+];
+
+/** T1a-2b-4: the late soak's findings, kept as fixed seeds of the late generator (each failed at the commit before its fix):
+ *  1911240021 a late entitlement's place among the receipts; 1795727711, 1795727357 the book's mirror of a ruled split
+ *  correction; 1795729395, 1795728065 a closed holding's row that waited on a doubt; 1795731088, 1795732944, 1795729025 a
+ *  closed holding's re-date screen and the rows dated outside its holding; 1795727403, 1795729529, 1795731153, 1795731607
+ *  a ruled id left in the hold set (the final soak). */
+export const LATE_SOAK_SEEDS = [1911240021, 1795727711, 1795727357, 1795729395, 1795728065, 1795731088, 1795732944, 1795729025,
+  // The final soak at de858e26 (I-5): a ruling that settles a sold holding's split record at its close left that record in
+  // the hold set the other ledgers' appliers read, so the comparison's later dividend waited at the ruling's close and the
+  // re-run paid it. Each failed at de858e26.
+  1795727403, 1795729529, 1795731153, 1795731607];
+
+// ── T1a-2b-4 FIX ROUND (late data asks, 20 Nov 2026): ASTRA'S NAMED HISTORIES, AS FIXED PLANS ───────────────────────────────
+// Her review names each history by a seed of her own generator extension, which is not in the attachment: these plans are
+// RECONSTRUCTED FROM HER DESCRIPTION (her findings and execution record — dates, rows, order, prices, comparison arm and
+// founder decisions), one plan per named seed, through the same harness and every check (I-1 to I-7). Expectations are the
+// founder's ruling's (L-1 to L-8): late data is proposed, named and held; only the founder's approval or ruling moves it.
+const xlk = { type: 'sector_fund', symbols: ['XLK'] };
+const rc = (i, price, rows = [], extra = {}) => ({ kind: 'close', i, price, rows, ...extra });
+const soldAtS2 = () => [rc(0, 100), rc(1, 94, [], { belowLine: true }), { kind: 'window', i: 2, price: 94 }, rc(2, 94)];
+const ownIncome = (usd) => at((idea) => { expect(idea.ledger.dividendsUsd, 'the idea own income').toBe(usd); });
+export const adjustmentsPosted = (idea) => ['ledger', 'comparisonLedger', 'spyLedger'].flatMap((f) => (idea[f]?.adjustments || []).filter((a) => a && a.held !== true).map((a) => [f, a.kind, a.actionId, a.amountUsd]));
+const nothingPosted = at((idea) => { expect(adjustmentsPosted(idea), 'no adjustment posted without the founder').toEqual([]); });
+const recordsOf = (idea, f = 'ledger') => (idea[f]?.corporateActionReceipts || []).filter((r) => r.reason === POSSIBLE_REDATE || r.reason === CONFLICTING_ACTION).map((r) => [r.reason, r.actionId]).sort();
+const belowFullQuality = (i) => at((idea, book, label, ctx) => { expect(ctx.row(S[i])?.fullQuality, `${label} the S${i} row is below full quality`).toBe(false); });
+const div1 = `cash_dividend_AAPL_${S[1]}`;
+const div2 = `cash_dividend_AAPL_${S[2]}`;
+const ten = (i, v) => rowOf('split', S[i], v);
+
+export const ASTRA_T2E = [
+  // T2E-01 — two first-seen dividend dates, delivered together after the sale (S1 and S2, both while held).
+  { seed: 'astra-2011202700', comparison: xlk, steps: [...soldAtS2(), rc(3, 94, [d(1, 1), d(2, 1)]),
+    at((idea) => {
+      expect(recordsOf(idea), 'both ids are ambiguous on the sold holding').toEqual([[POSSIBLE_REDATE, div1], [POSSIBLE_REDATE, div2]].sort());
+      expect(idea.ledger.dividendsUsd).toBe(0);
+    }), nothingPosted, belowFullQuality(3), rc(4, 94)] },
+  // …the array reversed, and a same-stock comparison that still holds AAPL (it holds both ids too, and pays nothing).
+  { seed: 'astra-2011202701', steps: [...soldAtS2(), rc(3, 94, [d(2, 1), d(1, 1)]),
+    at((idea) => {
+      expect(recordsOf(idea)).toEqual([[POSSIBLE_REDATE, div1], [POSSIBLE_REDATE, div2]].sort());
+      expect([idea.ledger.dividendsUsd, idea.comparisonLedger.dividendsUsd]).toEqual([0, 0]);
+    }), nothingPosted, rc(4, 94)] },
+  // …a single-name idea, RESULTED at the sale: nothing posts to the treasury (L-8); the late rows are named on the idea.
+  { seed: 'astra-2011202706', names: ['AAPL'], comparison: xlk, steps: [...soldAtS2(),
+    at((idea) => { expect(idea.status, 'resulted at the sale').toBe('resulted'); }),
+    at((idea, book, label, ctx) => { ctx.keep.treasury = book.treasury.unreservedCash; }),
+    rc(3, 94, [d(1, 1), d(2, 1)]),
+    at((idea, book, label, ctx) => {
+      expect(adjustmentsPosted(idea)).toEqual([]);
+      expect(book.treasury.unreservedCash, 'nothing posted to the treasury').toBe(ctx.keep.treasury);
+      expect((idea.lateDataUnsettled?.actions || []).map((a) => a.actionId).sort(), 'named on the resulted idea').toEqual([div1, div2]);
+    }), rc(4, 94)] },
+  // T2E-02 — a dividend moved back across the sale: $1 dated S3 (after it) listed at S3, then only $1 dated S2.
+  { seed: 'astra-2011202702', comparison: xlk, steps: [...soldAtS2(), rc(3, 94, [d(3, 1)]), rc(4, 94, [d(2, 1)]),
+    at((idea) => {
+      expect(recordsOf(idea), 'the moved row is a possible re-date of the row it was listed as').toEqual([[POSSIBLE_REDATE, div2]]);
+      expect(idea.ledger.dividendsUsd).toBe(0);
+    }), nothingPosted, belowFullQuality(4), rc(5, 94)] },
+  // …a same-stock comparison: it applied the S3 row while it held AAPL, and holds the moved one.
+  { seed: 'astra-2011202703', steps: [...soldAtS2(), rc(3, 94, [d(3, 1)]), rc(4, 94, [d(2, 1)]),
+    at((idea) => {
+      expect(recordsOf(idea)).toEqual([[POSSIBLE_REDATE, div2]]);
+      expect(recordsOf(idea, 'comparisonLedger')).toEqual([[POSSIBLE_REDATE, div2]]);
+      expect(idea.ledger.dividendsUsd).toBe(0);
+      expect(idea.comparisonLedger.dividendsUsd, 'the comparison was paid the S3 row it held').toBe(99.97);
+    }), nothingPosted, rc(5, 94)] },
+  // T2E-03 — $1 paid on S2; revised to $2 on S3 (open revision); on S4 the $2 row with a 5:4 dated S1 and an $80 quote.
+  { seed: 'astra-2011202704', comparison: xlk, steps: [rc(0, 100), rc(1, 100), rc(2, 100, [d(2, 1)]), rc(3, 100, [d(2, 2)]), rc(4, 80, [sp(1, '5/4'), d(2, 2)]),
+    ownIncome(99.97), nothingPosted, belowFullQuality(4),
+    at((idea) => {
+      expect(idea.ledger.holdings.AAPL.shares, 'the count follows the split').toBe(124.96251);
+      const p = (idea.ledger.lateProposals || []).find((x) => x.actionId === div2 && x.status === 'open');
+      expect(p, 'the late split is a proposal on the disputed dividend').toBeTruthy();
+      expect(p.blockers.some((b) => b.startsWith('id_unresolved')), 'approval refused while the id is unresolved').toBe(true);
+    }), rc(5, 80), ownIncome(99.97)] },
+  // …all three ordinary windows serviced (no sale).
+  { seed: 'astra-2011202705', comparison: xlk, steps: [rc(0, 100), { kind: 'window', i: 1, price: 100 }, rc(1, 100), { kind: 'window', i: 2, price: 100 }, rc(2, 100, [d(2, 1)]),
+    { kind: 'window', i: 3, price: 100 }, rc(3, 100, [d(2, 2)]), rc(4, 80, [sp(1, '5/4'), d(2, 2)]), ownIncome(99.97), nothingPosted] },
+  // …the ruled control: the founder chooses $2 — the net is posted once, on the dated count: $249.93 in all.
+  { seed: 'astra-2011202707', comparison: xlk, steps: [rc(0, 100), rc(1, 100), rc(2, 100, [d(2, 1)]), rc(3, 100, [d(2, 2)]), rc(4, 80, [sp(1, '5/4'), d(2, 2)]),
+    ownIncome(99.97),
+    { kind: 'ruleExact', body: { kind: 'conflict', recordId: div2, decision: 'payload', payload: { amount: 2 } } },
+    rc(5, 80), ownIncome(249.93),
+    at((idea) => {
+      expect(adjustmentsPosted(idea).filter(([f]) => f === 'ledger'), 'one posting').toEqual([['ledger', 'ruled_correction', div2, 149.96]]);
+      expect((idea.ledger.lateProposals || []).filter((x) => x.status === 'open'), 'the proposal is settled by the ruling').toEqual([]);
+    }), rc(6, 80), ownIncome(249.93)] },
+];
+
+/** T2E-06 (Q-9): same-date 10-for-1 and 1-for-10 under two ids, from a $100 close, with a $1 dividend of that date and the
+ *  line's sale enabled at the next window — 2011202612 to 2011202619: prices $10, $10.10, $10.20, $10.40, each in both
+ *  listing orders. Under L-5 every one HOLDS: no dividend, no sale, the count unmoved. */
+export const ASTRA_T2E06 = [10, 10.1, 10.2, 10.4].flatMap((price, k) => [0, 1].map((order) => {
+  const rows = [ten(1, '10/1'), ten(1, '1/10'), d(1, 1)];
+  return {
+    seed: `astra-${2011202612 + k * 2 + order}`, comparison: xlk,
+    steps: [rc(0, 100), rc(1, price, order === 0 ? rows : [rows[1], rows[0], rows[2]]), { kind: 'window', i: 2, price }, rc(2, price),
+      at((idea) => {
+        expect(idea.ledger.dividendsUsd, 'no dividend on the held count').toBe(0);
+        expect(idea.ledger.holdings.AAPL?.shares, 'no sale, the count unmoved').toBe(SH);
+        expect(recordsOf(idea).map(([, id]) => id), 'both ids are one ambiguity').toEqual([`reverse_split_AAPL_${S[1]}`, `split_AAPL_${S[1]}`]);
+      })],
+  };
+}));
+
+/** T2E-04: `precision-4/5-2/1-3.23` — a 4-for-5 effective S1, a 2-for-1 S2, closes $125, $62.50, $62.50, $3.23 a share
+ *  on S3: on time, and with the S1 listing withheld until S3 (rows in either order); sector and same-stock. Every
+ *  affected ledger and the book: 159.952012 shares and $516.64. */
+const precisionSteps = (arm, reversed) => {
+  const late = [sp(1, '4/5'), sp(2, '2/1'), d(3, 3.23)];
+  return arm === 'on-time'
+    ? [rc(0, 100), rc(1, 125, [sp(1, '4/5')]), rc(2, 62.5, [sp(1, '4/5'), sp(2, '2/1')]), rc(3, 62.5, late)]
+    : [rc(0, 100), rc(1, 125), rc(2, 62.5, [sp(2, '2/1')]), rc(3, 62.5, reversed ? [...late].reverse() : late)];
+};
+export const ASTRA_T2E04 = [['on-time', false], ['late', false], ['late', true]].flatMap(([arm, reversed]) => [xlk, null].map((comparison) => ({
+  seed: `precision-4/5-2/1-3.23-${arm}${reversed ? '-reversed' : ''}-${comparison ? 'sector' : 'same-stock'}`, ...(comparison ? { comparison } : {}),
+  steps: [...precisionSteps(arm, reversed), at((idea, book) => {
+    expect(idea.ledger.holdings.AAPL.shares).toBe(159.952012);
+    expect(idea.ledger.dividendsUsd).toBe(516.64);
+    expect(book.portfolio.positions.AAPL.shares, 'the book mirror').toBe(159.952012);
+    if (!comparison) { expect(idea.comparisonLedger.holdings.AAPL.shares).toBe(159.952012); expect(idea.comparisonLedger.dividendsUsd).toBe(516.64); }
+  })],
+})));
+
+/** T2E-08: `sold-sector-rejected-Tue-dividend-Wed` — AAPL sold on S2 (MSFT kept); on S4 the parse report rejects a split
+ *  dated S1 (`5:4`); on Monday S5 (a window from November 18) a $1 dividend dated S2 is first listed. Sector arm, and the
+ *  same-stock control: $0 and below full quality on both. */
+export const ASTRA_T2E08 = [xlk, null].map((comparison) => ({
+  seed: `sold-${comparison ? 'sector' : 'same-stock'}-rejected-Tue-dividend-Wed`, ...(comparison ? { comparison } : {}),
+  steps: [...soldAtS2(), rc(3, 94), rc(4, 94, [], { parse: { reject: 1 } }), rc(5, 94, [d(2, 1)]),
+    at((idea) => {
+      expect(idea.ledger.dividendsUsd, 'the sold ledger').toBe(0);
+      if (!comparison) expect(idea.comparisonLedger.dividendsUsd, 'the same-stock comparison').toBe(0);
+      expect(adjustmentsPosted(idea)).toEqual([]);
+    }), belowFullQuality(5)],
+}));
