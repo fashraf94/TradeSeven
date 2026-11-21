@@ -772,6 +772,187 @@ export function sweepWords(container, docs = {}) {
   return hits;
 }
 
+// ── Film Room D1 — THE FRONT, the game's flow (Build D spec §4 – §11; FL-12) ─────────────────────────────────────────
+//
+// The front shows its numbers WITHOUT the number-kind mark (FL-12), so the BA-42 sweep above does not apply to it; each
+// number is still BOUND, and this oracle holds it to its binding:
+//   data-flow-num="<path>"   a tape value: its path one the front may show (PINNED below), its class the tape's own
+//                            declaration for that path, its text the tape's value
+//   data-flow-agg="<name>"   a computed number: its name declared (SPEC_AGGREGATE_CLASSES, pinned above), at its own
+//                            site, its text its value — and its value RECOMPUTED HERE from the documents (or, for the
+//                            margin, from the key's DISPLAYED finals: the display rule itself, BUILD_RULES §9)
+//   data-flow-text="<path>"  a symbol: its text the tape's string at a path the front may show
+// and no digit elsewhere on the front but an instant's, a bound quotation's, or one of those three.
+
+/** The tape paths the front may show a number from, PINNED HERE from Build D spec §4, §5 and §7. */
+export const SPEC_FLOW_NUMBER_PATHS = Object.freeze([
+  /^battle\.final\.(total|opponent)$/,      // the key and "Final {total}" on a completed battle's final day (§4)
+  /^score\.lastCheck\.(total|opponent)$/,   // the key on any other day: the last check's (§4)
+  /^checks\[\d+\]\.scores\.total$/,         // the low mark (§5)
+  /^actions\[\d+\]\.exitPrice$/,            // " · sold at {price}" (§7)
+]);
+/** The tape paths the front may show a string from (a swap's two symbols, §7). */
+export const SPEC_FLOW_TEXT_PATHS = Object.freeze([/^actions\[\d+\]\.symbol(Out|In)$/]);
+/** Where each computed number of the front may sit. */
+export const SPEC_FLOW_AGGREGATE_SITES = Object.freeze({
+  'difference(the two displayed final scores)': '[data-flow-heading]',
+  'ordinal(pins in time order)': '[data-flow-pin], [data-flow-panel]',
+  'count(tape rows beyond the chosen pins)': '[data-flow-more]',
+  'count(actions[] by the agent)': '[data-flow-tile="trading"]',
+  'count(actions[])': '[data-flow-tile="trading"]',
+  'count(directives[] filed)': '[data-flow-tile="withYou"]',
+  'count(directives[])': '[data-flow-tile="withYou"]',
+  'count(moments on the tape day)': '[data-flow-cards-line]',
+});
+/**
+ * The front's own words, PINNED HERE from Build D spec §11 (and §6's "+") — never read from the production copy, so a
+ * changed word fails here: every text the front renders outside a bound value, an instant and a quotation is one of
+ * these, whole.
+ */
+export const SPEC_FLOW_COPY = Object.freeze([
+  'Won by', 'Lost by', 'Draw', 'Final', 'You', 'CPU', "Agent's swap", 'Other swap', 'Your directive', 'Low',
+  'Your agent', 'Stall rule', 'Risk rule', 'Guardrail', 'Gameplan meeting', 'Maker not recorded',
+  ' · ', ' → ', 'sold at', 'not recorded', 'filed', 'not filed', 'Previous', 'Next', '+',
+  'more on the full tape', 'Open this on the full tape', "Some of this day's record is incomplete. The full tape says what.",
+  'Nothing stood out in this game.', 'This game', 'This day', 'Trading', 'Working with you', 'of', 'swaps were its own call',
+  'directives filed', 'moment to take home, on the full tape', 'moments to take home, on the full tape', 'Open the full tape',
+]);
+
+/** A chart member's instant, from the tape: `action:i` → actions[i].at, `directive:j` → directives[j].filedAt. */
+function memberMs(tape, member) {
+  const [src, i] = member.split(':');
+  const row = src === 'action' ? tape?.actions?.[Number(i)] : tape?.directives?.[Number(i)];
+  return msOf(src === 'action' ? row?.at : row?.filedAt);
+}
+
+/** Each computed number's value, recomputed HERE from the documents by what its name says it counts. */
+function flowAggregateOracle(name, el, container, docs) {
+  const tape = docs.tape;
+  if (!tape) return undefined;
+  const actions = Array.isArray(tape.actions) ? tape.actions : [];
+  const directives = Array.isArray(tape.directives) ? tape.directives : [];
+  const members = [...container.querySelectorAll('[data-flow-pin-members]')].flatMap((b) => b.getAttribute('data-flow-pin-members').split(' '));
+  switch (name) {
+    case 'difference(the two displayed final scores)': {
+      // §4.1 / BUILD_RULES §9: the key's two DISPLAYED finals, as the player reads them; with no CPU entry in the key, the
+      // tape's two finals each read to two decimals
+      const shown = (p) => { const k = container.querySelector(`[data-flow-keyrow] [data-flow-num="${p}"]`); return k ? parseNumeral(k.textContent) : null; };
+      const raw = (p) => { const v = valueAt(tape, parsePath(p)); return typeof v === 'number' ? Number(v.toFixed(2)) : null; };
+      const a = shown('battle.final.total') ?? raw('battle.final.total');
+      const b = shown('battle.final.opponent') ?? raw('battle.final.opponent');
+      return a === null || b === null ? null : Math.round(Math.abs(a - b) * 100) / 100;
+    }
+    case 'ordinal(pins in time order)': {
+      const host = el.closest('[data-flow-pin], [data-flow-panel]');
+      const own = host?.hasAttribute('data-flow-pin') ? host.getAttribute('data-flow-pin-members').split(' ')[0] : host?.getAttribute('data-flow-panel-member');
+      const t = own ? memberMs(tape, own) : null;
+      if (t === null) return null;
+      // ties at one instant may take either order: the shown number must fall in [earlier + 1, earlier-or-equal]
+      const earlier = members.filter((m) => memberMs(tape, m) < t).length;
+      const atOrBefore = members.filter((m) => memberMs(tape, m) <= t).length;
+      const shown = Number(el.getAttribute('data-agg-value'));
+      return shown >= earlier + 1 && shown <= atOrBefore ? shown : earlier + 1;
+    }
+    case 'count(tape rows beyond the chosen pins)': return actions.length + directives.length - new Set(members).size;
+    case 'count(actions[] by the agent)': return actions.filter((a) => a?.mechanism === 'agent_decision').length;
+    case 'count(actions[])': return actions.length;
+    case 'count(directives[] filed)': return directives.filter((d) => d?.cardState === 'committed').length;
+    case 'count(directives[])': return directives.length;
+    case 'count(moments on the tape day)': return typeof docs.moments === 'number' ? docs.moments : undefined;
+    default: return undefined;
+  }
+}
+
+/**
+ * Film Room D1 — the front's numbers (FL-12, BUILD_RULES §9): every number bound, classed, shown as its value, at its
+ * site; no number-kind mark anywhere on the front; no stray digit. `docs.tape` is the day's tape; `docs.moments`, when
+ * the suite passes it, the cards line's expected count.
+ */
+export function sweepFlow(container, docs = {}) {
+  const bad = [];
+  const front = container.querySelector('[data-flow-front]') || container;
+  if (front.querySelector('[data-kind-mark], [data-num], [data-num-aggregate], [data-legend="number-kinds"]')) bad.push('a number-kind mark on the front (FL-12)');
+  for (const el of front.querySelectorAll('[data-flow-num]')) {
+    const where = el.getAttribute('data-flow-num');
+    const doc = docs[el.getAttribute('data-flow-doc') || 'tape'];
+    if (!doc) { bad.push(`${where}: unknown document`); continue; }
+    if (!SPEC_FLOW_NUMBER_PATHS.some((re) => re.test(where))) bad.push(`${where}: not a path the front may show`);
+    const path = parsePath(where);
+    const want = classOfNumber(doc.numberClasses, path);
+    if (!want || el.getAttribute('data-flow-class') !== want) bad.push(`${where}: class ${el.getAttribute('data-flow-class')}, declared ${want}`);
+    if (el.children.length) bad.push(`${where}: holds more than its number`);
+    const value = valueAt(doc, path);
+    const shown = parseNumeral(el.textContent);
+    if (!(typeof value === 'number' && Math.abs(shown - value) < 0.0051)) bad.push(`${where}: shows ${el.textContent}, the document holds ${value}`);
+  }
+  for (const el of front.querySelectorAll('[data-flow-agg]')) {
+    const name = el.getAttribute('data-flow-agg');
+    const want = SPEC_AGGREGATE_CLASSES[name];
+    if (!want || el.getAttribute('data-flow-class') !== want) bad.push(`aggregate ${name}: class ${el.getAttribute('data-flow-class')}, declared ${want}`);
+    if (!SPEC_FLOW_AGGREGATE_SITES[name] || !el.closest(SPEC_FLOW_AGGREGATE_SITES[name])) bad.push(`aggregate ${name}: outside its site`);
+    if (el.children.length) bad.push(`aggregate ${name}: holds more than its number`);
+    const computed = Number(el.getAttribute('data-agg-value'));
+    const shown = parseNumeral(el.textContent);
+    if (!(Math.abs(shown - computed) <= 0.0051)) bad.push(`aggregate ${name}: shows ${el.textContent}, computed ${computed}`);
+    const oracle = flowAggregateOracle(name, el, front, docs);
+    if (oracle !== undefined && !(typeof oracle === 'number' && Math.abs(oracle - computed) <= 1e-9 * Math.max(1, Math.abs(oracle)))) bad.push(`aggregate ${name}: computed ${computed}, the documents give ${oracle}`);
+  }
+  for (const el of front.querySelectorAll('[data-flow-text]')) {
+    const where = el.getAttribute('data-flow-text');
+    const value = valueAt(docs.tape, parsePath(where));
+    if (!SPEC_FLOW_TEXT_PATHS.some((re) => re.test(where))) bad.push(`${where}: not a text path the front may show`);
+    if (typeof value !== 'string' || el.textContent !== value || el.children.length) bad.push(`${where}: shows “${el.textContent}”, the tape holds ${JSON.stringify(value)}`);
+  }
+  const walker = front.ownerDocument.createTreeWalker(front, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    let text = node.textContent;
+    if (!/\d/.test(text)) continue;
+    const host = node.parentElement;
+    if (host.closest('[data-flow-num], [data-flow-agg], [data-flow-text]')) continue;
+    if (boundQuotationOf(host, docs)) continue;
+    if (host.closest('[data-time]')) for (const re of TIME_PATTERNS) text = text.replace(re, ' ');
+    if (/\d/.test(text)) bad.push(`stray digit on the front: “${node.textContent.trim().slice(0, 80)}”`);
+  }
+  for (const el of front.querySelectorAll(TEXT_ATTRIBUTE_SELECTOR)) {
+    for (const attr of TEXT_ATTRIBUTES) {
+      const text = el.getAttribute(attr);
+      if (text && /\d/.test(text)) bad.push(`a digit in ${attr} on the front: “${text.slice(0, 80)}”`);
+    }
+  }
+  return bad;
+}
+
+/**
+ * Film Room D1, F-COPY — the front says only the spec's §11 words, the tape's values and quotations: every text node
+ * under the front outside a bound value, an instant and a quotation is, whole, one of SPEC_FLOW_COPY (whitespace aside).
+ */
+export function flowCopyDefects(container) {
+  const bad = [];
+  const front = container.querySelector('[data-flow-front]') || container;
+  // whole entries, the spaces around them aside (a text node may carry the space before a bound value)
+  const allowed = new Set(SPEC_FLOW_COPY.map((s) => s.trim()));
+  const walker = front.ownerDocument.createTreeWalker(front, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const text = node.textContent.trim();
+    if (!text) continue;
+    const host = node.parentElement;
+    if (host.closest('[data-flow-num], [data-flow-agg], [data-flow-text], [data-time], [data-quotation]')) continue;
+    if (host.closest('[data-flow-missing]') && text === '—') continue;
+    if (!allowed.has(text)) bad.push(`not the spec's copy: “${text.slice(0, 80)}”`);
+  }
+  return bad;
+}
+
+/** The front's own reading of a mounted pin: its number, its kind and the tape rows it stands for, in the DOM's order. */
+export const flowPinsOf = (container) => [...container.querySelectorAll('[data-flow-pin]')].map((b) => ({
+  n: Number(b.getAttribute('data-flow-pin')),
+  kind: b.getAttribute('data-flow-pin-kind'),
+  members: b.getAttribute('data-flow-pin-members').split(' '),
+  label: b.querySelector('[aria-hidden="true"]')?.textContent ?? null,
+  name: b.textContent.replace(b.querySelector('[aria-hidden="true"]')?.textContent ?? '', ''),
+  pressed: b.getAttribute('aria-pressed'),
+}));
+
 /**
  * Sign colours only on recorded scores (BA-41): ANY element whose style carries the success or danger
  * token, in any form (var(), the -rgb triplet, a background, an SVG stroke), must be a recorded score's
