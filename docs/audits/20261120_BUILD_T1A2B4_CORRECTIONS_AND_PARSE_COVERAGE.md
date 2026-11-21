@@ -1212,4 +1212,4 @@ The rules suite was not run again at `9301f87f`: it reads `firestore.rules` only
 
 **Not repeated:** the soak — the only product files changed are Q-14's (`adjustments.js`, `ledger.js`; the merge brought none the idea book reads); the suite runs the fixed late histories, Astra's plans and the 36 shape, 18 refuter-shape and probe seeds. The differentials and the end-to-end dump — Q-14 acts only where the founder has ruled an ambiguous share-basis id, which complete, on-time, unambiguous data never has.
 
-**Time:** the rulings arrived at 22:42; this section was pushed at 23:35 (about 55 min): Q-14 and its rows ~25 min; the refuter ~16 min beside the merge and the battery; Q14-1 confirmed, fixed, two rows, the battery and the suite again ~30 min.
+**Time:** the rulings arrived at 22:42; this section was first pushed at 23:30 (about 50 min): Q-14 and its rows ~25 min; the refuter ~16 min beside the merge and the battery; Q14-1 confirmed, fixed, two rows, the battery and the suite again ~30 min.
