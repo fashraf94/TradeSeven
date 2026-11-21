@@ -193,7 +193,7 @@ export function exitTierOf(symbol, holding) {
  *   `fullQuality` is `marksFullQuality` (every mark is `vendor_time`) AND no unsettled conflicting corporate action:
  *   the two are kept apart so a result can say WHICH it lacked (review RH-7).
  */
-export function ledgerEndpoint(ledger, valuation, { coverageGaps = null } = {}) {
+export function ledgerEndpoint(ledger, valuation, { coverageGaps = null, pendingCorrections = [] } = {}) {
   const cashCents = toCents(ledger.cash);
   let grossCents = 0;
   let netCents = 0;
@@ -208,6 +208,15 @@ export function ledgerEndpoint(ledger, valuation, { coverageGaps = null } = {}) 
   const unsettledActions = [
     ...openAmbiguities(ledger).map((r) => r.actionId), ...heldActionRecords(ledger).map((r) => r.actionId), ...basisSuspicionRecords(ledger).map((r) => r.actionId),
     ...Object.keys(ledger.holdings || {}).sort().filter((sym) => coverageGaps?.[sym]).map((sym) => coverageGapIdOf(sym, coverageGaps[sym].since)),
+    // …and (T1a-2b-4, review AR4-A-2) every row listed for a holding since closed that waits on a doubt: money the idea
+    // may be owed and was not paid by its endpoint.
+    ...(ledger.closedHeldRows || []).map((r) => r.actionId),
+    // …and every founder correction naming this ledger not yet posted on it (fix-round refuter, on AR4-C-8): money the
+    // ruling moves and has not moved — counted as a waiting closed row is.
+    ...pendingCorrections,
+    // …and (T1a-2b-4 fix round, L-1) every LATE PROPOSAL still waiting for the founder on this ledger, by its id: money the
+    // late data says the ledger may be owed, not posted without the founder's approval — the endpoint names it.
+    ...(ledger.lateProposals || []).filter((p) => p?.status === 'open').map((p) => p.id),
   ];
   let marksFullQuality = true;
   let costTiersStored = true;
@@ -365,9 +374,11 @@ export function trackStatistics(track) {
  */
 export function buildEndpoint({ idea, valuations, date, kind, observed, caughtUp = false, snapshotMeta, nowIso }) {
   const gaps = { coverageGaps: idea.caCoverageGaps ?? null };
-  const own = ledgerEndpoint(idea.ledger, valuations.idea, gaps);
-  const cmp = ledgerEndpoint(idea.comparisonLedger, valuations.comparison, gaps);
-  const spy = ledgerEndpoint(idea.spyLedger, valuations.spy, gaps);
+  // (T1a-2b-4: a founder correction pending on a ledger it names — `corrects`, not yet applied.)
+  const pendingOn = (f) => (idea.founderRulings || []).filter((r) => r && r.appliedOn == null && r.kind === 'conflict' && r.corrects === true && (!Array.isArray(r.ledgers) || r.ledgers.includes(f))).map((r) => r.recordId);
+  const own = ledgerEndpoint(idea.ledger, valuations.idea, { ...gaps, pendingCorrections: pendingOn('ledger') });
+  const cmp = ledgerEndpoint(idea.comparisonLedger, valuations.comparison, { ...gaps, pendingCorrections: pendingOn('comparisonLedger') });
+  const spy = ledgerEndpoint(idea.spyLedger, valuations.spy, { ...gaps, pendingCorrections: pendingOn('spyLedger') });
   const reservedCents = toCents(idea.contract.capitalUsd);
   const gapCents = own.valueCents - cmp.valueCents;
   const spyGapCents = own.valueCents - spy.valueCents;
@@ -418,6 +429,14 @@ export function buildEndpoint({ idea, valuations, date, kind, observed, caughtUp
   // split never applied) though every mark is clean: unmeasurable, under its own reason (review RH-7).
   if (own.unsettledActions.length > 0) unmeasurableBecause.push('idea_unsettled_corporate_action');
   if (cmp.unsettledActions.length > 0) unmeasurableBecause.push('comparison_unsettled_corporate_action');
+  // T1a-2b-4 fix round (L-6; Astra T2E-05, Q-5 as ruled): a STANDING REASON — the shares the idea sold differ from the shares
+  // it was owed (a correction after the sale, or a split first listed after it). The sale stands; the result reads below
+  // full quality, under the reason, and the reason sits beside it (`standingQualityReasons`).
+  const standing = (idea.standingQualityReasons || []).filter((r) => r && typeof r.kind === 'string');
+  if (standing.length > 0) {
+    unmeasurableBecause.push(...[...new Set(standing.map((r) => r.kind))].sort());
+    endpointRow.standingQualityReasons = standing.map((r) => ({ kind: r.kind, symbol: r.symbol, actionId: r.actionId, since: r.since }));
+  }
   const bandCents = toCents(idea.contract.band.usd);
   let economicResult;
   if (unmeasurableBecause.length > 0) economicResult = ECONOMIC_RESULT.UNMEASURABLE;
@@ -464,6 +483,8 @@ export function buildEndpoint({ idea, valuations, date, kind, observed, caughtUp
       gapUsd: fromCents(gapCents), gapPctOfReserved: (gapCents * 100) / reservedCents,
       bandUsd: fromCents(bandCents), bandShareOfReserved: idea.contract.band.shareOfReserved,
       raw: endpointRow.raw, unmeasurableBecause,
+      // (L-6: beside the result, each standing reason in full — present only when one stands.)
+      ...(standing.length > 0 ? { standingQualityReasons: standing.map((r) => ({ kind: r.kind, symbol: r.symbol, actionId: r.actionId, since: r.since, via: r.via ?? null, ...(r.sold ? { sold: r.sold } : {}), ...(r.sharesSold != null ? { sharesSold: r.sharesSold, sharesOwed: r.sharesOwed } : {}) })) } : {}),
     },
     // 3
     processQuality,

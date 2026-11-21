@@ -55,7 +55,9 @@ import { coverageRefOf, coverageSymbols } from './coverage.js';
 import { fundStaticClassifications } from './symbols.js';
 import { runIdeaBookEntryPass } from './entry.js';
 import { runIdeaBookSalesPass } from './exits.js';
-import { closeIdeaBook, catchUpIdeaBook } from './close.js';
+import { closeIdeaBook, catchUpIdeaBook, recentlyResultedIdeas, resultedIdeaSymbols } from './close.js';
+import { makeParseReportingFetcher } from './caParseReport.js';
+import { etDateOfMs } from './windows.js';
 import { nextSessionDate } from './windows.js';
 import { recordWindowAttempt } from './windowLedger.js';
 import { practiceFieldLive } from './mode.js';
@@ -97,6 +99,16 @@ export async function readIdeaBookPresence(db) {
   }
 }
 
+/** T1a-2b-4 retention: every symbol an idea of these books that resulted within the look-back of `through` held. */
+async function retainedSymbolsOf(db, bookIds, { through }) {
+  const out = new Set();
+  for (const id of bookIds) {
+    // The collection by its literal name (a read; the close reads the same ideas inside its transaction).
+    for (const idea of await recentlyResultedIdeas(db.collection('mandates').doc(id), { through })) for (const sym of resultedIdeaSymbols(idea)) out.add(sym);
+  }
+  return [...out].sort();
+}
+
 /** One bounded page of idea books of one status — the idea book's own equality query. */
 async function ideaBooksOfStatus(db, status) {
   const page = await db.collection('mandates')
@@ -110,10 +122,22 @@ async function ideaBooksOfStatus(db, status) {
 /**
  * The snapshot builders' inputs when at least one idea book is active.
  *
- * @param {{ ideaHeldTickers: string[], quarterlyActive: boolean }} args  what the active idea books hold
+ * T1a-2b-4 adds two things to the DAILY build's inputs only (never the slot snapshots'):
+ *   • THE PARSE REPORT (Astra T2D-12; caParseReport.js): the daily build fetches the corporate actions of the symbols an
+ *     idea book's coverage requires through the parse-reporting wrapper, which returns exactly what the base fetcher
+ *     returns and writes the per-symbol report to `practiceFieldCaParseReports/{session}`. It is handed in only when
+ *     such a symbol is in the build — so at 'off', and at 'on' with no idea book (no call here at all), the daily build
+ *     is exactly the engine's own;
+ *   • RETENTION (Astra T2D-03 after a result): an idea that RESULTED within the daily layer's look-back still has rows the
+ *     vendor may first list now — a dividend dated while it held a name it has since sold — so the symbols its three
+ *     ledgers held stay in the daily build's coverage for that long (recentlyResultedIdeas). Without them the close
+ *     could never see such a row: the coverage document drops a resulted idea's symbols at once.
+ *
+ * @param {{ ideaHeldTickers: string[], quarterlyActive: boolean, ideaBookIds?: string[], now?: Date }} args  what the
+ *   active idea books hold, and which books they are
  * @returns {Promise<{ daily: object, tick: object, coverageCount: number }>}
  */
-export async function practiceFieldBuildInputs(db, { ideaHeldTickers = [], quarterlyActive, coverageData }) {
+export async function practiceFieldBuildInputs(db, { ideaHeldTickers = [], quarterlyActive, coverageData, ideaBookIds = [], now = new Date() }) {
   // `coverageData` is the coverage document the draining-query fallback ALREADY read this fire (coverageFromStandIn):
   // handed on, so that path needs no second read — a second one failing would throw into the fire the fallback is
   // there to protect (third refuter pass, 9a). On every other path it is undefined and the document is read here.
@@ -125,8 +149,22 @@ export async function practiceFieldBuildInputs(db, { ideaHeldTickers = [], quart
   const reserved = coverageSymbols(data);
   const coverageTickers = [...new Set([...ideaHeldTickers, ...reserved])];
   const withoutDefault = quarterlyActive ? {} : { candidateUniverse: [] };
+  // T1a-2b-4: the symbols of ideas that resulted within the look-back (retention), daily build only. Fenced: a failed
+  // read keeps the build as it was (those symbols then read uncovered at the close — fail-closed).
+  let retained = [];
+  if (practiceFieldLive() && ideaBookIds.length > 0) {
+    try {
+      retained = await retainedSymbolsOf(db, ideaBookIds, { through: etDateOfMs(now.getTime()) });
+    } catch (err) {
+      console.error(`${LOG_PREFIX} PRACTICE_FIELD_RETENTION_READ_FAILED — the daily build goes on without the resulted ideas' symbols: ${err?.message ?? err}`);
+    }
+  }
+  const dailyCoverage = retained.length === 0 ? coverageTickers : [...new Set([...coverageTickers, ...retained])];
+  // T2D-12: the parse-reporting wrapper, only when an idea book's coverage requires a symbol of this build.
+  const parseReporting = practiceFieldLive() && dailyCoverage.length > 0
+    ? { fetchCorporateActions: makeParseReportingFetcher(db, { symbols: dailyCoverage }) } : {};
   return {
-    daily: { ...withoutDefault, coverageTickers, staticClassifications: fundStaticClassifications() },
+    daily: { ...withoutDefault, coverageTickers: dailyCoverage, staticClassifications: fundStaticClassifications(), ...parseReporting },
     tick: { ...withoutDefault, coverageTickers, ...(quarterlyActive ? {} : { minCandidateCapacity: 0 }) },
     coverageCount: reserved.length,
   };

@@ -17,8 +17,7 @@ import { planHoldRuling, applyFounderRulings, markRulingsApplied } from './holdR
 import { nextSessionDate } from './windows.js';
 import {
   seedBook, admitAndEnter, closeOn, windowAt, contractOf, getBook, getIdea, getRow, closeNowOf, etIso, storeCloseSnapshot, placeSnapshot, closeSnapshot,
-  takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults,
-} from './__testsupport__/fixtures.js';
+  takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, vendorAnswering } from './__testsupport__/fixtures.js';
 
 const S = ['2026-11-16'];
 while (S.length < 26) S.push(nextSessionDate(S.at(-1)));
@@ -172,7 +171,7 @@ describe('T2D-02 — a 20-session catch-up applies the backfill it fetched, what
       asks.push([sym, range]);
       return { failed: false, calls: 2, actions: sym === 'AAPL' ? [spl(2, '5/4'), div(4)] : [] };
     };
-    const args = { before: S[23], now: closeNowOf(S[23]), fetchCorporateActions };
+    const args = { before: S[23], now: closeNowOf(S[23]), ...vendorAnswering(fetchCorporateActions) };
     const first = await catchUpIdeaBook(c.db, c.bookRef, args);
     expect(first.caughtUp.length).toBe(20);
     recon(c);
@@ -701,7 +700,7 @@ describe('AR1-RF-05 — a backfill row never settles a conflict it took part in'
     await close(c, 0);
     for (let i = 1; i < 23; i += 1) await storeCloseSnapshot(c.db, S[i], q(i >= 4 ? 80 : 100, i === 4 ? [spl(4, '5/4')] : []));
     const fetchCorporateActions = async (sym) => ({ failed: false, calls: 2, actions: sym === 'AAPL' ? [spl(4, '3/2')] : [] });
-    const args = { before: S[23], now: closeNowOf(S[23]), fetchCorporateActions };
+    const args = { before: S[23], now: closeNowOf(S[23]), ...vendorAnswering(fetchCorporateActions) };
     await catchUpIdeaBook(c.db, c.bookRef, args);
     recon(c);
     await catchUpIdeaBook(c.db, c.bookRef, args);

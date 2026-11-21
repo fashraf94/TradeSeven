@@ -470,7 +470,7 @@
     "api/_utils/practiceField/close.js::closeNextSession::create::rows": 1,
     "api/_utils/practiceField/close.js::closeNextSession::set::corporateActions": 1,
     "api/_utils/practiceField/close.js::closeNextSession::set::dailyRows": 1,
-    "api/_utils/practiceField/close.js::closeNextSession::set::ideas": 1,
+    "api/_utils/practiceField/close.js::closeNextSession::set::ideas": 2,
     "api/_utils/practiceField/close.js::closeNextSession::set::practiceFieldCoverage": 1,
     "api/_utils/practiceField/close.js::closeNextSession::set::rows": 1,
     "api/_utils/practiceField/close.js::closeNextSession::update::unresolved": 2,
@@ -524,7 +524,7 @@
     "scripts/rule-compat-cleanup.js::main::update::unresolved": 2,
     "scripts/ws1-observe-walk.js::removeTestAgent::delete::unresolved": 1,
     "api/_utils/practiceField/admission.js::admitIdea::create::unresolved": 1,
-    "api/_utils/practiceField/close.js::closeNextSession::create::unresolved": 3,
+    "api/_utils/practiceField/close.js::closeNextSession::create::unresolved": 4,
     "api/_utils/practiceField/close.js::closeNextSession::set::practiceFieldBooks": 2,
     "api/_utils/practiceField/founderControls.js::applyControl::update::mandates": 1,
     "api/_utils/practiceField/founderControls.js::applyControl::update::practiceFieldBooks": 1,
@@ -539,7 +539,8 @@
     "api/_utils/practiceField/spend.js::reserveSpend::create::unresolved": 1,
     "api/_utils/practiceField/caBackfill.js::ensureCoverageBackfills::set::practiceFieldCaBackfill": 2,
     "api/_utils/practiceField/founderControls.js::applyResolveHold::create::unresolved": 1,
-    "api/_utils/practiceField/founderControls.js::applyResolveHold::update::ideas": 1
+    "api/_utils/practiceField/founderControls.js::applyResolveHold::update::ideas": 1,
+    "api/_utils/practiceField/caParseReport.js::makeParseReportingFetcher::set::practiceFieldCaParseReports": 1
   },
   "_notes_spec1_phase3": {
     "api/_utils/mandateClosePass.js::closeBook (set/update)": "SPEC1 Phase 3 (this PR). The §3.6 daily-close transaction — TWO tx.set sites (the deferred-write loop: decisions/{id} expiry receipts + corporateActions/{actionId} logs + CORPORATE_CLOSE receipts; and the dailyRows/{date} row write, whose mandateRef-parameter-rooted chain the scanner cannot resolve even though the collection literal is visible) and one tx.update on the mandate doc (marks/peaks/scoring/health/execState under revision discipline). The atomic reads-before-writes structure must not be restructured to chase a literal. Same class as the Phase 2 executeDecision/writeTerminal entries. Verified targets: mandates/{id}, mandates/{id}/decisions, mandates/{id}/corporateActions, mandates/{id}/dailyRows — none protected. The pendingScoringAppends write (appendScoringWithRetry) resolves via its callee-base literal and needs no entry.",
@@ -832,5 +833,10 @@
     "api/_utils/practiceField/caBackfill.js::ensureCoverageBackfills::set::practiceFieldCaBackfill": "Amendment F-1. Two ref.set calls on practiceFieldCaBackfill/{SYM} (one document per symbol, its widest successful range) — the corporate-action BACKFILL of one held symbol from the day after its idea's caCoveredThrough through the date the idea-book close is about to close, fetched by the daily builder's own fetchCorporateActionsEODHD (called, not edited). One writes a successful fetch (failed: false), replacing a shorter earlier one; the other a FAILED fetch's partial rows, only when no successful one is stored (a failed answer never replaces a successful one). Server-only (the rules' catch-all deny); read only by the idea book's close, inside its transaction, for that symbol and that idea — never by a quarterly reader, and nothing is written to mandateUniverseDaily or a snapshot. Reached only from closeIdeaBook and catchUpIdeaBook, each of which returns at 'off' before any read. Founder sign-off required (a new server-only collection).",
     "api/_utils/practiceField/founderControls.js::applyResolveHold::create::unresolved": "Amendment F-5. One tx.create: practiceFieldBooks/{uid}/founderOps/{requestKey} — the founder's resolve_hold request, recorded once (with the ruling it wrote) in the transaction that writes the ruling, exactly as applyControl records pause/resume/wind_down; a replay answers it and changes nothing. The handle is a ref the scan cannot resolve (founderOpRefOf). Reached only through runFounderAction after isPracticeFieldFounder (PRACTICE_FIELD_MODE not 'off' AND the uid on MANDATE_FOUNDER_UIDS; the uid from the verified token).",
     "api/_utils/practiceField/founderControls.js::applyResolveHold::update::ideas": "Amendment F-5. One tx.update on mandates/{bookId}/ideas/{ideaId} (a money subcollection): it appends ONE ruling to the idea's founderRulings — the founder's ruling on a corporate-action hold (a suspicion, a conflict or possible re-date, a coverage gap), naming the exact record, who, when and the request key. It moves no money and changes no ledger here: the idea book's next observed close applies the ruling once (holdRulings.js applyFounderRulings), under its own reconciliation. Only on the caller's OWN open idea book (claim → book, owner checked; a closed book refused) and an idea in its openIdeaIds, after planHoldRuling refuses a record that does not exist or is already resolved. Same gates as above."
+  },
+  "_notes_practice_field_t1a2b4": {
+    "api/_utils/practiceField/caParseReport.js::makeParseReportingFetcher::set::practiceFieldCaParseReports": "Astra T2D-12. One set (merge) per symbol on practiceFieldCaParseReports/{session}: the per-symbol PARSE REPORT of the daily build's corporate-action fetch (rows received, accepted, no-op and rejected with their reasons, and a malformed envelope), written by the Practice Field wrapper around the daily builder's own fetchCorporateActionsEODHD (called, not edited), which returns exactly what the base returns and makes no second upstream call. Only for the symbols an idea book's coverage requires: the wrapper is handed to ensureDailySnapshot only by sweep.js practiceFieldBuildInputs, at a mode above 'off' with such a symbol in the build — so the quarterly daily document is never written by it, and a fire with no idea book is the engine's own. Server-only (the rules' catch-all deny); read by the idea book's close, sales and admission (dailyCoverage.js: a missing or unclean entry is a day of doubt). Never the request URL (it carries the vendor key). Founder sign-off required (a new server-only collection).",
+    "api/_utils/practiceField/close.js::closeNextSession::create::unresolved": "T1a-2b-4 — now FOUR tx.create sites in the close's one transaction (was three, T1a-2b-2 §4.4): the result packet, its numbered receipt parts and the close's window row, as before; (4) NEW: each ADJUSTMENT's evidence document, mandates/{bookId}/ideas/{ideaId}/evidence/adjustment_{id} (adjustments.js: a late entitlement, a late basis or a ruled correction — content-hashed, deterministic id), each read first in the same transaction and created only when absent: create-once.",
+    "api/_utils/practiceField/close.js::closeNextSession::set::ideas": "T1a-2b-4 — now TWO tx.set sites on ideas (was one): each open idea the close changed, as before; and (NEW) each RESULTED idea (within the daily layer's look-back, read in the same transaction) that this close posts a late adjustment for — its ledgers gain the adjustment record (and a history-only split receipt or an ambiguity record), and `resultAdjustments` beside its result; the result itself is never rewritten."
   }
 }

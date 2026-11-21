@@ -127,7 +127,7 @@ function waitingAfter(prior, { tick, refusal, nowIso }) {
  * @returns {{ changed: boolean, nextIdea: object, nextBook: object, nextCoverage: object|null, openIdeas: Array<object>,
  *             decisions: Array<[string, object]>, sold: Array<object>, waited: Array<object>, resulted: boolean, alerts: string[] }}
  */
-export function planPendingSales({ book, idea, others, snapshot, daily = null, coverageData = null, tick, nowIso }) {
+export function planPendingSales({ book, idea, others, snapshot, daily = null, parseReport = null, coverageData = null, tick, nowIso }) {
   const ideaId = idea.ideaId;
   let ledger = cloneLedger(idea.ledger);
   const positions = { ...(book.portfolio.positions || {}) };
@@ -187,7 +187,8 @@ export function planPendingSales({ book, idea, others, snapshot, daily = null, c
     // session the idea's data covered the symbol (`caCoveredThrough`, F-1): on the first day after an outage longer
     // than the daily window, today's entry is clean but an action in the gap is still unapplied — held too, until the
     // close applies the backfill. (Within the window the rows are here, and a due one holds the sale below.)
-    else if (!sessionCoverage({ symbol, session: tick.date, coveredThrough: coveredThroughOf(idea, symbol), daily: dailyDoc, dailyRefOk: namesDaily }).covered) refusal = CORPORATE_ACTION_DATA_MISSING;
+    // (T1a-2b-4, T2D-12: and the session's parse report shows the symbol's answer parsed whole — dailyCoverage.js.)
+    else if (!sessionCoverage({ symbol, session: tick.date, coveredThrough: coveredThroughOf(idea, symbol), daily: dailyDoc, dailyRefOk: namesDaily, parseReport }).covered) refusal = CORPORATE_ACTION_DATA_MISSING;
     else if (heldBack !== null) refusal = heldBack;
     else {
       try {
@@ -394,11 +395,14 @@ export async function sellPendingHoldings(db, { bookRef, ideaId, tick, nowIso })
     const coverageData = coverageSnap.exists ? coverageSnap.data() : null;
     const dailySnap = await tx.get(dailyRef);
     const daily = dailySnap.exists ? dailySnap.data() : null;
+    // T1a-2b-4 (T2D-12): the session's parse report, read only — part of the symbol's coverage. By its literal name.
+    const reportSnap = await tx.get(db.collection('practiceFieldCaParseReports').doc(tick.date));
+    const parseReport = reportSnap.exists ? reportSnap.data() : null;
     // Reject, never repair: the book as READ must reconcile before a sale is decided. A sale rewrites the book's
     // cash, positions and equity, so a check of the next state alone would overwrite an inconsistent one and pass.
     assertReconciled(book, [...others, idea]);
 
-    const plan = planPendingSales({ book, idea, others, snapshot, daily, coverageData, tick, nowIso });
+    const plan = planPendingSales({ book, idea, others, snapshot, daily, parseReport, coverageData, tick, nowIso });
     if (!plan.changed) return { outcome: 'waiting', sold: [], waited: plan.waited, resulted: false, alerts: [] };
     assertReconciled(plan.nextBook, plan.openIdeas);
 
