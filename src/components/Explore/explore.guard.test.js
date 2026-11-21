@@ -202,6 +202,17 @@ describe('the words (K-13, E-1)', () => {
   });
 });
 
+describe('the build\'s files outside Explore stay outside the sheet too (K-3; refuter on D-5)', () => {
+  const OTHERS = ['src/components/Search/SearchDiscover.jsx', 'src/components/Search/SearchOverlay.jsx', 'src/components/Search/companyMatch.js', 'src/components/Navigation/BottomNav.jsx', 'src/components/Navigation/DesktopSidebar.jsx', 'src/config/exploreFlags.js'];
+  it.each(OTHERS)('%s imports neither the sheet nor the service, nor names either in a string', (r) => {
+    const p = resolve(REPO, r);
+    const text = readFileSync(p, 'utf8');
+    const targets = targetsOf(p, text);
+    expect(targets.filter((t) => t.startsWith('src/components/SharedResearch') || SERVICE.test(t))).toEqual([]);
+    expect([...namesInStrings(text, 'SharedResearch/'), ...namesInStrings(text, 'sharedResearchService')]).toEqual([]);
+  });
+});
+
 describe('the bookmark document and its rules block agree (review D-7)', () => {
   it('the title bound is the rules\' bound, and the four keys are the rules\' four', async () => {
     const rules = readFileSync(resolve(REPO, 'firestore.rules'), 'utf8');

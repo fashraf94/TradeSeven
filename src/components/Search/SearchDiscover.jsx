@@ -43,9 +43,10 @@ const SearchDiscover = ({ user, isMobile, isDesktop, setScreen, stocksData, side
   // ExploreRuntime's snapshot ({ research, admitted, stories, bookmarks }); null at 'off' and until it loads.
   const [explore, setExplore] = useState(null);
   // Whether the player has tapped anything on the page (a tab, the search bar, a row, a card — spec §6; build prompt
-  // K-5): at 'allowlist' the Explore tab, once added, opens by itself only before that.
+  // K-5): at 'allowlist' the Explore tab, once added, opens by itself only before that. A tap is a click (a scroll
+  // gesture on a phone is not one) or Enter / Space on a control.
   const touched = useRef(false);
-  const markTouched = (event) => { if (event.type !== 'keydown' || event.key === 'Enter' || event.key === ' ') touched.current = true; };
+  const markTouched = (event) => { if (event.type === 'click' || event.key === 'Enter' || event.key === ' ') touched.current = true; };
   const withExplore = mode === 'on' || (mode === 'allowlist' && explore?.admitted === true);
   // The Explore tab is never shown without Explore (a player change at 'allowlist' resets the admission): Markets then.
   const activeTab = selectedTab === EXPLORE_HOME && !withExplore ? 'explore' : selectedTab;
@@ -74,7 +75,7 @@ const SearchDiscover = ({ user, isMobile, isDesktop, setScreen, stocksData, side
 
   return (
     <motion.div
-      onPointerDownCapture={markTouched}
+      onClickCapture={markTouched}
       onKeyDownCapture={markTouched}
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}

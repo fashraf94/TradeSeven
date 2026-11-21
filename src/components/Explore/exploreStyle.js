@@ -7,7 +7,8 @@
 //
 // THE DOM IS THE READING ORDER AT EVERY WIDTH (review C-1: CSS `order` moved boxes but not the Tab or
 // screen-reader order). The reader is one grid in the phone's order; from 1000 px its side block
-// (the questions and the panel) is PLACED in the second column beside the story, spanning its rows.
+// (the questions and the panel) is PLACED in the second column beside the story, spanning its rows and a
+// last, flexible row that takes any extra height (so a tall panel never widens the story's gaps).
 // Home's two columns are real columns at every width (stacked on a phone); its short "Research in
 // progress" list is drawn in each column's place, the one not in use `display: none`. Neither column
 // ever has a scroll of its own (spec E-4, N-6): the page scrolls, and on desktop the side column
@@ -115,7 +116,8 @@ export const EXPLORE_CSS = `
   .ftx-grid[data-ftx-grid="home"] { grid-template-columns: minmax(0, 1fr) 320px; gap: 44px; align-items: start; }
   .ftx-grid[data-ftx-grid="story"] { grid-template-columns: minmax(0, 660px) minmax(320px, 400px); column-gap: 48px; row-gap: 22px; justify-content: space-between; align-items: start; }
   .ftx-grid[data-ftx-grid="story"] > * { grid-column: 1; }
-  .ftx-grid[data-ftx-grid="story"] > [data-ftx-side] { grid-column: 2; grid-row: 1 / span var(--ftx-side-rows, 2); }
+  .ftx-grid[data-ftx-grid="story"] { grid-template-rows: repeat(var(--ftx-left-rows, 2), auto) minmax(0, 1fr); }
+  .ftx-grid[data-ftx-grid="story"] > [data-ftx-side] { grid-column: 2; grid-row: 1 / -1; }
   .ftx-phone-only { display: none; }
   .ftx-wide-only { display: block; }
 }

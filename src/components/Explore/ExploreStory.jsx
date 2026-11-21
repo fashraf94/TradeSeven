@@ -67,7 +67,7 @@ export default function ExploreStory({
   return (
     <div data-explore-screen="story" style={{ paddingBottom: 96 }}>
       <div style={{ marginBottom: 8 }}><LinkBtn onClick={onBack} data-explore-back="">{COPY.back}</LinkBtn></div>
-      <div className="ftx-grid" data-ftx-grid="story">
+      <div className="ftx-grid" data-ftx-grid="story" style={{ '--ftx-left-rows': leftRows }}>
           <article style={{ ...S.col, gap: 14 }}>
             <div style={S.row}><OriginTags story={story} />{story.reporter.beat && <span style={S.small}>{story.reporter.beat}</span>}</div>
             <h2 ref={titleRef} className="ftx-h1" tabIndex={-1} data-explore-story-title="" style={{ outline: 'none', textWrap: 'balance' }}>{story.title}</h2>
@@ -104,7 +104,7 @@ export default function ExploreStory({
               <p style={{ margin: 0, fontSize: 16.5, fontWeight: 600, lineHeight: 1.4, color: T.ink, overflowWrap: 'anywhere' }}>{story.openQuestion}</p>
             </div>
           )}
-          <div data-ftx-side="" style={{ ...S.col, gap: 22, '--ftx-side-rows': leftRows }}>
+          <div data-ftx-side="" style={{ ...S.col, gap: 22 }}>
             <ExploreQuestions story={story} selectedId={question.id} onSelect={(id) => onChoice({ ...choice, selectedId: id })} />
             <ExplorePanel
               form={form}

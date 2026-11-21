@@ -267,7 +267,7 @@ describe('lens B — separation and wiring', () => {
     read.mockReturnValue(held.promise);
     keep(mount(page(), { sources }));
     await until(() => $('[data-stub-card]'), 'the movers');
-    $('[data-stub-card]').dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    click($('[data-stub-card]'));
     held.resolve(answerOf(READS.none));
     await until(() => $$('button').some((b) => b.textContent.trim() === 'Markets'), 'the tab added');
     await new Promise((r) => { setTimeout(r, 300); });
@@ -339,7 +339,7 @@ describe('lens C — reading order and contrast', () => {
     const kids = [...$('[data-ftx-grid="story"]').children].map((el) => (el.tagName === 'ARTICLE' ? 'story' : el.querySelector('[data-explore-body]') ? 'body'
       : el.matches('[data-explore-leaves-open]') ? 'open' : el.matches('[data-ftx-side]') ? 'side' : el.matches('[data-explore-connections]') ? 'connections' : el.matches('[data-explore-sources]') ? 'sources' : '?'));
     expect(kids).toEqual(['story', 'body', 'open', 'side', 'connections', 'sources']);
-    expect($('[data-ftx-side]').style.getPropertyValue('--ftx-side-rows')).toBe('5');
+    expect($('[data-ftx-grid="story"]').style.getPropertyValue('--ftx-left-rows')).toBe('5');
     expect(document.querySelector('.ftx-o1, .ftx-o2, .ftx-o3')).toBeNull();
   }, ROW);
   it('C-1: home\'s DOM is the phone\'s reading order: search, Research in progress, the cards — and the side column\'s own copy for wide screens', async () => {
