@@ -21,7 +21,7 @@
 // into the read's open investigation after the close. Every other field is the fixture's, untouched. The read after
 // the close follows the walk: opened → walkAfterOpen, a step → walkAfterStep, a part set → walkAfterPart.
 //
-//   ?exploreFixture=<scene>   (index: the list)   &delay=<ms per answer, default 400>
+//   ?exploreFixture=<scene>   (index: the list)   &delay=<ms per answer, default 400>   &stay=home (do not open the scene's story)
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ThemeProvider } from '../contexts/ThemeContext';
@@ -45,7 +45,11 @@ const SMOKE_LINE = (what) => ({ status: 400, body: { error: 'smoke_not_in_walk',
 const SCENES = {
   home: { title: 'Home · three sample stories, nothing in progress', read: READS.none },
   'home-progress': { title: 'Home · the AI-buildout story in progress', read: READS.progress },
-  'home-finished': { title: 'Home · a thesis saved on the AI-buildout story', read: READS.saved, bookmarks: ['sample-tap-to-pay'] },
+  'home-finished': { title: 'Home · a thesis saved on the AI-buildout story, and a story saved for later', read: READS.saved, bookmarks: ['sample-tap-to-pay'] },
+  'home-concluded': { title: 'Home · an investigation concluded on the AI-buildout story', read: READS.concluded },
+  'stories-failed': { title: "Home · Couldn't load stories (Try again works)", read: READS.none, stories: 'fail-once' },
+  'bookmark-gone': { title: 'Home · a saved story that is no longer published', read: READS.none, bookmarks: ['sample-utility-load', { storyId: 'sample-taken-down', storyVersion: 1, title: 'A sample story taken down' }] },
+  'progress-gone': { title: 'Home · an open investigation whose story is no longer published', read: READS.gone },
   story: { title: 'Story · the AI-buildout story, nothing started', read: READS.none, open: AI_ID },
   'story-progress': { title: 'Story · in progress (Continue research)', read: READS.progress, open: AI_ID },
   'story-finished': { title: 'Story · a thesis saved (View it), and a new one may start', read: READS.saved, open: AI_ID },
@@ -103,14 +107,19 @@ function installRoutes(scene) {
 
 /** In-memory fixture sources: the scene's stories, and bookmarks kept for the page's life. */
 function smokeSources(scene) {
-  const stories = scene.stories ?? SAMPLE_STORIES;
+  const stories = Array.isArray(scene.stories) ? scene.stories : SAMPLE_STORIES;
+  let failStories = scene.stories === 'fail-once';
   let bookmarks = (scene.bookmarks ?? []).map((id) => {
+    if (typeof id === 'object') return { ...id, savedAt: new Date().toISOString() };
     const s = SAMPLE_STORIES.find((x) => x.id === id);
     return { storyId: s.id, storyVersion: s.version, title: s.title, savedAt: new Date().toISOString() };
   });
   const later = (v) => new Promise((r) => { setTimeout(() => r(v), DELAY); });
   return {
-    readStories: () => later(stories),
+    readStories: () => {
+      if (failStories) { failStories = false; return new Promise((_r, reject) => { setTimeout(() => reject(new Error('SMOKE ONLY — the stories read failed on purpose')), DELAY); }); }
+      return later({ list: stories, complete: true }); // the stories source's answer: the list, and the read holds them all
+    },
     readBookmarks: () => later(bookmarks.map((b) => ({ ...b }))),
     saveBookmark: (_uid, story) => {
       const b = { storyId: story.id, storyVersion: story.version, title: story.title, savedAt: new Date().toISOString() };
@@ -145,7 +154,7 @@ function Page({ scene }) {
   // SMOKE ONLY: a scene that starts on a story taps its card once it is drawn
   const opened = useRef(false);
   useEffect(() => {
-    if (!scene.open) return undefined;
+    if (!scene.open || QP.get('stay') === 'home') return undefined;
     const t = setInterval(() => {
       const b = document.querySelector(`[data-explore-card="${scene.open}"] [data-explore-card-read]`) ?? document.querySelector(`[data-explore-card="${scene.open}"] [data-explore-card-primary]`);
       if (b && !opened.current) { opened.current = true; b.click(); clearInterval(t); }
@@ -174,7 +183,7 @@ export default function ExploreSmokeScreen({ fixture }) {
   useEffect(() => {
     const mark = document.createElement('div');
     mark.textContent = `SMOKE ONLY · sample stories · ${fixture}`;
-    Object.assign(mark.style, { position: 'fixed', right: '8px', top: '6px', zIndex: '1003', pointerEvents: 'none', font: '600 11px system-ui, sans-serif', color: 'var(--ft-gold)', background: 'rgba(13,17,23,0.85)', padding: '2px 6px', borderRadius: '6px' });
+    Object.assign(mark.style, { position: 'fixed', left: '50%', transform: 'translateX(-50%)', top: '2px', zIndex: '1003', pointerEvents: 'none', font: '600 11px system-ui, sans-serif', color: 'var(--ft-gold)', background: 'rgba(13,17,23,0.85)', padding: '2px 6px', borderRadius: '6px' });
     document.body.appendChild(mark);
     return () => mark.remove();
   }, [fixture]);
