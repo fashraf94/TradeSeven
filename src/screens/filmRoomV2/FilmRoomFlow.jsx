@@ -183,12 +183,15 @@ const LINE = Object.freeze({
 /**
  * One line's runs (Amendment B DB-7, Astra's F7): a run of two points or more is a path; a run of ONE scored check is
  * a dot at its own instant — never a path, whose stub would reach across a neighbouring missing check; an isolated
- * final point is drawn by its end dot (data-flow-end). Butt caps: no line's end reaches into the gap it stops at.
+ * final point is drawn by its end dot (data-flow-end). Butt caps: no line's end reaches into the gap it stops at. A run
+ * whose points all coincide (two scored checks at one instant with one value) has no length for a butt-capped stroke to
+ * paint — it is a point too, a dot (the fix round review's FRB-1).
  */
 function LineRuns({ line, who, lay }) {
   return line.runs.map((run, k) => {
-    if (run.length > 1) return <path key={k} data-flow-line={who} d={pathOf(run, lay)} style={LINE[who].path} />;
-    if (run[0].final) return null;
+    const point = run.every((p) => p.t === run[0].t && p.v === run[0].v);
+    if (!point) return <path key={k} data-flow-line={who} d={pathOf(run, lay)} style={LINE[who].path} />;
+    if (run.some((p) => p.final)) return null;
     return <circle key={k} data-flow-dot={who} cx={lay.x(run[0].t)} cy={lay.y(run[0].v)} r={LINE[who].dot.r} style={LINE[who].dot.style} />;
   });
 }
@@ -200,6 +203,14 @@ const lowTextOf = (flow) => (flow.low && flow.low.value ? `${F.low} ${fmtPoints(
 function FlowChart({ tape, flow, lay, height, selectedN, onSelectGroup }) {
   const low = flow.low && flow.low.value ? flow.low : null;
   const sel = lay.groups.find((g) => g.members.some((m) => m.n === selectedN)) ?? null;
+  // the selected pin's drop line never strikes through the low mark's label: where it would cross it, it stops short of
+  // the label (or starts below it) — the fix round review's FRB-2, after DA-11's inset drew the Sep 23 low at 390
+  const lowBox = lay.low && lay.low.shown ? lay.low.box : null;
+  let drop = sel ? { from: sel.y + 14, to: height } : null;
+  if (drop && lowBox && sel.x >= lowBox.left && sel.x <= lowBox.right) {
+    if (drop.from < lowBox.top) drop = { ...drop, to: Math.max(drop.from, lowBox.top - 2) };
+    else if (drop.from <= lowBox.bottom) drop = { ...drop, from: lowBox.bottom + 2 };
+  }
   const finalOf = (line) => (line ? line.points.find((p) => p.final) ?? null : null);
   const youEnd = finalOf(flow.lines.you);
   const cpuEnd = finalOf(flow.lines.cpu);
@@ -208,7 +219,7 @@ function FlowChart({ tape, flow, lay, height, selectedN, onSelectGroup }) {
       <svg width={lay.width} height={height} aria-hidden="true" focusable="false" style={{ display: 'block', overflow: 'visible' }}>
         {lay.guides.map((g) => <line key={g} data-flow-guide="" x1={0} x2={lay.width} y1={lay.y(g)} y2={lay.y(g)} style={{ stroke: C.hair, strokeWidth: 1 }} />)}
         <line data-flow-zero="" x1={0} x2={lay.width} y1={lay.zeroY} y2={lay.zeroY} style={{ stroke: tint('scrim', 0.24), strokeWidth: 1 }} />
-        {sel ? <line data-flow-drop="" x1={sel.x} x2={sel.x} y1={sel.y + 14} y2={height} style={{ stroke: tint('teal', 0.55), strokeWidth: 1 }} /> : null}
+        {drop ? <line data-flow-drop="" x1={sel.x} x2={sel.x} y1={drop.from} y2={drop.to} style={{ stroke: tint('teal', 0.55), strokeWidth: 1 }} /> : null}
         {flow.lines.cpu ? <g data-flow-runs="cpu"><LineRuns line={flow.lines.cpu} who="cpu" lay={lay} /></g> : null}
         <g data-flow-runs="you"><LineRuns line={flow.lines.you} who="you" lay={lay} /></g>
         {cpuEnd ? <circle data-flow-end="cpu" cx={lay.x(cpuEnd.t)} cy={lay.y(cpuEnd.v)} r="3" style={{ fill: C.bg, stroke: C.ink2, strokeWidth: 1.6 }} /> : null}

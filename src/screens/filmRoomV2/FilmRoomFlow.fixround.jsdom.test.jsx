@@ -453,7 +453,10 @@ describe('item 5 — DA-16 / DB-13: quotations on the front', () => {
   });
 });
 
-describe('item 5 — the kit\'s Quotation: `preview` omitted, every existing use renders as it did (the fence, DA-16)', () => {
+// At ONE head these rows pin `preview` omitted and `false` to identical markup for every existing call site's props (a
+// changed default fails them). That the default renders as it did BEFORE item 5 is the cross-tree proof in the build
+// report §11.6 (the parents of every call site, hashed in LF archives of 62e4243b and the head) — not these rows.
+describe('item 5 — the kit\'s Quotation: `preview` omitted and `preview={false}` serialize identically for every existing call site\'s props (DA-16)', () => {
   /** Every quote paragraph reports a long text, so a clamped quotation measures as clamped (jsdom has no layout). */
   function stubLong() {
     const sh = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollHeight');
@@ -505,5 +508,84 @@ describe('item 2 — the harness reads instants as the front does (flowMs, DB-6)
     expect(text('[data-flow-low]')).toBe('Low −10 · 10:30 AM');
     expect(m.q('[data-flow-low] [data-flow-num]').getAttribute('data-flow-num')).toBe('checks[1].scores.total');
     clean(t);   // a harness reading the zoneless instant with Date.parse would demand checks[2] — the row that bites
+  });
+});
+
+describe('the review round (fix round) — the front', () => {
+  it('FRB-1: two scored checks at ONE instant with ONE value — no length to stroke, so a dot at that instant (never an invisible zero-length path)', () => {
+    const t = clone(sep23Tape);
+    t.isFinalDay = false;
+    t.battle = clone(ACTIVE);
+    t.checks = [check(1, iso('14:00'), 8, 2), check(2, iso('15:00'), null), check(3, iso('16:00'), 5, 2), check(4, iso('16:00'), 5, 2), check(5, iso('17:00'), null), check(6, iso('18:00'), 9, 2)];
+    t.actions = [];
+    t.directives = [];
+    t.score.lastCheck = { ...t.score.lastCheck, tickSeq: 6, at: iso('18:00'), total: 9, opponent: 2 };
+    stubChartWidth(FLOW_LAYOUT.phone.chartWidth);
+    mount(t);
+    const x = layoutOf(flowOf(t, { battle: battleOf(t) }), FLOW_LAYOUT.phone.chartWidth, FLOW_LAYOUT.phone.chartHeight).x;
+    const at = (s) => Math.round(x(Date.parse(iso(s))) * 10) / 10;
+    expect(m.qa('path[data-flow-line="you"]')).toEqual([]);
+    expect(m.qa('[data-flow-dot="you"]').map((c) => Math.round(Number(c.getAttribute('cx')) * 10) / 10)).toEqual([at('14:00'), at('16:00'), at('18:00')]);
+    clean(t);
+  });
+  it('FRB-1\'s control: two scored checks at one instant with DIFFERENT values still draw their (vertical) stroke — a path, not a dot', () => {
+    const t = clone(sep23Tape);
+    t.isFinalDay = false;
+    t.battle = clone(ACTIVE);
+    t.checks = [check(1, iso('16:00'), 5, 2), check(2, iso('16:00'), 9, 2)];
+    t.actions = [];
+    t.directives = [];
+    t.score.lastCheck = { ...t.score.lastCheck, tickSeq: 2, at: iso('16:00'), total: 9, opponent: 2 };
+    stubChartWidth(FLOW_LAYOUT.phone.chartWidth);
+    mount(t);
+    expect(m.qa('path[data-flow-line="you"]')).toHaveLength(1);
+    expect(m.q('[data-flow-dot="you"]')).toBeNull();
+  });
+  it('FRB-2: at 390 the selected pin\'s drop line stops short of the low mark\'s label — for either group selected; with no label (639) it runs to the axis', () => {
+    stubChartWidth(FLOW_LAYOUT.phone.chartWidth);
+    mount(sep23Tape);
+    const label = m.q('[data-flow-low]');
+    expect(label.textContent).toBe('Low −92 · 1:30 PM');
+    const top = parseFloat(label.style.top);
+    const bottom = top + 14;
+    const left = parseFloat(label.style.left);
+    const right = left + parseFloat(label.style.width);
+    const crosses = () => {
+      const d = m.q('[data-flow-drop]');
+      const xd = Number(d.getAttribute('x1'));
+      const [y1, y2] = [Number(d.getAttribute('y1')), Number(d.getAttribute('y2'))].sort((a, b) => a - b);
+      return { inLabelColumn: xd >= left && xd <= right, crosses: xd >= left && xd <= right && y1 < bottom && y2 > top };
+    };
+    expect(crosses()).toEqual({ inLabelColumn: true, crosses: false });   // "3–5", selected on opening
+    m.click(m.q('[data-flow-pin="1"]'));
+    expect(crosses()).toEqual({ inLabelColumn: true, crosses: false });   // "1–2"
+    m.teardown(); m.root = null; restoreWidth();
+    stubChartWidth(639);
+    mount(sep23Tape);
+    expect(m.q('[data-flow-low]')).toBeNull();
+    expect(m.q('[data-flow-drop]').getAttribute('y2')).toBe(String(FLOW_LAYOUT.phone.chartHeight));
+  });
+  it('FRD-1: a tape written before isFinalDay existed, on its battle\'s validated last day — the front reads it final through its `battle` ("Won by 46", the finals, the end dot); the harness reads it through docs.battle', () => {
+    const t = clone(sep23Tape);
+    delete t.isFinalDay;
+    const battle = battleOf(t);   // timing.tradingDays [Sep 23]: its validated final trading day is this date
+    stubChartWidth(FLOW_LAYOUT.phone.chartWidth);
+    mount(t, { battle });
+    expect(text('[data-flow-heading]')).toBe('Won by 46');
+    expect(m.qa('[data-flow-key]').map((e) => e.textContent)).toEqual(['You −47', 'CPU −93']);
+    expect(m.q('[data-flow-end="you"]')).toBeTruthy();
+    clean(t, { battle });
+    // the harness, handed no battle, cannot see the evidence: the finals it reads become a defect
+    expect(sweepFlow(m.container, { tape: t })).toContain("battle.final.total: a final score on a day that is not the battle's final day");
+  });
+  it('FRD-1\'s control: the same tape on a battle whose last day is later — the date, the last check\'s values', () => {
+    const t = clone(sep23Tape);
+    delete t.isFinalDay;
+    const battle = battleOf(t, { timing: { tradingDays: [D, '2026-09-24'] } });
+    stubChartWidth(FLOW_LAYOUT.phone.chartWidth);
+    mount(t, { battle });
+    expect(text('[data-flow-heading]')).toBe('Wed, Sep 23, 2026');
+    expect(m.qa('[data-flow-key]').map((e) => e.textContent)).toEqual(['You −47', 'CPU −83']);
+    clean(t, { battle });
   });
 });

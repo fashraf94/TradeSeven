@@ -4,8 +4,9 @@
 //
 // Film Room D1 fix round — the SHELL's rows (build report §11): Astra's D1 review §1 findings in the shell as rows,
 // each of which FAILED at the reviewed head 368dc113 (run in an LF git archive before any code change) — F3, F4 (its
-// jsdom half; the browser half is §11's browser checks), F5, F10, F11, F12 — the guards that pass at both heads (DA-12's
-// control, the untouched admission), said so in their names, and the rulings that closed them (Build D Amendment B).
+// jsdom half; the browser half is §11's browser checks), F5, F10, F11, F12 — the controls of those reproductions that
+// pass at both heads (DA-12's, the untouched admission, F10's and F11's other endings), said so in their names, and the
+// rulings' and the review's own rows (Build D Amendment B; build report §11), some of which also pass at 368dc113.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
@@ -406,5 +407,100 @@ describe('item 6 — DB-3 on the off path, where the storage throws', () => {
       expect(notice()).toBeNull();
       expect(attempts).toHaveLength(1);
     } finally { Storage.prototype.setItem = set; }
+  });
+});
+
+describe('the review round (fix round) — the shell', () => {
+  const press = (el) => { act(() => { el.dispatchEvent(pointer('pointerdown')); }); m.click(el); };
+  it("FRA-1 / FRC-3: a press that keeps the tape while the verdict is pending, then the viewer leaves — marked (an irrevocable tape entry is settled)", async () => {
+    flags.flow = 'allowlist';
+    const h = heldApi();
+    await open({ cardsApi: h.api });
+    expect(hasSeenFirstOpen('viewer-1')).toBe(false);
+    press(m.tab('Study')); await m.flush();
+    expect(hasSeenFirstOpen('viewer-1')).toBe(true);
+    m.teardown(); m.setup();
+    expect(hasSeenFirstOpen('viewer-1')).toBe(true);
+  });
+  it('FRA-1: a focus move alone onto a tape control while pending — marked; the header back control pressed while pending — marked, and it leaves', async () => {
+    flags.flow = 'allowlist';
+    let h = heldApi();
+    await open({ cardsApi: h.api });
+    act(() => { m.tab('Study').focus(); });
+    await m.flush();
+    expect(hasSeenFirstOpen('viewer-1')).toBe(true);
+    m.teardown(); m.setup(); globalThis.localStorage.clear(); resetFilmRoomVerdicts();
+    h = heldApi();
+    let backs = 0;
+    await open({ cardsApi: h.api, onBack: () => { backs += 1; } });
+    press(m.q('header button')); await m.flush();
+    expect(backs).toBe(1);
+    expect(hasSeenFirstOpen('viewer-1')).toBe(true);
+  });
+  it("FRA-2: under 'allowlist', a battle with no id (never asked about) — the notice marked at the first paint, as on main", async () => {
+    flags.flow = 'allowlist';
+    const r = api();
+    await open({ battle: battleOf(sep23Tape, { id: undefined }), cardsApi: r });
+    expect(notice()).toBeTruthy();
+    expect(r.calls.verdict).toEqual([]);
+    expect(hasSeenFirstOpen('viewer-1')).toBe(true);
+  });
+  it("FRC-1: after owner A's front, a refresh to owner B (held) — a press on the pending tape keeps it when B is admitted; the gesture's Study opens", async () => {
+    flags.flow = 'allowlist';
+    let answerB;
+    const cardsApi = { ...api(), readVerdict: (id, o) => (o?.ownerId === 'owner-b' ? new Promise((r) => { answerB = r; }) : Promise.resolve(true)) };
+    const readers = readersOf({ [D]: sep23Tape }, sep23Series);
+    await open({ battle: battleOf(sep23Tape, { ownerId: 'owner-a' }), readers, cardsApi });
+    expect(onFront()).toBe(true);
+    m.render(screen({ battle: battleOf(sep23Tape, { ownerId: 'owner-b' }), readers, cardsApi }));
+    await m.flush();
+    expect(onTape()).toBe(true);
+    const study = m.tab('Study');
+    act(() => { study.dispatchEvent(pointer('pointerdown')); });
+    answerB(true); await m.flush();
+    expect(onTape()).toBe(true);
+    expect(study.isConnected).toBe(true);
+    m.click(study); await m.flush();
+    expect(m.tab('Study').getAttribute('aria-selected')).toBe('true');
+  });
+  it("FRC-1's control: the refresh to B with no gesture — B admitted opens B's front", async () => {
+    flags.flow = 'allowlist';
+    let answerB;
+    const cardsApi = { ...api(), readVerdict: (id, o) => (o?.ownerId === 'owner-b' ? new Promise((r) => { answerB = r; }) : Promise.resolve(true)) };
+    const readers = readersOf({ [D]: sep23Tape }, sep23Series);
+    await open({ battle: battleOf(sep23Tape, { ownerId: 'owner-a' }), readers, cardsApi });
+    m.render(screen({ battle: battleOf(sep23Tape, { ownerId: 'owner-b' }), readers, cardsApi }));
+    await m.flush();
+    answerB(true); await m.flush();
+    expect(onFront()).toBe(true);
+  });
+  it("FRC-2: front → tape, then the owner refreshed and DENIED — the back control is main's, and one press leaves", async () => {
+    flags.flow = 'allowlist';
+    let answerB;
+    let backs = 0;
+    const onBack = () => { backs += 1; };
+    const cardsApi = { ...api(), readVerdict: (id, o) => (o?.ownerId === 'owner-b' ? new Promise((r) => { answerB = r; }) : Promise.resolve(true)) };
+    const readers = readersOf({ [D]: sep23Tape }, sep23Series);
+    await open({ battle: battleOf(sep23Tape, { ownerId: 'owner-a' }), readers, cardsApi, onBack });
+    m.click(m.q('[data-flow-door]')); await m.flush();
+    expect(backLabel()).toBe('‹ Game flow');
+    m.render(screen({ battle: battleOf(sep23Tape, { ownerId: 'owner-b' }), readers, cardsApi, onBack }));
+    await m.flush();
+    expect(backLabel()).toBe('‹ Game flow');   // B's answer still pending: the front may yet be there
+    answerB(false); await m.flush();
+    expect(backLabel()).toBe('‹ Dashboard');
+    m.click(m.q('header button')); await m.flush();
+    expect(backs).toBe(1);
+  });
+  it('FRD-1: through the shell, a tape written before isFinalDay existed, on its battle\'s validated last day — "Won by 46" (the battle reaches the front)', async () => {
+    const t = clone(sep23Tape);
+    delete t.isFinalDay;
+    await open({ battle: battleOf(t, { ownerId: 'owner-1' }), readers: readersOf({ [D]: t }, sep23Series) });
+    expect(onFront()).toBe(true);
+    expect(m.q('[data-flow-heading]').textContent).toBe('Won by 46');
+    m.teardown(); m.setup();
+    await open({ battle: battleOf(t, { ownerId: 'owner-1', timing: { tradingDays: [D, '2026-09-24'] } }), readers: readersOf({ [D]: t }, sep23Series) });
+    m.click(chips()[0]); await m.flush();   // the battle opens on its last day, Sep 24; Sep 23 is an earlier one
+    expect(m.q('[data-flow-heading]').textContent).toBe('Wed, Sep 23, 2026');
   });
 });

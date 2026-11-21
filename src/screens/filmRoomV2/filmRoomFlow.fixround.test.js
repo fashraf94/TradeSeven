@@ -84,7 +84,8 @@ describe('item 1 — F2: a day is final only on evidence (Amendment B DB-2)', ()
     expect(isFinalDayOf(legacy(), battleOf(sep23Tape))).toBe(true);                                             // a genuine legacy final
     expect(flowOf(legacy(), { battle: battleOf(sep23Tape) }).heading).toMatchObject({ kind: 'won', margin: { text: '46' } });
     expect(isFinalDayOf(legacy(), battleOf(sep23Tape, { timing: { tradingDays: [D, D24] } }))).toBe(false);   // the battle's last day is later
-    expect(isFinalDayOf(legacy(), battleOf(sep23Tape, { timing: { tradingDays: [D, '2026-09-26'] } }))).toBe(false);   // a timeline that does not validate (a Saturday)
+    // a timeline that does not validate — a Saturday before this date, so its raw last day IS this date (the review's FRD-2)
+    expect(isFinalDayOf(legacy(), battleOf(sep23Tape, { timing: { tradingDays: ['2026-09-19', D] } }))).toBe(false);
     expect(isFinalDayOf(legacy(), battleOf(sep23Tape, { timing: undefined }))).toBe(false);                   // no timeline: no evidence
     expect(isFinalDayOf(legacy())).toBe(false);                                                               // no battle document
     expect(isFinalDayOf(legacy('active'), battleOf(sep23Tape))).toBe(false);                                  // not completed

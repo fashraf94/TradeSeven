@@ -286,14 +286,18 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
   // a verdict that lands late never takes the tape from under them. `fromFront`: the tape was opened from the front in
   // this visit (§10). `seenFront`: the front has shown in this visit — from then on a day the player picks on the
   // front that is still being read keeps the front's frame (its header, the day picker under the player's focus)
-  // instead of painting the tape's layout for a moment (the review's DR-1).
+  // instead of painting the tape's layout for a moment (the review's DR-1). It belongs, as the flow's answer does
+  // (DB-12), to the battle and the owner the front showed for: a refreshed owner's pending tape is a new question, and
+  // keeps DB-4's guard (the fix round review's FRC-1).
   const [onTape, setOnTape] = useState(false);
   const [fromFront, setFromFront] = useState(false);
-  const [seenFront, setSeenFront] = useState(false);
+  const flowKey = `${battleId}|${flowOwnerId}`;
+  const [seenFrontFor, setSeenFrontFor] = useState(null);
+  const seenFront = seenFrontFor === flowKey;
   const frontIntent = flowOn && !openedAtMoment && !onTape;
   const front = frontIntent && written;
   const frontFrame = !front && frontIntent && seenFront && tapeState.status === 'loading';
-  useEffect(() => { if (front && !seenFront) setSeenFront(true); }, [front, seenFront]);
+  useEffect(() => { if (front && !seenFront) setSeenFrontFor(flowKey); }, [front, seenFront, flowKey]);
   // the review's DR-7 / DR-2, as Amendment B DB-4 makes it (Astra's F4): A GESTURE IN PROGRESS KEEPS THE TAPE. While
   // the front's conditions are still unknown — the verdict on its way, or the day still being read — a pointer-down
   // inside the tape, a key-down inside it, or a focus move onto one of its controls keeps the tape for this visit, from
@@ -309,10 +313,13 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
   // shows on, as before Build D (the refuter's N-1b). Amendment B DB-3 (Astra's F3): so is a screen opened AT A
   // MOMENT, valid or rejected — that entry never shows the front, so its tape is settled from the first paint; and a
   // notice the viewer DISMISSES before that is marked then (onDismiss, below). Where the paint already marked it — the
-  // flow off, as on main — the dismissal asks nothing more of the storage. DA-12's one declared difference stays: under
-  // 'allowlist', a viewer who leaves without interacting while the verdict is pending isn't marked.
-  const flowOffHere = flowMode === 'off' || (flowMode === 'allowlist' && flowVerdict === false);
-  const noticeShown = !front && !frontFrame && (flowOffHere || openedAtMoment || ((flowVerdict === true || flowMode === 'on') && tapeState.status !== 'loading'));
+  // flow off, as on main — the dismissal asks nothing more of the storage. And a tape the viewer is ON (`onTape`: a
+  // gesture held it, or a door opened it) is an irrevocable entry — the front can no longer show in this visit — so it
+  // is settled too (Astra's F3 proposal, "treat an irrevocable tape entry as settled"; the review's FRA-1 / FRC-3).
+  // DA-12's one declared difference stays: under 'allowlist', a viewer who leaves WITHOUT interacting while the verdict
+  // is pending isn't marked. A battle with no id is never asked about, so the flow is off for it (the review's FRA-2).
+  const flowOffHere = flowMode === 'off' || (flowMode === 'allowlist' && (flowVerdict === false || !battleId));
+  const noticeShown = !front && !frontFrame && (flowOffHere || openedAtMoment || onTape || ((flowVerdict === true || flowMode === 'on') && tapeState.status !== 'loading'));
   useEffect(() => { if (notice && noticeShown) markFirstOpenSeen(viewerId); }, [notice, viewerId, noticeShown]);
   const dismissNotice = () => { if (!noticeShown) markFirstOpenSeen(viewerId); setNotice(false); };
   // the series is the Deep dive's, read only when it opens — never for the front, whatever depth the tape was left at
@@ -433,8 +440,9 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
   // where the press left it, or nowhere — never taken from a control the player has moved to since
   const backToFront = () => { setOnTape(false); setFromFront(false); setPendingJump({ id: doorId, focus: true, scroll: false, when: 'tape', from: focusedNow() }); };
   // "Game flow" only where there is a front (Amendment B DB-10, Astra's F10): the day on screen has a written tape, or is
-  // still being read; a day with no tape, a failed read or an unwritten day gets the back control it always had
-  const backHere = fromFront && !front && (tapeState.status === 'loading' || written);
+  // still being read; a day with no tape, a failed read or an unwritten day gets the back control it always had — and so
+  // does a tape whose (refreshed) owner the flow is now off for (the review's FRC-2)
+  const backHere = fromFront && !front && !flowOffHere && (tapeState.status === 'loading' || written);
   // §9: the cards line counts the moments the tape view would offer (the prepared case's own rule) — only under cards
   const momentCount = cardsOn && written && tagsStateOf(tape) === 'ready' ? momentsOfTape(tape).length : 0;
 
