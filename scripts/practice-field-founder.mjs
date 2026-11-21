@@ -28,9 +28,12 @@
 //   resolve      The door's resolve_hold: the ruling in the file (late_adjustment, conflict, suspicion or coverage_gap).
 //   pause, resume, wind-down   The door's pause, resume and wind_down on the uid's open book.
 //
-// THE GATES — every one is required before anything is sent, and the door's own dispatcher checks the first two again:
-//   1. PRACTICE_FIELD_MODE is not 'off' — read from THIS checkout (src/config/practiceFieldFlags.js);
-//   2. the uid is a founder: on MANDATE_FOUNDER_UIDS in THIS machine's environment (.env.local);
+// THE GATES — every one is required before anything is sent. The door's own dispatcher (runFounderAction) checks the first
+// two again, but in THIS process, against the same checkout and environment: a second check, not an independent one.
+//   1. PRACTICE_FIELD_MODE is not 'off' — read from THIS checkout (src/config/practiceFieldFlags.js), not from the deployed
+//      app: run the script from a checkout of `main` as deployed;
+//   2. the uid is a founder: on MANDATE_FOUNDER_UIDS in THIS process's environment — the shell's, else .env.local's
+//      (scripts/loadLocalEnv.js: a variable already set in the shell wins);
 //   3. --go is on the command line.
 // Without --go a write command prints exactly the body it would send, and stops (exit 2: nothing sent). With gate 1 or 2
 // failing, nothing is read and nothing is sent (exit 2). `status` and `admit --dry-run` need gates 1 and 2 too: the
@@ -41,12 +44,16 @@
 // HOW IT SENDS. It calls runFounderAction — the function the HTTP door calls — with the body the door would receive
 // (`{ action, requestKey, … }`) and the uid given. It never writes Firestore itself. The uid is the command line's: the
 // gates are a seatbelt for the founder's own machine, not authentication — the service account in .env.local is what
-// grants access, as for every founder script.
+// grants access, as for every founder script. Unlike the HTTP door it has no rate limit, and its clock is this machine's.
 //
 // THE REQUEST KEY is derived from the command and what it sends (a hash of the body without its key — for admit and
 // resolve, the file's content), and for every command that acts on a book, the book's id. So running the same command
 // again is the door's own idempotent replay: it answers the stored response and changes nothing ("REPLAY" below). A
-// changed file is a new request. A replay of pause or resume names the book's state as it is now.
+// changed file is a new request. The door stores a REFUSAL as it stores a success, so a refused request is refused again
+// on every re-run, even after its cause has gone (a book resumed, a list updated) — and pause → resume → pause, or a
+// create-book after the last book closed, would replay the first one. To send such a request again as a NEW one, add
+// `--again <word>` (letters, digits, - or _): the word goes into the key; without it the key is as above. A replay of
+// pause or resume names the book's state as it is now; `admit --dry-run` says when --go would replay a stored answer.
 //
 // FILES. JSON. A top-level `_notes` key (the examples carry the fields' meanings there) is removed before the body is
 // built, so it never reaches the door and never changes the key. Examples: scripts/practice-field-founder.examples/.
@@ -66,7 +73,7 @@ import { fileURLToPath } from 'node:url';
 import { PRACTICE_FIELD_MODE as SHIPPED_MODE } from '../src/config/practiceFieldFlags.js';
 import { practiceFieldMode, practiceFieldAdmits } from '../api/_utils/practiceField/mode.js';
 import {
-  runFounderAction, isPracticeFieldFounder, founderAllowlist, FOUNDER_FIXTURE_ORIGIN,
+  runFounderAction, isPracticeFieldFounder, founderAllowlist, founderRequestFingerprint, FOUNDER_FIXTURE_ORIGIN,
 } from '../api/_utils/practiceField/founderControls.js';
 import { admitIdea, ideaIdFor } from '../api/_utils/practiceField/admission.js';
 import { normalizeIdeaContract } from '../api/_utils/practiceField/contract.js';
@@ -100,14 +107,16 @@ export const COMMANDS = Object.freeze({
 /** The flags each command takes (every command also takes --uid and --json). */
 const FLAGS_OF = Object.freeze({
   status: [],
-  'create-book': ['--agent', '--go'],
-  admit: ['--file', '--dry-run', '--go'],
-  resolve: ['--file', '--go'],
-  pause: ['--go'],
-  resume: ['--go'],
-  'wind-down': ['--go'],
+  'create-book': ['--agent', '--go', '--again'],
+  admit: ['--file', '--dry-run', '--go', '--again'],
+  resolve: ['--file', '--go', '--again'],
+  pause: ['--go', '--again'],
+  resume: ['--go', '--again'],
+  'wind-down': ['--go', '--again'],
 });
-const VALUE_FLAGS = new Set(['--uid', '--agent', '--file']);
+const VALUE_FLAGS = new Set(['--uid', '--agent', '--file', '--again']);
+/** An --again word: it goes into the request key. */
+const AGAIN_WORD = /^[A-Za-z0-9_-]{1,40}$/;
 const BOOLEAN_FLAGS = new Set(['--go', '--dry-run', '--json', '--help']);
 /** The fields of a resolve_hold body the door reads (founderControls.js resolveFieldsOf) — the only ones sent. */
 export const RESOLVE_FIELDS = Object.freeze(['ideaId', 'kind', 'recordId', 'decision', 'ratio', 'payload', 'actionId']);
@@ -121,6 +130,8 @@ const SHARE_BASIS = new Set(['split', 'reverse_split', 'stock_distribution']);
 const REQUEST_KEY = /^[A-Za-z0-9][A-Za-z0-9_\-:.]{0,199}$/;
 
 export const EXIT = Object.freeze({ DONE: 0, FAILED: 1, REFUSED: 2 });
+/** The exit code of a door answer. */
+const exitOfStatus = (status) => (status >= 200 && status < 300 ? EXIT.DONE : status >= 500 ? EXIT.FAILED : EXIT.REFUSED);
 
 export const USAGE = [
   'Practice Field — the founder\'s command-line door.',
@@ -132,6 +143,7 @@ export const USAGE = [
   '  node scripts/practice-field-founder.mjs pause | resume | wind-down                 --uid <uid> [--go]',
   '',
   '  --go        send it. Without it a write command prints what it would send, and sends nothing.',
+  '  --again <w> (any write command) send it as a NEW request: a re-run otherwise replays the stored answer, a refusal too.',
   '  --dry-run   (admit) run the door\'s admission on a read-only view: what would be refused, and why.',
   '  --json      the answer as JSON.',
   '',
@@ -163,7 +175,7 @@ export function parseArgs(argv) {
   const command = args.shift();
   if (!Object.hasOwn(COMMANDS, command)) throw new ScriptError(`unknown command "${command}" — one of: ${Object.keys(COMMANDS).join(', ')}`);
   const allowed = new Set(['--uid', '--json', ...FLAGS_OF[command]]);
-  const out = { command, uid: null, agentId: null, file: null, go: false, dryRun: false, json: false };
+  const out = { command, uid: null, agentId: null, file: null, again: null, go: false, dryRun: false, json: false };
   const seen = [];
   while (args.length > 0) {
     const token = args.shift();
@@ -185,6 +197,10 @@ export function parseArgs(argv) {
     if (flag === '--uid') out.uid = value;
     if (flag === '--agent') out.agentId = value;
     if (flag === '--file') out.file = value;
+    if (flag === '--again') {
+      if (!AGAIN_WORD.test(value)) throw new ScriptError('--again takes one word: letters, digits, - or _ (at most 40)');
+      out.again = value;
+    }
   }
   if (out.uid === null) throw new ScriptError('--uid <uid> is required');
   if ((command === 'admit' || command === 'resolve') && out.file === null) throw new ScriptError(`${command} needs --file <file.json>`);
@@ -230,8 +246,9 @@ export function bodyWithoutKey(command, { agentId = null, fileValue = null } = {
  * THE REQUEST KEY (see the header): the action, then a hash of the body without its key and — for a command that acts on
  * a book — the book's id. The same request on the same book is the same key: the door's idempotent replay.
  */
-export function requestKeyFor(body, bookId = null) {
-  const hash = canonicalContentHash({ body, bookId }).replace(/[^A-Za-z0-9]/g, '').slice(-24);
+export function requestKeyFor(body, bookId = null, again = null) {
+  // (`again` only when given: every key without it is unchanged.)
+  const hash = canonicalContentHash(again === null ? { body, bookId } : { body, bookId, again }).replace(/[^A-Za-z0-9]/g, '').slice(-24);
   const key = `pf-${body.action}-${hash}`;
   if (!REQUEST_KEY.test(key)) throw new ScriptError('internal: the derived request key is not a valid key');
   return key;
@@ -452,7 +469,19 @@ export function readOnlyView(db, caught) {
   });
 }
 
-export async function runAdmitDryRun(db, { uid, contractRaw, requestKey, nowIso }) {
+/**
+ * The door's record of a request under this key (founderControls.js: `practiceFieldBooks/{uid}/founderOps/{key}`), as
+ * --go would meet it: a stored answer it would REPLAY, a conflict, a pending request — or null (a new request). Read only.
+ */
+async function storedRequestOf(db, uid, requestKey, fullBody) {
+  const rec = dataOf(await db.collection('practiceFieldBooks').doc(uid).collection('founderOps').doc(requestKey).get());
+  if (!rec) return null;
+  if (rec.action !== fullBody.action || rec.fingerprint !== founderRequestFingerprint(fullBody.action, fullBody)) return { kind: 'conflict', action: rec.action ?? null };
+  if (rec.state !== 'done' || !rec.response) return { kind: 'pending', createdAt: rec.createdAt ?? null };
+  return { kind: 'replay', httpStatus: rec.response.status, answer: rec.response.body, completedAt: rec.completedAt ?? null };
+}
+
+export async function runAdmitDryRun(db, { uid, contractRaw, requestKey, nowIso, fullBody = null }) {
   const gates = readGates(uid);
   const refused = gateRefusals(gates);
   // What the door admits: the file's contract with the door's own origin (founderControls.js admitFixture).
@@ -461,8 +490,10 @@ export async function runAdmitDryRun(db, { uid, contractRaw, requestKey, nowIso 
   const base = { command: 'admit', dryRun: true, ...gates, requestKey, shapeRefusals: shape.refusals, normalized: shape.contract };
   if (refused.length > 0) return { exitCode: EXIT.REFUSED, result: { ...base, refused } };
   if (!isPlain(contractRaw)) return { exitCode: EXIT.REFUSED, result: { ...base, verdict: { ok: false, error: 'contract_required', refusals: [] } } };
+  // What --go would meet FIRST: the door answers a key it has recorded from that record (a stored refusal included).
+  const stored = fullBody ? await storedRequestOf(db, uid, requestKey, fullBody) : null;
   const own = await ownBookOf(db, uid);
-  if (!own) return { exitCode: EXIT.REFUSED, result: { ...base, verdict: { ok: false, error: 'no_open_book', refusals: [] } } };
+  if (!own) return { exitCode: stored?.kind === 'replay' ? exitOfStatus(stored.httpStatus) : EXIT.REFUSED, result: { ...base, stored, verdict: { ok: false, error: 'no_open_book', refusals: [] } } };
   const caught = [];
   let res;
   try {
@@ -485,16 +516,16 @@ export async function runAdmitDryRun(db, { uid, contractRaw, requestKey, nowIso 
       ok: false, error: (res.refusals || []).some((r) => r.code === 'op_id_conflict') ? 'op_id_conflict' : 'admission_refused',
       refusals: res.refusals || [], permittedMaxUsd: res.permittedMaxUsd ?? null, binding: res.binding ?? [],
     };
+  // With a stored answer, --go replays it whatever admission would say now: that is the dry run's exit too.
+  const exitCode = stored?.kind === 'replay' ? exitOfStatus(stored.httpStatus) : stored?.kind === 'conflict' ? EXIT.REFUSED : (res.ok ? EXIT.DONE : EXIT.REFUSED);
   return {
-    exitCode: res.ok ? EXIT.DONE : EXIT.REFUSED,
-    result: { ...base, bookId: own.bookId, verdict, wouldWrite: caught, priceList },
+    exitCode,
+    result: { ...base, bookId: own.bookId, stored, verdict, wouldWrite: caught, priceList },
   };
 }
 
 // ── THE WRITE COMMANDS ──────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** The exit code of a door answer. */
-const exitOfStatus = (status) => (status >= 200 && status < 300 ? EXIT.DONE : status >= 500 ? EXIT.FAILED : EXIT.REFUSED);
 
 /**
  * Run one command. `fileValue` is the request file as read (its `_notes` removed). Returns `{ exitCode, result }`; the
@@ -514,10 +545,10 @@ export async function runCommand(db, parsed, { nowIso, fileValue = null }) {
 
   // The book a book-scoped request acts on, for its key (create_book has none yet).
   const own = action === 'create_book' ? null : await ownBookOf(db, uid);
-  const requestKey = requestKeyFor(body, own?.bookId ?? null);
+  const requestKey = requestKeyFor(body, own?.bookId ?? null, parsed.again ?? null);
   const fullBody = { action, requestKey, ...Object.fromEntries(Object.entries(body).filter(([k]) => k !== 'action')) };
 
-  if (command === 'admit' && parsed.dryRun) return runAdmitDryRun(db, { uid, contractRaw: body.contract, requestKey, nowIso });
+  if (command === 'admit' && parsed.dryRun) return runAdmitDryRun(db, { uid, contractRaw: body.contract, requestKey, nowIso, fullBody });
 
   if (!parsed.go) {
     return { exitCode: EXIT.REFUSED, result: { ...base, sent: false, refused: [{ gate: 'go', message: 'not sent: add --go to send it' }], body: fullBody, bookId: own?.bookId ?? null } };
@@ -595,6 +626,16 @@ export function renderText(result) {
     out.push(`request key     ${result.requestKey}`);
     if (result.refused?.length) return out;
     out.push(`book            ${result.bookId ?? 'none open'}`);
+    const st = result.stored;
+    if (st?.kind === 'replay') {
+      out.push(`--go WOULD REPLAY the answer stored under this key (${st.completedAt ?? 'earlier'}): ${st.httpStatus} ${st.answer?.error ?? (st.answer?.ok ? 'ok' : '')}`);
+      for (const x of st.answer?.refusals || []) out.push(`  stored: ${x.code}`);
+      out.push('  To send it as a new request, add --again <word>. Admission as it stands now, for that new request:');
+    } else if (st?.kind === 'conflict') {
+      out.push(`--go would be REFUSED request_key_conflict: this key holds a different request (${st.action}); add --again <word>.`);
+    } else if (st?.kind === 'pending') {
+      out.push(`--go would re-run the request recorded under this key at ${st.createdAt ?? 'an earlier time'}, never completed.`);
+    }
     const v = result.verdict;
     if (v?.ok) {
       out.push(`DRY RUN: would be ADMITTED${v.replay ? ' (already admitted under this key: --go would replay it)' : ''} — idea ${v.ideaId}, start ${v.startSession}, due ${v.dueSession}, permitted maximum ${usd(v.permittedMaxUsd)}`);
@@ -616,7 +657,10 @@ export function renderText(result) {
   out.push(`${result.sent ? 'SENT' : 'WOULD SEND'}       ${JSON.stringify(result.body)}`);
   if (!result.sent) return out;
   const a = result.answer || {};
-  if (result.replay) out.push('REPLAY: this exact request was already sent; the stored answer is below and nothing changed now.');
+  if (result.replay) {
+    out.push('REPLAY: this exact request was already sent; the stored answer is below and nothing changed now.');
+    out.push('        To send it as a NEW request (its cause has gone, or you mean it again), add --again <word>.');
+  }
   if (result.bookNow) out.push(`book now        ${result.bookNow.status}${result.bookNow.drafting ? `, drafting ${result.bookNow.drafting}` : ''}`);
   out.push(`door answered   ${result.httpStatus} ${a.ok === false || a.error ? `REFUSED: ${a.error}` : 'ok'}`);
   for (const r of a.refusals || []) out.push(`  ${r.code}   ${JSON.stringify(Object.fromEntries(Object.entries(r).filter(([k]) => k !== 'code')))}`);
@@ -657,7 +701,14 @@ async function productionDb() {
   return getFirebaseAdmin();
 }
 
-const invokedDirectly = process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, '/').split('/').pop());
+/** Is this module the entry point? The FULL resolved paths, compared (a file-name suffix match ran it from `founder.mjs`). */
+export function isDirectRun(moduleUrl, argv1) {
+  if (typeof argv1 !== 'string' || argv1.length === 0) return false;
+  const norm = (q) => path.resolve(q).replace(/\\/g, '/').replace(/^[a-z]:/, (d) => d.toUpperCase());
+  return norm(fileURLToPath(moduleUrl)) === norm(argv1);
+}
+
+const invokedDirectly = isDirectRun(import.meta.url, process.argv[1]);
 if (invokedDirectly) {
   runCli(process.argv.slice(2), { getDb: productionDb }).then((code) => { process.exitCode = code; });
 }

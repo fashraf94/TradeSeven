@@ -20,10 +20,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   runCli, parseArgs, parseRequestText, bodyWithoutKey, requestKeyFor, openRecordsOf, sessionsLeft, readOnlyView,
-  RESOLVE_FIELDS, DECISIONS_OF, COMMANDS, EXIT,
+  RESOLVE_FIELDS, DECISIONS_OF, COMMANDS, EXIT, isDirectRun,
 } from './practice-field-founder.mjs';
 import { setPracticeFieldModeForTests } from '../api/_utils/practiceField/mode.js';
 import { COCKPIT_ALLOWLIST_ENV } from '../api/_utils/callRecords/allowlist.js';
@@ -322,6 +322,82 @@ describe('the request key — the door\'s idempotent replay', () => {
     expect(requestKeyFor(bodyWithoutKey('pause'), 'book-1')).not.toBe(requestKeyFor(bodyWithoutKey('resume'), 'book-1'));
     expect(requestKeyFor(bodyWithoutKey('pause'), 'book-1')).not.toBe(requestKeyFor(bodyWithoutKey('pause'), 'book-2'));
     expect(requestKeyFor(bodyWithoutKey('create-book', { agentId: 'a' }))).not.toBe(requestKeyFor(bodyWithoutKey('create-book')));
+  });
+});
+
+// ── A STORED REFUSAL, AND --again (the refuter's F1) ────────────────────────────────────────────────────────────────────
+
+describe('a stored refusal is the door\'s replay — the dry run says so, and --again sends a new request', () => {
+  it('without --again every key is as before; with it the key differs, and only a plain word is taken', () => {
+    const body = bodyWithoutKey('pause');
+    expect(requestKeyFor(body, 'book-1', null)).toBe(requestKeyFor(body, 'book-1'));
+    expect(requestKeyFor(body, 'book-1', 'two')).not.toBe(requestKeyFor(body, 'book-1'));
+    expect(requestKeyFor(body, 'book-1', 'two')).not.toBe(requestKeyFor(body, 'book-1', 'three'));
+    expect(parseArgs(['pause', '--uid', UID, '--again', 'second-try_2'])).toMatchObject({ again: 'second-try_2' });
+    for (const bad of ['two words', 'x/y', '', 'a'.repeat(41)]) expect(() => parseArgs(['pause', '--uid', UID, `--again=${bad}`]), bad).toThrow();
+    expect(() => parseArgs(['status', '--uid', UID, '--again', 'x'])).toThrow(/not an option of status/);
+  });
+
+  it('a refusal while paused is replayed after the resume: the dry run names the replay (exit 2), --go replays it, --again admits', async () => {
+    const { db } = await founderBook();
+    const files = { 'c.json': fixtureFile(contractOf()) };
+    expect((await json(db, ['pause', '--uid', UID, '--go'])).code).toBe(EXIT.DONE);
+    const refused = await json(db, ['admit', '--file', 'c.json', '--uid', UID, '--go'], { files });
+    expect(refused.body.answer.refusals.map((r) => r.code)).toContain('drafting_paused');
+    expect((await json(db, ['resume', '--uid', UID, '--go'])).code).toBe(EXIT.DONE);
+    const before = dumpStore(db);
+    const dry = await json(db, ['admit', '--file', 'c.json', '--dry-run', '--uid', UID], { files });
+    expect(dumpStore(db)).toBe(before);
+    expect(dry.code).toBe(EXIT.REFUSED);
+    expect(dry.body.stored).toMatchObject({ kind: 'replay', httpStatus: 422, answer: { error: 'admission_refused' } });
+    expect(dry.body.verdict.ok).toBe(true); // admission as it stands now, for a NEW request
+    expect((await cli(db, ['admit', '--file', 'c.json', '--dry-run', '--uid', UID], { files })).out).toContain('--go WOULD REPLAY the answer stored under this key');
+    const go = await cli(db, ['admit', '--file', 'c.json', '--uid', UID, '--go'], { files });
+    expect(go.code).toBe(EXIT.REFUSED);
+    expect(go.out).toContain('add --again <word>');
+    const again = await json(db, ['admit', '--file', 'c.json', '--again', 'after-resume', '--uid', UID, '--go'], { files });
+    expect(again).toMatchObject({ code: EXIT.DONE, body: { httpStatus: 201, answer: { ok: true, status: 'accepted' } } });
+  });
+
+  it('create-book refused mode_not_admitted at \'allowlist\' stays refused once the list holds the uid — until --again', async () => {
+    const db = makeMandateFakeDb(agents());
+    setPracticeFieldModeForTests('allowlist');
+    vi.stubEnv(COCKPIT_ALLOWLIST_ENV, 'someone-else');
+    expect((await json(db, ['create-book', '--uid', UID, '--go'])).body.answer).toMatchObject({ error: 'mode_not_admitted' });
+    vi.stubEnv(COCKPIT_ALLOWLIST_ENV, UID);
+    expect((await json(db, ['create-book', '--uid', UID, '--go'])).body).toMatchObject({ replay: true, answer: { error: 'mode_not_admitted' } });
+    expect((await json(db, ['create-book', '--uid', UID, '--again', 'listed', '--go'])).body).toMatchObject({ httpStatus: 201, answer: { ok: true } });
+  });
+
+  it('after the book closes, create-book replays the first creation; --again makes the next book', async () => {
+    const { db, bookId } = await founderBook();
+    // The book closed (close.js: the claim released, the book closed) — as the store stands after a completed wind-down.
+    db._store.delete(`practiceFieldBooks/${UID}`);
+    db._store.set(`mandates/${bookId}`, { data: { ...getBook(db, bookId), status: 'closed' }, version: 99 });
+    const replay = await json(db, ['create-book', '--uid', UID, '--go']);
+    expect(replay.body).toMatchObject({ replay: true, answer: { bookId } });
+    const next = await json(db, ['create-book', '--uid', UID, '--again', 'book-2', '--go']);
+    expect(next.body).toMatchObject({ httpStatus: 201, answer: { ok: true } });
+    expect(next.body.answer.bookId).not.toBe(bookId);
+  });
+
+  it('pause → resume → pause --again pauses the book again', async () => {
+    const { db, bookId } = await founderBook();
+    await cli(db, ['pause', '--uid', UID, '--go']);
+    await cli(db, ['resume', '--uid', UID, '--go']);
+    expect((await json(db, ['pause', '--uid', UID, '--again', '2', '--go'])).body.answer).toMatchObject({ outcome: 'paused' });
+    expect(getBook(db, bookId).drafting).toBe('paused');
+  });
+});
+
+describe('the direct-run check (the refuter\'s F2): the full path, never a file-name suffix', () => {
+  it('runs only when argv[1] is this very file', () => {
+    const url = pathToFileURL(SCRIPT_PATH).href;
+    expect(isDirectRun(url, SCRIPT_PATH)).toBe(true);
+    expect(isDirectRun(url, path.relative(process.cwd(), SCRIPT_PATH))).toBe(true);
+    for (const other of ['founder.mjs', '-founder.mjs', 'r.mjs', path.join(HERE, 'founder.mjs'), path.join(HERE, 'x-practice-field-founder.mjs'), '', undefined]) {
+      expect(isDirectRun(url, other), String(other)).toBe(false);
+    }
   });
 });
 
