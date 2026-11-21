@@ -68,7 +68,7 @@ function timedChecks(tape) {
 }
 
 /** The rationale row recorded at check `c`: the same tickSeq, else the same evaluation id. */
-function rationaleAt(tape, c) {
+function rationaleRowOf(tape, c) {
   const rows = Array.isArray(tape.rationale) ? tape.rationale : [];
   if (Number.isInteger(c?.tickSeq)) {
     const bySeq = rows.find((r) => Number.isInteger(r?.tickSeq) && r.tickSeq === c.tickSeq);
@@ -81,7 +81,7 @@ function rationaleAt(tape, c) {
 /** The agent's words at one check, as the digest carries them — each text whole or left out; null when none is carried. */
 function saidAt(tape, check, knownIds) {
   if (!check) return null;
-  const row = rationaleAt(tape, check.c);
+  const row = rationaleRowOf(tape, check.c);
   if (!row) return null;
   const rationale = promptQuoteText(row.rationale, DIGEST_QUOTE_MAX, knownIds);
   const hypothesis = promptQuoteText(row.hypothesis, DIGEST_QUOTE_MAX, knownIds);
