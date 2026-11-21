@@ -63,7 +63,7 @@ vi.mock('../_utils/sharedResearch/retrieval.js', async (importOriginal) => {
 
 const { default: handler } = await import('./shared-research.js');
 const { resetUidRateLimits } = await import('../_utils/sharedResearch/gate.js');
-const { EXPLORE_OPEN_READ, EXPLORE_RECORDS_READ, EXPLORE_DOCS_MAX } = await import('../_utils/sharedResearch/explore.js');
+const { EXPLORE_OPEN_READ, EXPLORE_ENDED_READ, EXPLORE_RECORDS_READ, EXPLORE_DOCS_MAX, sessionsByIdOf } = await import('../_utils/sharedResearch/explore.js');
 const { openSessionOf } = await import('../_utils/sharedResearch/session.js');
 const { emptyCard } = await import('../_utils/sharedResearch/thesis.js');
 const { findingLabelOf } = await import('../../src/constants/sharedResearch.js');
@@ -192,9 +192,9 @@ describe('X-2: an Explore story opens as its own kind', () => {
     }
     expect(env.writes).toEqual([]);
   });
-  it('a SignalDrop entry cannot name an Explore story, nor an item another kind (invalid_entry)', async () => {
+  it('a SignalDrop entry naming an Explore story answers as on main (item_kind_unsupported, review A-3); an item naming a drop, invalid_entry', async () => {
     const r = await post({ action: 'open', requestId: 'req-d', entry: { kind: 'signaldrop', itemRef: { recordKind: 'exploreStories', recordId: EXPLORE.id }, question: Q1 } });
-    expect([r.statusCode, r.body.error]).toEqual([400, 'invalid_entry']);
+    expect([r.statusCode, r.body.error]).toEqual([400, 'item_kind_unsupported']);
     const s = await post({ action: 'open', requestId: 'req-s', entry: { kind: 'item', itemRef: { recordKind: 'signalDrops', recordId: 'drop-1' }, question: Q1 } });
     expect([s.statusCode, s.body.error]).toEqual([400, 'invalid_entry']);
     expect(env.writes).toEqual([]);
@@ -356,10 +356,13 @@ describe('X-1: GET ?list=explore', () => {
     state.user = { uid: 'u2' };
     expect((await exploreRead()).items).toEqual([]);
   });
-  it('the document bound: the open query, its records outside the window, the window, the sessions of stories ended only — 161 documents with the quota; no write', async () => {
-    // 40 open investigations, the oldest; 60 ended, newer — so the window holds none of the open ones' records
+  it('the document bound: the two session queries, the window, the window\'s sessions the queries missed, the open ones\' records outside it — 191 documents with the quota; no write', async () => {
+    // The double answers an unordered query in the order documents were written, so the queries take the first planted
+    // of each status: 40 open (the oldest), 40 completed (older), then 50 completed (the newest, the window's) — the
+    // window then holds no session the queries returned, and no open investigation's record.
     for (let n = 0; n < 40; n++) plant({ n, storyId: `story-open-${n}`, createdAt: at(n) });
-    for (let n = 40; n < 100; n++) plant({ n, storyId: `story-done-${n}`, status: 'completed', createdAt: at(n), updatedAt: at(n) });
+    for (let n = 40; n < 80; n++) plant({ n, storyId: `story-done-${n}`, status: 'completed', createdAt: at(n), updatedAt: at(n) });
+    for (let n = 80; n < 130; n++) plant({ n, storyId: `story-new-${n}`, status: 'completed', createdAt: at(n), updatedAt: at(n) });
     let docs = 0;
     const real = env.db;
     const wrapQ = (q) => ({
@@ -370,27 +373,62 @@ describe('X-1: GET ?list=explore', () => {
     state.db = { ...real, collection: (name) => wrapQ(real.collection(name)) };
     const writes = env.writes.length;
     const b = await exploreRead();
-    expect([EXPLORE_OPEN_READ, EXPLORE_RECORDS_READ, EXPLORE_DOCS_MAX]).toEqual([30, 50, 161]);
+    expect([EXPLORE_OPEN_READ, EXPLORE_ENDED_READ, EXPLORE_RECORDS_READ, EXPLORE_DOCS_MAX]).toEqual([30, 30, 50, 191]);
     expect(docs).toBe(EXPLORE_DOCS_MAX);
     expect(b.items.filter((i) => i.open)).toHaveLength(30);
-    expect(b.items.filter((i) => i.last)).toHaveLength(50);
+    expect(b.items.filter((i) => i.last)).toHaveLength(30 + 50);
     expect(b.items.every((i) => Number.isSafeInteger(i.itemVersion))).toBe(true);
     expect(env.writes.length).toBe(writes);
   });
-  it('past the window, newest first (review HB-2): a story\'s last is its newest ended investigation whatever the session ids; the oldest stories age out; an open one is found at any age', async () => {
-    // the story's older conclusion has the higher session id and its newer save the lower one: ids never decide
-    const newer = plant({ n: 1, storyId: 'st-0', status: 'completed', createdAt: at(90), updatedAt: at(91), adoption: { watchlistId: 'wl-1', version: 1, at: at(91) } });
-    plant({ n: 99, storyId: 'st-0', status: 'completed', createdAt: at(10), updatedAt: at(11) });
-    for (let n = 20; n < 80; n++) plant({ n, storyId: `st-${n}`, status: 'completed', createdAt: at(n), updatedAt: at(n) });
-    const old = plant({ n: 2, storyId: 'st-open', createdAt: at(0) }); // open, older than every record in the window
+  it('newest first past the queries\' bounds (review HB-2): a story\'s newer save outside the completed query\'s 30 is found in the window and wins; a story in neither ages out', async () => {
+    plant({ n: 1, storyId: 'st-0', status: 'completed', createdAt: at(10), updatedAt: at(11) }); // the older conclusion: in the query's 30
+    for (let n = 20; n < 49; n++) plant({ n, storyId: `st-${n}`, status: 'completed', createdAt: at(n), updatedAt: at(n) }); // fills the query
+    for (let n = 49; n < 120; n++) plant({ n, storyId: `st-${n}`, status: 'completed', createdAt: at(n), updatedAt: at(n) }); // beyond it
+    const newer = plant({ n: 200, storyId: 'st-0', status: 'completed', createdAt: at(300), updatedAt: at(301), adoption: { watchlistId: 'wl-1', version: 1, at: at(301) } });
     const { items } = await exploreRead();
-    expect(items.find((i) => i.itemRef.recordId === 'st-0').last).toEqual({ sessionId: newer.sessionId, ended: 'saved', at: at(91) });
-    expect(items.find((i) => i.itemRef.recordId === 'st-open').open.sessionId).toBe(old.sessionId);
-    // the window: the newest 50 records — st-0's save, st-31…st-79; st-20…st-30 and st-0's old conclusion are older
-    const ended = items.filter((i) => i.last).map((i) => i.itemRef.recordId);
-    expect(ended).toHaveLength(EXPLORE_RECORDS_READ);
-    expect(ended).toContain('st-31');
-    expect(ended).not.toContain('st-30');
+    expect(items.find((i) => i.itemRef.recordId === 'st-0').last).toEqual({ sessionId: newer.sessionId, ended: 'saved', at: at(301) });
+    // the query: st-0 and st-20…st-48; the window: st-0's save and st-71…st-119; st-49…st-70 are in neither
+    const ended = items.map((i) => i.itemRef.recordId);
+    expect(ended).toContain('st-48');
+    expect(ended).toContain('st-71');
+    expect(ended).not.toContain('st-49');
+    expect(ended).not.toContain('st-70');
+    expect(items).toHaveLength(1 + 29 + 49);
+  });
+  it('an Explore save is kept when 50 newer research records of other kinds push it out of the window (review RF-2): the completed query holds it', async () => {
+    const saved = plant({ n: 1, storyId: EXPLORE.id, status: 'completed', createdAt: at(1), updatedAt: at(2), adoption: { watchlistId: 'wl-1', version: 1, at: at(2) } });
+    for (let n = 10; n < 70; n++) plant({ n, storyId: `ft-${n}`, kind: 'fantasyTimesStories', status: 'completed', createdAt: at(n), updatedAt: at(n) });
+    expect((await exploreRead()).items).toEqual([{ itemRef: { recordKind: 'exploreStories', recordId: EXPLORE.id }, itemVersion: 1, open: null, last: { sessionId: saved.sessionId, ended: 'saved', at: at(2) } }]);
+  });
+  it('an open investigation the open query left out (31 open at once) is found through its record in the window (review RF-3)', async () => {
+    const older = plant({ n: 1, storyId: EXPLORE.id, status: 'completed', createdAt: at(1), updatedAt: at(2) });
+    for (let n = 10; n < 40; n++) plant({ n, storyId: `st-${n}`, createdAt: at(n) }); // the open query's 30
+    const newest = plant({ n: 100, storyId: EXPLORE.id, createdAt: at(100), stepsUsed: 3 });
+    const item = (await exploreRead()).items.find((i) => i.itemRef.recordId === EXPLORE.id);
+    expect(item.open).toMatchObject({ sessionId: newest.sessionId, stepsLeft: 7, question: 'Question 100' });
+    expect(item.last).toEqual({ sessionId: older.sessionId, ended: 'concluded', at: at(2) });
+  });
+  it('a session two reads saw differently counts once, as ended (review RF-4): never both open and last', () => {
+    const open = { sessionId: 's-1', status: 'open', updatedAt: at(1) };
+    const closed = { sessionId: 's-1', status: 'completed', updatedAt: at(2) };
+    expect([...sessionsByIdOf([[open], [closed]]).values()]).toEqual([closed]);
+    expect([...sessionsByIdOf([[closed], [open]]).values()]).toEqual([closed]);
+  });
+  it('FantasyTimes and own-words investigations ended (concluded, saved) are not listed — and their sessions are never read (review RF-1)', async () => {
+    plant({ n: 1, storyId: 'ft-1', kind: 'fantasyTimesStories', status: 'completed', createdAt: at(1), updatedAt: at(2) });
+    plant({ n: 2, storyId: 'ft-2', kind: 'fantasyTimesStories', status: 'completed', createdAt: at(3), updatedAt: at(4), adoption: { watchlistId: 'wl-2', version: 1, at: at(4) } });
+    const own = await post({ action: 'open', requestId: 'req-own', entry: { kind: 'observation', observation: 'I want to play power gear' } });
+    expect((await post({ action: 'close', sessionId: own.body.session.sessionId, reason: 'concluded' })).statusCode).toBe(200);
+    let docs = 0;
+    const real = env.db;
+    const wrapQ = (q) => ({
+      ...q, where: (...a) => wrapQ(q.where(...a)), orderBy: (...a) => wrapQ(q.orderBy(...a)), limit: (n) => wrapQ(q.limit(n)),
+      get: async () => { const snap = await q.get(); docs += snap.docs.length; return snap; },
+      ...(q.doc ? { doc: (id) => { const d = q.doc(id); return { ...d, get: async () => { docs += 1; return d.get(); } }; } } : {}),
+    });
+    state.db = { ...real, collection: (name) => wrapQ(real.collection(name)) };
+    expect((await exploreRead()).items).toEqual([]);
+    expect(docs).toBe(1 + 3); // the quota and the window's three records: no session read, none queried back
   });
   it('a read writes nothing, and a second read answers the same', async () => {
     await opened();

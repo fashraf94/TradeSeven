@@ -49,7 +49,9 @@ import {
 import { companiesOf } from './companies.js';
 import { CLAIMS_READ_LIMIT } from './opening.js';
 import { EXPLORE_RECORD_KIND } from '../../../src/constants/sharedResearch.js';
-import { EXPLORE_OPEN_READ, EXPLORE_RECORDS_READ, livePerStoryOf, lastPerStoryOf, exploreItemsOf } from './explore.js';
+import {
+  EXPLORE_OPEN_READ, EXPLORE_ENDED_READ, EXPLORE_RECORDS_READ, sessionsToReadOf, sessionsByIdOf, livePerStoryOf, lastPerStoryOf, exploreItemsOf,
+} from './explore.js';
 
 export const AGENTS_COLLECTION = 'agents';
 /** The environment variable that overrides the app's daily step ceiling — read at call time (spec §6.12 control 4). */
@@ -191,40 +193,37 @@ export async function readExploreStory(db, storyId) {
 
 /**
  * The Explore read (B6a X-1, GET ?list=explore): the caller's investigations of Explore stories, shaped by explore.js.
- * No new index, no write. Two queries, in parallel:
- *   - the OPEN Explore sessions: `userId ==`, `entry.itemRef.recordKind == 'exploreStories'`, `status == 'open'` —
- *     equality filters only, which Firestore serves by merging the automatic single-field indexes (the same merge
- *     `open`'s own itemKey query uses), at most EXPLORE_OPEN_READ;
+ * No new index, no write. Three queries, in parallel:
+ *   - the OPEN and the COMPLETED Explore sessions: `userId ==`, `entry.itemRef.recordKind == 'exploreStories'`,
+ *     `status ==` — equality filters only, which Firestore serves by merging the automatic single-field indexes (the
+ *     same merge `open`'s own itemKey query uses), each at most EXPLORE_OPEN_READ / EXPLORE_ENDED_READ, in no order;
  *   - the newest research records: the deployed (userId, createdAt desc) index listOpen reads, at most
- *     EXPLORE_RECORDS_READ — each story's last ended investigation is its newest record there that closed saved or
- *     concluded (review HB-2: newest first, never an arbitrary subset).
- * Then, by key: the record of each open investigation the window does not hold, and the session of each story reported
- * with only an ended investigation (its story version). At most EXPLORE_DOCS_MAX documents with the quota.
+ *     EXPLORE_RECORDS_READ. The session of each open or completed Explore investigation there that the two queries did
+ *     not return is read by id — so the newest investigations are always held (review HB-2, RF-2, RF-3).
+ * Then the record of each open investigation the window does not hold. A session held twice counts once, ended if any
+ * read saw it ended (RF-4). At most EXPLORE_DOCS_MAX documents with the quota.
  */
 export async function readExploreInvestigations(db, { uid }) {
-  const [openSnap, recordSnap] = await Promise.all([
-    db.collection(SESSIONS_COLLECTION).where('userId', '==', uid).where('entry.itemRef.recordKind', '==', EXPLORE_RECORD_KIND)
-      .where('status', '==', 'open').limit(EXPLORE_OPEN_READ).get(),
+  const mine = db.collection(SESSIONS_COLLECTION).where('userId', '==', uid).where('entry.itemRef.recordKind', '==', EXPLORE_RECORD_KIND);
+  const [openSnap, endedSnap, recordSnap] = await Promise.all([
+    mine.where('status', '==', 'open').limit(EXPLORE_OPEN_READ).get(),
+    mine.where('status', '==', 'completed').limit(EXPLORE_ENDED_READ).get(),
     db.collection(RESEARCH_WORK_COLLECTION).where('userId', '==', uid).orderBy('createdAt', 'desc').limit(EXPLORE_RECORDS_READ).get(),
   ]);
-  const live = livePerStoryOf(openSnap.docs.map((d) => d.data()).filter((s) => isOwnedSession(s, uid)));
+  const owned = (snap) => snap.docs.map((d) => d.data()).filter((s) => isOwnedSession(s, uid));
+  const queried = sessionsByIdOf([owned(openSnap), owned(endedSnap)]);
   const newest = new Map(recordSnap.docs.map((d) => d.data()).filter((r) => isOwnedRecord(r, uid)).map((r) => [r.researchWorkId, r]));
-  const last = lastPerStoryOf([...newest.values()]);
-  const ownedRecord = async (id) => {
-    if (!id) return null;
-    if (newest.has(id)) return newest.get(id);
-    const r = dataOf(await researchWorkRefOf(db, id).get());
-    return isOwnedRecord(r, uid) ? r : null;
-  };
-  const ownedSession = async (id) => {
-    const s = dataOf(await sessionRefOf(db, id).get());
-    return isOwnedSession(s, uid) ? s : null;
-  };
-  const [records, sessions] = await Promise.all([
-    Promise.all([...live.values()].map(async (s) => [s.sessionId, await ownedRecord(s.researchWorkId)])),
-    Promise.all([...last].filter(([key]) => !live.has(key)).map(async ([, r]) => [r.host.id, await ownedSession(r.host.id)])),
-  ]);
-  return exploreItemsOf({ live, last, records: new Map(records), sessions: new Map(sessions) });
+  const found = await Promise.all(sessionsToReadOf([...newest.values()], queried).map(async (id) => dataOf(await sessionRefOf(db, id).get())));
+  const sessions = [...sessionsByIdOf([[...queried.values()], found.filter((s) => isOwnedSession(s, uid))]).values()];
+  const live = livePerStoryOf(sessions);
+  const last = lastPerStoryOf(sessions);
+  const records = await Promise.all([...live.values()].map(async (s) => {
+    if (!s.researchWorkId) return [s.sessionId, null];
+    if (newest.has(s.researchWorkId)) return [s.sessionId, newest.get(s.researchWorkId)];
+    const r = dataOf(await researchWorkRefOf(db, s.researchWorkId).get());
+    return [s.sessionId, isOwnedRecord(r, uid) ? r : null];
+  }));
+  return exploreItemsOf({ live, last, records: new Map(records) });
 }
 
 /** The caller's OWN drop, or null — another owner's drop is not found (spec §6.3). */

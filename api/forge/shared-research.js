@@ -307,7 +307,9 @@ async function handleOpen(body, res, { db, uid }) {
   if (!isPlainObject(entry) || !['item', 'signaldrop'].includes(entry.kind) || !isPlainObject(entry.itemRef)) throw refuse(400, 'invalid_entry');
   const { recordKind, recordId } = entry.itemRef;
   if (!ENTRY_ITEM_RECORD_KINDS.includes(recordKind)) throw refuse(400, 'item_kind_unsupported');
-  // An `item` names a story — a FantasyTimes story, or an Explore story (B6a X-2); a `signaldrop` names a drop.
+  // An `item` names a story — a FantasyTimes story, or an Explore story (B6a X-2); a `signaldrop` names a drop. Any entry
+  // but an item naming an Explore story answers as it did before the kind existed (review A-3).
+  if (recordKind === EXPLORE_RECORD_KIND && entry.kind !== 'item') throw refuse(400, 'item_kind_unsupported');
   if ((entry.kind === 'item') !== STORY_RECORD_KINDS.includes(recordKind) || !isValidForgeId(recordId)) throw refuse(400, 'invalid_entry');
   if (!isValidForgeId(body.requestId)) throw refuse(400, 'invalid_request');
   const question = questionOf(entry.question);
