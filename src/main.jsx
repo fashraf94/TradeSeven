@@ -30,6 +30,10 @@ console.log('Debug utilities loaded');
 
 const root = createRoot(document.getElementById('root'));
 
+// SMOKE ONLY, NEVER MERGE — Explore Build 1 (build prompt 'The smoke branch'): the fixture loader.
+// ?exploreFixture=<scene> (index for the list) renders the Search page with Explore on, on committed fixtures, instead of the app.
+const exploreFixture = new URLSearchParams(window.location.search).get('exploreFixture');
+
 // Backing Beta PR 4 — the dev-only Backing design preview (?preview=backing):
 // the repo's ?preview= dev-screen gate (App.jsx's ?preview=baggerbomb), taken
 // one level up so the app shell — auth, the user doc, the agent listeners —
@@ -37,7 +41,11 @@ const root = createRoot(document.getElementById('root'));
 // Vite dev server or on a Vercel preview host, never on production
 // (src/components/League/backing/backingPreview.js decides); anywhere else the
 // app renders exactly as before. The page is its own lazily loaded chunk.
-if (backingPreviewRequested(window.location, { DEV: import.meta.env.DEV, VITE_VERCEL_ENV: import.meta.env.VITE_VERCEL_ENV })) {
+if (exploreFixture) {
+  import('./smoke/ExploreSmokeScreen')
+    .then((m) => { root.render(<m.default fixture={exploreFixture} />); })
+    .catch((err) => console.error('[ExploreSmoke] the fixture page failed to load:', err));
+} else if (backingPreviewRequested(window.location, { DEV: import.meta.env.DEV, VITE_VERCEL_ENV: import.meta.env.VITE_VERCEL_ENV })) {
   import('./screens/BackingPreviewScreen')
     .then((preview) => {
       const BackingPreviewScreen = preview.default;

@@ -49,5 +49,7 @@ export const EXPLORE_MODE = 'off';
 
 /** The switch at call time: 'off' for any value outside EXPLORE_MODES. */
 export function exploreMode() {
+  // SMOKE ONLY, NEVER MERGE: the ?exploreFixture= page (src/smoke/ExploreSmokeScreen.jsx) sets this; the literal stays 'off'.
+  if (typeof window !== 'undefined' && window.__exploreSmokeOn === true) return 'on';
   return EXPLORE_MODE === 'allowlist' || EXPLORE_MODE === 'on' ? EXPLORE_MODE : 'off';
 }
