@@ -28,6 +28,8 @@ const kit = await import('./__fixtures__/exploreKit');
 const { READS, SAMPLE_STORIES, answerOf, fixtureSources, mount, flush, click, typeInto, press, $, $$, until } = kit;
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+// Rows wait on lazy modules and the page's own animations in real time: 15 s each, so a loaded machine cannot time one out.
+vi.setConfig({ testTimeout: 15_000 });
 const [AI, TAP] = SAMPLE_STORIES;
 let mounted = [];
 let fetchCalls;

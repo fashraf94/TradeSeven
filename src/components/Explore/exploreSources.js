@@ -23,10 +23,14 @@ import { BOOKMARKS_MAX, BOOKMARK_TITLE_MAX, EXPLORE_RECORD_KIND, STORIES_READ, i
 /** The bookmarks subcollection under users/{uid}. */
 export const BOOKMARKS_COLLECTION = 'exploreBookmarks';
 
-/** The published stories, newest first, as the reader's views (a record storyOf drops is left out). */
+/**
+ * The published stories, newest first, as the reader's views (a record storyOf drops is left out), and whether the
+ * read holds EVERY published story: fewer documents came back than the limit (counted before any is dropped). Only
+ * then can a bookmark whose story is missing be called "No longer available" (review A-2).
+ */
 export async function readStories() {
   const snap = await getDocs(query(collection(db, EXPLORE_RECORD_KIND), where('status', '==', 'published'), orderBy('publishedAt', 'desc'), limit(STORIES_READ)));
-  return snap.docs.map((d) => storyOf(d.id, d.data())).filter(Boolean);
+  return { list: snap.docs.map((d) => storyOf(d.id, d.data())).filter(Boolean), complete: snap.docs.length < STORIES_READ };
 }
 
 /** A stored bookmark as the page reads it, or null. */

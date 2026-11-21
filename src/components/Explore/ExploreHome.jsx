@@ -6,13 +6,15 @@
 // newest story first: the QUESTION is the headline); Saved for later; Browse topics. From 1000 px, Research in
 // progress, Saved and topics sit in a right-hand column that scrolls with the page. One DOM at every width.
 //
-// Every state line is the read's (exploreView.js stateOf): reading, saving and choosing start nothing.
+// Every state line is the read's (exploreView.js stateOf): reading, saving and choosing start nothing. A bookmark says
+// "not researched" only when the read has answered (review A-1); "No longer available" only when the stories read
+// holds every published story (A-2); a Save toggle acts only once the bookmarks are known (A-5).
 
 import React, { useState } from 'react';
 import { EXPLORE_COPY } from './exploreCopy';
-import { BOOKMARKS_MAX, RESEARCH, dateOf, featuredCardsOf, itemFor, stateOf, topicsOf } from './exploreView';
+import { RESEARCH, dateOf, featuredCardsOf, itemFor, saveBusyOf, stateOf, topicsOf } from './exploreView';
 import { S, T, btnStyle, wash } from './exploreStyle';
-import { Btn, Eyebrow, Notice, SaveToggle, StatusLine } from './exploreParts';
+import { BookmarkError, Btn, Eyebrow, Notice, SaveToggle, StatusLine, Tag } from './exploreParts';
 import ExploreSearch from './ExploreSearch';
 import { OriginTags } from './ExploreStory';
 import { progressLineOf, endedLineOf } from './ExplorePanel';
@@ -20,7 +22,6 @@ import { progressLineOf, endedLineOf } from './ExplorePanel';
 const COPY = EXPLORE_COPY.home;
 const CARD = EXPLORE_COPY.card;
 const STATE = EXPLORE_COPY.state;
-const BOOKMARK = EXPLORE_COPY.bookmark;
 
 /** The state line's words (spec §3.7), from stateOf's view of the read. */
 export function stateLinesOf(state) {
@@ -40,15 +41,9 @@ function StateLine({ state }) {
   return <p data-explore-state={state.kind} style={{ ...S.small, color: tone === 'ink2' ? T.ink2 : T[tone], fontWeight: 600 }}>{lines.join(' · ')}</p>;
 }
 
-function BookmarkError({ bookmarks, storyId }) {
-  const error = bookmarks.error;
-  if (!error || error.storyId !== storyId) return null;
-  const words = error.kind === 'cap' ? BOOKMARK.cap(BOOKMARKS_MAX) : error.kind === 'remove' ? BOOKMARK.failedRemove : BOOKMARK.failedSave;
-  return <Notice role="alert" tone="copper"><span data-explore-bookmark-error={error.kind}>{words}</span></Notice>;
-}
-
-function QuestionCard({ story, question, item, saved, bookmarks, onOpenStory, onContinue }) {
-  const state = stateOf({ item, bookmarked: saved });
+function QuestionCard({ story, question, item, saved, known, bookmarks, onOpenStory, onContinue }) {
+  const state = stateOf({ item, bookmarked: saved && known });
+  const origin = `card:${story.id}:${question.id}`;
   const open = item?.open ?? null;
   return (
     <article style={{ ...S.box, padding: 'clamp(16px, 3vw, 24px)', borderRadius: 18, gap: 12 }} data-explore-card={story.id}>
@@ -70,9 +65,9 @@ function QuestionCard({ story, question, item, saved, bookmarks, onOpenStory, on
           {open ? CARD.continue : CARD.read}
         </Btn>
         {open && <Btn key="read" kind="secondary" onClick={(event) => onOpenStory(story.id, question.id, event)} data-explore-card-read="">{CARD.read}</Btn>}
-        <SaveToggle key="save" pressed={saved} busy={bookmarks.pending.includes(story.id)} label={CARD.save} onToggle={() => bookmarks.toggle(story)} />
+        <SaveToggle key="save" pressed={saved} busy={saveBusyOf(bookmarks, story.id)} label={CARD.save} onToggle={() => bookmarks.toggle(story, origin)} />
       </div>
-      <BookmarkError bookmarks={bookmarks} storyId={story.id} />
+      <BookmarkError bookmarks={bookmarks} storyId={story.id} origin={origin} />
     </article>
   );
 }
@@ -87,16 +82,37 @@ export default function ExploreHome({ explore, stocksData, onOpenStory, onContin
   const ready = research.status === RESEARCH.READY;
   const inProgress = ready ? research.items.filter((it) => it.open) : [];
   const storyById = new Map(list.map((s) => [s.id, s]));
+  // Research in progress sits between search and the cards on a phone, and heads the side column from 1000 px: drawn in
+  // both places, the one not in use display: none, so the reading order is the visual order at every width (review C-1).
+  const progress = (placement) => (
+    inProgress.length > 0 ? (
+      <div className={placement === 'wide' ? 'ftx-wide-only' : 'ftx-phone-only'} data-explore-progress-placement={placement}>
+      <section aria-labelledby={`ftx-prog-h-${placement}`} style={S.section} data-explore-in-progress="">
+        <Eyebrow as="h2" id={`ftx-prog-h-${placement}`} tone="teal">{COPY.inProgress}</Eyebrow>
+        {inProgress.map((it) => (
+          <div key={it.storyId} style={{ ...S.card, border: `1px solid ${wash('teal', 0.3)}` }} data-explore-progress-row={it.storyId}>
+            {storyById.get(it.storyId)?.sample && <div style={S.row}><Tag tone="copper" dim>{CARD.sample}</Tag></div>}
+            <span style={{ fontSize: 14.5, fontWeight: 600, lineHeight: 1.35, color: T.ink, overflowWrap: 'anywhere' }}>{it.open.question ?? storyById.get(it.storyId)?.title ?? ''}</span>
+            <StateLine state={stateOf({ item: it })} />
+            <div><Btn kind="primary" onClick={(event) => onContinue(event, it.open.sessionId)} data-explore-progress-continue="">{CARD.continue}</Btn></div>
+          </div>
+        ))}
+      </section>
+      </div>
+    ) : null
+  );
 
   return (
     <div data-explore-screen="home" style={{ ...S.col, gap: 22 }}>
       <p ref={introRef} tabIndex={-1} style={{ ...S.meta, fontSize: 15, maxWidth: 560, outline: 'none' }} data-explore-intro="">{COPY.intro}</p>
       <div className="ftx-grid" data-ftx-grid="home">
         <div className="ftx-col" data-ftx-col="main">
-          <div className="ftx-o1">
-            <ExploreSearch stories={list} research={research} stocksData={stocksData} onOpenStory={onOpenStory} onOpenCompany={onOpenCompany} onOwnWords={onOwnWords} />
+          <div>
+            <ExploreSearch stories={list} storiesReady={stories.status === 'ready'} research={research} stocksData={stocksData} onOpenStory={onOpenStory} onOpenCompany={onOpenCompany} onOwnWords={onOwnWords} />
           </div>
-          <section className="ftx-o3" aria-label={COPY.questionsLabel} style={{ ...S.col, gap: 14 }} data-explore-cards="">
+          {progress('phone')}
+          <section aria-labelledby="ftx-cards-h" style={{ ...S.col, gap: 14 }} data-explore-cards="">
+            <h2 id="ftx-cards-h" className="ftx-sr">{COPY.questionsLabel}</h2>
             {stories.status === 'idle' || stories.status === 'loading' ? <StatusLine>{COPY.loading}</StatusLine> : null}
             {stories.status === 'failed' && (
               <div style={S.section}>
@@ -113,6 +129,7 @@ export default function ExploreHome({ explore, stocksData, onOpenStory, onContin
                 question={question}
                 item={itemFor(research, story.id)}
                 saved={isSaved(story.id)}
+                known={ready}
                 bookmarks={bookmarks}
                 onOpenStory={onOpenStory}
                 onContinue={onContinue}
@@ -121,19 +138,8 @@ export default function ExploreHome({ explore, stocksData, onOpenStory, onContin
           </section>
         </div>
         <div className="ftx-col" data-ftx-col="side">
-          {inProgress.length > 0 && (
-            <section className="ftx-o2" aria-labelledby="ftx-prog-h" style={S.section} data-explore-in-progress="">
-              <Eyebrow as="h2" id="ftx-prog-h" tone="teal">{COPY.inProgress}</Eyebrow>
-              {inProgress.map((it) => (
-                <div key={it.storyId} style={{ ...S.card, border: `1px solid ${wash('teal', 0.3)}` }} data-explore-progress-row={it.storyId}>
-                  <span style={{ fontSize: 14.5, fontWeight: 600, lineHeight: 1.35, color: T.ink, overflowWrap: 'anywhere' }}>{it.open.question ?? storyById.get(it.storyId)?.title ?? ''}</span>
-                  <StateLine state={stateOf({ item: it })} />
-                  <div><Btn kind="primary" onClick={(event) => onContinue(event, it.open.sessionId)} data-explore-progress-continue="">{CARD.continue}</Btn></div>
-                </div>
-              ))}
-            </section>
-          )}
-          <section className="ftx-o4" aria-labelledby="ftx-saved-h" style={S.section} data-explore-saved="">
+          {progress('wide')}
+          <section aria-labelledby="ftx-saved-h" style={S.section} data-explore-saved="">
             <Eyebrow as="h2" id="ftx-saved-h">{COPY.saved}</Eyebrow>
             {bookmarks.status === 'loading' && <StatusLine>{COPY.savedLoading}</StatusLine>}
             {bookmarks.status === 'failed' && (
@@ -145,24 +151,27 @@ export default function ExploreHome({ explore, stocksData, onOpenStory, onContin
             {bookmarks.status === 'ready' && bookmarks.list.length === 0 && <p style={S.small}>{COPY.savedEmpty}</p>}
             {bookmarks.list.map((b) => {
               const story = storyById.get(b.storyId) ?? null;
-              const gone = stories.status === 'ready' && !story;
+              // missing from a read that holds every published story: really gone; missing from a partial read: unknown
+              const gone = stories.status === 'ready' && stories.complete === true && !story;
+              const unknown = !story && !gone;
               return (
                 <div key={b.storyId} style={{ ...S.card, gap: 6 }} data-explore-saved-row={b.storyId} data-explore-gone={gone ? 'true' : undefined}>
+                  {story?.sample && <div style={S.row}><Tag tone="copper" dim>{CARD.sample}</Tag></div>}
                   <span style={{ fontSize: 14.5, fontWeight: 600, lineHeight: 1.35, color: T.ink, overflowWrap: 'anywhere' }}>{story?.title ?? b.title}</span>
-                  {gone ? <p style={S.small}>{COPY.gone}</p> : <StateLine state={stateOf({ item: itemFor(research, b.storyId), bookmarked: true })} />}
+                  {gone ? <p style={S.small}>{COPY.gone}</p> : unknown ? null : <StateLine state={stateOf({ item: itemFor(research, b.storyId), bookmarked: ready })} />}
                   <div style={S.actions}>
                     {story && <Btn onClick={(event) => onOpenStory(story.id, null, event)} data-explore-saved-read="">{CARD.read}</Btn>}
-                    {gone && (
-                      <Btn ariaDisabled={bookmarks.pending.includes(b.storyId)} onClick={() => bookmarks.remove(b.storyId)} data-explore-saved-remove="">{COPY.remove}</Btn>
+                    {!story && (
+                      <Btn ariaDisabled={saveBusyOf(bookmarks, b.storyId)} onClick={() => bookmarks.remove(b.storyId, `saved:${b.storyId}`)} data-explore-saved-remove="">{COPY.remove}</Btn>
                     )}
                   </div>
-                  <BookmarkError bookmarks={bookmarks} storyId={b.storyId} />
+                  <BookmarkError bookmarks={bookmarks} storyId={b.storyId} origin={`saved:${b.storyId}`} />
                 </div>
               );
             })}
           </section>
           {topics.length > 0 && (
-            <section className="ftx-o5" aria-labelledby="ftx-topic-h" style={S.section} data-explore-topics="">
+            <section aria-labelledby="ftx-topic-h" style={S.section} data-explore-topics="">
               <Eyebrow as="h2" id="ftx-topic-h">{COPY.topics}</Eyebrow>
               <div style={S.row}>
                 {[null, ...topics].map((t) => (

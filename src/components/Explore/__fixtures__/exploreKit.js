@@ -37,19 +37,22 @@ export function deferred() {
  * Fixture sources for ExploreSourcesContext. `stories` (a list, a function, or 'fail'), `bookmarks` (the stored list),
  * `failWrites` (a Set of 'save' | 'remove'). Every call is recorded in `calls`.
  */
-export function fixtureSources({ stories = SAMPLE_STORIES, bookmarks = [], failWrites = new Set(), failBookmarks = false } = {}) {
+export function fixtureSources({ stories = SAMPLE_STORIES, complete = true, bookmarks = [], failWrites = new Set(), failBookmarks = false, holdBookmarks = null } = {}) {
   const calls = [];
   const held = { bookmarks: bookmarks.map((b) => ({ ...b })) };
   return {
     calls,
     held,
+    /** As the Firestore source answers: the stories, and whether the read holds every published one. */
     readStories: async () => {
       calls.push({ kind: 'readStories' });
       if (stories === 'fail') throw new Error('stories failed');
-      return typeof stories === 'function' ? stories() : stories;
+      const list = await (typeof stories === 'function' ? stories() : stories);
+      return { list, complete };
     },
     readBookmarks: async (uid) => {
       calls.push({ kind: 'readBookmarks', uid });
+      if (holdBookmarks) await holdBookmarks;
       if (failBookmarks) throw new Error('bookmarks failed');
       return held.bookmarks.map((b) => ({ ...b }));
     },

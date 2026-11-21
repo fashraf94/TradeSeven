@@ -5,11 +5,13 @@
 // (BUILD_RULES §10): cssVar() for a color, `rgba(var(--ft-<tone>-rgb), a)` for a wash. No hex.
 // Motion comes from src/theme/motion.js (BUILD_RULES §11).
 //
-// ONE DOM AT EVERY WIDTH. A layout that changed its parents by breakpoint would remount its
-// children (focus and state lost), so the two-column screens are one grid whose two column
-// wrappers are `display: contents` on a phone — their items then interleave by `order` — and real
-// flex columns from 1000 px. Neither column ever has a scroll of its own (spec E-4, N-6): the page
-// scrolls, and on desktop the side column scrolls with it.
+// THE DOM IS THE READING ORDER AT EVERY WIDTH (review C-1: CSS `order` moved boxes but not the Tab or
+// screen-reader order). The reader is one grid in the phone's order; from 1000 px its side block
+// (the questions and the panel) is PLACED in the second column beside the story, spanning its rows.
+// Home's two columns are real columns at every width (stacked on a phone); its short "Research in
+// progress" list is drawn in each column's place, the one not in use `display: none`. Neither column
+// ever has a scroll of its own (spec E-4, N-6): the page scrolls, and on desktop the side column
+// scrolls with it.
 //
 // The app has no global border-box and forces 16 px on every <button> (src/index.css), so the
 // roots here scope their own box model and button labels are sized on an inner span.
@@ -41,8 +43,8 @@ export const EXPLORE_LAYERS = Object.freeze({ bar: 60, sheet: 1000 });
 
 /** The breakpoint of the two-column home and reader (spec §3.2, §3.4). */
 export const WIDE_MIN_PX = 1000;
-/** The app's BottomNav: 64 px tall, plus the safe-area inset (no border-box). The pinned bar sits above it. */
-export const BOTTOM_NAV_PX = 64;
+/** The app's BottomNav: 64 px tall and a 1 px top border, plus the safe-area inset (no border-box). The bar sits above it. */
+export const BOTTOM_NAV_PX = 65;
 
 export const S = Object.freeze({
   col: { display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 },
@@ -103,16 +105,19 @@ export const EXPLORE_CSS = `
 .ftx-parts { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; padding: 10px 0; }
 .ftx-two { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
 .ftx-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 22px; }
-.ftx-col { display: contents; }
-.ftx-o1 { order: 1; } .ftx-o2 { order: 2; } .ftx-o3 { order: 3; } .ftx-o4 { order: 4; } .ftx-o5 { order: 5; } .ftx-o6 { order: 6; } .ftx-o7 { order: 7; }
+.ftx-col { display: flex; flex-direction: column; gap: 22px; min-width: 0; }
+.ftx-wide-only { display: none; }
 @media (min-width: 560px) {
   .ftx-two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ftx-parts { grid-template-columns: 140px minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: baseline; }
 }
 @media (min-width: ${WIDE_MIN_PX}px) {
   .ftx-grid[data-ftx-grid="home"] { grid-template-columns: minmax(0, 1fr) 320px; gap: 44px; align-items: start; }
-  .ftx-grid[data-ftx-grid="story"] { grid-template-columns: minmax(0, 660px) minmax(320px, 400px); gap: 48px; justify-content: space-between; align-items: start; }
-  .ftx-grid > .ftx-col { display: flex; flex-direction: column; gap: 22px; min-width: 0; }
+  .ftx-grid[data-ftx-grid="story"] { grid-template-columns: minmax(0, 660px) minmax(320px, 400px); column-gap: 48px; row-gap: 22px; justify-content: space-between; align-items: start; }
+  .ftx-grid[data-ftx-grid="story"] > * { grid-column: 1; }
+  .ftx-grid[data-ftx-grid="story"] > [data-ftx-side] { grid-column: 2; grid-row: 1 / span var(--ftx-side-rows, 2); }
+  .ftx-phone-only { display: none; }
+  .ftx-wide-only { display: block; }
 }
 @media (prefers-reduced-motion: reduce) { .ftx-btn, .ftx-rowbtn { transition: none; } }
 `;

@@ -11,9 +11,9 @@
 
 import React, { useRef } from 'react';
 import { EXPLORE_COPY } from './exploreCopy';
-import { FORMS, atLimitOf, dateOf, formOf, itemFor } from './exploreView';
+import { FORMS, atLimitOf, dateOf, formOf, itemFor, saveBusyOf } from './exploreView';
 import { S, T, wash } from './exploreStyle';
-import { Disclosure, Eyebrow, LinkBtn, SaveToggle, Tag } from './exploreParts';
+import { BookmarkError, Disclosure, Eyebrow, LinkBtn, SaveToggle, Tag } from './exploreParts';
 import ExploreQuestions from './ExploreQuestions';
 import ExplorePanel, { progressLineOf } from './ExplorePanel';
 import ExplorePinnedBar from './ExplorePinnedBar';
@@ -39,7 +39,7 @@ export function barActionOf({ form, item, quota }) {
 }
 
 export default function ExploreStory({
-  story, research, bookmarks, choice, onChoice, onBack, onWork, onContinue, onViewIt, titleRef, navBelow = false, barLeft = 0,
+  story, research, bookmarks, choice, onChoice, onBack, onWork, onContinue, onViewIt, titleRef, navBelow = false, barLeft = 0, sheetOpen = false,
 }) {
   const primaryRef = useRef(null);
   const selectedId = choice.selectedId;
@@ -49,11 +49,13 @@ export default function ExploreStory({
   const item = itemFor(research, story.id);
   const quota = research?.status === 'ready' ? research.quota : null;
   const saved = bookmarks.list.some((b) => b.storyId === story.id);
-  const saveBusy = bookmarks.pending.includes(story.id);
-  const toggleSave = () => bookmarks.toggle(story);
+  const saveBusy = saveBusyOf(bookmarks, story.id);
+  const toggleFrom = (origin) => () => bookmarks.toggle(story, origin);
   const bar = barActionOf({ form, item, quota });
   const work = (event) => onWork(event, story, value);
   const published = dateOf(story.publishedAt);
+  // the story rows the side block spans beside them from 1000 px (the article, the body, and each optional block)
+  const leftRows = 2 + (story.openQuestion ? 1 : 0) + (story.connections.length > 0 ? 1 : 0) + (story.sources.length > 0 ? 1 : 0);
 
   const setEdit = (text) => onChoice({ ...choice, edits: { ...choice.edits, [question.id]: text } });
   const reset = () => {
@@ -66,20 +68,20 @@ export default function ExploreStory({
     <div data-explore-screen="story" style={{ paddingBottom: 96 }}>
       <div style={{ marginBottom: 8 }}><LinkBtn onClick={onBack} data-explore-back="">{COPY.back}</LinkBtn></div>
       <div className="ftx-grid" data-ftx-grid="story">
-        <div className="ftx-col" data-ftx-col="main">
-          <article className="ftx-o1" style={{ ...S.col, gap: 14 }}>
+          <article style={{ ...S.col, gap: 14 }}>
             <div style={S.row}><OriginTags story={story} />{story.reporter.beat && <span style={S.small}>{story.reporter.beat}</span>}</div>
-            <h1 ref={titleRef} className="ftx-h1" tabIndex={-1} data-explore-story-title="" style={{ outline: 'none', textWrap: 'balance' }}>{story.title}</h1>
+            <h2 ref={titleRef} className="ftx-h1" tabIndex={-1} data-explore-story-title="" style={{ outline: 'none', textWrap: 'balance' }}>{story.title}</h2>
             {story.deck && <p className="ftx-deck" style={{ fontSize: 18, textWrap: 'pretty' }}>{story.deck}</p>}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', padding: '10px 0', borderTop: `1px solid ${T.hair}`, borderBottom: `1px solid ${T.hair}` }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
                 {story.reporter.name && <span style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>{story.reporter.name}</span>}
                 <span style={S.small} data-explore-published="">{COPY.published(published, story.evidenceSpan)}</span>
               </div>
-              <SaveToggle kind="secondary" pressed={saved} busy={saveBusy} label={CARD.save} onToggle={toggleSave} />
+              <SaveToggle kind="secondary" pressed={saved} busy={saveBusy} label={CARD.save} onToggle={toggleFrom('byline')} />
             </div>
+            <BookmarkError bookmarks={bookmarks} storyId={story.id} origin="byline" />
           </article>
-          <div className="ftx-o2" style={{ ...S.col, gap: 18 }}>
+          <div style={{ ...S.col, gap: 18 }}>
             <div className="ftx-prose" data-explore-body="">{story.body.map((p, i) => <p key={i} style={{ textWrap: 'pretty' }}>{p}</p>)}</div>
             {story.parts.length > 0 && (
               <div role="table" aria-label={COPY.parts.caption} style={{ ...S.box, gap: 0, padding: '4px 14px' }} data-explore-parts="">
@@ -97,13 +99,36 @@ export default function ExploreStory({
             )}
           </div>
           {story.openQuestion && (
-            <div className="ftx-o3" style={{ ...S.box, background: wash('copper', 0.06), border: `1px solid ${wash('copper', 0.3)}`, gap: 6 }} data-explore-leaves-open="">
+            <div style={{ ...S.box, background: wash('copper', 0.06), border: `1px solid ${wash('copper', 0.3)}`, gap: 6 }} data-explore-leaves-open="">
               <Eyebrow tone="copper">{COPY.leavesOpen}</Eyebrow>
               <p style={{ margin: 0, fontSize: 16.5, fontWeight: 600, lineHeight: 1.4, color: T.ink, overflowWrap: 'anywhere' }}>{story.openQuestion}</p>
             </div>
           )}
+          <div data-ftx-side="" style={{ ...S.col, gap: 22, '--ftx-side-rows': leftRows }}>
+            <ExploreQuestions story={story} selectedId={question.id} onSelect={(id) => onChoice({ ...choice, selectedId: id })} />
+            <ExplorePanel
+              form={form}
+              story={story}
+              question={question}
+              value={value}
+              onEdit={setEdit}
+              onReset={reset}
+              item={item}
+              quota={quota}
+              saved={saved}
+              saveBusy={saveBusy}
+              onToggleSave={toggleFrom('panel')}
+              saveError={<BookmarkError bookmarks={bookmarks} storyId={story.id} origin="panel" />}
+              onWork={work}
+              onContinue={onContinue}
+              onViewIt={onViewIt}
+              onRetry={research?.retry}
+              primaryRef={primaryRef}
+              refreshing={research?.refreshing === true}
+            />
+          </div>
           {story.connections.length > 0 && (
-            <div className="ftx-o6" data-explore-connections="">
+            <div data-explore-connections="">
               <Disclosure label={COPY.connections} count={String(story.connections.length)}>
                 {story.connections.map((c) => (
                   <div key={c.who} style={{ ...S.card, gap: 6 }} data-explore-connection={c.basis}>
@@ -121,7 +146,7 @@ export default function ExploreStory({
             </div>
           )}
           {story.sources.length > 0 && (
-            <div className="ftx-o7" data-explore-sources="">
+            <div data-explore-sources="">
               <Disclosure label={COPY.sources} count={String(story.sources.length)}>
                 <p style={S.meta}>{COPY.sourcesOpen(published)}</p>
                 {story.sources.map((s) => (
@@ -138,32 +163,6 @@ export default function ExploreStory({
               </Disclosure>
             </div>
           )}
-        </div>
-        <div className="ftx-col" data-ftx-col="side">
-          <div className="ftx-o4">
-            <ExploreQuestions story={story} selectedId={question.id} onSelect={(id) => onChoice({ ...choice, selectedId: id })} />
-          </div>
-          <div className="ftx-o5">
-            <ExplorePanel
-              form={form}
-              story={story}
-              question={question}
-              value={value}
-              onEdit={setEdit}
-              onReset={reset}
-              item={item}
-              quota={quota}
-              saved={saved}
-              saveBusy={saveBusy}
-              onToggleSave={toggleSave}
-              onWork={work}
-              onContinue={onContinue}
-              onViewIt={onViewIt}
-              onRetry={research?.retry}
-              primaryRef={primaryRef}
-            />
-          </div>
-        </div>
       </div>
       {bar && (
         <ExplorePinnedBar
@@ -173,6 +172,8 @@ export default function ExploreStory({
           line={bar.line}
           onAct={bar.kind === 'continue' ? (event) => onContinue(event, bar.sessionId) : work}
           disabled={bar.kind === 'work' && !value.trim()}
+          refreshing={research?.refreshing === true}
+          inertNow={sheetOpen}
           navBelow={navBelow}
           left={barLeft}
         />

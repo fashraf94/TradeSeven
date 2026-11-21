@@ -10,20 +10,22 @@
 //      ready (K-12): a tap opens the sheet's own-words start with the text in it; nothing is sent until the player
 //      continues there.
 // Never a dead end: with no story and no company, "No story on this yet." — and for a player without access, the
-// line that points at companies instead. There is no "not available" row. Typing sends nothing.
+// line that points at companies instead; said only once the stories read has answered (review A-3). There is no
+// "not available" row. Typing sends nothing.
 
 import React, { useMemo, useState } from 'react';
 import { matchCompanies, researchAssetOf } from '../Search/companyMatch';
 import { EXPLORE_COPY } from './exploreCopy';
 import { OWN_WORDS_MIN, RESEARCH, storyMatchesOf } from './exploreView';
 import { S, T, rowBtnStyle, wash } from './exploreStyle';
-import { Eyebrow, Icon } from './exploreParts';
+import { Eyebrow, Icon, Tag } from './exploreParts';
 
 const COPY = EXPLORE_COPY.search;
+const CARD = EXPLORE_COPY.card;
 const STORY_ROWS = 6;
 const COMPANY_ROWS = 5;
 
-export default function ExploreSearch({ stories, research, stocksData = [], onOpenStory, onOpenCompany, onOwnWords }) {
+export default function ExploreSearch({ stories, storiesReady = true, research, stocksData = [], onOpenStory, onOpenCompany, onOwnWords }) {
   const [text, setText] = useState('');
   const typed = text.trim();
   const priceMap = useMemo(() => {
@@ -65,6 +67,7 @@ export default function ExploreSearch({ stories, research, stocksData = [], onOp
             >
               <span style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.35, overflowWrap: 'anywhere' }}>{r.text}</span>
               <span style={S.meta}>{r.story.title}</span>
+              {r.story.sample && <span><Tag tone="copper" dim>{CARD.sample}</Tag></span>}
             </button>
           ))}
           {companies.length > 0 && <Eyebrow>{COPY.companies}</Eyebrow>}
@@ -81,7 +84,7 @@ export default function ExploreSearch({ stories, research, stocksData = [], onOp
               <span style={S.meta}>{COPY.companyNote}</span>
             </button>
           ))}
-          {storyRows.length === 0 && companies.length === 0 && (
+          {storiesReady && storyRows.length === 0 && companies.length === 0 && (
             <p role="status" style={S.meta} data-explore-no-story="">{access ? COPY.noStory : COPY.noStoryNoAccess}</p>
           )}
           {ownWords && (

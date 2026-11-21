@@ -36,7 +36,10 @@ export default function useExploreResearch({ ownerKey = null } = {}) {
     const sentFor = owner.current;
     seq.current += 1;
     const n = seq.current;
+    // A quiet read keeps the view and marks it `refreshing` until the answer replaces it: the panel keeps its button
+    // (and the focus on it) but the button does not act meanwhile (review B-10).
     if (!quiet) setView(LOADING);
+    else setView((v) => (v.status === RESEARCH.LOADING || v.refreshing ? v : { ...v, refreshing: true }));
     return Promise.resolve()
       .then(() => readExploreInvestigations())
       .then(researchViewOf, () => researchViewOf(null))

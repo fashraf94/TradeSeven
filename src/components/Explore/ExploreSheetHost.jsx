@@ -114,12 +114,24 @@ export function createExploreSheetHost(load) {
 
   function ExploreSheetHost({ entry, gated = false, phone = false, onClose, opener = null, fallbackFocus = null }) {
     const overlayRef = useRef(null);
+    const backdropRef = useRef(null);
     const dialogRef = useRef(null);
     const closeRef = useRef(null);
     const reducedMotion = useReducedMotion() === true;
     const [loads, setLoads] = useState(0);
     const [retrying, setRetrying] = useState(false);
     const [failures, setFailures] = useState(0);
+
+    // A wheel or a drag over the backdrop never scrolls the page behind (review C-6); the dialog contains its own
+    // scroll (overscroll-behavior: contain).
+    useEffect(() => {
+      const el = backdropRef.current;
+      if (!el) return undefined;
+      const stop = (event) => { event.preventDefault(); };
+      el.addEventListener('wheel', stop, { passive: false });
+      el.addEventListener('touchmove', stop, { passive: false });
+      return () => { el.removeEventListener('wheel', stop); el.removeEventListener('touchmove', stop); };
+    }, []);
 
     useEffect(() => {
       const release = inertOthers(overlayRef.current);
@@ -176,6 +188,7 @@ export function createExploreSheetHost(load) {
         style={{ position: 'fixed', inset: 0, zIndex: EXPLORE_LAYERS.sheet, display: 'flex', alignItems: phone ? 'flex-end' : 'center', justifyContent: 'center', padding: phone ? 0 : 24 }}
       >
         <motion.div
+          ref={backdropRef}
           aria-hidden="true"
           data-explore-sheet-backdrop=""
           onClick={onClose}

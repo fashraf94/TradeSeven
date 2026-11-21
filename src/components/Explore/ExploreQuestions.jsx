@@ -23,7 +23,7 @@ export default function ExploreQuestions({ story, selectedId, onSelect }) {
   };
   return (
     <section aria-labelledby={headingId} style={S.section} data-explore-questions="">
-      <h2 id={headingId} style={S.h2}>{COPY.title}</h2>
+      <h3 id={headingId} style={S.h2}>{COPY.title}</h3>
       <p style={S.meta}>{COPY.help}</p>
       <div role="radiogroup" aria-labelledby={headingId} onKeyDown={onKeyDown} style={{ display: 'grid', gap: 8 }}>
         {story.questions.map((q) => {

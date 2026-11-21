@@ -37,15 +37,18 @@ const SearchDiscover = ({ user, isMobile, isDesktop, setScreen, stocksData, side
   const { tokens } = useTheme();
   // The switch, read at call time (spec §6): 'off' → this page exactly as before Explore.
   const mode = exploreMode();
-  const [activeTab, setActiveTab] = useState(() => (mode === 'on' ? EXPLORE_HOME : 'explore'));
+  const [selectedTab, setActiveTab] = useState(() => (mode === 'on' ? EXPLORE_HOME : 'explore'));
   const [showSearchOverlay, setShowSearchOverlay] = useState(false);
   const [researchAsset, setResearchAsset] = useState(null);
   // ExploreRuntime's snapshot ({ research, admitted, stories, bookmarks }); null at 'off' and until it loads.
   const [explore, setExplore] = useState(null);
-  // Whether the player has tapped a tab, the search bar or a row: at 'allowlist' the Explore tab, once added,
-  // opens by itself only before that (build prompt K-5).
+  // Whether the player has tapped anything on the page (a tab, the search bar, a row, a card — spec §6; build prompt
+  // K-5): at 'allowlist' the Explore tab, once added, opens by itself only before that.
   const touched = useRef(false);
+  const markTouched = (event) => { if (event.type !== 'keydown' || event.key === 'Enter' || event.key === ' ') touched.current = true; };
   const withExplore = mode === 'on' || (mode === 'allowlist' && explore?.admitted === true);
+  // The Explore tab is never shown without Explore (a player change at 'allowlist' resets the admission): Markets then.
+  const activeTab = selectedTab === EXPLORE_HOME && !withExplore ? 'explore' : selectedTab;
   useEffect(() => {
     if (mode === 'allowlist' && withExplore && !touched.current) setActiveTab(EXPLORE_HOME);
   }, [mode, withExplore]);
@@ -71,6 +74,8 @@ const SearchDiscover = ({ user, isMobile, isDesktop, setScreen, stocksData, side
 
   return (
     <motion.div
+      onPointerDownCapture={markTouched}
+      onKeyDownCapture={markTouched}
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}

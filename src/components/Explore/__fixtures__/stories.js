@@ -3,8 +3,9 @@
 // THREE SAMPLE STORIES in the spec's §5.1 shape (docs/specs/20261121_EXPLORE_BUILD_1_SPEC_V1_1.md), for the jsdom
 // rows and the fixture preview ONLY. Each carries `sample: true`, so the page's own reader (exploreView.js storyOf)
 // drops it if it ever came from the collection; a sample is never researched and never written anywhere (FQ-1).
-// Every sample company is labelled as one where it is named. The real tickers (NVDA, V, MA, NEE, DUK) are named only
-// as the kind of company a story is about, never with a quotation.
+// Every sample company is labelled as one where it is named ("KSTL (sample company)"). The real tickers (NVDA, V, MA,
+// NEE, DUK) are named only as the kind of company a story is about: never with a quotation, and never under a
+// "Source cited" connection, whose only sources here are samples (review A-10).
 //
 //   1. the Round 1 mockup's AI-buildout story, rewritten so that every sentence resting on the reporter's reading
 //      says so in its own words (E-8), and every connection carries one of the three bases (E-1);
@@ -39,16 +40,16 @@ export const SAMPLE_AI = Object.freeze({
     {
       who: 'Chip designers', what: 'Sell the processors that run AI work to data-center operators.', basis: 'source_cited',
       basisLine: 'Two sample company filings cited. Each describes what the company sells.', sourceIds: ['s1', 's2'],
-      leads: ['NVDA', 'KSTL · sample company', 'HLDN · sample company'],
+      leads: ['KSTL (sample company)', 'HLDN (sample company)'],
     },
     {
       who: 'Networking suppliers', what: 'Sell the switches and cables that link processors together.', basis: 'reporters_reading',
-      basisLine: "Kim's reading of how these systems are built. No filing cited.", sourceIds: [], leads: [],
+      basisLine: "Kim's reading of how these systems are built. No filing cited.", sourceIds: [], leads: ['NVDA'],
     },
     {
       who: 'Power-equipment makers', what: 'Sell transformers, switchgear and backup systems to new sites.', basis: 'no_source_yet',
       basisLine: 'No source ties a company to this yet. The sample industry overview below describes lead times and names no company.', sourceIds: [],
-      leads: ['VLTA · sample company', 'GRDN · sample company'],
+      leads: ['VLTA (sample company)', 'GRDN (sample company)'],
     },
   ],
   sources: [
@@ -58,12 +59,12 @@ export const SAMPLE_AI = Object.freeze({
   ],
   questions: [
     {
-      id: 'q-chips', angleLabel: 'Chip suppliers', featured: true, sourceIds: ['s1', 's2'], leads: ['NVDA', 'KSTL · sample company', 'HLDN · sample company'],
+      id: 'q-chips', angleLabel: 'Chip suppliers', featured: true, sourceIds: ['s1', 's2'], leads: ['NVDA', 'KSTL (sample company)', 'HLDN (sample company)'],
       text: 'Which chip suppliers have evidence of meaningful exposure to AI spending?',
       unknown: "How much of each supplier's sales depends on AI spending.",
     },
     {
-      id: 'q-power', angleLabel: 'Power equipment', featured: false, sourceIds: ['s3'], leads: ['VLTA · sample company', 'GRDN · sample company'],
+      id: 'q-power', angleLabel: 'Power equipment', featured: false, sourceIds: ['s3'], leads: ['VLTA (sample company)', 'GRDN (sample company)'],
       text: 'Which power-equipment businesses have a sourced connection to the buildout?',
       unknown: "Whether any filing ties these companies' orders to data centers.",
     },
@@ -91,20 +92,21 @@ export const SAMPLE_TAP = Object.freeze({
   parts: [
     { name: 'Card network', job: 'Carries the payment message', timing: 'On every tap' },
     { name: 'Processor', job: 'Connects the store to the network', timing: 'Paid by the store' },
-    { name: 'Issuing bank', job: "Holds the shopper's account", timing: 'Earns part of the fee' },
+    { name: 'Issuing bank', job: "Holds the shopper's account", timing: 'Can earn part of the fee' },
   ],
   openQuestion: 'Which business in the chain keeps the largest part of the fee?',
   connections: [
-    { who: 'Card networks', what: 'Carry the payment between the store and the bank.', basis: 'source_cited', basisLine: 'One sample industry report cited.', sourceIds: ['p1'], leads: ['V', 'MA'] },
-    { who: 'Payment processors', what: 'Sell stores the service that accepts taps.', basis: 'reporters_reading', basisLine: "Ari's reading of how stores buy this service. No source cited.", sourceIds: [], leads: ['PAYQ · sample company'] },
+    { who: 'Card networks', what: 'Carry the payment between the store and the bank.', basis: 'reporters_reading', basisLine: "Ari's reading of how a tap travels. The sample report below describes contactless growth, not the networks.", sourceIds: [], leads: ['V', 'MA'] },
+    { who: 'Payment processors', what: 'Sell stores the service that accepts taps.', basis: 'source_cited', basisLine: 'One sample company filing cited. It describes what the company sells.', sourceIds: ['p2'], leads: ['PAYQ (sample company)'] },
     { who: 'Phone makers', what: 'Build the wallet a shopper taps with.', basis: 'no_source_yet', basisLine: 'Named in the story; no source cited yet.', sourceIds: [], leads: [] },
   ],
   sources: [
     { id: 'p1', name: 'Payments industry report', kind: 'Industry report · sample trade body', dated: 'Oct 2026', excerpt: 'Contactless purchases rose as a share of in-store card payments.', url: null },
+    { id: 'p2', name: 'PAYQ annual report', kind: 'Company filing · sample company', dated: 'Jun 2026', excerpt: 'The company sells payment acceptance to merchants of every size.', url: null },
   ],
   questions: [
     {
-      id: 'q-tap', angleLabel: 'The payment chain', featured: true, sourceIds: ['p1'], leads: ['V', 'MA'],
+      id: 'q-tap', angleLabel: 'The payment chain', featured: true, sourceIds: ['p1', 'p2'], leads: ['V', 'MA', 'PAYQ (sample company)'],
       text: 'Who earns when you tap to pay?',
       unknown: 'How the fee is split between the network, the processor and the bank.',
     },
@@ -126,25 +128,26 @@ export const SAMPLE_UTILITIES = Object.freeze({
   publishedAt: '2026-11-17T13:00:00.000Z',
   lead: 'story',
   title: 'Data centers ask the local utility for more',
-  deck: 'New sites need power before they open. The utilities that serve them plan years ahead.',
+  deck: 'New sites need power before they open. The utilities that serve them often plan years ahead.',
   reporter: { name: 'Dana', beat: 'Utilities and infrastructure' },
   evidenceSpan: 'Mar to Aug 2026',
   body: [
-    'A large data center can ask its utility for as much power as a small town. The utility has to plan the lines and the plants years before the site switches on.',
+    'A large data center can ask its utility for as much power as a small town. The utility often has to plan the lines and the plants years before the site switches on.',
     "Dana's reading is that utilities in regions with many new sites tend to raise their long-term plans first. The sample filing behind this story describes one such plan; it does not say how much of the plan the data centers will pay for.",
   ],
   parts: [],
   openQuestion: 'Does the new demand show up in what the utilities earn, or only in what they spend?',
   connections: [
-    { who: 'Regional utilities', what: 'Sell power to new data-center sites.', basis: 'source_cited', basisLine: 'One sample utility filing cited.', sourceIds: ['u1'], leads: ['NEE', 'DUK'] },
+    { who: 'Regional utilities', what: 'Sell power to new data-center sites.', basis: 'source_cited', basisLine: 'One sample utility filing cited.', sourceIds: ['u1'], leads: ['GRDP (sample utility)'] },
+    { who: 'Utilities in fast-growing regions', what: 'Plan for more load from large customers.', basis: 'reporters_reading', basisLine: "Dana's reading. No filing cited.", sourceIds: [], leads: ['NEE', 'DUK'] },
   ],
   sources: [
-    { id: 'u1', name: 'Utility resource plan', kind: 'Regulatory filing · sample utility', dated: 'Aug 2026', excerpt: 'Forecast demand from large customers was revised upward.', url: null },
+    { id: 'u1', name: 'GRDP resource plan', kind: 'Regulatory filing · sample utility', dated: 'Aug 2026', excerpt: 'Forecast demand from large customers was revised upward.', url: null },
   ],
   questions: [
     {
       id: 'q-earn', angleLabel: 'Earnings', featured: true, sourceIds: ['u1'], leads: ['NEE', 'DUK'],
-      text: 'Which utilities earn more because data centers moved in?',
+      text: 'Do any utilities earn more because data centers moved in?',
       unknown: 'Whether regulators let the new spending into the rates.',
     },
     {

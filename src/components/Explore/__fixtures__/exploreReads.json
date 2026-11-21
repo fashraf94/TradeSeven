@@ -169,7 +169,7 @@
         "itemVersion": 4,
         "open": {
           "sessionId": "5e5e5e5e-0000-4000-8000-000000000007",
-          "question": "Which utilities earn more because data centers moved in?",
+          "question": "Do any utilities earn more because data centers moved in?",
           "lastTurnAt": null,
           "filled": 0,
           "parts": 6,

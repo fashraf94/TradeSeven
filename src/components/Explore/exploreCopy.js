@@ -8,7 +8,7 @@
 // never says what an investigation would conclude, and "What starts with it" says
 // only what the investigation really receives in Build 1 (spec §4, N-3): the story,
 // the question, and — when the story names tickers — the companies the server reads.
-// The guard (exploreCopy.guard.test.js) bans, in this file, the investigation's own
+// The guard (explore.guard.test.js) bans, in this file, the investigation's own
 // labels and the sheet's banned promises.
 //
 // IMPORTS NOTHING. The gated line is Explore's own string, pinned equal to the hub's
@@ -102,6 +102,8 @@ export const EXPLORE_COPY = Object.freeze({
 
   panel: Object.freeze({
     proposed: 'Proposed investigation',
+    /** The panel's heading while the read cannot say whether there is one (loading, no access, failed: review A-9). */
+    investigation: 'Investigation',
     yours: 'Your investigation',
     question: 'Proposed question',
     questionHelp: "Edit it if it isn't quite your question. It is set when you start.",
@@ -124,7 +126,7 @@ export const EXPLORE_COPY = Object.freeze({
     checking: 'Checking your research',
     readFailed: "Couldn't check your research",
     tryAgain: 'Try again',
-    /** Pinned equal to the hub's research.disabled (hub/hubCopy.js) by exploreCopy.guard.test.js — word for word. */
+    /** Pinned equal to the hub's research.disabled (hub/hubCopy.js) by explore.guard.test.js — word for word. */
     gated: "Research records aren't available on this account",
     gatedNote: 'You can read the stories; starting an investigation needs research access.',
     save: 'Save for later',

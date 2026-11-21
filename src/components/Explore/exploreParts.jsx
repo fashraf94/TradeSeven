@@ -6,6 +6,8 @@
 
 import React, { forwardRef, useId, useState } from 'react';
 import { S, T, btnStyle, linkStyle, wash } from './exploreStyle';
+import { EXPLORE_COPY } from './exploreCopy';
+import { BOOKMARKS_MAX } from './exploreView';
 
 export function Eyebrow({ as = 'div', id, tone = null, style, children }) {
   return React.createElement(as, { id, style: { ...S.eyebrow, color: tone ? T[tone] : T.ink3, ...style } }, children);
@@ -16,7 +18,8 @@ export function Tag({ tone = 'ink2', dim = false, children }) {
   return (
     <span style={{
       display: 'inline-flex', alignItems: 'center', padding: '2px 8px', borderRadius: 999, fontSize: 11.5, fontWeight: 700, lineHeight: 1.5,
-      color: tone === 'ink2' ? T.ink2 : T[tone], background: dim ? 'transparent' : wash(triplet, 0.1), border: `1px solid ${dim ? T.hair : wash(triplet, 0.35)}`,
+      // purple text fails 4.5:1 on its own wash (review C-4): a purple tag says its words in ink
+      color: tone === 'ink2' ? T.ink2 : tone === 'purple' ? T.ink : T[tone], background: dim ? 'transparent' : wash(triplet, 0.1), border: `1px solid ${dim ? T.hair : wash(triplet, 0.35)}`,
       whiteSpace: 'normal', overflowWrap: 'anywhere',
     }}
     >
@@ -102,6 +105,19 @@ export function SaveToggle({ pressed, busy = false, label, onToggle, kind = 'gho
   );
 }
 
+/**
+ * A failed bookmark write for this story, in one line (spec §3.8): a save, a remove, or the client's cap — shown only
+ * next to the control that was tapped (`origin`: a card, a saved row, the reader's byline, the panel), so a story on
+ * two cards still says it once (review B-9).
+ */
+export function BookmarkError({ bookmarks, storyId, origin = null }) {
+  const error = bookmarks.errors && Object.hasOwn(bookmarks.errors, storyId) ? bookmarks.errors[storyId] : null;
+  if (!error || error.origin !== origin) return null;
+  const COPY = EXPLORE_COPY.bookmark;
+  const words = error.kind === 'cap' ? COPY.cap(BOOKMARKS_MAX) : error.kind === 'remove' ? COPY.failedRemove : COPY.failedSave;
+  return <Notice role="alert" tone="copper"><span data-explore-bookmark-error={error.kind}>{words}</span></Notice>;
+}
+
 /** A collapsed section (spec §3.4 items 8 and 9). */
 export function Disclosure({ label, count = null, children }) {
   const [open, setOpen] = useState(false);
@@ -111,7 +127,7 @@ export function Disclosure({ label, count = null, children }) {
       <button
         type="button"
         aria-expanded={open}
-        aria-controls={id}
+        aria-controls={open ? id : undefined}
         onClick={() => setOpen((v) => !v)}
         style={{ appearance: 'none', font: 'inherit', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, width: '100%', minHeight: 48, padding: '8px 14px', textAlign: 'left', color: T.ink }}
       >

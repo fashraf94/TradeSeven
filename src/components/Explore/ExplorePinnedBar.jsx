@@ -8,12 +8,12 @@
 //   - ONE IntersectionObserver, on the panel's own primary button. The bar shows only while that button is not
 //     fully on screen (the band behind the phone's bottom nav counts as off screen), on every screen size.
 //   - It is portalled into <body>: the page's ancestors animate with transforms, which would carry a fixed box.
-//     So the sheet's host marks it inert with the rest of the page.
+//     While the sheet is open it is inert by its own prop (it may appear while the sheet is open: review B-8).
 //   - It is not in the tab order twice: its button takes no Tab stop (the panel's button keeps the one, and
 //     focusing it scrolls it on screen, which hides the bar); neither is hidden from assistive tech.
 //   - Reduced motion: it appears without a transition.
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import { motionToken } from '../../theme/motion';
@@ -32,26 +32,48 @@ export const onScreenOf = (entry) => Boolean(entry?.isIntersecting) && entry.int
  * @param {boolean}  p.navBelow    the phone's bottom nav is on screen
  * @param {number}   p.left        the desktop sidebar's width
  */
-export default function ExplorePinnedBar({ targetRef, targetKey, label, line = null, onAct, disabled = false, navBelow = false, left = 0 }) {
+export default function ExplorePinnedBar({ targetRef, targetKey, label, line = null, onAct, disabled = false, refreshing = false, inertNow = false, navBelow = false, left = 0 }) {
   const [offScreen, setOffScreen] = useState(false);
   const reducedMotion = useReducedMotion() === true;
+  const barRef = useRef(null);
 
   useEffect(() => {
     const target = targetRef?.current ?? null;
     if (!target || typeof IntersectionObserver !== 'function') { setOffScreen(false); return undefined; }
     const observer = new IntersectionObserver((entries) => {
-      const entry = entries[entries.length - 1];
-      setOffScreen(!onScreenOf(entry));
+      const onScreen = onScreenOf(entries[entries.length - 1]);
+      // The bar leaves while its own button holds focus (a sheet opened from it, then closed): focus goes to the panel's
+      // button — the same action, now on screen — never to <body> (review C-3).
+      if (onScreen && barRef.current?.contains(document.activeElement)) target.focus({ preventScroll: true });
+      setOffScreen(!onScreen);
     }, { threshold: [0, 0.99, 1], rootMargin: navBelow ? `0px 0px -${BOTTOM_NAV_PX}px 0px` : '0px' });
     observer.observe(target);
     return () => observer.disconnect();
   }, [targetRef, targetKey, navBelow]);
 
-  if (!offScreen || !label) return null;
+  // While the bar is shown, the page keeps its band clear for focus: a control reached by Tab is scrolled above the bar,
+  // never left under it (scroll-padding-bottom; review C-2). Put back exactly as it was when the bar goes.
+  const shown = offScreen && Boolean(label);
+  useLayoutEffect(() => {
+    if (!shown) return undefined;
+    const root = document.documentElement;
+    const before = root.style.scrollPaddingBottom;
+    const reserve = () => {
+      const top = barRef.current?.getBoundingClientRect().top;
+      if (Number.isFinite(top)) root.style.scrollPaddingBottom = `${Math.max(0, Math.ceil(window.innerHeight - top))}px`;
+    };
+    reserve();
+    window.addEventListener('resize', reserve);
+    return () => { window.removeEventListener('resize', reserve); root.style.scrollPaddingBottom = before; };
+  }, [shown, line, navBelow]);
+
+  if (!shown) return null;
   return createPortal(
     <motion.div
+      ref={barRef}
       className="ftx-portal"
       data-explore-pinned-bar=""
+      inert={inertNow ? true : undefined}
       initial={reducedMotion ? false : { opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={motionToken('fade', { reducedMotion })}
@@ -62,7 +84,7 @@ export default function ExplorePinnedBar({ targetRef, targetKey, label, line = n
       }}
     >
       <div style={{ maxWidth: 720, margin: '0 auto', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-        <button type="button" className="ftx-btn" tabIndex={-1} data-explore-bar-action="" disabled={disabled} onClick={disabled ? undefined : onAct} style={{ ...btnStyle('primary', { disabled }), flexShrink: 0 }}>
+        <button type="button" className="ftx-btn" tabIndex={-1} data-explore-bar-action="" disabled={disabled} aria-disabled={refreshing ? 'true' : undefined} onClick={disabled || refreshing ? undefined : onAct} style={{ ...btnStyle('primary', { disabled: disabled || refreshing }), flexShrink: 0 }}>
           <span style={{ fontSize: 15, lineHeight: 1.3 }}>{label}</span>
         </button>
         {line && <p style={{ ...S.small, flex: '1 1 160px' }}>{line}</p>}

@@ -49,7 +49,7 @@ export default function ExploreTab({ explore = null, onOpenResearch, stocksData 
   const introRef = useRef(null);
   const openings = useRef(0);
   const afterView = useRef(null);
-  const afterClose = useRef(false);
+  const afterClose = useRef(null); // { research } as it stood at the close, until the read's answer replaces it
   const phoneSheet = useMatches(PHONE_SHEET);
   const viewRef = useRef(view);
   viewRef.current = view;
@@ -65,23 +65,34 @@ export default function ExploreTab({ explore = null, onOpenResearch, stocksData 
 
   // After a close, the read's answer can change what sits ABOVE the opener (form A becomes the shorter form B): the
   // opener is kept where it was on screen, in every browser alike (Safari has no scroll anchoring; .ftx-root turns
-  // Chromium's off so the two never add up). The page's scroll is untouched by the close itself.
+  // Chromium's off so the two never add up). The page's scroll is untouched by the close itself, and a scroll the
+  // player makes while the read is out moves the baseline with it, so it is never undone (review B-2).
   const research = explore?.research ?? null;
   const keepOnScreen = useRef(null);
+  /** The read's answer to the quiet read sent at the close has landed (not the close's own render, not `refreshing`). */
+  const answeredSince = (captured) => Boolean(captured) && !sheet && Boolean(research) && research.refreshing !== true && research !== captured.research;
+  useEffect(() => {
+    const onScroll = () => {
+      const keep = keepOnScreen.current;
+      if (keep?.el?.isConnected) keep.top = keep.el.getBoundingClientRect().top;
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
   useLayoutEffect(() => {
     const keep = keepOnScreen.current;
-    if (!keep || sheet || research === keep.research) return; // wait for the read's answer
+    if (!answeredSince(keep)) return;
     keepOnScreen.current = null;
     if (!keep.el?.isConnected) return;
     const delta = keep.el.getBoundingClientRect().top - keep.top;
     if (Math.abs(delta) > 0.5) window.scrollBy(0, delta);
   }, [research, sheet]);
 
-  // A control that held focus and left with the read after a close (a finished investigation's Continue row):
-  // focus goes to the screen's own anchor, never to <body>.
+  // A control that held focus and left with the read's answer after a close (a finished investigation's Continue row;
+  // form A's button when the read fails): focus goes to the screen's own anchor, never to <body> (review B-1).
   useEffect(() => {
-    if (!afterClose.current || sheet) return;
-    afterClose.current = false;
+    if (!answeredSince(afterClose.current)) return;
+    afterClose.current = null;
     if (document.activeElement === document.body || !document.activeElement) {
       focusQuietly(viewRef.current.kind === 'story' ? titleRef.current : introRef.current);
     }
@@ -125,7 +136,7 @@ export default function ExploreTab({ explore = null, onOpenResearch, stocksData 
   const onViewIt = (event, sessionId) => openSheet({ way: 'view', sessionId }, event);
   const onOwnWords = (event, text) => openSheet({ way: 'words', words: text }, event);
   const closeSheet = () => {
-    afterClose.current = true;
+    afterClose.current = { research: explore.research };
     const el = sheet?.opener ?? null;
     keepOnScreen.current = el?.isConnected ? { el, top: el.getBoundingClientRect().top, research: explore.research } : null;
     setSheet(null);
@@ -149,6 +160,7 @@ export default function ExploreTab({ explore = null, onOpenResearch, stocksData 
         onViewIt={onViewIt}
         titleRef={titleRef}
         navBelow={isMobile}
+        sheetOpen={sheet !== null}
         barLeft={isMobile ? 0 : sidebarCollapsed ? 64 : 220}
       />
     );

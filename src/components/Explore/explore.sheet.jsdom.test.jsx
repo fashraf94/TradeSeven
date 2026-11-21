@@ -28,6 +28,8 @@ const { SR_DROP_LAYER } = await import('../SharedResearch/sharedResearchStyle');
 const { mount, flush, click, press, $, $$, until, deferred } = await import('./__fixtures__/exploreKit');
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+/** A neighbouring source file's text (as the layers rows read theirs). */
+const zOfText = (file) => readFileSync(new URL(file, import.meta.url), 'utf8');
 let mounted = [];
 const keep = (m) => { mounted.push(m); return m; };
 afterEach(() => { for (const m of mounted) m.unmount(); mounted = []; document.body.querySelectorAll('[inert]').forEach((el) => el.removeAttribute('inert')); });
@@ -221,11 +223,15 @@ describe('K-14: the pinned bar', () => {
   it('above the phone\'s nav: the nav band counts as off screen, and the bar sits on top of it', async () => {
     keep(mount(<Harness onAct={vi.fn()} navBelow />));
     await flush();
-    expect(observers[0].options.rootMargin).toBe('0px 0px -64px 0px');
+    // BottomNav: height 64 px and a 1 px top border, content-box (the app ships no border-box): 65 px of band
+    const navSrc = zOfText('../Navigation/BottomNav.jsx');
+    expect(navSrc).toMatch(/height: '64px'/);
+    expect(navSrc).toMatch(/borderTop: `1px solid/);
+    expect(observers[0].options.rootMargin).toBe('0px 0px -65px 0px');
     const { act } = await import('react');
     act(() => fire(false, 0));
     // jsdom's style parser reorders env(); the browser rows measure the real box
-    expect($('[data-explore-pinned-bar]').style.bottom).toMatch(/^calc\(64px \+ env\(.*safe-area-inset-bottom.*\)\)$/);
+    expect($('[data-explore-pinned-bar]').style.bottom).toMatch(/^calc\(65px \+ env\(.*safe-area-inset-bottom.*\)\)$/);
     expect(Number($('[data-explore-pinned-bar]').style.zIndex)).toBe(EXPLORE_LAYERS.bar);
   });
   it('no button, no bar (and no observer)', async () => {

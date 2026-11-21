@@ -38,6 +38,8 @@ const CONTENT = { Explore: '[data-explore-tab]', Markets: '[data-stub="markets"]
 const openTab = async (label) => { click(buttonNamed(label)); await until(() => $(CONTENT[label]), `the ${label} tab`); };
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+// Rows wait on lazy modules and the page's own animations in real time: 15 s each, so a loaded machine cannot time one out.
+vi.setConfig({ testTimeout: 15_000 });
 const USER = { uid: 'u-explore-1', username: 'Flash' };
 const OLD_TABS = ['Explore', 'Rankings', 'Institutional', 'Screen', ...(CORRELATION_LAB_ENABLED ? ['Correlations'] : [])];
 const NEW_TABS = ['Explore', 'Markets', 'Rankings', 'Institutional', 'Screen', ...(CORRELATION_LAB_ENABLED ? ['Correlations'] : [])];

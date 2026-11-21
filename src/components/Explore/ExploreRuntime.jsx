@@ -10,7 +10,8 @@
 //   research   useExploreResearch: the one research read (loading · ready · gated · failed)
 //   admitted   whether the Explore tab exists: always at 'on'; at 'allowlist' from the first ready
 //              read on (and kept for the page's life, so a later failed read shows inside the tab)
-//   stories    idle until admitted, then ONE getDocs; Try again is one more
+//   stories    idle until admitted, then ONE getDocs; Try again is one more. `complete`: the read holds every
+//              published story (fewer came back than its limit)
 //   bookmarks  idle until admitted (and a player is signed in), then ONE read; a write per toggle
 // Stories and bookmarks are never read for a player the read has not admitted at 'allowlist'.
 
@@ -35,10 +36,13 @@ function useStories({ enabled, readStories }) {
   const load = useCallback(() => {
     seq.current += 1;
     const n = seq.current;
-    setState({ status: 'loading', list: [] });
+    setState({ status: 'loading', list: [], complete: false });
     Promise.resolve().then(() => readStories()).then(
-      (list) => { if (live.current && n === seq.current) setState({ status: 'ready', list: Array.isArray(list) ? list : [] }); },
-      () => { if (live.current && n === seq.current) setState({ status: 'failed', list: [] }); },
+      (out) => {
+        if (!live.current || n !== seq.current) return;
+        setState({ status: 'ready', list: Array.isArray(out?.list) ? out.list : [], complete: out?.complete === true });
+      },
+      () => { if (live.current && n === seq.current) setState({ status: 'failed', list: [], complete: false }); },
     );
   }, [readStories, live]);
   const started = useRef(false);
@@ -51,18 +55,23 @@ function useStories({ enabled, readStories }) {
 }
 
 /**
- * The bookmarks: one read once `enabled`; a save or a remove per toggle. A write that fails leaves the list as it
- * was and names the story in `error`; the cap of BOOKMARKS_MAX is the client's (the rules do not count).
+ * The bookmarks: one read once `enabled`; a save or a remove per toggle (spec §3.8, K-11).
+ *   - The toggles act only once the read has answered (saveBusyOf, exploreView.js): a write never races the first
+ *     read, and the cap is never judged on a list not yet known (reviews A-5, B-3, B-4).
+ *   - The cap of BOOKMARKS_MAX is the client's (the rules do not count): saves still in flight count toward it (B-3).
+ *   - A write that fails leaves the list as it was and records, for THAT story, what failed and which control was
+ *     tapped (`origin`): its one line shows next to that control, and a later write on another story never clears it
+ *     (B-5, B-9). A new write on the same story clears its own line.
  */
 function useBookmarks({ enabled, uid, sources }) {
-  const [state, setState] = useState(() => ({ ...IDLE, pending: [], error: null }));
+  const [state, setState] = useState(() => ({ ...IDLE, pending: [], errors: {} }));
   const live = useLive();
   const seq = useRef(0);
-  const pending = useRef(new Set());
+  const pending = useRef(new Map()); // storyId → 'save' | 'remove'
   const load = useCallback(() => {
     seq.current += 1;
     const n = seq.current;
-    setState((s) => ({ ...s, status: 'loading', list: [], error: null }));
+    setState((s) => ({ ...s, status: 'loading', list: [], errors: {} }));
     Promise.resolve().then(() => sources.readBookmarks(uid)).then(
       (list) => { if (live.current && n === seq.current) setState((s) => ({ ...s, status: 'ready', list: Array.isArray(list) ? list : [] })); },
       () => { if (live.current && n === seq.current) setState((s) => ({ ...s, status: 'failed', list: [] })); },
@@ -75,40 +84,47 @@ function useBookmarks({ enabled, uid, sources }) {
     load();
   }, [enabled, uid, load]);
 
-  const write = useCallback((storyId, kind, run, apply) => {
+  const withoutError = (errors, storyId) => {
+    if (!Object.hasOwn(errors, storyId)) return errors;
+    const next = { ...errors };
+    delete next[storyId];
+    return next;
+  };
+  const write = useCallback((storyId, kind, origin, run, apply) => {
     if (pending.current.has(storyId)) return;
-    pending.current.add(storyId);
-    setState((s) => ({ ...s, pending: [...pending.current], error: null }));
+    pending.current.set(storyId, kind);
+    setState((s) => ({ ...s, pending: [...pending.current.keys()], errors: withoutError(s.errors, storyId) }));
     Promise.resolve().then(run).then(
       (out) => {
         pending.current.delete(storyId);
-        if (live.current) setState((s) => ({ ...s, list: apply(s.list, out), pending: [...pending.current] }));
+        if (live.current) setState((s) => ({ ...s, list: apply(s.list, out), pending: [...pending.current.keys()] }));
       },
       () => {
         pending.current.delete(storyId);
-        if (live.current) setState((s) => ({ ...s, pending: [...pending.current], error: { storyId, kind } }));
+        if (live.current) setState((s) => ({ ...s, pending: [...pending.current.keys()], errors: { ...s.errors, [storyId]: { kind, origin } } }));
       },
     );
   }, [live]);
 
-  const toggle = useCallback((story) => {
-    if (!uid || !story) return;
+  const toggle = useCallback((story, origin = null) => {
+    if (!uid || !story || state.status !== 'ready') return;
     const saved = state.list.some((b) => b.storyId === story.id);
     if (saved) {
-      write(story.id, 'remove', () => sources.removeBookmark(uid, story.id), (list) => list.filter((b) => b.storyId !== story.id));
+      write(story.id, 'remove', origin, () => sources.removeBookmark(uid, story.id), (list) => list.filter((b) => b.storyId !== story.id));
       return;
     }
-    if (state.list.length >= BOOKMARKS_MAX) {
-      setState((s) => ({ ...s, error: { storyId: story.id, kind: 'cap' } }));
+    const savesInFlight = [...pending.current.values()].filter((k) => k === 'save').length;
+    if (state.list.length + savesInFlight >= BOOKMARKS_MAX) {
+      setState((s) => ({ ...s, errors: { ...s.errors, [story.id]: { kind: 'cap', origin } } }));
       return;
     }
-    write(story.id, 'save', () => sources.saveBookmark(uid, story), (list, added) => [added, ...list.filter((b) => b.storyId !== story.id)]);
-  }, [uid, state.list, sources, write]);
+    write(story.id, 'save', origin, () => sources.saveBookmark(uid, story), (list, added) => [added, ...list.filter((b) => b.storyId !== story.id)]);
+  }, [uid, state.status, state.list, sources, write]);
 
-  const remove = useCallback((storyId) => {
-    if (!uid) return;
-    write(storyId, 'remove', () => sources.removeBookmark(uid, storyId), (list) => list.filter((b) => b.storyId !== storyId));
-  }, [uid, sources, write]);
+  const remove = useCallback((storyId, origin = null) => {
+    if (!uid || state.status !== 'ready') return;
+    write(storyId, 'remove', origin, () => sources.removeBookmark(uid, storyId), (list) => list.filter((b) => b.storyId !== storyId));
+  }, [uid, state.status, sources, write]);
 
   return useMemo(() => ({ ...state, retry: load, toggle, remove }), [state, load, toggle, remove]);
 }

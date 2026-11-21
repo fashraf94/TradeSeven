@@ -232,6 +232,9 @@ export function stateOf({ item = null, bookmarked = false }) {
   return null;
 }
 
+/** A Save toggle acts once the bookmarks are known, and not while this story's own write runs (review A-5). */
+export const saveBusyOf = (bookmarks, storyId) => bookmarks?.status !== 'ready' || bookmarks.pending.includes(storyId);
+
 /** The sheet's `item` for Work this idea (spec §3.6): the story as the sheet's preview names it, the question as edited. */
 export function sheetItemOf(story, question) {
   return {

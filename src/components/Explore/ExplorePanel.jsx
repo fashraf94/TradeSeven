@@ -94,7 +94,7 @@ export function StartsWithIt({ story, question }) {
  */
 export default function ExplorePanel({
   form, story, question, value, onEdit, onReset, item = null, quota = null,
-  saved = false, saveBusy = false, onToggleSave, onWork, onContinue, onViewIt, onRetry, primaryRef,
+  saved = false, saveBusy = false, onToggleSave, saveError = null, onWork, onContinue, onViewIt, onRetry, primaryRef, refreshing = false,
 }) {
   const fieldId = `ftx-q-${story.id}`;
   const helpId = `${fieldId}-help`;
@@ -104,7 +104,7 @@ export default function ExplorePanel({
   if (form === FORMS.LOADING) {
     return (
       <section aria-labelledby="ftx-panel-h" style={S.section} data-explore-panel="loading">
-        <Eyebrow as="h2" id="ftx-panel-h">{COPY.proposed}</Eyebrow>
+        <Eyebrow as="h3" id="ftx-panel-h">{COPY.investigation}</Eyebrow>
         <StatusLine>{COPY.checking}</StatusLine>
       </section>
     );
@@ -114,7 +114,7 @@ export default function ExplorePanel({
   if (form === FORMS.D || form === FORMS.E) {
     return (
       <section aria-labelledby="ftx-panel-h" style={{ ...S.box, gap: 14, padding: 16 }} data-explore-panel={form}>
-        <Eyebrow as="h2" id="ftx-panel-h">{COPY.proposed}</Eyebrow>
+        <Eyebrow as="h3" id="ftx-panel-h">{COPY.investigation}</Eyebrow>
         <div style={S.card}><p style={{ ...S.body, fontSize: 14.5, fontWeight: 600 }} data-explore-question-text="">{value}</p></div>
         <StartsWithIt story={story} question={question} />
         {form === FORMS.D ? (
@@ -126,13 +126,14 @@ export default function ExplorePanel({
           </div>
         )}
         <div style={S.actions}>{save('secondary')}</div>
+        {saveError}
       </section>
     );
   }
 
   const limit = atLimitOf(quota);
   const proposed = [
-    <Eyebrow key="proposed-h" as={form === FORMS.A ? 'h2' : 'h3'} id={form === FORMS.A ? 'ftx-panel-h' : undefined} tone="teal">{form === FORMS.A ? COPY.proposed : COPY.newOne}</Eyebrow>,
+    <Eyebrow key="proposed-h" as={form === FORMS.A ? 'h3' : 'h4'} id={form === FORMS.A ? 'ftx-panel-h' : undefined} tone="teal">{form === FORMS.A ? COPY.proposed : COPY.newOne}</Eyebrow>,
     <div key="field" style={{ minWidth: 0 }}>
       <label htmlFor={fieldId} style={S.label}>{COPY.question}</label>
       <QuestionBox id={fieldId} value={value} onChange={onEdit} describedBy={helpId} />
@@ -150,7 +151,7 @@ export default function ExplorePanel({
     const open = item.open;
     const differs = open.question === null || norm(open.question) !== norm(value);
     children = [
-      <Eyebrow key="yours-h" as="h2" id="ftx-panel-h" tone="teal">{COPY.yours}</Eyebrow>,
+      <Eyebrow key="yours-h" as="h3" id="ftx-panel-h" tone="teal">{COPY.yours}</Eyebrow>,
       <Notice key="open-note" role="status" tone="teal">{COPY.open}</Notice>,
       <div key="open-card" style={{ ...S.card, border: `1px solid ${wash('teal', 0.3)}` }} data-explore-open="">
         {open.question && <p style={{ ...S.body, fontSize: 14.5, fontWeight: 600 }} data-explore-open-question="">{open.question}</p>}
@@ -164,7 +165,7 @@ export default function ExplorePanel({
   } else if (form === FORMS.C) {
     const last = item.last;
     children = [
-      <Eyebrow key="yours-h" as="h2" id="ftx-panel-h" tone="teal">{COPY.yours}</Eyebrow>,
+      <Eyebrow key="yours-h" as="h3" id="ftx-panel-h" tone="teal">{COPY.yours}</Eyebrow>,
       <div key="ended" style={{ ...S.card, gap: 10 }} data-explore-ended={last.ended}>
         <p style={{ ...S.body, fontWeight: 600 }} data-explore-state="">{endedLineOf(last)}</p>
         <div><Btn kind="secondary" onClick={(event) => onViewIt(event, last.sessionId)} data-explore-view-it="">{COPY.viewIt}</Btn></div>
@@ -189,6 +190,7 @@ export default function ExplorePanel({
               ref={primaryRef}
               kind="primary"
               disabled={primary.kind === 'work' && !value.trim()}
+              ariaDisabled={refreshing}
               onClick={primary.act}
               data-explore-primary={primary.kind}
             >
@@ -197,6 +199,7 @@ export default function ExplorePanel({
           )
           : save('primary')}
       </div>
+      {primary ? null : saveError}
     </section>
   );
 }

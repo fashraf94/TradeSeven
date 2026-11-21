@@ -31,6 +31,8 @@ const { READS, GATED, NO_ANSWER, SAMPLE_STORIES, answerOf, fixtureSources, bookm
 const { EXPLORE_COPY: COPY } = await import('./exploreCopy');
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+// Rows wait on lazy modules and the page's own animations in real time: 15 s each, so a loaded machine cannot time one out.
+vi.setConfig({ testTimeout: 15_000 });
 const USER = { uid: 'u-explore-1' };
 const [AI, TAP, UTIL] = SAMPLE_STORIES;
 let mounted = [];

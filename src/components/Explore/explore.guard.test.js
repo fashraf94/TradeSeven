@@ -115,14 +115,28 @@ describe('the boundary (K-3)', () => {
   });
 });
 
-const SHOWN = new Set(['aria-label', 'placeholder', 'title', 'alt']);
-/** The words a JSX file writes itself: its JSX text with a letter, and visible attributes given as letter literals. */
+/** Props whose value a player can read or hear: any aria-* word, a placeholder, a title, an alt, a label. */
+const shownProp = (name) => typeof name === 'string' && (/^aria-(label|description|roledescription|valuetext|placeholder)$/.test(name) || ['placeholder', 'title', 'alt', 'label'].includes(name));
+const literalText = (v) => (v?.type === 'StringLiteral' ? v.value : v?.type === 'TemplateLiteral' ? v.quasis.map((q) => q.value.cooked).join('') : null);
+/**
+ * The words a JSX file writes itself (review A-8): JSX text with a letter; a string or template literal standing as a
+ * JSX child (`{'Words'}`); and a shown prop given a letter literal, bare or in braces (`label="…"`, `aria-label={'…'}`).
+ */
 function wordsWrittenIn(text) {
   const out = [];
   const visit = (node) => {
     if (!node || typeof node.type !== 'string') return;
     if (node.type === 'JSXText' && /[A-Za-z]/.test(node.value)) out.push(node.value.trim());
-    if (node.type === 'JSXAttribute' && SHOWN.has(node.name?.name) && node.value?.type === 'StringLiteral' && /[A-Za-z]/.test(node.value.value)) out.push(`${node.name.name}="${node.value.value}"`);
+    if ((node.type === 'JSXElement' || node.type === 'JSXFragment') && Array.isArray(node.children)) {
+      for (const c of node.children) {
+        const t = c.type === 'JSXExpressionContainer' ? literalText(c.expression) : null;
+        if (t && /[A-Za-z]/.test(t)) out.push(t);
+      }
+    }
+    if (node.type === 'JSXAttribute' && shownProp(node.name?.name)) {
+      const t = node.value?.type === 'JSXExpressionContainer' ? literalText(node.value.expression) : literalText(node.value);
+      if (t && /[A-Za-z]/.test(t)) out.push(`${node.name.name}="${t}"`);
+    }
     for (const [k, v] of Object.entries(node)) {
       if (k === 'loc' || k === 'start' || k === 'end') continue;
       if (Array.isArray(v)) v.forEach(visit); else if (v && typeof v === 'object') visit(v);
@@ -173,6 +187,16 @@ describe('the words (K-13, E-1)', () => {
   it('the words scan bites (planted)', () => {
     expect(wordsWrittenIn('export const X = () => <p aria-label="Close it">Hello there</p>;').sort()).toEqual(['Hello there', 'aria-label="Close it"']);
     expect(wordsWrittenIn('export const X = () => <p aria-label={COPY.x}>{COPY.y}</p>;')).toEqual([]);
+    // review A-8's evasions, each now caught
+    for (const planted of [
+      "export const X = () => <p>{'Supported'}</p>;",
+      'export const X = () => <p>{`Source-backed`}</p>;',
+      "export const X = () => <p aria-label={'Verified'} />;",
+      'export const X = () => <p aria-description="Confirmed" />;',
+      'export const X = () => <SaveToggle label="Supported" />;',
+      "export const X = () => <Tag>{'Source-backed'}</Tag>;",
+      "export const X = () => <>{'Words'}</>;",
+    ]) expect(wordsWrittenIn(planted).length, planted).toBeGreaterThan(0);
   });
 });
 
