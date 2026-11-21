@@ -70,15 +70,17 @@ const agg = (key, value) => ({ value, aggregate: FLOW_AGGREGATES[key], cls: SCRE
 /**
  * THE BATTLE'S FINAL DAY, ONLY ON EVIDENCE (Amendment B DB-2; Astra's F2) — the one predicate the model, its tests and
  * the harness share. The tape records this day as the battle's last (`isFinalDay` true: the writer's one reading of
- * the validated timeline, tapeAssemble.js); or, for a tape written before that field existed (NO `isFinalDay` key at
- * all), the tape's battle block says `completed` AND the battle document's validated final trading day
- * (validFinalTradingDay, src/utils/tapeSchedule.js) is this date. `false` — an earlier day, whose tape can carry a
- * completed battle block (the review's NUM-1 / CH-4) — and `null` — the timeline did not validate, the writer
- * keeping its doubt — are any other day (§4.1): its date, the last check's values, no final point.
+ * the validated timeline, tapeAssemble.js) AND its battle block says `completed` (Amendment C DC-1: the tape view's
+ * result card states a result only for a completed battle, and the front never states one where it doesn't); or, for
+ * a tape written before that field existed (NO `isFinalDay` key at all), the tape's battle block says `completed` AND
+ * the battle document's validated final trading day (validFinalTradingDay, src/utils/tapeSchedule.js) is this date.
+ * `false` — an earlier day, whose tape can carry a completed battle block (the review's NUM-1 / CH-4) — and `null` —
+ * the timeline did not validate, the writer keeping its doubt — are any other day (§4.1): its date, the last check's
+ * values, no final point.
  */
 export function isFinalDayOf(tape, battle = null) {
   if (!isObj(tape)) return false;
-  if (tape.isFinalDay === true) return true;
+  if (tape.isFinalDay === true) return isObj(tape.battle) && tape.battle.status === 'completed';
   if (Object.prototype.hasOwnProperty.call(tape, 'isFinalDay')) return false;
   return isObj(tape.battle) && tape.battle.status === 'completed' && typeof tape.etDate === 'string' && validFinalTradingDay(battle) === tape.etDate;
 }
