@@ -1,0 +1,13 @@
+{
+  "_notes": [
+    "A ruling on a split-shaped price move no data row explains (kind suspicion; record id suspected_split_<SYMBOL>_<date>).",
+    "Required: ideaId, kind 'suspicion', recordId (from status), decision.",
+    "decision 'price_move': the move was real; nothing is split. Leave ratio out.",
+    "decision 'split' needs ratio: the share multiplier (2 for a 2-for-1, 0.1 for a 1-for-10), which must match the move the record stands for.",
+    "No payload or actionId for this kind."
+  ],
+  "ideaId": "idea_REPLACE_WITH_THE_IDEA_ID_FROM_STATUS",
+  "kind": "suspicion",
+  "recordId": "suspected_split_REPLACE_WITH_THE_RECORD_ID_FROM_STATUS",
+  "decision": "price_move"
+}
