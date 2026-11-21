@@ -239,6 +239,15 @@ export function withinSessions(a, b, n) {
   }
   return lo >= hi;
 }
+/** Q-14 (the founder's ruling, 20 Nov 2026): the OTHER share-basis ids among `others` — rows or items of `action`'s symbol
+ *  — on `action`'s effective date that the founder has not ruled at this close (`ruledHere`). A ruled share-basis action
+ *  beside any of them, recorded, held, waiting or listed now, always HOLDS, as one ambiguity with it, until the founder
+ *  rules the pair, whatever order the two ids sort in; meanwhile no dividend, sale or approval uses the count. The held
+ *  path (`applyLedgerActions`) and the closed one (adjustments.js) both ask it. */
+export function sameDateUnruled(action, others, ruledHere) {
+  if (!SHARE_BASIS_TYPES.has(action?.type) || typeof action.effectiveDate !== 'string') return [];
+  return others.filter((o) => o && o.actionId !== action.actionId && SHARE_BASIS_TYPES.has(o.type) && o.effectiveDate === action.effectiveDate && !ruledHere?.has(o.actionId));
+}
 /** The payload two rows of one kind must share to be one action (the id fixes the rest). */
 const samePayload = (a, b) => (a?.ratio ?? null) === (b?.ratio ?? null) && (a?.amount ?? null) === (b?.amount ?? null)
   && (a?.cashPerShare ?? null) === (b?.cashPerShare ?? null);
@@ -1439,6 +1448,16 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
     // applied first. Before, its item still held what is dated after it for this close; re-running the close applied it.)
     const mootHere = (i) => founderSkips.some((s) => s.actionId === i.actionId);
     for (const i of blocked.get(sym) || []) if (i.actionId !== action.actionId && before(i) && !nowSettled.has(i.actionId) && !retiredHere(i) && !mootHere(i)) addItem(out, sym, plain(i));
+    // Q-14 (the founder's ruling, 20 Nov 2026): a RULED share-basis action beside another share-basis id of its date that
+    // the founder has not ruled at this close — recorded, held (here or on another ledger of the idea) or listed in this
+    // call — waits, whatever order the two sort in: the pair is one ambiguity until the founder rules it. (Before, it waited
+    // only on one that sorted first, and not at all on one listed in the same call — the fourth refuter's EQ-1.) The ruling
+    // stays pending while the record stands (holdRulings.js), so the pair applies at the close the other id is ruled.
+    if (shareBasis && isRuled(action)) {
+      const ruledHere = new Set(candidates.filter((a) => isFounderAction(a)).map((a) => a.actionId));
+      const others = [...(blocked.get(sym) || []), ...(holds?.get(sym) || []), ...candidates.filter((a) => upper(a.ticker) === sym)];
+      for (const o of sameDateUnruled(action, others, ruledHere)) if (!nowSettled.has(o.actionId) && !mootHere(o)) addItem(out, sym, plain(itemOf(o, o.ledger ?? kind)));
+    }
     return (out.get(sym) || []).sort(byItem);
   };
   // Not applied, not settled: the holding keeps a record of what it is owed, refreshed to the payload the feed lists now.

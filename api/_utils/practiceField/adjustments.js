@@ -50,6 +50,7 @@ import { toCents, fromCents, addUsd } from './money.js';
 import {
   cloneLedger, actionIdOf, SHARE_BASIS_TYPES, withinSessions, REDATE_WINDOW_SESSIONS, actionPayloadOf, recordedPayloadsOf,
   CONFLICTING_ACTION, POSSIBLE_REDATE, REVISED_AFTER_RULING, NOT_ENTITLED, founderSettledIds, shareBasisChainOf, datedCountOn,
+  sameDateUnruled,
 } from './ledger.js';
 
 export const ADJUSTMENT_KIND = Object.freeze({ LATE_ENTITLEMENT: 'late_entitlement', LATE_BASIS: 'late_basis', RULED_CORRECTION: 'ruled_correction' });
@@ -363,11 +364,12 @@ export function planLedgerAdjustments(ledger, ctx) {
   // AN OPEN SHARE-BASIS AMBIGUITY OF THE SYMBOL ON THIS LEDGER — a record this very call made included — holds every
   // count-dependent row of it dated on or after it, as the hold set does for a held symbol (review AR4-A-1). A row waiting
   // on a doubt (`closedHeldRows`) of a share-basis type holds them too. An id a ruling settles at this close is the
-  // ruling's, never a doubt. (The held path's order — date, then phase, then id: a share-basis row waits only on one that
-  // PRECEDES it — fix-round refuter RFX-2.)
+  // ruling's, never a doubt. A share-basis row waits on one dated before it; one of ITS OWN date is no doubt here: unruled,
+  // the two are one ambiguity (L-5, recorded before this is asked); ruled, Q-14 holds it beside any unruled one (`handle`).
+  // (Q-14 replaced RFX-2's same-date order by id, which let a ruled id apply or wait by how two ids sorted — EQ-1.)
   const shareDoubtOn = (sym, d, selfId = null, selfShare = false) => {
     const l = cur();
-    const precedes = (r) => isDate(r.effectiveDate) && (r.effectiveDate < d || (r.effectiveDate === d && (!selfShare || String(r.actionId) < String(selfId))));
+    const precedes = (r) => isDate(r.effectiveDate) && (r.effectiveDate < d || (r.effectiveDate === d && !selfShare));
     const waiting = (l.closedHeldRows || []).some((r) => SHARE_BASIS_TYPES.has(r.type) && upper(r.ticker) === sym && r.actionId !== selfId && precedes(r));
     if (waiting) return true;
     return (l.corporateActionReceipts || []).some((r) => SHARE_BASIS_TYPES.has(r?.type) && upper(r.ticker) === sym && r.actionId !== selfId
@@ -476,6 +478,13 @@ export function planLedgerAdjustments(ledger, ctx) {
         }
       }
     }
+    // (Q-14: every other share-basis id of the symbol a ruled one may stand beside — a row waiting on a doubt, an open record
+    // of an id not settled, a row listed at this close.)
+    const sameDateOthers = () => [
+      ...(cur().closedHeldRows || []).filter((r) => upper(r.ticker) === sym),
+      ...(cur().corporateActionReceipts || []).filter((r) => upper(r.ticker) === sym && !settledNow().has(r.actionId) && openRecordOf(cur(), r.actionId) !== null),
+      ...[...byId].filter(([oid, g]) => !settledNow().has(oid) && g.some((a) => !a.founderRuling)).map(([oid, g]) => ({ ...g.find((a) => !a.founderRuling), actionId: oid })),
+    ];
     const handle = (id, group0) => {
       // (S-1 ②, for a closed holding: the feed now lists the id with a payload other than the one it waited with — a revision.)
       const held = heldOf(id);
@@ -594,6 +603,12 @@ export function planLedgerAdjustments(ledger, ctx) {
       // (Fix-round refuter R-5: what the founder's ruling would post waits while a sold holding's coverage doubt holds its
       // count — the ruling is not kept here; it is re-made once the doubt clears.)
       if (ruled && rulingDoubtOn(sym, action.effectiveDate)) return;
+      // Q-14 (the founder's ruling, 20 Nov 2026): a RULED share-basis id beside another share-basis id of its date that the
+      // founder has not ruled at this close — recorded, waiting, or listed now — holds, whatever order the two ids sort in:
+      // the pair is one ambiguity until the founder rules it. The ruling is not kept here: on a sold holding it closes moot
+      // (reading 10, Q-12 as built), and the founder rules the pair together. (The other id is recorded beside this one's
+      // open record by the L-5 screen.)
+      if (ruled && sameDateUnruled(action, sameDateOthers(), ruledIds).length > 0) return;
       if (doubtOn(sym, action.effectiveDate) || shareDoubtOn(sym, action.effectiveDate, id, SHARE_BASIS_TYPES.has(action.type))) {
         // Durable: the row waits on the closed holding (replayed at the first close without the doubt, revised if the feed
         // later lists it otherwise). A founder's action is re-supplied by its ruling: not kept here. (An open proposal of

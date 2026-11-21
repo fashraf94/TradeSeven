@@ -35,8 +35,9 @@
 // Those rows failed at 05aa1200, and pass now.
 //
 // THE FOURTH REFUTER (read-only, on the equivalence row of 0426efc9, which claimed the battery's survivor FR2 unreachable):
-//   EQ-1 FR2's same-date ordering is reachable — a ruled share-basis id beside a new id of its date. Not a defect: the row
-//        pins today's behaviour (the founder's Q-14 asks whether it should hold instead), and kills FR2.
+//   EQ-1 FR2's same-date ordering is reachable — a ruled share-basis id beside a new id of its date applied or waited by
+//        how the two ids sorted. The founder ruled it (Q-14): the ruled id always holds until the pair is ruled. Built;
+//        the rows below (Q-14) fail on afd145f6 where the ruled id sorts first, and pin the other order.
 
 import { describe, it, expect } from 'vitest';
 import { run, installSequenceHooks, S } from './__testsupport__/caSequences.js';
@@ -804,36 +805,110 @@ describe('the proposal the founder is told about is owed on the ex-date count (b
   });
 });
 
-describe('EQ-1 — a ruled share-basis id beside a new id of its date: RFX-2\'s order decides (battery survivor FR2, reachable)', () => {
-  // The fourth refuter (on the equivalence row of 0426efc9) found FR2's same-date ordering reachable, so not redundant: a
-  // ruled row skips the close's same-date screen, and `shareDoubtOn` meets the new id's open record made in the same plan.
-  // Today the ruled id applies when its id sorts first (here `reverse_split_…` before `split_…`), and waits — its ruling
-  // closing moot — when it sorts after. This row pins today's reading; whether the ruled id should hold beside the new one
-  // (L-5's letter: one ambiguity) is put to the founder as Q-14. Either way nothing moves money: L-2 ③ refuses every
-  // approval while the new id stands.
-  const A = `reverse_split_AAPL_${S[1]}`;
-  it('sold at S2: A (two ratios) ruled 4-for-5; then a 2-for-1 dated S1 and one dated S2 (a re-date pair): A applies as history and its ruling is applied, not moot; a late $1 dividend dated S1 is never proposed (its count waits on the new id: L-5) and nothing posts', async () => {
+
+describe('Q-14 — a ruled share-basis id beside a new id of its date holds, as one ambiguity with it, until the founder rules the pair', () => {
+  // The founder's ruling (20 Nov 2026), on the fourth refuter's EQ-1: "A ruled share-basis id beside a new id of the same
+  // date always holds, as one ambiguity with the new id, until the founder rules the pair, whatever order the ids sort in.
+  // Meanwhile no dividend, sale or approval uses the count." Before, RFX-2's order by id decided it: the ruled id applied
+  // when its id sorted first (`reverse_split_…` before `split_…`), and waited when it sorted after — and on a held holding a
+  // new id listed in the same call never held it. Rows for both orders, on a sold and on a held holding: where the ruled id
+  // sorts first they fail on afd145f6 (it applied); where it sorts after, it already held — pinned, so the rule is
+  // order-free — and every row then has the founder rule the pair and the ruled id apply.
+  const RS = `reverse_split_AAPL_${S[1]}`;
+  const SP = `split_AAPL_${S[1]}`;
+  const ORDERS = [
+    { name: 'the ruled id sorts FIRST', ruled: RS, ruledRows: [spl(1, '4/5'), spl(1, '1/2')], ratio: 0.8, other: SP, otherRow: spl(1, '2/1') },
+    { name: 'the ruled id sorts AFTER the new one', ruled: SP, ruledRows: [spl(1, '2/1'), spl(1, '3/2')], ratio: 2, other: RS, otherRow: spl(1, '1/2') },
+  ];
+  const conflict = (recordId, decision, payload) => ({ kind: 'ruleExact', body: { kind: 'conflict', recordId, decision, ...(payload ? { payload } : {}) } });
+  const rulingsOf = (idea, id) => (idea.founderRulings || []).filter((r) => r.recordId === id).map((r) => [r.appliedOn ?? null, r.outcome ?? null]);
+  const openRecord = (idea, id) => idea.ledger.corporateActionReceipts.some((r) => r.actionId === id && (r.reason === 'possible_redate' || r.reason === 'conflicting_action') && !(idea.ledger.appliedActionIds || []).includes(id) && !(idea.ledger.declinedActionIds || []).includes(id));
+
+  it('EQ-1, sold at S2 (the ruled id sorts first): A (two ratios) ruled 4-for-5; then a 2-for-1 dated S1 and one dated S2 — A holds and its ruling closes moot; a late $1 dividend dated S1 is never proposed and nothing posts; ruled together with the new id, A applies as history', async () => {
+    const A = RS;
     await run({
       seed: 'refuter4-EQ-1', comparison: xlk,
       steps: [hc(0, 100), hc(1, 94, [], { belowLine: true }), { kind: 'window', i: 2, price: 94 }, hc(2, 94),
         hc(3, 94, [spl(1, '4/5'), spl(1, '1/2')]),
         { kind: 'expectIdea', fn: (idea) => expect(idea.ledger.corporateActionReceipts.filter((r) => r.reason).map((r) => [r.reason, r.actionId])).toEqual([['conflicting_action', A]]) },
-        { kind: 'ruleExact', body: { kind: 'conflict', recordId: A, decision: 'payload', payload: { ratio: 0.8 } } },
+        conflict(A, 'payload', { ratio: 0.8 }),
         hc(4, 94, [spl(1, '2/1'), spl(2, '2/1')]),
         { kind: 'expectIdea', fn: (idea) => {
-          expect(idea.ledger.appliedActionIds, 'the ruled id applied (history only: the holding is sold)').toContain(A);
-          expect(idea.ledger.corporateActionReceipts.filter((r) => r.actionId === A && r.applied).map((r) => r.historyOnly)).toEqual([true]);
-          expect((idea.founderRulings || []).filter((r) => r.recordId === A).map((r) => [r.appliedOn, r.outcome ?? null]), 'applied, not moot').toEqual([[S[4], null]]);
-          expect(idea.ledger.corporateActionReceipts.filter((r) => r.reason === 'possible_redate').map((r) => r.actionId).sort()).toEqual([`split_AAPL_${S[1]}`, `split_AAPL_${S[2]}`]);
+          expect(idea.ledger.appliedActionIds, 'the ruled id holds beside the new one').not.toContain(A);
+          expect(rulingsOf(idea, A), 'a deferred ruling on a sold holding closes moot (Q-12 as built)').toEqual([[S[4], 'moot']]);
+          expect(openRecord(idea, A) && openRecord(idea, SP), 'one ambiguity: both ids open').toBe(true);
         } },
         hc(5, 94, [div(1, 1)]),
         { kind: 'lateExact', body: lateBody('idea', D(1)), status: 404 },
+        conflict(A, 'payload', { ratio: 0.8 }), conflict(SP, 'none'),
         hc(6, 94),
         { kind: 'expectIdea', fn: (idea) => {
-          expect((idea.ledger.lateProposals || []).filter((x) => x.actionId === D(1)), 'no proposal while the count is in doubt').toEqual([]);
+          expect(idea.ledger.appliedActionIds, 'the pair ruled: A applies').toContain(A);
+          expect(idea.ledger.corporateActionReceipts.filter((r) => r.actionId === A && r.applied).map((r) => r.historyOnly)).toEqual([true]);
+          expect(rulingsOf(idea, A)).toEqual([[S[4], 'moot'], [S[6], null]]);
+          expect((idea.ledger.adjustments || []).filter((a) => !a.held), 'nothing posts without an approval').toEqual([]);
+          expect(idea.ledger.dividendsUsd).toBe(0);
+        } }],
+    });
+  });
+
+  it('sold at S2, the ruled id sorts AFTER the new one: the same — it holds, its ruling closes moot, nothing is proposed or posted; ruled together with the new id, it applies as history', async () => {
+    const o = ORDERS[1];
+    await run({
+      seed: 'q14-sold-ruled-sorts-after', comparison: xlk,
+      steps: [hc(0, 100), hc(1, 94, [], { belowLine: true }), { kind: 'window', i: 2, price: 94 }, hc(2, 94),
+        hc(3, 94, o.ruledRows),
+        conflict(o.ruled, 'payload', { ratio: o.ratio }),
+        hc(4, 94, [o.otherRow]),
+        { kind: 'expectIdea', fn: (idea) => {
+          expect(idea.ledger.appliedActionIds).not.toContain(o.ruled);
+          expect(rulingsOf(idea, o.ruled)).toEqual([[S[4], 'moot']]);
+          expect(openRecord(idea, o.ruled) && openRecord(idea, o.other), 'one ambiguity: both ids open').toBe(true);
+        } },
+        hc(5, 94, [div(1, 1)]),
+        { kind: 'lateExact', body: lateBody('idea', D(1)), status: 404 },
+        conflict(o.ruled, 'payload', { ratio: o.ratio }), conflict(o.other, 'none'),
+        hc(6, 94),
+        { kind: 'expectIdea', fn: (idea) => {
+          expect(idea.ledger.appliedActionIds).toContain(o.ruled);
+          expect(rulingsOf(idea, o.ruled)).toEqual([[S[4], 'moot'], [S[6], null]]);
           expect((idea.ledger.adjustments || []).filter((a) => !a.held)).toEqual([]);
           expect(idea.ledger.dividendsUsd).toBe(0);
         } }],
     });
   });
+
+  for (const o of ORDERS) {
+    it(`held (${o.name}): ruled, then the new id listed with a $1 dividend dated S2 and the price below the line — the ruled id holds, its ruling pending; no dividend, no sale, the count unmoved; the founder rules the new id, and the pair applies`, async () => {
+      let sh = null;
+      await run({
+        seed: `q14-held-${o.ruled === RS ? 'ruled-sorts-first' : 'ruled-sorts-after'}`, comparison: xlk,
+        steps: [hc(0, 100), hc(1, 100), hc(2, 100, o.ruledRows),
+          { kind: 'expectIdea', fn: (idea) => { sh = idea.ledger.holdings.AAPL.shares; expect(openRecord(idea, o.ruled)).toBe(true); } },
+          conflict(o.ruled, 'payload', { ratio: o.ratio }),
+          hc(3, 100, [o.otherRow, div(2, 1)], { belowLine: true }),
+          { kind: 'expectIdea', fn: (idea) => {
+            expect(idea.ledger.appliedActionIds, 'the ruled id holds beside the new one').not.toContain(o.ruled);
+            expect(rulingsOf(idea, o.ruled), 'pending while its record stands').toEqual([[null, null]]);
+            expect(openRecord(idea, o.other), 'the new id is an ambiguity beside it').toBe(true);
+            expect(idea.ledger.holdings.AAPL.shares, 'the count unmoved').toBe(sh);
+            expect(idea.ledger.dividendsUsd, 'no dividend on the count').toBe(0);
+          } },
+          { kind: 'window', i: 4, price: 90 },
+          hc(4, 90),
+          { kind: 'expectIdea', fn: (idea) => {
+            expect(idea.ledger.holdings.AAPL?.shares, 'no sale').toBe(sh);
+            expect(idea.ledger.appliedActionIds).not.toContain(o.ruled);
+          } },
+          conflict(o.other, 'none'),
+          hc(5, 90),
+          { kind: 'expectIdea', fn: (idea) => {
+            expect(idea.ledger.appliedActionIds, 'the pair ruled: the ruled id applies').toContain(o.ruled);
+            expect(idea.ledger.holdings.AAPL.shares).toBe(Math.round(sh * o.ratio * 1e6) / 1e6);
+            expect(rulingsOf(idea, o.ruled)).toEqual([[S[5], null]]);
+            expect(idea.ledger.dividendsUsd, 'the dividend paid on the ruled count (I-6 checks the amount)').toBeGreaterThan(0);
+          } }],
+      });
+    });
+  }
 });
