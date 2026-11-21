@@ -163,6 +163,29 @@ describe('home (spec §3.2)', () => {
   });
 });
 
+describe('K-7: every number on the page is the read\'s own (planted numbers no rule would compute)', () => {
+  const planted = (over) => answerOf({ ...READS.progress, ...over });
+  it('the cost line and the limit come from the quota: 2 of 5 used, then 5 of 5', async () => {
+    await openPage({ answer: planted({ quota: { ...READS.progress.quota, investigationsToday: 2, perDay: 5 } }) });
+    await openStory(TAP);
+    expect($('[data-explore-cost]').textContent).toBe('Uses 1 of your 5 investigations today · 2 used');
+    expect(primary().textContent).toBe(COPY.panel.work);
+  });
+  it('at 5 of 5 the limit line names 5', async () => {
+    await openPage({ answer: planted({ quota: { ...READS.progress.quota, investigationsToday: 5, perDay: 5 } }) });
+    await openStory(TAP);
+    expect($('[data-explore-limit]').textContent).toBe(COPY.panel.limit(5));
+  });
+  it('the state line carries filled, parts and steps left as read: 4 of 7, 13 steps', async () => {
+    const item = READS.progress.items[0];
+    await openPage({ answer: planted({ items: [{ ...item, open: { ...item.open, filled: 4, parts: 7, stepsLeft: 13 } }] }) });
+    expect(card(AI.id).querySelector('[data-explore-state]').textContent).toBe('In progress · 4 of 7 · 13 steps left');
+    await openStory(AI);
+    expect($('[data-explore-open] [data-explore-state]').textContent).toBe('In progress · 4 of 7');
+    expect($('[data-explore-steps]').textContent).toBe('13 steps left');
+  });
+});
+
 describe('the reader and the panel (spec §3.4, §3.5)', () => {
   it('opening a story starts at the top and moves focus to its title', async () => {
     await openPage();

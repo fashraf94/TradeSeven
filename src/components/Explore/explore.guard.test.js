@@ -182,6 +182,15 @@ describe('the look (BUILD_RULES §10, §11; K-15)', () => {
     expect(c.match(/#[0-9a-fA-F]{3,8}\b/g) ?? []).toEqual([]);
     expect(c).not.toMatch(/transition=\{\{/);
   });
+  it('no box of the page scrolls on its own (E-4, N-6): the page\'s rules set no overflow scroll, no height cap, no sticky', async () => {
+    const { EXPLORE_CSS } = await import('./exploreStyle');
+    const rules = EXPLORE_CSS.replace(/\s+/g, ' ');
+    expect(rules).not.toMatch(/overflow(-y|-x)?\s*:\s*(auto|scroll)/);
+    expect(rules).not.toMatch(/max-height|position\s*:\s*sticky/);
+    for (const p of OURS.filter((x) => /Explore(Home|Story|Panel|Questions|Search|Tab)\.jsx$/.test(x))) {
+      expect(stripComments(code(p)), rel(p)).not.toMatch(/overflow[XY]?\s*:\s*'(auto|scroll)'|maxHeight|position\s*:\s*'sticky'/);
+    }
+  });
   it('the scan bites (planted)', () => {
     expect('color: \'#5eead4\''.match(/#[0-9a-fA-F]{3,8}\b/g)).not.toBeNull();
     expect('<motion.div transition={{ duration: 0.2 }} />').toMatch(/transition=\{\{/);

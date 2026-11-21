@@ -152,6 +152,16 @@ describe('K-8: the host', () => {
     click($('[data-explore-sheet-backdrop]'));
     expect(onClose).toHaveBeenCalledTimes(2);
   });
+  it('a fresh body for each opening: a new entry remounts it, even where the host itself stays mounted', async () => {
+    const body = recordingBody();
+    const Host = createExploreSheetHost(() => Promise.resolve(body.module));
+    const m = keep(mount(<Host entry={ENTRY} onClose={vi.fn()} opener={opener} />));
+    await until(() => body.mounts.length === 1, 'the first body');
+    m.rerender(<Host entry={{ id: 'opening-2', way: 'continue', sessionId: 's-open' }} onClose={vi.fn()} opener={opener} />);
+    await until(() => body.mounts.length === 2, 'a second body');
+    expect(body.mounts.map((p) => p.mode)).toEqual(['item', 'session']);
+    expect(body.mounts[1].sessionId).toBe('s-open');
+  });
   it('inertOthers releases only what it marked, once', () => {
     const a = document.createElement('div');
     document.body.append(a);
