@@ -5,9 +5,12 @@
 // folder, one tree at a time — 2 to 4 hours a round) with:
 //   1. N trees in parallel (default 4 × 4 workers), each an LF `git archive` of the commit under test with a
 //      `node_modules` junction to the main checkout's install.
-//   2. Per mutant, first only the test files that can see the mutated file (importGraph.mjs). In the default `tiered`
-//      mode, only the related files that are QUICK (baseline time ≤ --quick-fraction × the slowest file's).
-//   3. A KILL there is final: the same rows fail in the full run (vitest isolates each file). ANYTHING ELSE — survived,
+//   2. Per mutant, first only test files that can see the mutated file (importGraph.mjs). In the default `tiered` mode:
+//      a FIRST tier of --first-files (default 6) related files — the cheapest file that killed this id before
+//      (--prior), then the files with the most kills per second of cost so far — then the REST of the related files
+//      up to --quick-fraction × the slowest file's baseline time. A file costs ~4 s of fork + import before its first
+//      row, so a small well-chosen tier settles most kills in ~10–25 s where all related files take ~200 s.
+//   3. A KILL in any tier is final: the same rows fail in the full run (vitest isolates each file). ANYTHING ELSE — survived,
 //      broken, errored, timed out — is decided by a run of the FULL row set with the mutation still applied, judged
 //      exactly as the old runner judged, so the battery never reports a survivor, or a broken mutant, the full folder
 //      would not.
@@ -32,7 +35,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 // ── arguments ────────────────────────────────────────────────────────────────────────────────────────────────────────
 function parseArgs(argv) {
-  const a = { sha: 'HEAD', trees: 4, workers: 4, mode: 'tiered', quickFraction: 0.125, only: [], verify: false, timeout: 900, rows: DEFAULT_ROWS, clean: false };
+  const a = { sha: 'HEAD', trees: 4, workers: 4, mode: 'tiered', quickFraction: 0.35, first: 6, prior: [], only: [], verify: false, timeout: 900, rows: DEFAULT_ROWS, clean: false };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     const v = () => { if (i + 1 >= argv.length) throw new Error(`${k} needs a value`); return argv[++i]; };
@@ -44,6 +47,8 @@ function parseArgs(argv) {
     else if (k === '--workers') a.workers = Number(v());
     else if (k === '--mode') a.mode = v();
     else if (k === '--quick-fraction') a.quickFraction = Number(v());
+    else if (k === '--first-files') a.first = Number(v());
+    else if (k === '--prior') a.prior.push(v());
     else if (k === '--only') a.only.push(...v().split(',').filter(Boolean));
     else if (k === '--verify') a.verify = true;
     else if (k === '--timeout') a.timeout = Number(v());
@@ -55,6 +60,7 @@ function parseArgs(argv) {
   if (!['tiered', 'related', 'full'].includes(a.mode)) throw new Error('--mode is tiered, related or full');
   if (!a.clean && !a.mutants) throw new Error('--mutants <file.mjs> is required (see README.md)');
   if (!(a.trees >= 1 && a.workers >= 1 && a.quickFraction > 0 && a.quickFraction <= 1 && a.timeout > 0)) throw new Error('bad --trees/--workers/--quick-fraction/--timeout');
+  if (!(Number.isInteger(a.first) && a.first >= 0)) throw new Error('bad --first-files');
   return a;
 }
 
@@ -263,35 +269,79 @@ async function main() {
     else queue.push({ m, plan });
   }
 
-  // baselines: the full row set on every tree at once (the battery's own load), all green and alike
-  const baselines = await Promise.all(trees.map((t, i) => runVitest({ tree: t.dir, vitest, files: args.rows, workers: args.workers, json: path.join(out, 'runs', `baseline-t${i}.json`), timeout: args.timeout })));
-  for (const [i, b] of baselines.entries()) log(`baseline t${i}: exit ${b.exit}, ${b.total} rows, ${b.ranFiles.length} files, failing ${b.failed.length}, load failures ${b.loadFailures.length}, ${b.seconds} s`);
-  if (baselines.some((b) => judge(b) !== 'SURVIVED' || b.total !== baselines[0].total)) {
-    log('a baseline is not green (or the trees disagree) — nothing was mutated. Under load, try fewer --trees or --workers.');
+  // the baseline: the full row set ONCE, sharded across the trees (tree i runs shard i+1 of N, all at once — the
+  // battery's own load). Every shard green; together they are one full run, and give each file's time.
+  const shard = (i) => (args.trees > 1 ? [...args.rows, `--shard=${i + 1}/${args.trees}`] : args.rows);
+  const baselines = await Promise.all(trees.map((t, i) => runVitest({ tree: t.dir, vitest, files: shard(i), workers: args.workers, json: path.join(out, 'runs', `baseline-t${i}.json`), timeout: args.timeout })));
+  for (const [i, b] of baselines.entries()) {
+    log(`baseline shard ${i + 1}/${args.trees} on t${i}: exit ${b.exit}, ${b.total} rows, ${b.ranFiles.length} files, failing ${b.failed.length}, load failures ${b.loadFailures.length}, ${b.seconds} s`);
+    // a row that only timed out under the battery's own load: green if its files pass alone
+    if (judge(b) === 'KILLED' && b.timeoutOnly && b.loadFailures.length === 0) {
+      const alone = await runVitest({ tree: trees[i].dir, vitest, files: [...new Set(b.failed.map((x) => x.split(' > ')[0]))], workers: 1, json: path.join(out, 'runs', `baseline-t${i}-alone.json`), timeout: args.timeout });
+      if (judge(alone) === 'SURVIVED') {
+        log(`  ⚠ t${i}: ${b.failed.length} row(s) timed out under load and pass alone — load-sensitive: ${b.failed.join(' | ').slice(0, 300)}`);
+        b.loadSensitive = b.failed;
+        b.exit = 0;
+        b.failed = [];
+      }
+    }
+  }
+  const fullFiles = baselines.flatMap((b) => b.ranFiles);
+  const fullRows = baselines.reduce((s, b) => s + b.total, 0);
+  if (baselines.some((b) => judge(b) !== 'SURVIVED') || new Set(fullFiles).size !== fullFiles.length || fullFiles.length === 0) {
+    log('the baseline is not green (or its shards overlap) — nothing was mutated. Under load, try fewer --trees or --workers.');
     for (const b of baselines) if (b.failed.length) log(`  ${b.failed.slice(0, 5).join('\n  ')}`);
     process.exit(2);
   }
-  const fullFiles = baselines[0].ranFiles;
   const durations = new Map();
-  for (const [i, b] of baselines.entries()) {
+  for (const [i] of baselines.entries()) {
     const j = JSON.parse(readFileSync(path.join(out, 'runs', `baseline-t${i}.json`), 'utf8'));
-    for (const f of j.testResults) { const n = relName(trees[i].dir, f.name); durations.set(n, (durations.get(n) ?? 0) + (f.endTime - f.startTime) / 1000 / baselines.length); }
+    for (const f of j.testResults) durations.set(relName(trees[i].dir, f.name), (f.endTime - f.startTime) / 1000);
   }
   const slowest = Math.max(...durations.values());
   const quickCut = slowest * args.quickFraction;
   const graph = buildGraph(trees[0].dir, fullFiles);
-  log(`graph: ${fullFiles.length} test files, ${graph.modulesRead} modules; slowest file ${slowest.toFixed(1)} s, quick cut ${quickCut.toFixed(1)} s · ${clock()}`);
+  log(`baseline green: ${fullRows} rows in ${fullFiles.length} files · graph: ${graph.modulesRead} modules · slowest file ${slowest.toFixed(1)} s, quick cut ${quickCut.toFixed(1)} s · ${clock()}`);
 
-  const stage1Files = (m) => {
+  // kill history: which files killed which ids before (--prior results, the old runner's or this one's), and which
+  // files have killed most in this run so far. It only ORDERS the first tier; it never decides a verdict.
+  const priorKillers = new Map();
+  const killCount = new Map();
+  const countKill = (files) => { for (const f of files) killCount.set(f, (killCount.get(f) ?? 0) + 1); };
+  for (const p of args.prior) {
+    const j = JSON.parse(readFileSync(path.resolve(p), 'utf8'));
+    for (const r of j.results || []) {
+      if (r.verdict !== 'KILLED') continue;
+      const rows = r.stages ? r.stages.filter((s) => s.verdict === 'KILLED').flatMap((s) => s.failedRows) : (r.first || []);
+      const files = new Set(rows.map((x) => x.split(' > ')[0]).filter((f) => fullFiles.includes(f)));
+      if (files.size) { priorKillers.set(r.id, new Set([...(priorKillers.get(r.id) ?? []), ...files])); countKill(files); }
+    }
+  }
+  if (args.prior.length) log(`prior: killing files known for ${priorKillers.size} ids`);
+
+  /** The stages before the full row set: [label, files] each. */
+  const tiersFor = (m) => {
     const related = relatedTests(graph, [...new Set(m.edits.map((e) => e.file))]).map((r) => r.test);
-    if (args.mode === 'full') return { related, files: null };
-    const files = args.mode === 'tiered' ? related.filter((f) => (durations.get(f) ?? Infinity) <= quickCut) : related;
-    return { related, files: files.length > 0 ? files : null };
+    if (args.mode === 'full') return { related, tiers: [] };
+    if (args.mode === 'related') return { related, tiers: related.length ? [['related', related]] : [] };
+    const dur = (f) => durations.get(f) ?? slowest;
+    const first = [];
+    if (args.first > 0) {
+      // the cheapest file that killed this id before, then the files with the most kills per second of cost (a file
+      // costs ~4 s before its first row) — no slower than that anchor; with no kills yet, the cheapest files
+      const anchor = [...(priorKillers.get(m.id) ?? [])].sort((a, b) => dur(a) - dur(b))[0];
+      if (anchor) first.push(anchor);
+      const cap = anchor ? Math.max(dur(anchor), 2) : Infinity;
+      const score = (f) => ((killCount.get(f) ?? 0) + 0.01) / (4 + dur(f));
+      for (const f of [...related].sort((a, b) => score(b) - score(a))) if (first.length < args.first && !first.includes(f) && dur(f) <= cap) first.push(f);
+    }
+    const rest = related.filter((f) => dur(f) <= quickCut && !first.includes(f));
+    return { related, tiers: [first.length ? ['first', first] : null, rest.length ? ['quick', rest] : null].filter(Boolean) };
   };
   const summarize = (r) => ({ verdict: judge(r), exit: r.exit, seconds: r.seconds, failing: r.failed.length, first: r.failed.slice(0, 3), failedRows: r.failed, loadFailures: r.loadFailures, timeoutOnly: r.timeoutOnly, files: r.ranFiles.length });
   const save = () => {
     const tmp = path.join(out, 'results.json.tmp');
-    writeFileSync(tmp, JSON.stringify({ sha, mutants: mutantsPath, mode: args.mode, verify: args.verify, trees: args.trees, workers: args.workers, baseline: { rows: baselines[0].total, files: fullFiles.length, slowest, quickCut }, results }, null, 1));
+    writeFileSync(tmp, JSON.stringify({ sha, mutants: mutantsPath, mode: args.mode, verify: args.verify, trees: args.trees, workers: args.workers, baseline: { rows: fullRows, files: fullFiles.length, slowest, quickCut, durations: Object.fromEntries(durations) }, results }, null, 1));
     renameSync(tmp, path.join(out, 'results.json'));
   };
 
@@ -300,35 +350,43 @@ async function main() {
     for (const [f, text] of plan.mutated) writeFileSync(path.join(t.dir, f), text);
     const run = async (label, files, workers = args.workers) => {
       const r = await runVitest({ tree: t.dir, vitest, files, workers, json: path.join(out, 'runs', `${m.id}.${label}.json`), timeout: args.timeout });
-      const s = { stage: label, ...summarize(r) };
+      const s = { stage: label, asked: files, ...summarize(r) };
       rec.stages.push(s);
       return { r, s };
     };
     try {
-      const { related, files } = stage1Files(m);
+      const { related, tiers } = tiersFor(m);
       rec.related = related.length;
       let decided = null;
-      if (files) {
-        const { r, s } = await run(args.mode, files);
+      for (const [label, files] of tiers) {
+        const { r, s } = await run(label, files);
         const inFull = r.ranFiles.every((f) => fullFiles.includes(f)) && files.every((f) => r.ranFiles.includes(f));
         if (!inFull) s.note = 'ran files differ from those asked for — not decisive';
         else if (s.verdict === 'KILLED' && r.timeoutOnly) {
-          const alone = await run(`${args.mode}-alone`, [...new Set(r.failed.map((x) => x.split(' > ')[0]))], 1);
-          if (alone.s.verdict === 'KILLED' && !alone.r.timeoutOnly) decided = { verdict: 'KILLED', by: `${args.mode} (timeouts confirmed alone)` };
-        } else if (s.verdict === 'KILLED') decided = { verdict: 'KILLED', by: args.mode };
+          // a kill resting only on timed-out rows may be the load: those files again, alone, one worker
+          const alone = await run(`${label}-alone`, [...new Set(r.failed.map((x) => x.split(' > ')[0]))], 1);
+          if (alone.s.verdict === 'KILLED') {
+            decided = { verdict: 'KILLED', by: `${label} (confirmed alone)` };
+            if (alone.r.timeoutOnly) rec.warning = 'killed only by rows that time out even alone (a hang?) — look';
+          }
+        } else if (s.verdict === 'KILLED') decided = { verdict: 'KILLED', by: label };
+        if (decided) break;
       }
       if (!decided || args.verify) {
         const { r, s } = await run('full', args.rows);
-        if (!decided) {
-          decided = { verdict: s.verdict, by: 'full' };
-          if (s.verdict === 'KILLED' && r.timeoutOnly) {
-            const alone = await run('full-alone', [...new Set(r.failed.map((x) => x.split(' > ')[0]))], 1);
-            if (alone.s.verdict !== 'KILLED') rec.warning = 'killed only by timed-out rows, which pass alone — look before trusting this kill';
-          }
+        let full = { verdict: s.verdict, by: 'full' };
+        if (s.verdict === 'KILLED' && r.timeoutOnly) {
+          // every other row passed with the mutation in place; if the timed-out rows pass alone too, nothing kills it
+          const alone = await run('full-alone', [...new Set(r.failed.map((x) => x.split(' > ')[0]))], 1);
+          if (alone.s.verdict === 'SURVIVED') full = { verdict: 'SURVIVED', by: 'full (its only failures were timeouts under load, which pass alone)' };
+          else if (alone.s.verdict === 'KILLED' && alone.r.timeoutOnly) rec.warning = 'killed only by rows that time out even alone (a hang?) — look';
         }
-        if (args.verify) rec.verify = verifyOne(rec, related, files, r);
+        if (!decided) decided = full;
+        if (args.verify) rec.verify = verifyOne(rec, related, r, full.verdict, decided.verdict);
       }
       Object.assign(rec, decided);
+      rec.seconds = Math.round(rec.stages.reduce((s, x) => s + x.seconds, 0));
+      if (rec.verdict === 'KILLED') countKill(new Set(rec.stages.filter((s) => s.verdict === 'KILLED').flatMap((s) => s.failedRows.map((x) => x.split(' > ')[0]))));
     } finally {
       for (const [f, text] of plan.originals) writeFileSync(path.join(t.dir, f), text);
       for (const [f, text] of plan.originals) if (sha256(readFileSync(path.join(t.dir, f))) !== sha256(Buffer.from(text))) throw new Error(`restore failed: ${t.dir} ${f}`);
@@ -336,18 +394,19 @@ async function main() {
     return rec;
   }
 
-  function verifyOne(rec, related, files, full) {
-    const s1 = rec.stages.find((s) => s.stage === args.mode);
-    const fullVerdict = judge(full);
-    const s1Verdict = s1 ? s1.verdict : null;
+  /** --verify: the battery's verdict against the full row set's, each early stage's failing rows against the full
+   *  run's rows on the same files, and every file that failed in the full run inside the related set. */
+  function verifyOne(rec, related, full, fullVerdict, batteryVerdict) {
+    const early = rec.stages.filter((s) => s.stage !== 'full' && !s.stage.endsWith('-alone'));
     const failingFiles = [...new Set([...full.failed.map((x) => x.split(' > ')[0]), ...full.loadFailures])];
-    const scoped = s1 ? full.failed.filter((x) => files.includes(x.split(' > ')[0])).sort() : [];
+    const rowsOf = (s) => full.failed.filter((x) => s.asked.includes(x.split(' > ')[0])).sort();
+    const rowDiffs = early.filter((s) => JSON.stringify([...s.failedRows].sort()) !== JSON.stringify(rowsOf(s))).map((s) => s.stage);
     return {
       fullVerdict,
-      stage1Verdict: s1Verdict,
-      batteryVerdict: s1Verdict === 'KILLED' ? 'KILLED' : fullVerdict,
-      verdictsAgree: (s1Verdict === 'KILLED' ? 'KILLED' : fullVerdict) === fullVerdict,
-      rowsAgree: s1 ? JSON.stringify([...s1.failedRows].sort()) === JSON.stringify(scoped) : null,
+      batteryVerdict,
+      verdictsAgree: batteryVerdict === fullVerdict,
+      rowsAgree: rowDiffs.length === 0,
+      rowDiffs,
       contained: failingFiles.every((f) => related.includes(f)),
       missedFiles: failingFiles.filter((f) => !related.includes(f)),
     };
@@ -370,12 +429,14 @@ async function main() {
   const tally = (v) => results.filter((r) => r.verdict === v).length;
   const got = new Set(results.map((r) => r.id));
   const missing = defined.filter((m) => !got.has(m.id)).map((m) => m.id);
-  log(`defined ${defined.length}, ran ${results.filter((r) => r.stages).length}, broken ${tally('BROKEN')}, killed ${tally('KILLED')} (${results.filter((r) => r.by && r.by !== 'full').length} decided before the full row set), survived ${tally('SURVIVED')}, errored ${tally('ERRORED')}, timeout ${tally('TIMEOUT')} · ${clock()}`);
+  const byStage = {};
+  for (const r of results) if (r.by) { const k = r.by.split(' ')[0]; byStage[k] = (byStage[k] ?? 0) + 1; }
+  log(`defined ${defined.length}, ran ${results.filter((r) => r.stages).length}, broken ${tally('BROKEN')}, killed ${tally('KILLED')}, survived ${tally('SURVIVED')}, errored ${tally('ERRORED')}, timeout ${tally('TIMEOUT')} · decided by ${Object.entries(byStage).map(([k, n]) => `${k} ${n}`).join(', ')} · ${clock()}`);
   if (missing.length) log(`NO VERDICT for ${missing.length}: ${missing.join(' ')}`);
   for (const r of results.filter((x) => x.verdict === 'SURVIVED' || x.verdict === 'ERRORED' || x.verdict === 'TIMEOUT' || x.warning)) log(`  look: ${r.id} ${r.verdict}${r.warning ? ` ⚠ ${r.warning}` : ''}`);
   if (args.verify) {
     const v = results.filter((r) => r.verify);
-    log(`verify: ${v.length} mutants · verdicts agree ${v.filter((r) => r.verify.verdictsAgree).length} · stage-1 rows = full rows on those files ${v.filter((r) => r.verify.rowsAgree !== false).length} · failing files inside the related set ${v.filter((r) => r.verify.contained).length}`);
+    log(`verify: ${v.length} mutants · verdicts agree ${v.filter((r) => r.verify.verdictsAgree).length} · early-stage rows = full rows on those files ${v.filter((r) => r.verify.rowsAgree).length} · failing files inside the related set ${v.filter((r) => r.verify.contained).length}`);
   }
   save();
   for (const t of trees) for (const f of targets) if (!readFileSync(path.join(t.dir, f)).equals(git(repo, ['cat-file', 'blob', `${sha}:${f}`]))) throw new Error(`${t.dir} ${f} is not the commit's bytes at the end`);
