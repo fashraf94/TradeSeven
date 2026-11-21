@@ -95,11 +95,11 @@ export const EXPLORE_CSS = `
 .ftx-btn { transition: filter .15s ease; }
 .ftx-btn:not(:disabled):not([aria-disabled="true"]):hover { filter: brightness(1.12); }
 .ftx-rowbtn:hover { box-shadow: 0 0 0 1px ${wash('teal', 0.35)}; }
-.ftx-h1 { margin: 0; font-size: clamp(26px, 4.2vw, 40px); font-weight: 800; letter-spacing: -.025em; line-height: 1.1; text-wrap: balance; color: ${T.ink}; overflow-wrap: anywhere; }
-.ftx-qh { margin: 0; font-size: clamp(19px, 2.4vw, 24px); font-weight: 800; letter-spacing: -.015em; line-height: 1.2; text-wrap: pretty; color: ${T.ink}; overflow-wrap: anywhere; }
-.ftx-deck { margin: 0; font-size: 16px; line-height: 1.5; color: ${T.ink2}; max-width: 60ch; text-wrap: pretty; overflow-wrap: anywhere; }
+.ftx-h1 { margin: 0; font-size: clamp(26px, 4.2vw, 40px); font-weight: 800; letter-spacing: -.025em; line-height: 1.1; color: ${T.ink}; overflow-wrap: anywhere; }
+.ftx-qh { margin: 0; font-size: clamp(19px, 2.4vw, 24px); font-weight: 800; letter-spacing: -.015em; line-height: 1.2; color: ${T.ink}; overflow-wrap: anywhere; }
+.ftx-deck { margin: 0; font-size: 16px; line-height: 1.5; color: ${T.ink2}; max-width: 60ch; overflow-wrap: anywhere; }
 .ftx-prose { display: flex; flex-direction: column; gap: 16px; max-width: 64ch; }
-.ftx-prose p { margin: 0; font-size: 17px; line-height: 1.65; color: ${T.ink}; text-wrap: pretty; overflow-wrap: anywhere; }
+.ftx-prose p { margin: 0; font-size: 17px; line-height: 1.65; color: ${T.ink}; overflow-wrap: anywhere; }
 .ftx-parts { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; padding: 10px 0; }
 .ftx-two { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
 .ftx-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 22px; }

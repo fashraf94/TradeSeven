@@ -53,7 +53,7 @@ function QuestionCard({ story, question, item, saved, bookmarks, onOpenStory, on
   return (
     <article style={{ ...S.box, padding: 'clamp(16px, 3vw, 24px)', borderRadius: 18, gap: 12 }} data-explore-card={story.id}>
       <div style={S.row}><OriginTags story={story} /></div>
-      <h3 className="ftx-qh" data-explore-card-question="">{question.text}</h3>
+      <h3 className="ftx-qh" style={{ textWrap: 'pretty' }} data-explore-card-question="">{question.text}</h3>
       <p style={S.meta}>
         <span style={{ color: T.ink, fontWeight: 600 }}>{story.title}</span>
         {' · '}

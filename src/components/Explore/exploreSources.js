@@ -18,8 +18,7 @@
 import { createContext } from 'react';
 import { collection, deleteDoc, doc, getDocs, limit, orderBy, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
 import { db } from '../../firebase/config';
-import { EXPLORE_RECORD_KIND } from '../../constants/sharedResearch';
-import { BOOKMARKS_MAX, BOOKMARK_TITLE_MAX, STORIES_READ, isoOf, storyOf } from './exploreView';
+import { BOOKMARKS_MAX, BOOKMARK_TITLE_MAX, EXPLORE_RECORD_KIND, STORIES_READ, isoOf, storyOf } from './exploreView';
 
 /** The bookmarks subcollection under users/{uid}. */
 export const BOOKMARKS_COLLECTION = 'exploreBookmarks';

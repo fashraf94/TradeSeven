@@ -18,7 +18,12 @@
 //   storyMatchesOf   search over the loaded stories (spec §3.3; companies are SearchOverlay's matcher)
 //   sheetItemOf      the `item` the sheet is handed on Work this idea (spec §3.6's table)
 
-import { EXPLORE_RECORD_KIND } from '../../constants/sharedResearch';
+/**
+ * An Explore story's record kind and its collection, one name (B6a X-2). Explore's own copy of
+ * src/constants/sharedResearch.js EXPLORE_RECORD_KIND, pinned EQUAL to it by exploreView.test.js: importing that module
+ * here would pull it out of the hub's chunk into a shared one (the bundle diff, report §7).
+ */
+export const EXPLORE_RECORD_KIND = 'exploreStories';
 
 /** The route's id rule for a story (B6a §1.2): the document id, as `itemRef.recordId`. */
 export const STORY_ID = /^[A-Za-z0-9_-]{1,200}$/;

@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from 'vitest';
 import {
-  BASES, FORMS, QUESTION_MAX, RESEARCH, STORY_ID, atLimitOf, featuredCardsOf, formOf, itemFor, questionIdFor,
+  BASES, EXPLORE_RECORD_KIND as OWN_RECORD_KIND, FORMS, QUESTION_MAX, RESEARCH, STORY_ID, atLimitOf, featuredCardsOf, formOf, itemFor, questionIdFor,
   researchViewOf, sheetItemOf, stateOf, storyMatchesOf, storyOf, topicsOf,
 } from './exploreView';
 import { OBSERVATION_MAX, cleanPlayerText } from '../../../api/_utils/sharedResearch/session.js';
@@ -28,6 +28,9 @@ describe('K-7: the question limit is the server\'s, restated', () => {
     expect(QUESTION_MAX).toBe(QUESTION_MAX_LEN);
     expect(cleanPlayerText('x'.repeat(QUESTION_MAX), OBSERVATION_MAX)).not.toBeNull();
     expect(cleanPlayerText('x'.repeat(QUESTION_MAX + 1), OBSERVATION_MAX)).toBeNull();
+  });
+  it('the record kind is the server\'s, restated (src/constants/sharedResearch.js EXPLORE_RECORD_KIND)', () => {
+    expect(OWN_RECORD_KIND).toBe(EXPLORE_RECORD_KIND);
   });
   it('the story id rule is the route\'s (B6a §1.2)', () => {
     expect(STORY_ID.source).toBe('^[A-Za-z0-9_-]{1,200}$');

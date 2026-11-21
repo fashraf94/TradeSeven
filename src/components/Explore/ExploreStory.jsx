@@ -69,8 +69,8 @@ export default function ExploreStory({
         <div className="ftx-col" data-ftx-col="main">
           <article className="ftx-o1" style={{ ...S.col, gap: 14 }}>
             <div style={S.row}><OriginTags story={story} />{story.reporter.beat && <span style={S.small}>{story.reporter.beat}</span>}</div>
-            <h1 ref={titleRef} className="ftx-h1" tabIndex={-1} data-explore-story-title="" style={{ outline: 'none' }}>{story.title}</h1>
-            {story.deck && <p className="ftx-deck" style={{ fontSize: 18 }}>{story.deck}</p>}
+            <h1 ref={titleRef} className="ftx-h1" tabIndex={-1} data-explore-story-title="" style={{ outline: 'none', textWrap: 'balance' }}>{story.title}</h1>
+            {story.deck && <p className="ftx-deck" style={{ fontSize: 18, textWrap: 'pretty' }}>{story.deck}</p>}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', padding: '10px 0', borderTop: `1px solid ${T.hair}`, borderBottom: `1px solid ${T.hair}` }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
                 {story.reporter.name && <span style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>{story.reporter.name}</span>}
@@ -80,7 +80,7 @@ export default function ExploreStory({
             </div>
           </article>
           <div className="ftx-o2" style={{ ...S.col, gap: 18 }}>
-            <div className="ftx-prose" data-explore-body="">{story.body.map((p, i) => <p key={i}>{p}</p>)}</div>
+            <div className="ftx-prose" data-explore-body="">{story.body.map((p, i) => <p key={i} style={{ textWrap: 'pretty' }}>{p}</p>)}</div>
             {story.parts.length > 0 && (
               <div role="table" aria-label={COPY.parts.caption} style={{ ...S.box, gap: 0, padding: '4px 14px' }} data-explore-parts="">
                 <div role="row" className="ftx-sr">
