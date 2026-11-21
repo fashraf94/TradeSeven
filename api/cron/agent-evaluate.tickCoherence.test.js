@@ -50,7 +50,10 @@ const { captured } = vi.hoisted(() => ({ captured: { calls: [] } }));
 const { guardrailCapture } = vi.hoisted(() => ({ guardrailCapture: { lockedPositions: null, calls: 0 } }));
 
 vi.mock('@anthropic-ai/sdk', () => ({ default: class AnthropicMock { constructor() { this.messages = { create: (...args) => mocks.create(...args) }; } } }));
-vi.mock('../_utils/marketDataCache.js', () => ({
+// The market-data cuts (EVAL_MARKET_DATA_CUTS_ENABLED, on since 20 Nov 2026) format symbols through these four real
+// helpers; with them this golden holds byte-identical with the cuts on and off (docs/audits/20261120_COCKPIT_STAGED_SWITCH_ON.md §5.2).
+vi.mock('../_utils/marketDataCache.js', async (importOriginal) => ({
+  ...(({ getCleanSymbol, isCryptoSymbol, formatEODHDSymbol, DAILY_WINDOW_CALENDAR_DAYS }) => ({ getCleanSymbol, isCryptoSymbol, formatEODHDSymbol, DAILY_WINDOW_CALENDAR_DAYS }))(await importOriginal()),
   getStockAnalysisData: mocks.getStockAnalysisData, fetchIntradayBatch: mocks.fetchIntradayBatch,
   fetchIntradayCandles: vi.fn(async () => []), filterToLatestSession: vi.fn((candles) => ({ candles: candles || [], sessionDate: '2026-09-09' })),
 }));
