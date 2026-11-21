@@ -358,6 +358,10 @@ export function choosePins(tape, { domain = domainOf(tape), battle = null, lines
     n: k + 1,
     ordinal: agg('ordinal', k + 1),
     frac: domain && span > 0 ? Math.min(1, Math.max(0, (p.t - domain.startMs) / span)) : 0,
+    // Amendment D DD-4: the pin's CLAMPED elapsed time from the axis's start, in whole milliseconds, and the span it is
+    // measured over — what the grouping compares exactly (groupPins), before any coordinate is computed
+    dt: domain && span > 0 ? Math.min(span, Math.max(0, p.t - domain.startMs)) : 0,
+    span,
     v: heightAt(lines.you.runs, p.t),
   }));
   return { pins, more: agg('more', all.length - pins.length) };
@@ -370,15 +374,25 @@ export function choosePins(tape, { domain = domainOf(tape), battle = null, lines
  * place, takes the shape of its highest-priority member, and is labelled with its range — its first and its last
  * number, "2–4" (Amendment A DA-15) — when it holds more than one. Computed ONCE per paint (layoutOf): the chart draws
  * these groups and the panel steps through the same ones.
+ *
+ * EXACT (Amendment D DD-4, Astra's N5): "closer than 44 px" is decided on the pins' CLAMPED elapsed times, before any
+ * coordinate is computed — separation × drawable span < 44 × time span, every operand an integer (whole milliseconds,
+ * the measured width in whole pixels), so two pins exactly 44 px apart start two groups at every width; subtracting two
+ * rounded floating-point centres once made 44 read 43.999999999999986. Pins handed in without their instants (a
+ * caller's synthetic `frac` alone) compare their fractions' separation the same way, still before any coordinate.
  */
 export function groupPins(pins, width) {
   const w = isNum(width) && width > 0 ? width : 0;
+  const drawable = Math.max(0, w - 2 * FLOW_AXIS_INSET);
+  const timed = (p) => Number.isSafeInteger(p?.dt) && Number.isSafeInteger(p?.span) && p.span > 0;
+  const closer = (p, first) => (timed(p) && timed(first) && p.span === first.span
+    ? Math.abs(p.dt - first.dt) * drawable < FLOW_PIN_TOUCH * p.span
+    : Math.abs(p.frac - first.frac) * drawable < FLOW_PIN_TOUCH);
   const groups = [];
   for (const p of pins) {
-    const x = axisX(p.frac, w);
     const g = groups[groups.length - 1];
-    if (g && Math.abs(x - g.x) < FLOW_PIN_TOUCH) g.members.push(p);
-    else groups.push({ x, members: [p] });
+    if (g && closer(p, g.members[0])) g.members.push(p);
+    else groups.push({ x: axisX(p.frac, w), members: [p] });
   }
   return groups.map((g) => ({
     x: g.x,

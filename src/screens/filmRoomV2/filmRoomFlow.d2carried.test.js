@@ -59,3 +59,52 @@ describe('DC-8 — ties at the low on displayed hundredths (Amendment C; BUILD_R
     expect(lowOf(day([1, -5.004, 3, 2], { final: -5.001 })).eligible).toBe(false);
   });
 });
+
+// Astra's N5: the regular Sep 23 session (9:30 to 4:00, 390 minutes), just two directives, at 9:35 and 10:35 ET — the
+// first member five minutes from the axis's origin. At a 330 px chart (a 370 px viewport) the drawable span is 286 px
+// and the two centres are 60 × 286 / 390 = 44 px apart EXACTLY: two groups (FL-4: a new group at equality).
+function twoDirectives() {
+  const t = clone(sep23Tape);
+  t.actions = [];
+  t.directives = [
+    { ...clone(sep23Tape.directives[0]), filedAt: '2026-09-23T13:35:00.000Z' },
+    { ...clone(sep23Tape.directives[1]), filedAt: '2026-09-23T14:35:00.000Z' },
+  ];
+  return t;
+}
+
+describe('DD-4 — exact grouping (Amendment D; Astra\'s N5)', () => {
+  const groupsAt = (width, t = twoDirectives()) => groupPins(flowOf(t, { battle: battleOf(sep23Tape) }).pins, width).map((g) => g.members.map((m) => m.n));
+  it('the fixture is what N5 names: the regular session, the two directives five and sixty-five minutes after the open', () => {
+    const t = twoDirectives();
+    const d = domainOf(t);
+    expect(d.endMs - d.startMs).toBe(390 * 60_000);
+    expect(choosePins(t).pins.map((p) => (p.t - d.startMs) / 60_000)).toEqual([5, 65]);
+  });
+  it('DD-4: a 330 px chart — the two centres exactly 44 px apart — two groups, two stops', () => {
+    expect(groupsAt(330)).toEqual([[1], [2]]);
+  });
+  it('DD-4\'s controls (pass at both heads): 329 px — 43.85 px apart — one group; 331 px — 44.15 px — two', () => {
+    expect(groupsAt(329)).toEqual([[1, 2]]);
+    expect(groupsAt(331)).toEqual([[1], [2]]);
+  });
+  it('DD-4: the decision is the integer cross-product — every width from 280 to 1440 agrees with the exact rational oracle', () => {
+    const t = twoDirectives();
+    const flow = flowOf(t, { battle: battleOf(sep23Tape) });
+    const d = flow.domain;
+    const span = d.endMs - d.startMs;
+    const sep = flow.pins[1].t - flow.pins[0].t;
+    for (let w = 280; w <= 1440; w += 1) {
+      // closer than 44 px ⇔ sep × (w − 44) < 44 × span — BigInt, so no float can round it
+      const merged = BigInt(sep) * BigInt(w - FLOW_PIN_TOUCH) < BigInt(FLOW_PIN_TOUCH) * BigInt(span);
+      expect(groupPins(flow.pins, w).length, `width ${w}`).toBe(merged ? 1 : 2);
+    }
+  });
+  it('DD-4\'s control (passes at both heads): a pin before the open or after the close is clamped to its edge BEFORE the separation is taken', () => {
+    const t = twoDirectives();
+    t.directives[0].filedAt = '2026-09-22T23:00:00.000Z';   // the evening before: the open's edge (DA-2)
+    t.directives[1].filedAt = '2026-09-23T14:30:00.000Z';   // sixty minutes after the open
+    expect(groupsAt(330, t)).toEqual([[1], [2]]);           // 60 × 286 / 390 = 44 exactly, measured from the edge
+    expect(groupsAt(329, t)).toEqual([[1, 2]]);
+  });
+});
