@@ -99,6 +99,10 @@ export function composeReads() {
     gone: readOf([plant({ n: 8, story: { ...SAMPLE_TAP, id: 'sample-unpublished-1', title: 'A story taken down' }, question: 'Who keeps the fee?', createdAt: at(1) })], 1),
     // the smoke walk, after Work this idea: the sheet's own story-open session, opened just now
     walkAfterOpen: readOf([plant({ n: 9, sessionId: WALK_SESSION_ID, story: SAMPLE_AI, question: Q_AI, createdAt: at(2) })], 1),
+    // ...after its first step (the sheet's storyVerified: one step used, nothing set)
+    walkAfterStep: readOf([plant({ n: 10, sessionId: WALK_SESSION_ID, story: SAMPLE_AI, question: Q_AI, createdAt: at(2), stepsUsed: 1, extraFindings: 2 })], 1),
+    // ...after one part of the card is set (the sheet's storyConfirmTheme: one of six set)
+    walkAfterPart: readOf([plant({ n: 11, sessionId: WALK_SESSION_ID, story: SAMPLE_AI, question: Q_AI, createdAt: at(2), stepsUsed: 1, extraFindings: 2, thesis: ONE_PART_SET })], 1),
   };
 }
 
@@ -119,5 +123,6 @@ describe('exploreReads.json — composed by the server (K-16)', () => {
     expect(r.both.items[0].last).toMatchObject({ ended: 'concluded' });
     expect(r.limit.quota).toMatchObject({ investigationsToday: 3, perDay: 3 });
     expect(r.walkAfterOpen.items[0].open.sessionId).toBe(WALK_SESSION_ID);
+    expect([r.walkAfterOpen, r.walkAfterStep, r.walkAfterPart].map((x) => [x.items[0].open.filled, x.items[0].open.stepsLeft])).toEqual([[0, 10], [0, 9], [1, 9]]);
   });
 });

@@ -237,5 +237,63 @@
         "last": null
       }
     ]
+  },
+  "walkAfterStep": {
+    "quota": {
+      "investigationsToday": 1,
+      "perDay": 3,
+      "framingsToday": 0,
+      "framingsPerDay": 10,
+      "stepsToday": 0,
+      "stepsPerDay": 30
+    },
+    "items": [
+      {
+        "itemRef": {
+          "recordKind": "exploreStories",
+          "recordId": "sample-ai-buildout"
+        },
+        "itemVersion": 2,
+        "open": {
+          "sessionId": "7d7d7d7d-0000-4000-8000-000000000001",
+          "question": "Which chip suppliers have evidence of meaningful exposure to AI spending?",
+          "lastTurnAt": null,
+          "filled": 0,
+          "parts": 6,
+          "stepsLeft": 9,
+          "findingsCount": 3
+        },
+        "last": null
+      }
+    ]
+  },
+  "walkAfterPart": {
+    "quota": {
+      "investigationsToday": 1,
+      "perDay": 3,
+      "framingsToday": 0,
+      "framingsPerDay": 10,
+      "stepsToday": 0,
+      "stepsPerDay": 30
+    },
+    "items": [
+      {
+        "itemRef": {
+          "recordKind": "exploreStories",
+          "recordId": "sample-ai-buildout"
+        },
+        "itemVersion": 2,
+        "open": {
+          "sessionId": "7d7d7d7d-0000-4000-8000-000000000001",
+          "question": "Which chip suppliers have evidence of meaningful exposure to AI spending?",
+          "lastTurnAt": null,
+          "filled": 1,
+          "parts": 6,
+          "stepsLeft": 9,
+          "findingsCount": 3
+        },
+        "last": null
+      }
+    ]
   }
 }
