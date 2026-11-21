@@ -1,7 +1,8 @@
-import React, { useState, lazy, Suspense } from 'react';
+import React, { useState, lazy, Suspense, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search } from 'lucide-react';
 import { CORRELATION_LAB_ENABLED } from '../../config/featureFlags';
+import { exploreMode } from '../../config/exploreFlags';
 import { useTheme } from '../../contexts/ThemeContext';
 import ExploreView from './ExploreView';
 import SearchOverlay from './SearchOverlay';
@@ -12,6 +13,14 @@ const RankingsView = lazy(() => import('./RankingsView'));
 const InstitutionalView = lazy(() => import('./InstitutionalView'));
 const ScreenerView = lazy(() => import('./ScreenerView'));
 const CorrelationLab = lazy(() => import('../Research/CorrelationLab'));
+// Explore Build 1 (docs/specs/20261121_EXPLORE_BUILD_1_SPEC_V1_1.md; dark: src/config/exploreFlags.js). Both load
+// only when the switch is not 'off': at 'off' nothing of src/components/Explore/ is requested and this page is today's.
+// The runtime holds the page's reads (the one research read, the stories, the bookmarks) and draws nothing; the tab
+// is the Explore tab's content.
+const ExploreRuntime = lazy(() => import('../Explore/ExploreRuntime'));
+const ExploreTab = lazy(() => import('../Explore/ExploreTab'));
+/** The Explore tab's id. Today's movers tab keeps 'explore' and is labelled "Markets" beside it. */
+const EXPLORE_HOME = 'exploreHome';
 
 const TABS = [
   { id: 'explore', label: 'Explore' },
@@ -24,13 +33,27 @@ const TABS = [
   ...(CORRELATION_LAB_ENABLED ? [{ id: 'correlations', label: 'Correlations' }] : []),
 ];
 
-const SearchDiscover = ({ user, isMobile, isDesktop, setScreen, stocksData }) => {
+const SearchDiscover = ({ user, isMobile, isDesktop, setScreen, stocksData, sidebarCollapsed }) => {
   const { tokens } = useTheme();
-  const [activeTab, setActiveTab] = useState('explore');
+  // The switch, read at call time (spec §6): 'off' → this page exactly as before Explore.
+  const mode = exploreMode();
+  const [activeTab, setActiveTab] = useState(() => (mode === 'on' ? EXPLORE_HOME : 'explore'));
   const [showSearchOverlay, setShowSearchOverlay] = useState(false);
   const [researchAsset, setResearchAsset] = useState(null);
+  // ExploreRuntime's snapshot ({ research, admitted, stories, bookmarks }); null at 'off' and until it loads.
+  const [explore, setExplore] = useState(null);
+  // Whether the player has tapped a tab, the search bar or a row: at 'allowlist' the Explore tab, once added,
+  // opens by itself only before that (build prompt K-5).
+  const touched = useRef(false);
+  const withExplore = mode === 'on' || (mode === 'allowlist' && explore?.admitted === true);
+  useEffect(() => {
+    if (mode === 'allowlist' && withExplore && !touched.current) setActiveTab(EXPLORE_HOME);
+  }, [mode, withExplore]);
+  const tabs = withExplore
+    ? [{ id: EXPLORE_HOME, label: 'Explore' }, ...TABS.map((tab) => (tab.id === 'explore' ? { ...tab, label: 'Markets' } : tab))]
+    : TABS;
 
-  const onOpenResearch = (asset) => setResearchAsset(asset);
+  const onOpenResearch = (asset) => { touched.current = true; setResearchAsset(asset); };
 
   const mainTabStyle = (isActive) => ({
     padding: '10px 20px',
@@ -73,7 +96,7 @@ const SearchDiscover = ({ user, isMobile, isDesktop, setScreen, stocksData }) =>
           fontWeight: 700,
           margin: 0,
         }}>
-          Discover
+          {withExplore ? 'Explore' : 'Discover'}
         </h1>
         {isMobile && (
           <div
@@ -98,10 +121,11 @@ const SearchDiscover = ({ user, isMobile, isDesktop, setScreen, stocksData }) =>
         )}
       </div>
 
-      {/* Search Bar */}
+      {/* Search Bar — on every tab but Explore, whose own search takes its place */}
+      {activeTab === EXPLORE_HOME ? null : (
       <motion.div
         whileTap={{ scale: 0.99 }}
-        onClick={() => setShowSearchOverlay(true)}
+        onClick={() => { touched.current = true; setShowSearchOverlay(true); }}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -119,6 +143,7 @@ const SearchDiscover = ({ user, isMobile, isDesktop, setScreen, stocksData }) =>
           Search stocks by ticker or name...
         </span>
       </motion.div>
+      )}
 
       {/* Main Tabs */}
       <div style={{
@@ -128,10 +153,10 @@ const SearchDiscover = ({ user, isMobile, isDesktop, setScreen, stocksData }) =>
         overflowX: 'auto',
         WebkitOverflowScrolling: 'touch',
       }}>
-        {TABS.map(tab => (
+        {tabs.map(tab => (
           <button
             key={tab.id}
-            onClick={() => { setResearchAsset(null); setActiveTab(tab.id); }}
+            onClick={() => { touched.current = true; setResearchAsset(null); setActiveTab(tab.id); }}
             style={mainTabStyle(activeTab === tab.id)}
           >
             {tab.label}
@@ -164,6 +189,17 @@ const SearchDiscover = ({ user, isMobile, isDesktop, setScreen, stocksData }) =>
           exit={{ opacity: 0, x: -10 }}
           transition={{ duration: 0.2 }}
         >
+          {withExplore && activeTab === EXPLORE_HOME && (
+            <Suspense fallback={<div style={{ color: tokens.textMuted, padding: '20px', textAlign: 'center', fontSize: '13px' }}>Loading Explore...</div>}>
+              <ExploreTab
+                explore={explore}
+                onOpenResearch={onOpenResearch}
+                stocksData={stocksData}
+                isMobile={isMobile}
+                sidebarCollapsed={sidebarCollapsed}
+              />
+            </Suspense>
+          )}
           {activeTab === 'explore' && (
             <ExploreView
               stocksData={stocksData}
@@ -222,6 +258,13 @@ const SearchDiscover = ({ user, isMobile, isDesktop, setScreen, stocksData }) =>
           version={2}
         />
       )}
+
+      {/* Explore's reads, for this page's life (draws nothing); never at 'off' */}
+      {mode !== 'off' ? (
+        <Suspense fallback={null}>
+          <ExploreRuntime key={user?.uid ?? ''} uid={user?.uid ?? null} mode={mode} onChange={setExplore} />
+        </Suspense>
+      ) : null}
     </motion.div>
   );
 };

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Search } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
-import { STOCKS } from '../../data/assets';
+import { matchCompanies, researchAssetOf } from './companyMatch';
 
 const SearchOverlay = ({ visible, onClose, onSelectStock, stocksData, isMobile }) => {
   const { tokens } = useTheme();
@@ -23,16 +23,9 @@ const SearchOverlay = ({ visible, onClose, onSelectStock, stocksData, isMobile }
     return map;
   }, [stocksData]);
 
-  const results = useMemo(() => {
-    if (!query.trim()) return [];
-    const q = query.toLowerCase().trim();
-    return STOCKS.filter(s =>
-      s.symbol.toLowerCase().includes(q) || s.name.toLowerCase().includes(q)
-    ).slice(0, 20);
-  }, [query]);
+  const results = useMemo(() => matchCompanies(query), [query]);
 
   const handleSelect = (stock) => {
-    const priceInfo = priceMap[stock.symbol] || {};
     // Save to recent searches
     try {
       const key = 'ft_recent_searches';
@@ -40,14 +33,7 @@ const SearchOverlay = ({ visible, onClose, onSelectStock, stocksData, isMobile }
       const updated = [stock.symbol, ...existing.filter(s => s !== stock.symbol)].slice(0, 8);
       localStorage.setItem(key, JSON.stringify(updated));
     } catch {}
-    onSelectStock({
-      symbol: stock.symbol,
-      name: stock.name,
-      sector: stock.sector,
-      price: priceInfo.price || 0,
-      percentChange: priceInfo.percentChange || 0,
-      change: priceInfo.change || 0,
-    });
+    onSelectStock(researchAssetOf(stock, priceMap));
     onClose();
   };
 

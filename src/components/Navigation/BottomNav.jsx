@@ -2,6 +2,8 @@ import React from 'react';
 import { Swords, Newspaper, Trophy, Hammer, Search, Bomb } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { TOURNAMENT_TAB_ENABLED, LEAGUE_HIDE_ENABLED } from '../../config/featureFlags';
+// Explore Build 1 (spec §6): the Search entry reads "Explore" at 'on' only — read at render, never at module scope.
+import { exploreMode } from '../../config/exploreFlags';
 
 const NAV_ITEMS = [
   { id: 'compete', label: 'Compete', icon: Swords, screen: 'dashboard', iconSize: 24 },
@@ -125,7 +127,7 @@ export default function BottomNav({ screen, setScreen, setShowForge, showForge }
                 lineHeight: 1,
               }}
             >
-              {item.label}
+              {item.id === 'search' && exploreMode() === 'on' ? 'Explore' : item.label}
             </span>
           </button>
         );

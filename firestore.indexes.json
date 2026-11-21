@@ -29,6 +29,20 @@
       ]
     },
     {
+      "collectionGroup": "exploreStories",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "publishedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "fantasyTimesStories",
       "queryScope": "COLLECTION",
       "fields": [

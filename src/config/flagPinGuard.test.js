@@ -373,6 +373,21 @@ const DARK_BY_DESIGN = {
   // (the client, dark); then one founder PR to 'on' after B4 merges, moving the
   // pin row in sharedResearchFlags.test.js in the same commit (BUILD_RULES §2).
   // Rollback: back to 'off' with its pin row; open builder sessions keep working.
+  // EXPLORE_MODE intentionally ABSENT, and it must stay absent: Explore, the
+  // front page of Search (spec docs/specs/
+  // 20261121_EXPLORE_BUILD_1_SPEC_V1_1.md §6), is a STRING TRI-STATE
+  // ('off' | 'allowlist' | 'on') in its own module, src/config/exploreFlags.js,
+  // so buildFlagMap never sees it and the integrity test below would fail the
+  // key outright. Noted HERE so a flip is loud in the place a reader looks for
+  // the dark runway; exploreFlags.test.js asserts both halves.
+  //   Runway: 'off' ships with Build 1 (dark): the Search page, its tabs and
+  //   the nav are today's, the research read is never made and no Explore
+  //   chunk is requested. 'allowlist' (the players the Work an idea read
+  //   admits) after the two rules blocks and the stories index are deployed
+  //   and the AI-buildout stories are published; then 'on'. Each step is its
+  //   own one-line founder PR, never a build PR, and moves the pin row in
+  //   exploreFlags.test.js in the same commit (BUILD_RULES §2). Rollback: one
+  //   step back with its pin row.
   // PRACTICE_FIELD_MODE intentionally ABSENT, and it must stay absent: the
   // Practice Field's idea book (build T1a-1 + T1c, report
   // docs/audits/20261113_BUILD_T1A1_T1C_IDEA_BOOK_ACCOUNTING.md) is a STRING
