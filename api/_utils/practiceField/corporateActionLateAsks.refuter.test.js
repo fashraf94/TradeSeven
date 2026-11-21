@@ -33,6 +33,10 @@
 //        caught it): the approval posted while the vendor still listed the row malformed.
 //   O-4  the oracle let a ruling made before a pairing showed — the founder's own split among them — answer it.
 // Those rows failed at 05aa1200, and pass now.
+//
+// THE FOURTH REFUTER (read-only, on the equivalence row of 0426efc9, which claimed the battery's survivor FR2 unreachable):
+//   EQ-1 FR2's same-date ordering is reachable — a ruled share-basis id beside a new id of its date. Not a defect: the row
+//        pins today's behaviour (the founder's Q-14 asks whether it should hold instead), and kills FR2.
 
 import { describe, it, expect } from 'vitest';
 import { run, installSequenceHooks, S } from './__testsupport__/caSequences.js';
@@ -797,5 +801,39 @@ describe('the proposal the founder is told about is owed on the ex-date count (b
     const told = (out.alerts || []).filter((a) => a.startsWith('PRACTICE_FIELD_LATE_PROPOSED'));
     expect(told).toHaveLength(1);
     expect(told[0]).toContain('late_entitlement of $99.97 (owed $99.97 on 99.970008 shares');
+  });
+});
+
+describe('EQ-1 — a ruled share-basis id beside a new id of its date: RFX-2\'s order decides (battery survivor FR2, reachable)', () => {
+  // The fourth refuter (on the equivalence row of 0426efc9) found FR2's same-date ordering reachable, so not redundant: a
+  // ruled row skips the close's same-date screen, and `shareDoubtOn` meets the new id's open record made in the same plan.
+  // Today the ruled id applies when its id sorts first (here `reverse_split_…` before `split_…`), and waits — its ruling
+  // closing moot — when it sorts after. This row pins today's reading; whether the ruled id should hold beside the new one
+  // (L-5's letter: one ambiguity) is put to the founder as Q-14. Either way nothing moves money: L-2 ③ refuses every
+  // approval while the new id stands.
+  const A = `reverse_split_AAPL_${S[1]}`;
+  it('sold at S2: A (two ratios) ruled 4-for-5; then a 2-for-1 dated S1 and one dated S2 (a re-date pair): A applies as history and its ruling is applied, not moot; a late $1 dividend dated S1 is never proposed (its count waits on the new id: L-5) and nothing posts', async () => {
+    await run({
+      seed: 'refuter4-EQ-1', comparison: xlk,
+      steps: [hc(0, 100), hc(1, 94, [], { belowLine: true }), { kind: 'window', i: 2, price: 94 }, hc(2, 94),
+        hc(3, 94, [spl(1, '4/5'), spl(1, '1/2')]),
+        { kind: 'expectIdea', fn: (idea) => expect(idea.ledger.corporateActionReceipts.filter((r) => r.reason).map((r) => [r.reason, r.actionId])).toEqual([['conflicting_action', A]]) },
+        { kind: 'ruleExact', body: { kind: 'conflict', recordId: A, decision: 'payload', payload: { ratio: 0.8 } } },
+        hc(4, 94, [spl(1, '2/1'), spl(2, '2/1')]),
+        { kind: 'expectIdea', fn: (idea) => {
+          expect(idea.ledger.appliedActionIds, 'the ruled id applied (history only: the holding is sold)').toContain(A);
+          expect(idea.ledger.corporateActionReceipts.filter((r) => r.actionId === A && r.applied).map((r) => r.historyOnly)).toEqual([true]);
+          expect((idea.founderRulings || []).filter((r) => r.recordId === A).map((r) => [r.appliedOn, r.outcome ?? null]), 'applied, not moot').toEqual([[S[4], null]]);
+          expect(idea.ledger.corporateActionReceipts.filter((r) => r.reason === 'possible_redate').map((r) => r.actionId).sort()).toEqual([`split_AAPL_${S[1]}`, `split_AAPL_${S[2]}`]);
+        } },
+        hc(5, 94, [div(1, 1)]),
+        { kind: 'lateExact', body: lateBody('idea', D(1)), status: 404 },
+        hc(6, 94),
+        { kind: 'expectIdea', fn: (idea) => {
+          expect((idea.ledger.lateProposals || []).filter((x) => x.actionId === D(1)), 'no proposal while the count is in doubt').toEqual([]);
+          expect((idea.ledger.adjustments || []).filter((a) => !a.held)).toEqual([]);
+          expect(idea.ledger.dividendsUsd).toBe(0);
+        } }],
+    });
   });
 });
