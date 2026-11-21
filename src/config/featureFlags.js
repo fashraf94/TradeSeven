@@ -3639,3 +3639,43 @@ export const FILM_ROOM_CARDS_MODE = 'allowlist';
 
 /** The three walked states, in walk order. */
 export const FILM_ROOM_CARDS_MODES = Object.freeze(['off', 'allowlist', 'on']);
+
+/**
+ * FILM_ROOM_FLOW_MODE — the Film Room's FRONT, the game's flow (Build D spec
+ * docs/specs/FILM_ROOM_BUILD_D_FLOW_SPEC_V1_20261120.md §2, ruling FL-14;
+ * build report docs/audits/20261121_BUILD_FILM_ROOM_D1_FLOW.md), a STRING
+ * TRI-STATE after the FILM_ROOM_CARDS_MODE pattern. It resolves
+ * PER BATTLE OWNER (src/utils/filmRoomGate.js resolveFilmRoomFlowMode and
+ * filmRoomFlowOn):
+ *   'off'       — the front for nobody: the v2 screen opens on the tape as it
+ *                 did before Build D, byte for byte at every paint, with the
+ *                 same requests (the cards-off goldens).
+ *   'allowlist' — the front only for a battle whose owner the cockpit's
+ *                 SERVER-SIDE allowlist admits: the client reads the existing
+ *                 GET /api/agent/cockpit-status `allowlisted` verdict for the
+ *                 caller's own battle — the SAME cached verdict the cards read
+ *                 (readFilmRoomVerdict), never a second request for a battle.
+ *                 While that verdict is on its way the screen is the 'off'
+ *                 layout. Everyone else: exactly 'off'.
+ *   'on'        — the front for every owner.
+ * Unknown values resolve to 'off' (fail closed). The front needs the v2
+ * screen: a battle the legacy screen serves is untouched in every mode. It is
+ * a CLIENT surface: it reads only the tape day the screen already reads — no
+ * new Firestore read, route, record, cron or rules change, and
+ * NOTHING THE AGENT SEES OR TRADES READS ANY OF IT.
+ *
+ * CURRENT: 'allowlist' (merged at this value by Film Room D1, FL-14): the
+ * front for the owners the cockpit's server-side allowlist admits; everyone
+ * else is the 'off' screen as it was. RUNWAY: 'allowlist' → 'on', its own
+ * founder PR, never a build PR. Each step moves the pin row in
+ * src/config/filmRoomFlowFlags.test.js in the same commit (BUILD_RULES §2).
+ * ROLLBACK: one line, this value back to 'off', with its pin row. A string
+ * tri-state, so it is pinned DIRECTLY — never a DARK_BY_DESIGN key (the
+ * flag-pin guard scans `*_ENABLED = true|false` only; the FILM_ROOM_V2_MODE /
+ * FILM_ROOM_CARDS_MODE precedent).
+ */
+// Pinned by: filmRoomFlowFlags.test.js (a STRING tri-state — pinned directly, outside flagPinGuard's `*_ENABLED` scan; this value and the pin move together — BUILD_RULES §2).
+export const FILM_ROOM_FLOW_MODE = 'allowlist';
+
+/** The three walked states, in walk order. */
+export const FILM_ROOM_FLOW_MODES = Object.freeze(['off', 'allowlist', 'on']);

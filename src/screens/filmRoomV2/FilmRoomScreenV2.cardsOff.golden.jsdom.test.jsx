@@ -44,6 +44,10 @@ const flags = vi.hoisted(() => ({ cards: 'off' }));
 vi.mock('../../config/featureFlags', async (importOriginal) => ({
   ...(await importOriginal()),
   get FILM_ROOM_CARDS_MODE() { return flags.cards; },
+  // Film Room D1: this suite is about the TAPE as it was before Build D, so the front — merged at 'allowlist', which
+  // would open an admitted owner on the game's flow and ask the verdict when cards are off — is pinned off here. The
+  // flow's own gate, off path and front are tested in the FilmRoomFlow.* suites.
+  get FILM_ROOM_FLOW_MODE() { return 'off'; },
 }));
 const auth = vi.hoisted(() => ({ user: { uid: 'owner-1', getIdToken: async () => 'token' } }));
 vi.mock('firebase/auth', () => ({ getAuth: vi.fn(() => ({ currentUser: auth.user })) }));

@@ -97,6 +97,14 @@ const COPY_KEYS = [
   'cards.retire', 'cards.retiring', 'cards.recurrences',
   'cards.noRecurrence', 'cards.recurrencesWord', 'cards.unavailableDays()', 'cards.otherBattle', 'cards.otherBattleUnreadable', 'cards.noWatchCards', 'cards.latestTitle', 'cards.myCards', 'cards.groups.active', 'cards.groups.shelved', 'cards.groups.notTaken', 'cards.groups.parked', 'cards.groups.adopted', 'cards.groups.retired', 'cards.groups.other', 'cards.noCards', 'cards.shelvedExplainer',
   'cards.loading', 'cards.readError', 'cards.openCard',
+  // Film Room D1 — the front, the game's flow (Build D spec §11)
+  'flow.heading.won', 'flow.heading.lost', 'flow.heading.wonAlone', 'flow.heading.lostAlone', 'flow.heading.draw', 'flow.heading.final', 'flow.key.you', 'flow.key.cpu',
+  'flow.legend.agent', 'flow.legend.other', 'flow.legend.directive', 'flow.low',
+  'flow.makers.agent', 'flow.makers.stall', 'flow.makers.risk', 'flow.makers.guardrail', 'flow.makers.meeting', 'flow.makers.unrecorded',
+  'flow.dot', 'flow.arrow', 'flow.soldAt', 'flow.notRecorded', 'flow.yourDirective', 'flow.filed', 'flow.notFiled', 'flow.speakerYou', 'flow.previous', 'flow.next', 'flow.range',
+  'flow.more', 'flow.openThis', 'flow.incomplete', 'flow.nothing',
+  'flow.counts.thisGame', 'flow.counts.thisDay', 'flow.counts.trading', 'flow.counts.withYou', 'flow.counts.of', 'flow.counts.ownCall', 'flow.counts.filed',
+  'flow.moments()', 'flow.door', 'flow.back',
 ];
 
 /** Every function key's sample calls — each tuple is one call; every one is swept. */
@@ -124,6 +132,7 @@ const SAMPLE_CALLS = {
   'meetingAt()': [['2:15 PM'], ['Sep 22, 8:30 PM']],
   'coverageSummary.notCharted()': [[1], [2]],
   'cards.unavailableDays()': [[1], [3]],
+  'flow.moments()': [[1], [3]],
 };
 
 const COPY_EXPORTS = ['CLASS_LETTER', 'DIRECTIVE_EXPLAINER', 'FILM_ROOM_COPY', 'FORBIDDEN_WORDS', 'LOCKED_BASIS_NOTE', 'PROVENANCE_LABELS', 'REPLAY_SENTENCE', 'REPLAY_VERSION_NOTE'];
@@ -217,6 +226,52 @@ describe('Astra B3 — the copy inventory: every key of the screen\'s own copy, 
     expect(W.refusals.cap_reached).toBe('The open-card cap is reached. A card stops counting once it is retired, parked, adopted or not taken.');
     expect(W.groups.equipped).toBeUndefined();
   });
+  it('Film Room D1 (Build D spec §11): the front\'s copy is the spec\'s table, verbatim — each template composed from its parts, {placeholders} where a bound value renders', () => {
+    const F = FILM_ROOM_COPY.flow;
+    const said = {
+      heading: [`${F.heading.won} {n}`, `${F.heading.lost} {n}`, F.heading.wonAlone, F.heading.lostAlone, F.heading.draw, `${F.heading.final} {total}`],
+      key: [F.key.you, F.key.cpu],
+      legend: [F.legend.agent, F.legend.other, F.legend.directive],
+      low: `${F.low} {value}${F.dot}{clock}`,
+      makers: [F.makers.agent, F.makers.stall, F.makers.risk, F.makers.guardrail, F.makers.meeting, F.makers.unrecorded],
+      swapFact: [`{maker}${F.dot}{out}${F.arrow}{in}${F.dot}{clock}`, `${F.dot}${F.soldAt} {price}`, F.notRecorded],
+      directiveFact: [`${F.yourDirective}${F.dot}{clock}${F.dot}${F.filed}`, `${F.yourDirective}${F.dot}{clock}${F.dot}${F.notFiled}`],
+      speaker: F.speakerYou,
+      stepper: [F.previous, F.next],
+      mergedPin: `{first}${F.range}{last}`,
+      more: `{n} ${F.more}`,
+      pinLink: F.openThis,
+      incomplete: F.incomplete,
+      noPins: F.nothing,
+      counts: [F.counts.thisGame, F.counts.thisDay, F.counts.trading, F.counts.withYou, `{x} ${F.counts.of} {y}`, F.counts.ownCall, F.counts.filed],
+      cardsLine: [`1 ${F.moments(1)}`, `{n} ${F.moments(3)}`],
+      door: F.door,
+      back: F.back,
+    };
+    expect(said).toEqual({
+      heading: ['Won by {n}', 'Lost by {n}', 'Won', 'Lost', 'Draw', 'Final {total}'],
+      key: ['You', 'CPU'],
+      legend: ["Agent's swap", 'Other swap', 'Your directive'],
+      low: 'Low {value} · {clock}',
+      makers: ['Your agent', 'Stall rule', 'Risk rule', 'Guardrail', 'Gameplan meeting', 'Maker not recorded'],
+      swapFact: ['{maker} · {out} → {in} · {clock}', ' · sold at {price}', 'not recorded'],
+      directiveFact: ['Your directive · {clock} · filed', 'Your directive · {clock} · not filed'],
+      speaker: 'You',
+      stepper: ['Previous', 'Next'],
+      mergedPin: '{first}–{last}',
+      more: '{n} more on the full tape',
+      pinLink: 'Open this on the full tape',
+      incomplete: "Some of this day's record is incomplete. The full tape says what.",
+      noPins: 'Nothing stood out in this game.',
+      counts: ['This game', 'This day', 'Trading', 'Working with you', '{x} of {y}', 'swaps were its own call', 'directives filed'],
+      cardsLine: ['1 moment to take home, on the full tape', '{n} moments to take home, on the full tape'],
+      door: 'Open the full tape',
+      back: 'Game flow',
+    });
+    // FL-10: "acted on" is never claimed; the mock-up's strings the spec replaced are not in the table
+    expect(JSON.stringify(F)).not.toMatch(/acted on|Stall-rule swap|arrive by the next morning|\$|One idea|Test this/);
+  });
+
   it('the other copy tables hold exactly the listed keys: filmRoomCopy\'s exports, the exit makers\' words, the plan directions', () => {
     expect(Object.keys(copyModule).sort()).toEqual(COPY_EXPORTS);
     expect(keysOf(EXIT_MAKER_WORDS)).toEqual(EXIT_MAKER_KEYS);
@@ -240,9 +295,9 @@ describe('Astra B3 — the copy inventory: every key of the screen\'s own copy, 
     }
   });
 
-  it('the inventory\'s size is pinned (the build report states it): 414 copy keys, 563 swept entries', () => {
-    expect(COPY_KEYS).toHaveLength(414);   // Film Room C2 item 6 (CC-8): cards.chain.adoptedNote; groups.equipped renamed groups.adopted (413 before); C1 fix round CA-18: cards.setNoTempo retired (414 before); CA-7: offerToAgent, offering, the six offerRefusals (406 before); CA-17 / CA-9: stageWordsOf.drillNominated, stageWordsOf.noFill, chain.considered (403 before); CA-22 / CA-5: chain.endedBeforeFirstTrade, chain.offerWaits (401 before); CA-2: chain.withdrawnRetired, refusals.nomination_unavailable (399 before); CA-3: groups.notTaken, stateNotes.notTaken (397 before); C1 item 8: cards.latestTitle (396 before); C1 item 7: stateNotes.parked, park, parking, refusals.parkDefault (392 before); C1 item 6: quoteBy.yourAgent and the chain's 20 keys (371 before); C1 item 5: routes/routeNotes drill → offer, refusals book_not_open and calendar_unavailable (369 before); Film Room C1 item 1: stageWords testing/tested/installed, groups parked/equipped (364 before); Amendment L RL-5: cards.setNextBattle (363 before); review KRV1-1: cards.refusals.attribution_unavailable (362 before); Amendment K RK-11: chartRecordedFor (361 before); RK-2: cards.setNoTempo (360 before); Astra F1: the two point legends (237 before); stock thresholds v2 B3-6: atrXMeasured (239 before); Film Room B2: the card's 75 keys and quoteBy.you (240 before; 59 keys before its review round)
-    expect(inventory()).toHaveLength(563);   // Film Room C2 item 6 (CC-8): chain.adoptedNote (562 before); Film Room C2 item 5 (CC-7): SUBJECT_WORDS separator and underIdea (560 before); C1 fix round CA-18: one entry retired (561 before); CA-7: eight entries (553 before); CA-17 / CA-9: three entries (550 before); CA-22 / CA-5: two entries (548 before); CA-2: two entries (546 before); CA-3: two entries (544 before); C1 item 8: one entry (543 before); C1 item 7: four entries (539 before); C1 item 6: 21 entries (518 before); C1 item 5: two entries (516 before); C1 item 1: five entries (511 before); RL-5: one entry (510 before); KRV1-1: one entry (509 before); RK-11: one entry (508 before); RK-2: one entry (507 before); B2: 76 keys, the one live situation's title and its three questions (348 before)
+  it('the inventory\'s size is pinned (the build report states it): 455 copy keys, 605 swept entries', () => {
+    expect(COPY_KEYS).toHaveLength(457);   // Film Room D1 fix round item 1 (Amendment A DA-4, Amendment B DB-1): flow.heading.wonAlone, lostAlone (455 before); Film Room D1 item 3 (Build D spec §11, and §6's "+"): the front's 41 keys under `flow` (414 before); Film Room C2 item 6 (CC-8): cards.chain.adoptedNote; groups.equipped renamed groups.adopted (413 before); C1 fix round CA-18: cards.setNoTempo retired (414 before); CA-7: offerToAgent, offering, the six offerRefusals (406 before); CA-17 / CA-9: stageWordsOf.drillNominated, stageWordsOf.noFill, chain.considered (403 before); CA-22 / CA-5: chain.endedBeforeFirstTrade, chain.offerWaits (401 before); CA-2: chain.withdrawnRetired, refusals.nomination_unavailable (399 before); CA-3: groups.notTaken, stateNotes.notTaken (397 before); C1 item 8: cards.latestTitle (396 before); C1 item 7: stateNotes.parked, park, parking, refusals.parkDefault (392 before); C1 item 6: quoteBy.yourAgent and the chain's 20 keys (371 before); C1 item 5: routes/routeNotes drill → offer, refusals book_not_open and calendar_unavailable (369 before); Film Room C1 item 1: stageWords testing/tested/installed, groups parked/equipped (364 before); Amendment L RL-5: cards.setNextBattle (363 before); review KRV1-1: cards.refusals.attribution_unavailable (362 before); Amendment K RK-11: chartRecordedFor (361 before); RK-2: cards.setNoTempo (360 before); Astra F1: the two point legends (237 before); stock thresholds v2 B3-6: atrXMeasured (239 before); Film Room B2: the card's 75 keys and quoteBy.you (240 before; 59 keys before its review round)
+    expect(inventory()).toHaveLength(607);   // Film Room D1 fix round item 1: "Won" and "Lost" (605 before); Film Room D1 item 3: the front's 40 entries and flow.moments()'s two samples (563 before); Film Room C2 item 6 (CC-8): chain.adoptedNote (562 before); Film Room C2 item 5 (CC-7): SUBJECT_WORDS separator and underIdea (560 before); C1 fix round CA-18: one entry retired (561 before); CA-7: eight entries (553 before); CA-17 / CA-9: three entries (550 before); CA-22 / CA-5: two entries (548 before); CA-2: two entries (546 before); CA-3: two entries (544 before); C1 item 8: one entry (543 before); C1 item 7: four entries (539 before); C1 item 6: 21 entries (518 before); C1 item 5: two entries (516 before); C1 item 1: five entries (511 before); RL-5: one entry (510 before); KRV1-1: one entry (509 before); RK-11: one entry (508 before); RK-2: one entry (507 before); B2: 76 keys, the one live situation's title and its three questions (348 before)
   });
 
   it('B2.1 A8 (A2F1-7): every fixed-digit exemption is bound to its copy key — the harness\x27s pinned text is production\x27s at that key, and every entry of the inventory that spells a digit is pinned', () => {

@@ -92,6 +92,17 @@ export const SCREEN_AGGREGATE_CLASSES = Object.freeze({
   // Build C §5: an expired nomination's "not considered within n sessions" — n is B6 (src/data/cardStages.js), said as
   // a derived number, as the build prompt rules
   'count(sessions a queued nomination waits, B6)': 'derived',
+  // Film Room D1 (Build D spec §4 – §9; FL-12): the front's numbers carry no mark, but each keeps its class. The margin
+  // is arithmetic on the two displayed final scores (§4.1, BUILD_RULES §9); a pin's number is its place in time order;
+  // "n more" counts the day's other swap and directive rows; the two tiles count recorded rows (§8); the cards line
+  // counts the day's moments (§9) — all `derived`. Trading's y is `count(actions[])`, declared above.
+  'difference(the two displayed final scores)': 'derived',
+  'ordinal(pins in time order)': 'derived',
+  'count(tape rows beyond the chosen pins)': 'derived',
+  'count(actions[] by the agent)': 'derived',
+  'count(directives[] filed)': 'derived',
+  'count(directives[])': 'derived',
+  'count(moments on the tape day)': 'derived',
 });
 
 /**
