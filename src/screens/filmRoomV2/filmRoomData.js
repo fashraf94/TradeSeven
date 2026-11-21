@@ -28,6 +28,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { TAPE_SUBCOLLECTION, SERIES_SUBCOLLECTION } from '../../constants/filmTape';
+import { DEBRIEFS_SUBCOLLECTION } from '../../utils/debriefSchedule.js';
 
 const NO_TAPE_CODES = new Set(['permission-denied', 'not-found']);
 
@@ -70,6 +71,18 @@ export const firestoreReaders = Object.freeze({
       return snap && snap.exists() ? { status: 'ready', battle: { id: snap.id ?? battleId, ...snap.data() } } : { status: 'missing', battle: null };
     } catch {
       return { status: 'error', battle: null };
+    }
+  },
+  // Film Room D2 (D2 spec §9, DW-10): the day's debrief record — the agent's words — read once per day, only where the
+  // front shows and the words are on for the owner. A record the rules deny (another owner's, or the block not yet
+  // deployed) and one that does not exist both read as "no record"; any other failure is an error, which shows nothing.
+  async readDebrief(battleId, etDate) {
+    try {
+      const { doc, getDoc, db } = await firestore();
+      const snap = await getDoc(doc(db, 'agentBattles', battleId, DEBRIEFS_SUBCOLLECTION, etDate));
+      return snap && snap.exists() ? { status: 'ready', record: snap.data() } : { status: 'missing', record: null };
+    } catch (err) {
+      return NO_TAPE_CODES.has(err?.code) ? { status: 'missing', record: null } : { status: 'error', record: null };
     }
   },
   // C2 item 5 (CC-7): the carried idea's version, read once under cards mode. A missing version is no statement; a read
@@ -149,6 +162,34 @@ export function useTapeDay(battleId, etDate, readers = firestoreReaders) {
   }, [key, battleId, etDate, readers, alive]);
   if (!key) return { status: 'missing', tape: null };
   return cache.current.get(key) || { status: 'loading', tape: null };
+}
+
+/**
+ * Film Room D2 (D2 spec §9, DW-10) — the day's debrief record: ONE getDoc per (battle, day), read only once `enabled`
+ * (the front shows for that day and the words are on for the owner) and kept for the hook's life — whatever it
+ * answered, an error included, so the front adds exactly one read per day. No reader for it (a test seam without
+ * one): idle, nothing asked.
+ *
+ * @returns {{ status: 'idle'|'loading'|'ready'|'missing'|'error', record: object|null }}
+ */
+export function useDebriefDay(battleId, etDate, enabled, readers = firestoreReaders) {
+  const cache = useRef(new Map());
+  const can = Boolean(enabled) && Boolean(battleId) && Boolean(etDate) && typeof readers?.readDebrief === 'function';
+  const key = can ? `${battleId}|${etDate}` : null;
+  const [, bump] = useState(0);
+  const alive = useAlive();
+  useEffect(() => {
+    if (!key || cache.current.has(key)) return;
+    cache.current.set(key, { status: 'loading', record: null });
+    Promise.resolve(readers.readDebrief(battleId, etDate))
+      .catch(() => ({ status: 'error', record: null }))
+      .then((r) => {
+        cache.current.set(key, r && r.status ? r : { status: 'error', record: null });
+        if (alive.current) bump((n) => n + 1);
+      });
+  }, [key, battleId, etDate, readers, alive]);
+  if (!key) return { status: 'idle', record: null };
+  return cache.current.get(key) || { status: 'loading', record: null };
 }
 
 /**

@@ -27,11 +27,13 @@ import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } f
 import { FILM_TAPE_WRITE_ENABLED, isAgentPresenceOn } from '../../config/featureFlags';
 import AgentPresenceMount from '../../components/AgentPresence/AgentPresenceMount';
 import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
-import { filmRoomBattleId, resolveFilmRoomFlowMode, filmRoomFlowOn, sameFilmRoomIdentity } from '../../utils/filmRoomGate';
+import { filmRoomBattleId, resolveFilmRoomFlowMode, filmRoomFlowOn, sameFilmRoomIdentity, resolveFilmRoomDebriefMode, filmRoomDebriefOn, filmRoomFrontVerdictAsked } from '../../utils/filmRoomGate';
+// Film Room D2: when the words are written (the front's "by the next morning" window)
+import { debriefNotYet } from '../../utils/debriefSchedule.js';
 import { isSessionDate, isBattleDay, closePassStartMs, closePassEndMs, closePassWillTape, validFinalTradingDay, etDateOf } from '../../utils/tapeSchedule';
 import { etClock, etDateLabel, tradingTimeline, meetingAnchor } from './filmRoomModel';
 import { FILM_ROOM_COPY as COPY } from './filmRoomCopy';
-import { useTapeDay, useSeriesDay, useIdeaVersion, firestoreReaders } from './filmRoomData';
+import { useTapeDay, useSeriesDay, useIdeaVersion, useDebriefDay, firestoreReaders } from './filmRoomData';
 // Film Room C2 item 5 (Amendment C CC-7): the idea the battle carried (Amendment D CD-8), read for the subject line under
 // cards mode only
 import { carriedIdeaOf } from '../../utils/filmRoomSubject';
@@ -265,6 +267,10 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
   // B DB-12, Astra's F12: the reader's cache keys by owner — a refreshed owner on the same battle id is a new question,
   // pending until its own answer, never the last owner's).
   const flowMode = resolveFilmRoomFlowMode();
+  // Film Room D2 (D2 spec §8, DW-9): the agent's words read THE SAME verdict, for the same identity — asked through the one
+  // seam only where the flow needs it ('allowlist') or, once the flow is 'on', where the words still do (filmRoomGate.js
+  // filmRoomFrontVerdictAsked); the flow 'off' shows no front, so no words and no question
+  const debriefMode = resolveFilmRoomDebriefMode();
   const flowOwnerId = typeof battle?.ownerId === 'string' ? battle.ownerId : null;
   // Amendment D DD-3 (Astra's N3, N4): ONE identity record — the battle id and the nullable owner, two fields compared
   // strictly — for the verdict, the front-seen marker and the "Game flow" return (filmRoomGate.js)
@@ -273,14 +279,14 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
   const [openedAtMoment] = useState(() => openAt != null);
   const [flowAnswer, setFlowAnswer] = useState(() => ({ identity, verdict: undefined }));
   useEffect(() => {
-    if (flowMode !== 'allowlist' || openedAtMoment || !battleId || typeof cardsApi?.readVerdict !== 'function') return undefined;
+    if (!filmRoomFrontVerdictAsked(flowMode, debriefMode) || openedAtMoment || !battleId || typeof cardsApi?.readVerdict !== 'function') return undefined;
     let live = true;
     Promise.resolve()
       .then(() => cardsApi.readVerdict(identity.battleId, { ownerId: identity.ownerId }))
       .then((v) => { if (live && mounted.current) setFlowAnswer({ identity, verdict: v === true }); })
       .catch(() => { if (live && mounted.current) setFlowAnswer({ identity, verdict: false }); });
     return () => { live = false; };
-  }, [flowMode, openedAtMoment, battleId, identity, cardsApi]);
+  }, [flowMode, debriefMode, openedAtMoment, battleId, identity, cardsApi]);
   const flowVerdict = sameFilmRoomIdentity(flowAnswer.identity, identity) ? flowAnswer.verdict : undefined;
   const flowOn = filmRoomFlowOn(flowMode, flowVerdict);
   // §3 — the screen opens on the front when the flow resolves on, the screen was NOT opened at a moment (`openAt`,
@@ -301,6 +307,10 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
   const front = frontIntent && written;
   const frontFrame = !front && frontIntent && seenFront && tapeState.status === 'loading';
   useEffect(() => { if (front && !seenFront) setSeenFrontFor(identity); }, [front, seenFront, identity]);
+  // Film Room D2 (D2 spec §1, §9; DW-10): the agent's words — only where the front shows for this day and the words
+  // resolve on for this identity's owner; then ONE read of the day's record (useDebriefDay), never on the tape view
+  const wordsOn = front && filmRoomDebriefOn(debriefMode, flowVerdict);
+  const debriefState = useDebriefDay(battleId, day, wordsOn, readers);
   // the review's DR-7 / DR-2, as Amendment B DB-4 makes it (Astra's F4): A GESTURE IN PROGRESS KEEPS THE TAPE. While
   // the front's conditions are still unknown — the verdict on its way, or the day still being read — a pointer-down
   // inside the tape, a key-down inside it, or a focus move onto one of its controls keeps the tape for this visit, from
@@ -542,6 +552,7 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
             onOpenAt={openTapeAt}
             doorId={doorId}
             renderAgentMark={(size) => <AgentMark battle={battle} size={size} />}
+            words={wordsOn ? { state: debriefState.status, record: debriefState.record, notYet: debriefState.status === 'missing' && debriefNotYet(tape?.writtenAt, now) } : null}
           />
           )}
         </main>

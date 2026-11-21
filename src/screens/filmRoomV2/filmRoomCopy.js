@@ -506,6 +506,8 @@ export const FILM_ROOM_COPY = Object.freeze({
   },
   // Film Room D2 — the agent's words (D2 spec §1, §2)
   debrief: {
+    // §1: a swap pin's state while the day has no record yet, before the next run
+    notYet: "Your agent's words arrive by the next morning.",
     // §2: the day digest's maker words for a swap's recorded mechanism (makerKeyOf) — facts the model reads, never the
     // agent's words; the front's own fact line keeps flow.makers
     makers: { agent: 'your agent', stall: 'the stall rule', risk: 'the risk rule', guardrail: 'the guardrail', meeting: 'the gameplan meeting', unrecorded: 'a maker not recorded' },
