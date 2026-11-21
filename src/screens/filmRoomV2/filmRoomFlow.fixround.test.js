@@ -6,7 +6,7 @@
 // Amendment A (DA-4, DA-8, DA-9, DA-11, DA-15) and Amendment B (DB-1, DB-2, DB-6 – DB-9, DB-14).
 
 import { describe, it, expect } from 'vitest';
-import { flowOf, headingOf, keyOf, linesOf, lowOf, heightAt, isFinalDayOf, readsAsFinal, layoutOf, panelOf, domainOf } from './filmRoomFlow.js';
+import { flowOf, headingOf, keyOf, linesOf, lowOf, heightAt, isFinalDayOf, readsAsFinal, layoutOf, panelOf, domainOf, groupPins, axisX, FLOW_AXIS_INSET } from './filmRoomFlow.js';
 import { sessionOf, etClock } from './filmRoomModel';
 import sep23Tape from './__fixtures__/sep23.tape.json';
 
@@ -392,5 +392,20 @@ describe('item 3 — DA-8: the low counts the drawn final (as Astra qualified it
   });
   it('an earlier day (no final point): the rule as before — the low −5, not the last point, three checks: the mark', () => {
     expect(low(day([10, -5, 3, 2]))).toMatchObject({ index: 1, eligible: true });
+  });
+});
+
+describe('item 4 — DA-11: the one x-range, and the merge at exactly 44 px on it', () => {
+  it('axisX: 22 px in from each end; the range shrinks with the chart, never below zero', () => {
+    expect([axisX(0, 350), axisX(1, 350), axisX(0.5, 350)]).toEqual([22, 328, 175]);
+    expect([axisX(0, 30), axisX(1, 30)]).toEqual([22, 22]);
+  });
+  it('just below, exactly at and just above 44 px (a 128 px x-range: each is exact in binary) — merged, apart, apart', () => {
+    const at = (px) => groupPins([{ n: 1, kind: 'other', frac: 0 }, { n: 2, kind: 'other', frac: px / 128 }], 128 + 2 * FLOW_AXIS_INSET).map((g) => g.members.map((p) => p.n));
+    expect([at(43.5), at(44), at(44.5)]).toEqual([[[1, 2]], [[1], [2]], [[1], [2]]]);
+  });
+  it('a group names its first and its last member (the range\'s two ordinals, DA-15)', () => {
+    const g = groupPins([{ n: 2, kind: 'other', frac: 0 }, { n: 3, kind: 'agent', frac: 0.01 }, { n: 4, kind: 'directive', frac: 0.02 }], 300)[0];
+    expect([g.first.n, g.last.n, g.n, g.kind, g.merged]).toEqual([2, 4, 2, 'agent', true]);
   });
 });

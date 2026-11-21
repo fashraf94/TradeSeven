@@ -36,6 +36,16 @@ const listOf = (tape, key) => (Array.isArray(tape?.[key]) ? tape[key] : []);
 export const FLOW_PIN_TOUCH = 44;
 /** The most pins the chart shows (FL-5). */
 export const FLOW_PIN_LIMIT = 5;
+/**
+ * THE ONE X-RANGE (Amendment A DA-11, as Astra qualified it in DB-14): the time axis is inset by half a pin's touch
+ * area on both sides, so a pin at either end of the axis — a directive filed the evening before sits at the open's
+ * edge (DA-2) — keeps its whole 44 px inside the chart, and so inside the page, at every width. Everything placed on
+ * the time axis takes its x from axisX: the lines, the final dots, the groups (and so the panel's stepper), the drop
+ * line, the low mark and its overlap test, the axis's labels.
+ */
+export const FLOW_AXIS_INSET = FLOW_PIN_TOUCH / 2;
+/** A place on the time axis — 0 the open, 1 the close — as x on a chart `width` px wide. */
+export const axisX = (frac, width) => FLOW_AXIS_INSET + frac * Math.max(0, width - 2 * FLOW_AXIS_INSET);
 
 /**
  * The aggregates the front states, by name — each DECLARED in SCREEN_AGGREGATE_CLASSES (filmRoomModel.js), so a
@@ -349,15 +359,17 @@ export function choosePins(tape, { domain = domainOf(tape), battle = null, lines
 
 /**
  * THE MERGE (§6, FL-4) — a pure function of the pins (in time order, each with `frac`) and the chart's rendered
- * width. Walking in time order, a pin joins the current group when its centre is closer than 44 px to the GROUP'S
- * FIRST pin; otherwise it starts a new group. A group is drawn at its first member's place, takes the shape of its
- * highest-priority member, and is labelled with its lowest number ("+" when it holds more than one).
+ * width, on the one x-range (axisX, DA-11). Walking in time order, a pin joins the current group when its centre is
+ * closer than 44 px to the GROUP'S FIRST pin; otherwise it starts a new group. A group is drawn at its first member's
+ * place, takes the shape of its highest-priority member, and is labelled with its range — its first and its last
+ * number, "2–4" (Amendment A DA-15) — when it holds more than one. Computed ONCE per paint (layoutOf): the chart draws
+ * these groups and the panel steps through the same ones.
  */
 export function groupPins(pins, width) {
   const w = isNum(width) && width > 0 ? width : 0;
   const groups = [];
   for (const p of pins) {
-    const x = p.frac * w;
+    const x = axisX(p.frac, w);
     const g = groups[groups.length - 1];
     if (g && Math.abs(x - g.x) < FLOW_PIN_TOUCH) g.members.push(p);
     else groups.push({ x, members: [p] });
@@ -368,6 +380,7 @@ export function groupPins(pins, width) {
     members: g.members,
     kind: [...g.members].sort((a, b) => RANK[a.kind] - RANK[b.kind])[0].kind,
     n: g.members[0].n,
+    last: g.members[g.members.length - 1],
     merged: g.members.length > 1,
   }));
 }
@@ -491,9 +504,10 @@ function niceStep(raw) {
 }
 
 /**
- * The chart at a width and a height: the value range (both lines and zero, padded), the x and y scales, the zero
- * line and at most two faint guides, each group of pins at its place, and the low mark — drawn only when the day's
- * rule holds AND its label neither overlaps a pin's touch area nor leaves the chart (§5).
+ * The chart at a width and a height: the value range (both lines and zero, padded), the x and y scales — x on the
+ * one inset x-range (axisX, DA-11) —, the zero line and at most two faint guides, each group of pins at its place
+ * (THE grouping: the front passes these same groups to the panel), and the low mark — drawn only when the day's rule
+ * holds AND its label neither overlaps one of those groups' touch areas nor leaves the chart (§5).
  */
 export function layoutOf(flow, width, height, lowText = '') {
   const w = isNum(width) && width > 0 ? width : 0;
@@ -505,7 +519,7 @@ export function layoutOf(flow, width, height, lowText = '') {
   const bottom = lo - span * 0.08;
   const ih = height - FLOW_CHART_PAD.top - FLOW_CHART_PAD.bottom;
   const d = flow.domain;
-  const x = (t) => (d ? ((t - d.startMs) / (d.endMs - d.startMs)) * w : 0);
+  const x = (t) => (d ? axisX((t - d.startMs) / (d.endMs - d.startMs), w) : FLOW_AXIS_INSET);
   const y = (v) => FLOW_CHART_PAD.top + ((top - v) / (top - bottom)) * ih;
   const step = niceStep(span / 3);
   const guides = [];

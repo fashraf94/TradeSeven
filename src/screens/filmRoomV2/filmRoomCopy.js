@@ -493,7 +493,7 @@ export const FILM_ROOM_COPY = Object.freeze({
     speakerYou: 'You',
     previous: 'Previous',
     next: 'Next',
-    plus: '+',   // §6: a merged pin shows its lowest number followed by "+"
+    range: '–',   // Amendment A DA-15: a merged pin shows its range, "2–4" — its first and last numbers (§6's "+" replaced)
     more: 'more on the full tape',   // "{n} more on the full tape"
     openThis: 'Open this on the full tape',
     incomplete: "Some of this day's record is incomplete. The full tape says what.",

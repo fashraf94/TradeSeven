@@ -24,7 +24,7 @@ import { FILM_ROOM_COPY as COPY } from './filmRoomCopy';
 import { C, tint, plain, When, Quotation } from './FilmRoomKit';
 import { fmtPoints, fmtPrice } from './filmRoomModel';
 import { formatNumberPath } from '../../constants/filmTape';
-import { flowOf, layoutOf, groupPins, panelOf, FLOW_PIN_TOUCH } from './filmRoomFlow.js';
+import { flowOf, layoutOf, panelOf, FLOW_PIN_TOUCH, FLOW_AXIS_INSET } from './filmRoomFlow.js';
 
 const F = COPY.flow;
 const NUM = { fontVariantNumeric: 'tabular-nums' };
@@ -83,9 +83,9 @@ function FlowNum({ num, fmt = fmtPoints, style }) {
   if (!num) return <span data-flow-missing="" style={style}>{fmt(null)}</span>;
   return <span data-flow-num={formatNumberPath(num.path)} data-flow-doc="tape" data-flow-class={num.cls || 'none'} style={{ ...NUM, ...style }}>{fmt(num.value)}</span>;
 }
-/** A declared aggregate the front computes, with its value — no mark. */
-function FlowAgg({ a, text = String(a.value), style }) {
-  return <span data-flow-agg={a.aggregate} data-flow-class={a.cls || 'none'} data-agg-value={a.value} style={{ ...NUM, ...style }}>{text}</span>;
+/** A declared aggregate the front computes, with its value — no mark. A pin's ordinal names the member it numbers. */
+function FlowAgg({ a, text = String(a.value), style, member = null }) {
+  return <span data-flow-agg={a.aggregate} data-flow-class={a.cls || 'none'} data-agg-value={a.value} data-flow-member={member ? `${member.src}:${member.index}` : undefined} style={{ ...NUM, ...style }}>{text}</span>;
 }
 /** A symbol, the tape's string at its path; "not recorded" where the tape holds none (§7). */
 function FlowSym({ tape, path }) {
@@ -95,11 +95,33 @@ function FlowSym({ tape, path }) {
 
 // ── the pin's shapes (§6): filled circle · hollow circle · diamond ──────────
 
-export function PinMark({ kind, label = null, sel = false, size = 22, flat = false }) {
+/** How much a merged pin's mark widens to hold its range, "2–4" (Amendment A DA-15) — inside the 44 px touch area. */
+export const PIN_RANGE_WIDEN = 12;
+
+/**
+ * A pin's mark (§6). `wide`: a merged pin's, widened to hold its range (DA-15) — the shape kept: a pill for the two
+ * circles, a lozenge (the diamond's points, its middle widened) for a directive.
+ */
+export function PinMark({ kind, label = null, sel = false, size = 22, flat = false, wide = false }) {
   const ring = flat ? 'none' : sel ? `0 0 0 2.5px ${C.bg}, 0 0 0 4.5px ${C.teal}` : `0 0 0 2px ${C.bg}`;
   const bw = size < 16 ? 1.5 : 1.75;
   const fill = flat ? 'transparent' : C.bg;
-  const num = label ? <span aria-hidden="true" style={{ position: 'relative', fontSize: 11.5, fontWeight: 800, lineHeight: 1, ...NUM }}>{label}</span> : null;
+  const width = wide ? size + PIN_RANGE_WIDEN : size;
+  const num = label ? <span aria-hidden="true" style={{ position: 'relative', zIndex: 1, fontSize: 11.5, fontWeight: 800, lineHeight: 1, whiteSpace: 'nowrap', ...NUM }}>{label}</span> : null;
+  if (kind === 'directive' && wide) {
+    const pad = 5;
+    const lozenge = (x0, y0, x1, y1) => { const m = (y1 - y0) / 2; return [[x0, y0 + m], [x0 + m, y0], [x1 - m, y0], [x1, y0 + m], [x1 - m, y1], [x0 + m, y1]].map((p) => p.map((v) => v.toFixed(2)).join(',')).join(' '); };
+    return (
+      <span data-pin-shape="diamond" data-pin-wide="" style={{ width, height: size, position: 'relative', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: C.ink }}>
+        {num}
+        <svg width={width + 2 * pad} height={size + 2 * pad} aria-hidden="true" focusable="false" style={{ position: 'absolute', left: -pad, top: -pad, zIndex: 0, overflow: 'visible' }}>
+          {flat ? null : <polygon points={lozenge(pad - (sel ? 4.5 : 2), pad - (sel ? 4.5 : 2), pad + width + (sel ? 4.5 : 2), pad + size + (sel ? 4.5 : 2))} style={{ fill: sel ? C.teal : C.bg }} />}
+          {sel && !flat ? <polygon points={lozenge(pad - 2.5, pad - 2.5, pad + width + 2.5, pad + size + 2.5)} style={{ fill: C.bg }} /> : null}
+          <polygon points={lozenge(pad, pad, pad + width, pad + size)} style={{ fill, stroke: C.ink, strokeWidth: bw }} />
+        </svg>
+      </span>
+    );
+  }
   if (kind === 'directive') {
     return (
       <span data-pin-shape="diamond" style={{ width: size, height: size, position: 'relative', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: C.ink }}>
@@ -110,14 +132,20 @@ export function PinMark({ kind, label = null, sel = false, size = 22, flat = fal
   }
   const filled = kind === 'agent';
   return (
-    <span data-pin-shape={filled ? 'filled' : 'hollow'} style={{ width: size, height: size, borderRadius: '50%', boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, background: filled ? C.ink : fill, border: filled ? 'none' : `${bw}px solid ${C.ink}`, color: filled ? C.bg : C.ink, boxShadow: ring }}>
+    <span data-pin-shape={filled ? 'filled' : 'hollow'} data-pin-wide={wide ? '' : undefined} style={{ width, height: size, borderRadius: size / 2, boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, background: filled ? C.ink : fill, border: filled ? 'none' : `${bw}px solid ${C.ink}`, color: filled ? C.bg : C.ink, boxShadow: ring }}>
       {num}
     </span>
   );
 }
 
-/** A pin's number on the chart (§6): its bound ordinal, then "+" for a merged pin — read aloud by its fact line instead. */
-const pinLabel = (group) => <><FlowAgg a={group.first.ordinal} />{group.merged ? F.plus : null}</>;
+/**
+ * A pin's number on the chart (§6): its bound ordinal; a merged pin's RANGE, "2–4" — its first and its last
+ * member's bound ordinals and one fixed en dash (Amendment A DA-15), so the number the panel names ("3") can be
+ * placed on the chart. Read aloud by the members' fact lines instead.
+ */
+const pinLabel = (group) => (group.merged
+  ? <><FlowAgg a={group.first.ordinal} member={group.first} />{F.range}<FlowAgg a={group.last.ordinal} member={group.last} /></>
+  : <FlowAgg a={group.first.ordinal} member={group.first} />);
 
 // ── the fact lines (§7) ─────────────────────────────────────────────────────
 
@@ -165,10 +193,12 @@ function LineRuns({ line, who, lay }) {
   });
 }
 
-function FlowChart({ tape, flow, height, width, selectedN, onSelectGroup }) {
+/** The low mark's label text (§5) — measured by layoutOf for its overlap test, drawn by the chart. */
+const lowTextOf = (flow) => (flow.low && flow.low.value ? `${F.low} ${fmtPoints(flow.low.value.value)}${F.dot}${flow.low.clock ?? ''}` : '');
+
+/** The chart, drawn from the front's ONE layout `lay` (DA-11): its x-range, its groups — the panel steps through the same. */
+function FlowChart({ tape, flow, lay, height, selectedN, onSelectGroup }) {
   const low = flow.low && flow.low.value ? flow.low : null;
-  const lowText = low ? `${F.low} ${fmtPoints(low.value.value)}${F.dot}${low.clock ?? ''}` : '';
-  const lay = layoutOf(flow, width, height, lowText);
   const sel = lay.groups.find((g) => g.members.some((m) => m.n === selectedN)) ?? null;
   const finalOf = (line) => (line ? line.points.find((p) => p.final) ?? null : null);
   const youEnd = finalOf(flow.lines.you);
@@ -203,7 +233,7 @@ function FlowChart({ tape, flow, height, width, selectedN, onSelectGroup }) {
             onClick={() => onSelectGroup(g)}
             style={{ ...plain, position: 'absolute', left: g.x - FLOW_PIN_TOUCH / 2, top: g.y - FLOW_PIN_TOUCH / 2, width: FLOW_PIN_TOUCH, height: FLOW_PIN_TOUCH, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: on ? 3 : 2, borderRadius: 8 }}
           >
-            <PinMark kind={g.kind} label={pinLabel(g)} sel={on} size={on ? 24 : 22} />
+            <PinMark kind={g.kind} label={pinLabel(g)} sel={on} size={on ? 24 : 22} wide={g.merged} />
             <span data-flow-pin-name="" style={hidden}>
               {g.members.map((m, k) => <React.Fragment key={m.n}>{k ? ' ' : null}<FactLine tape={tape} panel={panelOf(tape, m)} /></React.Fragment>)}
             </span>
@@ -291,7 +321,7 @@ function FlowPanel({ tape, flow, group, pin, onStep, onOpenAt, renderAgentMark, 
   return (
     <div data-flow-panel={pin.n} data-flow-panel-member={`${pin.src}:${pin.index}`} style={{ borderRadius: 16, background: C.surface, border: `1px solid ${C.hair2}`, padding: narrow ? '10px 12px 0' : '14px 16px 2px', display: 'flex', flexDirection: 'column', gap: narrow ? 7 : 9, minWidth: 0 }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, minWidth: 0 }}>
-        <span style={{ width: 26, flexShrink: 0, display: 'inline-flex', justifyContent: 'center' }}><PinMark kind={pin.kind} label={<FlowAgg a={pin.ordinal} />} flat /></span>
+        <span style={{ width: 26, flexShrink: 0, display: 'inline-flex', justifyContent: 'center' }}><PinMark kind={pin.kind} label={<FlowAgg a={pin.ordinal} member={pin} />} flat /></span>
         <span data-flow-fact="" style={{ fontSize: 13.5, lineHeight: '22px', color: C.ink2, minWidth: 0, ...NUM }}><FactLine tape={tape} panel={panel} /></span>
       </div>
       {panel.src === 'directive' && panel.player ? quote('player', panel.player) : null}
@@ -355,7 +385,10 @@ export default function FilmRoomFlow({ tape, battle = null, desktop = false, one
   // the chart's RENDERED width — measured once, here, on the chart's block (the chart is its full width): the chart
   // draws its groups at it and the panel steps through the same groups (§6)
   const [width, chartRef] = useWidth(L.chartWidth);
-  const group = pin ? groupPins(flow.pins, width).find((g) => g.members.includes(pin)) : null;
+  // ONE layout, ONE grouping (Amendment A DA-11 as Astra qualified it, DB-14): the chart draws these groups and the panel
+  // steps through the same ones — never a second grouping at another width
+  const lay = flow.domain ? layoutOf(flow, width, L.chartHeight, lowTextOf(flow)) : null;
+  const group = pin && lay ? lay.groups.find((g) => g.members.includes(pin)) ?? null : null;
   const onSelectGroup = (g) => setSelectedN(g.members.some((m) => m.n === selectedN) ? selectedN : g.first.n);
 
   const heading = <FlowHeading flow={flow} size={desktop ? 56 : narrow ? 32 : 40} />;
@@ -364,8 +397,9 @@ export default function FilmRoomFlow({ tape, battle = null, desktop = false, one
   // axis, no legend; the rows are counted below, and the key above keeps a recorded final
   const chartBlock = !flow.domain ? null : (
     <div ref={chartRef} data-flow-chart-block="" style={{ display: 'flex', flexDirection: 'column', gap: L.bleed ? 5 : 7, margin: L.bleed ? `0 -${L.bleed}px` : 0, minWidth: 0 }}>
-      <FlowChart tape={tape} flow={flow} height={L.chartHeight} width={width} selectedN={pin?.n ?? null} onSelectGroup={onSelectGroup} />
-      <div data-flow-axis="" style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: C.ink2, ...NUM }}>{flow.axis.map((t, k) => <When key={k}>{t ?? ''}</When>)}</div>
+      <FlowChart tape={tape} flow={flow} lay={lay} height={L.chartHeight} selectedN={pin?.n ?? null} onSelectGroup={onSelectGroup} />
+      {/* the axis's labels sit on the one x-range: the open at its start, the close at its end (DA-11) */}
+      <div data-flow-axis="" style={{ display: 'flex', justifyContent: 'space-between', padding: `0 ${FLOW_AXIS_INSET}px`, fontSize: 11, color: C.ink2, ...NUM }}>{flow.axis.map((t, k) => <When key={k}>{t ?? ''}</When>)}</div>
       {flow.legend.length ? <Legend kinds={flow.legend} /> : null}
     </div>
   );

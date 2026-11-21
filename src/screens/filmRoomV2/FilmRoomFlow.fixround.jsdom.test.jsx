@@ -10,7 +10,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import React from 'react';
 import FilmRoomFlow, { FLOW_LAYOUT } from './FilmRoomFlow.jsx';
 import { flowOf, layoutOf } from './filmRoomFlow.js';
-import { mounter, sep23Tape, clone, battleOf, sweepFlow, flowCopyDefects, sweepWords, quoteDefects } from './__fixtures__/filmRoomHarness';
+import { mounter, sep23Tape, clone, battleOf, sweepFlow, flowCopyDefects, sweepWords, quoteDefects, flowPinsOf } from './__fixtures__/filmRoomHarness';
 
 const m = mounter();
 let restoreWidth = null;
@@ -250,5 +250,133 @@ describe('item 3 — DB-7: dots and butt caps', () => {
     mount(t);
     expect(m.qa('[data-flow-end="you"]')).toHaveLength(1);
     expect(m.q('[data-flow-dot]')).toBeNull();
+  });
+});
+
+describe('item 4 — DA-11: one inset x-range, one grouping for the chart and the panel', () => {
+  /** A day with a directive filed the evening before (DA-2: at the open's edge) and one after the close (at its end). */
+  const edges = () => {
+    const t = clone(sep23Tape);
+    t.actions = [];
+    t.directives = [{ ...clone(sep23Tape.directives[0]), filedAt: '2026-09-23T00:30:00.000Z' }, { ...clone(sep23Tape.directives[1]), filedAt: '2026-09-23T23:30:00.000Z' }];
+    return t;
+  };
+  // the chart's width at each viewport: 280 and 320 take the narrow layout (16 px padding, 4 px bleed: W − 24), 390 the
+  // phone's (W − 40), the desktop its measured 639
+  it.each([['280', 256], ['320', 296], ['390', 350], ['desktop', 639]])('at %s (chart %i px): both edge pins keep their whole 44 px inside the chart', (_, w) => {
+    stubChartWidth(w);
+    mount(edges());
+    const pins = m.qa('[data-flow-pin]');
+    expect(pins).toHaveLength(2);
+    for (const b of pins) {
+      const left = parseFloat(b.style.left);
+      expect([b.style.width, b.style.height]).toEqual(['44px', '44px']);
+      expect(left).toBeGreaterThanOrEqual(0);
+      expect(left + 44).toBeLessThanOrEqual(w);
+    }
+    expect(parseFloat(pins[0].style.left)).toBe(0);         // the open's edge: x = 22, the touch area from 0
+    expect(parseFloat(pins[1].style.left) + 44).toBe(w);    // the close's: x = W − 22
+  });
+  it('the lines, the final dot and the drop line share the range: the final at W − 22, the axis\'s labels padded by 22', () => {
+    stubChartWidth(350);
+    mount(sep23Tape);
+    expect(m.q('[data-flow-end="you"]').getAttribute('cx')).toBe('328');
+    expect(m.q('[data-flow-end="cpu"]').getAttribute('cx')).toBe('328');
+    const first = m.q('path[data-flow-line="you"]').getAttribute('d').match(/^M(-?[\d.]+)/)[1];
+    expect(Number(first)).toBeCloseTo(22 + (45.333333 / 390) * 306, 1);   // the first check, 10:15:20 AM
+    const drop = m.q('[data-flow-drop]');
+    const sel = m.q('[data-flow-pin][aria-pressed="true"]');
+    expect(Number(drop.getAttribute('x1'))).toBeCloseTo(parseFloat(sel.style.left) + 22, 6);
+    expect(m.q('[data-flow-axis]').style.padding).toBe('0px 22px');
+  });
+  /** Two directives `gapPx` apart on the x-range of a chart `w` px wide, then a swap far to their right. */
+  const pair = (gapPx, w) => {
+    const t = clone(sep23Tape);
+    const open = Date.parse('2026-09-23T13:30:00.000Z');
+    const span = Date.parse('2026-09-23T20:00:00.000Z') - open;
+    const at = (px) => new Date(open + Math.round((px / (w - 44)) * span)).toISOString();
+    t.actions = [{ ...clone(sep23Tape.actions[1]), at: at(w - 60) }];
+    t.directives = [{ ...clone(sep23Tape.directives[0]), filedAt: at(100) }, { ...clone(sep23Tape.directives[1]), filedAt: at(100 + gapPx) }];
+    return t;
+  };
+  it.each([[43.5, true], [44.5, false]])('%s px apart: merged %s — and the panel steps through exactly the group the chart draws', (gap, merged) => {
+    const w = 300;
+    stubChartWidth(w);
+    mount(pair(gap, w));
+    const drawn = m.qa('[data-flow-pin]').map((b) => b.getAttribute('data-flow-pin-members').split(' '));
+    expect(drawn[0].length > 1).toBe(merged);
+    // walk the first group in the panel: select it, then Next to its end — the members the panel shows, in order
+    m.click(m.q('[data-flow-pin]'));
+    const walked = [m.q('[data-flow-panel]').getAttribute('data-flow-panel-member')];
+    for (let k = 0; k < 4; k += 1) {
+      const next = m.qa('[data-flow-stepper] button').find((b) => b.textContent === 'Next');
+      if (!next || next.getAttribute('aria-disabled') === 'true') break;
+      m.click(next);
+      walked.push(m.q('[data-flow-panel]').getAttribute('data-flow-panel-member'));
+    }
+    expect(walked).toEqual(drawn[0]);
+  });
+  it('a measured width that is not the layout\'s first-paint width: the panel steps through the MEASURED groups (639 on the phone layout)', () => {
+    stubChartWidth(639);
+    mount(sep23Tape);   // the phone layout's first paint assumes 350, where the agent's swap opens "3–5"
+    expect(flowPinsOf(m.container).map((p) => p.members.length)).toEqual([1, 2, 1, 1]);
+    const steps = () => m.qa('[data-flow-stepper] button').map((b) => [b.textContent, b.getAttribute('aria-disabled')]);
+    expect(text('[data-flow-fact]')).toBe('Your agent · DE → PLTR · 2:00 PM · sold at 468.43');
+    expect(steps()).toEqual([['Previous', null], ['Next', 'true']]);   // the group "2–3": the agent's swap is its last
+    m.click(m.qa('[data-flow-stepper] button')[0]);
+    expect(text('[data-flow-fact]')).toBe('Your directive · 1:40 PM · filed');
+  });
+});
+
+describe('item 4 — DA-15: a merged pin shows its range', () => {
+  it('"1–2" and "3–5" at 350: two BOUND ordinals each, one en dash — every name still its members\' fact lines', () => {
+    stubChartWidth(350);
+    mount(sep23Tape);
+    const marks = m.qa('[data-flow-pin]').map((b) => [...b.querySelectorAll('[data-flow-agg="ordinal(pins in time order)"]')].map((e) => [e.textContent, e.getAttribute('data-flow-member')]));
+    expect(marks).toEqual([[['1', 'action:0'], ['2', 'directive:0']], [['3', 'action:1'], ['5', 'directive:2']]]);
+    expect(flowPinsOf(m.container).map((p) => p.label)).toEqual(['1–2', '3–5']);
+    for (const b of m.qa('[data-flow-pin]')) expect(b.querySelector('[data-pin-wide]')).toBeTruthy();
+    clean(sep23Tape);
+  });
+  it('a three-member group, stepped through: the panel names 3, 4, 5 — each placeable on the chart\'s "3–5"', () => {
+    stubChartWidth(350);
+    mount(sep23Tape);
+    const seenN = [m.q('[data-flow-panel]').getAttribute('data-flow-panel')];
+    for (let k = 0; k < 2; k += 1) { m.click(m.qa('[data-flow-stepper] button').find((b) => b.textContent === 'Next')); seenN.push(m.q('[data-flow-panel]').getAttribute('data-flow-panel')); }
+    expect(seenN).toEqual(['3', '4', '5']);
+    clean(sep23Tape);
+  });
+  it('the shape is the highest-priority member\'s, widened: a directive group\'s lozenge, the agent\'s filled pill; a lone pin is not widened', () => {
+    stubChartWidth(350);
+    mount(sep23Tape);
+    expect(m.qa('[data-flow-pin] [data-pin-shape]').map((e) => e.getAttribute('data-pin-shape'))).toEqual(['diamond', 'filled']);
+    expect(m.q('[data-flow-pin="1"] svg polygon')).toBeTruthy();
+    expect(m.q('[data-flow-pin="3"] [data-pin-shape]').style.width).toBe('36px');   // selected (24) + 12
+    m.teardown(); m.root = null; restoreWidth();
+    stubChartWidth(639);
+    mount(sep23Tape);
+    expect(m.q('[data-flow-pin="1"] [data-pin-wide]')).toBeNull();
+    expect(m.q('[data-flow-pin="1"] [data-pin-shape]').style.width).toBe('22px');
+  });
+  it('the touch areas never overlap: each group\'s 44 px stands at least 44 px from the next — the layout at every chart width from 256 to 1440, the mounted buttons at the four viewports\'', () => {
+    const flow = flowOf(sep23Tape, { battle: battleOf(sep23Tape) });
+    for (let w = 256; w <= 1440; w += 1) {
+      const xs = layoutOf(flow, w, 150).groups.map((g) => g.x);
+      for (let k = 1; k < xs.length; k += 1) if (!(xs[k] - xs[k - 1] >= 44)) throw new Error(`${w}: groups ${k} and ${k + 1} are ${xs[k] - xs[k - 1]} px apart`);
+    }
+    for (const w of [256, 296, 350, 639]) {
+      stubChartWidth(w);
+      mount(sep23Tape);
+      const lefts = m.qa('[data-flow-pin]').map((b) => parseFloat(b.style.left));
+      for (let k = 1; k < lefts.length; k += 1) expect(lefts[k] - lefts[k - 1], `${w}`).toBeGreaterThanOrEqual(44);
+      m.teardown(); m.root = null; restoreWidth(); restoreWidth = null;
+    }
+  });
+  it('the harness reads each ordinal\'s own member: a range\'s last number swapped for the wrong one is a defect', () => {
+    stubChartWidth(350);
+    mount(sep23Tape);
+    const last = m.qa('[data-flow-pin="3"] [data-flow-agg]')[1];
+    last.textContent = '4'; last.setAttribute('data-agg-value', '4');
+    expect(sweepFlow(m.container, { tape: sep23Tape, battle: battleOf(sep23Tape) })).toContain('aggregate ordinal(pins in time order): computed 4, the documents give 5');
   });
 });

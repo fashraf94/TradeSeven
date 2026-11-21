@@ -834,14 +834,14 @@ export const SPEC_FLOW_AGGREGATE_SITES = Object.freeze({
   'count(moments on the tape day)': '[data-flow-cards-line]',
 });
 /**
- * The front's own words, PINNED HERE from Build D spec §11 (and §6's "+") — never read from the production copy, so a
+ * The front's own words, PINNED HERE from Build D spec §11 (and §6's range dash, Amendment A DA-15 — it replaced §6's "+") — never read from the production copy, so a
  * changed word fails here: every text the front renders outside a bound value, an instant and a quotation is one of
  * these, whole.
  */
 export const SPEC_FLOW_COPY = Object.freeze([
   'Won by', 'Lost by', 'Won', 'Lost', 'Draw', 'Final', 'You', 'CPU', "Agent's swap", 'Other swap', 'Your directive', 'Low',
   'Your agent', 'Stall rule', 'Risk rule', 'Guardrail', 'Gameplan meeting', 'Maker not recorded',
-  ' · ', ' → ', 'sold at', 'not recorded', 'filed', 'not filed', 'Previous', 'Next', '+',
+  ' · ', ' → ', 'sold at', 'not recorded', 'filed', 'not filed', 'Previous', 'Next', '–',
   'more on the full tape', 'Open this on the full tape', "Some of this day's record is incomplete. The full tape says what.",
   'Nothing stood out in this game.', 'This game', 'This day', 'Trading', 'Working with you', 'of', 'swaps were its own call',
   'directives filed', 'moment to take home, on the full tape', 'moments to take home, on the full tape', 'Open the full tape',
@@ -874,7 +874,8 @@ function flowAggregateOracle(name, el, container, docs) {
     }
     case 'ordinal(pins in time order)': {
       const host = el.closest('[data-flow-pin], [data-flow-panel]');
-      const own = host?.hasAttribute('data-flow-pin') ? host.getAttribute('data-flow-pin-members').split(' ')[0] : host?.getAttribute('data-flow-panel-member');
+      // each bound ordinal names its own member (DA-15: a merged pin shows two — its first and its last); else the pin's first / the panel's
+      const own = el.getAttribute('data-flow-member') || (host?.hasAttribute('data-flow-pin') ? host.getAttribute('data-flow-pin-members').split(' ')[0] : host?.getAttribute('data-flow-panel-member'));
       const t = own ? memberMs(tape, own) : null;
       if (t === null) return null;
       // ties at one instant may take either order: the shown number must fall in [earlier + 1, earlier-or-equal]

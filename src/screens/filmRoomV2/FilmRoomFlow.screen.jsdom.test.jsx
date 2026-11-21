@@ -212,7 +212,8 @@ describe('F-DOOR — the door, the way back, the pins\' links, a change of day; 
     expect(document.activeElement.getAttribute('data-swap-card')).toBe('1');
     m.click(m.q('header button')); await m.flush();
     expect(onFront()).toBe(true);
-    m.click(m.q('[data-flow-pin="5"]'));
+    // fix round item 4 (DA-11): the 2:20 PM directive is in the agent's group, "3–5" — one step on from the opening pin
+    m.click(m.qa('[data-flow-stepper] button').find((b) => b.textContent === 'Next'));
     m.click(m.q('[data-flow-pin-link]'));
     await m.flush();
     expect(document.activeElement).toBe(document.getElementById('directives'));

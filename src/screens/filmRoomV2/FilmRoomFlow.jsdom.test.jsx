@@ -42,7 +42,10 @@ const clean = (tape, extra) => {
 };
 
 describe('F-FIXTURE — the Sep 23 front, as the player sees it, pinned whole', () => {
-  it('at 390: "Won by 46", the key, three groups of five pins, the agent\'s swap open, "1 more on the full tape", the two counts, the door', () => {
+  // RE-PINNED by the fix round, item 4 (Amendment A DA-11, DA-15; build report §11): on the inset x-range the 12:45 PM swap
+  // and the 1:40 PM directive are 43.05 px apart at 350 — one group, "1–2"; the agent's swap opens "3–5"; and the low
+  // mark, no longer under a touch area, is drawn
+  it('at 390: "Won by 46", the key, two groups of five pins — "1–2" and "3–5" —, the agent\'s swap open, the low, "1 more on the full tape", the two counts, the door', () => {
     stubChartWidth(FLOW_LAYOUT.phone.chartWidth);
     mount(sep23Tape);
     expect(text('[data-flow-heading]')).toBe('Won by 46');
@@ -51,9 +54,8 @@ describe('F-FIXTURE — the Sep 23 front, as the player sees it, pinned whole', 
     expect(text('[data-flow-key="cpu"]')).toBe('CPU −93');
     expect(m.qa('[data-flow-axis] [data-time]').map((e) => e.textContent)).toEqual(['9:30 AM', '12:45 PM', '4:00 PM']);
     expect(flowPinsOf(m.container).map((p) => [p.n, p.kind, p.label, p.members.join(' '), p.pressed])).toEqual([
-      [1, 'other', '1', 'action:0', 'false'],
-      [2, 'agent', '2+', 'directive:0 action:1 directive:1', 'true'],
-      [5, 'directive', '5', 'directive:2', 'false'],
+      [1, 'directive', '1–2', 'action:0 directive:0', 'false'],
+      [3, 'agent', '3–5', 'action:1 directive:1 directive:2', 'true'],
     ]);
     expect(m.qa('[data-flow-legend-kind]').map((e) => e.textContent)).toEqual(["Agent's swap", 'Other swap', 'Your directive']);
     expect(text('[data-flow-fact]')).toBe('Your agent · DE → PLTR · 2:00 PM · sold at 468.43');
@@ -63,18 +65,22 @@ describe('F-FIXTURE — the Sep 23 front, as the player sees it, pinned whole', 
     expect(text('[data-flow-counts] h2')).toBe('This game');
     expect(text('[data-flow-door]')).toBe('Open the full tape');
     expect(m.q('[data-flow-door]').id).toBe('door-1');
-    expect(m.q('[data-flow-low]')).toBeNull();   // its label would sit over a pin's touch area (filmRoomFlow.test.js)
+    expect(text('[data-flow-low]')).toBe('Low −92 · 1:30 PM');   // clear of every touch area now (filmRoomFlow.test.js)
     expect(m.q('[data-flow-cards-line]')).toBeNull();
     clean(sep23Tape);
   });
 
-  it('at 320: two groups — 1+ (the 12:45 PM swap and the 1:40 PM directive) and 3+ (the agent\'s swap first, then two directives)', () => {
+  it('at 320: two groups — "1–2" (the 12:45 PM swap and the 1:40 PM directive) and "3–5" (the agent\'s swap first, then two directives)', () => {
     stubChartWidth(FLOW_LAYOUT.narrow.chartWidth);
-    mount(sep23Tape);
+    const had = window.matchMedia;   // the narrow layout (under 360 px): its 112 px chart height, as at 320
+    window.matchMedia = (q) => ({ matches: q === '(max-width: 359px)', addEventListener: () => {}, removeEventListener: () => {} });
+    try { mount(sep23Tape); } finally { window.matchMedia = had; }
+    expect(m.q('[data-flow-front]').getAttribute('data-flow-front')).toBe('narrow');
     expect(flowPinsOf(m.container).map((p) => [p.n, p.kind, p.label, p.members.join(' '), p.pressed])).toEqual([
-      [1, 'directive', '1+', 'action:0 directive:0', 'false'],
-      [3, 'agent', '3+', 'action:1 directive:1 directive:2', 'true'],
+      [1, 'directive', '1–2', 'action:0 directive:0', 'false'],
+      [3, 'agent', '3–5', 'action:1 directive:1 directive:2', 'true'],
     ]);
+    expect(m.q('[data-flow-low]')).toBeNull();   // its label would sit over the "3–5" pin's touch area (filmRoomFlow.test.js)
     expect(m.q('[data-flow-chart]').getAttribute('data-chart-width')).toBe('296');
     clean(sep23Tape);
   });
@@ -87,7 +93,7 @@ describe('F-FIXTURE — the Sep 23 front, as the player sees it, pinned whole', 
     expect(m.q('[data-flow-line="cpu"]').style.strokeDasharray).toBe('5 4');
     expect(m.q('[data-flow-line="you"]').style.strokeDasharray).toBe('');
     expect(m.q('[data-flow-line="you"]').getAttribute('d').split(/[ML]/).filter(Boolean)).toHaveLength(24);
-    expect(m.q('[data-flow-end="you"]').getAttribute('cx')).toBe('350');
+    expect(m.q('[data-flow-end="you"]').getAttribute('cx')).toBe('328');   // the inset axis's end, 350 − 22 (DA-11)
     expect(m.qa('[data-flow-zero]')).toHaveLength(1);
     expect(m.qa('[data-flow-guide]').length).toBeLessThanOrEqual(2);
     expect(m.qa('[data-flow-drop]')).toHaveLength(1);
@@ -108,37 +114,45 @@ describe('the pins are buttons (§6; exit criterion 10)', () => {
       expect(b.hasAttribute('aria-label')).toBe(false);
     }
     expect(flowPinsOf(m.container).map((p) => p.name)).toEqual([
-      'Stall rule · MSFT → CRWD · 12:45 PM · sold at 498.79',
-      'Your directive · 1:40 PM · filed Your agent · DE → PLTR · 2:00 PM · sold at 468.43 Your directive · 2:20 PM · not filed',
-      'Your directive · 2:50 PM · not filed',
+      'Stall rule · MSFT → CRWD · 12:45 PM · sold at 498.79 Your directive · 1:40 PM · filed',
+      'Your agent · DE → PLTR · 2:00 PM · sold at 468.43 Your directive · 2:20 PM · not filed Your directive · 2:50 PM · not filed',
     ]);
     // the keyboard's order is the DOM's: by time
     const lefts = buttons.map((b) => parseFloat(b.style.left));
     expect([...lefts].sort((a, b) => a - b)).toEqual(lefts);
   });
 
+  // re-pinned by the fix round, item 4: at 350 the groups are "1–2" and "3–5" (DA-11); a lone pin's row runs at 639
   it('a tap selects a pin (its first member), the ring moves, the panel follows; the stepper walks a merged pin in time order', () => {
     stubChartWidth(350);
     mount(sep23Tape);
     m.click(m.q('[data-flow-pin="1"]'));
-    expect(flowPinsOf(m.container).map((p) => p.pressed)).toEqual(['true', 'false', 'false']);
+    expect(flowPinsOf(m.container).map((p) => p.pressed)).toEqual(['true', 'false']);
     expect(text('[data-flow-fact]')).toBe('Stall rule · MSFT → CRWD · 12:45 PM · sold at 498.79');
-    expect(m.q('[data-flow-stepper]')).toBeNull();
-    m.click(m.q('[data-flow-pin="2"]'));
-    expect(text('[data-flow-fact]')).toBe('Your directive · 1:40 PM · filed');
     const step = (label) => m.click(m.qa('[data-flow-stepper] button').find((b) => b.textContent === label));
     step('Next');
+    expect(text('[data-flow-fact]')).toBe('Your directive · 1:40 PM · filed');
+    m.click(m.q('[data-flow-pin="3"]'));
+    expect(flowPinsOf(m.container).map((p) => p.pressed)).toEqual(['false', 'true']);
     expect(text('[data-flow-fact]')).toBe('Your agent · DE → PLTR · 2:00 PM · sold at 468.43');
     step('Next');
     expect(text('[data-flow-fact]')).toBe('Your directive · 2:20 PM · not filed');
+    step('Next');
+    expect(text('[data-flow-fact]')).toBe('Your directive · 2:50 PM · not filed');
     expect(m.qa('[data-flow-stepper] button').find((b) => b.textContent === 'Next').getAttribute('aria-disabled')).toBe('true');
     step('Next');   // at the end: stays
-    expect(text('[data-flow-fact]')).toBe('Your directive · 2:20 PM · not filed');
+    expect(text('[data-flow-fact]')).toBe('Your directive · 2:50 PM · not filed');
     step('Previous');
     step('Previous');
-    expect(text('[data-flow-fact]')).toBe('Your directive · 1:40 PM · filed');
+    expect(text('[data-flow-fact]')).toBe('Your agent · DE → PLTR · 2:00 PM · sold at 468.43');
     expect(m.qa('[data-flow-stepper] button').find((b) => b.textContent === 'Previous').getAttribute('aria-disabled')).toBe('true');
     clean(sep23Tape);
+    m.teardown(); m.root = null; restoreWidth();
+    stubChartWidth(639);   // the desktop chart's width: the 12:45 PM swap stands alone
+    mount(sep23Tape);
+    m.click(m.q('[data-flow-pin="1"]'));
+    expect(text('[data-flow-fact]')).toBe('Stall rule · MSFT → CRWD · 12:45 PM · sold at 498.79');
+    expect(m.q('[data-flow-stepper]')).toBeNull();
   });
 
   it('the panel is a polite live region; the pin link opens the tape at its anchor', () => {
@@ -149,7 +163,7 @@ describe('the pins are buttons (§6; exit criterion 10)', () => {
     m.click(m.q('[data-flow-pin-link]'));
     m.click(m.q('[data-flow-pin="1"]'));
     m.click(m.q('[data-flow-pin-link]'));
-    m.click(m.q('[data-flow-pin="5"]'));
+    m.click(m.qa('[data-flow-stepper] button').find((b) => b.textContent === 'Next'));   // the 1:40 PM directive, in "1–2"
     m.click(m.q('[data-flow-pin-link]'));
     expect(calls.at).toEqual(['swap-2', 'swap-1', 'directives']);
     m.click(m.q('[data-flow-door]'));
@@ -286,13 +300,13 @@ describe('the review round — the front', () => {
     restoreWidth = () => { if (desc) Object.defineProperty(HTMLElement.prototype, 'clientWidth', desc); else delete HTMLElement.prototype.clientWidth; };
     mount(sep23Tape);
     expect(m.q('[data-flow-chart]').getAttribute('data-chart-width')).toBe('350');
-    expect(flowPinsOf(m.container).map((p) => p.members.length)).toEqual([1, 3, 1]);
+    expect(flowPinsOf(m.container).map((p) => p.members.length)).toEqual([2, 3]);   // re-pinned, fix round item 4 (DA-11)
     m.render(<FilmRoomFlow tape={sep23Tape} desktop onOpenTape={() => {}} onOpenAt={() => {}} doorId="door-1" />);
     expect(m.q('[data-flow-chart]').getAttribute('data-chart-width')).toBe('639');
     expect(flowPinsOf(m.container).map((p) => p.members.length)).toEqual([1, 2, 1, 1]);
     m.render(<FilmRoomFlow tape={sep23Tape} onOpenTape={() => {}} onOpenAt={() => {}} doorId="door-1" />);
     expect(m.q('[data-flow-chart]').getAttribute('data-chart-width')).toBe('350');
-    expect(flowPinsOf(m.container).map((p) => p.members.length)).toEqual([1, 3, 1]);
+    expect(flowPinsOf(m.container).map((p) => p.members.length)).toEqual([2, 3]);
   });
   it('NUM-3: rows the chart cannot place (no instant) and no pin — the count of them on the full tape, never "Nothing stood out" beside it', () => {
     const t = clone(sep23Tape);

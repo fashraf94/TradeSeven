@@ -16,7 +16,7 @@ import path from 'node:path';
 import {
   flowOf, headingOf, keyOf, linesOf, lowOf, domainOf, axisLabelsOf, choosePins, groupPins, openingPin, legendOf, panelOf,
   incompleteOf, countsOf, layoutOf, marginOf, fmtMargin, hundredthsOfShown, makerKeyOf, heightAt, isFinalDayOf, allPinsOf,
-  FLOW_AGGREGATES, FLOW_PIN_TOUCH, momentsCountOf,
+  FLOW_AGGREGATES, FLOW_PIN_TOUCH, FLOW_AXIS_INSET, momentsCountOf,
 } from './filmRoomFlow.js';
 import { SCREEN_AGGREGATE_CLASSES, fmtPoints, etClock } from './filmRoomModel';
 import sep23Tape from './__fixtures__/sep23.tape.json';
@@ -104,17 +104,20 @@ describe('F-FIXTURE — the Sep 23 front, the model\'s half, pinned whole', () =
     expect(flow.selected.n).toBe(3);
     expect(flow.legend).toEqual(['agent', 'other', 'directive']);
   });
-  it('the groups at 390 (chart 350 px) and at 320 (chart 296 px)', () => {
-    expect(groupPins(flow.pins, W390).map((g) => [g.n, g.merged, g.kind, g.members.map((m) => m.n)])).toEqual([[1, false, 'other', [1]], [2, true, 'agent', [2, 3, 4]], [5, false, 'directive', [5]]]);
+  it('the groups at 390 (chart 350 px) and at 320 (chart 296 px) — on the inset x-range (DA-11, fix round item 4)', () => {
+    // x = 22 + frac × (W − 44): at 350 the 12:45 PM swap (x 175.10) and the 1:40 PM directive (x 218.15) are 43.05 px
+    // apart — one group now (49.2 px apart before the inset); the agent's swap starts the next (58.8 px from 175.10)
+    expect(groupPins(flow.pins, W390).map((g) => [g.n, g.merged, g.kind, g.members.map((m) => m.n)])).toEqual([[1, true, 'directive', [1, 2]], [3, true, 'agent', [3, 4, 5]]]);
     expect(groupPins(flow.pins, W320).map((g) => [g.n, g.merged, g.kind, g.members.map((m) => m.n)])).toEqual([[1, true, 'directive', [1, 2]], [3, true, 'agent', [3, 4, 5]]]);
   });
-  it('the low mark\'s value and clock: −92 at 1:30 PM; eligible, and left out at both phone widths — its label sits over a pin\'s touch area', () => {
+  it('the low mark\'s value and clock: −92 at 1:30 PM; eligible — drawn at 390, left out at 320 and on the desktop, where its label sits over a pin\'s touch area', () => {
     expect(flow.low).toEqual({ index: 13, t: ms('2026-09-23T17:30:20.000Z'), value: { value: -92, cls: 'recorded', path: ['checks', 13, 'scores', 'total'] }, clock: '1:30 PM', eligible: true });
     const text = `Low ${fmtPoints(-92)} · 1:30 PM`;
-    for (const [w, h] of [[W390, 150], [W320, 112]]) {
+    // fix round item 4 (DA-11): at 390 the 1:40 PM directive (at −91.6, beside the low) now shares the 12:45 PM swap's
+    // group, drawn at that swap's height (−55): no touch area reaches the label, so the mark is drawn
+    for (const [w, h, shown] of [[W390, 150, true], [W320, 112, false], [639, 230, false]]) {
       const lay = layoutOf(flow, w, h, text);
-      expect(lay.low.overlaps, `${w}`).toBe(true);
-      expect(lay.low.shown, `${w}`).toBe(false);
+      expect([lay.low.overlaps, lay.low.leaves, lay.low.shown], `${w}`).toEqual([!shown, false, shown]);
     }
   });
   it('the two counts: Trading 1 of 3, Working with you 1 of 3, under "This game"', () => {
@@ -307,11 +310,12 @@ describe('F-PINS — at most five, by priority; the merge; the order of the rows
   it('the grouping: a chain of close pins joins only while each is within 44 px of its GROUP\'S FIRST pin', () => {
     const pins = [0, 30, 60, 90, 133.9, 134, 177.8, 178].map((x, k) => ({ n: k + 1, kind: 'other', frac: x / 1000 }));
     // 177.8 is 43.9 px from its group's first pin (133.9) and joins; 178 is 44.1 px from it and starts a group — though
-    // only 0.2 px from the pin before it (a chain measured pin to pin would join it)
-    expect(groupPins(pins, 1000).map((g) => g.members.map((m) => m.n))).toEqual([[1, 2], [3, 4], [5, 6, 7], [8]]);
-    expect(groupPins(pins, 1000).map((g) => g.x)).toEqual([0, 60, 133.9, 178]);
-    // exactly 44 px apart is not "closer than 44"
-    expect(groupPins([{ n: 1, kind: 'other', frac: 0 }, { n: 2, kind: 'other', frac: FLOW_PIN_TOUCH / 100 }], 100).length).toBe(2);
+    // only 0.2 px from the pin before it (a chain measured pin to pin would join it). A 1044 px chart: its x-range is
+    // 1000 px, inset 22 px on each side (DA-11, fix round item 4)
+    expect(groupPins(pins, 1044).map((g) => g.members.map((m) => m.n))).toEqual([[1, 2], [3, 4], [5, 6, 7], [8]]);
+    expect(groupPins(pins, 1044).map((g) => Math.round((g.x - FLOW_AXIS_INSET) * 1e6) / 1e6)).toEqual([0, 60, 133.9, 178]);
+    // exactly 44 px apart is not "closer than 44" (a 128 px x-range: 44 / 128 is exact in binary)
+    expect(groupPins([{ n: 1, kind: 'other', frac: 0 }, { n: 2, kind: 'other', frac: FLOW_PIN_TOUCH / 128 }], 128 + 2 * FLOW_AXIS_INSET).length).toBe(2);
     // the shape is the highest-priority member's; the label the lowest number
     const g = groupPins([{ n: 1, kind: 'other', frac: 0 }, { n: 2, kind: 'directive', frac: 0.01 }, { n: 3, kind: 'agent', frac: 0.02 }], 100)[0];
     expect([g.kind, g.n, g.merged]).toEqual(['agent', 1, true]);
@@ -336,7 +340,7 @@ describe('F-PINS — at most five, by priority; the merge; the order of the rows
     const { pins } = choosePins(sep23Tape);
     expect(openingPin(pins).n).toBe(3);
     const inGroup = groupPins(pins, W390).find((g) => g.members.includes(openingPin(pins)));
-    expect(inGroup.members.map((m) => m.n)).toEqual([2, 3, 4]);
+    expect(inGroup.members.map((m) => m.n)).toEqual([3, 4, 5]);   // fix round item 4: the inset regroups 390 (DA-11)
     expect(groupPins(pins, 2000).find((g) => g.members.includes(openingPin(pins))).merged).toBe(false);
     const noAgent = dayOf([swap(12, 0, 'archetype_rotation')], [dir(11, 0, 'first')]);
     expect(openingPin(choosePins(noAgent).pins)).toMatchObject({ n: 1, kind: 'directive' });
@@ -479,8 +483,9 @@ describe("the review round — the tests' gaps (TI-2, TI-5)", () => {
     expect(lowOf(dayOfTotals([-5, 1, 2], 900_000)).eligible).toBe(true);
   });
   it('M05: a label that leaves the chart on the RIGHT only is left out', () => {
-    const t = dayOfTotals([0, 5, 3, 2, 1, -40, 4], 3_600_000);   // 10 AM to 4 PM, the low at 3 PM
-    const lay = layoutOf(flowOf(t), 300, 150, 'Low −40 · 3:00 PM');
+    // half-hourly, 10 AM to 4 PM, the low at 3:30 PM — late enough that its label passes the inset axis's end (DA-11)
+    const t = dayOfTotals([0, 5, 3, 2, 1, 4, 3, 2, 1, 3, 2, -40, 4], 1_800_000);
+    const lay = layoutOf(flowOf(t), 300, 150, 'Low −40 · 3:30 PM');
     expect(lay.low.box.left).toBeGreaterThanOrEqual(0);
     expect(lay.low.box.right).toBeGreaterThan(300);
     expect(lay.low).toMatchObject({ leaves: true, shown: false });
@@ -499,7 +504,7 @@ describe("the review round — the tests' gaps (TI-2, TI-5)", () => {
     const p = choosePins(t).pins.find((x) => x.src === 'directive' && x.index === 0);
     expect(p.frac).toBe(0);
     const lay = layoutOf(flowOf(t), 350, 150, '');
-    expect(Math.min(...lay.groups.map((g) => g.x))).toBe(0);
+    expect(Math.min(...lay.groups.map((g) => g.x))).toBe(FLOW_AXIS_INSET);   // the inset axis's start (DA-11): its whole 44 px inside
   });
 });
 
