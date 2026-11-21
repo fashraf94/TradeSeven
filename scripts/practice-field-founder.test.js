@@ -523,6 +523,16 @@ describe('the records status lists are the door\'s own records (over the corpora
     for (const reason of ['conflicting_action', 'possible_redate', 'revised_after_ruling', 'refused', 'open_gap', 'closed_doubt']) expect(reasons.has(reason), `${reason} reached: ${[...reasons]}`).toBe(true);
   }, 120_000);
 
+  it('a refused share-basis record whose id the ledger has settled since is not listed — the door does not find it either', () => {
+    const recordId = `reverse_split_AAPL_${SEQ[2]}`;
+    const held = { actionId: recordId, type: 'reverse_split', ticker: 'AAPL', effectiveDate: SEQ[2], ratio: 1e-9, refused: 'rounds_to_nothing', heldOn: SEQ[2] };
+    const ideaWith = (declined) => ({ ideaId: 'idea-x', ledger: { holdings: { AAPL: { shares: 10, heldActions: [held] } }, declinedActionIds: declined } });
+    expect(openRecordsOf(ideaWith([])).map((r) => [r.kind, r.recordId, r.reason])).toEqual([['conflict', recordId, 'refused: rounds_to_nothing']]);
+    expect(planHoldRuling(ideaWith([]), { kind: 'conflict', recordId, decision: 'none' }, { uid: 'u', requestKey: 'k', nowIso: ADMIT_ISO }).error).toBeUndefined();
+    expect(openRecordsOf(ideaWith([recordId]))).toEqual([]);
+    expect(planHoldRuling(ideaWith([recordId]), { kind: 'conflict', recordId, decision: 'none' }, { uid: 'u', requestKey: 'k', nowIso: ADMIT_ISO }).error).toBe('record_not_found');
+  });
+
   it('end to end: status on a history left with an open record lists it, and resolve --go with that id is recorded by the door', async () => {
     vi.stubEnv('MANDATE_FOUNDER_UIDS', 'owner-1');
     let done = false;
