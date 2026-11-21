@@ -203,14 +203,16 @@ describe('item 6 — DB-3 / DB-4 / DB-12, beside the reproductions', () => {
       expect(w.calls).toHaveLength(1);
     } finally { w.undo(); }
   });
-  it("DB-3: \"Got it\" while the verdict is on its way, then ADMITTED — marked at the dismissal; the front, and no notice on a remount", async () => {
+  it("DB-3: \"Got it\" pressed while the verdict is on its way, then ADMITTED — marked at the dismissal; the press kept the tape (DB-4); no notice on a remount", async () => {
     flags.flow = 'allowlist';
     const h = heldApi();
     await open({ cardsApi: h.api });
-    m.click(m.buttons('Got it')[0]); await m.flush();
+    const gotIt = m.buttons('Got it')[0];
+    act(() => { gotIt.dispatchEvent(pointer('pointerdown')); });   // a press, as a browser sends one
+    m.click(gotIt); await m.flush();
     expect(hasSeenFirstOpen('viewer-1')).toBe(true);
     h.answer(true); await m.flush();
-    expect(onFront()).toBe(true);
+    expect(onTape()).toBe(true);
     m.teardown(); m.setup();
     flags.flow = 'off';
     await open();

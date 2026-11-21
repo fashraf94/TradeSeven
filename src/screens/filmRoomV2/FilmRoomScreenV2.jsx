@@ -308,13 +308,13 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
   // Where the flow is off for this owner — the mode 'off', or 'allowlist' answered no — that is the first paint it
   // shows on, as before Build D (the refuter's N-1b). Amendment B DB-3 (Astra's F3): so is a screen opened AT A
   // MOMENT, valid or rejected — that entry never shows the front, so its tape is settled from the first paint; and a
-  // notice the viewer DISMISSES is marked then (onDismiss, below — markFirstOpenSeen writes nothing once marked).
-  // DA-12's one declared difference stays: under 'allowlist', a viewer who leaves without interacting while the verdict
-  // is pending isn't marked.
+  // notice the viewer DISMISSES before that is marked then (onDismiss, below). Where the paint already marked it — the
+  // flow off, as on main — the dismissal asks nothing more of the storage. DA-12's one declared difference stays: under
+  // 'allowlist', a viewer who leaves without interacting while the verdict is pending isn't marked.
   const flowOffHere = flowMode === 'off' || (flowMode === 'allowlist' && flowVerdict === false);
   const noticeShown = !front && !frontFrame && (flowOffHere || openedAtMoment || ((flowVerdict === true || flowMode === 'on') && tapeState.status !== 'loading'));
   useEffect(() => { if (notice && noticeShown) markFirstOpenSeen(viewerId); }, [notice, viewerId, noticeShown]);
-  const dismissNotice = () => { markFirstOpenSeen(viewerId); setNotice(false); };
+  const dismissNotice = () => { if (!noticeShown) markFirstOpenSeen(viewerId); setNotice(false); };
   // the series is the Deep dive's, read only when it opens — never for the front, whatever depth the tape was left at
   // (the review's DR-4)
   const seriesState = useSeriesDay(battleId, day, tape?.ownerId ?? null, depth === 'deep' && written && !front, readers);

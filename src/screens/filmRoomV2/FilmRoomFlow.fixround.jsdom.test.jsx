@@ -224,7 +224,9 @@ describe('item 3 — F7: a single scored check is a point (DB-7)', () => {
 });
 
 describe('item 3 — DB-7: dots and butt caps', () => {
-  it('a fifteen-minute break at 280 px wide stays visible — each line\'s stroke stops at its last check (butt caps)', () => {
+  // the narrowest chart: a 280 px viewport takes the narrow layout, 256 px wide — its inset x-range 212 px, so fifteen
+  // minutes is 8.15 px there (DB-7 counted "at least 9 px"; DA-11's inset came after — build report §11, a question)
+  it('a fifteen-minute break on the narrowest chart (256 px, a 280 px viewport) stays visible — each line\'s stroke stops at its last check (butt caps)', () => {
     const t = clone(sep23Tape);
     t.isFinalDay = false;
     t.battle = clone(ACTIVE);
@@ -232,14 +234,14 @@ describe('item 3 — DB-7: dots and butt caps', () => {
     t.actions = [];
     t.directives = [];
     t.score.lastCheck = { ...t.score.lastCheck, tickSeq: 5, at: iso('14:30'), total: 8, opponent: 1 };
-    stubChartWidth(280);
+    stubChartWidth(256);
     mount(t);
     for (const who of ['you', 'cpu']) {
       const paths = m.qa(`path[data-flow-line="${who}"]`);
       expect(paths, who).toHaveLength(2);
       expect(paths.every((p) => /stroke-linecap:\s*butt/.test(p.getAttribute('style'))), who).toBe(true);
       const xs = (p) => [...p.getAttribute('d').matchAll(/[ML]\s*(-?[\d.]+)/g)].map((mm) => Number(mm[1]));
-      expect(Math.min(...xs(paths[1])) - Math.max(...xs(paths[0])), who).toBeGreaterThanOrEqual(8);
+      expect(Math.min(...xs(paths[1])) - Math.max(...xs(paths[0])), who).toBeGreaterThanOrEqual(8);   // 8.15 px, nothing reaching into it
     }
     expect(m.q('[data-flow-dot]')).toBeNull();
     clean(t);
@@ -486,5 +488,22 @@ describe('item 5 — the kit\'s Quotation: `preview` omitted, every existing use
       expect(omitted.includes('Read more')).toBe(Boolean(props.lines));
       expect(html({ ...props, preview: true })).not.toBe(omitted);   // the control: the prop does change what it should
     } finally { undo(); }
+  });
+});
+
+describe('item 2 — the harness reads instants as the front does (flowMs, DB-6)', () => {
+  it('a zoneless check holding the day\'s lowest score is no check to the front — the low is the strict −10, and the sweep agrees', () => {
+    const t = clone(sep23Tape);
+    t.isFinalDay = false;
+    t.battle = clone(ACTIVE);
+    t.checks = [check(1, iso('14:00'), 5, 1), check(2, iso('14:30'), -10, 1), check(3, '2026-09-23T15:30:00', -50, 1), check(4, iso('16:30'), 3, 1), check(5, iso('17:00'), 4, 1)];
+    t.actions = [];
+    t.directives = [];
+    t.score.lastCheck = { ...t.score.lastCheck, tickSeq: 5, at: iso('17:00'), total: 4, opponent: 1 };
+    stubChartWidth(639);
+    mount(t);
+    expect(text('[data-flow-low]')).toBe('Low −10 · 10:30 AM');
+    expect(m.q('[data-flow-low] [data-flow-num]').getAttribute('data-flow-num')).toBe('checks[1].scores.total');
+    clean(t);   // a harness reading the zoneless instant with Date.parse would demand checks[2] — the row that bites
   });
 });
