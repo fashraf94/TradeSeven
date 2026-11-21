@@ -27,7 +27,7 @@
 // holds it in a module-scope const, so a featureFlags mock reaches every read.
 
 import { getAuth } from 'firebase/auth';
-import { FILM_ROOM_V2_MODE, FILM_ROOM_V2_MODES, FILM_ROOM_CARDS_MODE, FILM_ROOM_CARDS_MODES } from '../config/featureFlags';
+import { FILM_ROOM_V2_MODE, FILM_ROOM_V2_MODES, FILM_ROOM_CARDS_MODE, FILM_ROOM_CARDS_MODES, FILM_ROOM_FLOW_MODE, FILM_ROOM_FLOW_MODES } from '../config/featureFlags';
 
 /** The route the server answers on (the cockpit's own; no new endpoint). */
 export const FILM_ROOM_VERDICT_PATH = '/api/agent/cockpit-status';
@@ -207,4 +207,32 @@ export async function resolveFilmRoomCardsForBattle(battle, { readVerdict = read
   let verdict = false;
   try { verdict = (await readVerdict(id, { ownerId: typeof battle?.ownerId === 'string' ? battle.ownerId : null })) === true; } catch { verdict = false; }
   return filmRoomCardsOn(mode, verdict);
+}
+
+// ── Film Room D1 — the FLOW gate (Build D spec §2; FL-14) ──────────────────
+//
+// FILM_ROOM_FLOW_MODE ('off' | 'allowlist' | 'on') resolves per battle owner
+// exactly as the cards mode does, and in 'allowlist' it reads THE SAME cached
+// verdict (readFilmRoomVerdict, keyed by the battle's owner) — the screen asks
+// it through the one seam the cards use, so a battle the cards already asked
+// about is never asked about again. Everywhere the flow does not resolve on,
+// the screen opens on the tape as it did before Build D, byte for byte; while
+// an 'allowlist' verdict is on its way, it reads as off.
+
+/** The flow mode, when it is one of the walked states, else 'off'. Never throws. */
+export function resolveFilmRoomFlowMode() {
+  try {
+    const modes = FILM_ROOM_FLOW_MODES;
+    const mode = FILM_ROOM_FLOW_MODE;
+    return Array.isArray(modes) && modes.includes(mode) ? mode : OFF;
+  } catch {
+    return OFF;
+  }
+}
+
+/** Does the flow resolve on for this battle, given the mode and (in 'allowlist') the verdict? Pure; undefined reads as off. */
+export function filmRoomFlowOn(mode, verdict) {
+  if (mode === 'on') return true;
+  if (mode === 'allowlist') return verdict === true;
+  return false;
 }
