@@ -255,23 +255,28 @@ describe('L-1, L-2 through the real founder endpoint — approve, decline, repla
     expect(await ask(c, lateBody('idea', D1), 'x')).toMatchObject({ status: 409, body: { error: 'late_share_basis_unresolved' } });
   });
 
-  it('409 (4) a date in the holding interval is uncovered (T2E-08: a rejected row dated within the sold holding) — `late_date_uncovered`; a clean backfill covering it clears the doubt, and the approval posts', async () => {
+  it('409 (4) a date in the holding interval is uncovered (T2E-08: a rejected row dated within the sold holding) — `late_date_uncovered`; the founder\'s coverage_gap ruling clears the doubt (A-4: a clean backfill is evidence only), and the approval posts', async () => {
     const c = await opened({ comparison: xlk });
     const p = await soldAt2(c);
     await closeAt(c, 3, p);
     await storeCloseSnapshot(c.db, S[4], q(p));
     storeParseReport(c.db, S[4], 'AAPL', rejectedOn(S[1]));
     await closeIdeaBook(c.db, c.bookRef, { date: S[4], now: closeNowOf(S[4]) });
-    expect(ideaOf(c).ledger.closedCoverageDoubts).toEqual({ AAPL: { dates: [{ date: S[1], seenOn: S[4] }], through: S[2] } });
+    expect(ideaOf(c).ledger.closedCoverageDoubts).toEqual({ AAPL: { id: `ca_closed_doubt_AAPL_${S[1]}`, dates: [{ date: S[1], seenOn: S[4], lastSeenOn: S[4] }], through: S[2] } });
     await closeAt(c, 5, p, [div(2, 1)]);
     expect(ideaOf(c).ledger.lateProposals).toEqual([expect.objectContaining({ actionId: D2, status: 'open', blockers: [`date_uncovered:${S[1]}`] })]);
     expect(rowAt(c, 5).fullQuality).toBe(false);
     expect(await ask(c, lateBody('idea', D2), 'x')).toMatchObject({ status: 409, body: { error: 'late_date_uncovered' } });
     c.db._store.set('practiceFieldCaBackfill/AAPL', { data: { schemaVersion: 1, symbol: 'AAPL', from: S[0], to: S[5], failed: false, actions: [div(2, 1)], calls: 2, parseReport: CLEAN_PARSE_ENTRY }, version: 1 });
     await closeAt(c, 6, p, [div(2, 1)]);
+    // CHANGED EXPECTATION — A-4 (the founder's ruling, 21 Nov 2026): the clean backfill is evidence on the doubt, not a clearing.
+    expect(ideaOf(c).ledger.closedCoverageDoubts.AAPL.evidence.cleanRefetch).toMatchObject({ from: S[0], to: S[5] });
+    expect(await ask(c, lateBody('idea', D2), 'x2')).toMatchObject({ status: 409, body: { error: 'late_date_uncovered' } });
+    expect((await ask(c, { kind: 'coverage_gap', recordId: `ca_closed_doubt_AAPL_${S[1]}`, decision: 'no_action' }, 'cg')).status).toBe(200);
+    await closeAt(c, 7, p, [div(2, 1)]);
     expect(ideaOf(c).ledger.closedCoverageDoubts).toBeUndefined();
     expect((await ask(c, lateBody('idea', D2), 'y')).status).toBe(200);
-    await closeAt(c, 7, p);
+    await closeAt(c, 8, p);
     expect(posted(c)).toEqual([['late_entitlement', D2, 99.97]]);
   });
 

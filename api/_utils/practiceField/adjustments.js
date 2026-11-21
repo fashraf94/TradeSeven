@@ -50,7 +50,7 @@ import { toCents, fromCents, addUsd } from './money.js';
 import {
   cloneLedger, actionIdOf, SHARE_BASIS_TYPES, withinSessions, REDATE_WINDOW_SESSIONS, actionPayloadOf, recordedPayloadsOf,
   CONFLICTING_ACTION, POSSIBLE_REDATE, REVISED_AFTER_RULING, NOT_ENTITLED, founderSettledIds, shareBasisChainOf, datedCountOn,
-  sameDateUnruled,
+  sameDateUnruled, listedAheadOf, announcementOf, lastListedOf, differsFromAnnouncement, switchedBeforeDates,
 } from './ledger.js';
 
 export const ADJUSTMENT_KIND = Object.freeze({ LATE_ENTITLEMENT: 'late_entitlement', LATE_BASIS: 'late_basis', RULED_CORRECTION: 'ruled_correction' });
@@ -210,6 +210,20 @@ function openRecordOf(ledger, actionId) {
 }
 
 const payloadRow = (a, seenOn) => ({ ratio: a.ratio ?? null, amount: a.amount ?? null, source: a.source ?? null, ...(a.feedOrigin === 'backfill' ? { origin: 'backfill' } : {}), ...(seenOn ? { seenOn } : {}) });
+
+/**
+ * A-2 (the founder's ruling, 21 Nov 2026; Astra T2E-C03): THE OPEN OBSERVATION of `actionId` — a row the holding was told of
+ * before its date, while it held the stock (ledger.js `listedAhead`) — that nothing on the ledger carries yet: no receipt or
+ * record of the id, no row of it waiting, no proposal. The sale does not forget it. Pure.
+ */
+function bareAnnouncementOf(ledger, actionId) {
+  const e = announcementOf(ledger, actionId);
+  if (!e) return null;
+  if ((ledger?.appliedActionIds || []).includes(actionId) || (ledger?.declinedActionIds || []).includes(actionId)) return null;
+  if ((ledger?.corporateActionReceipts || []).some((r) => r?.actionId === actionId)) return null;
+  if ((ledger?.closedHeldRows || []).some((r) => r?.actionId === actionId) || (ledger?.lateProposals || []).some((p) => p?.actionId === actionId)) return null;
+  return e;
+}
 
 /** The status of a late proposal (L-1). Only an OPEN one waits; the rest are kept as its history. */
 export const LATE_PROPOSAL_STATUS = Object.freeze({ OPEN: 'open', POSTED: 'posted', DECLINED: 'declined', SETTLED: 'settled' });
@@ -435,10 +449,19 @@ export function planLedgerAdjustments(ledger, ctx) {
       const p = priorProposalOf(id);
       return p ? actionPayloadOf({ amount: p.amountPerShare }) : null;
     };
+    // (A-2, A-1: the announcement a row was listed with while the holding held the stock — before its date — differs from
+    // what is listed for it now: a revision, as a waiting row's or a proposal's other payload is. T2E-C03: $1 announced for
+    // the sale day, $2 listed after the sale, approved and paid $199.94.)
+    const announcedDiffers = (id, listedHere) => {
+      const e = bareAnnouncementOf(cur(), id);
+      const feed = listedHere.filter((a) => !a.founderRuling);
+      return e !== null && feed.length > 0 && differsFromAnnouncement(e, feed);
+    };
     const revisionFirst = ([id, group0]) => {
       const listedHere = group0.filter((a) => !a.fromHeld);
       if (listedHere.length === 0) return false;
       if (settledNow().has(id)) return true;
+      if (announcedDiffers(id, listedHere)) return true;
       const prior = priorKeyOf(id);
       return prior !== null && listedHere.some((a) => !a.founderRuling && actionPayloadOf(a) !== prior);
     };
@@ -458,6 +481,7 @@ export function planLedgerAdjustments(ledger, ctx) {
         if (keys.length !== 1) continue;
         const prior = priorKeyOf(id);
         if (prior !== null && prior !== keys[0]) continue;
+        if (announcedDiffers(id, group0.filter((a) => !a.fromHeld))) continue;
         candidates.push({ id, row: group[0], key: keys[0] });
       }
       const paired = new Set();
@@ -507,6 +531,19 @@ export function planLedgerAdjustments(ledger, ctx) {
         out.recorded.push(rec);
         dropHeld(id);
         out.alerts.push(`PRACTICE_FIELD_CORPORATE_ACTION_AMBIGUOUS ${ideaId} ${ledgerKind} ${sym} ${id} — revision on a holding since closed (it ${held ? 'waited' : 'was proposed'} with another payload): nothing is paid until the founder rules`);
+        return;
+      }
+      // A-2, A-1 (T2E-C03): THE ANNOUNCEMENT THE HOLDING WAS TOLD OF BEFORE ITS DATE, carried across the sale. Listed now with
+      // another payload — or the announcement withdrawn, or still listed two ways — the id is ambiguous: a conflict for the
+      // founder's ruling, never a proposal (its payloads: the announced ones and the ones listed now).
+      if (!ruled && !held && !proposal && announcedDiffers(id, listedHere)) {
+        const e = bareAnnouncementOf(cur(), id);
+        const l = edit();
+        const rowsAll = [...new Map([...(e.payloads || []).map((p) => payloadRow(p, lastListedOf(e))), ...group.filter((a) => !a.founderRuling).map((a) => payloadRow(a, date))].map((x) => [actionPayloadOf(x), x])).values()];
+        const rec = { actionId: id, type: first.type, ticker: sym, effectiveDate: first.effectiveDate, applied: false, reason: CONFLICTING_ACTION, entitled: true, rows: rowsAll, seenOn: date, kinds: [(e.payloads || []).length > 1 ? 'conflict' : 'revision'], revisedFrom: { announcedOn: lastListedOf(e), ...(e.withdrawnOn != null ? { withdrawnOn: e.withdrawnOn } : {}) }, closedHolding: true };
+        l.corporateActionReceipts = [...l.corporateActionReceipts, rec];
+        out.recorded.push(rec);
+        out.alerts.push(`PRACTICE_FIELD_CORPORATE_ACTION_AMBIGUOUS ${ideaId} ${ledgerKind} ${sym} ${id} — listed after the holding closed otherwise than it was announced while held (on ${lastListedOf(e)}${e.withdrawnOn != null ? `, withdrawn ${e.withdrawnOn}` : ''}): nothing is paid until the founder rules`);
         return;
       }
       if (settledNow().has(id)) {
@@ -572,7 +609,16 @@ export function planLedgerAdjustments(ledger, ctx) {
         const key = keys[0];
         const outside = [...(rows[sym] || []).filter((a) => a && !a.founderRuling && upper(a.ticker) === sym && a.type === first.type && isDate(a.effectiveDate)
           && !inInterval(a)).map((a) => ({ actionId: actionIdOf(a), effectiveDate: a.effectiveDate, key: actionPayloadOf(a) })), ...outsidePool(first.type)];
-        const pool = [...redatePool(cur(), sym, first.type), ...outside, ...(cur().closedHeldRows || []).filter((r) => r.type === first.type && upper(r.ticker) === sym).map((r) => ({ actionId: r.actionId, effectiveDate: r.effectiveDate, key: actionPayloadOf(r), held: r }))];
+        // (A-2 — T2E-C03: and every open observation of a row the holding was told of before its date, carried across the sale,
+        // by each payload it was last announced with — unless the switch between the two ids was made before both dates, A-1.
+        // Thursday's $1 announced on Tuesday, the stock sold on Wednesday, Wednesday's $1 listed on Thursday: one dividend,
+        // possibly moved inside the holding — a re-date for the founder, never a proposal.)
+        const own = announcementOf(cur(), id);
+        const ownLast = listedHere.length > 0 ? date : lastListedOf(own);
+        const announced = listedAheadOf(cur()).filter((e) => e.actionId !== id && upper(e.ticker) === sym && bareAnnouncementOf(cur(), e.actionId) !== null
+          && !switchedBeforeDates(own, ownLast, first.effectiveDate, e, lastListedOf(e), e.effectiveDate));
+        const announcedPool = (type) => announced.filter((e) => e.type === type).flatMap((e) => (e.payloads || []).map((p) => ({ actionId: e.actionId, effectiveDate: e.effectiveDate, key: actionPayloadOf(p), type: e.type })));
+        const pool = [...redatePool(cur(), sym, first.type), ...outside, ...announcedPool(first.type), ...(cur().closedHeldRows || []).filter((r) => r.type === first.type && upper(r.ticker) === sym).map((r) => ({ actionId: r.actionId, effectiveDate: r.effectiveDate, key: actionPayloadOf(r), held: r }))];
         let match = pool.find((p) => p.actionId !== id && p.key === key && withinSessions(p.effectiveDate, first.effectiveDate, REDATE_WINDOW_SESSIONS)) ?? null;
         let how = 'possible_redate';
         if (!match && SHARE_BASIS_TYPES.has(first.type)) {
@@ -580,7 +626,8 @@ export function planLedgerAdjustments(ledger, ctx) {
           // there is a conflict the close's pre-pass leaves out, recorded only when its own turn comes; an id sorting before it
           // met no record and applied, unruled, into the count the founder's ruling of the other one then stood on.)
           const listedNow = [...byId].filter(([oid, g]) => oid !== id && !settledNow().has(oid) && g.some((a) => !a.founderRuling && SHARE_BASIS_TYPES.has(a.type))).map(([oid, g]) => ({ actionId: oid, effectiveDate: g[0].effectiveDate }));
-          const sameDate = [...redatePool(cur(), sym, null), ...(cur().closedHeldRows || []).filter((r) => SHARE_BASIS_TYPES.has(r.type) && upper(r.ticker) === sym).map((r) => ({ actionId: r.actionId, effectiveDate: r.effectiveDate, held: r })), ...listedNow];
+          const sameDate = [...redatePool(cur(), sym, null), ...(cur().closedHeldRows || []).filter((r) => SHARE_BASIS_TYPES.has(r.type) && upper(r.ticker) === sym).map((r) => ({ actionId: r.actionId, effectiveDate: r.effectiveDate, held: r })), ...listedNow,
+            ...announced.filter((e) => SHARE_BASIS_TYPES.has(e.type)).map((e) => ({ actionId: e.actionId, effectiveDate: e.effectiveDate }))];
           match = sameDate.find((p) => p.actionId !== id && p.effectiveDate === first.effectiveDate) ?? null;
           how = 'same_date_share_basis';
         }
@@ -759,6 +806,25 @@ export function planLedgerAdjustments(ledger, ctx) {
       l.corporateActionReceipts = [...l.corporateActionReceipts, rec];
       out.recorded.push(rec);
       out.alerts.push(`PRACTICE_FIELD_CORPORATE_ACTION_REDATE ${ideaId} ${ledgerKind} ${x.actionId} — the same cash_dividend as the paid ${p.actionId}, dated just outside the sold holding: ${p.id} waits — the founder rules it (resolve_hold, conflict)`);
+    }
+  }
+  // (A-2, the founder's ruling of 21 Nov 2026: AN OPEN OBSERVATION — a row announced for a later date — that pairs with an open
+  // proposal under the re-date rule is RECORDED as a possible re-date of it, so the founder's conflict ruling can answer the
+  // pairing and the approval is refused meanwhile (L-2 ②, pairingCandidatesOf). The held path records such an observation at
+  // the close a pairing first shows (ledger.js, T2E-C02); this answers any proposal an observation reaches otherwise. One of
+  // the two dates has come — the proposal's — so the two are one ambiguity unless the switch was made before both, A-1.)
+  for (const p of openProposals(cur())) {
+    const sym = upper(p.ticker);
+    const key = actionPayloadOf({ amount: p.amountPerShare });
+    for (const e of listedAheadOf(cur())) {
+      if (e.actionId === p.actionId || upper(e.ticker) !== sym || e.type !== 'cash_dividend' || bareAnnouncementOf(cur(), e.actionId) === null) continue;
+      if (!(e.payloads || []).some((x) => actionPayloadOf(x) === key) || !withinSessions(e.effectiveDate, p.effectiveDate, REDATE_WINDOW_SESSIONS)) continue;
+      if (switchedBeforeDates(e, lastListedOf(e), e.effectiveDate, announcementOf(cur(), p.actionId), null, p.effectiveDate)) continue;
+      const l = edit();
+      const rec = { actionId: e.actionId, type: e.type, ticker: sym, effectiveDate: e.effectiveDate, ratio: null, amount: p.amountPerShare, cashPerShare: null, source: null, applied: false, reason: POSSIBLE_REDATE, redateOf: p.actionId, seenOn: date, rows: (e.payloads || []).map((x) => payloadRow(x, lastListedOf(e))), kinds: ['possible_redate'], announced: true };
+      l.corporateActionReceipts = [...l.corporateActionReceipts, rec];
+      out.recorded.push(rec);
+      out.alerts.push(`PRACTICE_FIELD_CORPORATE_ACTION_REDATE ${ideaId} ${ledgerKind} ${e.actionId} — the same cash_dividend as ${p.actionId}, announced for ${e.effectiveDate}: ${p.id} waits — the founder rules it (resolve_hold, conflict)`);
     }
   }
   // (…and — found by I-7's L-2 ③ check on shape seed 2119990011 — a SHARE-BASIS row kept outside the sold holding that pairs

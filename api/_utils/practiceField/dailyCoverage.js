@@ -221,6 +221,11 @@ export function dailyActionsBySymbol(daily) {
 /** The type, and the id prefix, of a coverage gap's item in the idea's hold set and in a held action's `heldBecause`. */
 export const CA_COVERAGE_GAP = 'ca_coverage_gap';
 export const coverageGapIdOf = (symbol, coveredThrough) => `${CA_COVERAGE_GAP}_${upper(symbol)}_${coveredThrough}`;
+/** A-4 (the founder's ruling, 21 Nov 2026): the record id of a SOLD holding's coverage doubt (close.js
+ *  `closedCoverageDoubts`) — the symbol and its earliest doubted date; distinct from a held gap's, which a same-stock
+ *  comparison still holding the symbol may have open at the same time. `resolve_hold` (`coverage_gap`) names it. */
+export const CA_CLOSED_DOUBT = 'ca_closed_doubt';
+export const closedDoubtIdOf = (symbol, firstDate) => `${CA_CLOSED_DOUBT}_${upper(symbol)}_${firstDate}`;
 
 /**
  * The key of a symbol's backfill document: the symbol. ONE document per symbol holds the latest successful range

@@ -215,7 +215,7 @@ describe('R-3 — an open proposal is re-screened at every close: the vendor mov
 });
 
 describe('R-5 — a sold holding\'s sticky coverage doubt holds the count for the founder\'s conflict ruling too', () => {
-  it('T2E-01\'s pair ruled while a rejected split dated within the holding stands: nothing posts, the ruling closes moot (alerted); a clean backfill clears the doubt, and the founder\'s ruling then posts once (red at 193a3dda: $99.97 at S5)', async () => {
+  it('T2E-01\'s pair ruled while a rejected split dated within the holding stands: nothing posts, the ruling closes moot (alerted); the founder\'s coverage_gap ruling clears the doubt (A-4: a clean backfill is evidence only), and the founder\'s ruling then posts once (red at 193a3dda: $99.97 at S5)', async () => {
     const c = await opened({ comparison: xlk });
     await closeAt(c, 0);
     const p = Math.round((lineOf(c) - 0.5) * 100) / 100;
@@ -238,18 +238,24 @@ describe('R-5 — a sold holding\'s sticky coverage doubt holds the count for th
     expect(redates(c).map(([id]) => id)).toContain(D(1));
     c.db._store.set('practiceFieldCaBackfill/AAPL', backfillOf(S[1], S[5], [div(1, 1)]));
     await closeAt(c, 6, p);
+    // CHANGED EXPECTATION — A-4 (the founder's ruling, 21 Nov 2026): the clean backfill no longer clears the doubt; it is the
+    // founder's evidence, kept on it. The founder's coverage_gap ruling clears it (one close later than the backfill did).
+    expect(ideaOf(c).ledger.closedCoverageDoubts?.AAPL).toMatchObject({ dates: [{ date: S[1] }], evidence: { cleanRefetch: { from: S[1], to: S[5] } } });
+    expect(postedFull(c)).toEqual([]);
+    expect((await ask(c, { kind: 'coverage_gap', recordId: ideaOf(c).ledger.closedCoverageDoubts.AAPL.id, decision: 'no_action' }, 'cg')).status).toBe(200);
+    await closeAt(c, 7, p);
     expect(ideaOf(c).ledger.closedCoverageDoubts).toBeUndefined();
     expect(postedFull(c)).toEqual([]);
     expect((await ask(c, { kind: 'conflict', recordId: D(1), decision: 'payload', payload: { amount: 1 } }, 'c3')).status).toBe(200);
-    await closeAt(c, 7, p);
-    expect(postedFull(c)).toEqual([['late_entitlement', D(1), 99.97, S[7]]]);
     await closeAt(c, 8, p);
+    expect(postedFull(c)).toEqual([['late_entitlement', D(1), 99.97, S[8]]]);
+    await closeAt(c, 9, p);
     expect(postedFull(c), 'posted once').toHaveLength(1);
   });
 });
 
 describe('R-5 — the same doubt holds a ruled correction; a doubt dated beyond the window holds nothing', () => {
-  it('a ruled correction of a sold holding\'s paid dividend waits while the doubt stands, and posts once a clean backfill clears it', async () => {
+  it('a ruled correction of a sold holding\'s paid dividend waits while the doubt stands, and posts once the founder\'s coverage_gap ruling clears it (A-4)', async () => {
     const c = await opened({ comparison: xlk });
     await closeAt(c, 0);
     await closeAt(c, 1);
@@ -268,7 +274,11 @@ describe('R-5 — the same doubt holds a ruled correction; a doubt dated beyond 
     expect(postedFull(c), 'the count it would be computed on is in doubt').toEqual([]);
     c.db._store.set('practiceFieldCaBackfill/AAPL', backfillOf(S[1], S[6], [div(2, 2)]));
     await closeAt(c, 7, p, [div(2, 2)]);
-    expect(postedFull(c)).toEqual([['ruled_correction', D(2), 99.97, S[7]]]);
+    // CHANGED EXPECTATION — A-4: the clean backfill is evidence only; the founder's coverage_gap ruling clears the doubt.
+    expect(postedFull(c)).toEqual([]);
+    expect((await ask(c, { kind: 'coverage_gap', recordId: ideaOf(c).ledger.closedCoverageDoubts.AAPL.id, decision: 'no_action' }, 'cg')).status).toBe(200);
+    await closeAt(c, 8, p, [div(2, 2)]);
+    expect(postedFull(c)).toEqual([['ruled_correction', D(2), 99.97, S[8]]]);
   });
 
   it('control: a rejected row dated more than the window after the dividend cannot change its count or be it moved — the ruling posts', async () => {
@@ -341,8 +351,8 @@ describe('R-2 — a decline sticks', () => {
   });
 });
 
-describe('R-4 — a sold holding\'s coverage doubt can clear: the backfill is fetched for it, and its rows reach the closed path', () => {
-  it('backfillNeeds names the sold symbol from its doubt\'s date; a clean backfill listing the rejected split clears the doubt, the split enters the count, and the approval posts the new net (red at 193a3dda: no need named)', async () => {
+describe('R-4 — a sold holding\'s coverage doubt can clear: the backfill is fetched for it, and the founder\'s row from it reaches the closed path (A-4)', () => {
+  it('backfillNeeds names the sold symbol from its doubt\'s date; a clean backfill listing the rejected split is evidence on the doubt; the founder\'s `row` ruling takes the split into the count and clears it, and the approval posts the new net (A-4) (red at 193a3dda: no need named)', async () => {
     const c = await opened({ comparison: xlk });
     const p = await soldAt(c, 2);
     await closeAt(c, 3, p);
@@ -355,14 +365,20 @@ describe('R-4 — a sold holding\'s coverage doubt can clear: the backfill is fe
     // The vendor's backfill lists the split the daily build rejected, cleanly.
     c.db._store.set('practiceFieldCaBackfill/AAPL', backfillOf(S[1], S[5], [spl(1, '5/4'), div(2, 1)]));
     await closeAt(c, 6, p);
+    // CHANGED EXPECTATION — A-4 (the founder's ruling, 21 Nov 2026): the clean backfill no longer clears the doubt and its rows
+    // no longer join the closed path (R-4's join is gone): it is evidence on the doubt. The founder's `row` ruling takes the split.
+    expect(ideaOf(c).ledger.closedCoverageDoubts?.AAPL).toMatchObject({ dates: [{ date: S[1] }], evidence: { cleanRefetch: { rows: 2 } } });
+    expect(proposalOf(c, D(2))).toMatchObject({ status: 'open', owedUsd: 99.97, blockers: [`date_uncovered:${S[1]}`] });
+    expect((await ask(c, { kind: 'coverage_gap', recordId: ideaOf(c).ledger.closedCoverageDoubts.AAPL.id, decision: 'row', actionId: `split_AAPL_${S[1]}` }, 'row')).status).toBe(200);
+    await closeAt(c, 7, p);
     const idea = ideaOf(c);
     expect(idea.ledger.closedCoverageDoubts).toBeUndefined();
     expect(idea.ledger.corporateActionReceipts).toContainEqual(expect.objectContaining({ actionId: `split_AAPL_${S[1]}`, historyOnly: true, applied: true }));
     expect(proposalOf(c, D(2))).toMatchObject({ status: 'open', owedUsd: 124.96, netUsd: 124.96, blockers: [] });
-    expect(backfillNeeds([idea], S[6]).map((n) => n.symbol)).not.toContain('AAPL');
+    expect(backfillNeeds([idea], S[7]).map((n) => n.symbol)).not.toContain('AAPL');
     expect((await ask(c, lateBody('idea', D(2)), 'a1')).status).toBe(200);
-    await closeAt(c, 7, p);
-    expect(postedFull(c)).toEqual([['late_entitlement', D(2), 124.96, S[7]]]);
+    await closeAt(c, 8, p);
+    expect(postedFull(c)).toEqual([['late_entitlement', D(2), 124.96, S[8]]]);
   });
 });
 
@@ -560,7 +576,7 @@ describe('P-2 — a decline answers the money, not the id: its payload stays one
   });
 });
 
-describe('P-3 — a sold holding\'s clean backfill reaches its path though the comparison still holds the stock', () => {
+describe('P-3 — a sold holding\'s clean backfill reaches its path by the founder\'s row ruling (A-4) though the comparison still holds the stock', () => {
   it('same-stock comparison: the backfill lists a 5/4 split dated within the holding — the net is 124.96 (red at c569f281: 99.97)', async () => {
     const c = await opened({ comparison: { type: 'same_stock_held' } });
     const p = await soldAtWith(c, 3);
@@ -572,11 +588,15 @@ describe('P-3 — a sold holding\'s clean backfill reaches its path though the c
     expect(proposalOf(c, D(3))).toMatchObject({ kind: 'late_entitlement', status: 'open', owedUsd: 99.97 });
     c.db._store.set('practiceFieldCaBackfill/AAPL', backfillOf(S[2], S[5], [spl(2, '5/4'), div(3, 1)]));
     await closeAt(c, 6, p);
+    // CHANGED EXPECTATION — A-4: the refetch is evidence; the founder's `row` ruling takes its split (R-4's join is gone).
+    expect(ideaOf(c).ledger.closedCoverageDoubts?.AAPL?.evidence?.cleanRefetch).toMatchObject({ failed: false });
+    expect((await ask(c, { kind: 'coverage_gap', recordId: ideaOf(c).ledger.closedCoverageDoubts.AAPL.id, decision: 'row', actionId: `split_AAPL_${S[2]}` }, 'row')).status).toBe(200);
+    await closeAt(c, 7, p);
     expect(ideaOf(c).ledger.closedCoverageDoubts).toBeUndefined();
     expect(proposalOf(c, D(3))).toMatchObject({ status: 'open', owedUsd: 124.96 });
     expect((await ask(c, lateBody('idea', D(3)), 'a1')).status).toBe(200);
-    await closeAt(c, 7, p);
-    expect(postedFull(c).filter(([k]) => k === 'late_entitlement')).toEqual([['late_entitlement', D(3), 124.96, S[7]]]);
+    await closeAt(c, 8, p);
+    expect(postedFull(c).filter(([k]) => k === 'late_entitlement')).toEqual([['late_entitlement', D(3), 124.96, S[8]]]);
   });
 
   it('control: a sector comparison — 124.96 (unchanged)', async () => {
@@ -588,9 +608,12 @@ describe('P-3 — a sold holding\'s clean backfill reaches its path though the c
     await closeAt(c, 5, p, [div(3, 1)]);
     c.db._store.set('practiceFieldCaBackfill/AAPL', backfillOf(S[2], S[5], [spl(2, '5/4'), div(3, 1)]));
     await closeAt(c, 6, p);
-    expect((await ask(c, lateBody('idea', D(3)), 'a1')).status).toBe(200);
+    // CHANGED EXPECTATION — A-4: as above, the founder's `row` ruling takes the split; the approval then posts the new net.
+    expect((await ask(c, { kind: 'coverage_gap', recordId: ideaOf(c).ledger.closedCoverageDoubts.AAPL.id, decision: 'row', actionId: `split_AAPL_${S[2]}` }, 'row')).status).toBe(200);
     await closeAt(c, 7, p);
-    expect(postedFull(c).filter(([k]) => k === 'late_entitlement')).toEqual([['late_entitlement', D(3), 124.96, S[7]]]);
+    expect((await ask(c, lateBody('idea', D(3)), 'a1')).status).toBe(200);
+    await closeAt(c, 8, p);
+    expect(postedFull(c).filter(([k]) => k === 'late_entitlement')).toEqual([['late_entitlement', D(3), 124.96, S[8]]]);
   });
 });
 
@@ -693,8 +716,8 @@ describe('a share-basis row kept outside the sold holding that pairs with one ap
 });
 
 // ── THE THIRD REFUTER (05aa1200) ──────────────────────────────────────────────────────────────────────────────────────
-describe('F-1 — a sold holding\'s coverage doubt clears only by a backfill fetched after it was seen', () => {
-  it('the idea\'s own pipeline: a clean backfill clears doubt #1; a later rejection is doubt #2; the refetch meets the bad row, the stale document does not clear it; the vendor corrects it, and the approval posts (red at 05aa1200: $99.97 posted at S8)', async () => {
+describe('F-1 — a sold holding\'s coverage doubt clears only by the founder\'s ruling (A-4; F-1 cleared it by a backfill fetched after it was seen)', () => {
+  it('the idea\'s own pipeline: the founder clears doubt #1 (A-4: a clean backfill is evidence only); a later rejection is doubt #2; the refetch meets the bad row; the vendor corrects it, the founder rules, and the approval posts (red at 05aa1200: $99.97 posted at S8)', async () => {
     const c = await opened({ comparison: xlk });
     const p = await soldAtWith(c, 3);
     let malformed = false; // the vendor lists the split dated S3 malformed while this holds
@@ -712,24 +735,31 @@ describe('F-1 — a sold holding\'s coverage doubt clears only by a backfill fet
       await closeIdeaBook(c.db, c.bookRef, { date: S[i], now: closeNowOf(S[i]) });
     };
     await closeWith(4, rejectedOn(S[1]), [div(2, 1)]);
-    expect(ideaOf(c).ledger.closedCoverageDoubts?.AAPL?.dates).toEqual([{ date: S[1], seenOn: S[4] }]);
+    expect(ideaOf(c).ledger.closedCoverageDoubts?.AAPL?.dates).toEqual([{ date: S[1], seenOn: S[4], lastSeenOn: S[4] }]);
     await closeWith(5);
-    expect(ideaOf(c).ledger.closedCoverageDoubts, 'cleared by the clean backfill fetched for it at S5').toBeUndefined();
-    expect(proposalOf(c, D(2))).toMatchObject({ kind: 'late_entitlement', status: 'open', blockers: [] });
+    // CHANGED EXPECTATION — A-4 (the founder's ruling, 21 Nov 2026): the clean backfill fetched at S5 no longer clears doubt #1;
+    // it is evidence on it. The founder's coverage_gap ruling clears it.
+    expect(ideaOf(c).ledger.closedCoverageDoubts?.AAPL).toMatchObject({ dates: [{ date: S[1] }], evidence: { cleanRefetch: { failed: false } } });
+    expect(proposalOf(c, D(2))).toMatchObject({ kind: 'late_entitlement', status: 'open', blockers: [`date_uncovered:${S[1]}`] });
+    expect((await ask(c, { kind: 'coverage_gap', recordId: ideaOf(c).ledger.closedCoverageDoubts.AAPL.id, decision: 'no_action' }, 'cg1')).status).toBe(200);
     malformed = true;
     await closeWith(6, rejectedOn(S[3]));
     await closeWith(7);
-    expect(ideaOf(c).ledger.closedCoverageDoubts?.AAPL?.dates, 'the stored S1..S5 document never saw the S3 row').toEqual([{ date: S[3], seenOn: S[6] }]);
+    expect(ideaOf(c).ledger.closedCoverageDoubts?.AAPL?.dates, 'doubt #1 cleared by the ruling; doubt #2 stands').toEqual([{ date: S[3], seenOn: S[6], lastSeenOn: S[6] }]);
     expect(await ask(c, lateBody('idea', D(2)), 'a1')).toMatchObject({ status: 409, body: { error: 'late_date_uncovered' } });
     await closeWith(8);
     expect(postedFull(c)).toEqual([]);
     expect(rowAt(c, 8).fullQuality).toBe(false);
     malformed = false;
     await closeWith(9);
-    expect(ideaOf(c).ledger.closedCoverageDoubts, 'a clean backfill fetched after the doubt clears it').toBeUndefined();
-    expect((await ask(c, lateBody('idea', D(2)), 'a2')).status).toBe(200);
+    // (A-4: the vendor corrects the row and a clean refetch shows it — evidence for the founder, still not a clearing.)
+    expect(ideaOf(c).ledger.closedCoverageDoubts?.AAPL?.dates?.map((x) => x.date)).toEqual([S[3]]);
+    expect((await ask(c, { kind: 'coverage_gap', recordId: ideaOf(c).ledger.closedCoverageDoubts.AAPL.id, decision: 'no_action' }, 'cg2')).status).toBe(200);
     await closeWith(10);
-    expect(postedFull(c)).toEqual([['late_entitlement', D(2), 99.97, S[10]]]);
+    expect(ideaOf(c).ledger.closedCoverageDoubts, 'the founder rules it').toBeUndefined();
+    expect((await ask(c, lateBody('idea', D(2)), 'a2')).status).toBe(200);
+    await closeWith(11);
+    expect(postedFull(c)).toEqual([['late_entitlement', D(2), 99.97, S[11]]]);
   });
 
   it('a clean document stored before the rejection (another idea\'s or an earlier need\'s) does not clear it (red at 05aa1200)', async () => {
@@ -741,7 +771,7 @@ describe('F-1 — a sold holding\'s coverage doubt clears only by a backfill fet
     storeParseReport(c.db, S[5], 'AAPL', rejectedOn(S[1]));
     await closeIdeaBook(c.db, c.bookRef, { date: S[5], now: closeNowOf(S[5]) });
     await closeAt(c, 6, p);
-    expect(ideaOf(c).ledger.closedCoverageDoubts?.AAPL?.dates).toEqual([{ date: S[1], seenOn: S[5] }]);
+    expect(ideaOf(c).ledger.closedCoverageDoubts?.AAPL?.dates).toEqual([{ date: S[1], seenOn: S[5], lastSeenOn: S[5] }]);
     expect(await ask(c, lateBody('idea', D(2)), 'a1')).toMatchObject({ status: 409, body: { error: 'late_date_uncovered' } });
     await closeAt(c, 7, p);
     expect(postedFull(c)).toEqual([]);

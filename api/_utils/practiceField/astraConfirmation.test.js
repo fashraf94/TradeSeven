@@ -523,7 +523,7 @@ describe('C04 — on a sold holding a rejection clears only by the founder\'s co
     expect((await session(ctx, 7, [], 94)).dividendsUsd).toBe(99.97);
   });
 
-  it('a rejection seen after the ruling re-opens the doubt; `row` is no decision for a sold holding\'s doubt (422)', async () => {
+  it('a rejection seen after the ruling re-opens the doubt; `row` takes only a row of a stored clean refetch (422 without one)', async () => {
     const ctx = await openIdea();
     await soldWithApproval(ctx);
     expect((await ask(ctx, { kind: 'coverage_gap', recordId: doubtOf(ctx).id, decision: 'row', actionId: 'split_AAPL_' + S[2] }, 'row')).status).toBe(422);

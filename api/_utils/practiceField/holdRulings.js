@@ -41,7 +41,7 @@ import {
   cloneLedger, suspicionIdOf, ratioMatchesMove, residualMoveOf, priceMoveReference, CONFLICTING_ACTION, POSSIBLE_REDATE, actionIdOf as deriveActionId,
   recordedPayloadsOf, openRulingRevisions, REVISED_AFTER_RULING,
 } from './ledger.js';
-import { coverageGapIdOf } from './dailyCoverage.js';
+import { coverageGapIdOf, closedDoubtIdOf, CA_CLOSED_DOUBT } from './dailyCoverage.js';
 import { roundShares } from '../mandateRounding.js';
 import { ADJUSTMENT_KIND, correctShareBasisOn, postedAdjustments, pairingCandidatesOf } from './adjustments.js';
 
@@ -111,6 +111,24 @@ function openActionRecords(idea, recordId) {
     for (const r of l.corporateActionReceipts || []) {
       if (r?.actionId !== recordId || (r.reason !== CONFLICTING_ACTION && r.reason !== POSSIBLE_REDATE)) continue;
       if (!settled.has(recordId)) out.push([f, r]);
+    }
+  }
+  return out;
+}
+
+/**
+ * A-5 (the founder's ruling, 21 Nov 2026; Astra T2E-C05): the ledgers of an idea whose holding carries a REFUSED SHARE-BASIS
+ * RECORD of `recordId` — a split, reverse split or stock distribution the applier cannot apply (it would round the holding to
+ * nothing, a ratio it refuses, no entitlement data): `heldActions` with `refused`, never replayed (ledger.js). It holds the
+ * holding's count, and so its sale, for good: before this ruling nothing could answer it (404). [field, record].
+ */
+function refusedActionRecords(idea, recordId) {
+  const out = [];
+  for (const f of LEDGERS) {
+    const l = idea?.[f];
+    if (!l || settledIdsOf(l).has(recordId)) continue;
+    for (const [sym, h] of Object.entries(l.holdings || {})) {
+      for (const r of h?.heldActions || []) if (r?.actionId === recordId && typeof r.refused === 'string' && SHARE_BASIS.has(r.type)) out.push([f, { ...r, symbol: upper(sym) }]);
     }
   }
   return out;
@@ -304,7 +322,22 @@ export function planHoldRuling(idea, { kind, recordId, decision, ratio, payload,
           },
         };
       }
-      const ever = LEDGERS.some((f) => (idea?.[f]?.corporateActionReceipts || []).some((r) => r?.actionId === recordId && (r.reason === CONFLICTING_ACTION || r.reason === POSSIBLE_REDATE || r.reason === REVISED_AFTER_RULING)));
+      // A-5 (the founder's ruling, 21 Nov 2026; Astra T2E-C05): A REFUSED SHARE-BASIS RECORD on a ledger of the idea is answered
+      // by `none` — declined on every ledger the ruling names that carries it, with the ruling's receipt; its held record then
+      // drops, and the line sale it held completes at the next eligible window. `payload` is no answer: the applier refused that
+      // very payload. (Replay protection: a pending ruling of the record answers 409 above; once applied, 409 below.)
+      const refused = refusedActionRecords(idea, recordId);
+      if (refused.length > 0) {
+        if (decision !== 'none') return { error: 'refused_record_takes_none', status: 422 };
+        const [, rec] = refused[0];
+        return {
+          ruling: {
+            ...base, symbol: rec.symbol, type: rec.type, effectiveDate: rec.effectiveDate, recordReason: 'refused', refused: rec.refused,
+            ledgers: [...new Set(refused.map(([f]) => f))], seen: [...new Map(refused.map(([, x]) => payloadOf(x)).map((p) => [JSON.stringify(p), p])).values()],
+          },
+        };
+      }
+      const ever = LEDGERS.some((f) => (idea?.[f]?.corporateActionReceipts || []).some((r) => r?.actionId === recordId && (r.reason === CONFLICTING_ACTION || r.reason === POSSIBLE_REDATE || r.reason === REVISED_AFTER_RULING || r.reason === 'founder_ruled_none')));
       return ever ? { error: 'record_already_resolved', status: 409 } : { error: 'record_not_found', status: 404 };
     }
     const [, r] = open[0];
@@ -354,6 +387,40 @@ export function planHoldRuling(idea, { kind, recordId, decision, ratio, payload,
   }
 
   // coverage_gap
+  // A-4 (the founder's ruling, 21 Nov 2026; Astra T2E-C04): A SOLD HOLDING'S COVERAGE DOUBT (close.js `closedCoverageDoubts`:
+  // a rejected row dated within the holding the idea sold) clears ONLY by this ruling — no backfill clears it. It covers each
+  // date as the doubt shows it when ruled (its last rejection), so a rejection a later close shows again stands again. The
+  // clean refetch kept on the doubt is the founder's evidence, and the founder's `row` may take one of its rows:
+  //   no_action  the rejected dates hide nothing the holding was owed;
+  //   row        one row of the stored clean refetch (`practiceFieldCaBackfill/{SYM}`), dated within the doubt, is what the
+  //              rejected row was: it reaches the sold holding's path as the founder's (a split enters the dated count as
+  //              history; a dividend is proposed, L-1) — the only way the refetch's rows reach it (R-4's join is gone).
+  const doubts = idea?.ledger?.closedCoverageDoubts || {};
+  const doubtSym = Object.keys(doubts).find((k) => (doubts[k]?.dates || []).length > 0 && closedDoubtIdOf(k, doubts[k].dates[0].date) === recordId);
+  if (doubtSym) {
+    const d = doubts[doubtSym];
+    let row = null;
+    if (decision === 'row') {
+      if (typeof actionId !== 'string') return { error: 'action_id_invalid', status: 400 };
+      const rows = Array.isArray(backfill?.actions) && upper(backfill?.symbol) === doubtSym && backfill.failed !== true ? backfill.actions : [];
+      const first = d.dates[0].date;
+      const a = rows.find((x) => isPlain(x) && upper(x.ticker) === doubtSym && deriveActionId(x) === actionId && typeof x.effectiveDate === 'string'
+        && x.effectiveDate >= first && (typeof d.through !== 'string' || x.effectiveDate <= d.through));
+      if (!a) return { error: 'row_not_recorded', status: 422 };
+      if (ambiguousOnIdea(idea, actionId)) return { error: 'row_ambiguous_rule_conflict', status: 409 };
+      row = { type: a.type, ticker: doubtSym, effectiveDate: a.effectiveDate, ...(a.ratio != null ? { ratio: a.ratio } : {}), ...(a.amount != null ? { amount: a.amount } : {}), source: a.source ?? null };
+    }
+    return {
+      ruling: {
+        ...base, symbol: doubtSym, closedDoubt: true, ledgers: ['ledger'],
+        covers: { through: d.through ?? null, dates: (d.dates || []).map((x) => ({ date: x.date, lastSeenOn: x.lastSeenOn ?? x.seenOn ?? null })), ...(d.evidence ? { evidence: d.evidence } : {}) },
+        ...(row ? { row } : {}),
+      },
+    };
+  }
+  if (recordId.startsWith(`${CA_CLOSED_DOUBT}_`)) {
+    return (idea?.founderRulings || []).some((r) => r?.recordId === recordId && r.closedDoubt === true) ? { error: 'record_already_resolved', status: 409 } : { error: 'record_not_found', status: 404 };
+  }
   const gaps = idea?.caCoverageGaps || {};
   const sym = Object.keys(gaps).find((k) => coverageGapIdOf(k, gaps[k]?.since) === recordId);
   if (!sym) return { error: 'record_not_found', status: 404 };
@@ -397,6 +464,8 @@ export function applyFounderRulings(idea, { date }) {
     // T1a-2b-4 fix round: the founder's decisions on late proposals, by ledger (L-1), and the standing reasons a correction
     // after a sale leaves (L-6).
     lateApprovalsByLedger: perLedger(() => []), standingReasons: [],
+    // A-4: the founder's rulings of a sold holding's coverage doubt, by symbol — the only thing that clears it (close.js).
+    closedDoubtRulings: new Map(),
   };
   if (pending.length === 0) return out;
   const next = { ...idea };
@@ -522,6 +591,21 @@ export function applyFounderRulings(idea, { date }) {
       appliedNow.add(r.requestKey);
       continue;
     }
+    if (r.kind === 'conflict' && r.recordReason === 'refused') {
+      // A-5 (T2E-C05): `none` on a refused share-basis record — declined, with the ruling's receipt, on each ledger it names
+      // that still carries the record; the applier then drops the held record (its id is settled) and the sale it held goes on.
+      for (const f of namedLedgers(r)) {
+        const l = next[f];
+        if (!l || settledIdsOf(l).has(r.recordId)) continue;
+        const carries = Object.values(l.holdings || {}).some((h) => (h?.heldActions || []).some((x) => x?.actionId === r.recordId && typeof x.refused === 'string'));
+        if (!carries) continue;
+        l.declinedActionIds.push(r.recordId);
+        l.corporateActionReceipts.push({ actionId: r.recordId, type: r.type, ticker: r.symbol, effectiveDate: r.effectiveDate, applied: false, reason: 'founder_ruled_none', refused: r.refused ?? null, founderRuling: receiptOf(r), seenOn: date });
+      }
+      replace(r.recordId, namedLedgers(r));
+      appliedNow.add(r.requestKey);
+      continue;
+    }
     if (r.kind === 'conflict') {
       // Astra T2D-09: revalidated on each ledger the ruling names — the record must still be open there — and applied,
       // replaced and completed only there. A ledger that never carried the record keeps its own feed rows of the id.
@@ -544,6 +628,14 @@ export function applyFounderRulings(idea, { date }) {
       continue; // applied when the action is (close.js marks it)
     }
 
+    // A-4: a sold holding's coverage doubt, cleared at this close by the ruling (close.js withClosedCoverageDoubts).
+    if (r.kind === 'coverage_gap' && r.closedDoubt === true) {
+      out.closedDoubtRulings.set(r.symbol, r);
+      // (`row`: the founder's row reaches the idea's own ledger — the one that sold the stock — as the founder's action.)
+      if (r.row) addAction(r.symbol, { type: r.row.type, effectiveDate: r.row.effectiveDate, ...(r.row.ratio != null ? { ratio: r.row.ratio } : {}), ...(r.row.amount != null ? { amount: r.row.amount } : {}) }, r, ['ledger']);
+      appliedNow.add(r.requestKey);
+      continue;
+    }
     // coverage_gap: a fact about the symbol, for every ledger of the idea that holds it.
     out.coveredThroughOverrides.set(r.symbol, r.coversThrough);
     if (r.row) addAction(r.symbol, { type: r.row.type, effectiveDate: r.row.effectiveDate, ...(r.row.ratio != null ? { ratio: r.row.ratio } : {}), ...(r.row.amount != null ? { amount: r.row.amount } : {}) }, r, LEDGERS);

@@ -97,7 +97,7 @@ import { applyFounderRulings, markRulingsApplied } from './holdRulings.js';
 import {
   planLedgerAdjustments, closedHoldingsOf, resultAdjustmentView, adjustmentDocIdOf, heldAdjustments, openProposals, LATE_BLOCKER,
 } from './adjustments.js';
-import { dailyCoverageOf, rejectedRowDatesOf } from './dailyCoverage.js';
+import { dailyCoverageOf, rejectedRowDatesOf, closedDoubtIdOf } from './dailyCoverage.js';
 import { MANDATE_CA_FETCH_LOOKBACK_DAYS } from '../mandateConfig.js';
 import { stableStringify } from '../canonicalHash.js';
 
@@ -176,12 +176,18 @@ function coverageAfterClose(prior, next, { date, observed, coverage, renames }) 
  * T1a-2b-4 fix round (Astra T2E-08; L-2 ④): THE SOLD HOLDINGS' COVERAGE DOUBTS on the idea's own ledger, after this close.
  * A rejected row the session's parse report names for a sold symbol, dated within its holding (after the entry, through
  * the sale — an undated one: the whole holding, from the day after the entry), is a doubt about what the holding was owed
- * that STICKS (`closedCoverageDoubts: { SYM: { dates: [{ date, seenOn }], through } }`); a later session that lists the
- * symbol cleanly says nothing about that date. It clears only when a backfill with a clean parse report (`backfills`, the
- * successful document read in the close's transaction), fetched after the doubt was first seen, covers the date through the
- * sale. Unchanged: the same ledger. Pure.
+ * that STICKS (`closedCoverageDoubts: { SYM: { id, dates: [{ date, seenOn, lastSeenOn }], through, evidence? } }`); a later
+ * session that lists the symbol cleanly says nothing about that date.
+ * A-4 (the founder's ruling, 21 Nov 2026; Astra T2E-C04): IT CLEARS ONLY BY THE FOUNDER'S `coverage_gap` RULING (`rulings`:
+ * symbol → the ruling applied at this close, holdRulings.js), which clears every date it saw — each with the last session
+ * that showed its rejection (`lastSeenOn`) no later than when the ruling saw it. A rejection this close shows again is
+ * evidence the ruling never saw: the date stands again. No backfill clears it: a clean refetch (`backfills`, the successful
+ * document read in the close's transaction) is kept on the doubt as EVIDENCE for the founder (`evidence.cleanRefetch`) and
+ * acted on by nothing. (Before, a backfill fetched after the date's FIRST rejection cleared it — F-1 — so an older clean
+ * fetch cleared a newer rejection of the same date, and the waiting approval posted at full quality: T2E-C04.) Unchanged:
+ * the same ledger. Pure.
  */
-export function withClosedCoverageDoubts(ledger, closed, { date, parseReport, backfills = new Map() }) {
+export function withClosedCoverageDoubts(ledger, closed, { date, parseReport, backfills = new Map(), rulings = new Map() }) {
   const prior = ledger?.closedCoverageDoubts || {};
   const nextDoubts = {};
   for (const [sym, v] of Object.entries(prior)) if (!closed.has(sym)) nextDoubts[sym] = v;
@@ -190,14 +196,22 @@ export function withClosedCoverageDoubts(ledger, closed, { date, parseReport, ba
     const rejected = rejectedRowDatesOf(parseReport, date, sym);
     const fresh = rejected.dates.filter(inHolding);
     if (rejected.undated) fresh.push(c.openedAt !== null ? shiftCalendarDate(c.openedAt, 1) : c.through);
-    const kept = [...(prior[sym]?.dates || [])];
-    for (const d of fresh) if (!kept.some((x) => x.date === d)) kept.push({ date: d, seenOn: date });
+    const ruling = rulings.get(sym) ?? null;
+    const seenBy = (x) => (ruling?.covers?.dates || []).some((d) => d?.date === x.date && typeof d.lastSeenOn === 'string' && (x.lastSeenOn ?? x.seenOn) <= d.lastSeenOn);
+    const kept = (prior[sym]?.dates || []).filter((x) => !(ruling && seenBy(x)));
+    for (const d of fresh) {
+      const i = kept.findIndex((x) => x.date === d);
+      if (i < 0) kept.push({ date: d, seenOn: date, lastSeenOn: date });
+      else if ((kept[i].lastSeenOn ?? kept[i].seenOn) !== date) kept[i] = { ...kept[i], lastSeenOn: date };
+    }
+    kept.sort((a, b) => a.date.localeCompare(b.date));
+    if (kept.length === 0) continue;
+    // (A-4: a clean refetch covering the doubt through the sale is shown to the founder — never acted on.)
     const bf = backfills.get(sym) ?? null;
-    // (Third refuter F-1: only a backfill fetched AFTER the doubt was first seen answers it — its `to`, the session it was
-    // fetched through, later than the doubt's `seenOn`. A clean document stored before the rejection never saw that row:
-    // it cleared a later doubt while the vendor still listed the row malformed, and the approval posted.)
-    const left = kept.filter((x) => !(bf !== null && bf.from <= x.date && bf.to >= c.through && (typeof x.seenOn !== 'string' || bf.to > x.seenOn))).sort((a, b) => a.date.localeCompare(b.date));
-    if (left.length > 0) nextDoubts[sym] = { dates: left, through: c.through };
+    const evidence = bf !== null && bf.from <= kept[0].date && bf.to >= c.through
+      ? { cleanRefetch: { from: bf.from, to: bf.to, fetchedAt: bf.fetchedAt ?? null, failed: false, rows: Array.isArray(bf.actions) ? bf.actions.length : 0 } }
+      : (prior[sym]?.evidence ?? null);
+    nextDoubts[sym] = { id: closedDoubtIdOf(sym, kept[0].date), dates: kept, through: c.through, ...(evidence ? { evidence } : {}) };
   }
   if (stableStringify(nextDoubts) === stableStringify(prior)) return ledger;
   const l = cloneLedger(ledger);
@@ -269,7 +283,6 @@ function closeFilledIdea(idea, {
   const coverage = new Map();
   const uncovered = new Set();
   let feedActions = sessionActions;
-  const backfillJoined = new Set(); // the symbols whose backfill rows joined the session's rows
   if (ruled) alerts.push(...ruled.alerts);
   // The ids a ruling supplied, ledger by ledger (Astra T2D-09): not re-date-screened on that ledger only.
   const ruledIdsOf = (f) => ruled?.ruledIdsByLedger?.[f] ?? null;
@@ -305,19 +318,11 @@ function closeFilledIdea(idea, {
       // because the idea disputed its id, and let a re-listed backfill payload settle the idea's own conflict.)
       const rows = input.backfillRows ?? (r.viaBackfill ? input.backfill?.actions : null);
       const tagged = Array.isArray(rows) ? rows.filter((a) => a && typeof a === 'object').map((a) => ({ ...a, feedOrigin: 'backfill' })) : [];
-      if (tagged.length > 0) { feedActions = unionActionsBySymbol(feedActions, { [sym]: tagged }); backfillJoined.add(sym); }
-    }
-    // (Fix-round refuter R-4: A SOLD HOLDING'S CLEAN BACKFILL — read because its coverage doubt stands — is data about that
-    // holding's history: its rows join the idea's rows for the symbol, tagged as the backfill's, so the row the daily build
-    // rejected reaches the closed path as the backfill lists it. Clearing the doubt without them would compute on a count
-    // that misses it.)
-    for (const [sym, bf] of closedBackfills) {
-      // (Second refuter P-3: skipped only where the coverage loop above joined this symbol's backfill rows already — a
-      // comparison still holding the stock, covered by the day's own window, read none.)
-      if (backfillJoined.has(sym)) continue;
-      const tagged = (Array.isArray(bf?.actions) ? bf.actions : []).filter((a) => a && typeof a === 'object').map((a) => ({ ...a, feedOrigin: 'backfill' }));
       if (tagged.length > 0) feedActions = unionActionsBySymbol(feedActions, { [sym]: tagged });
     }
+    // (A-4, the founder's ruling of 21 Nov 2026: a sold holding's clean backfill — read because its coverage doubt stands — is
+    // EVIDENCE for the founder, kept on the doubt (withClosedCoverageDoubts), and acted on by nothing: its rows no longer join
+    // the idea's rows. R-4 joined them so the doubt could clear on them; only the founder's ruling clears it now.)
   }
 
   // One name, one idea (B-SAME): a ticker change INTO a symbol another idea of the book holds would put one ticker in
@@ -461,7 +466,8 @@ function closeFilledIdea(idea, {
       // doubt about its history that STICKS on the ledger (`closedCoverageDoubts`), until a backfill with a clean parse report
       // covers that date (`closedBackfills`, read in the close's transaction) — a late proposal of the symbol is refused
       // while it stands, and the founder may decline it. (Held, the symbol's B-3 floor does this: AR4-B-3, RFX-1.)
-      if (closed.size > 0) out.ledger = withClosedCoverageDoubts(out.ledger, closed, { date, parseReport, backfills: closedBackfills });
+      // (A-4: the founder's `coverage_gap` ruling of a sold holding's doubt, applied at this close, is the only thing that clears it.)
+      if (closed.size > 0) out.ledger = withClosedCoverageDoubts(out.ledger, closed, { date, parseReport, backfills: closedBackfills, rulings: f === 'ledger' ? (ruled?.closedDoubtRulings ?? new Map()) : new Map() });
       // (Review AR4-A-4 / AR4-C-10: a hold item an id a pending ruling settles at this close is the ruling's, not a doubt —
       // for a held symbol the dry run applies the ruled action and the item is gone; for a closed one nothing applies it, so
       // the founder's own action was deferred by its own record and the ruling closed moot.)
@@ -601,7 +607,7 @@ function closeFilledIdea(idea, {
     }
     // (T2E-08: a sold holding's sticky coverage doubt — named, and it refuses the approval of a proposal of the symbol.)
     for (const [sym, x] of Object.entries(ledger?.closedCoverageDoubts || {})) {
-      alerts.push(`PRACTICE_FIELD_CLOSED_COVERAGE_DOUBT ${idea.ideaId} ${name} ${sym} — a rejected row dated ${x.dates.map((d) => d.date).join(', ')}, within the holding sold ${x.through}: what it was owed is in doubt until a clean backfill covers it; a late proposal of it is not approved meanwhile`);
+      alerts.push(`PRACTICE_FIELD_CLOSED_COVERAGE_DOUBT ${idea.ideaId} ${name} ${sym} ${x.id ?? ''} — a rejected row dated ${x.dates.map((d) => d.date).join(', ')}, within the holding sold ${x.through}: what it was owed is in doubt until the founder rules it (resolve_hold, coverage_gap)${x.evidence?.cleanRefetch ? `; a clean refetch through ${x.evidence.cleanRefetch.to} is evidence for the ruling, acted on by nothing` : ''}; a late proposal of it is not approved meanwhile`);
     }
   }
 
