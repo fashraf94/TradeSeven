@@ -539,7 +539,8 @@ async function runInner(plan, expose) {
     expect([idea.ledger.holdings.AAPL.shares, idea.comparisonLedger.holdings.AAPL.shares, getBook(c.db, c.bookId).portfolio.positions.AAPL.shares], `${plan.seed} shares`).toEqual([plan.end.shares, plan.end.shares, plan.end.shares]);
   }
   if (plan.end?.late) plan.end.late(idea, getBook(c.db, c.bookId), soldAt);
-  return { idea, closes, inputs, entitlement, soldAt };
+  // (`store`: every document the history wrote — the fix round's equivalence rows compare it whole.)
+  return { idea, closes, inputs, entitlement, soldAt, store: c.db._store };
 }
 
 // ── EVERY REPRODUCTION FROM ASTRA'S REVIEWS, AS A FIXED CASE THROUGH THE SAME CHECKS (rev 1, S-6) ───────────────────────
