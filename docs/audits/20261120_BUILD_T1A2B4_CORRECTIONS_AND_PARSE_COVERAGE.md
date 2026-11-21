@@ -1485,3 +1485,173 @@ It also confirmed, with probes: the date-close comparison runs before any held r
 | T5 | the fire-time budget; the founder approvals screen — it should show Q-14 pairs, the early `possible_redate` records of announcements, a sold holding's doubt with its clean-refetch evidence, and a refused record's exit; Q-6 |
 
 **Time.** The prompt arrived about 00:00 CT on 21 Nov; Astra's confirmation was committed at 00:28, the rows red first at 00:35, A-1 to A-5 at 00:51, the oracle and generator at 01:08, the refuter's fix at 01:45, the soak's fix and the battery's answers at 02:29 (the frozen code); the soak, the battery, the suite and the checks ran on it after that, once each. The full suite and the rules suite ran 02:48–02:58; this section was pushed at about 03:05 CT — about three hours after the prompt (the last round took about seven and a half). Nothing ran twice on unchanged code: the battery at `90e2b220` ran only the mutants whose files or killing rows changed after `d9275df9`.
+
+## 13. Closeout, 21 Nov 2026 — R03 fixed; R01 and R02 alerted
+
+| | |
+|---|---|
+| Prompt | "Fix T1a-2b-4, closeout: the founder's row choice (R03), and an alert for late reports (R01, R02)", 21 Nov 2026 — Astra's focused recheck `docs/audits/20261121_ASTRA_RECHECK_T1A2B4.md`, committed byte-identical first (`4bd83ff0`; SHA-256 `ae1a8014308613047e791fdc556c280a5cb50ecba3c5b2c1d4e4afff0e68d080`, checked on the downloaded file and on the committed blob) |
+| Branch, base | `claude/practice-field-t1a2b4-corrections`; `git fetch origin` first (18:04 UTC): the branch head was `e2223443`, `origin/main` `cf35151b` (already merged in) — nothing to merge. Built in the session worktree `practice-field-t1a2b4-corrections-9e85f8` (its own branch, fast-forwarded to `e2223443`) and pushed to the PR branch as a fast-forward |
+| Heads | Product code `7b7066cd` (frozen; the battery, the refuter and every check below ran on it). The report commit follows |
+| Mode | `PRACTICE_FIELD_MODE` stays `'off'`. No fenced file, flag, flag pin, rules or index changed; `mandateUniverseSnapshot.js` and `mandateCorporateActions.js` untouched. Offline: the repository's test doubles only; `git fetch` and `git push` the only network |
+
+### 13.1 In plain terms
+
+**What Astra's recheck found.** Everything the final fix was asked to do held: C04 in all three orders, Q-17's refusals, A-1's date boundary (14 of 14), the once-per-ledger correction, her five acceptance rows, and the quarterly product. Three histories did not:
+- **R03.** The founder picks one row of a clean refetch for a sold holding's doubt (`coverage_gap` / `row`). A row's id names its type, ticker and date, never its ratio, so a refetch can list a 5/4 and a 2/1 split under one id. The endpoint took whichever was listed first, even when the founder named 5/4: **$199.94** paid where the founder's choice pays **$124.96**.
+- **R01, R02.** Two daily builds of one session race. The vendor answers the two identical requests differently a few seconds apart, and the losing build's rejection reaches the session's report only after the book has closed that session. A sold holding then pays **$99.97** without a coverage ruling (R01), and a held dividend pays **$236.93** from an announcement whose day the report later refuses (R02).
+
+**What the founder ruled.** R03 is fixed: the founder's choice is the row taken. R01 and R02 are alerted, not chased: a report that changes after its close raises `PRACTICE_FIELD_REPORT_CHANGED_AFTER_CLOSE`, naming the symbol, the session and the books that closed it. Nothing reopens and no money is held. The race itself is removed at T5, by a lease that lets one daily build run per session.
+
+**What changed.**
+- **The `row` ruling takes the payload the founder names** (`holdRulings.js`). Both `row` sites — a sold holding's doubt and an open coverage gap — collect every row of the requested id within the record's dates, and:
+  - a named payload takes only a row carrying exactly it; if none does, the request is refused (422), even when the id has one row;
+  - with no payload named, the id must carry one distinct payload; two or more are refused (422) while the doubt stands;
+  - a unique row still works without naming anything.
+- **A late report change is alerted** (`caParseReport.js`). When a write adds a rejected row or a disagreement to a symbol's entry, the same transaction reads which idea books' closes have already read that session's report. If any have, the write logs the alert once it commits, naming them.
+
+**How it is proved.** Astra's three seeds are rows in her own acceptance file: R03 verbatim, in both vendor orders, and R01 and R02 pinned to the ruling — the money she observed ($99.97, $236.93) and the alert exactly once, naming AAPL, the session and the book. A third, identical observation after the close adds nothing and alerts nothing. The passing order (the loser's report committed before the close) holds as today and alerts nothing. Seven more rows pin C-2 at both sites. Eight of the thirteen new rows fail on the old code (`e2223443`). The five that pass there are the two controls, the unique row, and the two orders the old code got right by luck, with 5/4 listed first. **The battery: 22 mutants re-run or added — the 20 that edit the two changed files and one each for C-1 and C-2 — all killed.** **The one refuter** confirmed that `row` takes only the named payload under every request shape it tried. It also found three ways around C-2 at its edges, each moving money in its harness. A `ratio` sent outside `payload` is ignored (RX-1, $199.94). The sold-doubt site accepts a refetch the engine itself would not count as clean (RX-2). The open gap takes an unnamed row from a failed backfill (RX-3). The closeout stopped at its time box, so none is built: RX-1 and RX-2 have fixes ready, and RX-1 blocks the flip; RX-3 is a founder question (Q-18; §13.7). The full Linux suite, the lint gate, the build and the rules suite pass (§13.8).
+
+**What changed for complete, on-time, unambiguous data:** nothing. A report that never gains a rejection or a disagreement is written exactly as before, with the same reads; the end-to-end dump is byte-identical and the differentials identical (§13.8).
+
+### 13.2 The founder's ruling, 21 Nov 2026 (verbatim)
+
+**A report that changes after its close is alerted**
+
+- **C-1.** When a session's parse report gains a rejection, or a disagreement, after an idea book has closed that session, it is **alerted** as `PRACTICE_FIELD_REPORT_CHANGED_AFTER_CLOSE`. The alert names the symbol, the session and the books that closed it. **It does not reopen the closed session or hold money.**
+  - **Why:** both histories need concurrent daily builds and a vendor that answers two identical requests differently within seconds. On a founder-only paper book that is rare, and the founder sees the alert.
+  - **Recorded for T5:** a lease so only one daily build runs per session, which removes the race at its source.
+- **C-2. R03:**
+  - `coverage_gap` / `row` resolves the requested row to **one distinct payload** in the stored clean refetch.
+  - If the id carries more than one payload, the request must name the payload, and only a matching row is taken. Otherwise it is refused (422) while the doubt stands.
+  - A payload that matches nothing is refused (422).
+
+### 13.3 Readings of the ruling (each a choice the letter left open)
+
+1. **"Gains a rejection, or a disagreement."** The write compares the entry it stores with the entry stored before it (`doubtGainedBy`). A rejected row the stored entry did not hold (compared by content), or `observationsDisagree` turning true, is a gain. A first entry is compared against nothing, so its rejections are all new. The same rejection observed again is not a gain, which keeps the alert to exactly once. A malformed envelope arriving after a clean entry makes the two observations disagree, so it is alerted. A first entry with only a malformed envelope is not: the close that read that session found no report, and a missing report is already a doubt.
+2. **"After an idea book has closed that session."** The book's close row for the session (`windows/{session}_close`) exists with `observed: true`. That is the close that read the session's parse report: `close.js` reads the report and creates that row in one transaction. The report write reads the rows in its own transaction, so the order is exact: a close that commits first is named, and a close that commits after reads the changed report and needs no alert. The books are those the registry lists, the open and draining ones. A book closed for good is not named.
+3. **Where the alert goes.** `console.error`, like the Practice Field's other alerts, logged after the transaction commits — never inside it, where a retry would run again. One line per symbol per committed write. Nothing is stored: no new collection, field, rule or index.
+4. **C-2 covers both `row` sites.** The sold holding's closed doubt (A-4) and the open coverage gap (F-1) had the same first-match `rows.find`; one resolver now serves both.
+5. **"Name the payload"** is the request's `payload` field — already part of the `resolve_hold` body and its request fingerprint, so a replay under the same key with another payload is still a key conflict (409). Payloads are compared as a conflict ruling compares them (`payloadOf`, `samePayload`): ratio, amount, cash per share and renamed-to, by exact value. `0.6667` therefore does not name a 2/3 split; the founder sends the ratio the refetch shows. Rows of one id with the same payload are one payload. A named payload is checked even when the id has one row. A `payload` that is not an object is refused 400 (`payload_invalid`), as on the conflict ruling.
+6. **The refusals** reuse the conflict ruling's vocabulary: `payload_not_recorded` (422) for a named payload no row carries, and a new `row_payload_ambiguous` (422) for an id with two payloads and none named. `row_not_recorded` (422) is unchanged.
+
+### 13.4 Each fix, by `file:line` (at `7b7066cd`)
+
+The round's commits: `4bd83ff0` (Astra's recheck, byte-identical), `7b7066cd` (C-1, C-2 and their rows). All under `api/_utils/practiceField/`.
+
+**C-2 — `holdRulings.js`.**
+- `holdRulings.js:87` `rowOfNamedPayload(candidates, payload)`: a named payload takes only a row with the same payload, else `payload_not_recorded` (422); none named, one distinct payload is taken, two or more are `row_payload_ambiguous` (422).
+- `holdRulings.js:432` the sold holding's doubt (A-4) and `holdRulings.js:459` the open coverage gap (F-1) now filter every row of the id within the record's dates and hand them to it. Each `a.ratio` / `a.amount` the ruling records, and the open gap's `unrepresentableOn` check, read the matched stored row, never the request.
+- Header notes at `holdRulings.js:34` and `:421`.
+- `founderControls.js` is unchanged: it already passes `payload` to `planHoldRuling` and covers it in the request fingerprint.
+
+**C-1 — `caParseReport.js`.**
+- `caParseReport.js:163` `doubtGainedBy(stored, merged)` (reading 1).
+- `caParseReport.js:176` `booksThatClosed(tx, db, session)`: the registry, then each listed book's close row for the session, in the report's transaction (reading 2).
+- `caParseReport.js:246–250`, inside the existing merge transaction: the books are read only when a symbol gained, before the write; the alert lines are returned.
+- `caParseReport.js:264–265`, in the write pump: the lines are logged after the transaction resolves.
+- Header at `caParseReport.js:38–44`.
+
+**The registry census** — `registryPresence.test.js:85–91`. The census of files that name the idea-book registry now lists `caParseReport.js`, with a check that it never writes the registry (as for `sweep.js`). The protected-store allowlist is unchanged: no new write site.
+
+No other file changed. The soak was not run: the only product files changed are `holdRulings.js` and `caParseReport.js` (the brief's rule 5).
+
+### 13.5 The rows
+
+All in `astraConfirmation.test.js`, through her harness: the real daily builder and its parse reports, the close, the windows and the founder's endpoint.
+
+| Row | What it pins | At `e2223443` | At `7b7066cd` |
+|---|---|---|---|
+| `R01 sold-report-after-close` (`:783`) | Astra's seed. The loser's `3:2` rejection reaches Monday's report after the book closed Monday: the alert fires once, naming AAPL, `2026-11-23` and the book; a third identical observation alerts nothing; the approval is accepted (200) and Tuesday posts **$99.97**. CHANGED EXPECTATION from her 409 / $0 under C-1 | red — no alert (it paid the same $99.97) | pass |
+| `R02 refused-announcement-after-close` (`:807`) | Astra's seed. S6's report gains the unreadable split after the book closed S6: one alert naming AAPL, `2026-11-24` and the book; S7 pays **$236.93**. CHANGED EXPECTATION from her $0 under C-1 | red — no alert (it paid the same $236.93) | pass |
+| `R03 refetch-order 5/4 then 2/1`, `2/1 then 5/4` (`:826`) | Astra's seed, verbatim: naming `{ ratio: 1.25 }` takes the 5/4 row and pays **$124.96** in both orders | 5/4 first: pass · **2/1 first: red** (ratio 2 recorded, as Astra found) | pass, pass |
+| C-1 controls (`:853`, `:869`) | The loser's report committed before the close: R01's standing doubt refuses the approval (409) and Tuesday pays $0; R02's S6 keeps the $1 announcement and S7 is a conflict that pays $0. No alert in either | pass, pass | pass, pass |
+| C-2, named (`:902`, both orders) | Naming 1.25 takes the 5/4 row; $124.96 at S7, unchanged at S8, the same cash — posted once | 5/4 first: pass · **2/1 first: red** (ratio 2) | pass, pass |
+| C-2, unnamed (`:913`, both orders) | Two payloads and none named: 422 `row_payload_ambiguous`, no ruling stored, $0 | red, red (200: the first row taken) | pass, pass |
+| C-2, absent (`:920`) | A ratio no row carries: 422 `payload_not_recorded` and $0 — with two payloads, and with one | red (200) | pass |
+| C-2, unique (`:929`) | One row, nothing named: the 5/4 split is taken and $124.96 posts once | pass | pass |
+| C-2, open gap (`:937`, pure) | The open coverage gap's `row`, both orders: unnamed 422, each named ratio taken, an absent one 422; a payload listed twice is one; a unique row is taken unnamed and refused under another named payload | red (the first row taken) | pass |
+
+Astra's acceptance file: **57 / 57** (44 before, 13 added). Every other row in the repository is unchanged except the registry census (§13.4).
+
+### 13.6 The mutation battery
+
+The fast battery (PR #1101's runner, copied untracked and deleted after), at `7b7066cd`, `--mode tiered`, 4 trees × 4 workers, with the final fix's four results files as `--prior`. **22 defined, 22 ran, 22 killed, none broken, survived, errored or timed out — 5.0 min** (baseline 1,519 rows in 42 files, green).
+
+**What ran.** The final fix's battery defined 145 mutants at `90e2b220`. This closeout re-ran the 20 of them that edit a file it changed — 13 in `holdRulings.js` alone, 4 in `caParseReport.js` alone, and 3 that edit `holdRulings.js` beside `adjustments.js` or `close.js` — with every anchor checked first (0 broken). It also ran one new mutant for each ruling:
+
+| Mutant | Ruling | Edit | Verdict | Killed by |
+|---|---|---|---|---|
+| `NC2-row-takes-first-row` | C-2 | `rowOfNamedPayload` returns the first candidate row, whatever was named | **KILLED** (quick, 6 rows failing) | `R03 refetch-order 2/1 then 5/4` — Astra's seed — and the C-2 rows |
+| `NC1-alert-not-only-on-gain` | C-1 | the alert fires whenever the merged entry disagrees, not only when this write added the doubt | **KILLED** (quick, 1 row failing) | `R01 sold-report-after-close` — the third identical observation alerts a second time |
+
+The other 125 edit files whose bytes are unchanged since `90e2b220`. The only test changes are rows added to `astraConfirmation.test.js` and one more check in the registry census, which can add kills but never remove one. Their verdicts stand. **The battery now stands at 147 defined, 146 killed; the one survivor is NL2c, the known equivalent** (`adjustments.js`, unchanged).
+
+One kill was decided with the battery idle: `FB6-write-not-bounded` (the report write's time limit removed). Its killing row, the same as last round's, gives the write a store that never answers, so under the mutant the build waits forever and the row times out. That is the defect the mutant names, not machine load: the row timed out alone with the battery idle (9.6 s).
+
+### 13.7 The refuter
+
+One refuter, on this diff only, at `7b7066cd`, in its own LF snapshot of the commit (read-only on git and on the worktree; its probe files stayed in the snapshot). It was told to find a way for `row` to take a payload the founder did not name. It ran three probe files: 138 pure rows, and end-to-end histories at both sites.
+
+**What held.** `rowOfNamedPayload` held under every request shape tried at both sites: `{}`, `[]`, `0`, `false`, `''`, `{ ratio: '1.25' }`, `{ ratio: 1.25, amount: 0 }`, extra keys, `{ ratio: null }`, `cashPerShare: null`, `renamedTo: ''`, over candidate sets `[1.25, 1.25, 2]`, `[2, 1.25, 1.25]` and both orders of two rows. Every 200 carried exactly the named ratio; every unnamed request against two payloads was 422.
+- End to end at the sold holding's doubt:
+  - Naming 1.25 or 2, then a later daily listing the other ratio, paid only the named figure ($124.96 or $199.94).
+  - A dividend id listing $1 and $2.37: unnamed was 422 and paid nothing; each named amount paid only itself ($99.97 or $236.93).
+  - The refetch rewritten between the ruling and the close changed nothing.
+  - A new key while the ruling was pending was 409 `record_already_resolved`, the same key with another payload 409 `request_key_conflict`, and a second ruling after it applied 409.
+- At the open gap: unnamed with two payloads was 422, and each named ratio applied exactly that ratio on both ledgers.
+
+**What it found — three ways around C-2's edges, none built here** (the closeout stopped at its time box; §13.10):
+
+| ID | Finding | Money | Disposition |
+|---|---|---|---|
+| **RX-1** | **A top-level `ratio` is read and ignored.** `resolveFieldsOf` reads `ratio` for every kind (and fingerprints it), but `coverage_gap` uses only `payload`. A founder who sends `{ …, decision: 'row', ratio: 1.25 }` against a stored refetch whose only split is 2/1 gets 200, the 2/1 row is taken, and S7 pays **$199.94**. The founder named 1.25, in the wrong field. | **yes** (the refuter's D3, run) | **Open — blocks the flip.** Fix ready: `planHoldRuling` refuses a non-null `ratio` on `coverage_gap` (400), with one row |
+| **RX-2** | **The sold-doubt site's "clean" test is weaker than the engine's.** It checks `backfill.failed !== true`. The engine's own test (`dailyCoverage.js:241` `successfulBackfill`) also requires a clean parse report. A `failed: false` document with no parse report is kept over a later refetch that saw a malformed sibling row. `row`, unnamed, then takes its one 2/1 row, and S7 pays **$199.94**. | yes in the harness (D6, run) | **Open.** Reach looks low: only a backfill document written before T2D-12, which is part of this unmerged PR, would have no parse report. Not verified against any store. Fix ready: read the document through `successfulBackfill` at that site |
+| **RX-3** | **The open gap takes an unnamed row from a failed backfill.** The vendor lists a readable 2/1 and an unreadable `5:4` split of one date. The backfill is stored `failed: true` with the 2/1 only, its parse report naming the rejected row. `row`, unnamed, takes the 2/1 and the shares double on both ledgers. | yes (shares; G2, run) | **Founder question Q-18.** F-1 lets the founder pick a failed backfill's rows by design (`caBackfill.js` header), and C-2's "stored clean refetch" was written for the sold doubt. Requiring a named payload when the backfill is not clean would change existing rows (`corporateActionStickyAmbiguity.test.js` rules unnamed on planted `failed: true` documents) |
+| RX-4 | The ruling's `row`, and the action built from it, carry only `ratio` and `amount`; `samePayload` also compares `cashPerShare` and `renamedTo`, which are then dropped. | no (EODHD's backfill lists only splits and dividends) | recorded (latent) |
+| RX-5 | On a sold holding, a ratio the vendor lists after the `row` ruling is ignored with no record; the open gap records `revised_after_ruling` in the same case. | no | recorded |
+
+**Q-18 (RX-3).** At an open coverage gap, should `row` require a named payload when the stored backfill is not clean? A failed backfill can hide a second row of the id. Or does F-1's "the founder may pick a failed backfill's rows" stand as it is?
+
+### 13.8 The checks
+
+Each ran once, on the frozen code `7b7066cd`.
+
+| Check | At | Result |
+|---|---|---|
+| Astra's recheck, committed byte-identical | `4bd83ff0` | SHA-256 `ae1a8014…d080` on the downloaded file and on the committed blob (LF, 17,186 bytes) |
+| Astra's acceptance file (`astraConfirmation.test.js`), Windows | `7b7066cd` | **57 / 57** — her five rows, the final fix's 39, and the closeout's 13 |
+| The new rows on the old code | product `e2223443`, rows `7b7066cd` | **8 red, 5 green** (§13.5): R01 and R02 with no alert; R03 2/1 first at ratio 2; the C-2 rows taking the first row; the controls, the unique row and the 5/4-first orders green |
+| The Practice Field folder, Windows | `7b7066cd` (before the census row) | 1,479 / 1,480 — the one failure was the registry census naming `caParseReport.js`, then extended (§13.4); the census file 10 / 10 |
+| Full Linux suite, WSL (`TZ=UTC flock /tmp/pd-suite.lock npx vitest run --maxWorkers=8`, Node 20.20.2, lock `e457c10d0317`) | `7b7066cd` | **exit 0** · `Test Files  1596 passed \| 13 skipped (1609)` · `Tests  36831 passed \| 179 skipped (37010)` (320 s) — 13 rows more than at `90e2b220`, the closeout's |
+| `npm run lint:gate` · `npx vite build` (WSL) | `7b7066cd` | **exit 0** each · `✓ built in 16.24s` |
+| `npm run test:rules` (WSL, JDK 21) | `7b7066cd` | **exit 0** · `Test Files  46 passed (46)` · `Tests  841 passed (841)` |
+| The end-to-end dump (`endToEnd.test.js`, its pinned `EXPECTED_DUMP`) | `7b7066cd` | byte-identical: 443,533 bytes, SHA-256 `abcf8420…ed9` (the row passes in the folder run and in the Linux suite) |
+| Differentials against `cf35151b` (Astra's probes; LF archives of both commits, the vendor key synthetic, `fetch` and prices stubbed) | `7b7066cd` | `astra-differential` **36/36**, `astra-cron-trace` **40/40**, planted-backfill **4/4** (planted 100 shares, vendor 200, cash $90,000; `off` and `on`). The three evidence files are byte-identical to the earlier rounds' (SHA-256 `b6d71e76…c6c6`, `6c169f26…e760`, `80a9e53b…abcf`) |
+| The mutation battery | `7b7066cd` | 22 / 22 killed (§13.6) |
+| The soak | — | not run: the only product files changed are `holdRulings.js` and `caParseReport.js` (the brief's rule 5) |
+
+### 13.9 The register
+
+**Switch: the founder flips `'allowlist'` on this closeout's merge, with Astra's R01 and R02 accepted as alerted (C-1), and R03 fixed with her seed as a row.**
+
+| Item | State |
+|---|---|
+| **Before the flip** | the closeout refuter's **RX-1** (a top-level `ratio` ignored by `row`: $199.94) is open and should be fixed first; **RX-2** (the sold-doubt site's weaker clean test) is open, with low reach. Both fixes are ready, not built (§13.7, §13.10) |
+| **T5: the daily-build lease** | one daily build per session, which removes R01's and R02's race at its source (C-1). Until then, a report that changes after its close is alerted, not reopened |
+| R01, R02 | accepted as alerted (C-1): the money stands as Astra observed it, and the alert names the symbol, the session and the books |
+| R03 | fixed (C-2); her seed is a row |
+| C-1's reach | the books named are the registry's open and draining books; a book closed for good is not named. The alert is a log line, like the Practice Field's other alerts; nothing stores it |
+| Q-1, Q-15, Q-16, Q-17 | decided by the founder in Astra's recheck brief, which her recheck applied; that brief is not in this repository, so the decisions are not restated here |
+| **Q-18** (RX-3) | at an open coverage gap, should `row` require a named payload when the stored backfill is not clean (§13.7)? |
+| NL2c's received-sum fallback (`adjustments.js` step 3) | proven equivalent; still to remove (unchanged) |
+| `evidence.test.js` 60-session row | still needs a timeout of its own (unchanged) |
+| RF-3, RF-4, RF-6 | as in §12.13 (unchanged) |
+| A refused CASH record (`count_on_ex_date_unknown`) | still has no founder exit (unchanged) |
+| T5 (also) | the fire-time budget; the founder approvals screen — it should show Q-14 pairs, the early `possible_redate` records, a sold holding's doubt with its clean-refetch evidence and every payload its refetch lists under the doubt's ids (C-2 asks the founder to name one), a refused record's exit, and the `PRACTICE_FIELD_REPORT_CHANGED_AFTER_CLOSE` alerts; Q-6 |
+
+### 13.10 Time
+
+The brief arrived with Astra's recheck; `git fetch` ran at 18:04 UTC. The recheck was committed at about 18:06. C-1, C-2 and their rows were frozen as `7b7066cd` at 18:20. The battery, the red check, the differentials and the four Linux checks all ran once on it, finishing by about 18:36. The refuter returned shortly after.
+
+The session then paused for a sign-in and resumed at 21:14 UTC, after the brief's three-hour stop (21:04), which fell inside the pause. **Nothing was built after the stop.** The refuter's RX-1 and RX-2 fixes are ready but not built: any code change would restart the battery and the four checks (about 30–40 minutes). Whether to exceed the time box is the founder's call. This section and the push are the report.
