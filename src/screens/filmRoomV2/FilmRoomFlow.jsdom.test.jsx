@@ -14,6 +14,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import React from 'react';
 import FilmRoomFlow, { FLOW_LAYOUT } from './FilmRoomFlow.jsx';
 import { mounter, sep23Tape, clone, sweepFlow, flowCopyDefects, sweepWords, quoteDefects, flowPinsOf, SPEC_FLOW_COPY } from './__fixtures__/filmRoomHarness';
+import { momentsCountOf } from './filmRoomFlow.js';
 
 const m = mounter();
 const docs = (tape, extra = {}) => ({ tape, ...extra });
@@ -211,8 +212,8 @@ describe('F-COPY — the front says only the spec\'s §11 words, the tape\'s val
   it.each(['quiet', 'partial', 'earlier', 'noCpu', 'unrecorded', 'loss', 'draw', 'final'])('%s: every sweep clean', (name) => {
     const tape = states()[name];
     stubChartWidth(350);
-    mount(tape);
-    clean(tape);
+    mount(tape, { moments: momentsCountOf(2) });
+    clean(tape, { moments: 2 });
   });
   it('each state says what §4 – §9 say', () => {
     const s = states();
@@ -251,7 +252,22 @@ describe('F-COPY — the front says only the spec\'s §11 words, the tape\'s val
   });
 });
 
-describe('the desktop layout', () => {
+describe('the cards line (§9) and the desktop layout', () => {
+  it('one moment, several, none: "1 moment …", "3 moments …", no line', () => {
+    stubChartWidth(350);
+    const calls = mount(sep23Tape, { moments: momentsCountOf(1) });
+    expect(text('[data-flow-cards-line]')).toBe('1 moment to take home, on the full tape');
+    m.click(m.q('[data-flow-cards-line]'));
+    expect(calls.tape).toBe(1);
+    clean(sep23Tape, { moments: 1 });
+    m.teardown(); m.root = null;
+    mount(sep23Tape, { moments: momentsCountOf(3) });
+    expect(text('[data-flow-cards-line]')).toBe('3 moments to take home, on the full tape');
+    clean(sep23Tape, { moments: 3 });
+    m.teardown(); m.root = null;
+    mount(sep23Tape, { moments: null });
+    expect(m.q('[data-flow-cards-line]')).toBeNull();
+  });
   it('desktop: the heading at 56, the panel beside the chart, the tiles in one row', () => {
     stubChartWidth(FLOW_LAYOUT.desktop.chartWidth);
     mount(sep23Tape, { desktop: true });

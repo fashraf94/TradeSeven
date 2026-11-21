@@ -249,7 +249,45 @@ describe('F-DOOR — the door, the way back, the pins\' links, a change of day; 
   });
 });
 
-describe('the empty day', () => {
+describe('F-CARDS — the cards line (§9)', () => {
+  const withMoments = (runs) => {
+    const t = clone(sep23Tape);
+    t.coverage.tags = { status: 'complete', note: null };
+    t.tags.items = runs.flatMap(([sym, from, to]) => Array.from({ length: to - from + 1 }, (_, k) => ({ situationId: 'stalled', symbol: sym, tickSeq: from + k, at: sep23Tape.checks[from + k - 1].at, count: 3 })));
+    return t;
+  };
+  it('cards on, one moment: "1 moment to take home, on the full tape"; a tap opens the tape on Glance', async () => {
+    flags.cards = 'on';
+    const tape = withMoments([['MSFT', 8, 10]]);
+    await open({ tapes: { [D]: tape } });
+    expect(m.q('[data-flow-cards-line]').textContent).toBe('1 moment to take home, on the full tape');
+    expect(sweepFlow(m.container, { tape, moments: 1 })).toEqual([]);
+    m.click(m.q('[data-flow-cards-line]')); await m.flush();
+    expect(onTape()).toBe(true);
+    expect(m.tab('Glance').getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(shownPanel());
+    expect(m.q('[data-cards-region="prepared-case"]')).toBeTruthy();   // the card regions are the tape's
+  });
+  it('several: "3 moments …"; none (the tagger found none, or could not tag): no line', async () => {
+    flags.cards = 'on';
+    await open({ tapes: { [D]: withMoments([['MSFT', 8, 10], ['ETN', 12, 13], ['DE', 15, 15]]) } });
+    expect(m.q('[data-flow-cards-line]').textContent).toBe('3 moments to take home, on the full tape');
+    m.teardown(); m.setup();
+    await open({ tapes: { [D]: withMoments([]) } });
+    expect(m.q('[data-flow-cards-line]')).toBeNull();
+    m.teardown(); m.setup();
+    await open();   // sep23: the tagger marked the day unavailable
+    expect(m.q('[data-flow-cards-line]')).toBeNull();
+  });
+  it('cards off: no line, and nothing asked of the cards — no verdict, no counter', async () => {
+    flags.cards = 'off';
+    const r = await open({ tapes: { [D]: withMoments([['MSFT', 8, 10]]) } });
+    expect(onFront()).toBe(true);
+    expect(m.q('[data-flow-cards-line]')).toBeNull();
+    expect(r.cardsApi.calls.counter).toBe(0);
+    expect(r.cardsApi.calls.verdict).toEqual([]);
+    expect(m.container.textContent).not.toMatch(/moment|Take this home|Since last time|My cards/);
+  });
   it('the empty day\'s front: the quiet line, no tiles, no legend — and every sweep clean', async () => {
     const tape = clone(emptyTape);
     await open({ battle: battleOf(tape, { ownerId: 'owner-1' }), tapes: { [tape.etDate]: tape } });

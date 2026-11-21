@@ -44,11 +44,12 @@ import FilmRoomStudy from './FilmRoomStudy';
 import FilmRoomDeepDive from './FilmRoomDeepDive';
 // Film Room B2 (Build B spec §6; Amendment G RG-2): the card — its gate, its reads and writes, and the four regions'
 // content, rendered in place of the empty reserved regions ONLY when cards resolve on for the battle's owner.
-import { useFilmRoomCards, defaultCardsApi, momentAnchor, momentKey } from './filmRoomCards';
+import { useFilmRoomCards, defaultCardsApi, momentAnchor, momentKey, momentsOfTape, tagsStateOf } from './filmRoomCards';
 import { PreparedCase, YourCall, Receipt, SinceLastTime } from './FilmRoomCardRegions';
 // Film Room D1 (Build D spec §3, §4, §10): the front, the game's flow — opened in place of the tape when the flow
 // resolves on for the battle's owner; the tape behind one door, unchanged
 import FilmRoomFlow from './FilmRoomFlow.jsx';
+import { momentsCountOf } from './filmRoomFlow.js';
 // B2.1 B2 (Amendment H RH-2): another battle's recurrence opens that battle through P1c's one door (App's listener)
 import { requestOpenBattleReview, battleReviewAtOf } from '../../components/Forge/Watchlist/ideaNavigation';
 
@@ -387,7 +388,7 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
   const cardsOn = cards.on === true;
   const cardsProps = cardsOn && written ? { onTakeHome: takeHome } : null;
 
-  // Film Room D1 (§10) — the doors. "Open the full tape" shows the tape on Glance and puts the
+  // Film Room D1 (§10) — the doors. "Open the full tape" (and the cards line) shows the tape on Glance and puts the
   // focus on its panel; a pin's link shows the tape at that swap or the directives, in Study, focused there — the
   // screen's own jump; "Game flow" returns to the front and puts the focus back on the door.
   const doorId = `${idBase}-flow-door`;
@@ -396,6 +397,8 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
   const backToFront = () => { setOnTape(false); setFromFront(false); setPendingJump({ id: doorId, focus: true, scroll: false }); };
   const onDepth = (d) => { setDepth(d); if (!onTape) setOnTape(true); };
   const backHere = fromFront && !front;
+  // §9: the cards line counts the moments the tape view would offer (the prepared case's own rule) — only under cards
+  const momentCount = cardsOn && written && tagsStateOf(tape) === 'ready' ? momentsOfTape(tape).length : 0;
 
   const parts = headerParts(battle, tape, day);
   const subtitle = [parts.name ? <AgentName key="name" battle={battle} /> : null, parts.archetype, parts.game, parts.length ? <BattleLength key="length" length={parts.length} tape={tape} /> : null, parts.date ? <When key="date">{parts.date}</When> : null].filter(Boolean);
@@ -461,6 +464,7 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
             tape={tape}
             desktop={desktop}
             oneDay={days.length <= 1}
+            moments={momentCount > 0 ? momentsCountOf(momentCount) : null}
             onOpenTape={openTape}
             onOpenAt={openTapeAt}
             doorId={doorId}

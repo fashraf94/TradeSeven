@@ -315,12 +315,14 @@ function Tiles({ counts, cols }) {
  * @param {object}   props.tape            the day's tape (written: `checks` is an array)
  * @param {boolean}  props.desktop         the shell's ≥ 1024 px layout
  * @param {boolean}  props.oneDay          a one-day battle ("This game"), else "This day"
- * @param {Function} props.onOpenTape      the door: the tape, on Glance
+ * @param {object|null} props.moments      the cards line's count (a declared aggregate) — only when cards are on and the
+ *                                         tape view would offer at least one moment (§9); null otherwise
+ * @param {Function} props.onOpenTape      the door (and the cards line): the tape, on Glance
  * @param {Function} props.onOpenAt        a pin's link: the tape, at that anchor (`swap-n` or `directives`)
  * @param {string}   props.doorId          the door's id — focus comes back to it from the tape (§10)
  * @param {Function} props.renderAgentMark the agent's mark at a size, beside its quoted reply
  */
-export default function FilmRoomFlow({ tape, desktop = false, oneDay = true, onOpenTape, onOpenAt, doorId, renderAgentMark = () => null }) {
+export default function FilmRoomFlow({ tape, desktop = false, oneDay = true, moments = null, onOpenTape, onOpenAt, doorId, renderAgentMark = () => null }) {
   const narrow = useNarrow() && !desktop;
   const L = desktop ? FLOW_LAYOUT.desktop : narrow ? FLOW_LAYOUT.narrow : FLOW_LAYOUT.phone;
   const flow = flowOf(tape, { oneDay });
@@ -351,6 +353,9 @@ export default function FilmRoomFlow({ tape, desktop = false, oneDay = true, onO
       {flow.incomplete ? <p data-flow-incomplete="" style={{ margin: 0, fontSize: 12.5, lineHeight: 1.45, color: C.ink2 }}>{F.incomplete}</p> : null}
     </div>
   );
+  const cardsLine = moments && moments.value > 0
+    ? <FlowLink label={<><FlowAgg a={moments} /> {F.moments(moments.value)}</>} onClick={onOpenTape} data={{ 'data-flow-cards-line': '' }} />
+    : null;
   const foot = (
     <div data-flow-foot="" style={{ borderTop: `1px solid ${C.hair}`, paddingTop: 8, display: 'flex' }}>
       <FlowLink id={doorId} label={F.door} onClick={onOpenTape} size={14} data={{ 'data-flow-door': '' }} />
@@ -363,6 +368,7 @@ export default function FilmRoomFlow({ tape, desktop = false, oneDay = true, onO
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 32, flexWrap: 'wrap' }}>{heading}{key}</div>
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.75fr) minmax(0,1fr)', gap: 36, alignItems: 'start' }}>{chartBlock}<div style={{ paddingTop: 16, minWidth: 0 }}>{below}</div></div>
         <Tiles counts={flow.counts} cols={Math.max(1, flow.counts.tiles.length)} />
+        {cardsLine}
         {foot}
       </div>
     );
@@ -376,6 +382,7 @@ export default function FilmRoomFlow({ tape, desktop = false, oneDay = true, onO
         {below}
       </div>
       <Tiles counts={flow.counts} cols={2} />
+      {cardsLine}
       {foot}
     </div>
   );
