@@ -259,7 +259,7 @@ describe('the record and its patches', () => {
   });
   it('buildRecord: identity, subject, funnel, budget, telemetry, terminal — and refuses what is malformed', () => {
     expect(base()).toEqual({
-      schemaVersion: 1, researchWorkId: 'ws_s', userId: 'u', origin: 'signaldrop', host: { collection: 'watchlistSessions', id: 's' }, createdAt: NOW,
+      schemaVersion: 2, /* minted now: version 2 (B6a) */ researchWorkId: 'ws_s', userId: 'u', origin: 'signaldrop', host: { collection: 'watchlistSessions', id: 's' }, createdAt: NOW,
       watchlistId: null, hypothesisVersion: null,
       stages: { universeSize: null, matchedPreLimit: null, shortlisted: 1, selectedForInvestigation: 1, investigationsCompleted: null, eligible: 0 },
       symbols: [{ symbol: 'NVDA', outcome: null, reason: null }], symbolsTruncated: false,

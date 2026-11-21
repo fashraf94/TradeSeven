@@ -65,6 +65,12 @@ const post = (body) => call(SHARED_RESEARCH_ROUTE, { method: 'POST', body: JSON.
 
 /** GET ?list=open — "Continue your research" (≤ 3 rows) and today's quota. */
 export const listOpenInvestigations = () => call(`${SHARED_RESEARCH_ROUTE}?list=open`, { method: 'GET' });
+/**
+ * GET ?list=explore — Explore's one read (B6a X-1): `{ quota, items }`, per Explore story investigated its open and
+ * last-ended investigation. Its one importer outside the sheet is src/components/Explore/useExploreResearch.js
+ * (sharedResearch.boundary.test.js); the sheet itself never calls it.
+ */
+export const readExploreInvestigations = () => call(`${SHARED_RESEARCH_ROUTE}?list=explore`, { method: 'GET' });
 /** GET ?sessionId= — one investigation as the server projects it (also the save check, K-8). */
 export const readInvestigation = (sessionId) => call(`${SHARED_RESEARCH_ROUTE}?sessionId=${encodeURIComponent(sessionId)}`, { method: 'GET' });
 /** POST frame — the player's words framed into a question (one model call). */

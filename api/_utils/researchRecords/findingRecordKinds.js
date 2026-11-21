@@ -7,7 +7,10 @@
 // version. A `retrieval` source carries its url. Re-exported by model.js.
 // The follow-up (7 Nov 2026, clarification 2) added `stockRankings`,
 // `peerRankings` and `researchWork` (a finding citing an earlier investigation)
-// to version 1 before anything stored it.
+// to version 1 before anything stored it. Version 2 (Shared Research B6a, the
+// founder's ruling of 21 Nov 2026) appends 'exploreStories' — an Explore story,
+// cited by the opening finding of an investigation started from one. Nothing
+// else moved.
 //
 // DATA ONLY, on purpose (review B1): the list names collections, so this file
 // is on the setupEvidence import guard's allowlist by name — and
@@ -17,5 +20,5 @@
 export const FINDING_RECORD_KINDS = Object.freeze([
   'symbolDayEvidence', 'fantasyTimesWire', 'fantasyTimesStories', 'ingestedClaims', 'stockBriefs', 'estimatesCache',
   'setupEvidence', 'activationPointer', 'call', 'hypothesisVersion', 'exchange', 'kb', 'retrieval',
-  'stockRankings', 'peerRankings', 'researchWork',
+  'stockRankings', 'peerRankings', 'researchWork', 'exploreStories',
 ]);

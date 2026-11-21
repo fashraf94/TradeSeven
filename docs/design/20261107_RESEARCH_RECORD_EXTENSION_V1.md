@@ -27,6 +27,8 @@ Every new field is written by the server. No route accepts a question, finding, 
 
 Each closed list below is defined once in the model and, once records are stored, grows only with a new `RECORD_SCHEMA_VERSION`. `api/_utils/researchRecords/extension.test.js` pins every list against the schema version (version 1 is this note; the follow-up amended version 1 in place because nothing had been stored).
 
+Version 2 (Nov 2026): adds `exploreStories` (appended to the finding source list, and so to the evidence-item list; Shared Research B6a, the founder's ruling of 21 Nov 2026).
+
 ## 2. The research record (`researchWork/{id}`)
 
 ### 2.0 Which records carry the extension fields
