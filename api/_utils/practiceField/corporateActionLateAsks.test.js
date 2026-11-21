@@ -52,7 +52,7 @@ describe('the oracle (Astra\'s "Oracle" section) — I-6 scoped, and I-7', () =>
   it('I-7 is derived from the inputs alone: an adjustment with no approval or ruling in the request log fails; its approval passes', () => {
     const inputs = new InputOracle(S);
     const e = new EntitlementOracle(S, inputs);
-    const idea = { ledger: { adjustments: [{ kind: 'late_entitlement', actionId: `cash_dividend_AAPL_${S[1]}`, amountUsd: 99.97, amountPerShare: 1, postedOn: S[4] }] } };
+    const idea = { ledger: { adjustments: [{ kind: 'late_entitlement', actionId: `cash_dividend_AAPL_${S[1]}`, amountUsd: 99.97, amountPerShare: 1, proposal: `late_idea_cash_dividend_AAPL_${S[1]}`, ruling: { requestKey: 'k4' }, postedOn: S[4] }] } };
     expect(() => e.checkAuthority(idea, 4, 'unit'), 'no approval: I-7 fails').toThrow(/I-7 ledger cash_dividend_AAPL_2026-11-17/);
     inputs.ruling({ kind: 'late_adjustment', recordId: `late_comparison_cash_dividend_AAPL_${S[1]}`, decision: 'approve' }, { status: 200 }, 'k1', 4);
     expect(() => e.checkAuthority(idea, 4, 'unit'), 'another ledger\'s approval is not this one\'s').toThrow(/I-7/);
@@ -69,7 +69,7 @@ describe('the oracle (Astra\'s "Oracle" section) — I-6 scoped, and I-7', () =>
     const inputs = new InputOracle(S);
     const e = new EntitlementOracle(S, inputs);
     const id = `cash_dividend_AAPL_${S[2]}`;
-    const idea = { comparisonLedger: { adjustments: [{ kind: 'ruled_correction', actionId: id, amountUsd: 99.97, payload: { amount: 2 }, postedOn: S[5] }] } };
+    const idea = { comparisonLedger: { adjustments: [{ kind: 'ruled_correction', actionId: id, amountUsd: 99.97, payload: { amount: 2 }, ruling: { requestKey: 'k2' }, postedOn: S[5] }] } };
     inputs.ruling({ kind: 'conflict', recordId: id, decision: 'payload', payload: { amount: 3 } }, { status: 200 }, 'k1', 5);
     expect(() => e.checkAuthority(idea, 5, 'unit')).toThrow(/I-7 comparisonLedger/);
     inputs.ruling({ kind: 'conflict', recordId: id, decision: 'payload', payload: { amount: 2 } }, { status: 200 }, 'k2', 5);

@@ -272,8 +272,10 @@ const samePayload = (a, b) => (a?.ratio ?? null) === (b?.ratio ?? null) && (a?.a
 //        the other's last listing and before both dates. An observation such a pairing makes ambiguous takes its own
 //        `possible_redate` record at that very close, so the founder can answer it (resolve_hold, `conflict`): a blocker
 //        with no record would be a dead end (T2E-C05's lesson).
-// An observation is dropped once its id is settled, recorded or held on the ledger: those carry it from there. Nothing is
-// written for a row that is never listed ahead, so complete, on-time data stores exactly what it stored before.
+// An observation is OPEN (a pairing candidate itself) until its id is settled, recorded or held on the ledger — those carry
+// it from there — and is KEPT after that: its listing dates still show a switch made before both dates, whichever id it is
+// paired with later. Nothing is written for a row that is never listed ahead, so complete, on-time data stores exactly
+// what it stored before.
 
 /** The ledger's observations of rows listed before their date (A-2): `[{ actionId, type, ticker, effectiveDate, listedOn,
  *  payloads, firstSeenOn, withdrawnOn }]` — `listedOn` the covered closes before its date that listed it, `payloads` the
@@ -1088,8 +1090,8 @@ function founderSplitMoot(ledger, sym, action, date) {
   return null;
 }
 
-export function applyLedgerActions(ledger, actionsBySymbol, { date, holds = null, deferRenames = null, renameTargetsTaken = null, renameIdsScreened = null, ruledIds = null, replacedRows = null }) {
-  return applyActions(ledger, actionsBySymbol, { date, phase: 'all', holds, deferRenames, renameTargetsTaken, renameIdsScreened, ruledIds, replacedRows });
+export function applyLedgerActions(ledger, actionsBySymbol, { date, holds = null, deferRenames = null, renameTargetsTaken = null, renameIdsScreened = null, ruledIds = null, replacedRows = null, uncoveredSymbols = null }) {
+  return applyActions(ledger, actionsBySymbol, { date, phase: 'all', holds, deferRenames, renameTargetsTaken, renameIdsScreened, ruledIds, replacedRows, uncoveredSymbols });
 }
 
 /** The order of one call: by effective date; on one date the share-basis actions FIRST (a cash action of that date is
@@ -1117,23 +1119,27 @@ function withoutHeld(holding, actionId) {
 }
 
 /**
- * A-2: THE LEDGER'S OBSERVATIONS AFTER THIS CLOSE'S LISTING. Every row of a held symbol dated after `date` — the feed's, and
- * the feed's rows a pending ruling replaces (still listed) — is observed at a close whose data covers the symbol (no
- * coverage-gap item for it in `holds`): a new one is added, a known one takes this close's listing (`listedOn`, `payloads`),
+ * A-2: THE LEDGER'S OBSERVATIONS AFTER THIS CLOSE'S LISTING. Every row dated after `date` of a symbol the ledger holds — or
+ * has SOLD (a sale receipt, no holding: the sold holding's screens meet what the vendor lists after the sale, A-2's "across
+ * a sale") — the feed's, and the feed's rows a pending ruling replaces (still listed), is observed at a close whose data
+ * covers the symbol (no coverage-gap item for it in `holds`, and not in `uncoveredSymbols`, the close's refusals for a sold
+ * symbol): a new one is added, a known one takes this close's listing (`listedOn`, `payloads`),
  * and a known one dated after `date` that this covered close no longer lists is withdrawn (`withdrawnOn`, the first such
  * close). An observation whose date has come is left as its last listing before the date left it (A-1). Pure; returns the
  * prior array itself when nothing changed (re-running a close changes nothing).
  */
-function observeListedAhead(ledger, actionsBySymbol, replacedRows, { date, holds }) {
+function observeListedAhead(ledger, actionsBySymbol, replacedRows, { date, holds, uncoveredSymbols = null }) {
   const prior = listedAheadOf(ledger);
-  const covered = (sym) => !(holds?.get(sym) || []).some((i) => i?.type === CA_COVERAGE_GAP);
+  const covered = (sym) => !(holds?.get(sym) || []).some((i) => i?.type === CA_COVERAGE_GAP) && !uncoveredSymbols?.has(sym);
+  const sold = new Set((ledger?.saleReceipts || []).map((r) => upper(r?.symbol)).filter((s) => s && !ledger?.holdings?.[s]));
+  const observes = (sym) => Boolean(ledger?.holdings?.[sym]) || sold.has(sym);
   const listed = new Map();
   for (const src of [feedRowsOf(actionsBySymbol), replacedRows || {}]) {
     for (const list of Object.values(src)) {
       for (const a of list || []) {
         if (!a || a.founderRuling != null || typeof a.effectiveDate !== 'string' || !(a.effectiveDate > date) || !APPLICABLE_TYPES.has(a.type)) continue;
         const sym = upper(a.ticker);
-        if (!ledger?.holdings?.[sym] || !covered(sym)) continue;
+        if (!observes(sym) || !covered(sym)) continue;
         const id = deriveActionId(a);
         const x = listed.get(id) ?? { a, sym, payloads: new Map() };
         const k = actionPayloadOf(a);
@@ -1142,7 +1148,7 @@ function observeListedAhead(ledger, actionsBySymbol, replacedRows, { date, holds
       }
     }
   }
-  if (listed.size === 0 && !prior.some((e) => e.effectiveDate > date && ledger?.holdings?.[upper(e.ticker)] && covered(upper(e.ticker)) && e.withdrawnOn == null)) return prior;
+  if (listed.size === 0 && !prior.some((e) => e.effectiveDate > date && observes(upper(e.ticker)) && covered(upper(e.ticker)) && e.withdrawnOn == null)) return prior;
   const payloadsOf = (x) => [...x.payloads.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, p]) => p);
   let changed = false;
   const out = prior.map((e) => {
@@ -1156,7 +1162,7 @@ function observeListedAhead(ledger, actionsBySymbol, replacedRows, { date, holds
       return { ...e, listedOn, payloads, withdrawnOn: null };
     }
     const sym = upper(e.ticker);
-    if (e.effectiveDate > date && e.withdrawnOn == null && ledger?.holdings?.[sym] && covered(sym)) { changed = true; return { ...e, withdrawnOn: date }; }
+    if (e.effectiveDate > date && e.withdrawnOn == null && observes(sym) && covered(sym)) { changed = true; return { ...e, withdrawnOn: date }; }
     return e;
   });
   for (const [id, x] of listed) {
@@ -1167,7 +1173,7 @@ function observeListedAhead(ledger, actionsBySymbol, replacedRows, { date, holds
 }
 const stableKey = (rows) => JSON.stringify((rows || []).map((r) => actionPayloadOf(r)));
 
-function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, deferRenames = null, renameTargetsTaken = null, renameIdsScreened = null, ruledIds = null, replacedRows = null }) {
+function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, deferRenames = null, renameTargetsTaken = null, renameIdsScreened = null, ruledIds = null, replacedRows = null, uncoveredSymbols = null }) {
   // 'share_basis' is the dry run shareBasisHolds makes: share-basis actions only, cash actions and renames withheld.
   const everything = phase === 'all';
   const next = cloneLedger(ledger);
@@ -1175,7 +1181,7 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
   const settled = settledIdsOf(next);
   // A-2: the rows listed ahead, observed (the dry runs observe them the same way, so they decide as the real run does).
   {
-    const observed = observeListedAhead(next, actionsBySymbol, replacedRows, { date, holds });
+    const observed = observeListedAhead(next, actionsBySymbol, replacedRows, { date, holds, uncoveredSymbols });
     if (observed !== listedAheadOf(next)) { if (observed.length > 0) next.listedAhead = observed; else delete next.listedAhead; }
   }
   // (An observation is OPEN — bare — while its id has no receipt, record or held row on the ledger: those carry it.)
@@ -1487,8 +1493,14 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
     // (A founder split meets only what is UNSETTLED — an open record's payload, a held row: a settled action explained a
     // move of its own, and the founder answered a later one, not a re-date of it — fix-round row T2D-11.)
     const openEnough = (r) => !(unsettledOnly || isFounderSplit(action)) || r.open;
+    // (A-1: no partner — a receipt, a record, a held row or an observation — that the switch was made away from, or onto,
+    // before both dates: an id announced ahead keeps its listing dates on the ledger after it settles, so the switch is still
+    // shown. A partner listed at or after its own date — every settled one but a withdrawn announcement — has no last listing
+    // before it: it can be shown to have superseded, never to have been superseded.)
+    const switched = (r) => switchedBeforeDates(own, ownLast, action.effectiveDate, announcementOf(next, r.actionId),
+      listedNowIds.has(r.actionId) ? date : (r.announced ? lastListedOf(r.announced) : null), r.effectiveDate);
     const matches = pool.filter((r) => r.actionId !== action.actionId && samePayload(r, action) && withinSessions(r.effectiveDate, action.effectiveDate, REDATE_WINDOW_SESSIONS)
-      && !inFounderGap(action, r.effectiveDate) && openEnough(r));
+      && !inFounderGap(action, r.effectiveDate) && openEnough(r) && !switched(r));
     // T1a-2b-4 fix round (L-5, Astra T2E-06; Q-9 answered with a hold): TWO SHARE-BASIS IDS OF ONE SYMBOL AND ONE EFFECTIVE
     // DATE are one ambiguity — whatever their types or ratios (a 10-for-1 and a 1-for-10 of one date, under `split_…` and
     // `reverse_split_…`, may be one action and its direction correction). Applied, held, declined or recorded, the other id
@@ -1510,7 +1522,7 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
     // (`pastOnly`: an observation still ahead of its date meets only what is dated on or before this close — two rows whose
     // dates are both still ahead are an announcement and wait for the first of them, A-1.)
     const past = (r) => !pastOnly || (typeof r.effectiveDate === 'string' && r.effectiveDate <= date);
-    const dated = sameDate.filter((r) => !inFounderGap(action, r.effectiveDate) && openEnough(r) && past(r));
+    const dated = sameDate.filter((r) => !inFounderGap(action, r.effectiveDate) && openEnough(r) && past(r) && !switched(r));
     const matched = matches.filter(past);
     if (matched.length === 0 && dated.length === 0) return null;
     const all = [...matched, ...dated];
@@ -2045,12 +2057,6 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
     for (const sym of holds?.keys() || []) if (Object.hasOwn(next.holdings, sym)) unresolved.add(sym);
   }
   checkRulingRevisions();
-  // A-2: an observation whose id is now settled, recorded or held on the ledger is carried by that from here: dropped. (An
-  // open one stays — one withdrawn before its date included: a sold holding's screens still meet it, T2E-C03.)
-  {
-    const kept = listedAheadOf(next).filter((e) => bareAnnouncementOf(e.actionId) !== null);
-    if (kept.length !== listedAheadOf(next).length) { if (kept.length > 0) next.listedAhead = kept; else delete next.listedAhead; }
-  }
   return {
     ledger: next, applied, declined, unresolved, conflicts, shareBasisChanges, renames, renamesDeferred, renamesBlocked, held, closedByCash, delistedWaiting, redates,
     founderSkips, founderRefusals, ambiguities,

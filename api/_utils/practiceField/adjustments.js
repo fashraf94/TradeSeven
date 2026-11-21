@@ -619,7 +619,11 @@ export function planLedgerAdjustments(ledger, ctx) {
           && !switchedBeforeDates(own, ownLast, first.effectiveDate, e, lastListedOf(e), e.effectiveDate));
         const announcedPool = (type) => announced.filter((e) => e.type === type).flatMap((e) => (e.payloads || []).map((p) => ({ actionId: e.actionId, effectiveDate: e.effectiveDate, key: actionPayloadOf(p), type: e.type })));
         const pool = [...redatePool(cur(), sym, first.type), ...outside, ...announcedPool(first.type), ...(cur().closedHeldRows || []).filter((r) => r.type === first.type && upper(r.ticker) === sym).map((r) => ({ actionId: r.actionId, effectiveDate: r.effectiveDate, key: actionPayloadOf(r), held: r }))];
-        let match = pool.find((p) => p.actionId !== id && p.key === key && withinSessions(p.effectiveDate, first.effectiveDate, REDATE_WINDOW_SESSIONS)) ?? null;
+        // (A-1: never a partner the switch was made away from, or onto, before both dates — ledger.js switchedBeforeDates.)
+        const listedNowIds = new Set((rows[sym] || []).filter((a) => a && !a.founderRuling && isDate(a.effectiveDate)).map((a) => actionIdOf(a)));
+        const switchedFor = (p) => switchedBeforeDates(own, ownLast, first.effectiveDate, announcementOf(cur(), p.actionId),
+          listedNowIds.has(p.actionId) ? date : (bareAnnouncementOf(cur(), p.actionId) ? lastListedOf(announcementOf(cur(), p.actionId)) : null), p.effectiveDate);
+        let match = pool.find((p) => p.actionId !== id && p.key === key && withinSessions(p.effectiveDate, first.effectiveDate, REDATE_WINDOW_SESSIONS) && !switchedFor(p)) ?? null;
         let how = 'possible_redate';
         if (!match && SHARE_BASIS_TYPES.has(first.type)) {
           // (The Q-14 refuter's Q14-1: and any other share-basis id LISTED AT THIS CLOSE, not settled — one listed two ways
@@ -628,7 +632,7 @@ export function planLedgerAdjustments(ledger, ctx) {
           const listedNow = [...byId].filter(([oid, g]) => oid !== id && !settledNow().has(oid) && g.some((a) => !a.founderRuling && SHARE_BASIS_TYPES.has(a.type))).map(([oid, g]) => ({ actionId: oid, effectiveDate: g[0].effectiveDate }));
           const sameDate = [...redatePool(cur(), sym, null), ...(cur().closedHeldRows || []).filter((r) => SHARE_BASIS_TYPES.has(r.type) && upper(r.ticker) === sym).map((r) => ({ actionId: r.actionId, effectiveDate: r.effectiveDate, held: r })), ...listedNow,
             ...announced.filter((e) => SHARE_BASIS_TYPES.has(e.type)).map((e) => ({ actionId: e.actionId, effectiveDate: e.effectiveDate }))];
-          match = sameDate.find((p) => p.actionId !== id && p.effectiveDate === first.effectiveDate) ?? null;
+          match = sameDate.find((p) => p.actionId !== id && p.effectiveDate === first.effectiveDate && !switchedFor(p)) ?? null;
           how = 'same_date_share_basis';
         }
         if (match) {

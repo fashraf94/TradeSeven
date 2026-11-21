@@ -11,11 +11,13 @@
 // of 40 seeds runs in every suite. (T1a-2b-4 fix round: PF_LATE_SHAPES=1 draws the shapes Astra found missing — generateLate
 // `shapes` — with the founder's decisions on late proposals, and records each history's ordered events on one id and one
 // ledger; 36 shape seeds run in every suite. PF_LATE_SHAPES=2 draws the independent refuter's shapes instead — generateLate
-// `refuter` — and 18 of its seeds run in every suite.)
+// `refuter` — and 18 of its seeds run in every suite. T1a-2b-4 final fix: PF_LATE_SHAPES=3 lists every on-time row 1–5
+// sessions before its date and draws one advance-listing shape — generateLate `ahead`, the founder's ruling of 21 Nov 2026,
+// A-1 to A-5 — and 45 of its seeds run in every suite.)
 
 import { describe, it, expect, afterAll } from 'vitest';
 import { writeFileSync } from 'node:fs';
-import { generateLate, run, installSequenceHooks, FIXED_LATE, LATE_KINDS, LATE_SOAK_SEEDS, LATE_SHAPES, REFUTER_SHAPES } from './__testsupport__/caSequences.js';
+import { generateLate, run, installSequenceHooks, FIXED_LATE, LATE_KINDS, LATE_SOAK_SEEDS, LATE_SHAPES, REFUTER_SHAPES, AHEAD_SHAPES } from './__testsupport__/caSequences.js';
 
 installSequenceHooks();
 
@@ -24,8 +26,9 @@ const COUNT = Number(process.env.PF_LATE_COUNT || 40);
 const OUT = process.env.PF_LATE_OUT || null;
 const SHAPES = process.env.PF_LATE_SHAPES === '1';
 const REFUTER = process.env.PF_LATE_SHAPES === '2';
+const AHEAD = process.env.PF_LATE_SHAPES === '3';
 const SEEDS = Array.from({ length: COUNT }, (_, k) => FROM + k);
-const stats = { from: FROM, count: COUNT, shapes: SHAPES, refuter: REFUTER, sequences: 0, closes: 0, sessions: 0, kinds: {}, pairs: {}, failures: [], i6: { checked: 0, excused: 0, waiting: 0, nothingOwed: 0, byKind: {} }, i7: 0, i7refusal: 0, adjustments: {}, sold: 0, byShape: {}, ordered: {}, orderedByShape: {}, reach: {}, decisions: {} };
+const stats = { from: FROM, count: COUNT, shapes: SHAPES, refuter: REFUTER, ahead: AHEAD, sequences: 0, closes: 0, sessions: 0, kinds: {}, pairs: {}, failures: [], i6: { checked: 0, excused: 0, waiting: 0, nothingOwed: 0, byKind: {} }, i7: 0, i7refusal: 0, adjustments: {}, sold: 0, byShape: {}, ordered: {}, orderedByShape: {}, reach: {}, decisions: {} };
 
 /** The product paths a finished shape history reached (counted per shape). */
 function reachOf(idea) {
@@ -49,6 +52,14 @@ function reachOf(idea) {
   // (The refuter's: a late entitlement's proposal whose id became an ambiguity; a paid dividend's late_basis a candidate paired with.)
   if (props.some((p) => p.kind === 'late_entitlement' && recs.some((r) => r.reason === 'possible_redate' && r.actionId === p.actionId))) hit.proposal_became_ambiguity = 1;
   if (props.some((p) => p.kind === 'late_basis' && (p.blockers || []).some((b) => b.startsWith('pairs_with')))) hit.late_basis_blocked_pairs = 1;
+  // (T1a-2b-4 final fix, A-1 to A-5: the advance-listing paths.)
+  if (L.some((l) => (l.listedAhead || []).length > 0)) hit.observed_ahead = 1;
+  if (L.some((l) => (l.listedAhead || []).some((e) => e.withdrawnOn != null))) hit.withdrawn_ahead = 1;
+  if (recs.some((r) => r.revisedFrom?.announcedOn)) hit.revised_from_announcement = 1;
+  if (recs.some((r) => r.reason === 'possible_redate' && r.announced === true)) hit.announcement_paired = 1;
+  if (recs.some((r) => r.reason === 'possible_redate' && typeof r.effectiveDate === 'string' && typeof r.seenOn === 'string' && r.effectiveDate > r.seenOn)) hit.recorded_before_its_date = 1;
+  if ((idea.founderRulings || []).some((r) => r.closedDoubt === true && r.appliedOn)) hit.closed_doubt_ruled = 1;
+  if (L.some((l) => Object.values(l.closedCoverageDoubts || {}).some((d) => d.evidence?.cleanRefetch))) hit.clean_refetch_evidence = 1;
   return hit;
 }
 
@@ -65,7 +76,7 @@ describe('S-6 extended — the late soak findings, kept as fixed seeds', () => {
 
 describe('S-6 extended — late generated histories: I-1 to I-6 after every close', () => {
   it.each(SEEDS)('late seed %i', async (seed) => {
-    const plan = generateLate(seed, { shapes: SHAPES, refuter: REFUTER });
+    const plan = generateLate(seed, { shapes: SHAPES, refuter: REFUTER, ahead: AHEAD });
     for (const k of plan.kinds) stats.kinds[k] = (stats.kinds[k] || 0) + 1;
     for (let a = 0; a < plan.kinds.length; a += 1) for (let b = a + 1; b < plan.kinds.length; b += 1) {
       const key = [plan.kinds[a], plan.kinds[b]].sort().join(' + ');
@@ -77,6 +88,7 @@ describe('S-6 extended — late generated histories: I-1 to I-6 after every clos
       stats.i6.waiting += entitlement.waiting;
       stats.i7 += entitlement.authorityChecks;
       stats.i7refusal += entitlement.refusalChecks || 0;
+      stats.i7net = (stats.i7net || 0) + (entitlement.netChecks || 0);
       if (plan.shape) {
         stats.byShape[plan.shape] = (stats.byShape[plan.shape] || 0) + 1;
         const reach = reachOf(idea);
@@ -108,6 +120,7 @@ describe('S-6 extended — late generated histories: I-1 to I-6 after every clos
     if (OUT) writeFileSync(OUT, JSON.stringify(stats, null, 1));
     if (SHAPES) for (const sh of LATE_SHAPES) expect(stats.byShape[sh] ?? 0, sh).toBeGreaterThan(0);
     if (REFUTER) for (const sh of REFUTER_SHAPES) expect(stats.byShape[sh] ?? 0, sh).toBeGreaterThan(0);
+    if (AHEAD && COUNT >= 200) for (const sh of AHEAD_SHAPES) expect(stats.byShape[sh] ?? 0, sh).toBeGreaterThan(0);
     // Without a range: the fixed seeds reach every chain kind (so the classes are exercised in every suite).
     if (!process.env.PF_LATE_FROM) for (const k of ['sale', 'late_after_sale', 'late_split', 'settled_revision_split', 'settled_revision_dividend', 'ruled_correction', 'parse_rejection', 'parse_missing']) expect(stats.kinds[k] ?? 0, k).toBeGreaterThan(0);
     expect(LATE_KINDS.length).toBeGreaterThan(10);
@@ -146,4 +159,17 @@ describe('S-6 extended — the independent refuter\'s shapes (R-1, R-1b, R-3), e
   }, 120_000);
   it.each(REFUTER_SOAK_SEEDS)('refuter probe seed %i', async (seed) => { await run(generateLate(seed, { refuter: true })); }, 120_000);
   afterAll(() => { for (const sh of REFUTER_SHAPES) expect(seen[sh] ?? 0, sh).toBeGreaterThan(0); });
+});
+
+// T1a-2b-4 final fix (the founder's ruling of 21 Nov 2026, A-1 to A-5): 45 histories with every on-time row listed 1–5
+// sessions before its date and one advance-listing shape each, in every suite — I-1 to I-7 after every close and its re-run.
+const AHEAD_SEEDS = Array.from({ length: 45 }, (_, k) => 2131990000 + k);
+describe('S-6 extended — rows listed before their date (A-1 to A-5), every close checked I-1 to I-7', () => {
+  const seen = {};
+  it.each(AHEAD_SEEDS)('ahead seed %i', async (seed) => {
+    const plan = generateLate(seed, { ahead: true });
+    seen[plan.shape] = (seen[plan.shape] || 0) + 1;
+    await run(plan);
+  }, 120_000);
+  afterAll(() => { expect(Object.keys(seen).length, 'advance-listing shapes drawn in the suite').toBeGreaterThanOrEqual(12); });
 });

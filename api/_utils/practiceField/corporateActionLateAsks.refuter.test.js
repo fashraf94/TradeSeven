@@ -388,7 +388,7 @@ describe('O — the oracle: I-7 checks L-2 at posting, from the inputs alone', (
     const e = new EntitlementOracle(S, inputs);
     inputs.close(5, [div(1, 1)]);
     inputs.close(6, [div(2, 1), div(3, 1)]);
-    const posting = (on) => ({ ledger: { corporateActionReceipts: [], adjustments: [{ kind: 'late_entitlement', actionId: D(1), amountUsd: 99.97, amountPerShare: 1, postedOn: on }] } });
+    const posting = (on) => ({ ledger: { corporateActionReceipts: [], adjustments: [{ kind: 'late_entitlement', actionId: D(1), amountUsd: 99.97, amountPerShare: 1, proposal: `late_idea_${D(1)}`, ruling: { requestKey: 'a1' }, postedOn: on }] } });
     inputs.ruling(lateBody('idea', D(1)), { status: 200 }, 'a1', 5);
     expect(() => e.checkAuthority(posting(S[5]), 5, 'unit'), 'posted before the pairing: L-2 did not refuse it').not.toThrow();
     expect(() => e.checkAuthority(posting(S[6]), 6, 'unit')).toThrow(/I-7 \(L-2 at posting\) ledger cash_dividend_AAPL_/);
@@ -415,13 +415,13 @@ describe('O — the oracle: I-7 checks L-2 at posting, from the inputs alone', (
     inputs.close(3, [div(1, 1), div(2, 1)]);
     inputs.close(5, [div(4, 1), div(5, 1)]);
     // The paid dividend's late_basis, on an approval alone, posted at the close the two new rows paired with it.
-    const idea = { ledger: { corporateActionReceipts: [], adjustments: [{ kind: 'late_basis', actionId: D(2), amountUsd: 24.99, amountPerShare: 1, postedOn: S[5] }] } };
+    const idea = { ledger: { corporateActionReceipts: [], adjustments: [{ kind: 'late_basis', actionId: D(2), amountUsd: 24.99, amountPerShare: 1, proposal: `late_idea_${D(2)}`, ruling: { requestKey: 'a1' }, postedOn: S[5] }] } };
     inputs.ruling(lateBody('idea', D(2)), { status: 200 }, 'a1', 5);
     expect(() => e.checkAuthority(idea, 5, 'unit'), 'the founder\'s ruling of S3 did not see the rows of S5').toThrow(/L-2 at posting\) ledger cash_dividend_AAPL_2026-11-18/);
     // (The founder answers the rows of S5 after seeing them; the posting at S6 then meets no refusal.)
     inputs.ruling({ kind: 'conflict', recordId: D(4), decision: 'none' }, { status: 200 }, 'r4', 6);
     inputs.ruling({ kind: 'conflict', recordId: D(5), decision: 'none' }, { status: 200 }, 'r5', 6);
-    const later = { ledger: { corporateActionReceipts: [], adjustments: [{ kind: 'late_basis', actionId: D(2), amountUsd: 24.99, amountPerShare: 1, postedOn: S[6] }] } };
+    const later = { ledger: { corporateActionReceipts: [], adjustments: [{ kind: 'late_basis', actionId: D(2), amountUsd: 24.99, amountPerShare: 1, proposal: `late_idea_${D(2)}`, ruling: { requestKey: 'a1' }, postedOn: S[6] }] } };
     expect(() => e.checkAuthority(later, 6, 'unit')).not.toThrow();
   });
 
@@ -451,11 +451,15 @@ describe('O — the oracle: I-7 checks L-2 at posting, from the inputs alone', (
     const e = new EntitlementOracle(S, inputs);
     inputs.close(5, [div(1, 1)]);
     inputs.close(6, [div(2, 1)]);
-    const idea = { ledger: { corporateActionReceipts: [], adjustments: [{ kind: 'late_entitlement', actionId: D(1), amountUsd: 99.97, amountPerShare: 1, postedOn: S[6] }] } };
+    const idea = { ledger: { corporateActionReceipts: [], adjustments: [{ kind: 'late_entitlement', actionId: D(1), amountUsd: 99.97, amountPerShare: 1, proposal: `late_idea_${D(1)}`, ruling: { requestKey: 'a1' }, postedOn: S[6] }] } };
     inputs.ruling(lateBody('idea', D(1)), { status: 200 }, 'a1', 6);
     expect(() => e.checkAuthority(idea, 6, 'unit')).toThrow(/L-2 at posting/);
     inputs.ruling({ kind: 'conflict', recordId: D(1), decision: 'payload', payload: { amount: 1 } }, { status: 200 }, 'r1', 6);
-    expect(() => e.checkAuthority(idea, 6, 'unit')).not.toThrow();
+    // CHANGED (T1a-2b-4 final fix, Astra's test-only gap): a posting names the one request that authorized it. The ruling's
+    // posting is the ruling's — it passes; the approval's posting still meets L-2 at posting.
+    expect(() => e.checkAuthority(idea, 6, 'unit')).toThrow(/L-2 at posting/);
+    const byRuling = { ledger: { corporateActionReceipts: [], adjustments: [{ ...idea.ledger.adjustments[0], proposal: undefined, ruling: { requestKey: 'r1', kind: 'conflict' } }] } };
+    expect(() => e.checkAuthority(byRuling, 6, 'unit')).not.toThrow();
   });
 });
 
@@ -653,29 +657,33 @@ describe('O-1 to O-3 — I-7\'s L-2 at posting reads ③, ④ and the ledgers a 
     inputs.close(5, [spl(1, '5/4'), spl(1, '2/1')]);
     expect((inputs.marks.get(`split_AAPL_${S[1]}`) || []).map((m) => m.how)).toContain('conflict');
     inputs.ruling(lateBody('idea', D(2)), { status: 200 }, 'a1', 5);
-    const idea = { ledger: { corporateActionReceipts: [], adjustments: [{ kind: 'late_entitlement', actionId: D(2), amountUsd: 99.97, amountPerShare: 1, postedOn: S[5] }] } };
+    const idea = { ledger: { corporateActionReceipts: [], adjustments: [{ kind: 'late_entitlement', actionId: D(2), amountUsd: 99.97, amountPerShare: 1, proposal: `late_idea_${D(2)}`, ruling: { requestKey: 'a1' }, postedOn: S[5] }] } };
     expect(() => e.checkAuthority(idea, 5, 'unit')).toThrow(/L-2 ③ at posting/);
     // (Answered by the founder's ruling of the split, made after the close that showed it: a posting at the next close passes.)
     inputs.ruling({ kind: 'conflict', recordId: `split_AAPL_${S[1]}`, decision: 'payload', payload: { ratio: 1.25 } }, { status: 200 }, 'r1', 6);
-    const next = { ledger: { corporateActionReceipts: [], adjustments: [{ kind: 'late_entitlement', actionId: D(2), amountUsd: 99.97, amountPerShare: 1, postedOn: S[6] }] } };
+    const next = { ledger: { corporateActionReceipts: [], adjustments: [{ kind: 'late_entitlement', actionId: D(2), amountUsd: 99.97, amountPerShare: 1, proposal: `late_idea_${D(2)}`, ruling: { requestKey: 'a1' }, postedOn: S[6] }] } };
     expect(() => e.checkAuthority(next, 6, 'unit')).not.toThrow();
   });
 
-  it('O-2: L-2 ④ — a posting at a close whose inputs leave the symbol uncovered, or after a rejected row of a sold holding with no clean data since (red at c569f281: accepted)', () => {
+  it('O-2: L-2 ④ — a posting at a close whose inputs leave the symbol uncovered, or after a rejected row of a sold holding no founder ruling has cleared (A-4; red at c569f281: accepted)', () => {
     const inputs = new InputOracle(S);
     const e = new EntitlementOracle(S, inputs);
     inputs.close(4, [div(2, 1)]);
     inputs.close(5, [div(2, 1)], { uncoveredSyms: ['AAPL'] });
     inputs.coverage(5, { uncovered: ['AAPL'] });
     inputs.ruling(lateBody('idea', D(2)), { status: 200 }, 'a1', 5);
-    const at = (on) => ({ ledger: { corporateActionReceipts: [], adjustments: [{ kind: 'late_entitlement', actionId: D(2), amountUsd: 99.97, amountPerShare: 1, postedOn: on }] } });
+    const at = (on) => ({ ledger: { corporateActionReceipts: [], adjustments: [{ kind: 'late_entitlement', actionId: D(2), amountUsd: 99.97, amountPerShare: 1, proposal: `late_idea_${D(2)}`, ruling: { requestKey: 'a1' }, postedOn: on }] } });
     expect(() => e.checkAuthority(at(S[5]), 5, 'unit')).toThrow(/L-2 ④ at posting/);
     // A sold holding (bought S0, sold S3): a row dated S1 rejected at S4 is a sticky doubt; a catch-up after it clears it.
     inputs.coverage(4, { rejected: [{ sym: 'AAPL', date: S[1] }] });
     inputs.coverage(6, {});
     const sold = { ledger: { sym: 'AAPL', entryShares: 99.970008, boughtAt: 0, soldAt: 3 } };
     expect(() => e.checkAuthority(at(S[6]), 6, 'unit', sold)).toThrow(/L-2 ④ at posting.*rejected/);
+    // CHANGED EXPECTATION — A-4 (the founder's ruling, 21 Nov 2026): a catch-up's clean data no longer clears a sold holding's
+    // doubt; only the founder's coverage_gap ruling of it, made after the rejection showed, does.
     inputs.coverage(6, { catchup: true });
+    expect(() => e.checkAuthority(at(S[6]), 6, 'unit', sold)).toThrow(/L-2 ④ at posting.*rejected/);
+    inputs.ruling({ kind: 'coverage_gap', recordId: `ca_closed_doubt_AAPL_${S[1]}`, decision: 'no_action' }, { status: 200 }, 'cg', 6);
     expect(() => e.checkAuthority(at(S[6]), 6, 'unit', sold)).not.toThrow();
   });
 
@@ -686,7 +694,7 @@ describe('O-1 to O-3 — I-7\'s L-2 at posting reads ③, ④ and the ledgers a 
     inputs.close(6, [div(2, 1)]);
     inputs.ruling(lateBody('idea', D(1)), { status: 200 }, 'a1', 6);
     inputs.ruling({ kind: 'conflict', recordId: D(2), decision: 'none' }, { status: 200 }, 'r2', 7, ['comparisonLedger']);
-    const idea = { ledger: { corporateActionReceipts: [], adjustments: [{ kind: 'late_entitlement', actionId: D(1), amountUsd: 99.97, amountPerShare: 1, postedOn: S[7] }] } };
+    const idea = { ledger: { corporateActionReceipts: [], adjustments: [{ kind: 'late_entitlement', actionId: D(1), amountUsd: 99.97, amountPerShare: 1, proposal: `late_idea_${D(1)}`, ruling: { requestKey: 'a1' }, postedOn: S[7] }] } };
     expect(() => e.checkAuthority(idea, 7, 'unit')).toThrow(/L-2 at posting/);
     inputs.ruling({ kind: 'conflict', recordId: D(2), decision: 'none' }, { status: 200 }, 'r2b', 7, ['ledger']);
     expect(() => e.checkAuthority(idea, 7, 'unit')).not.toThrow();
@@ -803,7 +811,7 @@ describe('O-4 — the oracle: a ruling made before a pairing showed never answer
     expect((inputs.marks.get(`split_AAPL_${S[5]}`) || []).map((m) => m.how)).toEqual(['redate']);
     inputs.ruling(lateBody('idea', D(1)), { status: 200 }, 'a1', 6);
     inputs.close(6, []);
-    const idea = { ledger: { corporateActionReceipts: [], adjustments: [{ kind: 'late_entitlement', ticker: 'AAPL', actionId: D(1), amountUsd: 99.97, amountPerShare: 1, postedOn: S[6] }] } };
+    const idea = { ledger: { corporateActionReceipts: [], adjustments: [{ kind: 'late_entitlement', ticker: 'AAPL', actionId: D(1), amountUsd: 99.97, amountPerShare: 1, proposal: `late_idea_${D(1)}`, ruling: { requestKey: 'a1' }, postedOn: S[6] }] } };
     expect(() => e.checkAuthority(idea, 6, 'unit')).toThrow(/L-2 ③ at posting/);
   });
 
@@ -816,7 +824,7 @@ describe('O-4 — the oracle: a ruling made before a pairing showed never answer
     inputs.close(5, [div(1, 1)]);
     inputs.ruling(lateBody('idea', D(1)), { status: 200 }, 'a1', 6);
     inputs.close(6, []);
-    const idea = { ledger: { corporateActionReceipts: [], adjustments: [{ kind: 'late_entitlement', ticker: 'AAPL', actionId: D(1), amountUsd: 99.97, amountPerShare: 1, postedOn: S[6] }] } };
+    const idea = { ledger: { corporateActionReceipts: [], adjustments: [{ kind: 'late_entitlement', ticker: 'AAPL', actionId: D(1), amountUsd: 99.97, amountPerShare: 1, proposal: `late_idea_${D(1)}`, ruling: { requestKey: 'a1' }, postedOn: S[6] }] } };
     expect(() => e.checkAuthority(idea, 6, 'unit')).toThrow(/L-2 at posting/);
   });
 });

@@ -59,6 +59,10 @@ export class InputOracle {
     this.founder = new Map();
     this.founderExcused = 0;
     this.coverageAt = new Map(); // k → { uncovered: [sym], rejected: [{ sym, date }], catchup }
+    // A-1, A-2: each id's announcement — id → { keys (its latest covered listing before its date), lastK, listedPre (the
+    // covered closes before its date that listed it), withdrawnK (the first covered close before its date that did not) }.
+    this.ann = new Map();
+    this.listedAt = new Map();
   }
 
   /** T1a-2b-4 fix round (the second refuter's O-2): the coverage facts of the close of index k — the symbols its inputs
@@ -95,10 +99,41 @@ export class InputOracle {
     if (id && status === 200) this.event(id, nextClose, body.kind === 'conflict' ? (body.decision === 'none' ? 'rule_none' : 'rule_payload') : 'rule_suspicion_split');
   }
 
-  /** The first close index `id` was listed at (any payload), or null. */
+  /** The first close index `id` was listed at (any payload, its announcement included), or null. */
   firstListedAt(id) {
     const e = this.ids.get(id);
-    return e ? Math.min(...e.payloads.values()) : null;
+    if (!e) return null;
+    const ks = [...e.payloads.values(), ...(this.ann.get(id)?.listedPre || [])];
+    return ks.length > 0 ? Math.min(...ks) : null;
+  }
+
+  /** A-1: was `id` ever listed on or after its own date (its payloads are known)? An id only ever announced, and withdrawn
+   *  before its date, never was: it is owed nothing unless the founder's ruling chose its payload. */
+  listedAtDate(id) { return (this.ids.get(id)?.payloads.size ?? 0) > 0; }
+
+  /** A-1, A-2: the payloads that stand for `id` now — those listed on or after its date (its announcement among them), or,
+   *  while it was only announced, its latest announcement. Keys. */
+  payloadsOfId(id) {
+    const e = this.ids.get(id);
+    if (!e) return new Set();
+    if (e.payloads.size > 0) return new Set(e.payloads.keys());
+    return new Set(this.ann.get(id)?.keys || []);
+  }
+
+  /**
+   * A-1 (the founder's ruling, 21 Nov 2026): WAS THE SWITCH BETWEEN `x` AND `y` MADE BEFORE BOTH THEIR DATES, at close k? One
+   * superseded the other when it was announced, at a covered close, after the other's last listing and before both dates. The
+   * last listing the rule reads is the product's: this close's, for an id listed now; else, for an id only ever announced, its
+   * last covered announcement; else unknown (an id listed on or after its date) — and an unknown one cannot be superseded.
+   */
+  switchedBefore(x, y, k) {
+    const ex = this.ids.get(x);
+    const ey = this.ids.get(y);
+    if (!ex || !ey) return false;
+    const m = Math.min(ex.d, ey.d);
+    const lastOf = (id) => (this.listedAt.get(k)?.has(id) ? k : (this.listedAtDate(id) ? null : (this.ann.get(id)?.lastK ?? null)));
+    const sup = (a, lastB) => lastB !== null && (this.ann.get(a)?.listedPre || []).some((z) => z > lastB && z < m);
+    return sup(x, lastOf(y)) || sup(y, lastOf(x));
   }
 
   /** The id a founder `split` ruling's action takes when the feed has not settled it (the derived split id). */
@@ -110,14 +145,25 @@ export class InputOracle {
 
   /**
    * One close of index k: `rows` every row the close listed (archive and backfill alike), `pendingSplits` the founder
-   * split rulings still pending at this close (id → ratio), `uncoveredSyms` the symbols whose data failed.
+   * split rulings still pending at this close (id → ratio), `uncoveredSyms` the symbols whose data failed, and
+   * `parseUncoveredSyms` those whose parse report refused (the close's coverage, for the announcements: A-2).
+   *
+   * T1a-2b-4 final fix (the founder's ruling of 21 Nov 2026, A-1 to A-3) — ROWS LISTED BEFORE THEIR DATE. A row dated after
+   * the close is an ANNOUNCEMENT: at a covered close its latest listing is the id's announcement (its payloads, the close),
+   * and a covered close that no longer lists it withdraws it; nothing is ambiguous before the date — a changed payload, a
+   * withdrawal or a conflict there is an update. At the first close that lists the id on or after its date, it is held to
+   * its announcement: another payload, an announcement still listed two ways (A-3) or a withdrawn one listed again is a
+   * revision (or a conflict). Two ids of one payload within the window pair from the first close on or after either date —
+   * an announcement (A-2) as much as a listed row — unless the switch was made before both dates. Two ids whose dates are
+   * both still ahead do not pair yet. Derived from the inputs alone.
    */
-  close(k, rows, { pendingSplits = new Map(), uncoveredSyms = [], disagreeIds = new Set() } = {}) {
+  close(k, rows, { pendingSplits = new Map(), uncoveredSyms = [], disagreeIds = new Set(), parseUncoveredSyms = [] } = {}) {
     this.closesSeen.push(k);
     // (A pending split is `ratio`, or `{ ratio, since, suspectedOn, at }` — its record's gap, and the close after the ruling.)
     const pend = new Map([...pendingSplits].map(([id, v]) => [id, typeof v === 'number' ? { ratio: v } : v]));
     pendingSplits = new Map([...pend].map(([id, v]) => [id, v.ratio]));
     if (!this.listedAt) this.listedAt = new Map();
+    const covered = (sym) => !uncoveredSyms.includes(sym) && !parseUncoveredSyms.includes(sym);
     const byId = new Map();
     for (const row of rows || []) {
       if (!row || typeof row.effectiveDate !== 'string') continue;
@@ -132,13 +178,42 @@ export class InputOracle {
       const e = this.ids.get(id);
       if (!byId.has(id) && last === this.closesSeen.at(-2) && k - e.d <= REDATE_WINDOW) this.event(id, k, 'dropped');
     }
+    // A-1: THE ANNOUNCEMENTS — rows dated after this close. Not payloads of the id yet: no conflict, revision or pairing.
     for (const [id, cur] of byId) {
+      if (!(cur.d > k)) continue;
       const known = this.ids.get(id);
-      const isNew = !known;
       const e = known || { sym: cur.sym, type: cur.type, d: cur.d, payloads: new Map() };
+      if (!known) { this.ids.set(id, e); this.event(id, k, 'listed_ahead'); }
+      if (covered(cur.sym)) {
+        const a = this.ann.get(id);
+        if (a && (a.keys.size !== cur.keys.size || [...cur.keys].some((x) => !a.keys.has(x)))) this.event(id, k, 'revised_ahead');
+        if (a && a.withdrawnK != null) this.event(id, k, 'returned_ahead');
+        if (cur.keys.size > 1) this.event(id, k, 'conflict_ahead');
+        this.ann.set(id, { keys: new Set(cur.keys), lastK: k, listedPre: [...(a?.listedPre || []), k], withdrawnK: null });
+      } else this.event(id, k, 'uncovered_ahead');
+      this.lastListed.set(id, k);
+    }
+    for (const [id, a] of this.ann) {
+      const e = this.ids.get(id);
+      if (e.d > k && !byId.has(id) && a.withdrawnK == null && covered(e.sym)) { a.withdrawnK = k; this.event(id, k, 'withdrawn_ahead'); }
+    }
+    for (const [id, cur] of byId) {
+      if (cur.d > k) continue;
+      const known = this.ids.get(id);
+      const e = known || { sym: cur.sym, type: cur.type, d: cur.d, payloads: new Map() };
+      const isNew = !known;
       if (isNew) this.event(id, k, 'listed');
       else if (this.lastListed.get(id) !== this.closesSeen.at(-2)) this.event(id, k, 'returned');
       if (uncoveredSyms.includes(cur.sym)) this.event(id, k, 'uncovered');
+      // A-1, A-3: the first listing on or after its date, held to the announcement it entered the date with.
+      const a = this.ann.get(id);
+      if (e.payloads.size === 0 && a) {
+        const differs = a.withdrawnK != null || a.keys.size !== 1 || [...cur.keys].some((x) => !a.keys.has(x));
+        for (const x of a.keys) e.payloads.set(x, a.lastK);
+        if (differs) { this.mark(id, k, a.keys.size > 1 ? 'conflict' : 'revision'); this.event(id, k, a.withdrawnK != null ? 'relisted_after_withdrawal' : 'revised_at_date'); }
+        else this.event(id, k, 'announced_on_time');
+      }
+      const hadPayloads = e.payloads.size > 0;
       // A conflict: two accounts of the id in this close — its rows, and the founder's pending split for it.
       const accounts = new Set(cur.keys);
       if (pendingSplits.has(id)) accounts.add(keyOf({ ratio: pendingSplits.get(id) }));
@@ -149,8 +224,8 @@ export class InputOracle {
         this.event(id, k, ruled !== null && [...cur.keys].some((x) => x !== ruled) ? 'conflict_with_ruling' : 'conflict');
       }
       if (disagreeIds.has(id)) this.event(id, k, 'backfill_disagrees');
-      // A revision: a payload never listed for it before.
-      if (!isNew && [...cur.keys].some((x) => !e.payloads.has(x))) { this.mark(id, k, 'revision'); this.event(id, k, 'revision'); }
+      // A revision: a payload never listed for it before (its announcement included).
+      if (hadPayloads && [...cur.keys].some((x) => !e.payloads.has(x))) { this.mark(id, k, 'revision'); this.event(id, k, 'revision'); }
       for (const x of cur.keys) if (!e.payloads.has(x)) e.payloads.set(x, k);
       this.ids.set(id, e);
       this.lastListed.set(id, k);
@@ -168,7 +243,7 @@ export class InputOracle {
       const e = this.ids.get(id);
       if (e && [...e.payloads.keys()].some((x) => x !== key)) { this.mark(id, k, 'conflict'); this.event(id, k, 'conflict_with_ruling'); }
       for (const [other, cur] of byId) {
-        if (other === id || cur.sym !== f.sym || cur.type !== f.type || Math.abs(cur.d - f.d) > REDATE_WINDOW || !cur.keys.has(key)) continue;
+        if (other === id || cur.d > k || cur.sym !== f.sym || cur.type !== f.type || Math.abs(cur.d - f.d) > REDATE_WINDOW || !cur.keys.has(key)) continue;
         const od = this.S[cur.d];
         if ((typeof f.since !== 'string' || od > f.since) && od <= f.suspectedOn) continue;
         const via = { key, sides: [[other, this.ids.get(other).payloads.get(key)], [id, f.first]], founder: { other, at: f.at } };
@@ -177,31 +252,43 @@ export class InputOracle {
         this.event(other, k, 'redate');
       }
     }
+    // The ids that can pair at this close (A-2): each listed now on or after its date, and each announcement whose date is
+    // still ahead (the product screens an open observation at every close, listed or not).
+    const live = [...this.ids.keys()].filter((id) => (byId.has(id) && byId.get(id).d <= k) || (this.ids.get(id).d > k && this.ann.has(id)));
     // (T1a-2b-4 fix round, L-5: TWO SHARE-BASIS IDS OF ONE SYMBOL AND ONE EFFECTIVE DATE are one ambiguity, whatever their
-    // payloads or types — a 10-for-1 and a 1-for-10 of one date may be one action and its direction correction. Both marked.)
-    for (const [id, cur] of byId) {
-      if (!SHARE_BASIS.has(cur.type)) continue;
+    // payloads or types — a 10-for-1 and a 1-for-10 of one date may be one action and its direction correction. Both marked —
+    // from that date on, unless one replaced the other before it, A-1.)
+    for (const id of live) {
+      const cur = this.ids.get(id);
+      if (!SHARE_BASIS.has(cur.type) || cur.d > k) continue;
       for (const [other, o] of this.ids) {
         if (other === id || o.sym !== cur.sym || !SHARE_BASIS.has(o.type) || o.d !== cur.d) continue;
-        const via = { key: null, sameDate: true, sides: [[id, k], [other, Math.min(...o.payloads.values())]] };
+        if (this.payloadsOfId(other).size === 0 || this.switchedBefore(id, other, k)) continue;
+        const via = { key: null, sameDate: true, sides: [[id, k], [other, this.firstListedAt(other)]] };
         this.mark(id, k, 'same_date', via);
         this.mark(other, k, 'same_date', via);
         this.event(id, k, 'same_date_share_basis');
       }
     }
-    // A possible re-date: a payload listed now that another id of the same symbol and type, dated within the window, has
-    // been listed with (now or before). Both ids are marked; the match is kept for the per-ledger carve-out.
-    for (const [id, cur] of byId) {
+    // A possible re-date: a payload standing for a live id that another id of the same symbol and type, dated within the
+    // window, stands for too — from the first close on or after either date (A-2), unless the switch between the two was made
+    // before both (A-1). Both ids are marked; the match is kept for the per-ledger carve-out.
+    for (const id of live) {
+      const cur = this.ids.get(id);
+      const mine = this.payloadsOfId(id);
       for (const [other, o] of this.ids) {
-        if (other === id || o.sym !== cur.sym || o.type !== cur.type || Math.abs(o.d - cur.d) > REDATE_WINDOW) continue;
-        for (const x of cur.keys) {
-          if (!o.payloads.has(x)) continue;
+        if (other === id || o.sym !== cur.sym || o.type !== cur.type || Math.abs(o.d - cur.d) > REDATE_WINDOW || Math.min(o.d, cur.d) > k) continue;
+        const theirs = this.payloadsOfId(other);
+        const shared = [...mine].filter((x) => theirs.has(x));
+        if (shared.length === 0 || this.switchedBefore(id, other, k)) continue;
+        for (const x of shared) {
           // (Both sides, each with the close its copy of the payload was first listed at — for the carve-out.)
-          const via = { key: x, sides: [[id, this.ids.get(id).payloads.get(x)], [other, o.payloads.get(x)]] };
+          const firstAt = (sid) => this.ids.get(sid).payloads.get(x) ?? this.ann.get(sid)?.listedPre?.[0] ?? k;
+          const via = { key: x, sides: [[id, firstAt(id)], [other, firstAt(other)]] };
           this.mark(id, k, 'redate', via);
           this.mark(other, k, 'redate', via);
           this.event(id, k, 'redate');
-          if (o.payloads.get(x) === k && this.lastListed.get(other) === k) this.event(other, k, 'redate_same_close');
+          if (byId.has(other) && o.payloads.get(x) === k && this.lastListed.get(other) === k) this.event(other, k, 'redate_same_close');
         }
       }
     }
@@ -427,6 +514,63 @@ export class EntitlementOracle {
     this.authorityChecks = 0;
     this.refusalChecks = 0;
     this.byKind = { late_entitlement: 0, late_basis: 0, ruled_correction: 0 };
+    this.netChecks = 0;
+    this.netUndetermined = 0;
+  }
+
+  /** An accepted conflict ruling choosing a payload of `id`, covering ledger `f` (the founder's answer for it there). */
+  ruledPayload(id, f) {
+    return this.inputs.rulings.some((r) => r.status === 200 && r.body?.kind === 'conflict' && r.body.recordId === id && r.body.decision === 'payload' && (f === null || !Array.isArray(r.ledgers) || r.ledgers.includes(f)));
+  }
+
+  /**
+   * WHAT LEDGER `f` IS OWED FOR DIVIDEND `id` BY THE INPUTS at close k, on its holding history `h` — the ex-date count along
+   * the splits the inputs determine (entry count × each entitled split dated on or before the ex-date, in date order, six
+   * places at each step) × the amount in force — or null when the inputs cannot tell (the payload, or a split before it,
+   * still ambiguous; a founder's suspicion split of the symbol). Never reads the product's state.
+   */
+  owedFromInputs(f, h, id, k) {
+    const e = this.inputs.ids.get(id);
+    if (!e || e.type !== 'cash_dividend') return null;
+    const entitledAt = (d) => d > h.boughtAt && (h.soldAt == null || d <= h.soldAt) && d <= k;
+    if (!entitledAt(e.d)) return 0;
+    if (!this.inputs.listedAtDate(id) && !this.ruledPayload(id, f)) return 0;
+    const p = this.payloadOf(id, f);
+    if (p === undefined) return null;
+    if (p === null) return 0;
+    const splits = [];
+    for (const [sid, s] of this.inputs.ids) {
+      if (s.sym !== e.sym || !SHARE_BASIS.has(s.type) || !entitledAt(s.d) || s.d > e.d) continue;
+      if (!this.inputs.listedAtDate(sid) && !this.ruledPayload(sid, f)) continue;
+      const sp = this.payloadOf(sid, f);
+      if (sp === undefined) return null;
+      if (sp === null || !(Number(sp.ratio) > 0)) continue;
+      splits.push({ sid, d: s.d, ratio: Number(sp.ratio) });
+    }
+    for (const rq of this.inputs.rulings) {
+      if (rq.status === 200 && rq.body?.kind === 'suspicion' && rq.body.decision === 'split' && String(rq.body.recordId || '').startsWith(`suspected_split_${e.sym}_`)) return null;
+    }
+    let count = h.entryShares;
+    for (const sp of splits.sort((a, b) => a.d - b.d || a.sid.localeCompare(b.sid))) count = roundSharesHere(count * sp.ratio);
+    return roundUsdHere(count * Number(p.amount));
+  }
+
+  /**
+   * T1a-2b-4 final fix (Astra's "test-only gap"): THE NET OF A POSTING, at the close that posted it, BEFORE ANY EXCUSE. A
+   * posting moves what the ledger is owed now by the inputs less everything it had received for the id before it (L-2) —
+   * checked whatever the product's own state says: I-6's waiting-state excuses read that state, and a fabricated doubt there
+   * excused a $1 overpayment. Unit rows with no holding history, and an amount the inputs cannot tell, are not checked here
+   * (counted); the L-2 checks at posting cover the latter.
+   */
+  checkNetAtPosting(idea, f, a, i, posted, k, label, h) {
+    if (!h || a.postedOn !== this.S[k] || (a.type != null && a.type !== 'cash_dividend')) return;
+    const owed = this.owedFromInputs(f, h, a.actionId, k);
+    if (owed === null) { this.netUndetermined += 1; return; }
+    const l = idea?.[f];
+    const receipts = (l?.corporateActionReceipts || []).filter((r) => r?.applied === true && r.actionId === a.actionId);
+    const before = addUsd(0, ...receipts.map((r) => Number(r.incomeUsd) || 0), ...posted.slice(0, i).filter((x) => x.actionId === a.actionId).map((x) => Number(x.amountUsd) || 0));
+    this.netChecks += 1;
+    expect(Number(a.amountUsd), `${label} ${this.S[k]} I-7 (net at posting) ${f} ${a.actionId}: a ${a.kind} of $${a.amountUsd} posted on ${a.postedOn}; the inputs say $${owed} owed less $${before} received before it`).toBe(roundUsdHere(owed - before));
   }
 
   /** The payload in force for `id` by the inputs: the founder's accepted payload ruling (the latest), else its one listed
@@ -477,18 +621,32 @@ export class EntitlementOracle {
       if (!l) continue;
       const posted = (l.adjustments || []).filter((a) => a && a.held !== true);
       const lateCount = new Map();
-      for (const a of posted) {
+      // T1a-2b-4 final fix (Astra's "test-only gap"): EVERY POSTING MATCHES ONE EXACT, UNCONSUMED REQUEST — the accepted request
+      // whose key the posting's ruling receipt names, of the kind that authorizes it: an approval of exactly the proposal it
+      // names (its generation included), or a conflict ruling choosing exactly its payload. A request authorizes one posting
+      // on a ledger. (Before, an approval of proposal 1 authorized a fabricated posting naming proposal 2 and another key.)
+      const consumed = new Set();
+      for (const [i, a] of posted.entries()) {
         const at = this.S.indexOf(a.postedOn);
         this.authorityChecks += 1;
+        const key = a.ruling?.requestKey ?? null;
+        const exact = (r) => r.status === 200 && r.requestKey === key && r.at <= at && !consumed.has(r.requestKey);
         if (a.kind === 'ruled_correction') {
-          const ok = this.inputs.rulings.find((r) => r.status === 200 && r.body?.kind === 'conflict' && r.body.recordId === a.actionId && r.body.decision === 'payload' && (!Array.isArray(r.ledgers) || r.ledgers.includes(f))
-            && keyOf(r.body.payload) === keyOf(a.payload || {}) && r.at <= at) ?? null;
-          expect(ok, `${label} ${this.S[k]} I-7 ${f} ${a.actionId}: a ruled_correction of ${keyOf(a.payload || {})} posted on ${a.postedOn} with no accepted conflict ruling choosing that payload`).not.toBeNull();
+          const ok = this.inputs.rulings.find((r) => exact(r) && r.body?.kind === 'conflict' && r.body.recordId === a.actionId && r.body.decision === 'payload' && (!Array.isArray(r.ledgers) || r.ledgers.includes(f))
+            && keyOf(r.body.payload) === keyOf(a.payload || {})) ?? null;
+          expect(ok, `${label} ${this.S[k]} I-7 ${f} ${a.actionId}: a ruled_correction of ${keyOf(a.payload || {})} posted on ${a.postedOn} with no accepted conflict ruling (${key}) choosing that payload`).not.toBeNull();
+          if (ok) consumed.add(ok.requestKey);
+          this.checkNetAtPosting(idea, f, a, i, posted, k, label, holdings?.[f] ?? null);
           continue;
         }
-        const auth = this.authoritiesFor(f, a.actionId).filter((x) => x.at <= at
-          && (x.kind === 'approval' || keyOf(x.r.body.payload) === keyOf({ amount: a.amountPerShare })));
-        expect(auth.length > 0, `${label} ${this.S[k]} I-7 ${f} ${a.actionId}: a ${a.kind} of $${a.amountUsd} posted on ${a.postedOn} with no founder approval or ruling for this ledger and id in the inputs`).toBe(true);
+        const matched = this.inputs.rulings.find((r) => exact(r) && (
+          (r.body?.kind === 'late_adjustment' && r.body.decision === 'approve' && r.body.recordId === a.proposal && proposalOf(r.body.recordId)?.field === f && proposalOf(r.body.recordId)?.actionId === a.actionId)
+          || (r.body?.kind === 'conflict' && r.body.recordId === a.actionId && r.body.decision === 'payload' && (!Array.isArray(r.ledgers) || r.ledgers.includes(f)) && keyOf(r.body.payload) === keyOf({ amount: a.amountPerShare })))) ?? null;
+        expect(matched, `${label} ${this.S[k]} I-7 ${f} ${a.actionId}: a ${a.kind} of $${a.amountUsd} posted on ${a.postedOn} (proposal ${a.proposal ?? '—'}, request ${key ?? '—'}) matches no exact, unconsumed founder approval or ruling for this ledger and id in the inputs`).not.toBeNull();
+        if (matched) consumed.add(matched.requestKey);
+        const auth = matched ? [{ at: matched.at, kind: matched.body.kind === 'late_adjustment' ? 'approval' : 'ruling', r: matched }] : [];
+        // (The movement's NET, checked before any waiting-state excuse — I-6's excuses read the product's state.)
+        this.checkNetAtPosting(idea, f, a, i, posted, k, label, holdings?.[f] ?? null);
         // (A late ENTITLEMENT the founder's conflict ruling chose is the ruling's: the closed path posts it on the ruling — at its
         // close, or later where a doubt deferred it and a ledger still holding the stock kept the ruling pending (the soak's
         // 2120005580). A ruling never posts a `late_basis`: every one of those, like every approval's posting, meets L-2 —
@@ -561,8 +719,11 @@ export class EntitlementOracle {
         for (const x of cov.rejected || []) {
           const d = this.S.indexOf(x.date);
           if (x.sym !== sym || !(d > boughtAt && d <= h.soldAt)) continue;
-          const cleared = [...this.inputs.coverageAt].some(([c2, v]) => c2 > r && c2 <= at && v.catchup);
-          expect(cleared, `${label} ${this.S[k]} I-7 (L-2 ④ at posting) ${f} ${a.actionId}: a ${a.kind} of $${a.amountUsd} posted on ${a.postedOn} on an approval alone, while a row dated ${x.date} within the sold holding, rejected at ${this.S[r]}, has no clean data since`).toBe(true);
+          // (A-4, the founder's ruling of 21 Nov 2026: ONLY the founder's coverage_gap ruling of the sold holding's doubt, made
+          // after this rejection showed, clears it — never a catch-up or a backfill, which were the proxy before. Astra T2E-C04.)
+          const cleared = this.inputs.rulings.some((q) => q.status === 200 && q.body?.kind === 'coverage_gap' && String(q.body.recordId || '').startsWith(`ca_closed_doubt_${sym}_`)
+            && q.at > r && q.at <= at);
+          expect(cleared, `${label} ${this.S[k]} I-7 (L-2 ④ at posting) ${f} ${a.actionId}: a ${a.kind} of $${a.amountUsd} posted on ${a.postedOn} on an approval alone, while a row dated ${x.date} within the sold holding, rejected at ${this.S[r]}, has no founder coverage_gap ruling since`).toBe(true);
         }
       }
     }
@@ -647,6 +808,8 @@ export class EntitlementOracle {
       let splitsWait = Infinity; // the earliest date of a split that waits (its ex-date counts depend on it)
       for (const [id, e] of this.inputs.ids) {
         if (e.sym !== sym || !SHARE_BASIS.has(e.type) || !entitledAt(e.d)) continue;
+        // (A-1: a split only ever announced — withdrawn before its date — applies nowhere unless the founder ruled its payload.)
+        if (!this.inputs.listedAtDate(id) && !this.ruledPayload(id, f)) continue;
         const p = this.payloadOf(id, f);
         if (p === undefined) { splitsWait = Math.min(splitsWait, e.d); continue; }
         if (p === null || !(Number(p.ratio) > 0)) continue;
@@ -678,6 +841,13 @@ export class EntitlementOracle {
           // Owed nothing: bought on or after its ex-date, or sold before it. Never excused.
           this.nothingOwed += 1;
           expect(received, `${label} ${this.S[k]} I-6 ${f} ${id} is owed nothing (bought ${this.S[h.boughtAt]}, sold ${h.soldAt == null ? '—' : this.S[h.soldAt]}) but received $${received}`).toBe(0);
+          continue;
+        }
+        // (A-1: a dividend only ever announced — withdrawn before its date, never listed on or after it — is owed nothing,
+        // unless the founder's ruling chose its payload. Never excused.)
+        if (!this.inputs.listedAtDate(id) && !this.ruledPayload(id, f)) {
+          this.nothingOwed += 1;
+          expect(received, `${label} ${this.S[k]} I-6 ${f} ${id} was only announced (never listed on or after its date) and is owed nothing, but received $${received}`).toBe(0);
           continue;
         }
         const p = this.payloadOf(id, f);

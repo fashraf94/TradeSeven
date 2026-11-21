@@ -446,7 +446,11 @@ function closeFilledIdea(idea, {
     if (!replaced || replaced.size === 0) return null;
     return Object.fromEntries(Object.entries(actionsBySymbol).map(([sym, list]) => [sym, (list || []).filter((a) => replaced.has(deriveActionId(a)))]));
   };
-  const opts = (f) => ({ date, holds, deferRenames, renameTargetsTaken: heldByOthers, renameIdsScreened, ruledIds: ruledIdsOf(f), replacedRows: replacedRowsOf(f) });
+  // (A-2: a symbol the idea has SOLD is still observed for its rows listed ahead — only at a close whose session data covers
+  // it: the session's own refusal for it, as the sold holding's doubt reads it below.)
+  const soldUncovered = new Set([...closedHoldingsOf(idea.ledger, { entrySession: idea.entry?.sessionDate ?? null }).keys()]
+    .filter((sym) => !dailyRefOk || dailyCoverageOf(daily, sym, parseReport).refusal !== null));
+  const opts = (f) => ({ date, holds, deferRenames, renameTargetsTaken: heldByOthers, renameIdsScreened, ruledIds: ruledIdsOf(f), replacedRows: replacedRowsOf(f), uncoveredSymbols: soldUncovered });
   const own = observed ? applyLedgerActions(ledgers[0], actionsOf.ledger, opts('ledger')) : noActions(ledgers[0]);
   const cmp = observed ? applyLedgerActions(ledgers[1], actionsOf.comparisonLedger, opts('comparisonLedger')) : noActions(ledgers[1]);
   const spy = observed ? applyLedgerActions(ledgers[2], actionsOf.spyLedger, opts('spyLedger')) : noActions(ledgers[2]);

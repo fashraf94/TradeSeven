@@ -120,7 +120,9 @@ describe.skipIf(!present)('the battery\'s last survivor changes nothing stored (
     let refused = null;
     let moved = null;
     try { moved = await storedUnder('control', CONTROL); } catch (e) { refused = String(e?.message || e); }
-    if (refused !== null) expect(refused, 'refused by I-6 (the wrong net), not by anything else').toMatch(/ I-6 /);
+    // (CHANGED — T1a-2b-4 final fix: the oracle now checks every posting's net at the close that posted it, before any excuse
+    // — Astra's test-only gap — so I-7's net at posting refuses the cent first; I-6 refused it before. Either is the wrong net.)
+    if (refused !== null) expect(refused, 'refused for the wrong net (I-7 at posting, or I-6), not by anything else').toMatch(/ I-7 \(net at posting\) | I-6 /);
     else expect(moved.some((m, i) => m !== p.stored[i]), 'a stored document differs').toBe(true);
   }, 900_000);
 });

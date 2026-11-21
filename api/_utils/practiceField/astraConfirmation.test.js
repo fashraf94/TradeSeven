@@ -334,6 +334,27 @@ describe('C01 — a held row listed before its date (A-1, A-2, A-3)', () => {
     expect(recordsOf(ctx)).toEqual([]);
   });
 
+  it('a switch made before both dates stays an update after the new id is paid: Friday $1 replaced by Wednesday $1 on Tuesday', async () => {
+    const ctx = await openIdea();
+    await session(ctx, 0, [dividend(4, 1)]);
+    await session(ctx, 1, [dividend(2, 1)]);
+    expect((await session(ctx, 2, [dividend(2, 1)])).dividendsUsd).toBe(99.97);
+    expect((await session(ctx, 3, [dividend(2, 1)])).dividendsUsd).toBe(99.97);
+    expect(recordsOf(ctx)).toEqual([]);
+    expect(row(ctx, 3).fullQuality).toBe(true);
+  });
+
+  it('…and the replaced id listed again after the other was paid is a re-date of it: it waits for the founder', async () => {
+    const ctx = await openIdea();
+    await session(ctx, 0, [dividend(4, 1)]);
+    await session(ctx, 1, [dividend(2, 1)]);
+    expect((await session(ctx, 2, [dividend(2, 1)])).dividendsUsd).toBe(99.97);
+    await session(ctx, 3, [dividend(2, 1), dividend(4, 1)]);
+    expect(recordsOf(ctx)).toEqual([['possible_redate', divId(4)]]);
+    expect((await session(ctx, 4, [dividend(2, 1), dividend(4, 1)])).dividendsUsd).toBe(99.97);
+    expect(row(ctx, 4).fullQuality).toBe(false);
+  });
+
   it('two dates both announced at the last close before either: both wait from the first date (A-2)', async () => {
     const ctx = await openIdea();
     await session(ctx, 0);
@@ -587,5 +608,57 @@ describe('C05 — a refused share-basis record has a founder exit (A-5)', () => 
     await session(ctx, 5, [], 47);
     expect(idea(ctx).ledger.holdings.AAPL.shares).toBe(199.940016);
     expect((await session(ctx, 6, [], 46)).saleReceipts.some((r) => r.symbol === 'AAPL')).toBe(true);
+  });
+});
+
+// ── THE ORACLE: ASTRA'S TEST-ONLY GAP (her "A test-only gap" and "Oracle controls") ─────────────────────────────────────────
+// Inputs: a $1 AAPL dividend dated S1, listed late at S3; 99.970008 entry shares bought S0, sold S2; the founder's accepted
+// approval of the original proposal (generation 1, request a1). Constructed oracle objects only, to characterise coverage.
+import { InputOracle, EntitlementOracle } from './__testsupport__/caOracle.js';
+
+describe('the oracle — a posting matches one exact, unconsumed request, and its net is checked before any excuse', () => {
+  const D1 = 'cash_dividend_AAPL_' + S[1];
+  const row1 = { type: 'cash_dividend', ticker: 'AAPL', effectiveDate: S[1], amount: 1, source: 'eodhd_dividends' };
+  const sold = { ledger: { sym: 'AAPL', entryShares: 99.970008, boughtAt: 0, soldAt: 2 } };
+  const posting = (over = {}) => ({ kind: 'late_entitlement', type: 'cash_dividend', ticker: 'AAPL', actionId: D1, amountUsd: 99.97, amountPerShare: 1, proposal: 'late_idea_' + D1, ruling: { requestKey: 'a1' }, postedOn: S[4], ...over });
+  // (Astra's fabricated product state: the comparison ledger reports a split conflict dated before the ex-date.)
+  const doubted = { actionId: 'split_AAPL_' + S[1], type: 'split', ticker: 'AAPL', effectiveDate: S[1], applied: false, reason: 'conflicting_action', rows: [{ ratio: 2 }, { ratio: 3 }] };
+  const ideaOf = (adjustments, comparisonReceipts = []) => ({
+    ledger: { corporateActionReceipts: [], adjustments, dividendsUsd: adjustments.reduce((n, a) => n + a.amountUsd, 0), holdings: {} },
+    comparisonLedger: { corporateActionReceipts: comparisonReceipts, adjustments: [], holdings: { AAPL: { shares: 99.970008 } } },
+  });
+  const oracle = () => {
+    const inputs = new InputOracle(S);
+    const e = new EntitlementOracle(S, inputs);
+    for (const k of [0, 1, 2]) inputs.close(k, []);
+    inputs.close(3, [row1]);
+    inputs.ruling({ kind: 'late_adjustment', recordId: 'late_idea_' + D1, decision: 'approve' }, { status: 200 }, 'a1', 4);
+    inputs.close(4, []);
+    return e;
+  };
+
+  it('Astra\'s fabricated posting — generation 2, another request key, $100.97 — is refused by I-7 even beside a fabricated comparison doubt', () => {
+    const e = oracle();
+    const fabricated = ideaOf([posting({ amountUsd: 100.97, proposal: 'late_idea_' + D1 + '_2', ruling: { requestKey: 'x9' } })], [doubted]);
+    expect(() => e.checkAuthority(fabricated, 4, 'unit', sold)).toThrow(/matches no exact, unconsumed founder approval/);
+  });
+
+  it('the right proposal and request, but $100.97: the net at posting refuses it — the comparison\'s fabricated doubt excuses nothing', () => {
+    const e = oracle();
+    expect(() => e.checkAuthority(ideaOf([posting({ amountUsd: 100.97 })], [doubted]), 4, 'unit', sold)).toThrow(/I-7 \(net at posting\).*the inputs say \$99\.97 owed less \$0 received/);
+    expect(() => e.checkAuthority(ideaOf([posting({ amountUsd: 100.97 })]), 4, 'unit', sold)).toThrow(/net at posting/);
+  });
+
+  it('one request authorizes one posting: the same approval named twice is refused the second time', () => {
+    const e = oracle();
+    expect(() => e.checkAuthority(ideaOf([posting(), posting({ amountUsd: 0.01 })]), 4, 'unit', sold)).toThrow(/matches no exact, unconsumed/);
+  });
+
+  it('control: the honest posting — proposal 1, request a1, $99.97 — passes I-7 and I-6; the normal two-idea book is untouched', () => {
+    const e = oracle();
+    const honest = ideaOf([posting()]);
+    expect(() => e.checkAuthority(honest, 4, 'unit', sold)).not.toThrow();
+    expect(() => e.check(honest, 4, sold, 'unit')).not.toThrow();
+    expect(e.netChecks).toBe(1);
   });
 });
