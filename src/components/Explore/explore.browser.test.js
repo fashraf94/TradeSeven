@@ -116,6 +116,61 @@ describe.skipIf(!BASE)('Explore in a real browser (spec §9 checks 1–5)', () =
       }
     }, ROW * 3);
 
+    it(`${w}×${h}: Tab follows the page's visual order, and no focused control is ever hidden under the pinned bar (review C-1, C-2)`, async () => {
+      for (const scene of ['story', 'home-progress']) {
+        const { ctx, page } = await sceneAt(scene, size);
+        try {
+          await page.evaluate(() => { window.scrollTo(0, 0); document.querySelector('[data-explore-tab]').querySelector('[tabindex="-1"]')?.focus({ preventScroll: true }); });
+          const seen = [];
+          for (let i = 0; i < 40; i += 1) {
+            await page.keyboard.press('Tab');
+            await page.waitForTimeout(60);
+            const at = await page.evaluate(() => {
+              const el = document.activeElement;
+              if (!el || !el.closest('[data-explore-tab]')) return null;
+              const r = el.getBoundingClientRect();
+              const bar = document.querySelector('[data-explore-pinned-bar]')?.getBoundingClientRect() ?? null;
+              const covered = bar ? r.bottom > bar.top + 1 && r.top < bar.bottom : false;
+              return { y: Math.round(r.top + window.scrollY), x: Math.round(r.left), covered, what: (el.textContent || el.tagName).trim().slice(0, 30) };
+            });
+            if (!at) break; // left the Explore tab
+            seen.push(at);
+          }
+          expect(seen.length, scene).toBeGreaterThan(3);
+          expect(seen.filter((s) => s.covered), `${scene}: focused under the bar`).toEqual([]);
+          if (w < 1000) {
+            // one column: each next control sits at or below the last one
+            const back = seen.filter((s, i) => i > 0 && s.y < seen[i - 1].y - 4);
+            expect(back, `${scene}: ${JSON.stringify(seen.map((s) => [s.y, s.what]))}`).toEqual([]);
+          }
+        } finally {
+          await ctx.close();
+        }
+      }
+    }, ROW * 2);
+
+    it(`${w}×${h}: a sheet opened from the pinned bar — after the close and the read, focus is never on <body> (review C-3)`, async () => {
+      const { ctx, page } = await sceneAt('walk', size, 300);
+      try {
+        await page.click('[data-explore-card="sample-ai-buildout"] [data-explore-card-primary="read"]');
+        await page.waitForSelector('[data-explore-primary]', { timeout: ROW });
+        await page.evaluate(() => window.scrollTo(0, 0));
+        await page.waitForSelector('[data-explore-bar-action]', { timeout: ROW });
+        await page.click('[data-explore-bar-action]');
+        await page.waitForSelector('[data-shared-research-body]', { timeout: ROW });
+        await page.keyboard.press('Escape');
+        await page.waitForSelector('[data-explore-sheet-overlay]', { state: 'detached', timeout: ROW });
+        await page.waitForFunction(() => document.querySelector('[data-explore-panel]')?.dataset.explorePanel === 'B', null, { timeout: ROW });
+        await page.waitForTimeout(400);
+        expect(await page.evaluate(() => document.activeElement !== document.body)).toBe(true);
+        await page.evaluate(() => document.querySelector('[data-explore-primary]').scrollIntoView({ block: 'center' }));
+        await page.waitForTimeout(500);
+        expect(await page.evaluate(() => ({ body: document.activeElement === document.body, bar: Boolean(document.querySelector('[data-explore-pinned-bar]')) }))).toEqual({ body: false, bar: false });
+      } finally {
+        await ctx.close();
+      }
+    }, ROW * 2);
+
     it(`${w}×${h}: the walk — Work this idea opens the sheet, close leaves scrollY and returns focus; Continue research then`, async () => {
       // every answer 600 ms late, so the close can be measured before the read after it lands
       const { ctx, page } = await sceneAt('walk', size, 600);
