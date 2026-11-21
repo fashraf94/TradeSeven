@@ -963,7 +963,8 @@ export function sweepFlow(container, docs = {}) {
 
 /**
  * Film Room D1, F-COPY — the front says only the spec's §11 words, the tape's values and quotations: every text node
- * under the front outside a bound value, an instant and a quotation is, whole, one of SPEC_FLOW_COPY (whitespace aside).
+ * under the front outside a bound value, an instant and a quotation's bound text and attribution (DB-13) is, whole, one
+ * of SPEC_FLOW_COPY (whitespace aside).
  */
 export function flowCopyDefects(container) {
   const bad = [];
@@ -978,14 +979,19 @@ export function flowCopyDefects(container) {
     const text = node.textContent.trim();
     if (!text) continue;
     const host = node.parentElement;
+    // Amendment B DB-13: a quotation is exempt for its BOUND QUOTED TEXT and its ATTRIBUTION only (each a direct child
+    // of its quotation root, as the kit renders them) — anything else inside one, a "Read more" or "Show less" among it,
+    // is checked as the front's own words
+    const part = host.closest('[data-quote-path], [data-quote-attribution]');
+    if (part && part.parentElement?.hasAttribute('data-quotation')) continue;
     // an instant's element holds an instant and nothing else: its clocks and dates removed, nothing but separators
-    if (host.closest('[data-time]') && !host.closest('[data-quotation]')) {
+    if (host.closest('[data-time]')) {
       let rest = text;
       for (const re of TIME_PATTERNS) rest = rest.replace(re, ' ');
       if (/[^\s,]/.test(rest)) bad.push(`not an instant: “${text.slice(0, 80)}”`);
       continue;
     }
-    if (host.closest('[data-flow-num], [data-flow-agg], [data-flow-text], [data-quotation]')) continue;
+    if (host.closest('[data-flow-num], [data-flow-agg], [data-flow-text]')) continue;
     if (host.closest('[data-flow-missing]') && text === '—') continue;
     if (!allowed.has(text)) bad.push(`not the spec's copy: “${text.slice(0, 80)}”`);
   }

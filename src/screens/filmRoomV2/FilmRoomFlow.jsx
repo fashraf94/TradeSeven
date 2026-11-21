@@ -315,7 +315,9 @@ function FlowPanel({ tape, flow, group, pin, onStep, onOpenAt, renderAgentMark, 
       <span style={{ width: 26, flexShrink: 0, display: 'inline-flex', justifyContent: 'center', paddingTop: who === 'player' ? 3 : 0 }}>
         {who === 'player' ? <span style={{ fontSize: 11.5, fontWeight: 700, color: C.ink2 }}>{F.speakerYou}</span> : renderAgentMark(22)}
       </span>
-      <Quotation doc={tape} path={words.path} by={who} at={words.at} lines={3} size={narrow ? 14.5 : 15.5} weight={500} color={C.ink} />
+      {/* DA-16 / DB-13: three lines, no disclosure (the pin's link is the way to the rest); the attribution kept for
+          assistive technology and the oracle, hidden visually — the speaker's mark and the fact line's time say it */}
+      <Quotation doc={tape} path={words.path} by={who} at={words.at} lines={3} size={narrow ? 14.5 : 15.5} weight={500} color={C.ink} preview />
     </div>
   );
   return (

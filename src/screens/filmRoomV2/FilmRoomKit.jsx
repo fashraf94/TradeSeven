@@ -282,8 +282,14 @@ export function EmptyCard({ children }) {
  * preview (`lines`) clamps the FULL value with CSS (R6), measured again whenever its box changes size, so "Read
  * more" appears exactly when the value runs past it (review A2P3-1). Recorded words go nowhere else: no other
  * element's text, no aria-label, no title. A path that holds no text renders nothing.
+ *
+ * `preview` (Build D Amendment A DA-16, Amendment B DB-13 — the Film Room front's, and its only use): the attribution
+ * line is hidden VISUALLY — still in the DOM, its text, its instant and its paths intact, for assistive technology and
+ * the quotation oracle — and the clamp has no "Read more" / "Show less": the front's pin link is the way to the rest.
+ * Omitted (false), the quotation renders exactly as it always has.
  */
-export function Quotation({ doc, path, by, at, lines = 0, color = C.ink2, weight = 400, size = 13, docLabel = 'tape' }) {
+const VISUALLY_HIDDEN = { position: 'absolute', width: 1, height: 1, margin: -1, padding: 0, border: 0, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' };
+export function Quotation({ doc, path, by, at, lines = 0, color = C.ink2, weight = 400, size = 13, docLabel = 'tape', preview = false }) {
   const stored = valueAt(doc, path);
   const text = typeof stored === 'string' && stored ? stored : null;
   const [open, setOpen] = useState(false);
@@ -307,8 +313,8 @@ export function Quotation({ doc, path, by, at, lines = 0, color = C.ink2, weight
   return (
     <div data-quotation={by} style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
       <p ref={ref} id={id} data-quote-path={formatNumberPath(path)} data-quote-doc={docLabel} data-collapsed={lines ? (open ? 'no' : 'yes') : undefined} style={{ ...body, fontSize: size, fontWeight: weight, color, ...clamp }}>{text}</p>
-      {lines && (clamped || open) ? <TextButton onClick={() => setOpen(!open)} expanded={open} controls={id}>{open ? COPY.showLess : COPY.readMore}</TextButton> : null}
-      <span data-quote-attribution="" data-quote-at={at ? formatNumberPath(at) : undefined} style={mono(9.5, C.ink3, { lineHeight: 1.4 })}>
+      {lines && !preview && (clamped || open) ? <TextButton onClick={() => setOpen(!open)} expanded={open} controls={id}>{open ? COPY.showLess : COPY.readMore}</TextButton> : null}
+      <span data-quote-attribution="" data-quote-at={at ? formatNumberPath(at) : undefined} style={preview ? { ...mono(9.5, C.ink3, { lineHeight: 1.4 }), ...VISUALLY_HIDDEN } : mono(9.5, C.ink3, { lineHeight: 1.4 })}>
         — {COPY.quoteBy[by]} · {clock ? <When>{clock}</When> : COPY.notRecorded}
       </span>
     </div>

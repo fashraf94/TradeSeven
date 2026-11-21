@@ -10,6 +10,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import React from 'react';
 import FilmRoomFlow, { FLOW_LAYOUT } from './FilmRoomFlow.jsx';
 import { flowOf, layoutOf } from './filmRoomFlow.js';
+import { Quotation } from './FilmRoomKit';
 import { mounter, sep23Tape, clone, battleOf, sweepFlow, flowCopyDefects, sweepWords, quoteDefects, flowPinsOf } from './__fixtures__/filmRoomHarness';
 
 const m = mounter();
@@ -378,5 +379,112 @@ describe('item 4 — DA-15: a merged pin shows its range', () => {
     const last = m.qa('[data-flow-pin="3"] [data-flow-agg]')[1];
     last.textContent = '4'; last.setAttribute('data-agg-value', '4');
     expect(sweepFlow(m.container, { tape: sep23Tape, battle: battleOf(sep23Tape) })).toContain('aggregate ordinal(pins in time order): computed 4, the documents give 5');
+  });
+});
+
+describe('item 5 — DA-16 / DB-13: quotations on the front', () => {
+  /** Every quote paragraph reports a long text: 500 px of content in a 60 px clamp — "Read more" would show (jsdom has no layout). */
+  function stubLongQuotes() {
+    const sh = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollHeight');
+    const ch = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientHeight');
+    Object.defineProperty(HTMLElement.prototype, 'scrollHeight', { configurable: true, get() { return this.hasAttribute('data-quote-path') ? 500 : 0; } });
+    Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get() { return this.hasAttribute('data-quote-path') ? 60 : 0; } });
+    return () => {
+      if (sh) Object.defineProperty(HTMLElement.prototype, 'scrollHeight', sh); else delete HTMLElement.prototype.scrollHeight;
+      if (ch) Object.defineProperty(HTMLElement.prototype, 'clientHeight', ch); else delete HTMLElement.prototype.clientHeight;
+    };
+  }
+  const directiveDay = () => { const t = clone(sep23Tape); t.actions = []; t.directives = [clone(sep23Tape.directives[0])]; return t; };
+
+  it('a long quotation on the front: clamped at three lines, no "Read more" or "Show less" — the pin\'s link is the way to the rest', () => {
+    const undo = stubLongQuotes();
+    try {
+      const t = directiveDay();
+      mount(t);
+      const quotes = m.qa('[data-flow-said] [data-quotation]');
+      expect(quotes).toHaveLength(2);
+      for (const q of quotes) {
+        expect(q.querySelector('[data-quote-path]').getAttribute('data-collapsed')).toBe('yes');
+        expect(q.querySelector('[data-quote-path]').style.webkitLineClamp || q.querySelector('[data-quote-path]').getAttribute('style')).toMatch(/3/);
+        expect(q.querySelector('button')).toBeNull();
+      }
+      expect(m.qa('button').map((b) => b.textContent)).not.toContain('Read more');
+      expect(m.q('[data-flow-pin-link]')).toBeTruthy();
+      clean(t);
+    } finally { undo(); }
+  });
+  it('each attribution stays — a direct child, its source and its instant intact — and is hidden only visually', () => {
+    const t = directiveDay();
+    mount(t);
+    const quotes = m.qa('[data-flow-said] [data-quotation]');
+    expect(quotes.map((q) => [q.getAttribute('data-quotation'), q.querySelector(':scope > [data-quote-attribution]')?.textContent.trim()])).toEqual([
+      ['player', '— the player · 1:40 PM'],
+      ['agent', '— the agent · 1:40 PM'],
+    ]);
+    for (const q of quotes) {
+      const a = q.querySelector(':scope > [data-quote-attribution]');
+      expect(a.getAttribute('data-quote-at')).toBe('directives[0].filedAt');
+      expect([a.style.position, a.style.width, a.style.height, a.style.overflow]).toEqual(['absolute', '1px', '1px', 'hidden']);
+      expect(a.getAttribute('style')).toMatch(/clip: rect\(0/);
+    }
+    expect(quoteDefects(m.container, { tape: t })).toEqual([]);
+    clean(t);
+  });
+  it('the oracle still bites: an attribution removed, or its instant changed, is a defect', () => {
+    const t = directiveDay();
+    mount(t);
+    const a = m.q('[data-flow-said="player"] [data-quote-attribution] [data-time]');
+    a.textContent = '9:00 AM';
+    expect(quoteDefects(m.container, { tape: t })).not.toEqual([]);
+    m.q('[data-flow-said="player"] [data-quote-attribution]').remove();
+    expect(quoteDefects(m.container, { tape: t })).not.toEqual([]);
+  });
+  it('the copy sweep\'s exemption is the quoted text and its attribution only: a "Read more" inside a quotation on the front is named', () => {
+    const t = directiveDay();
+    mount(t);
+    const q = m.q('[data-flow-said="player"] [data-quotation]');
+    const b = document.createElement('button'); b.textContent = 'Read more';
+    q.appendChild(b);
+    expect(flowCopyDefects(m.container)).toEqual(['not the spec\'s copy: “Read more”']);
+    b.remove();
+    expect(flowCopyDefects(m.container)).toEqual([]);   // the quoted words and the attribution themselves stay exempt
+  });
+});
+
+describe('item 5 — the kit\'s Quotation: `preview` omitted, every existing use renders as it did (the fence, DA-16)', () => {
+  /** Every quote paragraph reports a long text, so a clamped quotation measures as clamped (jsdom has no layout). */
+  function stubLong() {
+    const sh = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollHeight');
+    const ch = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientHeight');
+    Object.defineProperty(HTMLElement.prototype, 'scrollHeight', { configurable: true, get() { return this.hasAttribute('data-quote-path') ? 500 : 0; } });
+    Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get() { return this.hasAttribute('data-quote-path') ? 60 : 0; } });
+    return () => {
+      if (sh) Object.defineProperty(HTMLElement.prototype, 'scrollHeight', sh); else delete HTMLElement.prototype.scrollHeight;
+      if (ch) Object.defineProperty(HTMLElement.prototype, 'clientHeight', ch); else delete HTMLElement.prototype.clientHeight;
+    };
+  }
+  const tape = sep23Tape;
+  // every existing call site's props (grep "<Quotation" in src/screens/filmRoomV2 at the reviewed head), with a document that holds text at the path
+  const SITES = [
+    ['Glance, the platform\'s words', { doc: tape, path: ['battle', 'completionMessage', 'text'], by: 'platform', at: ['battle', 'completionMessage', 'at'], size: 12 }],
+    ['Study, a filed directive', { doc: tape, path: ['directives', 0, 'playerText'], by: 'directive', at: ['directives', 0, 'filedAt'], size: 12.5, weight: 600, color: 'var(--ft-ink)' }],
+    ['Study, the player\'s words', { doc: tape, path: ['directives', 0, 'playerText'], by: 'player', at: ['directives', 0, 'filedAt'], lines: 3, color: 'var(--ft-ink)' }],
+    ['Study, the agent\'s reply', { doc: tape, path: ['directives', 0, 'agentReply'], by: 'agent', at: ['directives', 0, 'filedAt'], lines: 2 }],
+    ['Study, a rationale', { doc: tape, path: ['rationale', 0, 'rationale'], by: 'agent', at: ['rationale', 0, 'at'], lines: 2 }],
+    ['Study, a hypothesis', { doc: tape, path: ['rationale', 0, 'hypothesis'], by: 'agent', at: ['rationale', 0, 'at'], weight: 600, color: 'var(--ft-ink)' }],
+    ['the cards, a ledger note', { doc: { cards: { e1: { note: 'Hold the line.', createdAt: '2026-09-23T17:00:00.000Z' } } }, path: ['cards', 'e1', 'note'], by: 'you', at: ['cards', 'e1', 'createdAt'], docLabel: 'ledger' }],
+  ];
+  const renumber = (html) => html.replace(/_r_[0-9a-z]+_|«r[0-9a-z]+»|:r[0-9a-z]+:/g, 'ID');
+  const html = (props) => { m.setup(); m.render(<Quotation {...props} />); const out = renumber(m.container.innerHTML); m.teardown(); m.root = null; return out; };
+  it.each(SITES)('%s: omitted and `false` serialize identically — the attribution visible, "Read more" kept on a clamp', (_, props) => {
+    const undo = stubLong();
+    try {
+      const omitted = html(props);
+      expect(omitted).toContain('data-quotation');
+      expect(html({ ...props, preview: false })).toBe(omitted);
+      expect(omitted).not.toMatch(/clip: rect/);
+      expect(omitted.includes('Read more')).toBe(Boolean(props.lines));
+      expect(html({ ...props, preview: true })).not.toBe(omitted);   // the control: the prop does change what it should
+    } finally { undo(); }
   });
 });
