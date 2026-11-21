@@ -179,9 +179,9 @@ function coverageAfterClose(prior, next, { date, observed, coverage, renames }) 
  * that STICKS (`closedCoverageDoubts: { SYM: { id, dates: [{ date, seenOn, lastSeenOn }], through, evidence? } }`); a later
  * session that lists the symbol cleanly says nothing about that date.
  * A-4 (the founder's ruling, 21 Nov 2026; Astra T2E-C04): IT CLEARS ONLY BY THE FOUNDER'S `coverage_gap` RULING (`rulings`:
- * symbol → the ruling applied at this close, holdRulings.js), which clears every date it saw — each with the last session
- * that showed its rejection (`lastSeenOn`) no later than when the ruling saw it. A rejection this close shows again is
- * evidence the ruling never saw: the date stands again. No backfill clears it: a clean refetch (`backfills`, the successful
+ * symbol → the ruling applied at this close, holdRulings.js), which clears every date it saw (it applies at the first
+ * observed close after it was made, before that close's report is read). A rejection this close shows again is evidence
+ * the ruling never saw: the date stands again (`lastSeenOn` names the last session that showed one, for the founder). No backfill clears it: a clean refetch (`backfills`, the successful
  * document read in the close's transaction) is kept on the doubt as EVIDENCE for the founder (`evidence.cleanRefetch`) and
  * acted on by nothing. (Before, a backfill fetched after the date's FIRST rejection cleared it — F-1 — so an older clean
  * fetch cleared a newer rejection of the same date, and the waiting approval posted at full quality: T2E-C04.) Unchanged:
@@ -197,7 +197,9 @@ export function withClosedCoverageDoubts(ledger, closed, { date, parseReport, ba
     const fresh = rejected.dates.filter(inHolding);
     if (rejected.undated) fresh.push(c.openedAt !== null ? shiftCalendarDate(c.openedAt, 1) : c.through);
     const ruling = rulings.get(sym) ?? null;
-    const seenBy = (x) => (ruling?.covers?.dates || []).some((d) => d?.date === x.date && typeof d.lastSeenOn === 'string' && (x.lastSeenOn ?? x.seenOn) <= d.lastSeenOn);
+    // (The ruling applies at the first observed close after it was made, before this close's report is read: every rejection
+    // it covers is one it saw, and one this close shows again is added back below.)
+    const seenBy = (x) => (ruling?.covers?.dates || []).some((d) => d?.date === x.date);
     const kept = (prior[sym]?.dates || []).filter((x) => !(ruling && seenBy(x)));
     for (const d of fresh) {
       const i = kept.findIndex((x) => x.date === d);

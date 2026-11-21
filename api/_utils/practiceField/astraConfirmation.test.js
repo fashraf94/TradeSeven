@@ -662,3 +662,53 @@ describe('the oracle — a posting matches one exact, unconsumed request, and it
     expect(e.netChecks).toBe(1);
   });
 });
+
+describe('the oracle — A-1 and A-2 from the inputs alone', () => {
+  const adv = (i, amount) => ({ type: 'cash_dividend', ticker: 'AAPL', effectiveDate: S[i], amount, source: 'eodhd_dividends' });
+  // (Distinct marks: the oracle records a pairing from each side, and a revision once per check that sees it.)
+  const marksOf = (o, i) => [...new Set((o.marks.get('cash_dividend_AAPL_' + S[i]) || []).map((m) => `${m.k}:${m.how}`))].map((s) => [Number(s.split(':')[0]), s.split(':')[1]]);
+
+  it('a payload changed before its date marks nothing; one changed at the date is a revision', () => {
+    const o = new InputOracle(S);
+    o.close(0, [adv(3, 1)]);
+    o.close(1, [adv(3, 2)]);
+    o.close(2, [adv(3, 2)]);
+    expect(marksOf(o, 3)).toEqual([]);
+    o.close(3, [adv(3, 1)]);
+    expect(marksOf(o, 3)).toEqual([[3, 'revision']]);
+  });
+
+  it('only a covered close updates an announcement', () => {
+    const o = new InputOracle(S);
+    o.close(1, [adv(3, 1)]);
+    o.close(2, [adv(3, 2)], { parseUncoveredSyms: ['AAPL'] });
+    o.close(3, [adv(3, 2)]);
+    expect(marksOf(o, 3)).toEqual([[3, 'revision']]);
+  });
+
+  it('two dates announced together pair only from the first of them; a switch made before both is an update', () => {
+    const o = new InputOracle(S);
+    o.close(1, [adv(3, 1), adv(4, 1)]);
+    o.close(2, [adv(3, 1), adv(4, 1)]);
+    expect([marksOf(o, 3), marksOf(o, 4)]).toEqual([[], []]);
+    o.close(3, [adv(3, 1), adv(4, 1)]);
+    expect([marksOf(o, 3), marksOf(o, 4)]).toEqual([[[3, 'redate']], [[3, 'redate']]]);
+    const p = new InputOracle(S);
+    p.close(1, [adv(3, 1)]);
+    p.close(2, [adv(4, 1)]);
+    p.close(3, [adv(4, 1)]);
+    p.close(4, [adv(4, 1)]);
+    expect([marksOf(p, 3), marksOf(p, 4)]).toEqual([[], []]);
+  });
+
+  it('I-6: a dividend only ever announced — withdrawn before its date — is owed nothing; money received for it fails', () => {
+    const o = new InputOracle(S);
+    const e = new EntitlementOracle(S, o);
+    o.close(1, [adv(3, 1)]);
+    o.close(2, []);
+    o.close(3, []);
+    const paid = { ledger: { corporateActionReceipts: [{ actionId: 'cash_dividend_AAPL_' + S[3], type: 'cash_dividend', ticker: 'AAPL', effectiveDate: S[3], applied: true, appliedOn: S[3], amount: 1, incomeUsd: 99.97 }], adjustments: [] } };
+    expect(() => e.check(paid, 3, { ledger: { sym: 'AAPL', entryShares: 99.970008, boughtAt: 0, soldAt: null } }, 'unit')).toThrow(/only announced/);
+    expect(() => e.check({ ledger: { corporateActionReceipts: [], adjustments: [] } }, 3, { ledger: { sym: 'AAPL', entryShares: 99.970008, boughtAt: 0, soldAt: null } }, 'unit')).not.toThrow();
+  });
+});
