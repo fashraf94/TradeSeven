@@ -79,6 +79,7 @@ export function exploreBoundaryProblemsOf(files) {
       const clauses = [...stripComments(f.code).matchAll(/\bimport\b\s*([^'"`;]*?)\s*\bfrom\s*['"`]([^'"`]+)['"`]/g)].filter((m) => SERVICE.test(resolveFrom(p, m[2]))).map((m) => m[1].replace(/\s+/g, ''));
       if (service.length !== 1 || JSON.stringify(clauses) !== JSON.stringify(['{readExploreInvestigations}'])) problems.push(`the reader imports more of the service than its read: ${f.rel}`);
     } else if (service.length) problems.push(`imports the research service: ${f.rel}`);
+    if (f.rel !== READER && namesInStrings(f.code, 'sharedResearchService').length) problems.push(`names the research service in a string: ${f.rel}`); // review D-5
   }
   return problems;
 }
@@ -108,6 +109,7 @@ describe('the boundary (K-3)', () => {
       ['__fixtures__/stories.js', "const where = '../SharedResearch/__fixtures__/answers.json';"],
       ['useExploreResearch.js', "import { readExploreInvestigations, takeStep } from '../../services/sharedResearchService';"],
       ['useExploreResearch.js', "import * as svc from '../../services/sharedResearchService';"],
+      ['ExploreTab.jsx', "const where = '../../services/sharedResearchService';"],
       ['loadSharedResearch.js', "let p = null;\nexport function loadSharedResearch() { return import('../SharedResearch/SharedResearchSheetBody.jsx'); }\nexport { SR_COPY } from '../SharedResearch/sharedResearchCopy';"],
     ]) {
       expect(exploreBoundaryProblemsOf(at(planted)).length, planted.join(' :: ')).toBeGreaterThan(0);
@@ -197,6 +199,17 @@ describe('the words (K-13, E-1)', () => {
       "export const X = () => <Tag>{'Source-backed'}</Tag>;",
       "export const X = () => <>{'Words'}</>;",
     ]) expect(wordsWrittenIn(planted).length, planted).toBeGreaterThan(0);
+  });
+});
+
+describe('the bookmark document and its rules block agree (review D-7)', () => {
+  it('the title bound is the rules\' bound, and the four keys are the rules\' four', async () => {
+    const rules = readFileSync(resolve(REPO, 'firestore.rules'), 'utf8');
+    const { BOOKMARK_TITLE_MAX } = await import('./exploreView');
+    expect(rules).toContain(`request.resource.data.title.size() <= ${BOOKMARK_TITLE_MAX}`);
+    expect(rules).toContain("request.resource.data.keys().hasOnly(['storyId', 'storyVersion', 'title', 'savedAt'])");
+    const src = readFileSync(join(HERE, 'exploreSources.js'), 'utf8');
+    expect(src).toMatch(/storyId: story\.id,\s*storyVersion: story\.version,\s*title: story\.title\.slice\(0, BOOKMARK_TITLE_MAX\),\s*savedAt: serverTimestamp\(\),/);
   });
 });
 

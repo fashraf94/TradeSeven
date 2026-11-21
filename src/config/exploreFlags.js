@@ -34,7 +34,10 @@ export const EXPLORE_MODES = Object.freeze(['off', 'allowlist', 'on']);
  * founder PR, after the two rules blocks and the stories index are deployed to
  * production and the AI-buildout collection is published with real companies and
  * real sources (spec §6, FQ-1); 'on' is another. Never a build PR; each step moves
- * the first row of exploreFlags.test.js in the same commit (BUILD_RULES §2).
+ * the first row of exploreFlags.test.js in the same commit (BUILD_RULES §2). The 'on'
+ * step also reconciles, in that commit, the three nav rows that list the Search
+ * entry by its label "Search" (src/components/Navigation/leagueHide.nav.jsdom.test.jsx,
+ * the ON and OFF label rows): pin EXPLORE_MODE in that suite's mocks, or move the label.
  * ROLLBACK: one step back at a time ('on' → 'allowlist' → 'off') by moving the literal and its pin together; at 'off' the page is today's and nothing of Explore loads.
  *
  * NOTHING THE AGENT SEES OR TRADES changes at any value: Explore reads stories and

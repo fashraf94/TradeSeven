@@ -59,7 +59,7 @@ describe('EXPLORE_MODE — the pin (BUILD_RULES §2; spec §6, K-2)', () => {
     expect(SRC).not.toMatch(/\brequire\(/);
     const reads = SRC.split('\n').filter((l) => /\bEXPLORE_MODE\b/.test(l) && !/^\s*(\/\/|\*|\/\*)/.test(l));
     expect(reads).toEqual([
-      "export const EXPLORE_MODE = 'off';",
+      `export const EXPLORE_MODE = '${EXPLORE_MODE}';`, // value-neutral: a flip moves only the first row (review D-2)
       "  return EXPLORE_MODE === 'allowlist' || EXPLORE_MODE === 'on' ? EXPLORE_MODE : 'off';",
     ]);
   });

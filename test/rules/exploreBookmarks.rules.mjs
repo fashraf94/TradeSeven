@@ -82,6 +82,10 @@ describe('the owner (positive controls)', () => {
   it('a version of 0 and a title of 200 characters are allowed', async () => {
     await assertSucceeds(setDoc(doc(asOwner(), BOOKMARK), bookmark({ storyVersion: 0, title: 'x'.repeat(200) })));
   });
+  it('a title of 200 characters that are not ASCII is allowed: size() counts characters, as the client cuts (review D-7)', async () => {
+    await assertSucceeds(setDoc(doc(asOwner(), BOOKMARK), bookmark({ title: '’—'.repeat(100) })));
+    await assertFails(setDoc(doc(asOwner(), BOOKMARK), bookmark({ title: '’'.repeat(201) })));
+  });
 });
 
 describe('no one else', () => {

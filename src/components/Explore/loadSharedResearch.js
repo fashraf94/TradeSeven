@@ -5,7 +5,7 @@
 // import() of the sheet's body, and nothing else from its directory. The body, its screens and its service stay
 // out of every Explore chunk until the sheet first opens. The promise is kept, so the chunk is requested once
 // per page; it is reset on failure, so Try again starts a fresh import.
-// Guarded by the sheet's own boundary test (doorProblemsOf, EXPLORE_DOOR) and by explore.boundary.test.js.
+// Guarded by the sheet's own boundary test (doorProblemsOf, EXPLORE_DOOR) and by explore.guard.test.js.
 
 let pending = null;
 

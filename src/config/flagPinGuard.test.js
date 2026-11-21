@@ -386,8 +386,9 @@ const DARK_BY_DESIGN = {
   //   admits) after the two rules blocks and the stories index are deployed
   //   and the AI-buildout stories are published; then 'on'. Each step is its
   //   own one-line founder PR, never a build PR, and moves the pin row in
-  //   exploreFlags.test.js in the same commit (BUILD_RULES §2). Rollback: one
-  //   step back with its pin row.
+  //   exploreFlags.test.js in the same commit (BUILD_RULES §2); the 'on' step
+  //   also reconciles the nav label rows of leagueHide.nav.jsdom.test.jsx,
+  //   which list the entry as "Search". Rollback: one step back with its pin row.
   // PRACTICE_FIELD_MODE intentionally ABSENT, and it must stay absent: the
   // Practice Field's idea book (build T1a-1 + T1c, report
   // docs/audits/20261113_BUILD_T1A1_T1C_IDEA_BOOK_ACCOUNTING.md) is a STRING
