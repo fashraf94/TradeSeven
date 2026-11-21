@@ -384,6 +384,16 @@ describe('admit --dry-run — the door\'s admission on a read-only view: its ans
     expect(dry.verdict.binding).toEqual(go.answer.binding);
   });
 
+  it('a contract asking another origin: the door forces a founder fixture, and so does the dry run (both admit it)', async () => {
+    const { db } = await founderBook();
+    const asked = { ...contractOf(), origin: { kind: 'signaldrop', initiatedBy: 'player' } };
+    expect(normalizeIdeaContract(asked).refusals.map((r) => r.code)).toEqual(['origin_invalid']);
+    const { dry, dryCode, go } = await differential(db, asked);
+    expect(dryCode).toBe(EXIT.DONE);
+    expect(dry.verdict).toMatchObject({ ok: true });
+    expect(go.answer).toMatchObject({ ok: true, ideaId: dry.verdict.ideaId });
+  });
+
   it('the price list: each name, the comparison and SPY, priced or not in the latest snapshot', async () => {
     const { db } = await founderBook();
     await storeTickSnapshot(db, S[0], 'open30', { AAPL: QUOTES.AAPL, SPY: 597.31 });
