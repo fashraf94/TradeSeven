@@ -49,8 +49,8 @@ const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const str = (v) => (typeof v === 'string' && v ? v : null);
 const dataOf = (snap) => (snap?.exists ? (typeof snap.data === 'function' ? snap.data() : snap.data) : null);
 
-/** The close pass's two candidate queries (closePass.js candidatesFor), written again here: the battles, by id. */
-async function candidatesFor(db, bounds) {
+/** The close pass's two candidate queries (closePass.js candidatesFor), written again here: the battles, by id. The sample pack reads the same. */
+export async function candidatesFor(db, bounds) {
   const col = db.collection('agentBattles');
   const [activeSnap, laterSnap] = await Promise.all([
     col.where('status', '==', 'active').get(),
@@ -69,7 +69,7 @@ export function selectedForDebrief(battle, etDate, mode) {
 }
 
 /** The written day: the close pass wrote it and it holds its checks and actions. */
-const writtenTape = (tape) => isObj(tape) && tape.passes?.close?.status === 'written' && Array.isArray(tape.checks) && Array.isArray(tape.actions);
+export const writtenTape = (tape) => isObj(tape) && tape.passes?.close?.status === 'written' && Array.isArray(tape.checks) && Array.isArray(tape.actions);
 
 /**
  * The record (§6), every field stamped at write.
