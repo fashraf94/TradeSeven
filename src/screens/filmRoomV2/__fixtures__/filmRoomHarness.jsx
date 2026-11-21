@@ -268,6 +268,15 @@ export const SPEC_AGGREGATE_CLASSES = Object.freeze({
   // Build C §5 (PINNED HERE from the C1 build prompt): an expired nomination's "not considered within n sessions" — n is
   // B6, said as a derived number
   'count(sessions a queued nomination waits, B6)': 'derived',
+  // Film Room D1 (PINNED HERE from Build D spec §4 – §9 and FL-12): the front's numbers — the margin of the displayed
+  // finals, a pin's number, "n more", the two tiles' counts and the cards line's moments — each a derived aggregate
+  'difference(the two displayed final scores)': 'derived',
+  'ordinal(pins in time order)': 'derived',
+  'count(tape rows beyond the chosen pins)': 'derived',
+  'count(actions[] by the agent)': 'derived',
+  'count(directives[] filed)': 'derived',
+  'count(directives[])': 'derived',
+  'count(moments on the tape day)': 'derived',
 });
 /** The founder slots as the rulings fix them (RG-8) — the oracle for the two slot aggregates, never read from production. */
 export const SPEC_CARD_SLOTS = Object.freeze({ S9: 5, S10: 280 });
