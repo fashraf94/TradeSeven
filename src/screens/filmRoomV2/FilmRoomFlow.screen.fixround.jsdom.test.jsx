@@ -391,3 +391,20 @@ describe('item 8 — DB-5, beside the reproduction: the same rows, three length 
     expect(heading()).toBe('This day');
   });
 });
+
+describe('item 6 — DB-3 on the off path, where the storage throws', () => {
+  it("'off', storage that refuses every write: the first paint attempts the one write main attempts — \"Got it\" attempts none more", async () => {
+    flags.flow = 'off';
+    const set = Storage.prototype.setItem;
+    const attempts = [];
+    Storage.prototype.setItem = function setItem(k) { if (k === 'ft.filmRoom.v2.firstOpenSeen') attempts.push(k); throw new Error('QuotaExceededError'); };
+    try {
+      await open();
+      expect(notice()).toBeTruthy();
+      expect(attempts).toHaveLength(1);
+      m.click(m.buttons('Got it')[0]); await m.flush();
+      expect(notice()).toBeNull();
+      expect(attempts).toHaveLength(1);
+    } finally { Storage.prototype.setItem = set; }
+  });
+});
