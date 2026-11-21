@@ -565,10 +565,10 @@ These are not fixed, or not fully fixed.
 |---|---|
 | Prompt | "Fix T1a-2b-4: late data asks the founder (T2E-01 to T2E-08)", 20 Nov 2026 — Astra's review `docs/audits/20261120_ASTRA_REVIEW_T1A2B4.md` (committed byte-identical first, SHA-256 `ea2da300…1e86`) |
 | Branch, base | `claude/practice-field-t1a2b4-corrections` from `df9b7278`; `origin/main` still `41c04cd2` (fetched; nothing to merge) |
-| Code head | `e8d51fd6` (the report commit after it is documentation only) |
+| Code head | `e8d51fd6` for the product code. After it, test files only: `0426efc9`, `8418716a`, `afd145f6` (the battery's last two survivors settled, §11.9); the report commits are documentation only. Final code head of this round: `afd145f6` |
 | Mode | `PRACTICE_FIELD_MODE` stays `'off'`. No fenced file, flag, pin, rules or index changed; `mandateUniverseSnapshot.js` and `mandateCorporateActions.js` untouched. Offline: the repository's test doubles only; no network request, no environment variable, `.env` file or credential read |
 
-> **Time — read §11.14.** This round took about 7½ working hours (11:00–19:05 CT on 20 Nov, less a 25-minute pause) against about 1 h 40 min of building the fixes. The rest went to proving them, three refuter rounds where the prompt asked for one, and runs I had to repeat. §11.14 sets out where the time went, why, and what changes so it does not happen again.
+> **Time — read §11.14.** This round took about 7½ working hours (11:00–19:05 CT on 20 Nov, less a 25-minute pause) against about 1 h 40 min of building the fixes. The rest went to proving them, three refuter rounds where the prompt asked for one, and runs I had to repeat. §11.14 sets out where the time went, why, and what changes so it does not happen again. After the first push, the founder's follow-up (settle the battery's two survivors, with the fast runner from #1101) took about 1 h 40 min more, 20:53–22:35 CT; §11.14 covers that too.
 
 ### 11.1 In plain terms
 
@@ -585,9 +585,11 @@ These are not fixed, or not fully fixed.
 - **Parse reports merge.** Two observations of one symbol and session meet in a transaction; a rejection stays; two that disagree read uncovered.
 - **A resulted idea's late data is named only.** Nothing posts to the treasury any more (Q-2 as ruled).
 
-**How it is proved.** Each of Astra's histories is a row that fails at `df9b7278` and passes now — her four plans verbatim among them. I-6's excuses are scoped to each id's own facts, and a new I-7 checks every posted adjustment has a founder approval or ruling in the inputs — and, since the refuters, that L-2 did not refuse it at the close it posted; both fail at `df9b7278` on her histories. The generator now writes the six shapes she found missing, and the refuter's three. At the head, 11,560 generated histories — fresh seeds and Astra's ranges, 222,954 closes — and every fixed case pass with no failure (§11.8). The end-to-end dump and both differentials are identical to `main`'s. The mutation battery: 119 mutants, 117 killed, 2 equivalent — code the ruling made redundant, listed for removal (§11.9).
+**How it is proved.** Each of Astra's histories is a row that fails at `df9b7278` and passes now — her four plans verbatim among them. I-6's excuses are scoped to each id's own facts, and a new I-7 checks every posted adjustment has a founder approval or ruling in the inputs — and, since the refuters, that L-2 did not refuse it at the close it posted; both fail at `df9b7278` on her histories. The generator now writes the six shapes she found missing, and the refuter's three. At the head, 11,560 generated histories — fresh seeds and Astra's ranges, 222,954 closes — and every fixed case pass with no failure (§11.8). The end-to-end dump and both differentials are identical to `main`'s. The mutation battery: 119 mutants, 118 killed; the one survivor (NL2c, code the ruling made redundant) is proven by a row to change no stored document (§11.9).
 
 **Three independent refuters read the fixes.** Each was told to find late or corrected data moving money without the founder; **none found any**. Between them they found thirteen narrower product defects and five gaps in the oracle; the strengthened oracle then found one more product defect itself. The defects: approvals that posted while L-2 should have refused them (two rows of one close pairing only with each other; a dividend moved past the sale, or to the day after the close; a declined id coming back at another amount or date; a backfill older than the doubt it cleared; a split just past the sale pairing with one inside it), a ruling posting on a count still in doubt, a decline that did not stick, a doubt that could never clear, a net that missed a split, a proposal that could never complete. Every one is fixed, with a row that fails on the code it was found in (§11.10). The final soak then found two more — one an over-hold this round's own fix had made, one in the oracle — both fixed and kept as rows (§11.8). Those last fixes, and the third refuter's two (one condition in the product, one bound in the oracle), were not read by another refuter.
+
+**A fourth, narrow refuter** then read the proof that the battery's two survivors change nothing stored, and broke half of it: one of them (FR2) is reachable — a founder-ruled split beside a new split of its date — and changes what is stored, though no money. It is now killed by a row that pins today's behaviour, and the founder is asked whether that behaviour is right (Q-14, §11.4 reading 14). The other (NL2c) holds: proven on 90 histories (§11.9, §11.10).
 
 **What changed for complete, on-time, unambiguous data:** nothing. The end-to-end dump is byte-identical to `main`'s and both differentials are identical. Every row whose expectation changed is listed (§11.6) with its reason; none is a change for complete, on-time, unambiguous data.
 
@@ -628,7 +630,7 @@ These are not fixed, or not fully fixed.
 
 ### 11.3 What changed, by `file:line` (at the code head `e8d51fd6`)
 
-The round's commits: `16408f50` (Astra's review, byte-identical), `ab24620d` (her histories and the oracle first, red at `df9b7278`), `400742b2` (L-1 to L-6, L-8), `d4d32e9f` (L-7; the endpoint and T2E-05 rows), `f3e23c9d` (the shapes; the planner's doubt dated), `193a3dda` (rows for the battery), `c569f281`, `05aa1200`, `477ae3fb` (the three refuters' findings, each with its rows), `e8d51fd6` (the final soak's two findings, each kept as a row). All under `api/_utils/practiceField/`.
+The round's commits: `16408f50` (Astra's review, byte-identical), `ab24620d` (her histories and the oracle first, red at `df9b7278`), `400742b2` (L-1 to L-6, L-8), `d4d32e9f` (L-7; the endpoint and T2E-05 rows), `f3e23c9d` (the shapes; the planner's doubt dated), `193a3dda` (rows for the battery), `c569f281`, `05aa1200`, `477ae3fb` (the three refuters' findings, each with its rows), `e8d51fd6` (the final soak's two findings, each kept as a row); then test files only: `0426efc9` and `8418716a` (the equivalence row), `afd145f6` (FR2 killed by the fourth refuter's EQ-1 row; the equivalence row NL2c's alone). All under `api/_utils/practiceField/`.
 
 **`adjustments.js`** — the late-data planner (`planLedgerAdjustments`):
 - `:214` `LATE_PROPOSAL_STATUS`, `LATE_BLOCKER`, `proposalIdOf`, `openProposals` (L-1). `:234` `pairingCandidatesOf` — L-2 ②: any open candidate of the type and payload within the window (R-1, R-3).
@@ -652,7 +654,7 @@ The round's commits: `16408f50` (Astra's review, byte-identical), `ab24620d` (he
 
 **Test support** — `__testsupport__/caOracle.js`: `:67` the close's coverage facts; `:434` `payloadOf` per ledger; `:474` I-7 `checkAuthority`; `:515` `checkRefusalAtPosting` (L-2 at posting); `:578` `scopedDoubt` (I-6 scoped); `:604` `refusalStands`; `:640` I-6 `check`. `__testsupport__/caSequences.js`: `:388` each accepted ruling's ledgers recorded; `:1024` `generateLate` (Astra's shapes; the refuter's mode); `:1242` `LATE_SHAPES`, `:1244` `REFUTER_SHAPES`; `ASTRA_T2E*` her histories.
 
-**Rows** — `corporateActionLateAsks.astraPlans.test.js` (her four plans, verbatim: 4), `corporateActionLateAsks.test.js` (T2E-01 to T2E-08, the oracle, the founder endpoint: 42), `corporateActionLateAsks.refuter.test.js` (the three refuters' findings, the oracle's, and the proposal alert a battery survivor showed unpinned: 42), `corporateActionSequences.late.test.js` (the fixed late cases, 36 shape seeds, 18 refuter-shape seeds, 6 probe seeds and the final soak's 2 seeds: 122).
+**Rows** — `corporateActionLateAsks.astraPlans.test.js` (her four plans, verbatim: 4), `corporateActionLateAsks.test.js` (T2E-01 to T2E-08, the oracle, the founder endpoint: 42), `corporateActionLateAsks.refuter.test.js` (the three refuters' findings, the oracle's, the proposal alert a battery survivor showed unpinned, and the fourth refuter's EQ-1: 43), `corporateActionLateAsks.equivalence.test.js` (NL2c changes nothing stored, and its control: 2; `caSequences.js` `run()` now also returns the store), `corporateActionSequences.late.test.js` (the fixed late cases, 36 shape seeds, 18 refuter-shape seeds, 6 probe seeds and the final soak's 2 seeds: 122).
 
 ### 11.4 Readings of the ruling (each a choice the letter left open)
 
@@ -669,11 +671,13 @@ The round's commits: `16408f50` (Astra's review, byte-identical), `ab24620d` (he
 11. **The oracle's L-2 at posting** (I-7) is not asked of a late entitlement the founder's conflict ruling chose — the ruling is the founder's answer for the id, as on the held path, where the ruled action applies and a new row of its payload is recorded beside it; it may post a close after the ruling, where a doubt deferred it and a ledger still holding the stock kept the ruling pending (the soak's 2120005580). No ruling posts a `late_basis`: every one of those, and every approval's posting, meets L-2.
 12. **A conflict ruling covers only the ledgers it names** (Astra's T2D-09, unchanged): a comparison still holding the stock keeps a dividend it was paid while the id was unambiguous there, though the idea's sold holding later recorded the id ambiguous and the founder ruled it `none` there. The oracle now reads each ruling's ledgers as the endpoint stored them; six probe seeds pin it.
 13. **A pairing the founder already answered is not asked again.** A share-basis row kept just outside a sold holding that pairs with an action applied within it holds the symbol's proposals (L-2 ③: the count they stand on is in question) and is recorded for the founder — unless the founder's own ruling applied that action after the outside row had shown, which answered the pairing (the final soak's 2120005408).
+14. **A ruled share-basis id beside a new id of its date** (the fourth refuter's EQ-1; found after the final soak, so built before this reading was seen). L-5 makes two share-basis ids of one symbol and date one ambiguity, the count held until a conflict ruling. When the founder has already ruled one of them (here, a conflict among its own two ratios) and a different id of the same date is first listed at a later close, the ruled one skips the close's same-date screen, and RFX-2's order decides it: it applies when its id sorts before the new one's (on a sold holding, as history; its ruling applied), and waits when it sorts after (its ruling then closes moot, reading 10). The new id is recorded as usual. While it stands, no dividend of that date is proposed and L-2 ③ refuses every approval, so no money moves either way. L-5's letter reads stricter: the ruled id would hold with the new one. A row pins today's behaviour (§11.9); asked as Q-14.
 
 **New questions for the founder** (each a reading above; each leaves money where it is until answered):
 - **Q-11.** A ruled correction of a dividend a late split also changed posts the whole net once and settles the waiting proposal (reading 1). Or should the correction post only the amount's difference, and the proposal wait for its own approval?
 - **Q-12.** A conflict ruling a doubt defers, on a holding the ledger no longer has, closes moot and is discarded (reading 10). Should it instead stay pending, at the cost of locking the record while the doubt stands?
 - **Q-13.** A decline stands until a new late fact; then the proposal is asked again (reading 9). Should a decline settle the id for good instead?
+- **Q-14.** A share-basis id the founder has ruled, then a different id of the same date first listed after the ruling: today the ruled one applies or waits by the alphabetical order of the two ids (reading 14). Should it always hold, as one ambiguity with the new id, until the founder rules the pair?
 
 ### 11.5 Every branch removed (cited at `df9b7278`)
 
@@ -693,7 +697,7 @@ L-1 and L-8 make the automatic posting paths and the treasury posting for late d
 | `ledger.js:1566–1577` | the C-16 path's corrected-chain branch and its `earlierLate` replay | L-4: `datedCountOn` |
 | `ledger.js:718–733` | `shareBasisChainOf` in applied order | L-4: dated order |
 
-The refuter rounds removed no branch. **Redundant, not yet removed** (the battery's two equivalent survivors, §11.9): `adjustments.js` step 3's received-sum fallback for an unpaid id (always $0 under L-1/L-2), and `shareDoubtOn`'s same-date ordering of share-basis rows (unreachable under L-5). They go in the next round: removing code after the final soak would have restarted the whole proof.
+The refuter rounds removed no branch. **Redundant, not yet removed** (the battery's one equivalent survivor, §11.9): `adjustments.js` step 3's received-sum fallback for an unpaid id (always $0 under L-1/L-2; proven on 90 histories). It goes in the next round: removing code after the final soak would have restarted the whole proof. (`shareDoubtOn`'s same-date ordering of share-basis rows, listed here before as unreachable under L-5, is not redundant: it decides reading 14.)
 
 ### 11.6 Every row whose expectation changed, and why
 
@@ -855,18 +859,18 @@ Distinct ordered pairs across both shape runs: **252**.
 
 **Load.** Under four baselines starting at once, the 60-session evidence-packet row (`evidence.test.js`, "the largest shape stays well under Firestore's 1 MiB document limit", default timeout) timed out and failed two baselines; another session's probe loaded the machine for five minutes. Every kill resting only on that row or on the isolation row IS-3 was re-run alone: one, FR2, then survived.
 
-**Result at `e8d51fd6`: defined 119, ran 119, broken 0, killed 117, survived 2.**
+**Result at `e8d51fd6`: defined 119, ran 119, broken 0, killed 117, survived 2** (NL2c and FR2; FR2's first verdict, a kill by the evidence row above, was load — run alone, it survived). The survivor of the first pass at `477ae3fb`, `L03-count-at-close-not-ex-date`, is now killed by a row pinning the proposal alert to the ex-date count.
 
-**The two survivors are equivalent — code this round's ruling made redundant:**
-- **NL2c-net-ignores-received** (`adjustments.js` step 3: what an UNPAID id has received, summed from its own postings, replaced by 0). Every posted late entitlement, and every ruled correction, makes its id a paid dividend (`paidDividends`), so the fallback runs only where nothing was posted and always sums to /usr/bin/bash. Redundant under L-1 and L-2.
-- **FR2-share-rows-wait-on-each-other** (`adjustments.js` `shareDoubtOn`: a same-date share-basis row waits only on one whose id sorts first — RFX-2). Since L-5, two share-basis ids of one date are recorded as one ambiguity — in the close's pre-pass, or by the same-date screen — before any doubt check, so the ordering can no longer be reached. Its first verdict in the battery (killed by the evidence row above) was load: run alone, it survives.
+**The two survivors, settled.** After this report was first pushed, the founder: "Settle FR2 and NL2c: kill each, or prove with a test that it changes nothing stored."
+- **NL2c-net-ignores-received — equivalent, proven by a row.** (`adjustments.js` step 3: what an id not yet paid has received, summed from its own postings, replaced by 0.) Every posting that moves money is a `cash_dividend` adjustment of an id already paid when it posted, and the paid set never shrinks, so where this fallback runs the sum is $0. `corporateActionLateAsks.equivalence.test.js` runs a corpus of histories under a probe copy of `adjustments.js` (counting each time the spot is reached and each time the sum is not $0), under the mutant, and under a control that adds one cent there; each copy marks itself loaded and the row checks the copy ran. Full corpus (`PF_EQUIV_CORPUS=full`: every fixed late history, the kept soak seeds, 36 shape, 18 refuter-shape, 6 probe and the final soak's 2 seeds — 90 histories): **reached 231 times, never non-zero; every stored document of every history identical**; the cent is caught. The suite runs 5 of those histories (reached 3). Redundant under L-1 and L-2: listed for removal (§11.5, §11.12).
+- **FR2-share-rows-wait-on-each-other — killed.** (`adjustments.js` `shareDoubtOn`: a same-date share-basis row waits only on one whose id sorts first — RFX-2.) The first version of the row above (`0426efc9`) claimed FR2 equivalent too: since L-5 two share-basis ids of one date are one ambiguity before any doubt check, so the ordering can no longer be reached — and the corpus reached it 0 times. **That was wrong; a proof resting on zero executions proves nothing.** The fourth refuter (§11.10, EQ-1) found the path: a founder-ruled share-basis id skips the close's same-date screen, so when a different id of its date is first listed at a later close, the ordering decides it (reading 14). A probe showed the stored difference: under the code the ruled id applies and its ruling is applied; under the mutant nothing applies and the ruling closes moot. Row `EQ-1` in `corporateActionLateAsks.refuter.test.js` pins today's behaviour through every oracle check I-1 to I-7 (and shows no money moves) and is red under the mutant. Not redundant: off the cleanup list.
 
-Both are listed for removal in the next round (§11.5, §11.12) — not removed here, because a code change after the final soak restarts the whole proof. The survivor of the first pass at `477ae3fb`, `L03-count-at-close-not-ex-date`, is now killed by a row pinning the proposal alert to the ex-date count.
+**The final battery, with the fast runner from #1101** (`scripts/practice-field/battery/run-battery.mjs` at `a19e40a1`; tiered; 4 trees × 4 workers; the full run at `e8d51fd6` as `--prior`). At `8418716a` — `e8d51fd6`'s product code with the first equivalence row: **defined 119, ran 119, broken 0, killed 117, survived 2 (NL2c, FR2), errored 0, timeout 0, in 20.6 min** (baseline 1,400 rows in 39 files in 2.2 min; 116 mutants decided by the first tier of 6 files). No failing row in any stage came from the equivalence file, so it stood in for no kill (the fourth refuter's EQ-5). `FB6-write-not-bounded` was killed only by a row that timed out again with the battery idle: the row in which a write that never answers is given up — the mutant removes that bound, so the hang is the kill (the `e8d51fd6` run killed it by the same row). Then at `afd145f6`, which only adds the EQ-1 row and narrows the equivalence row to NL2c: **FR2 KILLED by EQ-1, in 1.2 min** (decided by the first tier). The other 118 verdicts carry over, because nothing since `8418716a` changed a product file, the rows that killed the 117 are unchanged, and the equivalence row skips under NL2c's mutant (its anchor is gone). **Final: defined 119, killed 118, 1 survivor — NL2c, proven by test to change nothing stored.**
 
-| Group | Defined | Killed | Survived | Broken |
+| Group (final, at `afd145f6`) | Defined | Killed | Survived | Broken |
 |---|---|---|---|---|
-| the build's, re-anchored | 59 | 58 | 1 | 0 |
-| the ruling, L-1 to L-8 | 25 | 24 | 1 | 0 |
+| the build's, re-anchored | 59 | 59 | 0 | 0 |
+| the ruling, L-1 to L-8 | 25 | 24 | 1 (NL2c, equivalent) | 0 |
 | the oracle | 15 | 15 | 0 | 0 |
 | the refuters' and the soak's fixes | 20 | 20 | 0 | 0 |
 
@@ -927,7 +931,7 @@ Both are listed for removal in the next round (§11.5, §11.12) — not removed 
 | `FX2-pending-correction-full-quality` | RF6-X1 | **KILLED** (1) | corporateActionCorrections.lensC.test.js > the refuters' rows — RF4, RF5, RF6 (each failed at 994ccc2e) A dividend correction a doubt defers keeps the |
 | `FS1-ruled-id-left-in-hold-set` | soak I-5 | **KILLED** (4) | corporateActionSequences.late.test.js > S-6 extended — the late soak findings, kept as fixed seeds late soak seed 1795729529 |
 | `FR1-floor-before-entry` | RFX-1 | **KILLED** (7) | corporateActionCorrections.fixRound.test.js > RFX-1 — a rejected row dated on or before the idea's entry never lowers its covered-through date RFX B-3 |
-| `FR2-share-rows-wait-on-each-other` | RFX-2 | **SURVIVED** | — |
+| `FR2-share-rows-wait-on-each-other` | RFX-2 | **KILLED** at `afd145f6` (1) — survived at `e8d51fd6` and `8418716a` | corporateActionLateAsks.refuter.test.js > EQ-1 — a ruled share-basis id beside a new id of its date: RFX-2's order decides (battery survivor FR2, reachable) |
 | `FR3-unsettled-compare-key-order` | RFX-3 | **KILLED** (3) | corporateActionCorrections.fixRound.test.js > RFX-3 — a resulted idea is not rewritten at every look-back close when nothing changed RFX: lateDataUnse |
 | `FR4-endpoint-ignores-pending-correction` | AR4-C-8 (RFX note) | **KILLED** (1) | corporateActionCorrections.lensC.test.js > the refuters' rows — RF4, RF5, RF6 (each failed at 994ccc2e) AR4-C-8 (RFX note): a correction still pending |
 | `PAIR-FA4+FS1` | AR4-A-4 (equivalence check) | **KILLED** (4) | corporateActionCorrections.lensA.test.js > AR4-A-4 / AR4-C-10 — a founder payload ruling on a closed holding's split conflict applies a conflict rulin |
@@ -938,7 +942,7 @@ Both are listed for removal in the next round (§11.5, §11.12) — not removed 
 | `NL1e-decline-ignored` | L-1 | **KILLED** (13) | corporateActionLateAsks.refuter.test.js > R-2 — a decline sticks late_entitlement: declined, the same row listed again opens nothing; the rows read fu |
 | `NL2a-close-ignores-blockers` | L-2 | **KILLED** (26) | corporateActionCorrections.test.js > the adjustment record (pure): a debit larger than its cash is held, and the result view a doubt on the count defe |
 | `NL2b-endpoint-never-409` | L-2 | **KILLED** (11) | corporateActionLateAsks.refuter.test.js > R-1 — L-2 ② on a sold holding: two rows of one close that pair with each other and with an open proposal wit |
-| `NL2c-net-ignores-received` | L-2 | **SURVIVED** | — |
+| `NL2c-net-ignores-received` | L-2 | **SURVIVED** — equivalent, proven by test (above) | — |
 | `NL2d-pairs-not-a-blocker` | L-2 (2) | **KILLED** (9) | corporateActionLateAsks.refuter.test.js > R-1 — L-2 ② on a sold holding: two rows of one close that pair with each other and with an open proposal app |
 | `NL2e-uncovered-not-a-blocker` | L-2 (4) | **KILLED** (6) | corporateActionLateAsks.refuter.test.js > R-4 — a sold holding's coverage doubt can clear: the backfill is fetched for it, and its rows reach the clos |
 | `NL2f-closed-doubt-not-sticky` | L-2 (4) / T2E-08 | **KILLED** (12) | corporateActionLateAsks.refuter.test.js > R-5 — a sold holding's sticky coverage doubt holds the count for the founder's conflict ruling too T2E-01's  |
@@ -1030,9 +1034,22 @@ Retired (their code went in this round): `L03-resulted-posts-to-ledger` — L-8 
 
 It also checked that P-1's outside record, ruled with a payload, closes moot and that `none` then lets the approval post the net once. **Not read by another refuter:** F-1's one condition (it can only make a doubt harder to clear), O-4's bound (it can only make the oracle refuse more), and the final soak's two fixes (§11.8: one condition that stops recording a pairing the founder answered, and I-7's gate for a ruled late entitlement). All pass the folder, the probes and the whole soak at `e8d51fd6`.
 
+**Fourth refuter** (an independent agent, read-only and running nothing — the battery was running; on `git diff b0539c4a 8418716a`, the first equivalence row; told to break the claim that the battery's two survivors change nothing stored). **NL2c's claim held**: it checked every posting path, and that every importer of `adjustments.js` gets the swapped copy. It found:
+
+| Id | What it found | What was done |
+|---|---|---|
+| EQ-1 | FR2 is reachable and changes what is stored (no money): a founder-ruled share-basis id beside a new id of its date | confirmed by a probe; row `EQ-1` pins today's behaviour and kills FR2 (§11.9); reading 14, Q-14 |
+| EQ-2 | FR2's equivalence rested on a spot reached 0 times: an empty proof | FR2 dropped from the equivalence row |
+| EQ-3 | the anchor check lets the row skip if the line is reformatted | kept, with the reason in the file: an unconditional anchor check would itself falsely kill NL2c's mutant in the battery |
+| EQ-4 | the control accepted any error; nothing showed the mutant copies were the modules that ran | the control must be refused by I-6 or change a stored document; every copy marks itself loaded and the row checks the mark |
+| EQ-5 | the row could fail under another mutant and count as that mutant's kill | checked in the final battery: no failing row in any stage came from it |
+| EQ-6 | the header called NL2c unreachable (it is reached 231 times) and stated its invariant loosely | the header states the invariant: every posting that moves money is a `cash_dividend` adjustment of an id already paid |
+
+**Not read by another refuter:** the EQ-1 row and the narrowed equivalence row (test files only; no product file changed).
+
 ### 11.11 The checks
 
-At the code head `e8d51fd6`. The commits after it change only this report and its docs index row: on the pushed head `94d5d47c` the lint gate and the build were run again (both exit 0, `✓ built in 25.42s`), and on this line's correction after it the same two again; the suite was not re-run for a documentation-only change.
+At the product code head `e8d51fd6`, then again at the final code head `afd145f6` (the rows marked `at afd145f6` in the table). Between them only test files changed (`0426efc9`, `8418716a`, `afd145f6`: the battery's survivors, §11.9), so at `afd145f6` the suite, the lint gate and the build were run once more. The rules suite, the differentials, the cron trace, the planted backfill and the end-to-end dump were not, because nothing they read changed after they passed at `e8d51fd6`. (On the earlier report-only heads `94d5d47c` and `b0539c4a` the lint gate and the build were run again, both exit 0.)
 
 | Check | Where | Result |
 |---|---|---|
@@ -1041,6 +1058,9 @@ At the code head `e8d51fd6`. The commits after it change only this report and it
 | `npm run lint:gate` | WSL | **exit 0** |
 | `npx vite build` | WSL | **exit 0** · `✓ built in 19.70s` |
 | `npm run test:rules` | WSL | **exit 0** · `Test Files  46 passed (46)` · `Tests  841 passed (841)` |
+| Full suite at `afd145f6`, the same command | WSL, Node 20.20.2, lock `e457c10d0317` | **exit 0** · `Test Files  1592 passed \| 13 skipped (1605)` · `Tests  36655 passed \| 179 skipped (36834)` — one file and three rows more: the equivalence row (2) and EQ-1 |
+| `npm run lint:gate` at `afd145f6` | WSL | **exit 0** |
+| `npx vite build` at `afd145f6` | WSL | **exit 0** · `✓ built in 17.10s` |
 | The quarterly differential: 17 scenarios × the mode off and on, 4,000 default build sets, the prompt bytes | Windows, `main` `41c04cd2` against the head | **36 of 36 identical** |
 | Astra's cron trace | same | **40 of 40 identical** |
 | The planted backfill (100 planted shares against 200 from the vendor, the mode off and on) | same | **4 of 4**: no quarterly reader sees it (100 / 200 as `main`) |
@@ -1073,22 +1093,23 @@ The differential, cron-trace and planted-backfill evidence files are byte-identi
 - **Q-1's cleanup** — parse reports outlive the 120-day cleanup of the daily documents.
 - **Q-4, Q-6, Q-7: as ruled; text not supplied.**
 
-**The founder's questions after the ruling:** Q-2 as ruled (L-1: open ideas only; L-8: a resulted idea's late data is named and alerted only); Q-5 answered by L-6; Q-9 answered by L-5 (a hold); Q-4, Q-6, Q-7 as ruled, text not supplied; Q-1's sign-off for `practiceFieldCaParseReports` still before the switch, its cleanup T5; **Q-3, Q-8 and Q-10 are not in the 20 Nov ruling and stay open.** New: Q-11, Q-12 and Q-13 (§11.4).
+**The founder's questions after the ruling:** Q-2 as ruled (L-1: open ideas only; L-8: a resulted idea's late data is named and alerted only); Q-5 answered by L-6; Q-9 answered by L-5 (a hold); Q-4, Q-6, Q-7 as ruled, text not supplied; Q-1's sign-off for `practiceFieldCaParseReports` still before the switch, its cleanup T5; **Q-3, Q-8 and Q-10 are not in the 20 Nov ruling and stay open.** New: Q-11, Q-12, Q-13 and Q-14 (§11.4).
 
-**Cleanup for the next round (no money, no behaviour):** remove the two branches the battery found redundant (§11.5, §11.9); give `evidence.test.js`'s 60-session packet row an explicit timeout — under parallel load it times out at the default, failed two battery baselines and made one false kill.
+**Cleanup for the next round (no money, no behaviour):** remove the branch the battery found redundant, step 3's received-sum fallback (§11.5, §11.9 — FR2's ordering is not redundant: reading 14); give `evidence.test.js`'s 60-session packet row an explicit timeout — under parallel load it times out at the default, failed two battery baselines and made one false kill.
 
 **Raised by this fix round (each a reading in §11.4, none moves money):**
 - A paid dividend whose only pairing candidate is a row kept outside the sold holding has no record the founder can rule; its `late_basis` approval is refused, and the founder's exit is to decline it.
 - A conflict ruling on a sold holding that a doubt defers closes moot (AR2-RF-4's rule): the founder's request is discarded, and the record takes a new ruling once the doubt clears.
+- A ruled share-basis id beside a new id of its date applies or waits by the order of the two ids (reading 14, Q-14); no money moves either way.
 - The oracles assume the generator's rows, each dated on or before the close that lists it. A dividend listed before its ex-date is screened by the product only from that date (it pairs then), while the input oracle would mark it at listing; outside the soak.
 
 ### 11.13 Status
 
-**What this round answers.** Astra's eight findings are fixed, each with a row that fails at `df9b7278` (§11.12); the founder's ruling L-1 to L-8 is built as worded, with thirteen readings where the letter left a choice (§11.4); the oracle is scoped and I-7 added, both failing at `df9b7278` on her histories (§11.7); three refuters found no money moved without the founder, and everything else they found is fixed (§11.10); the end-to-end dump and both differentials are identical to `main`'s (§11.11).
+**What this round answers.** Astra's eight findings are fixed, each with a row that fails at `df9b7278` (§11.12); the founder's ruling L-1 to L-8 is built as worded, with thirteen readings where the letter left a choice (§11.4); the oracle is scoped and I-7 added, both failing at `df9b7278` on her histories (§11.7); three refuters found no money moved without the founder, and everything else they found is fixed (§11.10); the battery kills 118 of 119 mutants, and its one survivor is proven by test to change nothing stored (§11.9); the end-to-end dump and both differentials are identical to `main`'s (§11.11).
 
-**What stays before the switch:** Astra's review of this round; the founder's Q-1 sign-off for `practiceFieldCaParseReports`; Q-3, Q-8 and Q-10, which the 20 Nov ruling did not cover, and this round's Q-11 to Q-13; the T5 register (§11.12); and the switch itself, by its own PR. This round changes no flag, pin, rule or index; `PRACTICE_FIELD_MODE` stays `'off'`; `mandateUniverseSnapshot.js` and `mandateCorporateActions.js` are untouched.
+**What stays before the switch:** Astra's review of this round; the founder's Q-1 sign-off for `practiceFieldCaParseReports`; Q-3, Q-8 and Q-10, which the 20 Nov ruling did not cover, and this round's Q-11 to Q-14; the T5 register (§11.12); and the switch itself, by its own PR. This round changes no flag, pin, rule or index; `PRACTICE_FIELD_MODE` stays `'off'`; `mandateUniverseSnapshot.js` and `mandateCorporateActions.js` are untouched.
 
-**Status: fixed, refuted three times, checked. Dark. Draft PR only; not merged.**
+**Status: fixed, refuted three times (and a fourth time, narrowly, on the battery's survivors), checked. Dark. Draft PR only; not merged.**
 
 ### 11.14 Why this round took about seven and a half hours, and what changes
 
@@ -1105,6 +1126,7 @@ The differential, cron-trace and planted-backfill evidence files are byte-identi
 | 15:16–16:02 | Linux suite, lint, build, rules (run twice: a heap cap I set for the soak killed the build); the full soak, slowed by a battery running beside it; the soak found 2 more (`e8d51fd6`) | ~45 min |
 | 16:02–17:20 | Every check again at `e8d51fd6`; the soak again (~45 min); the battery started a third time — one half never started (a shell slip), then re-split into four | ~1 h 20 min, paused at 69 of 119 mutants |
 | 17:45–19:05 | The remaining 50 mutants on four instances — two baselines failed under load and restarted, one false kill re-run alone (~1 h); the report, push and PR (~15 min) | ~1 h 20 min |
+| 20:53–22:35 | After the first push: resumed; the founder's follow-up (relayed at 21:37) — settle the battery's two survivors, with the fast runner from #1101. The equivalence row (a 90-history run included); the final battery at `8418716a` (20.6 min) beside a narrow, read-only fourth refuter (~18 min); the refuter showed FR2 reachable — a probe, a row that kills it, the equivalence row narrowed (~25 min); FR2 alone at `afd145f6` (1.2 min); the suite, lint and build once, at the frozen head; the report and push | about 1 h 40 min |
 
 **Why** — in order of cost:
 1. **Every code change restarted the whole proof.** One full verification pass here — the soak (11,560 histories, ~45 min), the mutation battery (119 mutants, each re-running all ~1,400 idea-book rows: 2–4 hours), and the Linux suite with lint, build and rules (~20 min) — costs three to five hours on this machine. The code changed five times after that proof had begun.
@@ -1116,6 +1138,12 @@ The differential, cron-trace and planted-backfill evidence files are byte-identi
 **What changes** (recorded as working rules; the first two apply from the next round):
 - **Freeze, then prove once.** Fixes → targeted rows and 300-history probes → the refuter → its fixes → freeze → one soak, one battery, one Linux suite at the end. The battery never starts before the code is frozen.
 - **One refuter, as the prompt says.** A second round only if the first finds money moving without the founder; otherwise its fixes and any remaining risk are named in the report for the reviewer. The report says so explicitly.
-- **A fast battery** — each mutant runs only the rows that reach the file it changes, the full row set only to confirm a survivor; four instances in parallel. This is being built in its own session (a draft PR of its own); it should take the battery from hours to minutes.
+- **A fast battery** — each mutant runs only the rows that reach the file it changes, the full row set only to confirm a survivor; four instances in parallel. Built in its own session as #1101 (draft), and used for this round's final battery: 20.6 minutes for all 119 mutants (below).
 - **The tooling lives in the repo**, not in a session's temporary folder that each session rebuilds (soak scripts, battery, differentials, report-table generators).
 - **For the founder's prompts** (a suggestion): size the proof to the round — for a fix round, e.g. a 1,000-history soak plus every fixed case, and the battery limited to the mutants of the changed files; the full 8,000-history soak and full battery once, before the switch. A time budget in the prompt ("past three hours, stop and report what is left") would have cut this round at its natural stopping point, after the first refuter.
+
+**The tail after the first push, and what it shows.**
+- **The fast runner did what it was built for.** The whole battery, 119 mutants, took 20.6 minutes, against 2–4 hours for the old runner on this machine. After the last change only the one affected mutant was re-run (1.2 min), because no product file had changed. (#1101 measured 9.1 min with a prior at `e8d51fd6`; this run's baseline found its slowest file at 90 s, against 28 s an hour later, so the machine was busier during it — not investigated.)
+- **Checks ran once, at the frozen head, and only those whose inputs changed:** the suite, the lint gate and the build. The rules suite, the differentials and the soak were not repeated: no product file changed after they passed.
+- **What cost time was my own first equivalence row.** It declared FR2 unreachable because the corpus never reached it — and a proof that rests on zero executions proves nothing. The narrow refuter caught it in one read; the fix cost a probe, a row and a one-mutant re-run (~30 min). Unchecked, it would have reached Astra as "redundant code, listed for removal", and removing that code would have changed stored behaviour.
+- **Rule added:** an equivalence proof must show the spot reached before it may claim anything; "never reached" is a question for a refuter, not a proof.
