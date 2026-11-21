@@ -109,7 +109,6 @@ describe('the battery\'s two survivors change nothing stored (NL2c, FR2)', () =>
 
   it.skipIf(!present.NL2c)('NL2c: the received-sum fallback is reached and always sums to $0; with it replaced by 0, every stored document of every history is identical', async () => {
     const p = await probeRun();
-    // eslint-disable-next-line no-console
     console.log(`NL2c over ${p.stored.length} histories: reached ${p.counts.NL2c.reached}, differs ${p.counts.NL2c.differs}`);
     expect(p.counts.NL2c.reached, 'the corpus reaches the spot').toBeGreaterThan(0);
     expect(p.counts.NL2c.differs, 'the fallback never sums to anything but $0').toBe(0);
@@ -130,7 +129,6 @@ describe('the battery\'s two survivors change nothing stored (NL2c, FR2)', () =>
 
   it.skipIf(!present.FR2)('FR2: the same-date ordering never decides a doubt (its two forms never disagree); with it removed, every stored document of every history is identical', async () => {
     const p = await probeRun();
-    // eslint-disable-next-line no-console
     console.log(`FR2 over ${p.stored.length} histories: reached ${p.counts.FR2.reached}, differs ${p.counts.FR2.differs}`);
     expect(p.counts.FR2.differs, 'the mutant\'s predicate never disagrees with the code\'s').toBe(0);
     const mutant = await storedUnder(moduleWith('FR2', [[SPOTS.FR2.from, SPOTS.FR2.mutant]]));
