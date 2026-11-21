@@ -58,9 +58,11 @@ export default function ExplorePinnedBar({ targetRef, targetKey, label, line = n
     if (!shown) return undefined;
     const root = document.documentElement;
     const before = root.style.scrollPaddingBottom;
+    // the bar's laid-out top (offsetTop ignores the entrance animation's transform, which a box measure would catch
+    // mid-slide), and a little room above it
     const reserve = () => {
-      const top = barRef.current?.getBoundingClientRect().top;
-      if (Number.isFinite(top)) root.style.scrollPaddingBottom = `${Math.max(0, Math.ceil(window.innerHeight - top))}px`;
+      const top = barRef.current?.offsetTop;
+      if (Number.isFinite(top)) root.style.scrollPaddingBottom = `${Math.max(0, Math.ceil(window.innerHeight - top) + 8)}px`;
     };
     reserve();
     window.addEventListener('resize', reserve);

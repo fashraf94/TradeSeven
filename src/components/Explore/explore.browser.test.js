@@ -29,7 +29,8 @@ async function sceneAt(scene, [w, h], delay = 0) {
   await page.goto(`${BASE}/?exploreFixture=${scene}&delay=${delay}`, { waitUntil: 'domcontentloaded', timeout: ROW });
   await page.waitForSelector('[data-explore-tab]', { timeout: ROW });
   // never measure an empty page: every scene here draws cards or a story's panel (a row once passed on a page with no stories)
-  await page.waitForSelector('[data-explore-card], [data-explore-panel]', { timeout: ROW });
+  // (any one DRAWN: under a story, home's cards are mounted but hidden)
+  await page.waitForFunction(() => [...document.querySelectorAll('[data-explore-card], [data-explore-panel]')].some((el) => el.getBoundingClientRect().height > 0), null, { timeout: ROW });
   await page.waitForTimeout(700); // the page's own entrance animation (framer, 0.3 s) settles
   return { ctx, page };
 }
