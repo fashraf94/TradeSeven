@@ -1032,7 +1032,7 @@ It also checked that P-1's outside record, ruled with a payload, closes moot and
 
 ### 11.11 The checks
 
-At the code head `e8d51fd6` (the report commit after it is documentation only; the suite, lint gate and build were run again on the pushed head — §11.13).
+At the code head `e8d51fd6`. The commits after it change only this report and its docs index row: on the pushed head `94d5d47c` the lint gate and the build were run again (both exit 0, `✓ built in 25.42s`), and on this line's correction after it the same two again; the suite was not re-run for a documentation-only change.
 
 | Check | Where | Result |
 |---|---|---|
