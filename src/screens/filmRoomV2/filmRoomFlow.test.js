@@ -11,13 +11,13 @@
 // F-LINE, F-LOW, F-MAKER, F-PINS, F-DIR (the panel's paths) and F-COUNT.
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import {
   flowOf, headingOf, keyOf, linesOf, lowOf, domainOf, axisLabelsOf, choosePins, groupPins, openingPin, legendOf, panelOf,
   incompleteOf, countsOf, layoutOf, marginOf, fmtMargin, hundredthsOfShown, makerKeyOf, heightAt, isFinalDayOf, allPinsOf,
   FLOW_AGGREGATES, FLOW_PIN_TOUCH, momentsCountOf,
-} from './filmRoomFlow';
+} from './filmRoomFlow.js';
 import { SCREEN_AGGREGATE_CLASSES, fmtPoints, etClock } from './filmRoomModel';
 import sep23Tape from './__fixtures__/sep23.tape.json';
 
@@ -59,6 +59,14 @@ describe('the dependency surface (BUILD_RULES §4): pure, no React, no reads', (
     for (const name of Object.values(FLOW_AGGREGATES)) expect(SCREEN_AGGREGATE_CLASSES[name], name).toBe('derived');
     expect(momentsCountOf(2)).toEqual({ value: 2, aggregate: 'count(moments on the tape day)', cls: 'derived' });
   });
+  it('the model and the front differ only by case (filmRoomFlow.js, FilmRoomFlow.jsx): every importer names its extension — on a case-insensitive disk an extension-less "./FilmRoomFlow" resolves to the model', () => {
+    const dir = path.join(process.cwd(), 'src', 'screens', 'filmRoomV2');
+    const files = readdirSync(dir).filter((f) => /\.(js|jsx)$/.test(f));
+    const bare = files.filter((f) => /from '\.\/[Ff]ilmRoomFlow'/.test(readFileSync(path.join(dir, f), 'utf8')));
+    expect(bare).toEqual([]);
+    const importers = files.filter((f) => /from '\.\/[Ff]ilmRoomFlow\.jsx?'/.test(readFileSync(path.join(dir, f), 'utf8')));
+    expect(importers.length).toBeGreaterThanOrEqual(3);
+  });
 });
 
 describe('F-FIXTURE — the Sep 23 front, the model\'s half, pinned whole', () => {
@@ -92,7 +100,7 @@ describe('F-FIXTURE — the Sep 23 front, the model\'s half, pinned whole', () =
     ]);
     expect(flow.more).toEqual({ value: 1, aggregate: 'count(tape rows beyond the chosen pins)', cls: 'derived' });
     expect(flow.selected.n).toBe(3);
-    expect(flow.legend).toEqual(['agent', 'directive', 'other']);
+    expect(flow.legend).toEqual(['agent', 'other', 'directive']);
   });
   it('the groups at 390 (chart 350 px) and at 320 (chart 296 px)', () => {
     expect(groupPins(flow.pins, W390).map((g) => [g.n, g.merged, g.kind, g.members.map((m) => m.n)])).toEqual([[1, false, 'other', [1]], [2, true, 'agent', [2, 3, 4]], [5, false, 'directive', [5]]]);

@@ -302,8 +302,10 @@ export function openingPin(pins) {
   return pins.find((p) => p.kind === 'agent') ?? pins[0] ?? null;
 }
 
+/** The legend's order, as §4.4 lists it: "Agent's swap", "Other swap", "Your directive". */
+export const LEGEND_ORDER = Object.freeze(['agent', 'other', 'directive']);
 /** The kinds on the chart, in the legend's order (§4.4): a kind with no pin is not listed. */
-export const legendOf = (pins) => PIN_KINDS.filter((k) => pins.some((p) => p.kind === k));
+export const legendOf = (pins) => LEGEND_ORDER.filter((k) => pins.some((p) => p.kind === k));
 
 // ── the panel (§7) ──────────────────────────────────────────────────────────
 
