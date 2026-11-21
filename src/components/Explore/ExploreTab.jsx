@@ -118,7 +118,7 @@ export default function ExploreTab({ explore = null, onOpenResearch, stocksData 
   };
 
   const story = view.kind === 'story' ? list.find((s) => s.id === view.storyId) ?? null : null;
-  let screen;
+  let screen = null;
   if (view.kind === 'story' && story) {
     screen = (
       <ExploreStory
@@ -144,23 +144,24 @@ export default function ExploreTab({ explore = null, onOpenResearch, stocksData 
         <p role="status" style={S.meta}>{EXPLORE_COPY.story.unavailable}</p>
       </div>
     );
-  } else {
-    screen = (
-      <ExploreHome
-        explore={explore}
-        stocksData={stocksData}
-        onOpenStory={openStory}
-        onContinue={onContinue}
-        onOpenCompany={onOpenResearch}
-        onOwnWords={onOwnWords}
-        introRef={introRef}
-      />
-    );
   }
 
+  // Home stays mounted (hidden) under a story: back returns to the same search, topic and cards, and focus to the
+  // very control that opened the story.
   return (
     <div className="ftx-root" data-explore-tab="">
       <style>{EXPLORE_CSS}</style>
+      <div hidden={view.kind !== 'home'} data-explore-home-holder="">
+        <ExploreHome
+          explore={explore}
+          stocksData={stocksData}
+          onOpenStory={openStory}
+          onContinue={onContinue}
+          onOpenCompany={onOpenResearch}
+          onOwnWords={onOwnWords}
+          introRef={introRef}
+        />
+      </div>
       {screen}
       {sheet && (
         <SheetHost
