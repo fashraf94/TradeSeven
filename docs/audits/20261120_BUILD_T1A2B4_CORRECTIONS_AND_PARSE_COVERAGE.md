@@ -1213,3 +1213,275 @@ The rules suite was not run again at `9301f87f`: it reads `firestore.rules` only
 **Not repeated:** the soak — the only product files changed are Q-14's (`adjustments.js`, `ledger.js`; the merge brought none the idea book reads); the suite runs the fixed late histories, Astra's plans and the 36 shape, 18 refuter-shape and probe seeds. The differentials and the end-to-end dump — Q-14 acts only where the founder has ruled an ambiguous share-basis id, which complete, on-time, unambiguous data never has.
 
 **Time:** the rulings arrived at 22:42; this section was first pushed at 23:30 (about 50 min): Q-14 and its rows ~25 min; the refuter ~16 min beside the merge and the battery; Q14-1 confirmed, fixed, two rows, the battery and the suite again ~30 min.
+
+## 12. Final fix, 21 Nov 2026 — advance listings (T2E-C01 to C05)
+
+| | |
+|---|---|
+| Prompt | "Fix T1a-2b-4, final: advance listings, and four narrow fixes (T2E-C01 to C05)", 21 Nov 2026 — Astra's confirmation `docs/audits/20261121_ASTRA_CONFIRMATION_T1A2B4.md`, committed byte-identical first (SHA-256 `35b7bf618fa59d5eaa52fb0431c32512f6bab07c1163bab98298c52f5689972a`, checked on the downloaded file and on the committed blob) |
+| Branch, base | `claude/practice-field-t1a2b4-corrections` from `5fa63271`; `git fetch origin` first: the branch head was `5fa63271` and `origin/main` `cf35151b`, already merged in (`f1d396c5`) — nothing to merge. Built in the session worktree `explore-work-idea-integration-3a23a9` (its own branch, fast-forwarded to `5fa63271`; the PR branch is checked out in another worktree) and pushed to the PR branch as a fast-forward |
+| Heads | Product code `90e2b220` (frozen; the soak, the battery and every check below ran on it). The report commit follows |
+| Mode | `PRACTICE_FIELD_MODE` stays `'off'`. No fenced file, flag, pin, rules or index changed; `mandateUniverseSnapshot.js` and `mandateCorporateActions.js` untouched. Offline: the repository's test doubles only; `git fetch` and `git push` the only network. No environment variable, `.env` file or credential read |
+
+### 12.1 In plain terms
+
+**What Astra found.** Most real dividends are announced days before they are paid, and the daily layer lists a row about two days before its date. The held ledger dropped every row dated after the close, so it forgot what it had been told. Four histories moved money with nobody deciding: a dividend revised before its date paid the latest amount with no record, and a pre-date conflict had no exit (C01); an approval posted beside the same payload already announced under a later date (C02); a sale forgot an announcement, so a dividend moved or revised across the sale paid on approval (C03); on a sold holding an older clean backfill cleared a newer rejection (C04). A fifth stranded a breached line: a reverse split that rounds the holding to nothing had no founder exit (C05).
+
+**What the founder ruled.** Before its date, the latest listing stands: a change there is an update, and nothing waits. From the date on, a change is a revision or a re-date, and it waits for the founder. The holding remembers what it was told, across a sale. A sold holding's rejected row clears only by the founder's ruling. A refused share-basis record takes `conflict` / `none`.
+
+**What changed.**
+- **The ledger keeps what it was told.** A row listed before its date is observed on the ledger — its id, date and the payloads of its latest listing — only at a close whose own data covers the symbol, and kept after a sale.
+- **At the date, the row is held to its announcement.** The same payload is on-time data and pays as before. Another payload, an announcement still listed two ways, or one withdrawn and listed again waits for the founder.
+- **An announcement is a pairing candidate.** From the first close on or after either date, two ids of one payload within the window are one ambiguity, unless the switch was made before both dates. An announcement that pairs with something already past gets its own record at once, so the founder can rule it — which is what holds C02's approval, and its exit.
+- **A sold holding's doubt clears only by the founder.** `resolve_hold` (`coverage_gap`) names it: `no_action`, or `row` — one row of the stored clean refetch. The refetch is shown on the doubt as evidence; nothing acts on it.
+- **A refused reverse split has an exit.** `resolve_hold` (`conflict`, `none`) declines it; the queued sale then completes at the next eligible window.
+
+**What the proof found on the way, all fixed with rows.** The one refuter found an announcement updated from a day whose data was refused, when another book's backfill reached that day ($199.94 paid; RF-1). The soak found a founder's correction, waiting on one ledger, posting again on the other at every close — $0 in its histories, and **$93.97** without approval once a late split came in between (pre-existing since T2D-05; A-4 keeps the window open longer). The battery's survivors showed two rows that tested less than their titles said, and one loop of mine that was redundant (removed).
+
+**How it is proved.** Astra's five rows, verbatim (C01's expectation changed under A-1), and 30 more of her named histories and variants through her own harness — 21 red at `5fa63271`, 14 green there (the controls, and the A-1 updates the old code already paid). The oracle now models A-1 and A-2 from the inputs alone, matches every posting to one exact, unconsumed request and checks its net before any excuse; Astra's fabricated posting is refused. A new generator mode lists every on-time row 1–5 sessions ahead in 15 shapes; on the old product its first 120 histories fail 59 times, on the new one none. **The soak at the frozen head: 5,358 histories, 103,650 closes, no failure. The battery: 145 mutants, 144 killed; the one survivor, NL2c, is last round's proven equivalent.** The full Linux suite, lint, build and the rules suite pass (§12.11).
+
+**What changed for complete, on-time, unambiguous data:** nothing. A row listed ahead and never changed pays on its date at full quality, as before (`H-baseline`); the end-to-end dump is byte-identical and the differentials identical.
+
+### 12.2 The founder's ruling, 21 Nov 2026 (verbatim)
+
+- **A-1. Before its date, the latest listing stands.**
+  - At a close before both a row's old and new effective dates, the latest listing of an id is the announcement. That includes a changed amount or ratio, a withdrawal, and a conflict that resolves to one payload. Nothing has been owed or paid, so nothing waits.
+  - From the first close on or after either date, everything is as ruled: a changed payload is a revision, a moved date is a re-date, and both wait for the founder (Amendment F revision 1, L-1 to L-8).
+- **A-2. The holding remembers what it was told.**
+  - Every listed row, past or future, is observed on the holding from its first listing: its id, date and payload.
+  - Those observations count as pairing candidates for L-2 ② and L-3, even when the row is not yet due.
+  - They carry across a sale into the sold holding's revision and re-date screens.
+- **A-3. A still-conflicting announcement at its date** is an ordinary conflict, with the existing `conflict` ruling as the exit. No pre-date ruling is needed.
+- **A-4. On a sold holding, a parse rejection dated within the holding clears only by the founder's `coverage_gap` ruling.**
+  - No backfill clears it automatically. This replaces the ordering logic C04 broke.
+  - Make sure `resolve_hold` (`coverage_gap`) can address it.
+  - A clean refetch is shown to the founder as evidence, not acted on.
+- **A-5. A refused share-basis record on the idea's own ledger** (`rounds_to_nothing` and the like) is founder-addressable with `conflict` / `none`, with a receipt and replay protection. Until it is answered, the line sale waits. After `none`, the queued sale completes at the next eligible window.
+
+**Simplify where A-1 to A-5 make code redundant.** That includes the closed-coverage clearing by backfill (F-1, R-4's clearing path). List every branch removed, with `file:line`.
+
+### 12.3 Readings of the ruling (each a choice the letter left open)
+
+1. **Only a close whose own data covers the symbol updates an announcement.** A failed fetch, a dirty or missing parse report — the session's own refusal for that symbol — neither updates nor withdraws one; a stored backfill reaching the session does not make it count (it vouches for nothing dated after the session — RF-1). A payload first seen at such a close and listed on the date is a revision.
+2. **The announcement a row enters its date with** is its latest such listing before the date. A withdrawn one never listed again is owed nothing and nothing waits (`H-withdraw`). **A withdrawn one listed again on or after its date is a revision** — the fail-closed side; the letter's "a withdrawal" is an update only before the date (asked as Q-16).
+3. **A-3:** an announcement listed two ways at its last listing before the date is a conflict at the date, whatever the date lists — one payload included.
+4. **"Before both dates", for a move:** the later id was listed, at a covered close, after the other id's last listing and before both dates. Otherwise the two are one ambiguity from the first close on or after either date: two ids announced together (both wait), a payload listed under an earlier date on that date (`H-move`), and an id replaced before both dates that comes back later. The rule reads a partner's listing dates even after the partner settles, so a switch stays shown.
+5. **An observation a pairing makes ambiguous gets its own `possible_redate` record at that close,** before its own date if need be, so the founder can rule it — C02's exit is `none` on the partner. A pre-date conflict that pairs with nothing has no record: nothing waits, so `resolve_hold` answers 404 (A-3: no pre-date ruling is needed).
+6. **"Observed on the holding" lives on the ledger** (`listedAhead`), because a sale deletes the holding. The idea's ledger keeps observing a symbol it sold, at closes whose own data covers it, so a re-listing after the sale counts as it does for the comparison.
+7. **Rule 5 on a sold holding:** a dividend announced for the sale day and listed unchanged on it holds the sale, and the close pays it on time, as before (SX-1). An unchanged announcement first listed again after the sale is a late entitlement, proposed as before (L-1).
+8. **A-4's `row`.** The founder may choose one row of the stored clean refetch, dated within the doubt; it reaches the sold holding's path as the founder's (a split enters the dated count as history; a dividend is proposed). Without it, R-4's join gone, a split the refetch shows could never enter the count — R-4's own row needs it. `no_action` clears the doubt with nothing added. A rejection a later close shows again stands again (asked as Q-17).
+9. **A-5 is `none` only** (`payload` 422: the applier refused that very payload). The ruling names every ledger that carries the refused record — a same-stock comparison has its own copy. A paper ledger's own refusal (F-4) is addressable the same way.
+10. **The oracle's I-6:** an id only ever announced — withdrawn before its date, never listed on or after it — is owed nothing unless the founder's ruling chose its payload.
+
+### 12.4 Each fix, by `file:line` (at `90e2b220`)
+
+The round's commits: `e35d5489` (Astra's confirmation, byte-identical), `ad362ff0` (her five rows and the named histories, red first at `5fa63271`), `020ec5eb` (A-1 to A-5 and the A-4 rows), `f61b39c3` (observations kept and observed after a sale; the oracle; the generator), `a1ee5149` (the oracle's A-1/A-2 rows; a guard simplified), `d9275df9` (the refuter's RF-1), `90e2b220` (the soak's correction finding; the battery's survivors answered). All under `api/_utils/practiceField/`.
+
+**C01, C02 — the held ledger (`ledger.js`).**
+- `:255` the rule, stated once. `:283` `listedAheadOf`, `announcementOf`, `lastListedOf`, `actionOfAnnouncement`; `:299` `differsFromAnnouncement` (A-1, A-3: a withdrawn announcement, or one listed two ways, always differs); `:310` `switchedBeforeDates`.
+- `:1131` `observeListedAhead` — every row dated after the close, of a symbol the ledger holds or has sold (`:1135`), observed at a close whose own data covers it; withdrawn at such a close that no longer lists it. It returns the prior array untouched when nothing changed, so a re-run close writes nothing and on-time data stores nothing new.
+- `:1188` an observation is open while its id has no receipt, record or held row.
+- `:1323` an in-call conflict's record keeps the announcement's payloads (A-3). `:1362` THE DATE-CLOSE COMPARISON (A-1, A-3): a due row whose announcement differs is a revision record; an unchanged one applies as before.
+- `:1483` observations in the re-date pool and the L-5 same-date pool; `:1500` the switch exemption for every partner. `recordRedatePair` records every observation a row pairs with.
+- `:1548` AN OBSERVATION ALREADY PAIRED: an announcement whose payload this ledger has applied, declined, holds, recorded, or seen announced under a date now past gets its `possible_redate` record at that close.
+
+**C03 — across the sale (`adjustments.js`, `close.js`).**
+- `adjustments.js:219` `bareAnnouncementOf`; `:455` `announcedDiffers`, read first in the revision order and the close's pre-pass; `:539` a sold holding's row listed otherwise than it was announced while held is a conflict record, never a proposal; `:620` the announced pool in the re-date screen; `:624` the switch exemption for every partner.
+- `close.js:461` `dailyRefused` — the session's OWN daily refusal, for every symbol any ledger of the idea holds or the idea sold — handed to every ledger's observation (RF-1).
+
+**C04 — a sold holding's doubt (`close.js`, `holdRulings.js`, `dailyCoverage.js`).**
+- `close.js:190` `withClosedCoverageDoubts`: cleared only by the founder's ruling applied at the close (`rulings`; `:202` the dates it covers — it applies at the first observed close after it was made, before that close's report is read); a rejection the close shows again stands again; `lastSeenOn` kept; the record carries its `id` and (`:214`) the clean refetch as `evidence.cleanRefetch` — acted on by nothing. `:327` R-4's join removed. `:476` the ruling handed in, on the idea's ledger. The doubt's alert names the id and the evidence.
+- `dailyCoverage.js:228` `closedDoubtIdOf` — `ca_closed_doubt_<SYM>_<first date>`, distinct from a held gap's (a same-stock comparison may hold one of the symbol at the same time).
+- `holdRulings.js:399` `resolve_hold` (`coverage_gap`) on a sold holding's doubt: `no_action`, or `row` of the stored clean refetch dated within the doubt; 409 once ruled. `:632` applied at the next observed close (`closedDoubtRulings`, `:468`); a `row` reaches the idea's ledger as the founder's action.
+
+**C05 — a refused share-basis record (`holdRulings.js`).**
+- `:125` `refusedActionRecords`; `:329` `resolve_hold` (`conflict`) on one: `none` only (`payload` 422), naming every ledger that carries it; the record answers 409 once ruled (`founder_ruled_none` joins the "ever" check). `:594` applied: declined, with the ruling's receipt, on each ledger it names; the applier drops the held record (its id is settled), and the sale it held completes at the next eligible window.
+
+**The soak's finding (`adjustments.js:753`).** A ruling's amount correction posts once on a ledger; a later count change is a `late_basis` proposal (§12.8).
+
+### 12.5 Every branch removed (cited at `5fa63271`)
+
+A-4 makes the backfill's part in a sold holding's doubt redundant: only the founder's ruling clears it, and a clean refetch is evidence.
+
+| `file:line` at `5fa63271` | What went | Why |
+|---|---|---|
+| `close.js:195–199` | F-1's clearing: `const bf = backfills.get(sym)`, and `left = kept.filter(… bf.from <= x.date && bf.to >= c.through && (… bf.to > x.seenOn))` | A-4: no backfill clears a sold holding's doubt (the ordering C04 broke) |
+| `close.js:200` | `if (left.length > 0) nextDoubts[sym] = { dates: left, through }` | rewritten: the doubt stands until the founder's ruling, with its `id` and the refetch as `evidence` |
+| `close.js:310–320` | R-4's join of a sold holding's clean backfill rows into the idea's rows (`for (const [sym, bf] of closedBackfills)`) | A-4: a clean refetch is not acted on; the founder's `row` ruling is the only way one of its rows reaches the sold holding |
+| `close.js:272`, `:308`, `:317` | `backfillJoined` — declared, filled by the coverage loop, and P-3's skip | went with the join |
+
+Kept: `caBackfill.js` `backfillNeeds` still fetches a backfill for a sold holding's doubt (it is the founder's evidence; C04's scaffold asserts the clean document exists), and the close still reads it — only to put it on the doubt. Also removed within the round (code this round had added): the planner's step-3 loop recording an announcement that pairs an open proposal — the battery showed it redundant beside the sold path's announced pool, P-4's kept outside rows and the held path's early record (§12.9). **Redundant, still not removed:** NL2c's received-sum fallback (`adjustments.js` step 3), proven equivalent last round; A-1 to A-5 do not touch it (register).
+
+### 12.6 Every row whose expectation changed, and why
+
+None is a change for complete, on-time, unambiguous data.
+
+| Row | Was | Now | Why |
+|---|---|---|---|
+| `astraConfirmation.test.js` C01 `H-revise` (Astra's, verbatim otherwise) | $0 | **$199.94**, full quality | A-1: the $2 listed before the date is the announcement |
+| `corporateActionLateAsks.refuter.test.js` R-5 (conflict ruling under a sold holding's doubt) | a clean backfill cleared the doubt at S6; the ruling posted $99.97 at S7 | the backfill is evidence; the founder's `coverage_gap` ruling clears it at S7; $99.97 at S8, once | A-4 |
+| refuter R-5 (a ruled correction under the doubt) | $99.97 at S7 when the backfill cleared it | nothing at S7; the founder's ruling; $99.97 at S8 | A-4 |
+| refuter R-4 | a clean backfill listing the rejected 5/4 cleared the doubt, joined the closed path; $124.96 at S7 | the backfill is evidence (`rows: 2`); the proposal stays $99.97, refused (`date_uncovered`); the founder's `row` ruling takes the 5/4 and clears the doubt; $124.96 at S8 | A-4: R-4's join and clearing are gone |
+| refuter P-3 (same-stock, and its sector control) | the backfill's 5/4 reached the closed path; $124.96 at S7 | the founder's `row` ruling takes it; $124.96 at S8 | A-4 |
+| refuter F-1 (the idea's own pipeline) | a clean backfill fetched at S5 cleared doubt #1; another at S9 cleared doubt #2; $99.97 at S10 | each doubt stands with the refetch as evidence until the founder's ruling; $99.97 at S11 | A-4 |
+| refuter F-1 (a clean document stored before the rejection) | `dates: [{ date, seenOn }]` | `dates: [{ date, seenOn, lastSeenOn }]` | the doubt names the last session that showed the rejection, for the founder |
+| `corporateActionLateAsks.test.js` 409 (4) | a clean backfill cleared the doubt at S6; $99.97 at S7 | the backfill is evidence; the approval still 409 `late_date_uncovered`; the founder's ruling clears it at S7; $99.97 at S8; the doubt carries its `id` and `lastSeenOn` | A-4 |
+| refuter O-2 (oracle: L-2 ④ on a sold holding) | a catch-up after the rejection cleared it | a catch-up no longer does; the founder's `coverage_gap` ruling made after the rejection does | A-4, in the oracle |
+| refuter "a ruling of the id itself answers its ambiguity" (oracle) | an approval's posting passed once a conflict ruling existed | the approval's posting still meets L-2 at posting; the ruling's own posting, naming the ruling, passes | the oracle's exact matching |
+| `corporateActionLateAsks.equivalence.test.js` NL2c control | the extra cent refused by I-6 | refused by I-7's net at posting (or I-6) | the oracle checks every posting's net at its own close, before any excuse |
+| 13 oracle unit rows (`corporateActionLateAsks.test.js` I-7 rows; refuter O, O-1, O-2, O-3, the founder-split pairing rows) | a posting with no `proposal` or `ruling` | the same posting naming its proposal and the approval's key (`a1`, `k4`, `k2`) — what every product posting carries | the oracle's exact matching |
+
+Every other row before this round passes unchanged. Two rows this round had added to `astraConfirmation.test.js` (a switch made before both dates) were removed: Astra's harness clips the vendor to the two-day lookahead, so they never listed the announcement they named; they run now in `corporateActionSequences.ahead.test.js`.
+
+### 12.7 The oracle and the generator
+
+**The oracle (`__testsupport__/caOracle.js`), from the inputs alone.**
+- **A-1, A-2.** A row dated after the close is an announcement: at a covered close (no failed fetch, no refused parse report — the harness now hands the parse refusals too) its latest listing is the id's announcement, and a covered close that no longer lists it withdraws it. Nothing before the date is a conflict, a revision or a pairing. At the first close that lists the id on or after its date it is held to its announcement. Two ids of one payload within the window pair from the first close on or after either date, unless the switch was made before both — read as the product reads it: the last listing of an id listed now is this close; of an id only ever announced, its last covered announcement; of any other, unknown. I-6: an id only ever announced is owed nothing unless the founder's ruling chose its payload.
+- **Astra's test-only gap.** I-7 matches every posting to ONE EXACT, UNCONSUMED request — the accepted request whose key the posting's ruling receipt names: an approval of exactly the proposal it names (its generation included), or a conflict ruling choosing exactly its payload, which can only be the late entitlement it chose; one request authorizes one posting on a ledger. The posting's NET is checked at the close that posted it, before any excuse: what the ledger is owed by the inputs, less everything it had received for the id before it. Her case — generation 2, another key, $100.97 — is refused (`astraConfirmation.test.js`, "the oracle"), as is the right proposal and key at $100.97 beside her fabricated comparison split conflict; a request named twice is refused the second time; the honest $99.97 passes I-7 and I-6.
+- **A-4.** I-7's L-2 ④ on a sold holding clears a rejected row only by the founder's accepted `coverage_gap` ruling made after it showed — never a catch-up (the proxy Astra named).
+- **Red first:** the new generator's first 120 histories on the old product (`5fa63271`'s five product files, this round's tests): **59 fail — 53 at I-2, 6 at I-7**; on this head, none. The exact-matching rule is what found the soak's correction finding.
+
+**The generator (`__testsupport__/caSequences.js` `generateLate(seed, { ahead: true })`, `PF_LATE_SHAPES=3`).** A third random stream, so every older seed writes the history it always wrote. Every row the history lists on time is listed 1–5 sessions before its date — the common case (the real daily layer looks about two calendar days ahead; 1–5 sessions is a deliberate superset) — with one of 15 advance-listing shapes:
+
+| Shape | The history |
+|---|---|
+| `ahead_revised` | $p1 announced, then $p2, both before the date (an update) |
+| `ahead_revised_at_date` | $p1 announced, $p2 listed on the date (a revision) |
+| `ahead_revised_after_date` | $p1 announced and paid, $p2 the session after (a settled id revised) |
+| `ahead_conflict_resolves` | [$p1, $p2] announced, then [$p1] before the date |
+| `ahead_conflict_at_date` | [$p1, $p2] through the date (A-3) |
+| `ahead_conflict_enters` | [$p1, $p2] announced, [$p1] listed on the date (A-3) |
+| `ahead_withdrawn` | announced, withdrawn before the date |
+| `ahead_withdrawn_relisted` | announced, withdrawn before the date, listed again on it |
+| `ahead_moved_before` | one date announced, replaced by another before both |
+| `ahead_moved_on_date` | the payload listed under an earlier date, on that date (H-move) |
+| `ahead_both_announced` | two dates of one payload announced together |
+| `ahead_split_revised` | a 2-for-1 announced, another ratio before the date, a dividend of that date (H-split) |
+| `ahead_partner_of_paid` | a paid dividend's late_basis and its payload announced under a later date; the founder's `none` on it (T2E-C02) |
+| `ahead_across_sale` | announced while held; after the sale moved inside the holding, revised, or listed unchanged (T2E-C03) |
+| `ahead_sold_doubt` | a sale, a late dividend's proposal and approval, a rejected row dated in the holding, the founder's `coverage_gap` ruling (T2E-C04) |
+
+The founder's decisions on late proposals (35% of closes) and, now and then, the founder's `coverage_gap` ruling of a sold holding's doubt (a new harness step, `ruleDoubt`) run through the real endpoint. 45 seeds run in every suite (`corporateActionSequences.late.test.js`, "rows listed before their date").
+
+### 12.8 The soak and coverage
+
+**The seeds, chosen before any run.** Fresh: advance-listing late histories 2140000000–2140003999 (4,000), ordered 2141000000–2141000999 (1,000). Astra's ranges: plain late 2161121000–2161121119, shapes 2161122000–2161122071, refuter shapes 2161123000–2161123053, ordered 2161124000–2161124063, wide 2161125000–2161125047. Every fixed case runs in every shard (the test files carry them: Astra's T2D and T2E histories, the kept soak seeds, the 36 shape, 18 refuter-shape and 45 advance-listing seeds). WSL, `TZ=UTC`, Node 20.20.2, one worker per shard, 1,536 MB of heap per shard, under the suite lock. After every close and its re-run: I-1 to I-5, the dated conservation, I-7 (exact matching, the net at posting, L-2 at posting), then I-6.
+
+**What the soak found (at `d9275df9`), fixed at `90e2b220`.** Three histories failed — two of the 4,000 fresh ones (2140002387, 2140002610) and one of Astra's refuter-shape range (2161123005, which passed on `5fa63271` under the old oracle) — all at I-7's rule that one request authorizes one posting on a ledger. In each, a founder's amount correction ruled for two ledgers was deferred on the idea's sold holding by a doubt (A-4 keeps it until the founder rules it) and posted on the comparison; the ruling stayed pending, was handed to every later close, and the comparison re-posted it as "owed now less received" — $0 while nothing changed. **With a late split listed in between it moves money:** a 2-for-1 dated on the ex-date, listed the close after the comparison posted, made it post **$93.97** under the old ruling with no approval (a late fact owes a proposal, L-1). Pre-existing since T2D-05; A-4 makes the deferral last until the founder's ruling. **Fix:** `adjustments.js:753` — a ruling's correction posts once on a ledger; a count change after it is a `late_basis` proposal. Rows (`corporateActionSequences.ahead.test.js`): the three seeds (one correction per ruling and ledger) and the late-split history (a proposal, never a second posting), each red on `d9275df9`'s `adjustments.js`; mutant `NCO-correction-posts-again`, killed by all four.
+
+**At `90e2b220` — no failure:**
+
+| Group | Seeds | Histories | Closes (and re-runs) | Failures |
+|---|---|---|---|---|
+| Advance listings (fresh) | 2140000000–2140003999 | 4,000 | 76,394 | **0** |
+| Ordered (fresh) and Astra's ordered | 2141000000–2141000999, 2161124000–063 | 1,064 | 21,612 | **0** |
+| Astra's plain late | 2161121000–119 | 120 | 2,278 | **0** |
+| Astra's shapes | 2161122000–071 | 72 | 1,374 | **0** |
+| Astra's refuter shapes | 2161123000–053 | 54 | 1,034 | **0** |
+| Astra's wide | 2161125000–047 | 48 | 958 | **0** |
+| **All** | | **5,358** | **103,650** | **0** |
+
+**Coverage of the advance-listing histories.** Every shape drawn (236–307 each). What they reached in the product (histories): observations 3,994; an announcement paired 1,257, its record made before its date 1,238; a row held to its announcement and revised 1,455; a withdrawal 726; a sold holding's doubt ruled by the founder 204; a re-date on a sold holding 101; same-date share-basis pairs 36. The founder's decisions: 1,323 approvals and 672 declines accepted, 912 approvals and 99 declines refused (409). I-7's net at posting checked 2,862 postings; I-6 checked 151,600 entitlements (109,149 excused, 14,131 waiting, 26,024 owed nothing). **Ordered pairs with a new event, on one id and one ledger: 344 distinct** (167 on the idea's ledger, 165 on the comparison, 12 on the SPY line). Among them, on the idea's ledger: `listed_ahead → announced_on_time` 11,128; `listed_ahead → revised_ahead` 1,313; `revised_ahead → announced_on_time` 1,006; `revised_ahead → revision` 340; `listed_ahead → revised_at_date` 1,691; `conflict_ahead → revised_ahead` 292; `conflict_ahead → announced_on_time` 251; `conflict_ahead → revised_at_date` 572; `conflict_ahead → conflict` 287; `listed_ahead → withdrawn_ahead` 760; `withdrawn_ahead → relisted_after_withdrawal` 283; `withdrawn_ahead → returned_ahead` 34; `withdrawn_ahead → redate` 171; `listed_ahead → redate` 1,572; `uncovered_ahead → announced_on_time` 3,023; `uncovered_ahead → revision` 1,010; `uncovered_ahead → revised_at_date` 602.
+
+### 12.9 The mutation battery
+
+The fast runner from #1101 (`scripts/practice-field/battery/run-battery.mjs` at `a19e40a1`, copied in untracked for the run and removed after), tiered, 3 trees × 4 workers, with the last round's results and this round's earlier run as `--prior`.
+
+**The definitions.** Last round's 119, re-anchored on this code: three retired with the code A-4 removed (`NR5-closed-backfill-rows-dropped`, `NR10-closed-backfill-skipped-when-held`, `NR13-stale-backfill-clears-doubt`, re-cut as `NA4a`), `NL2f-closed-doubt-not-sticky` and `NO5a-I7-L2-at-posting-off` re-anchored, and `NO5b-old-ruling-skips-L2` retired (the oracle's exact matching removed the line it cut: a conflict ruling matches only the late entitlement it chose). New: one or more per A-1 to A-5 and per oracle change, `NRF1` for the refuter's fix and `NCO` for the soak's. **145 defined.**
+
+**First run, at `d9275df9`** (131 mutants in files this round changed): 124 killed, 7 survived — NL2c (the known equivalent) and six this round answered:
+- `NA2c-sold-symbol-unobserved`, `NA2d-partner-exemption-unchecked` — the two `astraConfirmation.test.js` rows that should have killed them never listed their announcement (Astra's harness clips the vendor to the two-day lookahead): rebuilt in `corporateActionSequences.ahead.test.js` on the S-6 harness, which lists rows as given; both killed.
+- `NA2f-sold-announced-pool-dropped`, `NA2g-proposal-observation-unrecorded` — each covered the other's case; NA2g's loop was redundant and is removed (§12.5); NA2f then dies on Astra's C03.
+- `NO-A1-no-revision-at-date` — the oracle's generic revision check covered a changed payload; rows for a withdrawn announcement listed again and a conflict entering its date now kill it.
+- `NO5b-old-ruling-skips-L2` — retired (above).
+
+**At the frozen head `90e2b220`:** every mutant with an edit in `adjustments.js` or `caOracle.js` (the files changed since `d9275df9`), the re-checked survivors and NCO — **65 run, 64 killed, 1 survived (NL2c), 12.7 min**; every `ledger.js` mutant (one, NA2b, had been killed at `d9275df9` only by a removed row) — **16 run, 16 killed, 2.5 min** (NA2b now by Astra's C02); and `NR6-backfill-ignores-closed-doubts`, whose killing row (R-4) this round rewrote — **killed**. The other 49 verdicts carry from `d9275df9` (their files and killing rows unchanged since), and 14 from last round (files this round did not touch; each killing row checked to still be in the suite) — 82 run at the frozen head in all.
+
+**Final: 145 defined, 144 killed, 1 survived — NL2c, last round's proven equivalent; 0 broken, 0 errored, 0 timeout.**
+
+| New mutant | Item | Killed by (first failing row) |
+|---|---|---|
+| `NA1-announcement-not-compared` | A-1 | `astraConfirmation.refuter.test.js` RF-1 control |
+| `NA1b-uncovered-close-updates` | A-2 (covered closes) | RF-1 control |
+| `NA1c-withdrawal-unseen` | A-1 | C01 "withdrawn before its date and listed again on it" |
+| `NA1d-every-switch-exempt` | A-1 | lens A AR4-A-1 breadth (and the C01 re-date rows) |
+| `NA1e-no-switch-exempt` | A-1 | C01 "a move made before both dates is an update" |
+| `NA1f-withdrawn-relisted-not-revision` | reading 2 | C01 "withdrawn … listed again" |
+| `NA3-conflicting-announcement-read-as-one` | A-3 | C01 "enters its date conflicting" |
+| `NA2-observations-not-in-pool` | A-2 | C01 `H-move` |
+| `NA2b-paired-observation-not-recorded` | A-2 (T2E-C02) | Astra's C02 |
+| `NA2c-sold-symbol-unobserved` | A-2 (across a sale) | `corporateActionSequences.ahead.test.js` "across a sale" |
+| `NA2d-partner-exemption-unchecked` | A-1 | ahead "a switch … stays an update after it is paid" |
+| `NA2e-sold-revision-of-announcement-ignored` | A-2 (T2E-C03) | C03 `sold-changed-past-sale` |
+| `NA2f-sold-announced-pool-dropped` | A-2 (T2E-C03) | Astra's C03 |
+| `NA4a-backfill-clears-again` | A-4 | refuter R-5 |
+| `NA4b-closed-doubt-ruling-ignored` | A-4 | C04 `natural-dirty-after` |
+| `NA4c-rejection-again-not-reopened` | A-4 | refuter F-1 |
+| `NA4d-closed-doubt-unaddressable` | A-4 | refuter R-5 |
+| `NA5a-refused-record-unaddressable` | A-5 | Astra's C05 |
+| `NA5b-refused-takes-payload` | A-5 | C05 "`payload` is no answer" |
+| `NA5c-refused-none-not-declined` | A-5 | Astra's C05 |
+| `NA5d-refused-replay-404` | A-5 | C05 "replays" |
+| `NRF1-refused-daily-updates-announcement` | RF-1 | RF-1 beside B |
+| `NCO-correction-posts-again` | the soak's finding | lens C C1 (and the four `ahead` correction rows) |
+| `NO-A7-posting-not-exact` | oracle (exact request) | "Astra's fabricated posting" |
+| `NO-A7b-net-unchecked` | oracle (net at posting) | "the right proposal and request, but $100.97" |
+| `NO-A4-catchup-clears-again` | oracle (A-4) | refuter O-2 |
+| `NO-A1-no-revision-at-date` | oracle (A-1) | oracle "withdrawn … is a revision; … two ways is a conflict" |
+| `NO-A1b-uncovered-updates` | oracle (A-2) | oracle "only a covered close updates an announcement" |
+| `NO-A2-pairs-before-any-date` | oracle (A-2) | oracle "two dates announced together pair only from the first" |
+| `NO-A6-announced-only-owed` | oracle (I-6) | oracle "I-6: a dividend only ever announced" |
+
+### 12.10 The refuter
+
+**One refuter** (an independent agent, about 31 min; a read-only snapshot of `f61b39c3` and the diff from `5fa63271`; told to find a reachable history where a row listed ahead, or a sold holding's rejection, moves money without the founder). It ran 59 probes and a fresh advance-listing run of its own (seeds 3141590000–3141590299: 300 histories, 5,680 closes, every shape, no failure). **It found one money path, fixed with rows; the rest is recorded.**
+
+| Id | What it found | Money? | What was done |
+|---|---|---|---|
+| **RF-1** | A held symbol's announcement was updated from a daily layer REFUSED for that symbol (an unreadable second row of the id) whenever a stored backfill reached through the session: the close counts such a session covered (`dailyCoverage.js` `sessionCoverage`), though a backfill ending at the session vouches for nothing dated after it. The document is one per symbol, here fetched for another book's sold-holding doubt. Book A alone: S7's $2 was a revision of the $1 announcement and waited. Beside book B, or with B's document planted: **$199.94 paid at full quality, no ruling.** | **yes** | **Fixed** (`d9275df9`): `close.js:461` hands every ledger the session's own daily refusal for every symbol the idea holds or sold. Rows: `astraConfirmation.refuter.test.js` — the refuter's probe, a two-book harness; RF-1 beside B, and planted, red at `f61b39c3`; the controls green at both. Mutant `NRF1` |
+| RF-2 | The same cause withdrew an announcement at a refused close, so an unchanged $1 listed on its date waited as a revision. | no (over-hold) | fixed by the same change; rows RF-2 and its control |
+| RF-3 | The sequence harness runs one book, so the oracle never sees a backfill another book wrote. | no (oracle reach) | recorded; the two-book rows stand in |
+| RF-4 | On a sold holding, the announced pool's exemption reads an id listed now by its last announcement rather than this close (the held path reads this close). It can free the switched-to row as a proposal; its approval is still refused (L-2 ②) by the other id's revision record. | no | recorded |
+| RF-5 | A split announced, then replaced before its date by a reverse split of the same date, applies with no ruling — the switch-before-both-dates rule applied to L-5's same-date pair. | no (A-1 as read) | asked as Q-15 |
+| RF-6 | Observations of a ticker change or delisting are keyed by the old ticker; no vendor feed emits either row (`mandateCorporateActions.js` header). | no (unreachable) | recorded |
+
+It also confirmed, with probes: the date-close comparison runs before any held replay; a withdrawn-then-relisted row is always a revision; a switch always leaves the superseded id withdrawn at a covered close, so the two never both pay; applied or held partners always pair; A-4 clears only by a ruling, a re-rejection re-adds the date, backfill rows no longer join, and a `row` ruling goes through the closed path as the founder's; A-5 covers share-basis records only, on the ledgers that carry them, replay answers 409, and a later corrected ratio is a `revised_after_ruling`.
+
+**Not read by another refuter:** the RF-1 fix and its rows, and the soak's correction fix and its rows (both small, each red-green on its rows, both under the soak and the battery above). The prompt asked for one refuter.
+
+### 12.11 The checks
+
+| Check | At | Result |
+|---|---|---|
+| Astra's five rows, verbatim (C01 changed) | `5fa63271` · `90e2b220` | 5 red (her figures: $199.94, $124.96, $99.97, $99.97, 404) · **5 pass** |
+| Her named histories and variants (35 rows), the oracle rows (9), RF-1 (5), the harness rows (7) | `90e2b220` | **56 pass** (the 35 at `5fa63271`: 21 red, 14 green) |
+| The Practice Field folder (Windows) | `90e2b220` | **1,467 / 1,467** |
+| The end-to-end dump | `90e2b220` | byte-identical to `main`'s (the pinned `abcf8420…ed9`, after the parse-report check) |
+| Differentials against `cf35151b` (Astra's probes) | `90e2b220` | `astra-differential` **36/36** (35 scenarios + the prompt group), `astra-cron-trace` **40/40**, planted-backfill **4/4** (planted 100 shares, vendor 200, cash $90,000; `off` and `on`) |
+| Full Linux suite, WSL (`TZ=UTC flock /tmp/pd-suite.lock npx vitest run --maxWorkers=8`, Node 20.20.2) | `90e2b220` | **exit 0** · `Test Files  1596 passed \| 13 skipped (1609)` · `Tests  36818 passed \| 179 skipped (36997)` (425 s) |
+| `npm run lint:gate` · `npx vite build` | `90e2b220` | **exit 0** each · `✓ built in 20.12s` |
+| `npm run test:rules` (WSL) | `90e2b220` | **exit 0** · `Test Files  46 passed (46)` · `Tests  841 passed (841)` |
+
+### 12.12 Questions for the founder (each a reading above; each leaves money where it is until answered)
+
+- **Q-15** (RF-5). A split announced, then replaced before its date by a reverse split of the same date, is the switch-before-both-dates rule applied to L-5's same-date pair: the reverse split applies with no ruling. Or should two share-basis ids of one date always wait, even when one replaced the other before the date?
+- **Q-16** (reading 2). An announcement withdrawn before its date and listed again on or after it waits as a revision. Or should an unchanged payload listed again count as on-time?
+- **Q-17** (reading 8). A sold holding's doubt takes `row` as well as `no_action`: the founder may take one row of the stored clean refetch into the sold holding's path. Keep it, or `no_action` only?
+
+### 12.13 The register
+
+**For Astra:** C04's focused recheck before the flip: A-4 (founder-only clearing on a sold holding), `natural-dirty-after` and its two controls.
+
+| Item | State |
+|---|---|
+| Q-1 sign-off | before the switch (unchanged) |
+| NL2c's received-sum fallback (`adjustments.js` step 3) | proven equivalent last round, the battery's one survivor again; A-1 to A-5 do not make it redundant; still to remove |
+| `evidence.test.js` 60-session row | still needs a timeout of its own (load-sensitive under the battery) |
+| RF-3: the sequence harness runs one book | the oracle cannot see another book's backfill; the two-book rows stand in |
+| RF-4: the sold path's announced-pool exemption reads an id listed now by its last announcement | no money (L-2 ② refuses the approval); align with the held path in a later round |
+| RF-6: observations of a ticker change or delisting keyed by the old ticker | unreachable from vendor data today |
+| A refused CASH record (`count_on_ex_date_unknown`) | A-5 covers share-basis records; a refused cash record still has no founder exit (held, never paid) |
+| The daily layer's lookahead | about two calendar days; the generator lists 1–5 sessions ahead, a deliberate superset. Astra's harness clips to the real lookahead, so a switch made before both dates is tested on the S-6 harness |
+| T5 | the fire-time budget; the founder approvals screen — it should show Q-14 pairs, the early `possible_redate` records of announcements, a sold holding's doubt with its clean-refetch evidence, and a refused record's exit; Q-6 |
+
+**Time.** The prompt arrived about 00:00 CT on 21 Nov; Astra's confirmation was committed at 00:28, the rows red first at 00:35, A-1 to A-5 at 00:51, the oracle and generator at 01:08, the refuter's fix at 01:45, the soak's fix and the battery's answers at 02:29 (the frozen code); the soak, the battery, the suite and the checks ran on it after that, once each. The full suite and the rules suite ran 02:48–02:58; this section was pushed at about 03:05 CT — about three hours after the prompt (the last round took about seven and a half). Nothing ran twice on unchanged code: the battery at `90e2b220` ran only the mutants whose files or killing rows changed after `d9275df9`.
