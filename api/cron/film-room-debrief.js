@@ -1,0 +1,52 @@
+/**
+ * Vercel cron: Film Room D2 — THE AGENT'S WORDS, the nightly pass (D2 spec
+ * docs/specs/FILM_ROOM_BUILD_D2_WORDS_SPEC_V1_20261121.md §7; DW-7; the founder's FD-4).
+ *
+ * Schedule: `45 3 * * 2-6` UTC → /api/cron/film-room-debrief (vercel.json; src/utils/debriefSchedule.js holds the same
+ * string, and a test pins the two equal) — 10:45 PM EST / 11:45 PM EDT, the same ET evening as the session it reads,
+ * after the close pass (`15 2 * * 2-6`, at most 300 s) has written its tape. Its own entry, never a branch inside the
+ * close pass: model calls never share the tape writer's 300-second budget, and a failure here never touches the tape.
+ *
+ * The handler is auth + gate + wiring:
+ *   1. the cron guard every cron has (the Vercel cron header, or `Authorization: Bearer $CRON_SECRET`);
+ *   2. FILM_ROOM_DEBRIEF_MODE read at CALL time (api/_utils/filmRoom/debriefGate.js): 'off' answers
+ *      200 { skipped: true } before the Firestore handle is even taken — zero reads, zero calls, zero writes;
+ *   3. the pass (api/_utils/filmRoom/debriefPass.js): the ET date of the run, its admitted tiered battle days, one
+ *      model call per battle day with a swap, the checks, one record created per battle day
+ *      (agentBattles/{id}/debriefs/{etDate}).
+ * Writes ONLY agentBattles/{id}/debriefs/{etDate}, with `create` (a second run never overwrites a record). Reads
+ * the battles, each battle day's tape and its record — nothing else. Logs counts only: never words, ids or keys; an
+ * error is named by its kind, never by its message (a Firestore message can carry a document path).
+ *
+ * Crons do not run on Vercel preview: verification is the unit tests on the gate, the selection, the digest, the
+ * call, the checks and the record, then the first production run.
+ */
+
+import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
+import { filmRoomDebriefMode } from '../_utils/filmRoom/debriefGate.js';
+import { runDebriefPass } from '../_utils/filmRoom/debriefPass.js';
+
+export const config = { maxDuration: 300 };
+
+const LOG_PREFIX = '[film-room-debrief]';
+
+export default async function handler(req, res, { getDb = getFirebaseAdmin, pass = runDebriefPass } = {}) {
+  const startMs = Date.now();
+  // The platform's cron guard, as every other cron.
+  const isVercelCron = req.headers['x-vercel-cron'] === '1';
+  const authHeader = req.headers.authorization;
+  if (!isVercelCron && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  // The gate, read at CALL time, before any Firestore access.
+  const mode = filmRoomDebriefMode();
+  if (mode === 'off') return res.status(200).json({ skipped: true, reason: 'off' });
+  try {
+    const summary = await pass({ db: getDb(), clock: Date.now, startMs, budgetMs: config.maxDuration * 1000, mode });
+    return res.status(200).json({ ...summary, ms: Date.now() - startMs });
+  } catch (err) {
+    // never the message: it can carry a document path, and so an id
+    console.error(`${LOG_PREFIX} handler error`, JSON.stringify({ kind: err?.name ?? 'Error', code: Number.isInteger(err?.code) ? err.code : null }));
+    return res.status(500).json({ error: 'debrief_pass_failed' });
+  }
+}

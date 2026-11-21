@@ -121,8 +121,9 @@ describe('compute-index-intelligence — Phase A axis block wiring', () => {
     // (/api/cron/agent-evaluate?mode=settle — ruling F1, Oct 25, 2026); 45
     // with the Huddle S1 worker (/api/cron/huddle-worker — Huddle spec V1.1
     // §5.3 / Amendment A §A10, BUILD_RULES §6); 46 with the chart evidence sweep
-    // (/api/cron/setup-evidence-sweep — spec CHART_EVIDENCE_SPEC_V1 SW-1). The axis block itself still adds none.
-    expect((vercel.match(/"schedule"/g) || []).length).toBe(46);
+    // (/api/cron/setup-evidence-sweep — spec CHART_EVIDENCE_SPEC_V1 SW-1); 47 with the Film
+    // Room agent's words (/api/cron/film-room-debrief — spec FILM_ROOM_BUILD_D2_WORDS_SPEC_V1 §7, DW-7). The axis block itself still adds none.
+    expect((vercel.match(/"schedule"/g) || []).length).toBe(47);
     expect(vercel).toMatch(/"\/api\/cron\/intraday-poll"/);
     expect(vercel).toMatch(/"\/api\/cron\/intraday-validate"/);
     expect(vercel).not.toMatch(/rankingSnapshots/);

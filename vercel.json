@@ -224,6 +224,10 @@
     {
       "path": "/api/cron/setup-evidence-sweep",
       "schedule": "30 12,22,23 * * 1-5"
+    },
+    {
+      "path": "/api/cron/film-room-debrief",
+      "schedule": "45 3 * * 2-6"
     }
   ]
 }

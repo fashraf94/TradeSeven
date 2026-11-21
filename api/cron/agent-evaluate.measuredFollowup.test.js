@@ -187,7 +187,8 @@ describe('F1 — the schedule: after agent-daily-scores, the same ET evening, bo
     expect(cronEntry('/api/cron/agent-evaluate')).toBe('*/15 13,14,15,16,17,18,19,20,21 * * 1-5');
     // 44 → 45: the Huddle S1 worker (spec V1.1 §5.3 / Amendment A §A10; BUILD_RULES §6, founder-cited).
     // 45 → 46: the chart evidence sweep (/api/cron/setup-evidence-sweep — spec CHART_EVIDENCE_SPEC_V1 SW-1; BUILD_RULES §6).
-    expect(VERCEL.crons).toHaveLength(46);
+    // 46 → 47: the Film Room agent's words (/api/cron/film-room-debrief — spec FILM_ROOM_BUILD_D2_WORDS_SPEC_V1 §7, DW-7; BUILD_RULES §6).
+    expect(VERCEL.crons).toHaveLength(47);
   });
 
   it.each([...EDT_WEEK, ...EST_WEEK])('a battle created %s 10:00 ET settles that ET evening, after daily-scores and before the tape close', (day) => {
