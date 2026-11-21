@@ -171,3 +171,78 @@ describe('DD-2 — scrolling counts: a wheel or trackpad scroll, the document in
     expect(onFront()).toBe(true);
   });
 });
+
+describe('DD-3 — one identity record (Amendment D; Astra\'s N3 and N4)', () => {
+  it('N3: admit A, open the full tape, refresh the owner to B (held) — the back control is main\'s at B\'s first pending paint, and its first press leaves', async () => {
+    const o = ownersApi(['owner-b']);
+    const readers = readersOf({ [D]: sep23Tape }, sep23Series);
+    let backs = 0;
+    const onBack = () => { backs += 1; };
+    await open({ battle: battleOf(sep23Tape, { ownerId: 'owner-a' }), readers, cardsApi: o.cardsApi, onBack });
+    expect(onFront()).toBe(true);
+    m.click(m.q('[data-flow-door]')); await m.flush();
+    expect(backLabel()).toBe('‹ Game flow');
+    m.render(screen({ battle: battleOf(sep23Tape, { ownerId: 'owner-b' }), readers, cardsApi: o.cardsApi, onBack }));
+    expect(backLabel()).toBe('‹ Dashboard');          // the first paint after the refresh
+    await m.flush();
+    expect(backLabel()).toBe('‹ Dashboard');          // B's verdict still pending
+    m.click(m.q('header button')); await m.flush();
+    expect(backs).toBe(1);
+  });
+  it('N3\'s control (passes at both heads): … and B then answered no — main\'s back control, and one press leaves', async () => {
+    const o = ownersApi(['owner-b']);
+    const readers = readersOf({ [D]: sep23Tape }, sep23Series);
+    let backs = 0;
+    const onBack = () => { backs += 1; };
+    await open({ battle: battleOf(sep23Tape, { ownerId: 'owner-a' }), readers, cardsApi: o.cardsApi, onBack });
+    m.click(m.q('[data-flow-door]')); await m.flush();
+    m.render(screen({ battle: battleOf(sep23Tape, { ownerId: 'owner-b' }), readers, cardsApi: o.cardsApi, onBack }));
+    await m.flush();
+    o.answer['owner-b'](false); await m.flush();
+    expect(backLabel()).toBe('‹ Dashboard');
+    m.click(m.q('header button')); await m.flush();
+    expect(backs).toBe(1);
+  });
+  it("N3: … and B then ADMITTED — the return was A's entry, never B's: main's back control (the front is a door away)", async () => {
+    const o = ownersApi(['owner-b']);
+    const readers = readersOf({ [D]: sep23Tape }, sep23Series);
+    await open({ battle: battleOf(sep23Tape, { ownerId: 'owner-a' }), readers, cardsApi: o.cardsApi });
+    m.click(m.q('[data-flow-door]')); await m.flush();
+    m.render(screen({ battle: battleOf(sep23Tape, { ownerId: 'owner-b' }), readers, cardsApi: o.cardsApi }));
+    await m.flush();
+    o.answer['owner-b'](true); await m.flush();
+    expect(onTape()).toBe(true);
+    expect(backLabel()).toBe('‹ Dashboard');
+  });
+  it("N3's control (passes at both heads): the same owner, front → tape — \"Game flow\", and it returns to the front", async () => {
+    await open({ battle: battleOf(sep23Tape, { ownerId: 'owner-a' }) });
+    m.click(m.q('[data-flow-door]')); await m.flush();
+    expect(backLabel()).toBe('‹ Game flow');
+    m.click(m.q('header button')); await m.flush();
+    expect(onFront()).toBe(true);
+  });
+  it('N4: admitted with NO owner, then refreshed to the owner string "null" (held) — a pointer-down on the pending tape keeps it when "null" is admitted', async () => {
+    const o = ownersApi(['null']);
+    const readers = readersOf({ [D]: sep23Tape }, sep23Series);
+    await open({ battle: battleOf(sep23Tape), readers, cardsApi: o.cardsApi });
+    expect(onFront()).toBe(true);
+    m.render(screen({ battle: battleOf(sep23Tape, { ownerId: 'null' }), readers, cardsApi: o.cardsApi }));
+    expect(onTape()).toBe(true);                       // its first pending paint
+    await m.flush();
+    expect(o.calls).toContain('null');
+    const study = m.tab('Study');
+    act(() => { study.dispatchEvent(pointer('pointerdown')); });
+    o.answer.null(true); await m.flush();
+    expect(onTape()).toBe(true);
+    expect(study.isConnected).toBe(true);
+  });
+  it("N4's control (passes at both heads): the same refresh with no gesture — \"null\" admitted opens its front", async () => {
+    const o = ownersApi(['null']);
+    const readers = readersOf({ [D]: sep23Tape }, sep23Series);
+    await open({ battle: battleOf(sep23Tape), readers, cardsApi: o.cardsApi });
+    m.render(screen({ battle: battleOf(sep23Tape, { ownerId: 'null' }), readers, cardsApi: o.cardsApi }));
+    await m.flush();
+    o.answer.null(true); await m.flush();
+    expect(onFront()).toBe(true);
+  });
+});

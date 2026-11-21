@@ -27,7 +27,7 @@ import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } f
 import { FILM_TAPE_WRITE_ENABLED, isAgentPresenceOn } from '../../config/featureFlags';
 import AgentPresenceMount from '../../components/AgentPresence/AgentPresenceMount';
 import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
-import { filmRoomBattleId, resolveFilmRoomFlowMode, filmRoomFlowOn } from '../../utils/filmRoomGate';
+import { filmRoomBattleId, resolveFilmRoomFlowMode, filmRoomFlowOn, sameFilmRoomIdentity } from '../../utils/filmRoomGate';
 import { isSessionDate, isBattleDay, closePassStartMs, closePassEndMs, closePassWillTape, validFinalTradingDay, etDateOf } from '../../utils/tapeSchedule';
 import { etClock, etDateLabel, tradingTimeline, meetingAnchor } from './filmRoomModel';
 import { FILM_ROOM_COPY as COPY } from './filmRoomCopy';
@@ -266,19 +266,22 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
   // pending until its own answer, never the last owner's).
   const flowMode = resolveFilmRoomFlowMode();
   const flowOwnerId = typeof battle?.ownerId === 'string' ? battle.ownerId : null;
+  // Amendment D DD-3 (Astra's N3, N4): ONE identity record — the battle id and the nullable owner, two fields compared
+  // strictly — for the verdict, the front-seen marker and the "Game flow" return (filmRoomGate.js)
+  const identity = useMemo(() => ({ battleId, ownerId: flowOwnerId }), [battleId, flowOwnerId]);
   // a screen opened at a moment can never show the front (§3), so its verdict is never asked for the flow (the review's OP-2)
   const [openedAtMoment] = useState(() => openAt != null);
-  const [flowAnswer, setFlowAnswer] = useState(() => ({ battleId, ownerId: flowOwnerId, verdict: undefined }));
+  const [flowAnswer, setFlowAnswer] = useState(() => ({ identity, verdict: undefined }));
   useEffect(() => {
     if (flowMode !== 'allowlist' || openedAtMoment || !battleId || typeof cardsApi?.readVerdict !== 'function') return undefined;
     let live = true;
     Promise.resolve()
-      .then(() => cardsApi.readVerdict(battleId, { ownerId: flowOwnerId }))
-      .then((v) => { if (live && mounted.current) setFlowAnswer({ battleId, ownerId: flowOwnerId, verdict: v === true }); })
-      .catch(() => { if (live && mounted.current) setFlowAnswer({ battleId, ownerId: flowOwnerId, verdict: false }); });
+      .then(() => cardsApi.readVerdict(identity.battleId, { ownerId: identity.ownerId }))
+      .then((v) => { if (live && mounted.current) setFlowAnswer({ identity, verdict: v === true }); })
+      .catch(() => { if (live && mounted.current) setFlowAnswer({ identity, verdict: false }); });
     return () => { live = false; };
-  }, [flowMode, openedAtMoment, battleId, flowOwnerId, cardsApi]);
-  const flowVerdict = flowAnswer.battleId === battleId && flowAnswer.ownerId === flowOwnerId ? flowAnswer.verdict : undefined;
+  }, [flowMode, openedAtMoment, battleId, identity, cardsApi]);
+  const flowVerdict = sameFilmRoomIdentity(flowAnswer.identity, identity) ? flowAnswer.verdict : undefined;
   const flowOn = filmRoomFlowOn(flowMode, flowVerdict);
   // §3 — the screen opens on the front when the flow resolves on, the screen was NOT opened at a moment (`openAt`,
   // as App handed it at mount) and the day has a written tape; otherwise as it opened before Build D. `onTape`: the
@@ -288,16 +291,16 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
   // front that is still being read keeps the front's frame (its header, the day picker under the player's focus)
   // instead of painting the tape's layout for a moment (the review's DR-1). It belongs, as the flow's answer does
   // (DB-12), to the battle and the owner the front showed for: a refreshed owner's pending tape is a new question, and
-  // keeps DB-4's guard (the fix round review's FRC-1).
+  // keeps DB-4's guard (the fix round review's FRC-1). Both `fromFront` and `seenFront` hold the IDENTITY they belong to
+  // (DD-3) — never a joined string, so a missing owner and the owner "null" are two (Astra's N4).
   const [onTape, setOnTape] = useState(false);
-  const [fromFront, setFromFront] = useState(false);
-  const flowKey = `${battleId}|${flowOwnerId}`;
+  const [fromFrontFor, setFromFrontFor] = useState(null);
   const [seenFrontFor, setSeenFrontFor] = useState(null);
-  const seenFront = seenFrontFor === flowKey;
+  const seenFront = sameFilmRoomIdentity(seenFrontFor, identity);
   const frontIntent = flowOn && !openedAtMoment && !onTape;
   const front = frontIntent && written;
   const frontFrame = !front && frontIntent && seenFront && tapeState.status === 'loading';
-  useEffect(() => { if (front && !seenFront) setSeenFrontFor(flowKey); }, [front, seenFront, flowKey]);
+  useEffect(() => { if (front && !seenFront) setSeenFrontFor(identity); }, [front, seenFront, identity]);
   // the review's DR-7 / DR-2, as Amendment B DB-4 makes it (Astra's F4): A GESTURE IN PROGRESS KEEPS THE TAPE. While
   // the front's conditions are still unknown — the verdict on its way, or the day still being read — a pointer-down
   // inside the tape, a key-down inside it, or a focus move onto one of its controls keeps the tape for this visit, from
@@ -450,16 +453,18 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
   // focus on its panel; a pin's link shows the tape at that swap or the directives, in Study, focused there — the
   // screen's own jump; "Game flow" returns to the front and puts the focus back on the door.
   const doorId = `${idBase}-flow-door`;
-  const openTape = () => { setOnTape(true); setFromFront(true); setDepth('glance'); setPendingJump(panelOf('glance')); };
-  const openTapeAt = (anchor) => { setOnTape(true); setFromFront(true); setDepth('study'); setPendingJump({ id: anchor, focus: true }); };
+  const openTape = () => { setOnTape(true); setFromFrontFor(identity); setDepth('glance'); setPendingJump(panelOf('glance')); };
+  const openTapeAt = (anchor) => { setOnTape(true); setFromFrontFor(identity); setDepth('study'); setPendingJump({ id: anchor, focus: true }); };
   // the way back waits for the day's tape (a day still being read has no door yet — the review's DR-5); and, deferred,
   // it carries the screen's focus-origin guard (Amendment B DB-11, Astra's F11): it lands only while the focus is still
   // where the press left it, or nowhere — never taken from a control the player has moved to since
-  const backToFront = () => { setOnTape(false); setFromFront(false); setPendingJump({ id: doorId, focus: true, scroll: false, when: 'tape', from: focusedNow() }); };
+  const backToFront = () => { setOnTape(false); setFromFrontFor(null); setPendingJump({ id: doorId, focus: true, scroll: false, when: 'tape', from: focusedNow() }); };
   // "Game flow" only where there is a front (Amendment B DB-10, Astra's F10): the day on screen has a written tape, or is
   // still being read; a day with no tape, a failed read or an unwritten day gets the back control it always had — and so
-  // does a tape whose (refreshed) owner the flow is now off for (the review's FRC-2)
-  const backHere = fromFront && !front && !flowOffHere && (tapeState.status === 'loading' || written);
+  // does a tape whose (refreshed) owner the flow is now off for (the review's FRC-2). Amendment D DD-3 (Astra's N3): the
+  // return renders only for the IDENTITY whose front was entered — a refreshed owner, pending or answered, never
+  // inherits another identity's door; the same identity keeps it while a day is read (DC-3)
+  const backHere = sameFilmRoomIdentity(fromFrontFor, identity) && !front && !flowOffHere && (tapeState.status === 'loading' || written);
   // §9: the cards line counts the moments the tape view would offer (the prepared case's own rule) — only under cards
   const momentCount = cardsOn && written && tagsStateOf(tape) === 'ready' ? momentsOfTape(tape).length : 0;
 

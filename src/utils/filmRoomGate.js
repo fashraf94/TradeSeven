@@ -54,6 +54,18 @@ export const filmRoomBattleId = (battle) => {
 };
 
 /**
+ * Build D Amendment D DD-3 (Astra's N3, N4) — THE IDENTITY a Film Room answer belongs to: the battle id and the
+ * nullable owner, as two fields. One record serves the screen's verdict, its front-seen marker and its "Game flow"
+ * return (and D2's words, which read the same verdict). Never joined into one string: a missing owner and the owner
+ * string "null" are two identities.
+ */
+export function filmRoomIdentityOf(battle) {
+  return { battleId: filmRoomBattleId(battle), ownerId: typeof battle?.ownerId === 'string' ? battle.ownerId : null };
+}
+/** The same identity: both fields strictly equal. A missing record is no identity. */
+export const sameFilmRoomIdentity = (a, b) => Boolean(a && b) && a.battleId === b.battleId && a.ownerId === b.ownerId;
+
+/**
  * Ask the server once. Resolves `{ ok, allowlisted }`: `ok` only for a 200
  * with a boolean `allowlisted`; anything else — no user, a refusal, a network
  * failure, a malformed body, no answer within the timeout — is
