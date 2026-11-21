@@ -141,7 +141,7 @@ describe('row 2 — one record per host document; a retried mint returns the sam
     expect(stored(activeDb, `researchSessions/${SCREENER_SESSION}`).researchWorkId).toBe(SCREENER_RW);
     expect(rec(SCREENER_RW)).toMatchObject({
       researchWorkId: SCREENER_RW, userId: OWNER, origin: 'screener', host: { collection: 'researchSessions', id: SCREENER_SESSION },
-      createdAt: NOW, watchlistId: null, hypothesisVersion: null, state: 'open', terminalReason: null, endedAt: null, schemaVersion: 1,
+      createdAt: NOW, watchlistId: null, hypothesisVersion: null, state: 'open', terminalReason: null, endedAt: null, schemaVersion: 2, // a record minted now: schema version 2 (B6a)
     });
     // ONE transaction carried both writes: the session set and the record create are adjacent in the commit.
     const writes = activeDb.__access.writes.map((w) => `${w.op} ${w.path}`);
@@ -457,7 +457,7 @@ describe('row 6 — manual', () => {
     const id = `wl_${res.body.watchlistId}`;
     expect(stored(activeDb, `watchlists/${res.body.watchlistId}`).researchWorkId).toBe(id);
     expect(rec(id)).toEqual({
-      schemaVersion: 1, researchWorkId: id, userId: OWNER, origin: 'manual', host: null, createdAt: NOW,
+      schemaVersion: 2, /* minted now: version 2 (B6a) */ researchWorkId: id, userId: OWNER, origin: 'manual', host: null, createdAt: NOW,
       watchlistId: res.body.watchlistId, hypothesisVersion: null,
       stages: { universeSize: null, matchedPreLimit: null, shortlisted: null, selectedForInvestigation: null, investigationsCompleted: null, eligible: null },
       symbols: [], symbolsTruncated: false, budget: null,

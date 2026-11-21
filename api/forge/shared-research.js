@@ -2,7 +2,8 @@
 //
 // Shared Research "Work an idea" — THE ROUTE (spec of record
 // docs/specs/20261109_SHARED_RESEARCH_B1_B2_BUILD_SPEC_V1_2.md §6, §15). One
-// file: GET reads (`?sessionId=` one investigation; `?list=open` the open ones),
+// file: GET reads (`?sessionId=` one investigation; `?list=open` the open ones;
+// `?list=explore` Explore's read, B6a X-1),
 // POST actions `frame | open | step | close | adopt`. DARK: with
 // SHARED_RESEARCH_MODE 'off' every request answers 404 disabled before auth and
 // before any read (api/_utils/sharedResearch/gate.js).
@@ -32,6 +33,7 @@ import { isValidForgeId } from '../_utils/idValidation.js';
 import { buildFinding, FINDING_ID_PREFIX, FINDINGS_MAX, isHostId, isUuid, currentFindingsOf, normalizeQuestion } from '../_utils/researchRecords/model.js';
 import { recordTurnOutcome } from '../_utils/researchRecords/store.js';
 import { ENTRY_ITEM_RECORD_KINDS, STEP_INTENTS, CLOSE_REASONS } from '../../src/constants/sharedResearch.js';
+import { STORY_RECORD_KINDS, EXPLORE_RECORD_KIND } from '../../src/constants/sharedResearch.js';
 import { BUILD_INTENT, BUILD_GOALS, THESIS_PARTS, PICK_PARTS, CARD_OPS } from '../../src/constants/sharedResearch.js';
 import { gateSharedResearchRoute, sendSharedResearchError } from '../_utils/sharedResearch/gate.js';
 import { sharedResearchBuilderMode } from '../_utils/sharedResearch/gate.js';
@@ -51,6 +53,7 @@ import {
   failStep, closeInvestigation, normalizeAdoption, adoptIdea, readQuota, listOpen, readPrevious, AGENTS_COLLECTION, SHARED_RESEARCH_ADAPTER,
   openOwnWords, applyCard, adoptThesis,
 } from '../_utils/sharedResearch/store.js';
+import { readExploreStory, readExploreInvestigations } from '../_utils/sharedResearch/store.js';
 import { namesInScopeOf, openingFindingsOf, dropTextOf, dropTopicOf, storedRowsOf } from '../_utils/sharedResearch/opening.js';
 import { companiesOf, projectionOf, resolveSymbol, splitRole, answerStaleOf } from '../_utils/sharedResearch/companies.js';
 import { adoptPreviewOf, isPreviewRev } from '../_utils/sharedResearch/adoptPreview.js';
@@ -154,6 +157,9 @@ async function handleGet(req, res, { db, uid }) {
   const nowIso = new Date().toISOString();
   const day = await readQuota(db, { uid, nowIso });
   if (req.query?.list === 'open') return res.status(200).json({ open: await listOpen(db, { uid }), quota: quotaViewOf(day) });
+  // B6a X-1: Explore's one read — the day's quota and, per Explore story investigated, its open and last-ended
+  // investigation (api/_utils/sharedResearch/explore.js). No write.
+  if (req.query?.list === 'explore') return res.status(200).json({ quota: quotaViewOf(day), items: await readExploreInvestigations(db, { uid }) });
   const sessionId = req.query?.sessionId;
   if (!isHostId(sessionId)) throw refuse(400, 'invalid_request');
   const { session, record } = await readInvestigation(db, { uid, sessionId });
@@ -301,11 +307,17 @@ async function handleOpen(body, res, { db, uid }) {
   if (!isPlainObject(entry) || !['item', 'signaldrop'].includes(entry.kind) || !isPlainObject(entry.itemRef)) throw refuse(400, 'invalid_entry');
   const { recordKind, recordId } = entry.itemRef;
   if (!ENTRY_ITEM_RECORD_KINDS.includes(recordKind)) throw refuse(400, 'item_kind_unsupported');
-  if ((entry.kind === 'item') !== (recordKind === 'fantasyTimesStories') || !isValidForgeId(recordId)) throw refuse(400, 'invalid_entry');
+  // An `item` names a story — a FantasyTimes story, or an Explore story (B6a X-2); a `signaldrop` names a drop. Any entry
+  // but an item naming an Explore story answers as it did before the kind existed (review A-3).
+  if (recordKind === EXPLORE_RECORD_KIND && entry.kind !== 'item') throw refuse(400, 'item_kind_unsupported');
+  if ((entry.kind === 'item') !== STORY_RECORD_KINDS.includes(recordKind) || !isValidForgeId(recordId)) throw refuse(400, 'invalid_entry');
   if (!isValidForgeId(body.requestId)) throw refuse(400, 'invalid_request');
   const question = questionOf(entry.question);
   const direction = directionOf(entry.direction);
-  const story = entry.kind === 'item' ? await readStory(db, recordId) : null;
+  // An Explore story is read for its title, reporter, published time, tickers and version only (readExploreStory);
+  // everything after this read is today's story path.
+  const readItem = recordKind === EXPLORE_RECORD_KIND ? readExploreStory : readStory;
+  const story = entry.kind === 'item' ? await readItem(db, recordId) : null;
   const drop = entry.kind === 'signaldrop' ? await readDrop(db, { uid, dropId: recordId }) : null;
   if (!story && !drop) throw refuse(404, 'item_not_found');
   const names = namesInScopeOf({ entryKind: entry.kind, story, drop });
@@ -327,6 +339,8 @@ async function handleOpen(body, res, { db, uid }) {
       kind: entry.kind, itemRef: { recordKind, recordId }, question, direction, observation: null,
       topic: drop ? dropTopicOf(drop, { partnerName }) : null, // never a stray ticker or a forbidden pattern (refuter SH-11)
       names,
+      // B6a X-2: the Explore story's version, stamped on the session (session.js openSessionOf); a FantasyTimes story has none
+      ...(story && Number.isSafeInteger(story.version) ? { itemVersion: story.version } : {}),
     },
     exchanges: dropExchange ? [dropExchange] : [],
     findings, nowIso, method: selected.stamp,

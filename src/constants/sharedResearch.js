@@ -12,8 +12,15 @@
 // Values restated from other modules (the horizon windows) are pinned equal to
 // their sources by sharedResearch.test.js.
 
-/** What an entry's itemRef may name (spec §6.3): a FantasyTimes story, or the caller's own SignalDrop. A session field, never a finding source. */
-export const ENTRY_ITEM_RECORD_KINDS = Object.freeze(['fantasyTimesStories', 'signalDrops']);
+/**
+ * What an entry's itemRef may name (spec §6.3): a FantasyTimes story, the caller's own SignalDrop, or an Explore story
+ * (B6a X-2). A session field; a story's kind is also the source its opening finding cites.
+ */
+export const ENTRY_ITEM_RECORD_KINDS = Object.freeze(['fantasyTimesStories', 'signalDrops', 'exploreStories']);
+/** An Explore story (B6a X-2): its record kind and its collection, one name. */
+export const EXPLORE_RECORD_KIND = 'exploreStories';
+/** The kinds an `item` entry may name: a story, of either kind. A SignalDrop is the `signaldrop` entry's. */
+export const STORY_RECORD_KINDS = Object.freeze(['fantasyTimesStories', EXPLORE_RECORD_KIND]);
 /** How an investigation started. */
 export const ENTRY_KINDS = Object.freeze(['item', 'observation', 'signaldrop']);
 

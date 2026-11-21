@@ -56,6 +56,10 @@ const state = vi.hoisted(() => ({ cards: 'on', db: null, uid: 'owner-1', charact
 vi.mock('../../config/featureFlags.js', async (importOriginal) => ({
   ...(await importOriginal()),
   get FILM_ROOM_CARDS_MODE() { return state.cards; },
+  // Film Room D1: this suite is about the TAPE as it was before Build D, so the front — merged at 'allowlist', which
+  // would open an admitted owner on the game's flow and ask the verdict when cards are off — is pinned off here. The
+  // flow's own gate, off path and front are tested in the FilmRoomFlow.* suites.
+  get FILM_ROOM_FLOW_MODE() { return 'off'; },
   get FILM_TAPE_WRITE_ENABLED() { return true; },
   // Amendment K RK-2: Set's link needs the Forge's Character tab and the tempo dial on (both live); a row turns each off
   get RELEASE3_CHARACTER_TAB_ENABLED() { return state.characterTab; },

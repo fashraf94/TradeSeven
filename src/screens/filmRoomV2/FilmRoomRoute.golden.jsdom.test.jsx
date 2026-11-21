@@ -39,6 +39,10 @@ vi.mock('../../config/featureFlags', async (importOriginal) => ({
   // "no verdict asked" rows exist to forbid. The cards' own gate is pinned where it is tested (filmRoomGate.test.js,
   // FilmRoomScreenV2.cardsOff.golden.jsdom.test.jsx). Pinned in the cards flip's commit (BUILD_RULES §2).
   get FILM_ROOM_CARDS_MODE() { return 'off'; },
+  // Film Room D1: this suite is about the TAPE as it was before Build D, so the front — merged at 'allowlist', which
+  // would open an admitted owner on the game's flow and ask the verdict when cards are off — is pinned off here. The
+  // flow's own gate, off path and front are tested in the FilmRoomFlow.* suites.
+  get FILM_ROOM_FLOW_MODE() { return 'off'; },
 }));
 vi.mock('../../firebase/config', () => ({ db: {}, auth: {}, default: {} }));
 const auth = vi.hoisted(() => ({ user: null }));
