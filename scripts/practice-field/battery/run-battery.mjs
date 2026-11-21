@@ -11,9 +11,11 @@
 //      up to --quick-fraction × the slowest file's baseline time. A file costs ~4 s of fork + import before its first
 //      row, so a small well-chosen tier settles most kills in ~10–25 s where all related files take ~200 s.
 //   3. A KILL in any tier is final: the same rows fail in the full run (vitest isolates each file). ANYTHING ELSE — survived,
-//      broken, errored, timed out — is decided by a run of the FULL row set with the mutation still applied, judged
-//      exactly as the old runner judged, so the battery never reports a survivor, or a broken mutant, the full folder
-//      would not.
+//      broken, errored, timed out, or a kill resting only on timed-out rows — is decided by a run of the FULL row set
+//      with the mutation still applied, judged exactly as the old runner judged, so the battery never reports a
+//      survivor, or a broken mutant, the full folder would not. A full run whose only failures are timeouts is settled
+//      by those files alone: in the tree at once, or in the QUIET PHASE once every tree is idle (the load can slow a
+//      row past its limit, and "alone" is not alone while other trees run).
 // Kept from the old runner: every `from` must occur exactly once (else BROKEN, never run, and printed); the files are
 // restored and compared byte for byte after every mutant; defined ids are diffed against the ids that got a verdict.
 // Offline: reads no env file and no credential; the vitest child gets the parent's environment with EODHD_API_KEY
