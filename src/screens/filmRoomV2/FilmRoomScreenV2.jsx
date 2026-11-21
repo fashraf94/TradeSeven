@@ -486,7 +486,9 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
 
   // Film Room D1 — THE FRONT (§4): the header holds the back control, the day's pills and the day picker — never the
   // title, the subtitle, the depth control, the number-kind legend, the card regions or the first-open notice, which
-  // are the tape's — then the game's flow, keyed by the day (a change of day shows that day's front, §10).
+  // are the tape's — then the game's flow, keyed by the day (a change of day shows that day's front, §10). Its counts say
+  // "This game" only for a KNOWN one-day battle — the subtitle's own length evidence (headerParts: the timeline, else a
+  // final tape's dayNumber), never the day picker's count, whose one fallback day is no length (Amendment B DB-5, F5).
   if (front || frontFrame) {
     return (
       <div data-screen="film-room-v2" data-view="flow" style={{ minHeight: '100vh', background: C.bg, color: C.ink, display: 'flex', flexDirection: 'column' }}>
@@ -504,7 +506,7 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
             tape={tape}
             battle={battle}
             desktop={desktop}
-            oneDay={days.length <= 1}
+            oneDay={parts.length?.days === 1}
             moments={momentCount > 0 ? momentsCountOf(momentCount) : null}
             onOpenTape={openTape}
             onOpenAt={openTapeAt}

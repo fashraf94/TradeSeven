@@ -351,3 +351,41 @@ describe('item 7 — DB-10 / DB-11, beside the reproductions', () => {
     expect(document.activeElement).toBe(m.q('[data-flow-door]'));
   });
 });
+
+describe('item 8 — F5: "This game" needs a known one-day battle (DB-5)', () => {
+  it('F5: a battle without its trading-day list and a final tape of day 3 — the counts say "This day"; the tape behind the door says three-day', async () => {
+    const t = clone(sep23Tape);
+    t.dayNumber = 3;
+    await open({ battle: battleOf(t, { ownerId: 'owner-1', timing: undefined }), readers: readersOf({ [D]: t }, sep23Series) });
+    expect(onFront()).toBe(true);
+    expect(m.q('[data-flow-counts] h2').textContent).toBe('This day');
+    m.click(m.q('[data-flow-door]')); await m.flush();
+    expect(m.q('[data-header-subtitle]').textContent.toLowerCase()).toContain('three-day');
+  });
+});
+
+describe('item 8 — DB-5, beside the reproduction: the same rows, three length readings', () => {
+  const heading = () => m.q('[data-flow-counts] h2')?.textContent ?? null;
+  it('an unknown length — no trading-day list, a tape that records no final dayNumber — "This day"', async () => {
+    const t = clone(sep23Tape);
+    delete t.dayNumber;
+    await open({ battle: battleOf(t, { ownerId: 'owner-1', timing: undefined }), readers: readersOf({ [D]: t }, sep23Series) });
+    expect(onFront()).toBe(true);
+    expect(m.qa('[data-flow-tile]')).toHaveLength(2);
+    expect(heading()).toBe('This day');
+  });
+  it('a confirmed one-day battle — its timeline names one day — "This game"; the same with no timeline and a final tape of day 1', async () => {
+    await open();
+    expect(heading()).toBe('This game');
+    m.teardown(); m.setup();
+    const t = clone(sep23Tape);   // dayNumber 1, isFinalDay true
+    await open({ battle: battleOf(t, { ownerId: 'owner-1', timing: undefined }), readers: readersOf({ [D]: t }, sep23Series) });
+    expect(heading()).toBe('This game');
+  });
+  it('a three-day timeline: "This day" on its final day', async () => {
+    const t = clone(sep23Tape);
+    t.dayNumber = 3;
+    await open({ battle: battleOf(t, { ownerId: 'owner-1', timing: { tradingDays: ['2026-09-21', '2026-09-22', D] } }), readers: readersOf({ [D]: t }, sep23Series) });
+    expect(heading()).toBe('This day');
+  });
+});
