@@ -952,3 +952,49 @@ describe('C-2 — `coverage_gap` / `row` takes only the payload the founder name
     expect(ruleOn([splitRow(2)], { ratio: 1.25 })).toEqual({ error: 'payload_not_recorded', status: 422 });
   });
 });
+
+// ── The closeout refuter's RX-1 and RX-2, fixed (the founder's go-ahead, 21 Nov 2026) ─────────────────────────────────────
+describe('the closeout refuter — RX-1 and RX-2 (each red at 7b7066cd)', () => {
+  /** R03's history up to the S6 close: the sale, the approved dividend, the doubt; `beforeRefetch` runs before S6. */
+  async function doubtWithRefetch(rows, beforeRefetch = null) {
+    const ctx = await reviewSale();
+    expect((await approve(ctx, 2)).status).toBe(200);
+    const bad = [dividend(2, 1), split(2, '5:4')];
+    await session(ctx, 4, bad, 94);
+    await session(ctx, 5, bad, 94);
+    if (beforeRefetch) beforeRefetch(ctx);
+    const doc = await daily(ctx, 6, []);
+    await reviewClose(ctx, 6, doc, 94, rows);
+    return ctx;
+  }
+  const rowBody = (extra) => ({ kind: 'coverage_gap', recordId: 'ca_closed_doubt_AAPL_' + S[2], decision: 'row', actionId: 'split_AAPL_' + S[2], ...extra });
+
+  it('RX-1: a `ratio` sent beside a coverage-gap ruling is refused (400), never ignored — the unique 2/1 row is not taken on it', async () => {
+    const ctx = await doubtWithRefetch([split(2, '2/1'), dividend(2, 1)]);
+    // The founder means 1.25 but sends it as `ratio`: refused, and no ruling is recorded (at 7b7066cd: 200, the 2/1 taken, $199.94).
+    expect(await ask(ctx, rowBody({ ratio: 1.25 }), 'top-level')).toMatchObject({ status: 400, body: { error: 'ratio_not_accepted' } });
+    // `no_action` with a ratio is refused too.
+    expect(await ask(ctx, { ...rowBody({ ratio: 1.25 }), decision: 'no_action', actionId: undefined }, 'no-action-ratio')).toMatchObject({ status: 400, body: { error: 'ratio_not_accepted' } });
+    expect((idea(ctx).founderRulings || []).some((r) => r.kind === 'coverage_gap')).toBe(false);
+    // Only a payload the founder names in `payload` takes the row: here the 2/1 itself, and the dividend then posts on its count.
+    expect((await ask(ctx, rowBody({ payload: { ratio: 2 } }), 'named')).status).toBe(200);
+    expect(idea(ctx).founderRulings.at(-1).row).toMatchObject({ type: 'split', ratio: 2 });
+    expect((await session(ctx, 7, [], 94)).dividendsUsd).toBe(199.94);
+  });
+
+  it('RX-2: a stored document the engine does not count as clean (no parse report) offers no row to a sold holding\'s doubt — 422, nothing pays', async () => {
+    const legacy = (ctx) => ctx.db._store.set('practiceFieldCaBackfill/AAPL', {
+      data: { schemaVersion: 1, symbol: 'AAPL', from: S[1], to: S[5], failed: false, calls: 2, fetchedAt: S[5] + 'T21:00:00.000Z', source: 'idea_book_backfill',
+        actions: [{ type: 'split', ticker: 'AAPL', effectiveDate: S[2], ratio: 2, source: 'eodhd_splits' }, { type: 'cash_dividend', ticker: 'AAPL', effectiveDate: S[2], amount: 1, source: 'eodhd_dividends' }] },
+      version: 1,
+    });
+    // The S6 refetch lists the 2/1 beside a malformed 5:4 of the same date: not clean, so it never replaces the stored document.
+    const ctx = await doubtWithRefetch([split(2, '2/1'), split(2, '5:4'), dividend(2, 1)], legacy);
+    const stored = ctx.db._get('practiceFieldCaBackfill/AAPL');
+    expect(stored).toMatchObject({ failed: false });
+    expect(stored.parseReport).toBeUndefined();
+    expect(await ask(ctx, rowBody({}), 'legacy')).toMatchObject({ status: 422, body: { error: 'row_not_recorded' } });
+    expect(await ask(ctx, rowBody({ payload: { ratio: 2 } }), 'legacy-named')).toMatchObject({ status: 422, body: { error: 'row_not_recorded' } });
+    expect((await session(ctx, 7, [], 94)).dividendsUsd).toBe(0);
+  });
+});

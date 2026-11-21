@@ -1621,3 +1621,48 @@ describe('the review\'s fix round — coverage (lens A)', () => {
     await expect(fetchCorporateActionsEODHD('AAPL', { from: S[0], to: S[1] })).rejects.toThrow(/not configured/);
   });
 });
+
+// ── Q-18 (the founder, 21 Nov 2026; the T1a-2b-4 closeout's refuter, RX-3) ─────────────────────────────────────────────────
+// An open coverage gap may take a row from a FAILED backfill, but under C-2's rule: if the id carries more than one payload,
+// the request must name it, or it is refused (422). A row the refetch saw but could not read is one more payload of its id.
+describe('Q-18 — an open coverage gap takes a failed backfill\'s row only under C-2', () => {
+  const UID = 'owner-1';
+  let prevEnv;
+  beforeEach(() => { prevEnv = process.env.MANDATE_FOUNDER_UIDS; process.env.MANDATE_FOUNDER_UIDS = UID; });
+  afterEach(() => { if (prevEnv === undefined) delete process.env.MANDATE_FOUNDER_UIDS; else process.env.MANDATE_FOUNDER_UIDS = prevEnv; });
+  const resolve = (ctx, body, requestKey) => runFounderAction(ctx.db, { uid: UID, body: { action: 'resolve_hold', requestKey, ideaId: ctx.ideaId, ...body }, nowIso: etIso(S[6], 18, 0) });
+
+  it('RX-3: the vendor lists a readable 2/1 and an unreadable 5:4 split of one date — unnamed is refused (422); the 2/1 named applies once', async () => {
+    const ctx = await setup();
+    for (let i = 1; i <= 5; i += 1) await closeWithAaplFailed(ctx, S[i]);
+    // S6: the daily layer still fails AAPL; the close's own backfill reaches the vendor, which lists both rows of S3.
+    const vendor = async (url) => {
+      const { pathname, searchParams } = new URL(url);
+      const rows = pathname.includes('/AAPL.US') && pathname.includes('/splits/') ? [{ date: S[3], split: '2/1' }, { date: S[3], split: '5:4' }] : [];
+      return { ok: true, status: 200, json: async () => rows.filter((r) => r.date >= searchParams.get('from') && r.date <= searchParams.get('to')) };
+    };
+    await storeCloseSnapshot(ctx.db, S[6], quotes());
+    plantDaily(ctx.db, S[6], { symbol: 'AAPL', entry: { sector: null, caFetchFailed: true } });
+    await closeIdeaBook(ctx.db, ctx.bookRef, { date: S[6], now: closeNowOf(S[6]), fetchCorporateActions: (sym, opts) => fetchCorporateActionsEODHD(sym, { ...opts, apiKey: 'fixture' }), caFetchImpl: vendor });
+    recon(ctx);
+    const stored = ctx.db._get('practiceFieldCaBackfill/AAPL');
+    expect(stored).toMatchObject({ failed: true, actions: [expect.objectContaining({ type: 'split', effectiveDate: S[3], ratio: 2 })] });
+    expect(stored.actions).toHaveLength(1);
+    expect(stored.parseReport.rejects).toEqual([expect.objectContaining({ leg: 'splits', row: { date: S[3], split: '5:4' } })]);
+    const ID = `ca_coverage_gap_AAPL_${S[0]}`;
+    expect(ideaOf(ctx).caCoverageGaps.AAPL).toMatchObject({ since: S[0] });
+    const before = { ledger: sharesOf(ctx, 'ledger'), comparisonLedger: sharesOf(ctx, 'comparisonLedger') };
+    const body = { kind: 'coverage_gap', recordId: ID, decision: 'row', actionId: `split_AAPL_${S[3]}` };
+    // Two payloads under the id — the readable 2/1 and the unreadable 5:4 — and none named: refused, nothing recorded.
+    expect(await resolve(ctx, body, 'unnamed')).toMatchObject({ status: 422, body: { error: 'row_payload_ambiguous' } });
+    // The unreadable row's ratio cannot be named: no row carries it.
+    expect(await resolve(ctx, { ...body, payload: { ratio: 1.25 } }, 'unreadable')).toMatchObject({ status: 422, body: { error: 'payload_not_recorded' } });
+    expect(ideaOf(ctx).founderRulings ?? []).toEqual([]);
+    // The founder names the readable 2/1: taken, and applied once on both ledgers at the next close.
+    expect((await resolve(ctx, { ...body, payload: { ratio: 2 } }, 'named')).status).toBe(200);
+    await closeDay(ctx, S[7], { AAPL: BASE.AAPL / 2 });
+    for (const f of ['ledger', 'comparisonLedger']) expect(sharesOf(ctx, f), f).toBe(r6(before[f] * 2));
+    await closeDay(ctx, S[8], { AAPL: BASE.AAPL / 2 });
+    for (const f of ['ledger', 'comparisonLedger']) expect(sharesOf(ctx, f), f).toBe(r6(before[f] * 2));
+  });
+});
