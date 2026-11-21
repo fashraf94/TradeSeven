@@ -530,7 +530,7 @@ describe('the result packet — in the endpoint close\'s transaction, a copy of 
       db._store.delete(`mandates/${bookId}/ideas/${r.ideaId}/rows/${S[4]}`);
       const before = dumpStore(db);
       await expect(closeOn(db, bookId, S[10], Q)).rejects.toThrow(/observation_row_missing/);
-      expect(Object.keys(JSON.parse(dumpStore(db))).filter((p) => !(p in JSON.parse(before)) && !p.startsWith('mandateUniverseDaily/'))).toEqual([`mandateUniverseSnapshots/${S[10]}_close`]); // (and its daily layer: fixtures.js)
+      expect(Object.keys(JSON.parse(dumpStore(db))).filter((p) => !(p in JSON.parse(before)) && !p.startsWith('mandateUniverseDaily/') && !p.startsWith('practiceFieldCaParseReports/'))).toEqual([`mandateUniverseSnapshots/${S[10]}_close`]); // (and its daily layer: fixtures.js)
       expect(bookRef).toBeTruthy();
     });
 
@@ -696,7 +696,7 @@ describe('the result packet — in the endpoint close\'s transaction, a copy of 
     const planted = dumpStore(second.db);
     await expect(closeOn(second.db, second.bookId, DUE, quotes())).rejects.toThrow(/ALREADY_EXISTS/);
     const withSnapshot = JSON.parse(planted);
-    expect(Object.keys(JSON.parse(dumpStore(second.db))).filter((p) => !(p in withSnapshot) && !p.startsWith('mandateUniverseDaily/'))).toEqual([`mandateUniverseSnapshots/${DUE}_close`]); // only the snapshot the test stored (and its daily layer: fixtures.js)
+    expect(Object.keys(JSON.parse(dumpStore(second.db))).filter((p) => !(p in withSnapshot) && !p.startsWith('mandateUniverseDaily/') && !p.startsWith('practiceFieldCaParseReports/'))).toEqual([`mandateUniverseSnapshots/${DUE}_close`]); // only the snapshot the test stored (and its daily layer: fixtures.js)
     expect(ideaOf(second).result).toBeNull();
   });
 
@@ -708,7 +708,7 @@ describe('the result packet — in the endpoint close\'s transaction, a copy of 
     db._store.delete(`mandates/${bookId}/ideas/${r.ideaId}/rows/inception`);
     const before = dumpStore(db);
     await expect(closeOn(db, bookId, DUE, quotes())).rejects.toThrow(/inception_row_missing/);
-    expect(Object.keys(JSON.parse(dumpStore(db))).filter((p) => !(p in JSON.parse(before)) && !p.startsWith('mandateUniverseDaily/'))).toEqual([`mandateUniverseSnapshots/${DUE}_close`]); // (and its daily layer: fixtures.js)
+    expect(Object.keys(JSON.parse(dumpStore(db))).filter((p) => !(p in JSON.parse(before)) && !p.startsWith('mandateUniverseDaily/') && !p.startsWith('practiceFieldCaParseReports/'))).toEqual([`mandateUniverseSnapshots/${DUE}_close`]); // (and its daily layer: fixtures.js)
   });
 });
 

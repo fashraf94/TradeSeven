@@ -137,6 +137,8 @@ export async function snapshotBuildInputs(db, view) {
   }
   const pf = await practiceFieldBuildInputs(db, {
     ideaHeldTickers: unionHeldTickers(books.filter((b) => isIdeaBook(b))),
+    // T1a-2b-4: which idea books these are — the daily build keeps the symbols of their recently resulted ideas.
+    ideaBookIds: books.filter((b) => isIdeaBook(b) && typeof b.bookId === 'string').map((b) => b.bookId),
     quarterlyActive,
     // T1a-2a: when the Practice Field's draining query failed, its fallback already read the coverage document
     // (withDrainingIdeaBooks); it is handed on so this build makes no second read. Undefined on every other fire.

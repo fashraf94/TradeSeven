@@ -82,9 +82,13 @@ describe('the registry is a complete list of idea books (T2A-02) — pinned from
 
   it('2. the registry is written at TWO sites: createIdeaBook keeps every entry; the close removes only the book it sets closed, in that transaction', () => {
     const named = sources.filter((f) => /PRACTICE_FIELD_BOOK_REGISTRY_ID|['"`]_registry['"`]/.test(f.text)).map((f) => f.path).sort();
-    expect(named).toEqual(['api/_utils/practiceField/close.js', 'api/_utils/practiceField/constants.js', 'api/_utils/practiceField/ideaBook.js', 'api/_utils/practiceField/sweep.js']);
+    expect(named).toEqual(['api/_utils/practiceField/caParseReport.js', 'api/_utils/practiceField/close.js', 'api/_utils/practiceField/constants.js', 'api/_utils/practiceField/ideaBook.js', 'api/_utils/practiceField/sweep.js']);
     const sweep = sources.find((f) => f.path === 'api/_utils/practiceField/sweep.js').text;
     expect(sweep).not.toMatch(/registry[^\n]*\.(set|update|create|delete)\(/i); // sweep.js only reads it
+    // T1a-2b-4 closeout (C-1): the parse report's writer READS the registry, in its own transaction, only to name the books
+    // a late report change alerts — it never writes it.
+    const report = sources.find((f) => f.path === 'api/_utils/practiceField/caParseReport.js').text;
+    expect(report).not.toMatch(/registry[^\n]*\.(set|update|create|delete)\(/i);
     const allow = JSON.parse(readFileSync(join(ROOT, 'api/_utils/compositionProtectedStoresAllowlist.json'), 'utf8'));
     const counts = allow.allowedWriteSites;
     const keys = Object.keys(counts).filter((k) => k.endsWith('::practiceFieldBooks')).sort();

@@ -6,6 +6,8 @@
 // no admission while a completed session is unclosed. T2C-01 (Astra, 17 Nov 2026): and every held name covered by that
 // session's daily layer, its corporate-action fetch succeeded.
 
+import { vendorAnswering } from './__testsupport__/fixtures.js';
+import { makeParseReportingFetcher } from './caParseReport.js';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { admitIdea, evaluateAdmission } from './admission.js';
 import { normalizeIdeaContract } from './contract.js';
@@ -340,7 +342,7 @@ describe('integer cents throughout', () => {
     const ideas = book.openIdeaIds.map((id) => getIdea(db, bookId, id));
     const markSet = {
       basis: 'session_snapshot', session: DAYS.d2, snapshotKey: `${DAYS.d2}_open30`, snapshot: db._get(`mandateUniverseSnapshots/${DAYS.d2}_open30`), builtAtIso: null, considered: [],
-      daily: { key: DAYS.d2, present: true, symbols: db._get(`mandateUniverseDaily/${DAYS.d2}`).symbols, doc: db._get(`mandateUniverseDaily/${DAYS.d2}`) },
+      daily: { key: DAYS.d2, present: true, symbols: db._get(`mandateUniverseDaily/${DAYS.d2}`).symbols, doc: db._get(`mandateUniverseDaily/${DAYS.d2}`), parseReport: db._get(`practiceFieldCaParseReports/${DAYS.d2}`) ?? null },
     };
     const epoch = db._get(`mandates/${bookId}/epochs/epoch-0001`);
     const v = evaluateAdmission({ book, epoch, ideas, coverageData: null, contract, ideaRefKey: `${bookId}/x`, nowIso: AT_11, admitsOwner: true, markSet });
@@ -392,7 +394,9 @@ describe('Astra T2C-01 — a held name is valued only when the day\'s corporate-
         await ensureDailySnapshot(db, {
           date: DAYS.d2, heldTickers: aaplInDaily ? ['AAPL', 'SPY'] : ['SPY'], candidateUniverse: [], now: new Date(etIso(DAYS.d2, 9, 0)),
           getFundamentals: async () => ({ fundamentals: { sector: 'Technology', industry: 'Consumer Electronics', marketCap: 3.4e12 }, cacheStatus: { fundamentals: 'cache' } }),
-          fetchCorporateActions: async (sym) => (sym === 'AAPL' ? aaplCa : FETCH_OK),
+          // (T1a-2b-4: as the cron hands it for an idea book's coverage — the parse-reporting wrapper, which writes the
+          // session's parse report; the stub answers through the vendor fake so the report observes it.)
+          fetchCorporateActions: (() => { const v = vendorAnswering(async (sym) => (sym === 'AAPL' ? aaplCa : FETCH_OK)); return makeParseReportingFetcher(db, { symbols: ['AAPL', 'SPY'], base: v.fetchCorporateActions, fetchImpl: v.caFetchImpl }); })(),
         });
       }
       await ensureUniverseSnapshot(db, {

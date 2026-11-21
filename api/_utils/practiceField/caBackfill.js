@@ -8,7 +8,10 @@
 // fetchCorporateActionsEODHD — the §3.0 sole-fetch home, called, never edited, through the same feed parsers) for that
 // symbol's actions FROM THE DAY AFTER `caCoveredThrough`, through the date being closed, and stores the answer:
 //
-//   practiceFieldCaBackfill/{SYM}   { schemaVersion, symbol, from, to, failed, actions, calls, fetchedAt, source }
+//   practiceFieldCaBackfill/{SYM}   { schemaVersion, symbol, from, to, failed, actions, calls, fetchedAt, source, parseReport }
+//
+// (T1a-2b-4, T2D-12: `parseReport` is the same per-symbol report the daily build writes — caParseReport.js — for what
+// this fetch answered. A backfill whose report is not clean is stored as a FAILED one: its rows that parsed are kept.)
 //
 // ONE DOCUMENT PER SYMBOL, the latest successful range: a catch-up that moves an idea's `caCoveredThrough` forward one
 // session at a time keeps reading it (it reaches back to the day after each), and SPY — in every idea, each waiting
@@ -37,7 +40,8 @@ import { fetchCorporateActionsEODHD, bumpUpstreamCounter } from '../mandateUnive
 import { MANDATE_CA_FETCH_LOOKBACK_DAYS } from '../mandateConfig.js';
 import { isIdeaBook } from '../mandateBookKind.js';
 import { FILLED_IDEA_STATUSES } from './constants.js';
-import { coveredThroughOf, backfillIdOf, successfulBackfill, shiftCalendarDate, heldSymbolsOf } from './dailyCoverage.js';
+import { coveredThroughOf, backfillIdOf, successfulBackfill, shiftCalendarDate, heldSymbolsOf, parseEntryVerdict } from './dailyCoverage.js';
+import { fetchObservingParse, legReportOf, parseReportEntryOf, PARSE_LEGS } from './caParseReport.js';
 
 const LOG_PREFIX = '[PracticeFieldBackfill]';
 /** One fetch that has not answered in this long is taken as failed (its doubt stays). */
@@ -72,6 +76,15 @@ export function backfillNeeds(ideas, through) {
       const prior = needs.get(symbol);
       if (!prior || from < prior.from) needs.set(symbol, { symbol, from });
     }
+    // (T1a-2b-4 fix round, refuter R-4: A SOLD HOLDING'S STICKY COVERAGE DOUBT — `closedCoverageDoubts`, T2E-08 — clears only
+    // by a backfill with a clean report covering its earliest date through the sale; a session listing the symbol cleanly says
+    // nothing about that date, so the daily window never stands in. Needed from that date while the doubt stands.)
+    for (const [symbol, doubt] of Object.entries(idea.ledger?.closedCoverageDoubts || {})) {
+      const from = (doubt?.dates || []).map((x) => x?.date).filter((d) => typeof d === 'string').sort()[0];
+      if (typeof from !== 'string' || from > through) continue;
+      const prior = needs.get(symbol);
+      if (!prior || from < prior.from) needs.set(symbol, { symbol, from });
+    }
   }
   return [...needs.values()].sort((a, b) => a.symbol.localeCompare(b.symbol));
 }
@@ -84,6 +97,7 @@ export function backfillNeeds(ideas, through) {
  */
 export async function ensureCoverageBackfills(db, bookRef, {
   through, now = new Date(), fetchCorporateActions = fetchCorporateActionsEODHD, fetchTimeoutMs = BACKFILL_FETCH_TIMEOUT_MS, passBudgetMs = BACKFILL_PASS_BUDGET_MS,
+  fetchImpl = null,
 } = {}) {
   const out = { needed: 0, fetched: 0, failed: 0, upstreamCalls: 0, alerts: [] };
   const started = Date.now();
@@ -107,29 +121,41 @@ export async function ensureCoverageBackfills(db, bookRef, {
       // SPY is in every one — may still need the earlier one).
       const fetchFrom = stored !== null && stored.from < from ? stored.from : from;
       let res;
+      // T1a-2b-4 (T2D-12): the backfill records the same parse report as the daily build, for what it fetches — each leg's
+      // answer observed once through the base fetcher's own seam (caParseReport.js). A fetch that never answered has an
+      // unanswered report: not clean.
+      let parseReport = parseReportEntryOf(Object.fromEntries(PARSE_LEGS.map((leg) => [leg, legReportOf(symbol, leg, null)])), { at: now.toISOString() });
       if (Date.now() - started >= passBudgetMs) {
         res = { actions: [], calls: 0, failed: true, error: `the pass's ${passBudgetMs} ms budget was spent; asked again at the next close` };
       } else {
         try {
-          res = await withinTimeout(Promise.resolve().then(() => fetchCorporateActions(symbol, { from: fetchFrom, to: through })), fetchTimeoutMs);
+          const observed = await withinTimeout(Promise.resolve().then(() => fetchObservingParse(symbol, { from: fetchFrom, to: through }, { base: fetchCorporateActions, fetchImpl, now: () => now })), fetchTimeoutMs);
+          // (A timeout answers a plain failed fetch, with no report.)
+          if (observed && typeof observed === 'object' && Object.hasOwn(observed, 'entry')) { res = observed.res; parseReport = observed.entry; } else res = observed;
         } catch (err) {
           res = { actions: [], calls: 0, failed: true, error: err?.message ?? String(err) };
         }
       }
+      const parse = parseEntryVerdict(parseReport);
       out.upstreamCalls += Number(res?.calls) || 0;
       const actions = Array.isArray(res?.actions) ? res.actions : [];
       const doc = {
-        // (An answer whose rows are not a list is not a success, whatever it says: lens A N4.)
-        schemaVersion: 1, symbol, from: fetchFrom, to: through, failed: res?.failed !== false || !Array.isArray(res?.actions), actions,
-        calls: Number(res?.calls) || 0, fetchedAt: now.toISOString(), source: 'idea_book_backfill',
+        // (An answer whose rows are not a list is not a success, whatever it says: lens A N4. T1a-2b-4, T2D-12: nor is one
+        // whose parse report shows a rejected row or a malformed envelope — its rows that parsed are kept, for the founder.)
+        schemaVersion: 1, symbol, from: fetchFrom, to: through, failed: res?.failed !== false || !Array.isArray(res?.actions) || !parse.clean, actions,
+        calls: Number(res?.calls) || 0, fetchedAt: now.toISOString(), source: 'idea_book_backfill', parseReport,
       };
       if (doc.failed) {
         out.failed += 1;
-        const line = `PRACTICE_FIELD_CA_BACKFILL_FAILED ${bookRef.id} ${symbol} ${fetchFrom}..${through} — the backfill of its corporate actions failed${res?.error ? ` (${res.error})` : ''}; its coverage gap stays in doubt`;
+        const why = res?.error ?? (res?.failed === false && Array.isArray(res?.actions) && !parse.clean ? `its parse report is not clean: ${parse.reason}` : null);
+        const line = `PRACTICE_FIELD_CA_BACKFILL_FAILED ${bookRef.id} ${symbol} ${fetchFrom}..${through} — the backfill of its corporate actions failed${why ? ` (${why})` : ''}; its coverage gap stays in doubt`;
         out.alerts.push(line);
         console.error(`${LOG_PREFIX} ${line}`);
-        // A failed answer never replaces a successful one; with none, it is kept — rows and all — for the founder.
-        if (stored === null) await ref.set(doc);
+        // A failed answer never replaces a successful one; with none, it is kept — rows and all — for the founder. (Review
+        // AR4-B-5: "successful" here is the stored answer's own `failed: false`, its report or not — a success stored before
+        // this build carries none, covers nothing now, and is still never overwritten by a failure.)
+        const priorSucceeded = prior.exists && prior.data()?.failed === false;
+        if (stored === null && !priorSucceeded) await ref.set(doc);
         continue;
       }
       await ref.set(doc);

@@ -26,7 +26,7 @@ import { roundUsd, roundShares } from '../mandateRounding.js';
 import {
   seedBook, admitAndEnter, closeOn, windowAt, storeTickSnapshot, storeCloseSnapshot, contractOf, getBook, getIdea, getRow, tickOf, tickSnapshot,
   slotNowOf, slotOpenIso, closeNowOf, etIso, ADMIT_ISO, takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, countResults, moneyStoreBytes,
-  withoutWindowAlerts, admitAllThenEnter, coverHeldNames, founderRules,
+  withoutWindowAlerts, admitAllThenEnter, coverHeldNames, founderRules, CLEAN_PARSE_ENTRY,
 } from './__testsupport__/fixtures.js';
 
 // A short idea admitted on Friday 13 Nov 2026 starts on Monday the 16th (session 0) and is due ten sessions later.
@@ -737,11 +737,13 @@ describe('Q-2 and FR-A7 — one rule for every fill: a maximum age, and the stor
     const snapshot = tickSnapshot(S[1], 'open30', quotes());
     // (T1a-2b-3: the session's daily layer, covering the name — Amendment F-6: with none, the sale waits.)
     const daily = { date: S[1], symbols: { AAPL: { sector: null } } };
-    const plan = planPendingSales({ book, idea, others: [], snapshot, daily, tick: tickOf(S[1], 'open30'), nowIso: slotNowOf(S[1]).toISOString() });
+    // (T1a-2b-4: and its parse report, clean for the name — T2D-12: with none, the sale waits.)
+    const parseReport = { schemaVersion: 1, session: S[1], symbols: { AAPL: CLEAN_PARSE_ENTRY } };
+    const plan = planPendingSales({ book, idea, others: [], snapshot, daily, parseReport, tick: tickOf(S[1], 'open30'), nowIso: slotNowOf(S[1]).toISOString() });
     expect(plan).toMatchObject({ changed: true, resulted: false, sold: [{ symbol: 'AAPL', origin: 'line_exit' }] });
     expect(JSON.stringify([book, idea])).toBe(frozen); // the inputs are not mutated
     const foreign = { ...book, portfolio: { ...book.portfolio, positions: { AAPL: { ...book.portfolio.positions.AAPL, ideaId: 'another-idea' } } } };
-    expect(() => planPendingSales({ book: foreign, idea, others: [], snapshot, daily, tick: tickOf(S[1], 'open30'), nowIso: slotNowOf(S[1]).toISOString() })).toThrow(/sale_position_mismatch/);
+    expect(() => planPendingSales({ book: foreign, idea, others: [], snapshot, daily, parseReport, tick: tickOf(S[1], 'open30'), nowIso: slotNowOf(S[1]).toISOString() })).toThrow(/sale_position_mismatch/);
   });
 
   it('the sales pass serves an active or a draining book and nothing else; one idea\'s failure does not block another\'s sale', async () => {
@@ -1026,7 +1028,7 @@ describe('the second refuter pass — what the review\'s own fixes left open', (
     expect(idea.blockedBy).toEqual([{ kind: 'line_exit_held_for_corporate_action', symbol: 'MSFT', session: S[2] }]);
     expect(JSON.stringify(ctx.db._get(`mandateUniverseDaily/${S[2]}`))).toBe(dailyBefore); // read, never written
     // A symbol whose fetch did not fail is not held: the same day, another idea's sale would fill (the pure plan).
-    const plan = (daily) => planPendingSales({ book: bookOf(ctx), idea: ideaOf(ctx), others: [], snapshot: tickSnapshot(S[2], 'preClose', quotes()), daily, tick: tickOf(S[2], 'preClose'), nowIso: slotNowOf(S[2], 'preClose').toISOString() });
+    const plan = (daily) => planPendingSales({ book: bookOf(ctx), idea: ideaOf(ctx), others: [], snapshot: tickSnapshot(S[2], 'preClose', quotes()), daily, parseReport: ctx.db._get(`practiceFieldCaParseReports/${S[2]}`), tick: tickOf(S[2], 'preClose'), nowIso: slotNowOf(S[2], 'preClose').toISOString() });
     expect(plan({ date: S[2], symbols: { AAPL: { caFetchFailed: true }, MSFT: { sector: 'Technology' } } }).sold).toHaveLength(1); // another symbol's failure holds nothing
     expect(plan({ date: S[2], symbols: { MSFT: { caFetchFailed: true } } }).sold).toHaveLength(0);
     // A daily document with NO ENTRY for the symbol (built without the idea book's coverage) knows as little: held.

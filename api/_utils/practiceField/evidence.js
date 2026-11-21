@@ -70,6 +70,11 @@ function seal(body) {
   return { ...pure, hashAlgorithm: EVIDENCE_HASH_ALGORITHM, contentHash: canonicalContentHash(pure) };
 }
 
+/** T1a-2b-4: an ADJUSTMENT's evidence document (adjustments.js), sealed the same way as a packet: create-once, content-hashed. */
+export function sealAdjustment(body) {
+  return seal(body);
+}
+
 /** Does a stored packet still hash to its own `contentHash`? */
 export function verifyPacket(packet) {
   if (!isPlain(packet) || typeof packet.contentHash !== 'string') return false;

@@ -19,6 +19,7 @@
 //
 // To write the dump to a file: PF_E2E_DUMP=<path> npx vitest run api/_utils/practiceField/endToEnd.test.js
 
+import { makeParseReportingFetcher } from './caParseReport.js';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
@@ -28,9 +29,8 @@ import { nextSessionDate } from './windows.js';
 import { setPracticeFieldModeForTests } from './mode.js';
 import { roundUsd } from '../mandateRounding.js';
 import {
-  seedBook, closeOn, windowAt, contractOf, getBook, getIdea, getRow, dumpStore, countDocs, etIso, ADMIT_ISO,
-  takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, countResults, withoutWindowAlerts, admitAndEnter, closeNowOf,
-} from './__testsupport__/fixtures.js';
+  seedBook, closeOn, windowAt, contractOf, getBook, getIdea, getRow, dumpStore, countDocs, etIso, ADMIT_ISO, cleanParseEntryFor,
+  takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, countResults, withoutWindowAlerts, admitAndEnter, closeNowOf, vendorAnswering } from './__testsupport__/fixtures.js';
 import { closeIdeaBook } from './close.js';
 import { ensureDailySnapshot, ensureUniverseSnapshot } from '../mandateUniverseSnapshot.js';
 import {
@@ -329,10 +329,24 @@ describe('the end-to-end synthetic run', () => {
     expect(db._get(`mandates/${bookId}/dailyRows/2026-11-13`)).toBeUndefined();
 
     // The evidence.
-    const dump = dumpStore(db);
+    // T1a-2b-4 (T2D-12): CHECK, THEN STRIP. The fixtures now store, as the daily build does for an idea book's coverage,
+    // each session's PARSE REPORT beside its daily layer (`practiceFieldCaParseReports/{date}`, a new server-only
+    // collection) — every entry clean, every answer parsed whole. Checked here first: each report document is exactly the
+    // clean entries the fixtures write, one per symbol of its session's daily layer. Then, and only then, the pin is the
+    // store WITHOUT those documents — the same bytes as before (`abcf8420…`): no other document or leaf changed.
+    const reports = [...db._store.keys()].filter((p) => p.startsWith('practiceFieldCaParseReports/')).sort();
+    expect(reports.length, 'one report per stored daily layer').toBe([...db._store.keys()].filter((p) => p.startsWith('mandateUniverseDaily/')).length);
+    for (const path of reports) {
+      const date = path.split('/')[1];
+      const doc = db._get(path);
+      const layer = db._get(`mandateUniverseDaily/${date}`).symbols;
+      expect(doc, path).toEqual({ schemaVersion: 1, session: date, symbols: Object.fromEntries(Object.keys(layer).map((s) => [s, cleanParseEntryFor(layer[s].corporateActions)])) });
+    }
+    const stripped = Object.fromEntries([...db._store.keys()].filter((p) => !p.startsWith('practiceFieldCaParseReports/')).sort().map((p) => [p, db._store.get(p).data]));
+    const dump = JSON.stringify(stripped, (_k, v) => (v instanceof Date ? v.toISOString() : v), 1);
     const evidence = { sha256: createHash('sha256').update(dump, 'utf8').digest('hex'), bytes: Buffer.byteLength(dump, 'utf8') };
     if (process.env.PF_E2E_DUMP) writeFileSync(process.env.PF_E2E_DUMP, dump);
-    console.log(`PF_E2E_EVIDENCE ${JSON.stringify(evidence)} docs=${db._store.size}`);
+    console.log(`PF_E2E_EVIDENCE ${JSON.stringify(evidence)} docs=${db._store.size - reports.length} reports=${reports.length}`);
     expect(evidence).toEqual(EXPECTED_DUMP);
   });
 
@@ -481,7 +495,9 @@ describe('the end-to-end case with a coverage gap (Amendment F-1)', () => {
     await ensureDailySnapshot(db, {
       date, heldTickers: [], coverageTickers: ['AAPL', 'SPY'], candidateUniverse: [], now: new Date(etIso(date, 8, 30)),
       getFundamentals: async () => ({ fundamentals: { sector: 'Technology', industry: 'Consumer Electronics', marketCap: 3.4e12 }, cacheStatus: { fundamentals: 'cache' } }),
-      fetchCorporateActions: vendor(date),
+      // (T1a-2b-4: as the cron hands it for an idea book's coverage — the parse-reporting wrapper around the builder's own
+      // fetch, here answered by the fake vendor; it writes the session's parse report beside the daily layer.)
+      fetchCorporateActions: (() => { const v = vendorAnswering(vendor(date)); return makeParseReportingFetcher(db, { symbols: ['AAPL', 'SPY'], base: v.fetchCorporateActions, fetchImpl: v.caFetchImpl }); })(),
     });
     await ensureUniverseSnapshot(db, {
       tickKey: `${date}_close`, sessionDate: date, heldTickers: [], coverageTickers: ['AAPL', 'SPY'], candidateUniverse: [], minCandidateCapacity: 0,
@@ -497,7 +513,7 @@ describe('the end-to-end case with a coverage gap (Amendment F-1)', () => {
     const ideaNow = () => getIdea(db, bookId, ideaId);
     const recon = () => { const b = getBook(db, bookId); assertReconciled(b, b.openIdeaIds.map((id) => getIdea(db, bookId, id))); };
     await buildSession(db, SESSIONS[0]);
-    await closeIdeaBook(db, bookRef, { date: SESSIONS[0], now: closeNowOf(SESSIONS[0]), fetchCorporateActions: vendor(SESSIONS[0]) });
+    await closeIdeaBook(db, bookRef, { date: SESSIONS[0], now: closeNowOf(SESSIONS[0]), ...vendorAnswering(vendor(SESSIONS[0])) });
     recon();
     const shares = ideaNow().ledger.holdings.AAPL.shares;
     const gapAlerts = [];
@@ -505,7 +521,7 @@ describe('the end-to-end case with a coverage gap (Amendment F-1)', () => {
       const date = SESSIONS[i];
       await buildSession(db, date);
       expect(db._get(`mandateUniverseDaily/${date}`).symbols.AAPL).toMatchObject({ caFetchFailed: true }); // the builder's own record
-      const out = await closeIdeaBook(db, bookRef, { date, now: closeNowOf(date), fetchCorporateActions: vendor(date) });
+      const out = await closeIdeaBook(db, bookRef, { date, now: closeNowOf(date), ...vendorAnswering(vendor(date)) });
       recon();
       gapAlerts.push(out.alerts.filter((a) => a.startsWith('PRACTICE_FIELD_CA_COVERAGE_GAP')).length);
       // The doubt: AAPL carried at its pre-split mark, named; nothing count-dependent applied; SPY covered.
@@ -522,7 +538,7 @@ describe('the end-to-end case with a coverage gap (Amendment F-1)', () => {
     expect(db._get(`mandateUniverseDaily/${SESSIONS[7]}`).caWindow.from).toBe('2026-11-20');
     const backfill = vi.fn(vendor(SESSIONS[7]));
     const bookCash = getBook(db, bookId).portfolio.cash;
-    await closeIdeaBook(db, bookRef, { date: SESSIONS[7], now: closeNowOf(SESSIONS[7]), fetchCorporateActions: backfill });
+    await closeIdeaBook(db, bookRef, { date: SESSIONS[7], now: closeNowOf(SESSIONS[7]), ...vendorAnswering(backfill) });
     recon();
     expect(backfill.mock.calls).toEqual([['AAPL', { from: '2026-11-17', to: SESSIONS[7] }]]);
     expect(db._get('practiceFieldCaBackfill/AAPL')).toMatchObject({ from: '2026-11-17', to: SESSIONS[7], failed: false });
@@ -542,7 +558,7 @@ describe('the end-to-end case with a coverage gap (Amendment F-1)', () => {
     // S[8]: the data is continuous again — nothing fetched, nothing applied twice.
     await buildSession(db, SESSIONS[8]);
     const quiet = vi.fn(vendor(SESSIONS[8]));
-    await closeIdeaBook(db, bookRef, { date: SESSIONS[8], now: closeNowOf(SESSIONS[8]), fetchCorporateActions: quiet });
+    await closeIdeaBook(db, bookRef, { date: SESSIONS[8], now: closeNowOf(SESSIONS[8]), ...vendorAnswering(quiet) });
     recon();
     expect(quiet).not.toHaveBeenCalled();
     expect(ideaNow().ledger.dividendsUsd).toBe(owed);
