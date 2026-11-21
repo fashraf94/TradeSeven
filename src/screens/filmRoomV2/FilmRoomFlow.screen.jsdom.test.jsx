@@ -244,6 +244,8 @@ describe('F-DOOR — the door, the way back, the pins\' links, a change of day; 
     const cardsApi = { ...api(), readVerdict: () => new Promise((r) => { admit = r; }) };
     await open({ cardsApi });
     expect(onTape()).toBe(true);
+    // a press, as a browser sends one: its pointer-down, then its click (fix round item 6, DB-4: the guard holds from the start)
+    act(() => { m.tab('Study').dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true })); });
     m.click(m.tab('Study')); await m.flush();
     admit(true); await m.flush();
     expect(onTape()).toBe(true);
@@ -416,13 +418,16 @@ describe('the review round — the doors, the focus and the notice', () => {
     expect(document.activeElement).toBe(m.q('[data-flow-door]'));
   });
 
-  it('DR-7: a click anywhere on the tape before the verdict lands keeps the tape — the verdict landing late takes nothing away', async () => {
+  // fix round item 6 (Amendment B DB-4): the guard holds from the gesture's START — a press is a pointer-down, then its click
+  it('DR-7: a press anywhere on the tape before the verdict lands keeps the tape — the verdict landing late takes nothing away', async () => {
     flags.flow = 'allowlist';
     let admit;
     const cardsApi = { ...api(), readVerdict: () => new Promise((res) => { admit = res; }) };
     await open({ cardsApi });
     expect(onTape()).toBe(true);
-    m.click(m.q('[data-depth="glance"] button'));
+    const target = m.q('[data-depth="glance"] button');
+    act(() => { target.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true })); });
+    m.click(target);
     admit(true); await m.flush();
     expect(onTape()).toBe(true);
   });

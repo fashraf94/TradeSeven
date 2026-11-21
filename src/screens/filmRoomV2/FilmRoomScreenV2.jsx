@@ -261,27 +261,29 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
   // Film Room D1 (Build D spec §2, FL-14) — the FLOW gate, per battle owner: 'off' and 'on' ask nothing; 'allowlist'
   // reads THE verdict the cards read, through the one seam they use (cardsApi.readVerdict — readFilmRoomVerdict in
   // production) with the owner they pass, so its one cache answers both and a battle is never asked about twice. While
-  // it is on its way, the flow reads as off. The answer belongs to this battle alone (the route's A2L2-8 rule).
+  // it is on its way, the flow reads as off. The answer belongs to this battle AND the owner it was asked for (Amendment
+  // B DB-12, Astra's F12: the reader's cache keys by owner — a refreshed owner on the same battle id is a new question,
+  // pending until its own answer, never the last owner's).
   const flowMode = resolveFilmRoomFlowMode();
   const flowOwnerId = typeof battle?.ownerId === 'string' ? battle.ownerId : null;
   // a screen opened at a moment can never show the front (§3), so its verdict is never asked for the flow (the review's OP-2)
   const [openedAtMoment] = useState(() => openAt != null);
-  const [flowAnswer, setFlowAnswer] = useState(() => ({ battleId, verdict: undefined }));
+  const [flowAnswer, setFlowAnswer] = useState(() => ({ battleId, ownerId: flowOwnerId, verdict: undefined }));
   useEffect(() => {
     if (flowMode !== 'allowlist' || openedAtMoment || !battleId || typeof cardsApi?.readVerdict !== 'function') return undefined;
     let live = true;
     Promise.resolve()
       .then(() => cardsApi.readVerdict(battleId, { ownerId: flowOwnerId }))
-      .then((v) => { if (live && mounted.current) setFlowAnswer({ battleId, verdict: v === true }); })
-      .catch(() => { if (live && mounted.current) setFlowAnswer({ battleId, verdict: false }); });
+      .then((v) => { if (live && mounted.current) setFlowAnswer({ battleId, ownerId: flowOwnerId, verdict: v === true }); })
+      .catch(() => { if (live && mounted.current) setFlowAnswer({ battleId, ownerId: flowOwnerId, verdict: false }); });
     return () => { live = false; };
   }, [flowMode, openedAtMoment, battleId, flowOwnerId, cardsApi]);
-  const flowVerdict = flowAnswer.battleId === battleId ? flowAnswer.verdict : undefined;
+  const flowVerdict = flowAnswer.battleId === battleId && flowAnswer.ownerId === flowOwnerId ? flowAnswer.verdict : undefined;
   const flowOn = filmRoomFlowOn(flowMode, flowVerdict);
   // §3 — the screen opens on the front when the flow resolves on, the screen was NOT opened at a moment (`openAt`,
   // as App handed it at mount) and the day has a written tape; otherwise as it opened before Build D. `onTape`: the
-  // player went through a door — or used the tape before the front first showed (a click anywhere on it), so a
-  // verdict that lands late never takes the tape from under them. `fromFront`: the tape was opened from the front in
+  // player went through a door — or started using the tape before the front first showed (a gesture on it, below), so
+  // a verdict that lands late never takes the tape from under them. `fromFront`: the tape was opened from the front in
   // this visit (§10). `seenFront`: the front has shown in this visit — from then on a day the player picks on the
   // front that is still being read keeps the front's frame (its header, the day picker under the player's focus)
   // instead of painting the tape's layout for a moment (the review's DR-1).
@@ -292,19 +294,27 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
   const front = frontIntent && written;
   const frontFrame = !front && frontIntent && seenFront && tapeState.status === 'loading';
   useEffect(() => { if (front && !seenFront) setSeenFront(true); }, [front, seenFront]);
-  // the review's DR-7 / DR-2: using the tape while the front's conditions are still unknown — the verdict on its way,
-  // or the day still being read — keeps the tape; once the front has shown, or on a settled page, nothing does but a door
+  // the review's DR-7 / DR-2, as Amendment B DB-4 makes it (Astra's F4): A GESTURE IN PROGRESS KEEPS THE TAPE. While
+  // the front's conditions are still unknown — the verdict on its way, or the day still being read — a pointer-down
+  // inside the tape, a key-down inside it, or a focus move onto one of its controls keeps the tape for this visit, from
+  // the gesture's START: the gesture's own activation (its pointer-up, its key-up) then runs once, natively, on the
+  // element still under it. It replaces the click guard, which held only at the click — after an admission between
+  // the press and the release had already swapped the element away. Once the front has shown, or on a settled page,
+  // nothing does but a door; an untouched page still opens on the front when admitted.
   const unsettled = (flowMode === 'allowlist' && flowVerdict === undefined) || tapeState.status === 'loading';
   const holdTape = () => { if (flowMode !== 'off' && !seenFront && !onTape && !front && unsettled) setOnTape(true); };
-  // the depth control moves by keyboard too (arrow keys, Home, End — no click): it holds the tape as a click does (N-2)
-  const onDepth = (d) => { setDepth(d); holdTape(); };
   // BA-49, the first-open notice: marked seen once it has been SHOWN on the tape it qualifies — the tape layout, the
   // flow's answer in, the day's read done — never used up by a paint the front then replaces (the review's DR-3).
   // Where the flow is off for this owner — the mode 'off', or 'allowlist' answered no — that is the first paint it
-  // shows on, as before Build D (the refuter's N-1b).
+  // shows on, as before Build D (the refuter's N-1b). Amendment B DB-3 (Astra's F3): so is a screen opened AT A
+  // MOMENT, valid or rejected — that entry never shows the front, so its tape is settled from the first paint; and a
+  // notice the viewer DISMISSES is marked then (onDismiss, below — markFirstOpenSeen writes nothing once marked).
+  // DA-12's one declared difference stays: under 'allowlist', a viewer who leaves without interacting while the verdict
+  // is pending isn't marked.
   const flowOffHere = flowMode === 'off' || (flowMode === 'allowlist' && flowVerdict === false);
-  const noticeShown = !front && !frontFrame && (flowOffHere || ((flowVerdict === true || flowMode === 'on') && tapeState.status !== 'loading'));
+  const noticeShown = !front && !frontFrame && (flowOffHere || openedAtMoment || ((flowVerdict === true || flowMode === 'on') && tapeState.status !== 'loading'));
   useEffect(() => { if (notice && noticeShown) markFirstOpenSeen(viewerId); }, [notice, viewerId, noticeShown]);
+  const dismissNotice = () => { markFirstOpenSeen(viewerId); setNotice(false); };
   // the series is the Deep dive's, read only when it opens — never for the front, whatever depth the tape was left at
   // (the review's DR-4)
   const seriesState = useSeriesDay(battleId, day, tape?.ownerId ?? null, depth === 'deep' && written && !front, readers);
@@ -504,7 +514,7 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
   }
 
   return (
-    <div data-screen="film-room-v2" onClickCapture={holdTape} style={{ minHeight: '100vh', background: C.bg, color: C.ink, display: 'flex', flexDirection: 'column' }}>
+    <div data-screen="film-room-v2" onPointerDownCapture={holdTape} onKeyDownCapture={holdTape} onFocusCapture={holdTape} style={{ minHeight: '100vh', background: C.bg, color: C.ink, display: 'flex', flexDirection: 'column' }}>
       <header style={{ background: C.raised }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%', maxWidth: desktop ? 1240 : undefined, margin: '0 auto', boxSizing: 'border-box', padding: desktop ? '8px 24px 12px' : '6px 12px 10px' }}>
         {topRow}
@@ -529,7 +539,7 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
           </div>
           {/* The design of record's 400 px depth control gives way first on a narrow desktop (down to 280 px), so the subtitle keeps its room (review A2P3-3). */}
           <div style={desktop ? { flex: '0 1 400px', minWidth: 280, marginLeft: 24 } : { width: 'auto', flexShrink: 0 }}>
-            <Segmented value={depth} onChange={onDepth} options={COPY.depths} idBase={idBase} />
+            <Segmented value={depth} onChange={setDepth} options={COPY.depths} idBase={idBase} />
           </div>
           <KindLegend style={desktop ? { marginLeft: 'auto', justifyContent: 'flex-end', maxWidth: 340, flexShrink: 0 } : undefined} />
         </div>
@@ -537,7 +547,7 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
         </div>
       </header>
       <main style={{ flex: 1, width: '100%', maxWidth: desktop ? 1240 : undefined, margin: '0 auto', boxSizing: 'border-box', padding: desktop ? '18px 24px 48px' : '12px 12px 40px', display: 'flex', flexDirection: 'column', gap: desktop ? 18 : 14 }}>
-        {notice ? <FirstOpenNotice onDismiss={() => setNotice(false)} /> : null}
+        {notice ? <FirstOpenNotice onDismiss={dismissNotice} /> : null}
         {/* One tabpanel per depth, each the one its tab controls (aria-controls / aria-labelledby); the others hidden and empty.
             The shown panel is keyed by the day: a depth's own state (an opened marker, a plan filter, an opened rationale) never
             carries into another day's tape (review A2L3-3, A2L3-4). */}
