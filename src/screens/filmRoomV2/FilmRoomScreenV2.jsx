@@ -296,10 +296,14 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
   // or the day still being read — keeps the tape; once the front has shown, or on a settled page, nothing does but a door
   const unsettled = (flowMode === 'allowlist' && flowVerdict === undefined) || tapeState.status === 'loading';
   const holdTape = () => { if (flowMode !== 'off' && !seenFront && !onTape && !front && unsettled) setOnTape(true); };
+  // the depth control moves by keyboard too (arrow keys, Home, End — no click): it holds the tape as a click does (N-2)
+  const onDepth = (d) => { setDepth(d); holdTape(); };
   // BA-49, the first-open notice: marked seen once it has been SHOWN on the tape it qualifies — the tape layout, the
   // flow's answer in, the day's read done — never used up by a paint the front then replaces (the review's DR-3).
-  // With the flow off that is the first paint, as before Build D.
-  const noticeShown = !front && !frontFrame && (flowMode === 'off' || (flowVerdict !== undefined || flowMode === 'on') && tapeState.status !== 'loading');
+  // Where the flow is off for this owner — the mode 'off', or 'allowlist' answered no — that is the first paint it
+  // shows on, as before Build D (the refuter's N-1b).
+  const flowOffHere = flowMode === 'off' || (flowMode === 'allowlist' && flowVerdict === false);
+  const noticeShown = !front && !frontFrame && (flowOffHere || ((flowVerdict === true || flowMode === 'on') && tapeState.status !== 'loading'));
   useEffect(() => { if (notice && noticeShown) markFirstOpenSeen(viewerId); }, [notice, viewerId, noticeShown]);
   // the series is the Deep dive's, read only when it opens — never for the front, whatever depth the tape was left at
   // (the review's DR-4)
@@ -524,7 +528,7 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
           </div>
           {/* The design of record's 400 px depth control gives way first on a narrow desktop (down to 280 px), so the subtitle keeps its room (review A2P3-3). */}
           <div style={desktop ? { flex: '0 1 400px', minWidth: 280, marginLeft: 24 } : { width: 'auto', flexShrink: 0 }}>
-            <Segmented value={depth} onChange={setDepth} options={COPY.depths} idBase={idBase} />
+            <Segmented value={depth} onChange={onDepth} options={COPY.depths} idBase={idBase} />
           </div>
           <KindLegend style={desktop ? { marginLeft: 'auto', justifyContent: 'flex-end', maxWidth: 340, flexShrink: 0 } : undefined} />
         </div>

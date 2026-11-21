@@ -17,7 +17,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Whole-screen mounts with several flushes per row: the sibling suites' bound (FilmRoomScreenV2.reads, review A2V4-14).
 vi.setConfig({ testTimeout: 30_000 });
-import React from 'react';
+import React, { act } from 'react';
 
 const flags = vi.hoisted(() => ({ flow: 'on', cards: 'off' }));
 vi.mock('../../config/featureFlags', async (importOriginal) => ({
@@ -446,5 +446,30 @@ describe("the review round — the tests' gaps in the shell (TI-1, TI-3)", () =>
   it('M11: a one-day battle\'s counts are "This game" through the shell', async () => {
     await open();
     expect(m.q('[data-flow-counts] h2').textContent).toBe('This game');
+  });
+});
+
+describe("the refuter's round — the keyboard and the notice", () => {
+  it('N-2: the depth control moved BY KEYBOARD before the verdict lands keeps the tape too (and the focus on its tab)', async () => {
+    flags.flow = 'allowlist';
+    let admit;
+    const cardsApi = { ...api(), readVerdict: () => new Promise((res) => { admit = res; }) };
+    await open({ cardsApi });
+    const glance = m.tab('Glance');
+    glance.focus();
+    act(() => { glance.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true })); });
+    await m.flush();
+    expect(m.tab('Study').getAttribute('aria-selected')).toBe('true');
+    admit(true); await m.flush();
+    expect(onTape()).toBe(true);
+    expect(document.activeElement).toBe(m.tab('Study'));
+  });
+  it("N-1b: under 'allowlist' answered no, the notice is marked seen on the first paint it shows on, as before Build D — the day's read still on its way", async () => {
+    flags.flow = 'allowlist';
+    const readers = { readTape: () => new Promise(() => {}), readSeries: async () => ({ status: 'ready', series: [] }) };
+    m.render(<FilmRoomScreenV2 battle={battleOf(sep23Tape, { ownerId: 'owner-1' })} onBack={() => {}} viewerId="viewer-1" readers={readers} nowMs={NOW} cardsApi={api({ verdict: false })} />);
+    await m.flush();
+    expect(m.q('[data-region="first-open"]')).toBeTruthy();
+    expect(hasSeenFirstOpen('viewer-1')).toBe(true);
   });
 });

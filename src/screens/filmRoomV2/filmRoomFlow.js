@@ -158,14 +158,18 @@ function runsOf(rows) {
 }
 
 /**
- * The time axis (§5): the day's session from the calendar, early closes included — widened to hold any check the
- * tape records outside it, so every point sits at its own instant inside the chart (the review's CH-6) —; else the
- * first check to the last.
+ * The time axis (§5): the day's session from the calendar, early closes included — widened only to hold a SCORED
+ * check the tape records outside it, so every drawn point sits at its own instant inside the chart (the review's
+ * CH-6; a row with no score draws nothing and never moves the axis — the refuter's N-3) —; else the first check to
+ * the last.
  */
 export function domainOf(tape) {
   const session = sessionOf(tape?.etDate);
   const ts = listOf(tape, 'checks').map((c) => toMs(c?.at)).filter((t) => t !== null);
-  if (session) return { startMs: Math.min(session.openMs, ...ts), endMs: Math.max(session.closeMs, ...ts), session: true };
+  if (session) {
+    const drawnTs = orderedRows(tape, 'total').filter(drawn).map((r) => r.t);
+    return { startMs: Math.min(session.openMs, ...drawnTs), endMs: Math.max(session.closeMs, ...drawnTs), session: true };
+  }
   if (!ts.length) return null;
   const startMs = Math.min(...ts);
   const last = Math.max(...ts);

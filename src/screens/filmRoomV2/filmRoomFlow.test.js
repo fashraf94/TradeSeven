@@ -495,3 +495,13 @@ describe("the review round — the tests' gaps (TI-2, TI-5)", () => {
     expect(Math.min(...lay.groups.map((g) => g.x))).toBe(0);
   });
 });
+
+describe("the refuter's round", () => {
+  it('N-3: only a SCORED check outside the session widens the axis — a row with no score (a deferral at 8 AM) never moves it', () => {
+    const t = clone(sep23Tape);
+    t.checks.unshift({ tickSeq: 0, at: '2026-09-23T12:00:00.000Z', state: 'deferred', scores: null });
+    expect(domainOf(t)).toEqual({ startMs: ms('2026-09-23T13:30:00.000Z'), endMs: ms('2026-09-23T20:00:00.000Z'), session: true });
+    t.checks[0].scores = { total: 3, opponent: -1 };
+    expect(domainOf(t).startMs).toBe(ms('2026-09-23T12:00:00.000Z'));
+  });
+});
