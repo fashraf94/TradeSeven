@@ -155,7 +155,7 @@ No choices are drawn and nothing is sent but the one read. Two jsdom rows pin it
 | The sheet's existing test files | the four `SharedResearchSheetBody.*.jsdom` files and `useSharedResearch.uncertain` **unedited**, at their baseline counts (156 · 37 · 34 · 38 · 2) |
 | Mutants | **43 / 43** killed (§5) |
 | Review | two lenses and one refuter. 21 findings: 11 fixed, 9 kept with reasons, 1 settled by the Linux suite (A-7). One fix regressed (RF-2); the refuter found it, and it was fixed (§6) |
-| For the founder | Q-A **ruled Nov 21: thesis saves only** (as built). Q-B open, recommended "no" (§9) |
+| For the founder | both questions ruled Nov 21, as built: Q-A **thesis saves only**; Q-B **leave "already saved" as it is** (§9). Nothing is open |
 
 ---
 
@@ -435,7 +435,7 @@ Lens A of the review checked this independently and found the same.
 | HB-2 | should-fix | X-1's `limit(30)` equality queries return an arbitrary 30 (document-name order, random ids): past 30 completed, `last` could be the older one or missing | CONFIRMED | **Fixed**, in two steps: `82b36cbd` (the newest 50 records), then `7f46415e` after RF-2: the window *finds* sessions beside both exact queries. Rows: newest first past the bounds; RF-2; RF-3. |
 | HB-3 | note | the read lists `open` for a story later unpublished, whose new `open` answers 404 | CONFIRMED | Note for the Explore chat (§1.1): continue with `mode: 'session'`. A FantasyTimes story behaves the same today. |
 | HB-4 | note | a builder whose record cannot be read reports `filled: null` | CONFIRMED (no code path produces it) | Kept. |
-| HB-5 | note | the saved screen shows "already saved", not the statement, on an idempotent save on this page; the ledger's `recovered` shows the page's input | CONFIRMED (also on main) | Kept: out of X-7's letter ("on a reopened investigation"). Founder question Q-B. |
+| HB-5 | note | the saved screen shows "already saved", not the statement, on an idempotent save on this page; the ledger's `recovered` shows the page's input | CONFIRMED (also on main) | Kept: out of X-7's letter ("on a reopened investigation"). Founder question Q-B, ruled Nov 21: leave it. |
 | A-1 / HB Q-a | blocker unless ruled | X-7 recorded the statement on **every** save, ledger included: a STOP-line area the waiver does not cover | CONFIRMED | **Fixed** `9d67eb32`: only the thesis builder's save records it (`store.js adoptionExtra`). The ledger's save is exactly main's: the parity golden now includes a FantasyTimes ledger save. Mutant A1 killed. The wider reading was founder question Q-A, ruled Nov 21: thesis saves only. |
 | HB Q-b | note | a `sample` story would open "From FantasyTimes"; the server does not read `sample` | CONFIRMED (not a defect) | Note for the Explore chat (§1.2). |
 | M1 | test gap | the `last.at` mutant survived some runs: the open and the close could share a millisecond | CONFIRMED | **Fixed:** a tick before each close. |
@@ -516,7 +516,7 @@ Minified `vite build` of the final code head `7f46415e` against `main` `cf35151b
 - **Recommendation: no.** The builder mode is on, so every new investigation is a thesis builder.
 - **If yes:** a one-line change (`adoptIdea` passes the same `adoptionExtra`), plus flipping its row and the parity golden's ledger save.
 
-**Q-B. On an "already saved" answer, should the saved screen also show the recorded statement?**
+**Q-B. On an "already saved" answer, should the saved screen also show the recorded statement?** — **Ruled by the founder (Nov 21): leave it.** That is what is built; no change followed.
 - **The case:** a thesis saved twice on the same page — the second answer says it was already saved — shows "already saved" in place of the statement, as on `main`. A reopened sheet does show it (review HB-5).
 - **Recommendation: leave it.** It is outside X-7's letter ("on a reopened investigation"), and it changes a screen that has its own rows.
 
@@ -552,6 +552,10 @@ Minified `vite build` of the final code head `7f46415e` against `main` `cf35151b
 
 **Bundle:** only the lazy Shared Research chunk changes, 149,453 → 149,957 B. The entry is identical apart from that chunk's hashed name, and the CSS is the same file.
 
-**Founder rulings and questions:** Q-A ruled Nov 21: the statement is recorded on thesis saves only, as built. Q-B is still open (show it on an "already saved" answer? recommended no). Report §9.
+**Founder rulings (Nov 21), both as built:**
+- Q-A: the statement is recorded on thesis saves only.
+- Q-B: an "already saved" answer keeps showing no statement.
+
+No question is open. Report §9.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
