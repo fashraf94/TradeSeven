@@ -10,6 +10,7 @@
   "api/_utils/archetypeSeeding.js",
   "api/_utils/behaviorFingerprint.js",
   "api/_utils/directiveGate.js",
+  "api/_utils/filmRoom/dayDigest.js",
   "api/_utils/leanOverrides.js",
   "api/_utils/leanRevalidation.js",
   "api/_utils/learning/captureReceipt.js",

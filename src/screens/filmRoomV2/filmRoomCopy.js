@@ -9,7 +9,7 @@
 // number spelled as a word outside a marked number (Amendment E addendum 2,
 // R8) — the screen suites sweep the rendered output for all of them.
 
-import { PROVENANCE_LABELS, LOCKED_BASIS_NOTE, REPLAY_VERSION_NOTE } from '../../constants/filmTape';
+import { PROVENANCE_LABELS, LOCKED_BASIS_NOTE, REPLAY_VERSION_NOTE } from '../../constants/filmTape.js';
 
 export { PROVENANCE_LABELS, LOCKED_BASIS_NOTE, REPLAY_VERSION_NOTE };
 
@@ -503,6 +503,12 @@ export const FILM_ROOM_COPY = Object.freeze({
     moments: (n) => (n === 1 ? 'moment to take home, on the full tape' : 'moments to take home, on the full tape'),
     door: 'Open the full tape',
     back: 'Game flow',
+  },
+  // Film Room D2 — the agent's words (D2 spec §1, §2)
+  debrief: {
+    // §2: the day digest's maker words for a swap's recorded mechanism (makerKeyOf) — facts the model reads, never the
+    // agent's words; the front's own fact line keeps flow.makers
+    makers: { agent: 'your agent', stall: 'the stall rule', risk: 'the risk rule', guardrail: 'the guardrail', meeting: 'the gameplan meeting', unrecorded: 'a maker not recorded' },
   },
 });
 

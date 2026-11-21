@@ -16,7 +16,7 @@
 // class). Nothing here composes a sentence, and nothing holds anyone's words:
 // a quotation is a path, a word is a copy key (filmRoomCopy.js FILM_ROOM_COPY.flow).
 
-import { numberAt, exitMakerOf, directiveCardOf, sessionOf, etClock, etWhen, etDateLabel, fmtPoints, swapOrdinals, swapAnchor, SCREEN_AGGREGATE_CLASSES } from './filmRoomModel';
+import { numberAt, exitMakerOf, directiveCardOf, sessionOf, etClock, etWhen, etDateLabel, fmtPoints, swapOrdinals, swapAnchor, SCREEN_AGGREGATE_CLASSES } from './filmRoomModel.js';
 import { validFinalTradingDay } from '../../utils/tapeSchedule.js';
 // Amendment B DB-6 (Astra's F6): THE one strict instant parser (Build C CE-3) — no second parser on the front
 import { instantMs } from '../../utils/filmRoomSubject.js';
@@ -340,6 +340,11 @@ export function allPinsOf(tape) {
 
 const byTime = (a, b) => (a.t - b.t) || (RANK[a.kind] - RANK[b.kind]) || (a.order < b.order ? -1 : a.order > b.order ? 1 : 0);
 const byPriority = (a, b) => (RANK[a.kind] - RANK[b.kind]) || byTime(a, b);
+/**
+ * THE FRONT'S PIN ORDERS, for the D2 day digest (api/_utils/filmRoom/dayDigest.js, D2 spec §2: its swaps "chosen as the
+ * front chooses pins … and listed in time order"): one priority for both — never a second copy of it.
+ */
+export { byTime as comparePinsByTime, byPriority as comparePinsByPriority };
 
 /**
  * The chosen pins (FL-5): at most five, chosen by priority — the agent's swaps, then the directives, then the other
