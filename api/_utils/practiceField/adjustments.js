@@ -576,7 +576,11 @@ export function planLedgerAdjustments(ledger, ctx) {
         let match = pool.find((p) => p.actionId !== id && p.key === key && withinSessions(p.effectiveDate, first.effectiveDate, REDATE_WINDOW_SESSIONS)) ?? null;
         let how = 'possible_redate';
         if (!match && SHARE_BASIS_TYPES.has(first.type)) {
-          const sameDate = [...redatePool(cur(), sym, null), ...(cur().closedHeldRows || []).filter((r) => SHARE_BASIS_TYPES.has(r.type) && upper(r.ticker) === sym).map((r) => ({ actionId: r.actionId, effectiveDate: r.effectiveDate, held: r }))];
+          // (The Q-14 refuter's Q14-1: and any other share-basis id LISTED AT THIS CLOSE, not settled — one listed two ways
+          // there is a conflict the close's pre-pass leaves out, recorded only when its own turn comes; an id sorting before it
+          // met no record and applied, unruled, into the count the founder's ruling of the other one then stood on.)
+          const listedNow = [...byId].filter(([oid, g]) => oid !== id && !settledNow().has(oid) && g.some((a) => !a.founderRuling && SHARE_BASIS_TYPES.has(a.type))).map(([oid, g]) => ({ actionId: oid, effectiveDate: g[0].effectiveDate }));
+          const sameDate = [...redatePool(cur(), sym, null), ...(cur().closedHeldRows || []).filter((r) => SHARE_BASIS_TYPES.has(r.type) && upper(r.ticker) === sym).map((r) => ({ actionId: r.actionId, effectiveDate: r.effectiveDate, held: r })), ...listedNow];
           match = sameDate.find((p) => p.actionId !== id && p.effectiveDate === first.effectiveDate) ?? null;
           how = 'same_date_share_basis';
         }

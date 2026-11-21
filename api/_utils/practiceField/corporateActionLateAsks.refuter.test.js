@@ -911,4 +911,42 @@ describe('Q-14 — a ruled share-basis id beside a new id of its date holds, as 
       });
     });
   }
+  it('the Q-14 refuter\'s Q14-1, sold at S2: one close lists a 1-for-2 once and a split dated the same day two ways — both ids are one ambiguity, nothing applies; the founder rules the split alone: it holds and closes moot; a late $1 dividend is never proposed, nothing posts (red at 6c8daebb: the 1-for-2 applied unruled — I-2)', async () => {
+    await run({
+      seed: 'q14-refuter-Q14-1', comparison: xlk,
+      steps: [hc(0, 100), hc(1, 94, [], { belowLine: true }), { kind: 'window', i: 2, price: 94 }, hc(2, 94),
+        hc(3, 94, [spl(1, '1/2'), spl(1, '2/1'), spl(1, '3/2')]),
+        { kind: 'expectIdea', fn: (idea) => {
+          expect(idea.ledger.corporateActionReceipts.filter((r) => r.reason).map((r) => [r.reason, r.actionId])).toEqual([['possible_redate', RS], ['conflicting_action', SP]]);
+          expect((idea.ledger.appliedActionIds || []).filter((x) => x.includes('split'))).toEqual([]);
+        } },
+        conflict(SP, 'payload', { ratio: 2 }),
+        hc(4, 94, [div(1, 1)]),
+        { kind: 'expectIdea', fn: (idea) => {
+          expect(idea.ledger.appliedActionIds).not.toContain(SP);
+          expect(rulingsOf(idea, SP)).toEqual([[S[4], 'moot']]);
+        } },
+        { kind: 'lateExact', body: lateBody('idea', D(1)), status: 404 },
+        hc(5, 94),
+        { kind: 'expectIdea', fn: (idea) => {
+          expect((idea.ledger.adjustments || []).filter((a) => !a.held)).toEqual([]);
+          expect(idea.ledger.dividendsUsd).toBe(0);
+        } }],
+    });
+  });
+
+  it('sold at S2: the new id is listed two ways at the very close the ruling applies (recorded only after the ruled id\'s turn) — the ruled id still holds (the listed-now rows: the Q-14 refuter\'s unpinned branch)', async () => {
+    await run({
+      seed: 'q14-sold-new-id-listed-two-ways', comparison: xlk,
+      steps: [hc(0, 100), hc(1, 94, [], { belowLine: true }), { kind: 'window', i: 2, price: 94 }, hc(2, 94),
+        hc(3, 94, [spl(1, '4/5'), spl(1, '1/2')]),
+        conflict(RS, 'payload', { ratio: 0.8 }),
+        hc(4, 94, [spl(1, '2/1'), spl(1, '3/2')]),
+        { kind: 'expectIdea', fn: (idea) => {
+          expect(idea.ledger.appliedActionIds).not.toContain(RS);
+          expect(rulingsOf(idea, RS)).toEqual([[S[4], 'moot']]);
+          expect(openRecord(idea, RS) && openRecord(idea, SP), 'one ambiguity: both ids open').toBe(true);
+        } }],
+    });
+  });
 });
