@@ -253,3 +253,101 @@ describe('item 6 — DB-3 / DB-4 / DB-12, beside the reproductions', () => {
     expect(onFront()).toBe(true);
   });
 });
+
+describe('item 7 — F10 / F11: the doors (DB-10, DB-11)', () => {
+  /** Readers whose reads of `held` days wait until released; `fail` days reject. Every call recorded. */
+  function heldReaders(tapes, held = [], fail = []) {
+    const waiting = {};
+    const answer = (d) => (tapes[d] ? { status: 'ready', tape: tapes[d] } : { status: 'missing', tape: null });
+    return {
+      release: (d) => waiting[d]?.(),
+      readTape: (b, d) => {
+        if (fail.includes(d)) return Promise.reject(new Error('read failed'));
+        return held.includes(d) ? new Promise((r) => { waiting[d] = () => r(answer(d)); }) : Promise.resolve(answer(d));
+      },
+      readSeries: async () => ({ status: 'ready', series: [] }),
+    };
+  }
+  const early = () => { const t = clone(sep23Tape); t.etDate = D0; t.isFinalDay = false; t.battle = { status: 'active', completedAt: null, final: null, result: { value: null, basis: 'not_completed' }, completionMessage: null }; return t; };
+  const twoDays = (readers, onBack = () => {}) => open({ battle: battleOf(sep23Tape, { ownerId: 'owner-1', timing: { tradingDays: [D0, D] } }), readers, onBack });
+
+  it('F10: front → tape → a day with NO tape — the back control is main\'s ("Dashboard"), and one press leaves', async () => {
+    let backs = 0;
+    await twoDays(heldReaders({ [D]: sep23Tape }), () => { backs += 1; });
+    expect(onFront()).toBe(true);
+    m.click(m.q('[data-flow-door]')); await m.flush();
+    expect(backLabel()).toBe('‹ Game flow');
+    m.click(chips()[0]); await m.flush();
+    expect(m.q('[data-state="missing"]')).toBeTruthy();
+    expect(backLabel()).toBe('‹ Dashboard');
+    m.click(m.q('header button')); await m.flush();
+    expect(backs).toBe(1);
+  });
+  it('F10: front → tape → a day whose read FAILS — main\'s back control', async () => {
+    await twoDays(heldReaders({ [D]: sep23Tape }, [], [D0]));
+    m.click(m.q('[data-flow-door]')); await m.flush();
+    m.click(chips()[0]); await m.flush();
+    expect(m.q('[data-state="error"]')).toBeTruthy();
+    expect(backLabel()).toBe('‹ Dashboard');
+  });
+  it('F10\'s guard (passes at both heads): "Game flow" pressed while the day is read, then a miss — main\'s back control, one press leaves', async () => {
+    let backs = 0;
+    const r = heldReaders({ [D]: sep23Tape }, [D0]);
+    await twoDays(r, () => { backs += 1; });
+    m.click(m.q('[data-flow-door]')); await m.flush();
+    m.click(chips()[0]); await m.flush();
+    expect(backLabel()).toBe('‹ Game flow');
+    m.click(m.q('header button')); await m.flush();
+    r.release(D0); await m.flush();
+    expect(m.q('[data-state="missing"]')).toBeTruthy();
+    expect(backLabel()).toBe('‹ Dashboard');
+    m.click(m.q('header button')); await m.flush();
+    expect(backs).toBe(1);
+  });
+  it('F11: "Game flow" pressed while a written day is read, then the player focuses a day chip — the late door never takes that focus', async () => {
+    const r = heldReaders({ [D0]: early(), [D]: sep23Tape }, [D0]);
+    await twoDays(r);
+    m.click(m.q('[data-flow-door]')); await m.flush();
+    m.click(chips()[0]); await m.flush();
+    m.click(m.q('header button')); await m.flush();
+    const chip = chips()[1];
+    act(() => { chip.focus(); });
+    r.release(D0); await m.flush();
+    expect(onFront()).toBe(true);
+    expect(document.activeElement).toBe(chip);
+  });
+  it('F11, the other ending (passes at both heads): the focus left where "Game flow" put it — the door takes it once the day is read', async () => {
+    const r = heldReaders({ [D0]: early(), [D]: sep23Tape }, [D0]);
+    await twoDays(r);
+    m.click(m.q('[data-flow-door]')); await m.flush();
+    m.click(chips()[0]); await m.flush();
+    m.click(m.q('header button')); await m.flush();
+    r.release(D0); await m.flush();
+    expect(onFront()).toBe(true);
+    expect(document.activeElement).toBe(m.q('[data-flow-door]'));
+  });
+});
+
+describe('item 7 — DB-10 / DB-11, beside the reproductions', () => {
+  const unwritten = () => { const t = clone(sep23Tape); t.etDate = D0; delete t.checks; t.passes.close.status = 'error'; return t; };
+  const twoDaysWith = (tapes) => open({ battle: battleOf(sep23Tape, { ownerId: 'owner-1', timing: { tradingDays: [D0, D] } }), readers: readersOf(tapes, sep23Series) });
+  it('DB-10: a day whose tape document holds no written day (the close pass failed) — main\'s back control', async () => {
+    await twoDaysWith({ [D0]: unwritten(), [D]: sep23Tape });
+    m.click(m.q('[data-flow-door]')); await m.flush();
+    m.click(chips()[0]); await m.flush();
+    expect(m.q('[data-state="not-written"]')).toBeTruthy();
+    expect(backLabel()).toBe('‹ Dashboard');
+  });
+  it('DB-10: back on the written day after the miss — "Game flow" again, and it returns to that day\'s front with the door focused', async () => {
+    await twoDaysWith({ [D]: sep23Tape });
+    m.click(m.q('[data-flow-door]')); await m.flush();
+    m.click(chips()[0]); await m.flush();
+    expect(backLabel()).toBe('‹ Dashboard');
+    m.click(chips()[1]); await m.flush();
+    expect(onTape()).toBe(true);
+    expect(backLabel()).toBe('‹ Game flow');
+    m.click(m.q('header button')); await m.flush();
+    expect(onFront()).toBe(true);
+    expect(document.activeElement).toBe(m.q('[data-flow-door]'));
+  });
+});

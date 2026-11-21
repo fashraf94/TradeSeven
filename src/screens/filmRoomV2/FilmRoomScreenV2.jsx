@@ -428,9 +428,13 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
   const doorId = `${idBase}-flow-door`;
   const openTape = () => { setOnTape(true); setFromFront(true); setDepth('glance'); setPendingJump(panelOf('glance')); };
   const openTapeAt = (anchor) => { setOnTape(true); setFromFront(true); setDepth('study'); setPendingJump({ id: anchor, focus: true }); };
-  // the way back waits for the day's tape (a day still being read has no door yet — the review's DR-5)
-  const backToFront = () => { setOnTape(false); setFromFront(false); setPendingJump({ id: doorId, focus: true, scroll: false, when: 'tape' }); };
-  const backHere = fromFront && !front;
+  // the way back waits for the day's tape (a day still being read has no door yet — the review's DR-5); and, deferred,
+  // it carries the screen's focus-origin guard (Amendment B DB-11, Astra's F11): it lands only while the focus is still
+  // where the press left it, or nowhere — never taken from a control the player has moved to since
+  const backToFront = () => { setOnTape(false); setFromFront(false); setPendingJump({ id: doorId, focus: true, scroll: false, when: 'tape', from: focusedNow() }); };
+  // "Game flow" only where there is a front (Amendment B DB-10, Astra's F10): the day on screen has a written tape, or is
+  // still being read; a day with no tape, a failed read or an unwritten day gets the back control it always had
+  const backHere = fromFront && !front && (tapeState.status === 'loading' || written);
   // §9: the cards line counts the moments the tape view would offer (the prepared case's own rule) — only under cards
   const momentCount = cardsOn && written && tagsStateOf(tape) === 'ready' ? momentsOfTape(tape).length : 0;
 
