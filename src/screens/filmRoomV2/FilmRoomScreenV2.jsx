@@ -303,8 +303,10 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
   // inside the tape, a key-down inside it, or a focus move onto one of its controls keeps the tape for this visit, from
   // the gesture's START: the gesture's own activation (its pointer-up, its key-up) then runs once, natively, on the
   // element still under it. It replaces the click guard, which held only at the click — after an admission between
-  // the press and the release had already swapped the element away. Once the front has shown, or on a settled page,
-  // nothing does but a door; an untouched page still opens on the front when admitted.
+  // the press and the release had already swapped the element away. Amendment C DC-4: a CLICK is a fourth trigger —
+  // assistive technology and voice control can send a click with nothing before it; it holds the tape, and runs once.
+  // Once the front has shown, or on a settled page, nothing does but a door; an untouched page still opens on the
+  // front when admitted.
   const unsettled = (flowMode === 'allowlist' && flowVerdict === undefined) || tapeState.status === 'loading';
   const holdTape = () => { if (flowMode !== 'off' && !seenFront && !onTape && !front && unsettled) setOnTape(true); };
   // BA-49, the first-open notice: marked seen once it has been SHOWN on the tape it qualifies — the tape layout, the
@@ -528,7 +530,7 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
   }
 
   return (
-    <div data-screen="film-room-v2" onPointerDownCapture={holdTape} onKeyDownCapture={holdTape} onFocusCapture={holdTape} style={{ minHeight: '100vh', background: C.bg, color: C.ink, display: 'flex', flexDirection: 'column' }}>
+    <div data-screen="film-room-v2" onPointerDownCapture={holdTape} onKeyDownCapture={holdTape} onFocusCapture={holdTape} onClickCapture={holdTape} style={{ minHeight: '100vh', background: C.bg, color: C.ink, display: 'flex', flexDirection: 'column' }}>
       <header style={{ background: C.raised }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%', maxWidth: desktop ? 1240 : undefined, margin: '0 auto', boxSizing: 'border-box', padding: desktop ? '8px 24px 12px' : '6px 12px 10px' }}>
         {topRow}
