@@ -28,6 +28,10 @@ import { createRoot } from 'react-dom/client';
 import { classOfNumber } from '../../../constants/filmTape';
 import { COMPANY_NAMES } from '../../../config/stockData';
 import { valueAt, etClock, tradingTimeline } from '../filmRoomModel';
+// Film Room D1 fix round (Amendment B DB-2): the ONE final-day reading the model, its tests and this harness share
+import { readsAsFinal } from '../filmRoomFlow.js';
+// … and DB-6's one strict instant parser: the front's oracles read an instant as the front does (flowMs, below)
+import { instantMs } from '../../../utils/filmRoomSubject.js';
 import { isOpenStage } from '../../../data/cardStages';
 import sep23Tape from './sep23.tape.json';
 import sep23Series from './sep23.series.json';
@@ -268,6 +272,15 @@ export const SPEC_AGGREGATE_CLASSES = Object.freeze({
   // Build C §5 (PINNED HERE from the C1 build prompt): an expired nomination's "not considered within n sessions" — n is
   // B6, said as a derived number
   'count(sessions a queued nomination waits, B6)': 'derived',
+  // Film Room D1 (PINNED HERE from Build D spec §4 – §9 and FL-12): the front's numbers — the margin of the displayed
+  // finals, a pin's number, "n more", the two tiles' counts and the cards line's moments — each a derived aggregate
+  'difference(the two displayed final scores)': 'derived',
+  'ordinal(pins in time order)': 'derived',
+  'count(tape rows beyond the chosen pins)': 'derived',
+  'count(actions[] by the agent)': 'derived',
+  'count(directives[] filed)': 'derived',
+  'count(directives[])': 'derived',
+  'count(moments on the tape day)': 'derived',
 });
 /** The founder slots as the rulings fix them (RG-8) — the oracle for the two slot aggregates, never read from production. */
 export const SPEC_CARD_SLOTS = Object.freeze({ S9: 5, S10: 280 });
@@ -762,6 +775,238 @@ export function sweepWords(container, docs = {}) {
   hits.push(...numberWordHits(container, docs));
   return hits;
 }
+
+// ── Film Room D1 — THE FRONT, the game's flow (Build D spec §4 – §11; FL-12) ─────────────────────────────────────────
+//
+// The front shows its numbers WITHOUT the number-kind mark (FL-12), so the BA-42 sweep above does not apply to it; each
+// number is still BOUND, and this oracle holds it to its binding:
+//   data-flow-num="<path>"   a tape value: its path one the front may show (PINNED below), its class the tape's own
+//                            declaration for that path, its text the tape's value
+//   data-flow-agg="<name>"   a computed number: its name declared (SPEC_AGGREGATE_CLASSES, pinned above), at its own
+//                            site, its text its value — and its value RECOMPUTED HERE from the documents (or, for the
+//                            margin, from the key's DISPLAYED finals: the display rule itself, BUILD_RULES §9)
+//   data-flow-text="<path>"  a symbol: its text the tape's string at a path the front may show
+// and no digit elsewhere on the front but an instant's, a bound quotation's, or one of those three.
+
+/** The tape paths the front may show a number from, PINNED HERE from Build D spec §4, §5 and §7. */
+export const SPEC_FLOW_NUMBER_PATHS = Object.freeze([
+  /^battle\.final\.(total|opponent)$/,      // the key and "Final {total}" on a completed battle's final day (§4)
+  /^score\.lastCheck\.(total|opponent)$/,   // the key on any other day: the last check's (§4)
+  /^checks\[\d+\]\.scores\.total$/,         // the low mark (§5)
+  /^actions\[\d+\]\.exitPrice$/,            // " · sold at {price}" (§7)
+]);
+/**
+ * Where each of those tape numbers may sit, and on which day (the review's NUM-5: a path list alone let a key read the
+ * wrong source pass) — PINNED HERE from §4.2 / §5 / §7: the finals only on a day that reads as the battle's final
+ * (the model's own readsAsFinal — Amendment B DB-2 has the model, its tests and the harness share ONE predicate; it
+ * reads `docs.battle` for a tape written before `isFinalDay`), in the key or "Final {total}"; the last check's only
+ * on any other day, in the key; a check's total only as the low mark, and only the LOWEST scored check's, the
+ * earliest on a tie (recomputed here); an exit price only in a fact line.
+ */
+/** An instant as the FRONT reads one (Amendment B DB-6): strict, or none — never Date.parse in the viewer's zone. */
+const flowMs = instantMs;
+function lowestCheckOf(tape) {
+  let low = null;
+  (Array.isArray(tape?.checks) ? tape.checks : []).forEach((c, i) => {
+    const v = c?.scores?.total; const t = flowMs(c?.at);
+    if (typeof v !== 'number' || !Number.isFinite(v) || t === null) return;
+    if (!low || v < low.v || (v === low.v && t < low.t)) low = { i, v, t };
+  });
+  return low ? low.i : null;
+}
+export const SPEC_FLOW_NUMBER_SITES = Object.freeze([
+  { re: /^battle\.final\.(total|opponent)$/, site: '[data-flow-keyrow], [data-flow-heading]', day: 'final' },
+  { re: /^score\.lastCheck\.(total|opponent)$/, site: '[data-flow-keyrow]', day: 'other' },
+  { re: /^checks\[(\d+)\]\.scores\.total$/, site: '[data-flow-low]', low: true },
+  { re: /^actions\[\d+\]\.exitPrice$/, site: '[data-flow-fact], [data-flow-pin-name]' },
+]);
+/** The tape paths the front may show a string from (a swap's two symbols, §7). */
+export const SPEC_FLOW_TEXT_PATHS = Object.freeze([/^actions\[\d+\]\.symbol(Out|In)$/]);
+/** Where each computed number of the front may sit. */
+export const SPEC_FLOW_AGGREGATE_SITES = Object.freeze({
+  'difference(the two displayed final scores)': '[data-flow-heading]',
+  'ordinal(pins in time order)': '[data-flow-pin], [data-flow-panel]',
+  'count(tape rows beyond the chosen pins)': '[data-flow-more]',
+  'count(actions[] by the agent)': '[data-flow-tile="trading"]',
+  'count(actions[])': '[data-flow-tile="trading"]',
+  'count(directives[] filed)': '[data-flow-tile="withYou"]',
+  'count(directives[])': '[data-flow-tile="withYou"]',
+  'count(moments on the tape day)': '[data-flow-cards-line]',
+});
+/**
+ * The front's own words, PINNED HERE from Build D spec §11 (and §6's range dash, Amendment A DA-15 — it replaced §6's "+") — never read from the production copy, so a
+ * changed word fails here: every text the front renders outside a bound value, an instant and a quotation is one of
+ * these, whole.
+ */
+export const SPEC_FLOW_COPY = Object.freeze([
+  'Won by', 'Lost by', 'Won', 'Lost', 'Draw', 'Final', 'You', 'CPU', "Agent's swap", 'Other swap', 'Your directive', 'Low',
+  'Your agent', 'Stall rule', 'Risk rule', 'Guardrail', 'Gameplan meeting', 'Maker not recorded',
+  ' · ', ' → ', 'sold at', 'not recorded', 'filed', 'not filed', 'Previous', 'Next', '–',
+  'more on the full tape', 'Open this on the full tape', "Some of this day's record is incomplete. The full tape says what.",
+  'Nothing stood out in this game.', 'This game', 'This day', 'Trading', 'Working with you', 'of', 'swaps were its own call',
+  'directives filed', 'moment to take home, on the full tape', 'moments to take home, on the full tape', 'Open the full tape',
+]);
+
+/** A chart member's instant, from the tape: `action:i` → actions[i].at, `directive:j` → directives[j].filedAt. */
+function memberMs(tape, member) {
+  const [src, i] = member.split(':');
+  const row = src === 'action' ? tape?.actions?.[Number(i)] : tape?.directives?.[Number(i)];
+  return flowMs(src === 'action' ? row?.at : row?.filedAt);
+}
+
+/** Each computed number's value, recomputed HERE from the documents by what its name says it counts. */
+function flowAggregateOracle(name, el, container, docs) {
+  const tape = docs.tape;
+  if (!tape) return undefined;
+  const actions = Array.isArray(tape.actions) ? tape.actions : [];
+  const directives = Array.isArray(tape.directives) ? tape.directives : [];
+  const members = [...container.querySelectorAll('[data-flow-pin-members]')].flatMap((b) => b.getAttribute('data-flow-pin-members').split(' '));
+  switch (name) {
+    case 'difference(the two displayed final scores)': {
+      // §4.1 / BUILD_RULES §9: the key's two DISPLAYED finals, as the player reads them — BOTH bindings, or no margin
+      // (Amendment B DB-1, Astra's F1: never a fall back to the raw opponent the key does not show); two finals that
+      // display equal give none either (Amendment A DA-4)
+      const shown = (p) => { const k = container.querySelector(`[data-flow-keyrow] [data-flow-num="${p}"]`); return k ? parseNumeral(k.textContent) : null; };
+      const a = shown('battle.final.total');
+      const b = shown('battle.final.opponent');
+      const d = a === null || b === null ? null : Math.round(Math.abs(a - b) * 100) / 100;
+      return d ? d : null;
+    }
+    case 'ordinal(pins in time order)': {
+      const host = el.closest('[data-flow-pin], [data-flow-panel]');
+      // each bound ordinal names its own member (DA-15: a merged pin shows two — its first and its last); else the pin's first / the panel's
+      const own = el.getAttribute('data-flow-member') || (host?.hasAttribute('data-flow-pin') ? host.getAttribute('data-flow-pin-members').split(' ')[0] : host?.getAttribute('data-flow-panel-member'));
+      const t = own ? memberMs(tape, own) : null;
+      if (t === null) return null;
+      // ties at one instant may take either order: the shown number must fall in [earlier + 1, earlier-or-equal]
+      const earlier = members.filter((m) => memberMs(tape, m) < t).length;
+      const atOrBefore = members.filter((m) => memberMs(tape, m) <= t).length;
+      const shown = Number(el.getAttribute('data-agg-value'));
+      return shown >= earlier + 1 && shown <= atOrBefore ? shown : earlier + 1;
+    }
+    case 'count(tape rows beyond the chosen pins)': return actions.length + directives.length - new Set(members).size;
+    case 'count(actions[] by the agent)': return actions.filter((a) => a?.mechanism === 'agent_decision').length;
+    case 'count(actions[])': return actions.length;
+    case 'count(directives[] filed)': return directives.filter((d) => d?.cardState === 'committed').length;
+    case 'count(directives[])': return directives.length;
+    case 'count(moments on the tape day)': return typeof docs.moments === 'number' ? docs.moments : undefined;
+    default: return undefined;
+  }
+}
+
+/**
+ * Film Room D1 — the front's numbers (FL-12, BUILD_RULES §9): every number bound, classed, shown as its value, at its
+ * site; no number-kind mark anywhere on the front; no stray digit. `docs.tape` is the day's tape; `docs.battle`, when
+ * the suite passes it, the battle document (DB-2's evidence for a tape written before `isFinalDay`); `docs.moments`,
+ * when the suite passes it, the cards line's expected count.
+ */
+export function sweepFlow(container, docs = {}) {
+  const bad = [];
+  const front = container.querySelector('[data-flow-front]') || container;
+  if (front.querySelector('[data-kind-mark], [data-num], [data-num-aggregate], [data-legend="number-kinds"]')) bad.push('a number-kind mark on the front (FL-12)');
+  for (const el of front.querySelectorAll('[data-flow-num]')) {
+    const where = el.getAttribute('data-flow-num');
+    const doc = docs[el.getAttribute('data-flow-doc') || 'tape'];
+    if (!doc) { bad.push(`${where}: unknown document`); continue; }
+    if (!SPEC_FLOW_NUMBER_PATHS.some((re) => re.test(where))) bad.push(`${where}: not a path the front may show`);
+    const rule = SPEC_FLOW_NUMBER_SITES.find((r) => r.re.test(where));
+    if (rule) {
+      if (!el.closest(rule.site)) bad.push(`${where}: outside its site`);
+      if (rule.day === 'final' && !readsAsFinal(doc, docs.battle ?? null)) bad.push(`${where}: a final score on a day that is not the battle's final day`);
+      if (rule.day === 'other' && readsAsFinal(doc, docs.battle ?? null)) bad.push(`${where}: the last check's value on the battle's final day`);
+      if (rule.low && Number(rule.re.exec(where)[1]) !== lowestCheckOf(doc)) bad.push(`${where}: not the day's lowest scored check (checks[${lowestCheckOf(doc)}])`);
+    }
+    const path = parsePath(where);
+    const want = classOfNumber(doc.numberClasses, path);
+    if (!want || el.getAttribute('data-flow-class') !== want) bad.push(`${where}: class ${el.getAttribute('data-flow-class')}, declared ${want}`);
+    if (el.children.length) bad.push(`${where}: holds more than its number`);
+    const value = valueAt(doc, path);
+    const shown = parseNumeral(el.textContent);
+    if (!(typeof value === 'number' && Math.abs(shown - value) < 0.0051)) bad.push(`${where}: shows ${el.textContent}, the document holds ${value}`);
+  }
+  for (const el of front.querySelectorAll('[data-flow-agg]')) {
+    const name = el.getAttribute('data-flow-agg');
+    const want = SPEC_AGGREGATE_CLASSES[name];
+    if (!want || el.getAttribute('data-flow-class') !== want) bad.push(`aggregate ${name}: class ${el.getAttribute('data-flow-class')}, declared ${want}`);
+    if (!SPEC_FLOW_AGGREGATE_SITES[name] || !el.closest(SPEC_FLOW_AGGREGATE_SITES[name])) bad.push(`aggregate ${name}: outside its site`);
+    if (el.children.length) bad.push(`aggregate ${name}: holds more than its number`);
+    const computed = Number(el.getAttribute('data-agg-value'));
+    const shown = parseNumeral(el.textContent);
+    if (!(Math.abs(shown - computed) <= 0.0051)) bad.push(`aggregate ${name}: shows ${el.textContent}, computed ${computed}`);
+    const oracle = flowAggregateOracle(name, el, front, docs);
+    if (oracle !== undefined && !(typeof oracle === 'number' && Math.abs(oracle - computed) <= 1e-9 * Math.max(1, Math.abs(oracle)))) bad.push(`aggregate ${name}: computed ${computed}, the documents give ${oracle}`);
+  }
+  for (const el of front.querySelectorAll('[data-flow-text]')) {
+    const where = el.getAttribute('data-flow-text');
+    const value = valueAt(docs.tape, parsePath(where));
+    if (!SPEC_FLOW_TEXT_PATHS.some((re) => re.test(where))) bad.push(`${where}: not a text path the front may show`);
+    if (typeof value !== 'string' || el.textContent !== value || el.children.length) bad.push(`${where}: shows “${el.textContent}”, the tape holds ${JSON.stringify(value)}`);
+  }
+  const walker = front.ownerDocument.createTreeWalker(front, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    let text = node.textContent;
+    if (!/\d/.test(text)) continue;
+    const host = node.parentElement;
+    if (host.closest('[data-flow-num], [data-flow-agg], [data-flow-text]')) continue;
+    if (boundQuotationOf(host, docs)) continue;
+    if (host.closest('[data-time]')) for (const re of TIME_PATTERNS) text = text.replace(re, ' ');
+    if (/\d/.test(text)) bad.push(`stray digit on the front: “${node.textContent.trim().slice(0, 80)}”`);
+  }
+  for (const el of front.querySelectorAll(TEXT_ATTRIBUTE_SELECTOR)) {
+    for (const attr of TEXT_ATTRIBUTES) {
+      const text = el.getAttribute(attr);
+      if (text && /\d/.test(text)) bad.push(`a digit in ${attr} on the front: “${text.slice(0, 80)}”`);
+    }
+  }
+  return bad;
+}
+
+/**
+ * Film Room D1, F-COPY — the front says only the spec's §11 words, the tape's values and quotations: every text node
+ * under the front outside a bound value, an instant and a quotation's bound text and attribution (DB-13) is, whole, one
+ * of SPEC_FLOW_COPY (whitespace aside).
+ */
+export function flowCopyDefects(container) {
+  const bad = [];
+  const front = container.querySelector('[data-flow-front]') || container;
+  // whole entries, the spaces around them aside (a text node may carry the space before a bound value)
+  const allowed = new Set(SPEC_FLOW_COPY.map((s) => s.trim()));
+  // the review's TI-4: no words in an attribute either — the front names its pins by their content, so a text-bearing
+  // attribute on it is copy the spec never wrote
+  for (const el of front.querySelectorAll(TEXT_ATTRIBUTE_SELECTOR)) for (const attr of TEXT_ATTRIBUTES) if (el.getAttribute(attr)) bad.push(`words in ${attr} on the front: “${el.getAttribute(attr).slice(0, 80)}”`);
+  const walker = front.ownerDocument.createTreeWalker(front, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const text = node.textContent.trim();
+    if (!text) continue;
+    const host = node.parentElement;
+    // Amendment B DB-13: a quotation is exempt for its BOUND QUOTED TEXT and its ATTRIBUTION only (each a direct child
+    // of its quotation root, as the kit renders them) — anything else inside one, a "Read more" or "Show less" among it,
+    // is checked as the front's own words
+    const part = host.closest('[data-quote-path], [data-quote-attribution]');
+    if (part && part.parentElement?.hasAttribute('data-quotation')) continue;
+    // an instant's element holds an instant and nothing else: its clocks and dates removed, nothing but separators
+    if (host.closest('[data-time]')) {
+      let rest = text;
+      for (const re of TIME_PATTERNS) rest = rest.replace(re, ' ');
+      if (/[^\s,]/.test(rest)) bad.push(`not an instant: “${text.slice(0, 80)}”`);
+      continue;
+    }
+    if (host.closest('[data-flow-num], [data-flow-agg], [data-flow-text]')) continue;
+    if (host.closest('[data-flow-missing]') && text === '—') continue;
+    if (!allowed.has(text)) bad.push(`not the spec's copy: “${text.slice(0, 80)}”`);
+  }
+  return bad;
+}
+
+/** The front's own reading of a mounted pin: its number, its kind and the tape rows it stands for, in the DOM's order. */
+export const flowPinsOf = (container) => [...container.querySelectorAll('[data-flow-pin]')].map((b) => ({
+  n: Number(b.getAttribute('data-flow-pin')),
+  kind: b.getAttribute('data-flow-pin-kind'),
+  members: b.getAttribute('data-flow-pin-members').split(' '),
+  label: b.querySelector('[aria-hidden="true"]')?.textContent ?? null,
+  name: b.textContent.replace(b.querySelector('[aria-hidden="true"]')?.textContent ?? '', ''),
+  pressed: b.getAttribute('aria-pressed'),
+}));
 
 /**
  * Sign colours only on recorded scores (BA-41): ANY element whose style carries the success or danger

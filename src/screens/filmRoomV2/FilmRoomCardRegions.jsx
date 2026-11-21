@@ -694,6 +694,9 @@ export function SinceLastTime({ day = null, battleId = null, counter, onOpenMome
           {['active', 'shelved', 'notTaken', 'parked', 'adopted', 'retired', 'other'].map((g) => (groups[g].length ? (
             <div key={g} data-my-cards-group={g} style={{ display: 'flex', flexDirection: 'column' }}>
               <span style={mono(10, C.ink3, { letterSpacing: '0.12em', textTransform: 'uppercase' })}>{T.groups[g]}</span>
+              {/* Build C Amendment F CF-5 (carried by Film Room D1): the adopted sentence ONCE, under the Adopted heading —
+                  never on each row; the receipt's chain and the digest keep their own lines (CC-8, CD-17) */}
+              {g === 'adopted' ? <span data-adopted-group-note="" style={foot}>{T.chain.adoptedNote}</span> : null}
               {groups[g].map((c) => <CardRow key={c.entryId} card={c} onShow={onShowCard} />)}
             </div>
           ) : null))}

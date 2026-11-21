@@ -16,6 +16,13 @@
 //                    unbound or over-bound text.
 
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
+vi.mock('../../config/featureFlags', async (importOriginal) => ({
+  ...(await importOriginal()),
+  // Film Room D1: this suite is about the TAPE as it was before Build D, so the front — merged at 'allowlist', which
+  // would open an admitted owner on the game's flow and ask the verdict when cards are off — is pinned off here. The
+  // flow's own gate, off path and front are tested in the FilmRoomFlow.* suites.
+  get FILM_ROOM_FLOW_MODE() { return 'off'; },
+}));
 import React from 'react';
 import FilmRoomScreenV2 from './FilmRoomScreenV2';
 import { Receipt, YourCall } from './FilmRoomCardRegions';
