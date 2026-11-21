@@ -791,6 +791,29 @@ export const SPEC_FLOW_NUMBER_PATHS = Object.freeze([
   /^checks\[\d+\]\.scores\.total$/,         // the low mark (§5)
   /^actions\[\d+\]\.exitPrice$/,            // " · sold at {price}" (§7)
 ]);
+/**
+ * Where each of those tape numbers may sit, and on which day (the review's NUM-5: a path list alone let a key read the
+ * wrong source pass) — PINNED HERE from §4.2 / §5 / §7: the finals only on a completed battle's FINAL day (the tape's
+ * battle block completed and the tape not recording the day as an earlier one), in the key or "Final {total}"; the
+ * last check's only on any other day, in the key; a check's total only as the low mark, and only the LOWEST scored
+ * check's, the earliest on a tie (recomputed here); an exit price only in a fact line.
+ */
+const finalDayOfTape = (tape) => tape?.battle?.status === 'completed' && tape?.isFinalDay !== false;
+function lowestCheckOf(tape) {
+  let low = null;
+  (Array.isArray(tape?.checks) ? tape.checks : []).forEach((c, i) => {
+    const v = c?.scores?.total; const t = msOf(c?.at);
+    if (typeof v !== 'number' || !Number.isFinite(v) || t === null) return;
+    if (!low || v < low.v || (v === low.v && t < low.t)) low = { i, v, t };
+  });
+  return low ? low.i : null;
+}
+export const SPEC_FLOW_NUMBER_SITES = Object.freeze([
+  { re: /^battle\.final\.(total|opponent)$/, site: '[data-flow-keyrow], [data-flow-heading]', day: 'final' },
+  { re: /^score\.lastCheck\.(total|opponent)$/, site: '[data-flow-keyrow]', day: 'other' },
+  { re: /^checks\[(\d+)\]\.scores\.total$/, site: '[data-flow-low]', low: true },
+  { re: /^actions\[\d+\]\.exitPrice$/, site: '[data-flow-fact], [data-flow-pin-name]' },
+]);
 /** The tape paths the front may show a string from (a swap's two symbols, §7). */
 export const SPEC_FLOW_TEXT_PATHS = Object.freeze([/^actions\[\d+\]\.symbol(Out|In)$/]);
 /** Where each computed number of the front may sit. */
@@ -877,6 +900,13 @@ export function sweepFlow(container, docs = {}) {
     const doc = docs[el.getAttribute('data-flow-doc') || 'tape'];
     if (!doc) { bad.push(`${where}: unknown document`); continue; }
     if (!SPEC_FLOW_NUMBER_PATHS.some((re) => re.test(where))) bad.push(`${where}: not a path the front may show`);
+    const rule = SPEC_FLOW_NUMBER_SITES.find((r) => r.re.test(where));
+    if (rule) {
+      if (!el.closest(rule.site)) bad.push(`${where}: outside its site`);
+      if (rule.day === 'final' && !finalDayOfTape(doc)) bad.push(`${where}: a final score on a day that is not the battle's final day`);
+      if (rule.day === 'other' && finalDayOfTape(doc)) bad.push(`${where}: the last check's value on the battle's final day`);
+      if (rule.low && Number(rule.re.exec(where)[1]) !== lowestCheckOf(doc)) bad.push(`${where}: not the day's lowest scored check (checks[${lowestCheckOf(doc)}])`);
+    }
     const path = parsePath(where);
     const want = classOfNumber(doc.numberClasses, path);
     if (!want || el.getAttribute('data-flow-class') !== want) bad.push(`${where}: class ${el.getAttribute('data-flow-class')}, declared ${want}`);
@@ -931,12 +961,22 @@ export function flowCopyDefects(container) {
   const front = container.querySelector('[data-flow-front]') || container;
   // whole entries, the spaces around them aside (a text node may carry the space before a bound value)
   const allowed = new Set(SPEC_FLOW_COPY.map((s) => s.trim()));
+  // the review's TI-4: no words in an attribute either — the front names its pins by their content, so a text-bearing
+  // attribute on it is copy the spec never wrote
+  for (const el of front.querySelectorAll(TEXT_ATTRIBUTE_SELECTOR)) for (const attr of TEXT_ATTRIBUTES) if (el.getAttribute(attr)) bad.push(`words in ${attr} on the front: “${el.getAttribute(attr).slice(0, 80)}”`);
   const walker = front.ownerDocument.createTreeWalker(front, NodeFilter.SHOW_TEXT);
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
     const text = node.textContent.trim();
     if (!text) continue;
     const host = node.parentElement;
-    if (host.closest('[data-flow-num], [data-flow-agg], [data-flow-text], [data-time], [data-quotation]')) continue;
+    // an instant's element holds an instant and nothing else: its clocks and dates removed, nothing but separators
+    if (host.closest('[data-time]') && !host.closest('[data-quotation]')) {
+      let rest = text;
+      for (const re of TIME_PATTERNS) rest = rest.replace(re, ' ');
+      if (/[^\s,]/.test(rest)) bad.push(`not an instant: “${text.slice(0, 80)}”`);
+      continue;
+    }
+    if (host.closest('[data-flow-num], [data-flow-agg], [data-flow-text], [data-quotation]')) continue;
     if (host.closest('[data-flow-missing]') && text === '—') continue;
     if (!allowed.has(text)) bad.push(`not the spec's copy: “${text.slice(0, 80)}”`);
   }

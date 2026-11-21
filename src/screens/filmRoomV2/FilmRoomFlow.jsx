@@ -55,11 +55,16 @@ function useNarrow() {
   return narrow;
 }
 
-/** The chart's RENDERED width (§6: the merge uses it), measured and kept current; `fallback` until it is measured. */
-function useWidth(ref, fallback) {
+/**
+ * The chart's RENDERED width (§6: the merge uses it), measured and kept current; `fallback` until it is measured.
+ * It follows the ELEMENT, through a callback ref: a live switch between the phone and desktop layouts mounts the
+ * chart's block under another parent, and the width is measured again on the new element — never the old one's
+ * (the review's CH-3: a ref object's effect kept observing the detached node).
+ */
+function useWidth(fallback) {
+  const [el, setEl] = useState(null);
   const [w, setW] = useState(0);
   useLayoutEffect(() => {
-    const el = ref.current;
     if (!el) return undefined;
     const fit = () => { if (el.clientWidth > 1) setW(el.clientWidth); };
     fit();
@@ -67,8 +72,8 @@ function useWidth(ref, fallback) {
     const ro = new ResizeObserver(fit);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [ref]);
-  return w > 1 ? w : fallback;
+  }, [el]);
+  return [w > 1 ? w : fallback, setEl];
 }
 
 // ── bound values (FL-12: no mark, but bound) ────────────────────────────────
@@ -330,8 +335,7 @@ export default function FilmRoomFlow({ tape, desktop = false, oneDay = true, mom
   const pin = flow.pins.find((p) => p.n === selectedN) ?? flow.selected;
   // the chart's RENDERED width — measured once, here, on the chart's block (the chart is its full width): the chart
   // draws its groups at it and the panel steps through the same groups (§6)
-  const chartRef = useRef(null);
-  const width = useWidth(chartRef, L.chartWidth);
+  const [width, chartRef] = useWidth(L.chartWidth);
   const group = pin ? groupPins(flow.pins, width).find((g) => g.members.includes(pin)) : null;
   const onSelectGroup = (g) => setSelectedN(g.members.some((m) => m.n === selectedN) ? selectedN : g.first.n);
 
@@ -339,17 +343,20 @@ export default function FilmRoomFlow({ tape, desktop = false, oneDay = true, mom
   const key = <FlowKey flow={flow} size={desktop ? 15 : 13.5} />;
   const chartBlock = (
     <div ref={chartRef} data-flow-chart-block="" style={{ display: 'flex', flexDirection: 'column', gap: L.bleed ? 5 : 7, margin: L.bleed ? `0 -${L.bleed}px` : 0, minWidth: 0 }}>
-      <FlowChart tape={tape} flow={flow} height={L.chartHeight} width={width} selectedN={pin?.n ?? null} onSelectGroup={onSelectGroup} />
+      <FlowChart tape={tape} flow={flow} height={L.chartHeight} width={width} edge={L.pad - L.bleed} selectedN={pin?.n ?? null} onSelectGroup={onSelectGroup} />
       <div data-flow-axis="" style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: C.ink2, ...NUM }}>{flow.axis.map((t, k) => <When key={k}>{t ?? ''}</When>)}</div>
       {flow.legend.length ? <Legend kinds={flow.legend} /> : null}
     </div>
   );
   const below = (
     <div data-flow-below="" aria-live="polite" style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
+      {/* §7: with no pin, the quiet line — but never beside rows the chart could not place (no instant): then the
+          count of them alone, on the full tape (the review's NUM-3: "Nothing stood out" next to "6 more" contradicted) */}
       {pin && group
         ? <FlowPanel tape={tape} flow={flow} group={group} pin={pin} onStep={(m) => setSelectedN(m.n)} onOpenAt={onOpenAt} renderAgentMark={renderAgentMark} narrow={narrow} />
-        : <p data-flow-quiet="" style={{ margin: 0, fontSize: 16, lineHeight: 1.5, color: C.ink }}>{F.nothing}</p>}
-      {!pin && flow.more.value > 0 ? <p data-flow-more="" style={{ margin: 0, fontSize: 12.5, color: C.ink2 }}><FlowAgg a={flow.more} /> {F.more}</p> : null}
+        : flow.more.value > 0
+          ? <p data-flow-more="" style={{ margin: 0, fontSize: 12.5, color: C.ink2 }}><FlowAgg a={flow.more} /> {F.more}</p>
+          : <p data-flow-quiet="" style={{ margin: 0, fontSize: 16, lineHeight: 1.5, color: C.ink }}>{F.nothing}</p>}
       {flow.incomplete ? <p data-flow-incomplete="" style={{ margin: 0, fontSize: 12.5, lineHeight: 1.45, color: C.ink2 }}>{F.incomplete}</p> : null}
     </div>
   );

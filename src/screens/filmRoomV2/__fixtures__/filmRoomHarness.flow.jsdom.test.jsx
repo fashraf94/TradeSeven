@@ -23,7 +23,7 @@ const front = (over = {}) => [
   `<h1 data-flow-heading="won">Won by ${over.margin ?? agg('difference(the two displayed final scores)', 46)}</h1>`,
   `<div data-flow-keyrow=""><span data-flow-key="you">You ${over.you ?? num('battle.final.total', 'recorded', '−47')}</span><span data-flow-key="cpu">CPU ${num('battle.final.opponent', 'recorded', '−93')}</span></div>`,
   over.pins ?? `${pin(1, 'action:0')}${pin(2, 'directive:0 action:1 directive:1')}${pin(5, 'directive:2')}`,
-  `<div data-flow-panel="3" data-flow-panel-member="action:1">${agg('ordinal(pins in time order)', 3)}<span>Your agent</span> · <span data-flow-text="actions[1].symbolOut">DE</span> → <span data-flow-text="actions[1].symbolIn">PLTR</span> · <span data-time="">2:00 PM</span><span> · </span>sold at ${num('actions[1].exitPrice', 'recorded', '468.43')}`,
+  `<div data-flow-panel="3" data-flow-panel-member="action:1">${agg('ordinal(pins in time order)', 3)}<span data-flow-fact=""><span>Your agent</span> · <span data-flow-text="actions[1].symbolOut">DE</span> → <span data-flow-text="actions[1].symbolIn">PLTR</span> · <span data-time="">2:00 PM</span><span> · </span>sold at ${num('actions[1].exitPrice', 'recorded', '468.43')}</span>`,
   `<div data-flow-more="">${over.more ?? agg('count(tape rows beyond the chosen pins)', 1)} more on the full tape</div></div>`,
   `<div data-flow-tile="trading">${agg('count(actions[] by the agent)', over.agentSwaps ?? 1)} of ${agg('count(actions[])', 3)}</div>`,
   `<div data-flow-tile="withYou">${agg('count(directives[] filed)', 1)} of ${agg('count(directives[])', 3)}</div>`,
@@ -71,6 +71,21 @@ describe('sweepFlow — the front\'s numbers, bound', () => {
   });
 });
 
+describe('the review round (NUM-5): each tape number at its site, on its day', () => {
+  it("a final score on an earlier day, the last check's value on the final day, a check that is not the lowest, a price outside a fact — each caught", () => {
+    const earlier = clone(sep23Tape); earlier.isFinalDay = false;
+    expect(sweepFlow(plant(front()), { tape: earlier })).toContain("battle.final.total: a final score on a day that is not the battle's final day");
+    host.remove();
+    expect(sweepFlow(plant(front({ you: num('score.lastCheck.total', 'recorded', '−47') })), { tape: sep23Tape })).toContain("score.lastCheck.total: the last check's value on the battle's final day");
+    host.remove();
+    expect(sweepFlow(plant(front({ extra: `<span data-flow-low="">Low ${num('checks[14].scores.total', 'recorded', '−91')}</span>` })), { tape: sep23Tape })).toContain("checks[14].scores.total: not the day's lowest scored check (checks[13])");
+    host.remove();
+    expect(sweepFlow(plant(front({ extra: `<span data-flow-low="">Low ${num('checks[13].scores.total', 'recorded', '−92')}</span>` })), { tape: sep23Tape })).toEqual([]);
+    host.remove();
+    expect(sweepFlow(plant(front({ extra: `<p>${num('actions[0].exitPrice', 'recorded', '498.79')}</p>` })), { tape: sep23Tape })).toContain('actions[0].exitPrice: outside its site');
+  });
+});
+
 describe('flowCopyDefects — the front\'s words are §11\'s', () => {
   it('the planted front passes; a word that is not the spec\'s is named; the pinned list is §11\'s', () => {
     expect(flowCopyDefects(plant(front()))).toEqual([]);
@@ -78,5 +93,18 @@ describe('flowCopyDefects — the front\'s words are §11\'s', () => {
     expect(flowCopyDefects(plant(front({ extra: '<p>A strong game</p>' })))).toEqual(['not the spec\'s copy: “A strong game”']);
     expect(SPEC_FLOW_COPY).toHaveLength(39);
     expect(SPEC_FLOW_COPY).not.toContain('directives acted on');
+  });
+});
+
+describe('the review round (TI-4) — the copy oracle reads attributes and instants, inside the panel too', () => {
+  it('words in an aria-label or a title on the front, words in an instant element, and a word planted INSIDE the panel — each caught', () => {
+    expect(flowCopyDefects(plant(front({ extra: '<div role="img" aria-label="The game chart"></div>' })))).toEqual(['words in aria-label on the front: “The game chart”']);
+    host.remove();
+    expect(flowCopyDefects(plant(front({ extra: '<span data-time="">Details we chose</span>' })))).toEqual(['not an instant: “Details we chose”']);
+    host.remove();
+    expect(flowCopyDefects(plant(front({ extra: '<span data-time="">Sep 22, 8:30 PM</span>' })))).toEqual([]);
+    host.remove();
+    const page = plant(`<div data-flow-below=""><div data-flow-panel="1"><span>Details</span></div></div>`);
+    expect(flowCopyDefects(page)).toEqual(["not the spec's copy: “Details”"]);
   });
 });

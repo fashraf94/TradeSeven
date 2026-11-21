@@ -318,7 +318,7 @@ describe('F-PINS — at most five, by priority; the merge; the order of the rows
     for (const f of orders) {
       const t = clone(sep23Tape);
       f(t.actions); f(t.directives); f(t.checks);
-      expect(seen(t), String(f)).toEqual({ ...base, pins: base.pins.map((p) => [...p.slice(0, 11), p[11]]) });
+      expect(seen(t), String(f)).toEqual(base);
     }
     // two pins at one instant: ordered by their content, never their place
     const twin = dayOf([swap(11, 0, 'archetype_rotation', 'X', 'Y'), swap(11, 0, 'archetype_rotation', 'P', 'Q')], []);
@@ -338,7 +338,7 @@ describe('F-PINS — at most five, by priority; the merge; the order of the rows
   });
   it('a pin sits on the player\'s line at its instant, interpolated; outside the line, the nearest point\'s height', () => {
     const pts = [{ t: 0, v: 10 }, { t: 100, v: 0 }, { t: 200, v: -20 }];
-    expect([heightAt(pts, -50), heightAt(pts, 0), heightAt(pts, 50), heightAt(pts, 150), heightAt(pts, 500), heightAt([], 5)]).toEqual([10, 10, 5, -10, -20, 0]);
+    expect([heightAt([pts], -50), heightAt([pts], 0), heightAt([pts], 50), heightAt([pts], 150), heightAt([pts], 500), heightAt([], 5)]).toEqual([10, 10, 5, -10, -20, 0]);
     const p = choosePins(sep23Tape).pins.find((x) => x.n === 3);   // 2:00:05 PM, between −91 (1:45:20) and −65 (2:00:20)
     expect(p.v).toBeCloseTo(-91 + 26 * (885 / 900), 9);
   });
@@ -402,5 +402,96 @@ describe('F-COUNT — the two counts mean what §8 says', () => {
       if (status === undefined) delete t.coverage[s]; else t.coverage[s].status = status;
       expect(incompleteOf(t), `${s} ${status}`).toBe(true);
     }
+  });
+});
+
+describe('the review round — the chart and the day, as the tape records them', () => {
+  const checksOf = (rows) => rows.map(([seq, iso, v]) => ({ tickSeq: seq, at: iso, state: v === undefined ? 'no_record' : 'completed', scores: v === undefined || v === null ? null : { total: v, opponent: -1 } }));
+  const at = (hm) => `2026-09-23T${hm}:00.000Z`;
+  it('NUM-1 / CH-4: an EARLIER day whose tape carries the completed battle block is "any other day" — its date, the last check\'s values, no final point', () => {
+    const t = clone(sep23Tape);
+    t.isFinalDay = false;
+    t.battle.final.total = -10; t.battle.final.opponent = -20;
+    const flow = flowOf(t);
+    expect(isFinalDayOf(t)).toBe(false);
+    expect(flow.heading).toEqual({ kind: 'date', date: 'Wed, Sep 23, 2026' });
+    expect([flow.key.you.path, flow.key.cpu.path]).toEqual([['score', 'lastCheck', 'total'], ['score', 'lastCheck', 'opponent']]);
+    expect(flow.lines.you.points.some((p) => p.final)).toBe(false);
+    expect(flow.lines.you.points.at(-1)).toMatchObject({ v: -47, i: 22 });
+    // a tape that records no reading of its day (isFinalDay null: the timeline did not validate) reads as final when completed
+    const unknown = clone(sep23Tape); unknown.isFinalDay = null;
+    expect(isFinalDayOf(unknown)).toBe(true);
+  });
+  it('CH-1: a check that ran and left no record (the writer\'s gap row: a tickSeq, no instant, no score) breaks the line at its place — wherever the row sits in the array', () => {
+    const t = clone(sep23Tape);
+    t.checks = checksOf([[1, at('14:00'), 1], [2, at('14:15'), 2], [3, null, undefined], [4, at('14:45'), 4], [5, at('15:00'), 5]]);
+    const runs = (tape) => linesOf(tape).you.runs.map((r) => r.map((p) => p.v));
+    expect(runs(t)).toEqual([[1, 2], [4, 5, -47]]);
+    const moved = clone(t); moved.checks.push(moved.checks.splice(2, 1)[0]);   // the gap row last in the array
+    expect(runs(moved)).toEqual([[1, 2], [4, 5, -47]]);
+    const scoredNoInstant = clone(t); scoredNoInstant.checks[2] = { tickSeq: 3, at: null, state: 'completed', scores: { total: 3 } };
+    expect(runs(scoredNoInstant)).toEqual([[1, 2], [4, 5, -47]]);   // a score with no instant cannot be drawn: it breaks too
+  });
+  it('CH-2: a pin in a break sits at the nearest check\'s height — never interpolated across the break', () => {
+    const t = clone(sep23Tape);
+    t.checks = checksOf([[1, at('14:00'), 0], [2, at('15:00'), -10], [3, at('16:00'), null], [4, at('17:00'), -90], [5, at('18:00'), -100]]);
+    t.battle.status = 'active';
+    t.actions = [{ at: at('15:20'), mechanism: 'agent_decision', symbolOut: 'A', symbolIn: 'B' }, { at: at('16:40'), mechanism: 'agent_decision', symbolOut: 'C', symbolIn: 'D' }];
+    t.directives = [];
+    const pins = choosePins(t).pins;
+    expect(pins.map((p) => p.v)).toEqual([-10, -90]);   // 3:20 nearest the 3:00 check; 4:40 nearest the 5:00 check
+    expect(heightAt([[{ t: 0, v: 0 }, { t: 10, v: 10 }], [{ t: 30, v: 30 }]], 18)).toBe(10);
+    expect(heightAt([[{ t: 0, v: 0 }, { t: 10, v: 10 }], [{ t: 30, v: 30 }]], 25)).toBe(30);
+    expect(heightAt([[{ t: 0, v: 0 }, { t: 10, v: 10 }], [{ t: 30, v: 30 }]], 20)).toBe(10);   // equidistant: the earlier
+  });
+  it('CH-6: a check outside the session widens the axis to hold it — every point at its own instant, the final point at the axis\'s end, x never runs back', () => {
+    const t = clone(sep23Tape);
+    t.checks.push({ tickSeq: 24, at: '2026-09-23T20:10:00.000Z', state: 'completed', scores: { total: -50, opponent: -84 } });
+    const flow = flowOf(t);
+    expect(flow.domain.endMs).toBe(ms('2026-09-23T20:10:00.000Z'));
+    expect(flow.domain.startMs).toBe(ms('2026-09-23T13:30:00.000Z'));
+    const lay = layoutOf(flow, 350, 150, '');
+    const xs = flow.lines.you.points.map((p) => lay.x(p.t));
+    expect(Math.max(...xs)).toBeLessThanOrEqual(350);
+    expect(xs.every((x, k) => k === 0 || x >= xs[k - 1])).toBe(true);
+    expect(flow.lines.you.points.at(-1)).toMatchObject({ final: true, t: ms('2026-09-23T20:10:00.000Z') });
+  });
+});
+
+describe("the review round — the tests' gaps (TI-2, TI-5)", () => {
+  const dayOfTotals = (totals, step) => {
+    const t = clone(sep23Tape);
+    t.checks = totals.map((v, i) => ({ at: new Date(ms('2026-09-23T14:00:00.000Z') + i * step).toISOString(), tickSeq: i + 1, state: 'completed', scores: { total: v, opponent: -1 } }));
+    t.battle.status = 'active';
+    t.actions = []; t.directives = [];
+    return t;
+  };
+  it('M02: two scored checks with the low FIRST (not the last point) — still not shown: the count rule decides alone', () => {
+    const low = lowOf(dayOfTotals([-5, 1], 900_000));
+    expect([low.value.value, low.eligible]).toEqual([-5, false]);
+    expect(lowOf(dayOfTotals([-5, 1, 2], 900_000)).eligible).toBe(true);
+  });
+  it('M05: a label that leaves the chart on the RIGHT only is left out', () => {
+    const t = dayOfTotals([0, 5, 3, 2, 1, -40, 4], 3_600_000);   // 10 AM to 4 PM, the low at 3 PM
+    const lay = layoutOf(flowOf(t), 300, 150, 'Low −40 · 3:00 PM');
+    expect(lay.low.box.left).toBeGreaterThanOrEqual(0);
+    expect(lay.low.box.right).toBeGreaterThan(300);
+    expect(lay.low).toMatchObject({ leaves: true, shown: false });
+  });
+  it("M44: more than five of the agent's own swaps — the five EARLIEST are chosen, the latest counted", () => {
+    const t = clone(sep23Tape);
+    t.directives = [];
+    t.actions = [10, 11, 12, 13, 14, 15].map((h, k) => ({ at: `2026-09-23T${h + 4}:00:00.000Z`, mechanism: 'agent_decision', symbolOut: `S${k}`, symbolIn: `T${k}` }));
+    const { pins, more } = choosePins(t);
+    expect(pins.map((p) => t.actions[p.index].symbolOut)).toEqual(['S0', 'S1', 'S2', 'S3', 'S4']);
+    expect(more.value).toBe(1);
+  });
+  it('M28: a pin filed before the open sits at the axis edge (frac 0), never off the chart', () => {
+    const t = clone(sep23Tape);
+    t.directives[0].filedAt = '2026-09-23T00:30:00.000Z';   // Sep 22, 8:30 PM
+    const p = choosePins(t).pins.find((x) => x.src === 'directive' && x.index === 0);
+    expect(p.frac).toBe(0);
+    const lay = layoutOf(flowOf(t), 350, 150, '');
+    expect(Math.min(...lay.groups.map((g) => g.x))).toBe(0);
   });
 });

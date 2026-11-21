@@ -278,3 +278,78 @@ describe('the cards line (§9) and the desktop layout', () => {
     clean(sep23Tape);
   });
 });
+
+describe('the review round — the front', () => {
+  it('CH-3: a live switch between the phone and desktop layouts measures the chart again on its new element — the merge uses the width now rendered', () => {
+    const desc = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth');
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get() { return this.hasAttribute('data-flow-chart-block') ? (this.closest('[data-flow-front]')?.getAttribute('data-flow-front') === 'desktop' ? FLOW_LAYOUT.desktop.chartWidth : FLOW_LAYOUT.phone.chartWidth) : 0; } });
+    restoreWidth = () => { if (desc) Object.defineProperty(HTMLElement.prototype, 'clientWidth', desc); else delete HTMLElement.prototype.clientWidth; };
+    mount(sep23Tape);
+    expect(m.q('[data-flow-chart]').getAttribute('data-chart-width')).toBe('350');
+    expect(flowPinsOf(m.container).map((p) => p.members.length)).toEqual([1, 3, 1]);
+    m.render(<FilmRoomFlow tape={sep23Tape} desktop onOpenTape={() => {}} onOpenAt={() => {}} doorId="door-1" />);
+    expect(m.q('[data-flow-chart]').getAttribute('data-chart-width')).toBe('639');
+    expect(flowPinsOf(m.container).map((p) => p.members.length)).toEqual([1, 2, 1, 1]);
+    m.render(<FilmRoomFlow tape={sep23Tape} onOpenTape={() => {}} onOpenAt={() => {}} doorId="door-1" />);
+    expect(m.q('[data-flow-chart]').getAttribute('data-chart-width')).toBe('350');
+    expect(flowPinsOf(m.container).map((p) => p.members.length)).toEqual([1, 3, 1]);
+  });
+  it('NUM-3: rows the chart cannot place (no instant) and no pin — the count of them on the full tape, never "Nothing stood out" beside it', () => {
+    const t = clone(sep23Tape);
+    for (const a of t.actions) a.at = null;
+    for (const d of t.directives) d.filedAt = null;
+    stubChartWidth(350);
+    mount(t);
+    expect(m.q('[data-flow-quiet]')).toBeNull();
+    expect(text('[data-flow-more]')).toBe('6 more on the full tape');
+    clean(t);
+  });
+});
+
+describe("the review round — the tests' gaps on the front (TI-1, TI-5)", () => {
+  it('M07: at 320 the panel steps through the group the chart DRAWS (the agent swap opens first in 3+, Previous at its end)', () => {
+    stubChartWidth(FLOW_LAYOUT.narrow.chartWidth);
+    mount(sep23Tape);
+    const step = (label) => m.qa('[data-flow-stepper] button').find((b) => b.textContent === label);
+    expect(text('[data-flow-fact]')).toBe('Your agent · DE → PLTR · 2:00 PM · sold at 468.43');
+    expect(step('Previous').getAttribute('aria-disabled')).toBe('true');
+    m.click(step('Next'));
+    m.click(step('Next'));
+    expect(text('[data-flow-fact]')).toBe('Your directive · 2:50 PM · not filed');
+    expect(step('Next').getAttribute('aria-disabled')).toBe('true');
+  });
+  it('M08: a check with no score breaks the DRAWN line — two paths, never one through the gap', () => {
+    const t = clone(sep23Tape);
+    t.checks[5].scores = null;
+    stubChartWidth(350);
+    mount(t);
+    expect(m.qa('[data-flow-line="you"]')).toHaveLength(2);
+    expect(m.qa('[data-flow-line="cpu"]')).toHaveLength(2);
+  });
+  it('M09 / M10: a day whose low is drawn — "Low −92 · 1:30 PM" bound to that check; one event, so no "more" line', () => {
+    const t = clone(sep23Tape);
+    t.actions = [];
+    t.directives = [t.directives[0]];
+    t.directives[0].filedAt = '2026-09-23T14:20:00.000Z';
+    stubChartWidth(350);
+    mount(t);
+    expect(text('[data-flow-low]')).toBe('Low −92 · 1:30 PM');
+    expect(m.q('[data-flow-low] [data-flow-num]').getAttribute('data-flow-num')).toBe('checks[13].scores.total');
+    expect(m.q('[data-flow-more]')).toBeNull();
+    clean(t);
+  });
+  it('M38: under 360 px the narrow layout (the mock-up 320 frames): its padding, its chart height, its bleed', () => {
+    const had = window.matchMedia;
+    window.matchMedia = (q) => ({ matches: q === '(max-width: 359px)', addEventListener: () => {}, removeEventListener: () => {} });
+    try {
+      stubChartWidth(296);
+      mount(sep23Tape);
+      expect(m.q('[data-flow-front]').getAttribute('data-flow-front')).toBe('narrow');
+      expect(m.q('[data-flow-chart]').style.height).toBe('112px');
+      expect(m.q('[data-flow-chart-block]').style.margin).toBe('0px -4px');
+      expect(m.q('[data-flow-heading]').style.fontSize).toBe('32px');
+    } finally {
+      window.matchMedia = had;
+    }
+  });
+});

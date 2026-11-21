@@ -5,7 +5,7 @@
 // cached verdict the cards already read — the flow, asking through the same
 // reader with the same owner, never sends a second request. The screen's own
 // rows (a verdict for another battle never stands for this one; the mounted
-// screen's requests) are FilmRoomFlow.gate.jsdom.test.jsx's.
+// screen's requests) are FilmRoomFlow.screen.jsdom.test.jsx's.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 

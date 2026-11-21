@@ -29,6 +29,7 @@ vi.mock('../../config/featureFlags', async (importOriginal) => ({
 import FilmRoomScreenV2 from './FilmRoomScreenV2.jsx';
 import { readFilmRoomVerdict, resetFilmRoomVerdicts } from '../../utils/filmRoomGate';
 import { momentAnchor } from './filmRoomCards';
+import { hasSeenFirstOpen } from './filmRoomSeen';
 import { mounter, sep23Tape, sep23Series, emptyTape, clone, battleOf, readersOf, NOW, sweepFlow, flowCopyDefects, sweepWords, quoteDefects } from './__fixtures__/filmRoomHarness';
 
 const m = mounter();
@@ -303,5 +304,147 @@ describe('F-CARDS — the cards line (§9)', () => {
     expect(sweepFlow(m.container, { tape })).toEqual([]);
     expect(flowCopyDefects(m.container)).toEqual([]);
     expect(sweepWords(m.container, { tape })).toEqual([]);
+  });
+});
+
+describe('the review round — the doors, the focus and the notice', () => {
+  const D1 = '2026-09-22';
+  const D0 = '2026-09-21';
+  const early = () => { const t = clone(sep23Tape); t.etDate = D1; t.isFinalDay = false; t.battle = { status: 'active', completedAt: null, final: null, result: { value: null, basis: 'not_completed' }, completionMessage: null }; return t; };
+  /** Readers whose reads of `held` days wait until released; every call recorded. */
+  function heldReaders(tapes, held = []) {
+    const calls = []; const waiting = {};
+    const answer = (d) => (tapes[d] ? { status: 'ready', tape: tapes[d] } : { status: 'missing', tape: null });
+    return {
+      calls,
+      release: (d) => waiting[d]?.(),
+      readTape: (b, d) => { calls.push(['tape', d]); return held.includes(d) ? new Promise((r) => { waiting[d] = () => r(answer(d)); }) : Promise.resolve(answer(d)); },
+      readSeries: async (b, d) => { calls.push(['series', d]); return { status: 'ready', series: [] }; },
+    };
+  }
+  const mountWith = async (readers, days, cardsApi = api()) => {
+    m.render(<FilmRoomScreenV2 battle={battleOf(sep23Tape, { ownerId: 'owner-1', timing: { tradingDays: days } })} onBack={() => {}} viewerId="viewer-1" readers={readers} nowMs={NOW} cardsApi={cardsApi} />);
+    await m.flush();
+  };
+  const chips = () => m.qa('[data-region="day-picker"] button');
+
+  it('DR-1: a day picked on the front, still being read, keeps the front\'s frame — no tape layout painted — and the picked chip keeps the focus; then that day\'s front', async () => {
+    const r = heldReaders({ [D1]: early(), [D]: sep23Tape }, [D1]);
+    await mountWith(r, [D1, D]);
+    expect(onFront()).toBe(true);
+    const chip = chips()[0];
+    chip.focus();
+    m.click(chip);
+    await m.flush();
+    expect(m.q('[data-view="flow"] [data-flow-loading]')).toBeTruthy();
+    expect(m.q('[role="tablist"], h1, [data-region="first-open"], [data-legend="number-kinds"]')).toBeNull();
+    expect(chip.isConnected).toBe(true);
+    expect(document.activeElement).toBe(chip);
+    r.release(D1);
+    await m.flush();
+    expect(onFront()).toBe(true);
+    expect(m.q('[data-flow-heading]').textContent).toBe('Tue, Sep 22, 2026');
+    expect(document.activeElement).toBe(chips()[0]);
+  });
+
+  it('DR-2: a depth tab on a no-tape page reached from the front does not cost the front — the next taped day is its front', async () => {
+    const r = heldReaders({ [D]: sep23Tape }, []);
+    await mountWith(r, [D0, D]);
+    expect(onFront()).toBe(true);
+    m.click(chips()[0]); await m.flush();
+    expect(m.q('[data-state="missing"]')).toBeTruthy();
+    m.click(m.tab('Study')); await m.flush();
+    m.click(chips()[1]); await m.flush();
+    expect(onFront()).toBe(true);
+  });
+
+  it('DR-3: the first-open notice is not used up by the front — it is marked seen once the tape shows it; with the flow off, at the first paint as before', async () => {
+    await open();
+    expect(onFront()).toBe(true);
+    expect(hasSeenFirstOpen('viewer-1')).toBe(false);
+    m.click(m.q('[data-flow-door]')); await m.flush();
+    expect(m.q('[data-region="first-open"]')).toBeTruthy();
+    expect(hasSeenFirstOpen('viewer-1')).toBe(true);
+    m.teardown(); m.setup();
+    globalThis.localStorage.clear();
+    flags.flow = 'off';
+    await open();
+    expect(hasSeenFirstOpen('viewer-1')).toBe(true);
+  });
+
+  it('DR-4: the series is never read for the front — not after the Deep dive and "Game flow", nor for another day picked there', async () => {
+    const r = heldReaders({ [D1]: early(), [D]: sep23Tape }, []);
+    await mountWith(r, [D1, D]);
+    m.click(m.q('[data-flow-door]')); await m.flush();
+    m.click(m.tab('Deep dive')); await m.flush();
+    expect(r.calls.filter((c) => c[0] === 'series')).toEqual([['series', D]]);
+    m.click(m.q('header button')); await m.flush();   // "Game flow"
+    expect(onFront()).toBe(true);
+    m.click(chips()[0]); await m.flush();
+    expect(onFront()).toBe(true);
+    expect(r.calls.filter((c) => c[0] === 'series')).toEqual([['series', D]]);
+  });
+
+  it('DR-5: "Game flow" pressed while the tape\'s new day is being read lands the focus on the door once that day\'s front is there', async () => {
+    const r = heldReaders({ [D1]: early(), [D]: sep23Tape }, [D1]);
+    await mountWith(r, [D1, D]);
+    m.click(m.q('[data-flow-door]')); await m.flush();
+    m.click(chips()[0]); await m.flush();   // on the tape: the earlier day, its read held
+    const back = m.q('header button');
+    expect(back.textContent).toBe('‹ Game flow');
+    back.focus();
+    m.click(back); await m.flush();
+    r.release(D1); await m.flush();
+    expect(onFront()).toBe(true);
+    expect(document.activeElement).toBe(m.q('[data-flow-door]'));
+  });
+
+  it('DR-7: a click anywhere on the tape before the verdict lands keeps the tape — the verdict landing late takes nothing away', async () => {
+    flags.flow = 'allowlist';
+    let admit;
+    const cardsApi = { ...api(), readVerdict: () => new Promise((res) => { admit = res; }) };
+    await open({ cardsApi });
+    expect(onTape()).toBe(true);
+    m.click(m.q('[data-depth="glance"] button'));
+    admit(true); await m.flush();
+    expect(onTape()).toBe(true);
+  });
+});
+
+describe('the review round — the requests', () => {
+  it("OP-2: a screen opened at a moment under 'allowlist' never asks the verdict for the flow (the front can never show)", async () => {
+    flags.flow = 'allowlist';
+    const moment = { battleId: sep23Tape.battleId, etDate: D, situationId: 'stalled', symbol: 'MSFT', fromTickSeq: 8, toTickSeq: 9 };
+    const r = await open({ openAt: { battleId: sep23Tape.battleId, etDate: D, moment } });
+    expect(onTape()).toBe(true);
+    expect(r.cardsApi.calls.verdict).toEqual([]);
+    m.teardown(); m.setup();
+    const r2 = await open();   // the control: opened plainly, it asks once
+    expect(r2.cardsApi.calls.verdict).toHaveLength(1);
+  });
+});
+
+describe("the review round — the tests' gaps in the shell (TI-1, TI-3)", () => {
+  it('M12: a tape document whose close pass did not write the day (no checks) is not "written": no front — the page it always showed', async () => {
+    const t = clone(sep23Tape);
+    delete t.checks;
+    t.passes.close.status = 'error';
+    await open({ tapes: { [D]: t } });
+    expect(onFront()).toBe(false);
+    expect(m.q('[data-state="not-written"]')).toBeTruthy();
+  });
+  it('M48: the door always opens the tape ON GLANCE — after a trip to the Deep dive and "Game flow" too', async () => {
+    await open();
+    m.click(m.q('[data-flow-door]')); await m.flush();
+    m.click(m.tab('Deep dive')); await m.flush();
+    m.click(m.q('header button')); await m.flush();
+    expect(onFront()).toBe(true);
+    m.click(m.q('[data-flow-door]')); await m.flush();
+    expect(m.tab('Glance').getAttribute('aria-selected')).toBe('true');
+    expect(m.q('[data-depth="glance"]')).toBeTruthy();
+  });
+  it('M11: a one-day battle\'s counts are "This game" through the shell', async () => {
+    await open();
+    expect(m.q('[data-flow-counts] h2').textContent).toBe('This game');
   });
 });

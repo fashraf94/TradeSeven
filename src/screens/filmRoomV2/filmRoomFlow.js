@@ -49,10 +49,13 @@ const agg = (key, value) => ({ value, aggregate: FLOW_AGGREGATES[key], cls: SCRE
 // ── the day ─────────────────────────────────────────────────────────────────
 
 /**
- * A completed battle's final day, decided exactly as the tape view's result card decides it (FilmRoomGlance.jsx
- * ResultCard: the tape's own `battle.status` is `completed`), so the heading and the tape's result never disagree.
+ * A completed battle's FINAL DAY: the tape's own battle block says `completed` AND the tape records this day as the
+ * battle's last (`isFinalDay`, the writer's one reading of the validated timeline — tapeAssemble.js). An earlier
+ * day's tape can carry a completed battle block (a refresh re-merges the live battle onto it — the review's NUM-1 /
+ * CH-4), and that day is "any other day" (§4.1): its date, the last check's values, no final point. A tape that
+ * records no reading (`isFinalDay` null: the timeline did not validate) reads as final when its battle completed.
  */
-export const isFinalDayOf = (tape) => isObj(tape?.battle) && tape.battle.status === 'completed';
+export const isFinalDayOf = (tape) => isObj(tape?.battle) && tape.battle.status === 'completed' && tape?.isFinalDay !== false;
 
 /** The CPU condition (§4.2, FL-3): the tape's own basis is the CPU's portfolio. The value is checked where it is read. */
 const cpuBasisOf = (tape) => tape?.score?.opponentBasis === 'cpu_portfolio';
@@ -116,39 +119,53 @@ export function keyOf(tape) {
 // ── the lines (§5, FL-7) ────────────────────────────────────────────────────
 
 /**
- * The day's check rows that can be placed on the time axis, in time order — order-proof: by instant, then
- * tickSeq, then the value, never the rows' place in the array. A row with no instant cannot be placed, so it
- * neither draws nor breaks. `v` is the row's numeric value at `field`, or null — and a null breaks the line.
+ * The day's check rows in THE WRITER'S ORDER (api/_utils/filmTape/tapeAssemble.js orderChecks) — order-proof,
+ * never the rows' place in the array: sequence-bearing rows by tickSeq, each at its own instant or, with none (a
+ * gap row the writer mints for a check that ran and left no record), right after the row before it; the rest by
+ * instant; ties by tickSeq, then by the row's content. Every row is kept: `t` its instant or null, `v` its numeric
+ * value at `field` or null — and a row with no score OR no instant breaks the line (the review's CH-1: a check that
+ * ran with no record must never be joined across).
  */
-function placedRows(tape, field) {
-  const rows = [];
-  listOf(tape, 'checks').forEach((c, i) => {
-    const t = toMs(c?.at);
-    if (t === null) return;
+function orderedRows(tape, field) {
+  const rows = listOf(tape, 'checks').map((c, i) => {
     const n = numberAt(tape, ['checks', i, 'scores', field]);
-    rows.push({ i, t, v: n ? n.value : null, seq: Number.isInteger(c?.tickSeq) ? c.tickSeq : null });
+    return { i, t: toMs(c?.at), v: n ? n.value : null, seq: Number.isFinite(c?.tickSeq) ? c.tickSeq : null, key: contentKey(c) };
   });
-  const key = (r) => [r.t, r.seq ?? Infinity, r.v ?? Infinity];
-  return rows.sort((a, b) => { const x = key(a); const y = key(b); for (let k = 0; k < x.length; k += 1) if (x[k] !== y[k]) return x[k] < y[k] ? -1 : 1; return 0; });
+  const byKey = (a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
+  const keyed = [];
+  let lastMs = -Infinity;
+  for (const r of rows.filter((x) => x.seq !== null).sort((a, b) => (a.seq - b.seq) || byKey(a, b))) {
+    if (r.t !== null) lastMs = r.t;
+    keyed.push({ r, ms: r.t ?? lastMs, tie: r.seq });
+  }
+  for (const r of rows.filter((x) => x.seq === null)) keyed.push({ r, ms: r.t ?? Infinity, tie: Infinity });
+  keyed.sort((a, b) => (a.ms !== b.ms ? (a.ms < b.ms ? -1 : 1) : a.tie !== b.tie ? (a.tie < b.tie ? -1 : 1) : byKey(a.r, b.r)));
+  return keyed.map((k) => k.r);
 }
+/** A row the line can draw: a recorded score at a recorded instant. */
+const drawn = (r) => r.v !== null && r.t !== null;
 
-/** Runs of points `{ t, v, i }`, split wherever a placed check has no score: nothing is joined across it (FL-7). */
+/** Runs of points `{ t, v, i }`, split wherever a check has no score or no instant: nothing is joined across it (FL-7). */
 function runsOf(rows) {
   const runs = [];
   let run = null;
   for (const r of rows) {
-    if (r.v === null) { run = null; continue; }
+    if (!drawn(r)) { run = null; continue; }
     if (!run) { run = []; runs.push(run); }
     run.push({ t: r.t, v: r.v, i: r.i });
   }
   return runs;
 }
 
-/** The time axis (§5): the day's session from the calendar, early closes included; else the first check to the last. */
+/**
+ * The time axis (§5): the day's session from the calendar, early closes included — widened to hold any check the
+ * tape records outside it, so every point sits at its own instant inside the chart (the review's CH-6) —; else the
+ * first check to the last.
+ */
 export function domainOf(tape) {
   const session = sessionOf(tape?.etDate);
-  if (session) return { startMs: session.openMs, endMs: session.closeMs, session: true };
   const ts = listOf(tape, 'checks').map((c) => toMs(c?.at)).filter((t) => t !== null);
+  if (session) return { startMs: Math.min(session.openMs, ...ts), endMs: Math.max(session.closeMs, ...ts), session: true };
   if (!ts.length) return null;
   const startMs = Math.min(...ts);
   const last = Math.max(...ts);
@@ -172,12 +189,12 @@ export function linesOf(tape, domain = domainOf(tape)) {
   const key = keyOf(tape);
   const final = isFinalDayOf(tape);
   const lineOf = (field, finalNum) => {
-    const rows = placedRows(tape, field);
+    const rows = orderedRows(tape, field);
     const runs = runsOf(rows);
     if (final && finalNum && domain) {
       const end = { t: domain.endMs, v: finalNum.value, i: null, final: true };
       const last = rows[rows.length - 1];
-      if (last && last.v !== null && runs.length) runs[runs.length - 1].push(end);
+      if (last && drawn(last) && runs.length) runs[runs.length - 1].push(end);
       else runs.push([end]);
     }
     return { runs, points: runs.flat() };
@@ -195,26 +212,39 @@ export function linesOf(tape, domain = domainOf(tape)) {
  * outside the chart is left out).
  */
 export function lowOf(tape, lines = linesOf(tape)) {
-  const rows = placedRows(tape, 'total').filter((r) => r.v !== null);
+  const rows = orderedRows(tape, 'total').filter(drawn);
   if (!rows.length) return null;
   let low = rows[0];
-  for (const r of rows) if (r.v < low.v) low = r;   // rows are in time order: a later tie never replaces the earliest
+  for (const r of rows) if (r.v < low.v || (r.v === low.v && r.t < low.t)) low = r;   // a tie: the earliest check
   const points = lines.you.points;
   const last = points[points.length - 1];
   const isLast = Boolean(last && last.i === low.i && !last.final);
   return { index: low.i, t: low.t, value: numberAt(tape, ['checks', low.i, 'scores', 'total']), clock: etClock(tape.checks[low.i].at), eligible: rows.length >= 3 && !isLast };
 }
 
-/** The player's line's height at an instant (§6): between the neighbouring points; outside the line, the nearest. */
-export function heightAt(points, t) {
+/**
+ * The player's line's height at an instant (§6), from its RUNS: inside a run, interpolated between the neighbouring
+ * points of that run; outside every run — before the line, after it, or in a break where nothing is drawn — the
+ * nearest point's height (the earlier on a tie). Never interpolated across a break (the review's CH-2: that would
+ * be the join FL-7 forbids). With no line, the zero line.
+ */
+export function heightAt(runs, t) {
+  const points = runs.flat();
   if (!points.length) return 0;
-  const sorted = [...points].sort((a, b) => a.t - b.t);
-  if (t <= sorted[0].t) return sorted[0].v;
-  for (let k = 0; k < sorted.length - 1; k += 1) {
-    const a = sorted[k]; const b = sorted[k + 1];
-    if (t >= a.t && t <= b.t) return b.t === a.t ? a.v : a.v + (b.v - a.v) * ((t - a.t) / (b.t - a.t));
+  for (const run of runs) {
+    if (!run.length || t < run[0].t || t > run[run.length - 1].t) continue;
+    for (let k = 0; k < run.length - 1; k += 1) {
+      const a = run[k]; const b = run[k + 1];
+      if (t >= a.t && t <= b.t) return b.t === a.t ? a.v : a.v + (b.v - a.v) * ((t - a.t) / (b.t - a.t));
+    }
+    return run[0].v;   // a run of one point, at this instant
   }
-  return sorted[sorted.length - 1].v;
+  let best = points[0];
+  for (const p of points) {
+    const d = Math.abs(p.t - t); const e = Math.abs(best.t - t);
+    if (d < e || (d === e && p.t < best.t)) best = p;
+  }
+  return best.v;
 }
 
 // ── the pins (§6, FL-4, FL-5, FL-8) ─────────────────────────────────────────
@@ -267,7 +297,7 @@ export function choosePins(tape, { domain = domainOf(tape), lines = linesOf(tape
     n: k + 1,
     ordinal: agg('ordinal', k + 1),
     frac: domain && span > 0 ? Math.min(1, Math.max(0, (p.t - domain.startMs) / span)) : 0,
-    v: heightAt(lines.you.points, p.t),
+    v: heightAt(lines.you.runs, p.t),
   }));
   return { pins, more: agg('more', all.length - pins.length) };
 }
