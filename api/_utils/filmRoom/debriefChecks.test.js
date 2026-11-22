@@ -220,3 +220,13 @@ describe('the review round (§2 review, the census lens)', () => {
     expect(verdict('A \uFF4D\uFF49\uFF53\uFF54\uFF41\uFF4B\uFF45, then MSFT.')).toBe('forbidden');
   });
 });
+
+describe("the refuter's round (§2 review)", () => {
+  it('N1: an ellipsis before a capital ends a sentence — three such ends: `shape`; before a lower-case word it does not', () => {
+    for (const t of ['MSFT went quiet\u2026 I let it go\u2026 CRWD had the pull\u2026 It ran.', 'MSFT went quiet... I let it go... CRWD had the pull... It ran.']) expect(verdict(t), t).toBe('shape');
+    for (const t of ['I waited\u2026 then sold MSFT. It had stalled.', 'I waited... then sold MSFT. It had stalled.']) expect(verdict(t), t).toBeNull();
+  });
+  it('N2: a forbidden word with "-ed" or "-ing" is `forbidden` (bested, besting, lessoned)', () => {
+    for (const t of ['CRWD bested MSFT all day.', 'CRWD was besting MSFT.', 'I was lessoned by MSFT.', 'MSFT kept worsting.']) expect(verdict(t), t).toBe('forbidden');
+  });
+});

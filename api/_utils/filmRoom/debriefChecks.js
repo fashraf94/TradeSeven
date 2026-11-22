@@ -54,8 +54,9 @@ function numberFormsOf(w) {
   return out;
 }
 /**
- * A forbidden word's forms (the review's P4): the word, its plurals, and for a word ending in "e" its "-d" and "-ing"
- * (graded, grading); and the same verdicts' other forms, listed: mistaken, proved, validates, supports, should've …
+ * A forbidden word's forms (the review's P4): the word, its plurals, its "-ed" and "-ing" (bested), and for a word ending
+ * in "e" its "-d" and "-ing" (graded, grading); and the same verdicts' other forms, listed: mistaken, proved, validates,
+ * supports, should've …
  * ("support" alone stays allowed — it is the market's own word for a price level).
  */
 const FORBIDDEN_FORMS = Object.freeze({
@@ -66,7 +67,9 @@ const FORBIDDEN_FORMS = Object.freeze({
   'should have': ["should've", 'should’ve', 'shoulda'],
 });
 function forbiddenFormsOf(w) {
-  const out = [w, `${w}s`, `${w}es`, ...(FORBIDDEN_FORMS[w] || [])];
+  // "-ed" and "-ing" on every word (the refuter's N2: bested, besting, lessoned), and for a word ending in "e" its "-d"
+  // and "-ing" (graded, grading)
+  const out = [w, `${w}s`, `${w}es`, `${w}ed`, `${w}ing`, ...(FORBIDDEN_FORMS[w] || [])];
   if (w.endsWith('e')) out.push(`${w}d`, `${w.slice(0, -1)}ing`);
   return out;
 }
@@ -101,7 +104,10 @@ function sentenceEndsOf(text) {
   for (const m of text.matchAll(TERMINAL_RUN)) {
     const run = m[0].replace(/["'”’»›」』)\]]+$/, '');
     const atEnd = m.index + m[0].length >= end;
-    if (!atEnd && /^(?:…+|\.{2,})$/.test(run)) continue;   // an ellipsis inside the text
+    // an ellipsis inside the text, the sentence going on in lower case ("I waited… then sold"); before a capital it ends
+    // one (the refuter's N1: "went quiet… I let it go… AAPL had the pull…" is three)
+    const next = text.slice(m.index + m[0].length).trimStart().charAt(0);
+    if (!atEnd && /^(?:…+|\.{2,})$/.test(run) && /\p{Ll}/u.test(next)) continue;
     if (run === '.') {
       const word = text.slice(0, m.index).split(/\s/).pop().toLowerCase();
       if (ABBREVIATIONS.has(word)) continue;

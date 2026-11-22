@@ -19,7 +19,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import {
-  buildDayDigest, canonicalDigestJson, digestHashOf, knownIdsOf, archetypeCodeOf, archetypeDisplayOf, DAY_DIGEST_VERSION, DIGEST_SWAP_LIMIT, DIGEST_QUOTE_MAX, DIGEST_SAID_BY,
+  buildDayDigest, canonicalDigestJson, digestHashOf, knownIdsOf, archetypeCodeOf, archetypeDisplayOf, DAY_DIGEST_VERSION, DIGEST_SWAP_LIMIT, DIGEST_QUOTE_MAX, DIGEST_SAID_BY, PLATFORM_DEFAULT_AGENT_NAME,
 } from './dayDigest.js';
 import { sep23Day, SEP23_NIGHT } from '../filmTape/__fixtures__/screenFixtures.js';
 import { seedDay, OWNER } from '../filmTape/__fixtures__/tapeFixtures.js';
@@ -362,5 +362,27 @@ describe('the review round (§2 review, the player lens)', () => {
     const tape = clone(SEP.tape);
     tape.rationale.find((r) => r.tickSeq === 16).rationale = 'Café PLTR holds.';
     expect(buildDayDigest({ tape, battle: SEP.battle }).digest.swaps[1].after?.rationale).toBe('Café PLTR holds.');   // an accented letter is no disguise
+  });
+});
+
+describe("the refuter's round (§2 review)", () => {
+  const withName = (agentName) => ({ ...clone(SEP.battle), agentContext: { ...SEP.battle.agentContext, agentName } });
+  const s2After = (battle, words) => {
+    const tape = clone(SEP.tape);
+    tape.rationale.find((r) => r.tickSeq === 16).rationale = words;
+    return buildDayDigest({ tape, battle }).digest.swaps[1].after?.rationale;
+  };
+  it('M2: the name with its words joined by more spaces, a hyphen or a dash is left out too', () => {
+    const battle = withName('Quinzel Marrowby');
+    for (const words of ['QUINZEL   MARROWBY waits.', 'Quinzel-Marrowby waits.', 'Quinzel\u2014Marrowby waits.', 'quinzel\tmarrowby waits.']) expect(s2After(battle, words), JSON.stringify(words)).toBeUndefined();
+    expect(s2After(withName('Quinzel-Marrowby'), 'Quinzel Marrowby waits.')).toBeUndefined();   // a hyphenated name, written with a space
+    expect(s2After(battle, 'Quinzel waits for PLTR.')).toBe('Quinzel waits for PLTR.');           // one word of it is not the name
+  });
+  it("N4: the platform's default name ('Agent', which no player chose) leaves no quotation out for saying \"agent\"", () => {
+    expect(PLATFORM_DEFAULT_AGENT_NAME).toBe('Agent');
+    const src = readFileSync(path.join(HERE, '..', 'agentBattleService.js'), 'utf8');
+    expect(src.includes("agentName: agentData.name || 'Agent',")).toBe(true);   // the snapshot's own default, read where it is written
+    for (const name of ['Agent', 'agent', ' AGENT ']) expect(s2After(withName(name), 'The agent holds PLTR into the check.'), name).toBe('The agent holds PLTR into the check.');
+    expect(s2After(withName('Agent Smith'), 'Agent Smith holds PLTR.')).toBeUndefined();          // a chosen name holding the word is still a name
   });
 });

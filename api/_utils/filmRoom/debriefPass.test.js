@@ -342,7 +342,7 @@ describe('the review round (§2 review, the record lens)', () => {
     return t;
   };
   const quietConsole = () => { const spies = ['log', 'info', 'warn', 'error', 'debug'].map((k) => vi.spyOn(console, k).mockImplementation(() => {})); return { spies, restore: () => spies.forEach((s) => s.mockRestore()) }; };
-  it('R2/R3: attributionOf — the battle\'s own agent with no read; a clone\'s parent through ONE read of the owner\'s own clone document; never the clone; nothing printed', async () => {
+  it('R2/R3: attributionOf — the battle\'s own agent with no read; a clone\'s parent through a read of the owner\'s own clone document and of the owner\'s own parent; never the clone; nothing printed', async () => {
     const c = quietConsole();
     try {
       const plain = world();
@@ -350,8 +350,9 @@ describe('the review round (§2 review, the record lens)', () => {
       expect(plain.readLog).toEqual([]);
       const b = { id: 'b-clone', ownerId: OWNER, agentId: CLONE };
       const own = cloneWorld({ ownerId: OWNER, rankedAgentId: 'parent-agent-1' });
+      own.store.set('agents/parent-agent-1', { ownerId: OWNER });
       expect(await attributionOf(own.db, b)).toBe('parent-agent-1');
-      expect(own.readLog).toEqual([`agents/${CLONE}`]);
+      expect(own.readLog).toEqual([`agents/${CLONE}`, 'agents/parent-agent-1']);
       expect(await attributionOf(cloneWorld({ ownerId: 'owner-2', rankedAgentId: 'victim-agent-9' }).db, b)).toBeNull();   // another owner's
       expect(await attributionOf(cloneWorld({ ownerId: OWNER }).db, b)).toBeNull();                                         // no parent named
       expect(await attributionOf(cloneWorld(undefined).db, b)).toBeNull();                                                  // no clone document
@@ -409,5 +410,22 @@ describe('the review round (§2 review, the census lens)', () => {
     await run(t, { mode: 'allowlist', call: fakeCall().call });
     expect(t.store.has(recordPath('b-at-start'))).toBe(true);
     expect(t.store.has(recordPath('b-just-before'))).toBe(false);
+  });
+});
+
+describe("the refuter's round (§2 review)", () => {
+  const CLONE = 'casual-agent-' + OWNER;
+  const b = { id: 'b-clone', ownerId: OWNER, agentId: CLONE };
+  const quietConsole = () => { const spies = ['log', 'info', 'warn', 'error', 'debug'].map((k) => vi.spyOn(console, k).mockImplementation(() => {})); return { spies, restore: () => spies.forEach((sp) => sp.mockRestore()) }; };
+  it("N3: the owner's own clone naming a parent another owner holds, or no parent document, or a parent that cannot be read — null, never that agent; nothing printed", async () => {
+    const c = quietConsole();
+    try {
+      const at = (parentDoc, hooks) => { const t = makeTapeDb({ ['agents/' + CLONE]: { ownerId: OWNER, rankedAgentId: 'victim-agent-9' }, ...(parentDoc ? { 'agents/victim-agent-9': parentDoc } : {}) }, { hooks }); return attributionOf(t.db, b); };
+      expect(await at({ ownerId: 'owner-2' })).toBeNull();          // a parent another owner holds
+      expect(await at(null)).toBeNull();                            // no parent document
+      expect(await at({ ownerId: OWNER }, { beforeRead: (l) => { if (l === 'agents/victim-agent-9') throw new Error('UNAVAILABLE at agents/victim-agent-9'); } })).toBeNull();   // a failed read
+      expect(await at({ ownerId: OWNER })).toBe('victim-agent-9');  // the control: the owner's own parent
+      for (const sp of c.spies) expect(sp).not.toHaveBeenCalled();
+    } finally { c.restore(); }
   });
 });

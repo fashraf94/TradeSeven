@@ -66,11 +66,13 @@ export async function candidatesFor(db, bounds) {
 
 /**
  * The record's `attributionAgentId` (§6: "as the cards stamp them") — the platform's one attribution rule, a casual
- * clone's parent, else the battle's own agent: for a clone, ONE read of the clone's agent document, accepted only when
- * it is the battle owner's own (the cards' counter's reading, cardStore.js ownerAttributionOf), then the platform's
- * pure resolver (casualClone.js resolveRecordTargetId). Never the clone itself: a clone it cannot resolve — no document,
- * another owner's, no parent named, a failed read — is `null`, as the cards never file under a clone (the review's R3).
- * It prints nothing (the review's R2: the async resolver logs the ids it meets on its degraded paths).
+ * clone's parent, else the battle's own agent: for a clone, a read of the clone's agent document, accepted only when it
+ * is the battle owner's own, the platform's pure resolver (casualClone.js resolveRecordTargetId), then a read of the
+ * parent's agent document, accepted only when it exists and is the owner's too — the cards' own guard
+ * (casualClone.js resolveAttributionAgentId, which the cards stamp through: the refuter's N3). Never the clone itself,
+ * and never another owner's agent: a clone it cannot resolve — no document, another owner's, no parent named, a parent
+ * missing or another owner's, a failed read — is `null`, as the cards never file under a clone (the review's R3). It
+ * prints nothing (the review's R2: the async resolver logs the ids it meets on its degraded paths).
  * @returns {Promise<string|null>}
  */
 export async function attributionOf(db, battle) {
@@ -79,8 +81,10 @@ export async function attributionOf(db, battle) {
   try {
     const clone = dataOf(await db.collection('agents').doc(agentId).get());
     const own = isObj(clone) && clone.ownerId === battle.ownerId ? clone : null;
-    const target = resolveRecordTargetId(agentId, own);
-    return isCasualCloneId(target) ? null : str(target);
+    const target = str(resolveRecordTargetId(agentId, own));
+    if (!target || isCasualCloneId(target)) return null;
+    const parent = dataOf(await db.collection('agents').doc(target).get());
+    return isObj(parent) && parent.ownerId === battle.ownerId ? target : null;
   } catch {
     return null;
   }

@@ -112,9 +112,20 @@ const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
  * carry it (its evaluation prompt opens "You are {name}" — the review's M2): a quotation that holds the name, as a whole
  * word in any case, as written or unmasked, is left out whole, like one that holds an id.
  */
+// a run of spaces, hyphens or dashes between a name's words matches any such run (the refuter's M2: "QUINZEL   MARROWBY",
+// "Quinzel-Marrowby")
+const NAME_JOIN = /[\s\-‐-―]+/u;
+const NAME_JOIN_RE = '[\\s\\-\\u2010-\\u2015]+';
+/**
+ * The platform's own default name (agentBattleService.js snapshots `agentData.name || 'Agent'`), which no player chose:
+ * leaving out every quotation that says "agent" would drop words for nothing (the refuter's N4).
+ */
+export const PLATFORM_DEFAULT_AGENT_NAME = 'Agent';
 function namesOf(battle) {
   const name = typeof battle?.agentContext?.agentName === 'string' ? battle.agentContext.agentName.trim() : '';
-  return name ? [new RegExp(`(?<![\\p{L}\\p{N}])${escapeRe(name)}(?![\\p{L}\\p{N}])`, 'iu')] : [];
+  if (!name || name.toLowerCase() === PLATFORM_DEFAULT_AGENT_NAME.toLowerCase()) return [];
+  const words = name.split(NAME_JOIN).filter(Boolean).map(escapeRe);
+  return words.length ? [new RegExp(`(?<![\\p{L}\\p{N}])${words.join(NAME_JOIN_RE)}(?![\\p{L}\\p{N}])`, 'iu')] : [];
 }
 /** A format or default-ignorable character: a direction override, an invisible joiner or space (the review's P1). */
 const INVISIBLE_OR_CONTROL = /[\p{Cf}\p{Default_Ignorable_Code_Point}]/u;

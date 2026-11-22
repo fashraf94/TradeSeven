@@ -249,7 +249,8 @@ export function closureOf(roots, { skip = [], read = readSource, repo = REPO } =
 const chainTo = (parent, file, repo) => { const out = []; for (let at = file; at; at = parent.get(at)) out.unshift(path.relative(repo, at)); return out.join(' → '); };
 /** A read of the ledger by name: a `plays` collection, a collection group, a path segment — in code, comments stripped. */
 // review L2-4: a template-literal name and a path template ending in `plays` read true too
-const PLAYS_READ = /\b(?:collection|collectionGroup|doc)\s*\(\s*['"`]plays['"`]|['"`]plays['"`]|\/plays(?:\/|['"`]|$)/m;
+// the refuter's C2: a path that STARTS with the segment — `doc(ref, 'plays/' + id)`, `doc(ref, \`plays/${id}\`)` — reads true too
+const PLAYS_READ = /\b(?:collection|collectionGroup|doc)\s*\(\s*['"`]plays['"`]|['"`]plays['"`/]|\/plays(?:\/|['"`]|$)/m;
 
 const abs = (rel) => path.join(REPO, rel);
 const isModule = (name) => /\.(m?js|jsx)$/.test(name) && !/\.test\.(m?js|jsx)$/.test(name) && !/\.ARCHIVED\./.test(name);
@@ -738,9 +739,10 @@ describe('the walker bites (a guard that cannot fail guards nothing)', () => {
 const DEBRIEFS_READ = /\b(?:collection|collectionGroup|doc)\s*\(\s*['"`]debriefs['"`]|['"`]debriefs['"`/]|\/debriefs(?:\/|['"`]|$)/m;
 /**
  * The specifiers that hand a module a second interpreter: the debrief path fails closed on each (either spelling) —
- * §10's two, and a child process (the review's census Q1: `node -e` is one more interpreter).
+ * §10's two, a child process (the review's census Q1: `node -e` is one more interpreter), the inspector (the refuter's
+ * N5: its Runtime.evaluate) and the REPL.
  */
-const DEBRIEF_FORBIDDEN_SPECIFIERS = Object.freeze(['node:vm', 'vm', 'node:worker_threads', 'worker_threads', 'node:child_process', 'child_process']);
+const DEBRIEF_FORBIDDEN_SPECIFIERS = Object.freeze(['node:vm', 'vm', 'node:worker_threads', 'worker_threads', 'node:child_process', 'child_process', 'node:inspector', 'inspector', 'node:inspector/promises', 'inspector/promises', 'node:repl', 'repl']);
 const isMember = (n) => n?.type === 'MemberExpression' || n?.type === 'OptionalMemberExpression';
 /** A key written as a static string: a string literal, or a template with no `${}` (the review's C3: `globalThis[\`eval\`]`). */
 const staticKey = (k) => (k?.type === 'StringLiteral' ? k.value : k?.type === 'TemplateLiteral' && k.expressions.length === 0 ? k.quasis[0]?.value?.cooked ?? null : null);
@@ -910,5 +912,38 @@ describe('D2 — the debrief path\'s FAIL-CLOSED LOADS: eval, new Function, node
   it('the review\'s C2: a `debriefs` path that starts the string — concatenated or a template — reads true', () => {
     for (const r of ["doc(battleRef, 'debriefs/' + etDate)", 'doc(ref, `debriefs/${etDate}`)', "db.doc('debriefs/' + id)"]) expect(DEBRIEFS_READ.test(r), r).toBe(true);
     for (const c of ["const kind = 'debriefsArchive/' + x;", "db.collection('debrief/' + d)"]) expect(DEBRIEFS_READ.test(c), c).toBe(false);
+  });
+});
+
+describe("D2 — the refuter's round (§2 review)", () => {
+  const walkErrorOf = (bad) => {
+    const root = mkdtempSync(path.join(tmpdir(), 'one-door-d2-refuter-'));
+    try {
+      writeFileSync(path.join(root, 'bad.js'), bad);
+      writeFileSync(path.join(root, 'root.js'), "import { z } from './bad.js';\nexport const run = () => z;\n");
+      let err = null;
+      try { debriefClosureOf([path.join(root, 'root.js')], { repo: root }); } catch (e) { err = e; }
+      return err;
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  };
+  it('N5: the inspector and the REPL fail the debrief walk closed, either spelling', () => {
+    const plants = {
+      'node:inspector': ["import { Session } from 'node:inspector';\nexport const z = Session;\n", "export const z = () => import('inspector');\n"],
+      'node:inspector/promises': ["import { Session } from 'node:inspector/promises';\nexport const z = Session;\n"],
+      'node:repl': ["import repl from 'repl';\nexport const z = repl;\n"],
+    };
+    for (const [load, sources] of Object.entries(plants)) {
+      for (const src of sources) {
+        const err = walkErrorOf(src);
+        expect(err?.code, src).toBe('OPAQUE_LOAD');
+        expect(err.loads, src).toContain(load);
+      }
+    }
+  });
+  it("C2 (the inherited half): a `plays` path that starts the string — concatenated or a template — reads true; a neighbour name does not", () => {
+    for (const r of ["doc(battleRef, 'plays/' + id)", 'doc(ref, `plays/${id}`)', "db.doc('plays/' + id)"]) expect(PLAYS_READ.test(r), r).toBe(true);
+    for (const c of ["const kind = 'playsheets/' + x;", "db.collection('play/' + d)", "db.collection('replays/' + d)"]) expect(PLAYS_READ.test(c), c).toBe(false);
   });
 });
