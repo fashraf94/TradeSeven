@@ -11,7 +11,8 @@
 //       THE PRACTICE FIELD'S, since T1a-1: api/_utils/practiceField/bookStore.js bookForOwner — the owner's idea-book
 //       claim (`practiceFieldBooks/{uid}`), then the book it names (`mandates/{bookId}`, Astra T1A-04): an answer only
 //       for an existing, open idea book of that owner and agent, with the book's own status. While
-//       PRACTICE_FIELD_MODE does not admit the owner (the shipped 'off' admits nobody) it answers null and reads
+//       PRACTICE_FIELD_MODE does not admit the owner ('off' admits nobody; the shipped 'allowlist' only the cockpit
+//       list) it answers null and reads
 //       NOTHING, so every nomination is refused and the form never offers the Offer route — exactly the old default.
 //
 //   buildNominationDoc({ entryId, situationId, questionId, questionVersion, nowIso, expiresAfterSessions })
