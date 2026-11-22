@@ -320,6 +320,11 @@ export const PROTECTED_COLLECTIONS = new Set([
   // the corporate-action BACKFILL, server-only, read by the idea book's close alone — listed so every write site to
   // it is counted against the allowlist. Founder sign-off required.
   'practiceFieldCaBackfill',
+  // Practice Field T1a-2b-4 (Astra T2D-12; build report docs/audits/20261119_BUILD_T1A2B4_CORRECTIONS_AND_PARSE_COVERAGE.md):
+  // the per-symbol PARSE REPORT of the day's corporate-action fetch, server-only, written by the Practice Field wrapper
+  // around the daily build's fetch and read by the idea book's close, sales and admission — listed so every write site
+  // to it is counted against the allowlist. Founder sign-off required.
+  'practiceFieldCaParseReports',
 ]);
 
 // T1A-07 — THE MONEY STORE. The book (`mandates/{bookId}`: the quarterly Mandate book and the Practice Field idea

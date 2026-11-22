@@ -77,7 +77,7 @@ export const CA_COVERAGE_REFUSAL = Object.freeze({
  */
 function caCoverageOf(daily, symbol) {
   if (daily?.present !== true) return { covered: false, fetchSucceeded: null, refusal: CA_COVERAGE_REFUSAL.DAILY_MISSING };
-  return dailyCoverageOf(daily.doc ?? null, symbol);
+  return dailyCoverageOf(daily.doc ?? null, symbol, daily.parseReport ?? null);
 }
 
 const DAY_MS = 86_400_000;
@@ -190,7 +190,9 @@ export async function readAdmissionMarkSet(tx, db, { nowIso }) {
     const dailySnap = await tx.get(db.collection('mandateUniverseDaily').doc(session));
     // Amendment F-6: a stored document whose own date is not the session's counts as missing.
     const doc = dailyDocOf(dailySnap.exists ? dailySnap.data() : null, session);
-    daily = { key: session, present: doc !== null, symbols: doc?.symbols ?? null, doc };
+    // T1a-2b-4 (T2D-12): the session's parse report, read in the same transaction — part of a held name's coverage.
+    const reportSnap = await tx.get(db.collection('practiceFieldCaParseReports').doc(session));
+    daily = { key: session, present: doc !== null, symbols: doc?.symbols ?? null, doc, parseReport: reportSnap.exists ? reportSnap.data() : null };
   }
   for (const key of keys) {
     const snap = await tx.get(db.collection('mandateUniverseSnapshots').doc(key));
@@ -257,7 +259,7 @@ export function admissionMarksOf({ book, ideas, markSet, nowIso }) {
         continue;
       }
       // Amendment F-1: the session's rows must reach back to the day after the last session the idea's data covered.
-      if (!sessionCoverage({ symbol, session, coveredThrough: coveredThroughOf(idea, symbol), daily: markSet?.daily?.doc ?? null, dailyRefOk: true }).covered) {
+      if (!sessionCoverage({ symbol, session, coveredThrough: coveredThroughOf(idea, symbol), daily: markSet?.daily?.doc ?? null, dailyRefOk: true, parseReport: markSet?.daily?.parseReport ?? null }).covered) {
         heldBack.add(symbol);
         unavailable.push({ symbol, ideaId: idea.ideaId ?? null, reason: CA_COVERAGE_REFUSAL.COVERAGE_GAP });
         continue;

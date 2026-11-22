@@ -51,6 +51,9 @@ const STORES = Object.freeze([
   ['ideas/rows (endpoint)', `${IDEA}/rows/endpoint`, `${IDEA}/rows`],
   ['ideas/evidence (admission)', `${IDEA}/evidence/admission`, `${IDEA}/evidence`],
   ['ideas/evidence (result)', `${IDEA}/evidence/result`, `${IDEA}/evidence`],
+  // T1a-2b-4: an ADJUSTMENT's evidence document (a late entitlement, a late basis, a ruled correction) — under the same
+  // owner-read evidence rule; no rule changed.
+  ['ideas/evidence (adjustment)', `${IDEA}/evidence/adjustment_0123456789abcdef0123456789abcdef`, `${IDEA}/evidence`],
   ['epochs', `${BOOK}/epochs/epoch-0001`, `${BOOK}/epochs`],
   ['windows', `${BOOK}/windows/2026-11-16_open30`, `${BOOK}/windows`],
   ['windows (close)', `${BOOK}/windows/2026-11-16_close`, `${BOOK}/windows`],
@@ -196,7 +199,8 @@ describe('what stays as it was', () => {
     await assertFails(getDoc(doc(asOwner(), `${BOOK2}/ideas/idea_2`)));
   });
   it('the Practice Field\'s server-only stores outside the book — the owner\'s claim, the founder-cap registry, the coverage document — stay denied to every client', async () => {
-    for (const path of [`practiceFieldBooks/${OWNER}`, 'practiceFieldBooks/_registry', 'practiceFieldCoverage/current']) {
+    // (T1a-2b-4: and the corporate-action backfill and the parse report — server-only under the catch-all deny.)
+    for (const path of [`practiceFieldBooks/${OWNER}`, 'practiceFieldBooks/_registry', 'practiceFieldCoverage/current', 'practiceFieldCaBackfill/AAPL', 'practiceFieldCaParseReports/2026-11-17']) {
       for (const [, ctx] of EVERYONE) {
         await assertFails(getDoc(doc(ctx(), path)));
         await assertFails(setDoc(doc(ctx(), path), { x: 1 }));

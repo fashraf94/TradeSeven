@@ -14,7 +14,8 @@
 //   3. OWNED     every book position carries the `ideaId` of an idea in the set, and that idea's ledger holds it;
 //                no ticker is held by two ideas (B-SAME's standing form);
 //   4. CONSERVED each idea ledger's cash + cost basis = its reserved capital + dividends received + realised
-//                profit and loss — nothing enters or leaves a ledger except by a recorded action;
+//                profit and loss — nothing enters or leaves a ledger except by a recorded action (T1a-2b-4: a posted
+//                adjustment is one — its dividends are its applied receipts' income plus its adjustments');
 //   5. INDEXED   the set handed in is exactly the book's `openIdeaIds`, and each occupied slot names one of them;
 //   6. LIVE      each open idea has a status that still owns cash or shares — `accepted`, `entering`, `holding`,
 //                `line_hit_exit_pending`, or `settled` until its liquidation has filled (Astra T1A-C01) — sits in its
@@ -60,6 +61,7 @@ import {
 } from './constants.js';
 import { toCents, toMicroShares } from './money.js';
 import { markedEquityCents } from './ledger.js';
+import { adjustmentCentsOnLedger } from './adjustments.js';
 import { isCostTier } from './fills.js';
 
 /** The sales code makes (exits.js): a line exit, a delisting exit (Q-G, T1a-2b-1) and a settlement sale. */
@@ -82,7 +84,9 @@ const LEDGER_AMOUNTS = Object.freeze(['cash', 'reservedCapitalUsd', 'dividendsUs
 function recordedAmountProblems(ledger, ideaId, prefix, { paper = false } = {}) {
   const problems = [];
   const appliedReceipts = (ledger?.corporateActionReceipts || []).filter((r) => r?.applied === true);
-  const receiptedCents = appliedReceipts.reduce((sum, r) => sum + toCents(r.incomeUsd || 0), 0);
+  // T1a-2b-4: a posted ADJUSTMENT (adjustments.js — a late entitlement, a late basis, a ruled correction) is receipted
+  // income too: one linked record per correction, never a rewritten receipt.
+  const receiptedCents = appliedReceipts.reduce((sum, r) => sum + toCents(r.incomeUsd || 0), 0) + adjustmentCentsOnLedger(ledger);
   if (toCents(ledger?.dividendsUsd) !== receiptedCents) problems.push({ rule: `${prefix}dividends_not_receipted`, ideaId, dividendsCents: toCents(ledger?.dividendsUsd), receiptedCents });
   const sales = ledger?.saleReceipts || [];
   if (paper && sales.length > 0) problems.push({ rule: `${prefix}ledger_sold`, ideaId, sales: sales.length });

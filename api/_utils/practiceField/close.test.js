@@ -4,6 +4,7 @@
 // B-MARK and B-STAMP; shared contract V2 §14 case B-RECON): valuation every session, corporate actions once per
 // ledger, comparisons that stay matched, and rows that are marks — never sales.
 
+import { makeParseReportingFetcher } from './caParseReport.js';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { closeIdeaBook, closeSnapshotKeyFor } from './close.js';
 import { ensureDailySnapshot, ensureUniverseSnapshot, fetchCorporateActionsEODHD } from '../mandateUniverseSnapshot.js';
@@ -628,8 +629,11 @@ describe('Astra T1A-01 — an action the feed lists twice is applied once per le
       const shares = getIdea(db, bookId, r.ideaId).ledger.holdings.AAPL.shares;
       const date = DAYS.d2;
       const raw = { date, unadjustedValue: 1 };
-      const fetchCorporateActions = async (sym) => fetchCorporateActionsEODHD(sym, {
-        from: DAYS.d1, to: DAYS.d3, apiKey: 'synthetic',
+      // (T1a-2b-4: through the parse-reporting wrapper the cron hands the daily build for an idea book's coverage — it
+      // observes the same answers and writes the session's parse report.)
+      const fetchCorporateActions = makeParseReportingFetcher(db, {
+        symbols: ['AAPL', 'SPY'],
+        base: (sym, opts) => fetchCorporateActionsEODHD(sym, { ...opts, apiKey: 'synthetic' }),
         fetchImpl: async (url) => ({ ok: true, json: async () => (url.includes('/div/AAPL.') ? [raw, raw] : []) }),
       });
       const daily = await ensureDailySnapshot(db, {
