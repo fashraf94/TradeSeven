@@ -31,7 +31,7 @@
 | **Part 2 (criterion 10)** | DC-1, DC-4, DC-8, DD-2, DD-3 and DD-4 are built. Each reproduction was written first and failed at `56220130`. N2 and N5 were also reproduced in Chromium against the base and the head (§3). |
 | **Fences (criterion 11)** | Held. No BUILD_RULES §1 file and no fenced file is in the diff. What the diff touches outside the new modules is declared in §8. No secret appears in any output, log or file. |
 | **Merged tree (criterion 12)** | Green on Linux at `a1a3fc6b`, the tree merged with current `origin/main` `4037df59`:<br>• the full suite: **1,641 test files passed, 0 failing; 37,474 tests passed, 179 skipped, 0 failed**;<br>• `lint:gate`: exit 0;<br>• the rules suite: **47 files, 854 / 854**;<br>• the flow's and the debrief's suites under `TZ=America/Chicago`: 75 files, 1,852 / 1,852;<br>• `vite build`: exit 0.<br>The same full suite and `lint:gate` passed at the merge commit `821fdb25` (37,473 tests). |
-| **Review** | Five lenses and one refuter. Thirty-eight items were reported, findings and questions together, and 35 of them are distinct. The refuter REFUTED none. The refuter's check of the fixes found three partial fixes and six new items (N1 to N6). Every confirmed defect the spec's words decide is fixed, each with a row that fails on the code before it and a revert mutant. The rest are questions (§14). |
+| **Review** | Five lenses and one refuter. Thirty-eight items were reported, findings and questions together, and 35 of them are distinct. The refuter REFUTED none. The refuter's check of the fixes found four partial fixes (M2, R3, P5, and C2's inherited `plays` half) and six new items (N1 to N6); all four were completed at `41011ad0`. Every confirmed defect the spec's words decide is fixed, each with a row that fails on the code before it and a revert mutant. The rest are questions (§14). |
 | **Mutants** | **78 / 78 killed**, judged by exit code and a fresh JSON report. 77 were killed on the first pass. The one survivor, Y-R3own (the clone-owner check dropped, which the new parent check masked), is not equivalent: the row `a1a3fc6b` adds kills it. They ran in four LF `git archive` trees of the frozen code `41011ad0`, after a clean baseline of the 16 test files the spec names (517 rows). Every tree's mutated files were byte-identical to the commit afterwards (§11). |
 | **Questions** | 14, numbered in §14. Q-1 (R1) blocks as written; the rest do not. |
 
@@ -58,7 +58,7 @@
 | — | The digest's `rationaleAt` helper renamed (`rationaleRowOf`): the T0b census reads the old name as a decision field | `d2fcfc7c` | the full suite | — |
 | — | The review round, part 1: the model and record lenses' findings | `d996b683` | rows in each suite above | 12 / 12 (Y-M1 … Y-R6; Y-R3own by the row `a1a3fc6b` adds) |
 | — | The review round, part 2: the player, census and browser lenses' findings | `b6f800bb` | rows in each suite above | 22 / 22 (V1a–V15, X2–X4) |
-| — | The refuter's round: three partial fixes completed, and N2 to N5 | `41011ad0` | rows in each suite above | 7 / 7 (W1–W7) |
+| — | The refuter's round: four partial fixes completed, and N1 to N5 | `41011ad0` | rows in each suite above | 7 / 7 (W1–W7) |
 | — | Merge of `origin/main` `4037df59` | `821fdb25` | the checks (§9) | — |
 | — | The battery's one survivor killed by a row: another owner's clone document naming the owner's own agent is refused | `a1a3fc6b` | `debriefPass.test.js` | Y-R3own killed |
 
@@ -334,7 +334,7 @@ Every record that made a call carries its `usage` and `costUsd`, and the run's s
 **Result.**
 - Thirty-eight items were reported, findings and questions together. Thirty-five are distinct: B1 repeats P2, C7 repeats R2, and the player's Q1 repeats R6.
 - The refuter REFUTED none.
-- It marked three fixes PARTIAL: M2, R3 and P5. It also found three fixes that had lost an old guarantee (N1 to N3, all fixed) and three new questions (N4 to N6).
+- It marked four fixes PARTIAL: M2, R3, P5, and C2 (its inherited `plays` half), all completed at `41011ad0`. It also found three fixes that had lost an old guarantee (N1 to N3, all fixed) and three new questions (N4 to N6).
 - Every defect whose fix the spec decides is fixed, with a row that fails on the code before it and a revert mutant.
 
 | id | finding (short) | sev. | verdict | disposition |
