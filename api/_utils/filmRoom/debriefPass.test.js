@@ -428,4 +428,13 @@ describe("the refuter's round (§2 review)", () => {
       for (const sp of c.spies) expect(sp).not.toHaveBeenCalled();
     } finally { c.restore(); }
   });
+  it("the battery's Y-R3own: a clone document another owner holds is refused even when the parent it names is the owner's own — the platform resolver compares the parent with the CLONE's owner", async () => {
+    const c = quietConsole();
+    try {
+      const t = makeTapeDb({ ['agents/' + CLONE]: { ownerId: 'owner-2', rankedAgentId: 'parent-agent-1' }, 'agents/parent-agent-1': { ownerId: OWNER } });
+      expect(await attributionOf(t.db, b)).toBeNull();
+      expect(t.readLog).toEqual(['agents/' + CLONE]);   // refused at the clone: the parent is never read
+      for (const sp of c.spies) expect(sp).not.toHaveBeenCalled();
+    } finally { c.restore(); }
+  });
 });
