@@ -143,8 +143,8 @@ describe('6 identifier — no id the pass knows, and no shape the platform mints
   it('a platform shape with no digit: a live-draft group, a prefixed hex, a base-36 fallback, a mandate manager', () => {
     for (const t of ['Group lds_slotA met.', 'Book pf_abcdefabcdefabcdef held.', 'Op op_abcdef_abcdefgh ran.', 'Manager mgr_momentum_abcdefabcdefabcd ran.']) expect(verdict(t), t).toBe('identifier');
   });
-  it('an id split by an invisible character is read with it taken off', () => {
-    expect(verdict('On battle\u200BQuxAlpha it held.')).toBe('identifier');
+  it('an id split by an invisible character: dropped \u2014 by `shape` now, one check earlier (the review\'s P1: no line holds an invisible character)', () => {
+    expect(verdict('On battle\u200BQuxAlpha it held.')).toBe('shape');
   });
   it('prose passes: no id, no shape', () => {
     expect(verdict('The rule took it while I waited.')).toBeNull();
@@ -179,5 +179,44 @@ describe('the answer as a whole', () => {
     const r = run([{ swap: 's1', text: 'Out at 4 PM, the best exit.' }, { swap: 's2', text: 'PLTR came in on my plan.' }]);
     expect(r.lines).toEqual([{ label: 's2', text: 'PLTR came in on my plan.' }]);
     expect(JSON.stringify(r)).not.toMatch(/exit|PM/);
+  });
+});
+
+describe('the review round (§2 review, the player lens)', () => {
+  it('P1: a direction override, an invisible character, or no visible letter — `shape` (the reversed line rendered "It was a bad trade")', () => {
+    for (const t of ['I sold it. \u202Eedart dab a saw tI', 'I wanted \u202EADVN\u202C instead.', '\u200B', '\u2060', 'Fine\u00ADly done.', 'Left \u2066isolated\u2069 text.']) expect(verdict(t), JSON.stringify(t)).toBe('shape');
+    expect(verdict('...')).toBe('shape');   // no letter at all
+  });
+  it('P7: a letter outside the Latin script — a Cyrillic or Greek look-alike — `shape`; accented Latin letters pass', () => {
+    for (const t of ['The bеst exit.', 'A mistаke.', 'twо names.', 'ΝVDA ran.']) expect(verdict(t), t).toBe('shape');
+    expect(verdict('A café pause, then MSFT went.')).toBeNull();
+  });
+  it('P3: the "-ies" plurals and the other ordinals and multiples — `number_word`', () => {
+    for (const t of ['MSFT drifted into the forties.', 'It sat in the low twenties.', 'Up in the nineties.', 'Firstly, MSFT stalled.', 'A twofold move.', 'Fourty minutes.', 'In the twentieth minute.', 'The eleventh check.', 'A hundredth of it.', 'The twelfth check.']) expect(verdict(t), t).toBe('number_word');
+  });
+  it('P5: words that only look like a number word\'s form pass — "tend" is not "ten"', () => {
+    for (const t of ['I tend to let a stall like MSFT go.', 'It often stalls.', 'A tender moment.']) expect(verdict(t), t).toBeNull();
+  });
+  it('P4: the verdict phrases in their other spellings and forms — `forbidden`; "support" alone (a price level) passes', () => {
+    for (const t of ["I should've held MSFT.", 'I should’ve held MSFT.', 'I should-have held.', 'A good-trade there.', 'A bad—trade.', 'It was mistaken.', 'It proved out.', 'It validates the plan.', 'The tape supports it.']) expect(verdict(t), t).toBe('forbidden');
+    expect(verdict('MSFT sat at support all morning.')).toBeNull();
+  });
+  it('P5: sentence ends — an abbreviation\'s period and an ellipsis inside the text are none', () => {
+    for (const t of ['I chose CRWD vs. MSFT. The stall made the call.', 'Late in the U.S. session. I moved to CRWD.', 'I waited… then sold MSFT. It had stalled.', 'I waited... then sold MSFT. It had stalled.']) expect(verdict(t), t).toBeNull();
+  });
+  it('P6: terminal punctuation in its other forms counts — three such ends: `shape`', () => {
+    for (const t of ['MSFT！ It stalled！ I bought CRWD！', 'MSFT。 It stalled。 I bought CRWD。', 'MSFT‼ It stalled‼ I bought CRWD‼', 'MSFT.» It stalled.» I bought CRWD.»']) expect(verdict(t), t).toBe('shape');
+  });
+  it('P8: a directory symbol with its class suffix, or with a plural or possessive "s" — `symbol`', () => {
+    for (const t of ['BRK-B ran instead.', 'BRK.B ran instead.', 'The NVDAs ran.', "NVDA's run."]) expect(verdict(t), t).toBe('symbol');
+    expect(verdict("MSFT's stall made the call.")).toBeNull();   // the swap's own, possessive
+  });
+});
+
+describe('the review round (§2 review, the census lens)', () => {
+  it('C1: a number word or a forbidden word in full-width letters is read with its disguise off — `number_word`, `forbidden`', () => {
+    expect(verdict('MSFT went \uFF54\uFF57\uFF4F ways.')).toBe('number_word');
+    expect(verdict('The \uFF42\uFF45\uFF53\uFF54 exit.')).toBe('forbidden');
+    expect(verdict('A \uFF4D\uFF49\uFF53\uFF54\uFF41\uFF4B\uFF45, then MSFT.')).toBe('forbidden');
   });
 });

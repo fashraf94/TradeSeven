@@ -297,7 +297,7 @@ describe('the review round (§2 review, the model lens)', () => {
   });
   it('M2: a quotation holding the agent\'s own display name — any case, as a whole word, disguised or not — is left out whole', () => {
     const battle = { ...clone(SEP.battle), agentContext: { ...SEP.battle.agentContext, agentName: 'Quinzel Marrowby' } };
-    for (const words of ['Quinzel Marrowby sees PLTR holding, so DE goes out.', 'quinzel marrowby waits.', 'Quinzel​ Marrowby waits.']) {
+    for (const words of ['Quinzel Marrowby sees PLTR holding, so DE goes out.', 'quinzel marrowby waits.', 'Quinzel\u200B Marrowby waits.', '\uFF31\uFF55\uFF49\uFF4E\uFF5A\uFF45\uFF4C Marrowby waits.']) {
       const tape = clone(SEP.tape);
       tape.rationale.find((r) => r.tickSeq === 16).rationale = words;
       const s2 = buildDayDigest({ tape, battle }).digest.swaps[1];
@@ -349,5 +349,18 @@ describe('the review round (§2 review, the model lens)', () => {
     const tape = clone(SEP.tape);
     Object.assign(tape.rationale.find((r) => r.tickSeq === 16), { rationale: '   ', hypothesis: ' \t ' });
     expect(buildDayDigest({ tape, battle: SEP.battle }).digest.swaps[1].after).toBeUndefined();
+  });
+});
+
+describe('the review round (§2 review, the player lens)', () => {
+  it('P1: a quotation holding a direction override or an invisible character is left out whole — the model would read text the player never sees', () => {
+    for (const words of ['PLTR holds. \u202Eedart dab a saw tI', 'Hold\u200Bing PLTR.', 'Hold\u2060ing PLTR.', 'Soft\u00ADly out.']) {
+      const tape = clone(SEP.tape);
+      tape.rationale.find((r) => r.tickSeq === 16).rationale = words;
+      expect(buildDayDigest({ tape, battle: SEP.battle }).digest.swaps[1].after?.rationale, JSON.stringify(words)).toBeUndefined();
+    }
+    const tape = clone(SEP.tape);
+    tape.rationale.find((r) => r.tickSeq === 16).rationale = 'Café PLTR holds.';
+    expect(buildDayDigest({ tape, battle: SEP.battle }).digest.swaps[1].after?.rationale).toBe('Café PLTR holds.');   // an accented letter is no disguise
   });
 });

@@ -7,7 +7,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DEBRIEF_SCHEDULE, DEBRIEF_CRON_PATH, DEBRIEFS_SUBCOLLECTION, nextDebriefRunMs, debriefNotYet, debriefEtDateOfRun, DEBRIEF_NOT_YET_GRACE_MS } from './debriefSchedule.js';
+import { DEBRIEF_SCHEDULE, DEBRIEF_UTC_HOUR, DEBRIEF_UTC_MINUTE, DEBRIEF_UTC_WEEKDAYS, DEBRIEF_CRON_PATH, DEBRIEFS_SUBCOLLECTION, nextDebriefRunMs, debriefNotYet, debriefEtDateOfRun, DEBRIEF_NOT_YET_GRACE_MS } from './debriefSchedule.js';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const VERCEL = JSON.parse(readFileSync(path.join(REPO, 'vercel.json'), 'utf8'));
@@ -77,5 +77,25 @@ describe('the ET date a run processes', () => {
   it('03:45 UTC is the previous ET evening, in either DST state', () => {
     expect(debriefEtDateOfRun(Date.parse('2026-09-24T03:45:00.000Z'))).toBe('2026-09-23');   // 11:45 PM EDT
     expect(debriefEtDateOfRun(Date.parse('2026-12-02T03:45:00.000Z'))).toBe('2026-12-01');   // 10:45 PM EST
+  });
+});
+
+describe('the review round (§2 review, the census lens)', () => {
+  /** A five-field cron string, in the forms vercel.json uses here: numbers, `*`, a range, a list. */
+  const parseCron = (s) => {
+    const [minute, hour, dom, mon, dow] = String(s).trim().split(/\s+/);
+    const days = dow.split(',').flatMap((p) => (p.includes('-') ? (([a, b]) => Array.from({ length: b - a + 1 }, (_, i) => a + i))(p.split('-').map(Number)) : [Number(p)]));
+    return { minute: Number(minute), hour: Number(hour), dom, mon, days };
+  };
+  it('C5: the UTC hour, minute and weekdays the front computes with are read off the schedule string — not restated beside it', () => {
+    const c = parseCron(DEBRIEF_SCHEDULE);
+    expect([c.hour, c.minute, c.days, c.dom, c.mon]).toEqual([DEBRIEF_UTC_HOUR, DEBRIEF_UTC_MINUTE, [...DEBRIEF_UTC_WEEKDAYS], '*', '*']);
+  });
+  it('C5: the job starts after the close pass can have finished — from the close pass\'s own schedule (vercel.json) and maxDuration (its handler)', () => {
+    const close = parseCron(VERCEL.crons.find((c) => c.path === '/api/cron/film-tape-close').schedule);
+    const maxS = Number(/export const config = \{ maxDuration: (\d+) \}/.exec(readFileSync(path.join(REPO, 'api/cron/film-tape-close.js'), 'utf8'))[1]);
+    const mine = parseCron(VERCEL.crons.find((c) => c.path === DEBRIEF_CRON_PATH).schedule);
+    expect(mine.days).toEqual(close.days);   // the same nights
+    expect((mine.hour * 3600 + mine.minute * 60) - (close.hour * 3600 + close.minute * 60 + maxS)).toBeGreaterThan(0);
   });
 });

@@ -20,6 +20,7 @@ import { sep23Day, SEP23_NIGHT } from '../filmTape/__fixtures__/screenFixtures.j
 import { seedDay, OWNER } from '../filmTape/__fixtures__/tapeFixtures.js';
 import { makeTapeDb } from '../filmTape/__fixtures__/tapeFirestore.js';
 import { writeTapeDay } from '../filmTape/writeTapeDay.js';
+import { etDayBounds } from '../../../src/utils/tapeSchedule.js';
 
 const D = '2026-09-23';
 /** The run that reads Sep 23: 03:45 UTC on Sep 24 — 11:45 PM EDT on Sep 23. */
@@ -378,5 +379,35 @@ describe('the review round (§2 review, the record lens)', () => {
     expect([s.written, s.errors, s.writeFailed, s.totalCostUsd]).toEqual([0, 1, [{ battleId: BATTLE_ID, etDate: D }], 0.0036]);
     expect(t.store.has(recordPath(BATTLE_ID))).toBe(false);
     expect(lines.join('\n').includes(BATTLE_ID)).toBe(false);
+  });
+});
+
+describe('the review round (§2 review, the census lens)', () => {
+  const many = (n, tape) => Array.from({ length: n }, (_, i) => ({ id: `b-c4-${i}`, owner: OWNER, ...(tape ? { tape } : {}) }));
+  it('C4: the per-battle floor holds for a day with NO swap too — begun with less than the floor left, nothing is read or written', async () => {
+    const t = world(many(6, { actions: [] }));
+    const s = await run(t, { mode: 'allowlist', call: fakeCall().call, clock: () => RUN_MS + 300_000 - 20_000, budgetMs: 300_000 });
+    expect([s.selected, s.notReached.length, s.nothing, s.written, s.calls, s.complete]).toEqual([7, 7, 0, 0, 0, false]);
+    expect(t.readLog.filter((l) => l.includes('/tape/') || l.includes('/debriefs/'))).toEqual([]);
+    expect(t.writeLog).toEqual([]);
+  });
+  it('C4: a call\'s deadline never passes the run\'s — at most start + budget − 15 s; at the start, the call\'s own 60 s', async () => {
+    const late = fakeCall();
+    await run(world(), { mode: 'allowlist', call: late.call, clock: () => RUN_MS + 300_000 - 40_000, budgetMs: 300_000 });
+    expect(late.asked.map((r) => r.deadlineAt)).toEqual([RUN_MS + 300_000 - DEBRIEF_TIME_FLOOR_MS / 2]);
+    expect(RUN_MS + 300_000 - DEBRIEF_TIME_FLOOR_MS / 2).toBe(RUN_MS + 285_000);
+    const early = fakeCall();
+    await run(world(), { mode: 'allowlist', call: early.call, budgetMs: 300_000 });
+    expect(early.asked.map((r) => r.deadlineAt)).toEqual([RUN_MS + 60_000]);
+  });
+  it('C4: a battle completed exactly at the day\'s start is a candidate; a millisecond before it is not', async () => {
+    const { startIso, startMs } = etDayBounds(D);
+    const t = world([
+      { id: 'b-at-start', owner: OWNER, battle: { status: 'completed', completedAt: startIso } },
+      { id: 'b-just-before', owner: OWNER, battle: { status: 'completed', completedAt: new Date(startMs - 1).toISOString() } },
+    ]);
+    await run(t, { mode: 'allowlist', call: fakeCall().call });
+    expect(t.store.has(recordPath('b-at-start'))).toBe(true);
+    expect(t.store.has(recordPath('b-just-before'))).toBe(false);
   });
 });

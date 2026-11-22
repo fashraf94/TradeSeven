@@ -38,31 +38,96 @@ const TENS = ['thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'
 const ORDINALS = ['first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth'];
 export const NUMBER_WORDS = Object.freeze([...CARDINALS, ...TENS, 'hundred', 'thousand', 'million', 'billion', 'dozen', 'single', 'half', 'double', 'triple', 'twice', ...ORDINALS]);
 
-/** A word's inflected forms: -s, -es, -d, -ed, -ing, and for a word ending in "e" the "e" dropped (doubled, tripling); half → halves, halved, halving. */
-function formsOf(word) {
-  const out = [word, `${word}s`, `${word}es`, `${word}d`, `${word}ed`, `${word}ing`];
-  if (word.endsWith('e')) out.push(`${word.slice(0, -1)}ed`, `${word.slice(0, -1)}ing`);
-  if (word === 'half') out.push('halves', 'halved', 'halving');
+/**
+ * A number word's forms (the review's P3, P5): the word; its plurals (-s, -es; a "-y" word's "-ies": twenties, forties);
+ * its ordinals (-th: eleventh, hundredth; a "-y" word's "-ieth": twentieth; twelfth); "-fold" and "-ly" (twofold,
+ * firstly); and for a word ending in "e", "-d" and "-ing" (doubled, tripling) — never a bare "-d" or "-ed" that makes
+ * another word ("ten" + "d" is "tend"). half → halves, halved, halving; forty's common misspelling, fourty.
+ */
+function numberFormsOf(w) {
+  const out = [w, `${w}s`, `${w}es`, `${w}th`, `${w}ths`, `${w}fold`, `${w}ly`];
+  if (w.endsWith('y')) { const s = w.slice(0, -1); out.push(`${s}ies`, `${s}ieth`, `${s}ieths`); }
+  if (w.endsWith('e')) out.push(`${w}d`, `${w.slice(0, -1)}ing`);
+  if (w === 'half') out.push('halves', 'halved', 'halving');
+  if (w === 'twelve') out.push('twelfth', 'twelfths');
+  if (w === 'forty') out.push('fourty', 'fourties', 'fourtieth');
+  return out;
+}
+/**
+ * A forbidden word's forms (the review's P4): the word, its plurals, and for a word ending in "e" its "-d" and "-ing"
+ * (graded, grading); and the same verdicts' other forms, listed: mistaken, proved, validates, supports, should've …
+ * ("support" alone stays allowed — it is the market's own word for a price level).
+ */
+const FORBIDDEN_FORMS = Object.freeze({
+  mistake: ['mistaken', 'mistakenly'],
+  proven: ['prove', 'proves', 'proved', 'proving'],
+  validated: ['validate', 'validates', 'validating', 'validation'],
+  supported: ['supports', 'supporting'],
+  'should have': ["should've", 'should’ve', 'shoulda'],
+});
+function forbiddenFormsOf(w) {
+  const out = [w, `${w}s`, `${w}es`, ...(FORBIDDEN_FORMS[w] || [])];
+  if (w.endsWith('e')) out.push(`${w}d`, `${w.slice(0, -1)}ing`);
   return out;
 }
 const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-/** Whole words, any case: no letter or digit on either side. A phrase's spaces match any run of whitespace. */
-const wholeWords = (words) => new RegExp(`(?<![\\p{L}\\p{N}])(?:${words.flatMap((w) => formsOf(w)).map((f) => escape(f).replace(/ /g, '\\s+')).join('|')})(?![\\p{L}\\p{N}])`, 'iu');
-const NUMBER_WORD = wholeWords(NUMBER_WORDS);
-const FORBIDDEN = wholeWords(FORBIDDEN_WORDS);
+/** Whole words, any case: no letter or digit on either side. A phrase's spaces match any run of spaces or hyphens and dashes (P4). */
+const wholeWords = (forms) => new RegExp(`(?<![\\p{L}\\p{N}])(?:${forms.map((f) => escape(f).replace(/ /g, '[\\s\\-\\u2010-\\u2015]+')).join('|')})(?![\\p{L}\\p{N}])`, 'iu');
+const NUMBER_WORD = wholeWords(NUMBER_WORDS.flatMap(numberFormsOf));
+const FORBIDDEN = wholeWords(FORBIDDEN_WORDS.flatMap(forbiddenFormsOf));
 /** §5 check 3: any numeric character, in any script. */
 const DIGIT = /\p{N}/u;
 /** §5 check 2: a line break of any kind. */
-const LINE_BREAK = /[\n\r\u0085\u2028\u2029\v\f]/;
-/** §5 check 2: a sentence end — a run of . ! ? … (closing quotes and brackets after it) at a space or the text's end. */
-const SENTENCE_END = /[.!?…]+["'”’)\]]*(?=\s|$)/gu;
+const LINE_BREAK = new RegExp('[\\n\\r\\u0085\\u2028\\u2029\\v\\f]');
+/**
+ * §5 check 2 — the review's P1 and P7: a line the player would not read as written is no shape a line may have — an
+ * invisible or a direction-control character (any format character, any default-ignorable code point: a right-to-left
+ * override reverses what the checks read), no visible letter at all, or a letter outside the Latin script (a Cyrillic
+ * or Greek look-alike passes for a Latin one).
+ */
+const INVISIBLE_OR_CONTROL = /[\p{Cf}\p{Default_Ignorable_Code_Point}]/u;
+const ANY_LETTER = /\p{L}/u;
+const NON_LATIN_LETTER = /(?![\p{Script=Latin}])\p{L}/u;
+/**
+ * §5 check 2: the sentence ends (the review's P5, P6) — a run of terminal punctuation, in any of its forms (. ! ? and
+ * their full-width, ideographic and doubled forms), closing quotes and brackets after it, at a space or the text's end.
+ * Not an end: an ellipsis inside the text ("I waited… then sold"), or the period of a common abbreviation (vs., U.S.).
+ */
+const TERMINAL_RUN = /[.!?。！？．｡‼⁇⁈⁉﹒﹖﹗…]+["'”’»›」』)\]]*(?=\s|$)/gu;
+const ABBREVIATIONS = new Set(['vs', 'etc', 'e.g', 'i.e', 'mr', 'mrs', 'ms', 'dr', 'inc', 'corp', 'co', 'jr', 'sr', 'st', 'u.s', 'u.k', 'a.m', 'p.m', 'approx', 'est']);
+function sentenceEndsOf(text) {
+  let n = 0;
+  const end = text.trimEnd().length;
+  for (const m of text.matchAll(TERMINAL_RUN)) {
+    const run = m[0].replace(/["'”’»›」』)\]]+$/, '');
+    const atEnd = m.index + m[0].length >= end;
+    if (!atEnd && /^(?:…+|\.{2,})$/.test(run)) continue;   // an ellipsis inside the text
+    if (run === '.') {
+      const word = text.slice(0, m.index).split(/\s/).pop().toLowerCase();
+      if (ABBREVIATIONS.has(word)) continue;
+    }
+    n += 1;
+  }
+  return n;
+}
 
 /** The app's symbol directory: the stock tickers (the symbol directory, rankingConfig.js) and the crypto list. */
 export const DIRECTORY_SYMBOLS = Object.freeze(new Set([...Object.keys(TICKER_TO_SECTOR), ...VALID_CRYPTO_SYMBOLS]));
 
 const codePoints = (s) => [...s].length;
-/** The tokens of two to five capitals — whole runs of capitals, no letter or digit on either side. */
-const capitalTokens = (text) => text.match(/(?<![\p{L}\p{N}])[A-Z]{2,5}(?![\p{L}\p{N}])/gu) || [];
+/**
+ * The tokens of two to five capitals — whole runs of capitals, no letter or digit on either side — read as the symbol
+ * directory writes one (the review's P8): with its class suffix ("BRK-B": both "BRK-B" and "BRK" are read) and through
+ * a plural or possessive "s" ("the NVDAs", "NVDA's").
+ */
+function capitalTokens(text) {
+  const out = [];
+  for (const m of text.matchAll(/(?<![\p{L}\p{N}])([A-Z]{1,5})([.-][A-Z]{1,2})?(?:['’]?s)?(?![\p{L}\p{N}])/gu)) {
+    if (m[1].length >= 2) out.push(m[1]);
+    if (m[2]) out.push(`${m[1]}${m[2]}`, `${m[1]}${m[2].replace('.', '-')}`, `${m[1]}${m[2].replace('-', '.')}`);
+  }
+  return out;
+}
 
 /** The symbols a swap's line may name: its own two, and every capital token in its quotations. */
 function allowedSymbolsOf(swap) {
@@ -77,8 +142,10 @@ function allowedSymbolsOf(swap) {
 export function failingCheckOf(text, swap, knownIds = []) {
   if (typeof text !== 'string') return 'shape';
   const n = codePoints(text);
-  if (n < 1 || n > DEBRIEF_LINE_MAX || LINE_BREAK.test(text) || (text.match(SENTENCE_END) || []).length > MAX_SENTENCE_ENDS) return 'shape';
+  if (n < 1 || n > DEBRIEF_LINE_MAX || LINE_BREAK.test(text)) return 'shape';
+  if (INVISIBLE_OR_CONTROL.test(text) || !ANY_LETTER.test(text) || NON_LATIN_LETTER.test(text)) return 'shape';
   const plain = unmaskedText(text);
+  if (Math.max(sentenceEndsOf(text), sentenceEndsOf(plain)) > MAX_SENTENCE_ENDS) return 'shape';
   const both = (re) => re.test(text) || re.test(plain);
   if (both(DIGIT)) return 'digit';
   if (both(NUMBER_WORD)) return 'number_word';

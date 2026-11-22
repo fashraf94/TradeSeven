@@ -354,7 +354,9 @@ function AgentWords({ record, i, renderAgentMark, narrow }) {
     <div data-flow-said="agent-words" data-flow-debrief-line={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, minWidth: 0 }}>
       <span style={{ width: 26, flexShrink: 0, display: 'inline-flex', justifyContent: 'center' }}>{renderAgentMark(22)}</span>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-        <Quotation doc={record} path={['lines', i, 'text']} by="agent" at={['writtenAt']} lines={3} size={narrow ? 14.5 : 15.5} weight={500} color={C.ink} docLabel="debrief" preview />
+        {/* never clamped (the review's P2): the words are shown nowhere else, so the whole line — at most 160 code points
+            (§5) — is the player's to read; `preview` keeps the attribution for assistive technology only */}
+        <Quotation doc={record} path={['lines', i, 'text']} by="agent" at={['writtenAt']} size={narrow ? 14.5 : 15.5} weight={500} color={C.ink} docLabel="debrief" preview />
         {date ? <span data-flow-debrief-date="" style={{ fontSize: 11, lineHeight: 1.4, color: C.ink3 }}><When>{date}</When></span> : null}
       </div>
     </div>

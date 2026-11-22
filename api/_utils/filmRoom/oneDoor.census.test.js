@@ -734,33 +734,53 @@ describe('the walker bites (a guard that cannot fail guards nothing)', () => {
 // ── Film Room D2 (D2 spec §10; DW-11): the `debriefs` rule and the debrief path's fail-closed loads ──────────────────
 
 /** A read of the agent's words by name: a `debriefs` collection, a collection group, a path segment — in code, comments stripped. */
-const DEBRIEFS_READ = /\b(?:collection|collectionGroup|doc)\s*\(\s*['"`]debriefs['"`]|['"`]debriefs['"`]|\/debriefs(?:\/|['"`]|$)/m;
-/** The specifiers that hand a module a second interpreter: the debrief path fails closed on each (either spelling). */
-const DEBRIEF_FORBIDDEN_SPECIFIERS = Object.freeze(['node:vm', 'vm', 'node:worker_threads', 'worker_threads']);
+// the review's C2: a path that STARTS with the segment — `doc(battleRef, 'debriefs/' + d)`, `doc(ref, \`debriefs/${d}\`)` — reads true too
+const DEBRIEFS_READ = /\b(?:collection|collectionGroup|doc)\s*\(\s*['"`]debriefs['"`]|['"`]debriefs['"`/]|\/debriefs(?:\/|['"`]|$)/m;
+/**
+ * The specifiers that hand a module a second interpreter: the debrief path fails closed on each (either spelling) —
+ * §10's two, and a child process (the review's census Q1: `node -e` is one more interpreter).
+ */
+const DEBRIEF_FORBIDDEN_SPECIFIERS = Object.freeze(['node:vm', 'vm', 'node:worker_threads', 'worker_threads', 'node:child_process', 'child_process']);
 const isMember = (n) => n?.type === 'MemberExpression' || n?.type === 'OptionalMemberExpression';
-/** `n` names `name`: the identifier itself, or a member by that static key (`x.name`, `x['name']`). */
+/** A key written as a static string: a string literal, or a template with no `${}` (the review's C3: `globalThis[\`eval\`]`). */
+const staticKey = (k) => (k?.type === 'StringLiteral' ? k.value : k?.type === 'TemplateLiteral' && k.expressions.length === 0 ? k.quasis[0]?.value?.cooked ?? null : null);
+/** `n` names `name`: the identifier itself, or a member by that static key (`x.name`, `x['name']`, ``x[`name`]``). */
 const namesIt = (n, name) => (n?.type === 'Identifier' && n.name === name)
-  || (isMember(n) && ((!n.computed && n.property?.name === name) || (n.computed && n.property?.type === 'StringLiteral' && n.property.value === name)));
+  || (isMember(n) && ((!n.computed && n.property?.name === name) || (n.computed && staticKey(n.property) === name)));
 /**
  * What the debrief path's walk fails closed on, in one module's source: `eval` named anywhere in code (a call, an alias, a
- * member — `globalThis.eval`), `Function` called (with or without `new`, bare or as a member), and a load of `node:vm` or
- * `node:worker_threads`. Read with the census's own parser: a string or a comment that says "eval" is no load.
+ * member — `globalThis.eval`), `Function` called or taken as a value (with or without `new`, bare or as a member, aliased,
+ * destructured), and a load of `node:vm`, `node:worker_threads` or `node:child_process`. Read with the census's own parser:
+ * a string or a comment that says "eval" is no load.
  */
 export function debriefLoadsOf(src, where) {
   const found = new Set();
   for (const spec of importSpecifiersOf(src, where)) if (DEBRIEF_FORBIDDEN_SPECIFIERS.includes(spec)) found.add(spec.startsWith('node:') ? spec : `node:${spec}`);
   const ast = parse(String(src), { ...PARSE_OPTIONS, plugins: [...PARSE_OPTIONS.plugins] });
-  const stack = [ast.program];
+  // each node with its parent, the key it sits under, and the parent's parent — so `Function` named as a VALUE can be
+  // told from an object literal's key or a typeof
+  const stack = [[ast.program, null, null, null]];
   while (stack.length) {
-    const n = stack.pop();
-    if (Array.isArray(n)) { for (const x of n) if (x && typeof x === 'object') stack.push(x); continue; }
+    const [n, parent, key, grand] = stack.pop();
+    if (Array.isArray(n)) { for (const x of n) if (x && typeof x === 'object') stack.push([x, parent, key, grand]); continue; }
     if (n.type === 'Identifier' && n.name === 'eval') found.add('eval');
     if (isMember(n) && namesIt(n, 'eval')) found.add('eval');
     if ((n.type === 'NewExpression' || n.type === 'CallExpression' || n.type === 'OptionalCallExpression') && namesIt(n.callee, 'Function')) found.add('new Function');
+    // the review's C3: the Function constructor taken as a VALUE, not only called where it is named — a member that names
+    // it (`globalThis.Function`, `x['Function']`, ``x[`Function`]``), aliased (`const F = Function`), handed on
+    // (`Reflect.construct(Function, …)`), its prototype's constructor reached, or destructured (`{ Function: F } = globalThis`).
+    // Not a value: an object LITERAL's static key (`{ Function: 1 }`), or `typeof Function`
+    if (isMember(n) && namesIt(n, 'Function')) found.add('new Function');
+    if (n.type === 'Identifier' && n.name === 'Function') {
+      const asProperty = isMember(parent) && key === 'property' && !parent.computed;   // the member row above judges it
+      const asLiteralKey = (parent?.type === 'ObjectProperty' || parent?.type === 'ObjectMethod') && key === 'key' && !parent.computed && grand?.type !== 'ObjectPattern';
+      const asTypeof = parent?.type === 'UnaryExpression' && parent.operator === 'typeof';
+      if (!asProperty && !asLiteralKey && !asTypeof) found.add('new Function');
+    }
     for (const k of Object.keys(n)) {
       if (k === 'loc' || k === 'extra' || k === 'comments' || k.endsWith('Comments')) continue;
       const v = n[k];
-      if (v && typeof v === 'object') stack.push(v);
+      if (v && typeof v === 'object') stack.push([v, n, k, parent]);
     }
   }
   return [...found].sort();
@@ -825,7 +845,7 @@ describe('D2 — THE RULE: no module reachable from any other model path reads `
   });
 });
 
-describe('D2 — the debrief path\'s FAIL-CLOSED LOADS: eval, new Function, node:vm, node:worker_threads (Build C CF-11\'s cheap step)', () => {
+describe('D2 — the debrief path\'s FAIL-CLOSED LOADS: eval, new Function, node:vm, node:worker_threads, node:child_process (Build C CF-11\'s cheap step)', () => {
   it('the real debrief path walks clean — none of its modules loads by any of them', () => {
     expect(() => debriefClosureOf(MODEL_PATHS.debrief.map(abs))).not.toThrow();
   });
@@ -860,8 +880,35 @@ describe('D2 — the debrief path\'s FAIL-CLOSED LOADS: eval, new Function, node
     }
   });
   it('a clean module that only SAYS "eval" or "Function" — in a string, a comment, a longer name, a typeof — passes', () => {
-    for (const src of ["export const z = 'eval';\n", '// eval(x) here\nexport const z = 1;\n', 'export const z = (evaluation) => evaluation;\n', "export const z = { kind: 'Function' };\n", 'export const z = typeof Function;\n']) {
+    for (const src of ["export const z = 'eval';\n", '// eval(x) here\nexport const z = 1;\n', 'export const z = (evaluation) => evaluation;\n', "export const z = { kind: 'Function' };\n", 'export const z = typeof Function;\n', 'export const z = { Function: 1 };\n', 'export const z = (x) => typeof x === "function";\n']) {
       expect(walkErrorOf(src), src).toBeNull();
     }
+  });
+  it('the review\'s C3 and census Q1: the constructor taken as a value, a template-literal key, a child process — each throws', () => {
+    const plants = {
+      eval: ['export const z = (s) => globalThis[`eval`](s);\n'],
+      'new Function': [
+        "const F = Function; export const z = new F('return 1');\n",
+        "export const z = Reflect.construct(Function, ['return 1']);\n",
+        "export const z = new Function.prototype.constructor('return 1');\n",
+        "const { Function: F } = globalThis; export const z = new F('return 1');\n",
+        "const { Function } = globalThis; export const z = Function;\n",
+        "const F = globalThis.Function; export const z = new F('return 1');\n",
+        "export const z = new globalThis[`Function`]('return 1');\n",
+        'export const z = { make: Function };\n',
+      ],
+      'node:child_process': ["import { execFileSync } from 'node:child_process';\nexport const z = execFileSync;\n", "export const z = () => import('child_process');\n"],
+    };
+    for (const [load, sources] of Object.entries(plants)) {
+      for (const src of sources) {
+        const err = walkErrorOf(src);
+        expect(err?.code, src).toBe('OPAQUE_LOAD');
+        expect(err.loads, src).toContain(load);
+      }
+    }
+  });
+  it('the review\'s C2: a `debriefs` path that starts the string — concatenated or a template — reads true', () => {
+    for (const r of ["doc(battleRef, 'debriefs/' + etDate)", 'doc(ref, `debriefs/${etDate}`)', "db.doc('debriefs/' + id)"]) expect(DEBRIEFS_READ.test(r), r).toBe(true);
+    for (const c of ["const kind = 'debriefsArchive/' + x;", "db.collection('debrief/' + d)"]) expect(DEBRIEFS_READ.test(c), c).toBe(false);
   });
 });

@@ -116,10 +116,16 @@ function namesOf(battle) {
   const name = typeof battle?.agentContext?.agentName === 'string' ? battle.agentContext.agentName.trim() : '';
   return name ? [new RegExp(`(?<![\\p{L}\\p{N}])${escapeRe(name)}(?![\\p{L}\\p{N}])`, 'iu')] : [];
 }
-/** A quotation the digest may carry: within the bound, no id (CE-1), not blank (the review's M6), no player-chosen name. */
+/** A format or default-ignorable character: a direction override, an invisible joiner or space (the review's P1). */
+const INVISIBLE_OR_CONTROL = /[\p{Cf}\p{Default_Ignorable_Code_Point}]/u;
+/**
+ * A quotation the digest may carry: within the bound, no id (CE-1), not blank (the review's M6), no player-chosen name,
+ * and nothing invisible or directional — a right-to-left override would reach the model as text the reader never sees
+ * (the review's P1; the checks drop a line that copies one).
+ */
 function quoteOf(v, knownIds, names) {
   const text = promptQuoteText(v, DIGEST_QUOTE_MAX, knownIds);
-  if (text === null || !text.trim()) return null;
+  if (text === null || !text.trim() || INVISIBLE_OR_CONTROL.test(text)) return null;
   const plain = unmaskedText(text);
   return names.some((re) => re.test(text) || re.test(plain)) ? null : text;
 }

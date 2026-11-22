@@ -310,7 +310,7 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
   // Film Room D2 (D2 spec §1, §9; DW-10): the agent's words — only where the front shows for this day and the words
   // resolve on for this identity's owner; then ONE read of the day's record (useDebriefDay), never on the tape view
   const wordsOn = front && filmRoomDebriefOn(debriefMode, flowVerdict);
-  const debriefState = useDebriefDay(battleId, day, wordsOn, readers);
+  const debriefState = useDebriefDay(battleId, day, wordsOn, readers, flowOwnerId);
   // the review's DR-7 / DR-2, as Amendment B DB-4 makes it (Astra's F4): A GESTURE IN PROGRESS KEEPS THE TAPE. While
   // the front's conditions are still unknown — the verdict on its way, or the day still being read — a pointer-down
   // inside the tape, a key-down inside it, or a focus move onto one of its controls keeps the tape for this visit, from

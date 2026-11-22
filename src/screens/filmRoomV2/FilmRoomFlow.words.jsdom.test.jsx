@@ -95,6 +95,13 @@ describe('the line (§1): under the swap pin\'s fact, the agent\'s words, quoted
     expect(w.querySelector('[data-quote-attribution]').textContent).toBe('— the agent · 11:45 PM');
     expect(allDefects(record)).toEqual([]);
   });
+  it('the review\'s P2: never clamped — shown nowhere else, the whole line is the player\'s to read (no clamp, no hidden end)', async () => {
+    await open({ readers: wordsReaders(recordOf([LINE_AGENT])) });
+    const q = words()[0].querySelector('[data-quote-path]');
+    expect(q.hasAttribute('data-collapsed')).toBe(false);
+    expect(q.style.webkitLineClamp || q.style.WebkitLineClamp || '').toBe('');
+    expect(m.buttons('Read more')).toHaveLength(0);
+  });
   it('it sits between the fact line and the link "Open this on the full tape"', async () => {
     await open({ readers: wordsReaders(recordOf([LINE_AGENT])) });
     const panel = m.q('[data-flow-panel]');
@@ -253,6 +260,14 @@ describe('the read (§9, DW-10): exactly one, only where the front shows and the
     answerB(false); await m.flush();
     expect(words()).toHaveLength(0);
   });
+  it('the review\'s Q2: the read belongs to the identity (DD-3) — a refreshed owner, admitted, reads its own record once', async () => {
+    flags.flow = 'on'; flags.debrief = 'on';
+    const r = wordsReaders(recordOf([LINE_AGENT]));
+    await open({ readers: r, battle: battleOf(sep23Tape, { ownerId: 'owner-1' }) });
+    m.render(screen({ readers: r, battle: battleOf(sep23Tape, { ownerId: 'owner-b' }) }));
+    await m.flush();
+    expect(debriefReads(r)).toHaveLength(2);
+  });
   it('a screen opened at a moment never shows the front — and never reads the words', async () => {
     const r = wordsReaders(recordOf([LINE_AGENT]));
     m.render(<FilmRoomScreenV2 battle={battleOf(sep23Tape, { ownerId: 'owner-1' })} onBack={() => {}} viewerId="viewer-1" readers={r} nowMs={NOW} cardsApi={api(true)} openAt={{ battleId: sep23Tape.battleId, etDate: D, moment: { battleId: sep23Tape.battleId, etDate: D, situationId: 'stalled', symbol: 'MSFT', fromTickSeq: 8, toTickSeq: 9 } }} onOpenAtUsed={() => {}} />);
@@ -262,7 +277,10 @@ describe('the read (§9, DW-10): exactly one, only where the front shows and the
 });
 
 describe('the off path: the words off for the owner — the front is D1\'s', () => {
-  it("the same front, byte for byte, whether the words are 'off' or simply hold nothing for this owner's day", async () => {
+  // the review's C6: this compares the words 'off' with the words on and nothing to show — the words add nothing else to
+  // the front. It is no comparison with D1's own front: that is D1's suites' (moved only by the debrief 'off' pin) and
+  // the review's base-tree differential
+  it("the same front, byte for byte, whether the words are 'off' or on with nothing to show for this owner's day", async () => {
     flags.debrief = 'off';
     await open({ readers: wordsReaders(recordOf([LINE_AGENT])) });
     const off = m.container.innerHTML.replace(/_r_\w+_|«r\w+»/g, 'ID');

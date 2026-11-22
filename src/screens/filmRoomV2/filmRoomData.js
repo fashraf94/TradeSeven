@@ -172,10 +172,11 @@ export function useTapeDay(battleId, etDate, readers = firestoreReaders) {
  *
  * @returns {{ status: 'idle'|'loading'|'ready'|'missing'|'error', record: object|null }}
  */
-export function useDebriefDay(battleId, etDate, enabled, readers = firestoreReaders) {
+export function useDebriefDay(battleId, etDate, enabled, readers = firestoreReaders, ownerId = null) {
   const cache = useRef(new Map());
   const can = Boolean(enabled) && Boolean(battleId) && Boolean(etDate) && typeof readers?.readDebrief === 'function';
-  const key = can ? `${battleId}|${etDate}` : null;
+  // keyed by the identity too (Amendment D DD-3; the review's Q2): a refreshed owner's words are its own read
+  const key = can ? JSON.stringify([battleId, ownerId, etDate]) : null;
   const [, bump] = useState(0);
   const alive = useAlive();
   useEffect(() => {
