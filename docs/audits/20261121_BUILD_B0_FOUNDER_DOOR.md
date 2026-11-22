@@ -222,6 +222,14 @@ The setup:
 
   They are outside both PRs by the brief's rules. Reconcile them with the flip?
 
+- **Q-5. The review threshold.** PR 1's cumulative diff is 1,729 lines over 8 files: the script ≈720, its tests ≈730, this report ≈230, the examples ≈80. That crosses BUILD_RULES §2's 1,500-line line for a mandatory multi-lens, independently verified review. What ran is what the brief asked for:
+  - one refuter (§5);
+  - plus a 27-mutant battery (§4);
+  - `vite build`;
+  - the full suite.
+
+  The full multi-lens review was **not** run. Say if you want it before merging.
+
 ## 9. Record
 
 - **Branches:**
