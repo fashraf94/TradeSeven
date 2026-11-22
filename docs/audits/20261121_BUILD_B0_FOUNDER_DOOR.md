@@ -1,5 +1,14 @@
 # Build B0 — the founder's command-line door, and the flip PR (prepared, not merged)
 
+> **Founder's rulings, 21 Nov 2026** (§8):
+> - **Q-1:** fold the reconciliation into the flip commit.
+> - **Q-2:** keep `--again`.
+> - **Q-3:** keep `COCKPIT_ALLOWLIST_UIDS` in the checklist.
+> - **Q-4:** fold both docstrings into the flip commit.
+> - **Q-5:** no full review; the refuter and the battery are enough for a script that only calls the door.
+>
+> PR 2 is now one commit, `c1779856`, and it is green (§6.2).
+
 **Date of the run:** 21 Nov 2026 · **From:** the Practice Field chat (Practice Field PF-1, ruled 20 Nov) · **Base:** `origin/main` at `4037df59` (it includes #1098 and #1101), after `git fetch origin` at the start of the session · **Builder:** Claude Code (Opus), worktree `practice-field-b0-founder-door-b0ee99`.
 
 ## 1. Verdict
@@ -7,8 +16,7 @@
 | | |
 |---|---|
 | **PR 1 — the script** (`claude/practice-field-b0-founder-door`) | `scripts/practice-field-founder.mjs` runs the door's founder actions from your own checkout: `status`, `create-book`, `admit` (with `--dry-run`), `resolve`, `pause`, `resume`, `wind-down`. Every write goes through `runFounderAction`, the function the HTTP door calls, at one call site, behind three gates: the mode is not `'off'`, your uid is on `MANDATE_FOUNDER_UIDS`, and `--go`. **No file under `api/` changed.** No fenced file, rule or index changed. |
-| **PR 2 — the flip** (`claude/practice-field-flip-allowlist`) | `PRACTICE_FIELD_MODE` goes from `'off'` to `'allowlist'`, with its pin row and the flag's own "shipped value" docstring. Nothing else. **Its full suite has 7 red rows** (§6.2): they pin the old shipped `'off'`. |
-| **The reconciled flip** (`claude/practice-field-flip-allowlist-reconciled`, no PR) | It is the same flip plus, in the same commit, those 7 rows saying `'off'` outright instead of "the shipped value" (BUILD_RULES §2). No assertion moved. Its full suite is green (§6.2). **Q-1 asks which one you merge.** |
+| **PR 2 — the flip** (`claude/practice-field-flip-allowlist`, `c1779856`) | One commit: `PRACTICE_FIELD_MODE` from `'off'` to `'allowlist'` with its pin row and the flag's own "shipped value" docstring; and, per your Q-1 and Q-4 rulings, the 7 test rows that pinned the old shipped `'off'` now saying `'off'` outright (no assertion moved), plus the two header comments that called `'off'` the shipped value. Its full suite and rules suite are green (§6.2). |
 | **The quarterly product at `'allowlist'` with no idea book** | Unchanged (§6.3). The real eval, close and rollover sweeps on quarterly-only stores give the same writes, answers, model calls, quotes and reads at `'allowlist'` as at `'off'`. The one addition is a single read of the Practice Field registry per fire. |
 | **Refuter** | It found no write without all three gates, and nothing sent that the HTTP door would refuse. It confirmed two other defects, both fixed and pinned (§5): F1, a stored refusal replayed forever, and F2, the direct-run check. |
 | **Calls from this session** | No Firestore write, model call or EODHD call. Every test ran on the in-memory harness. No `.env` file, environment variable or credential was read. |
@@ -146,7 +154,11 @@ One refuter got the code, not my conclusions, on a `git archive` snapshot of `9c
 - `src/config/practiceFieldFlags.js`: `PRACTICE_FIELD_MODE = 'allowlist'`. The flag's docstring names `'allowlist'` the shipped value (it named `'off'`) and adds the step to the runway line.
 - `src/config/practiceFieldFlags.test.js`: the pin row and its title.
 
-Nothing else: no rule, index, `api/` or other `src/` file.
+Then, by your rulings on Q-1 and Q-4 (21 Nov), in the same commit:
+- `api/cron/practiceFieldIsolation.test.js` and `api/_utils/practiceField/ideaBook.test.js`: the 7 rows below say `'off'` outright, plus the third `null` row at :298;
+- `api/_utils/practiceField/mode.js:15` and `api/_utils/filmRoom/practiceFieldSeam.js:14`: comments only.
+
+No rule, index or other file.
 
 **What `'allowlist'` admits** (the beta census, `docs/audits/20261120_BETA_SWITCH_CENSUS.md` on `claude/beta-switch-census`, §4.1):
 - Creating a book and admitting an idea admit a uid on `COCKPIT_ALLOWLIST_UIDS`: the shared list of the founder and FT_QA. FT_QA passes that gate too.
@@ -162,14 +174,15 @@ Run on Linux in WSL, on the commit itself (it is `origin/main` plus the flip):
 |---|---|---|---|
 | PR 2, `baa580ce` | 1 | 2 failed, 1609 passed, 13 skipped (1624) | **7 failed**, 37167 passed, 179 skipped (37353) |
 | Reconciled, `3bc74e6d` | **0** | 1611 passed, 13 skipped (1624) | **37174 passed**, 179 skipped (37353) |
+| **PR 2 as merged, `c1779856`** (the reconciled tree plus the two comments) | **0** | 1611 passed, 13 skipped (1624) | **37174 passed, 179 skipped (37353)** |
 
 **The 7 reds are pins of the old shipped value.** Each row tests `'off'` behaviour by setting the mode to `null`, meaning "the flag as shipped", and so after the flip it runs at `'allowlist'`:
 - `api/cron/practiceFieldIsolation.test.js`: 5 rows, at :146, :588, :827, :848 and :934;
 - `api/_utils/practiceField/ideaBook.test.js`: 2 rows, at :43 ("the SHIPPED value is off") and :89. A third, :298, uses the same `null` and is still green only because its uid is on no list.
 
-BUILD_RULES §2 says a flip reconciles its pins in the same commit. Your brief says PR 2 holds only the flag and its pin. So PR 2 is built to the brief, and the reconciliation is ready as its own one-commit branch. In it, those rows say `'off'` outright, and no assertion moved: each still asserts `'off'` behaviour, which a rollback relies on. **Q-1.**
+BUILD_RULES §2 says a flip reconciles its pins in the same commit, while the brief said PR 2 holds only the flag and its pin. So the reconciliation was first built as its own one-commit branch. In it, those rows say `'off'` outright, and no assertion moved: each still asserts `'off'` behaviour, which a rollback relies on. **Ruled Q-1: folded into PR 2's commit.**
 
-`npm run test:rules` on PR 2 (`baa580ce`), in WSL with the emulator: **exit 0, 46 files, 841 rows passed**. The rules suite holds only `*.rules.mjs` files, which the reconciliation does not touch. The first attempt met another session's emulator on port 8080 and was re-run once the port was free.
+`npm run test:rules`, in WSL with the emulator: on `baa580ce`, **exit 0, 46 files, 841 rows passed**; on `c1779856`, **exit 0, 46 files, 841 rows passed**. The rules suite holds only `*.rules.mjs` files, which the reconciliation does not touch. The first attempt met another session's emulator on port 8080 and was re-run once the port was free.
 
 ### 6.3 The quarterly product at `'allowlist'` with no idea book
 This is a scratch differential, run on the flip tree and not committed, because PR 2 may hold nothing else. Its source is in §9.
@@ -193,7 +206,7 @@ The setup:
 
    Never use `--force`, and answer **No** if asked to delete indexes.
 2. **In Vercel**, confirm that `MANDATE_FOUNDER_UIDS` holds your uid. *Also confirm `COCKPIT_ALLOWLIST_UIDS` holds it:* at `'allowlist'`, creating a book and admitting an idea need that list too (Q-3).
-3. **Merge PR 1** (the script), then **the flip** (PR 2, or the reconciled branch, per Q-1), and wait for the deploy.
+3. **Merge PR 1** (the script), then **the flip** (PR 2), and wait for the deploy.
 4. **From your checkout on `main`**, pulled after the merge:
    - **Before running anything,** make sure `.env.local` holds:
      - the Firebase service account;
@@ -207,20 +220,28 @@ The setup:
    - then the same with `--go` in place of `--dry-run`.
 5. **The next session:** `status` shows the idea `holding`, with its lines at price levels.
 
-## 8. Questions for you
+## 8. Questions for you — all ruled 21 Nov 2026 (see the top)
 
 - **Q-1. Which flip do you merge?**
   - PR 2 is the flip and its pin only, as the brief asked, and its CI will be red on 7 rows.
   - The reconciled branch (`claude/practice-field-flip-allowlist-reconciled`, `3bc74e6d`) is the same flip plus those 7 rows reconciled in the same commit, as BUILD_RULES §2 requires. It is green.
 
   Say which, and I will move the reconciliation into PR 2's commit, or leave it.
+
+  **Ruled: fold it in.** Done in `c1779856`.
 - **Q-2. `--again`.** It is a flag the brief's usage lines do not name. It is the fix for the refuter's F1: without it a refused request can never be sent again under its derived key. Keep it, or rule another shape: refuse to send while a stored refusal stands, or key in the date.
+
+  **Ruled: keep it.**
 - **Q-3. `COCKPIT_ALLOWLIST_UIDS`** is added to the checklist's step 2 and to `.env.local`: the door refuses `mode_not_admitted` without it at `'allowlist'`. The brief named only `MANDATE_FOUNDER_UIDS`.
+
+  **Ruled: keep it.**
 - **Q-4. Two docstrings still call `'off'` the shipped value:**
   - `api/_utils/practiceField/mode.js:15` ("TESTS: the shipped value is 'off'");
   - `api/_utils/filmRoom/practiceFieldSeam.js:14`.
 
   They are outside both PRs by the brief's rules. Reconcile them with the flip?
+
+  **Ruled: fold both into the flip commit.** Done in `c1779856`.
 
 - **Q-5. The review threshold.** PR 1's cumulative diff is about 1,740 lines over 8 files: the script 714, its tests 698, this report ≈240, the examples 80. That crosses BUILD_RULES §2's 1,500-line line for a mandatory multi-lens, independently verified review. What ran is what the brief asked for:
   - one refuter (§5);
@@ -230,12 +251,14 @@ The setup:
 
   The full multi-lens review was **not** run. Say if you want it before merging.
 
+  **Ruled: no full review.** The refuter and the battery are enough for a script that only calls the door.
+
 ## 9. Record
 
 - **Branches:**
   - PR 1, `claude/practice-field-b0-founder-door` (fashraf94/TradeSeven#1104, draft): code at `9e97c8fb`, and this report in the commit after it;
-  - PR 2, `claude/practice-field-flip-allowlist` (fashraf94/TradeSeven#1105, draft), at `baa580ce`;
-  - reconciled, `claude/practice-field-flip-allowlist-reconciled`, at `3bc74e6d`, no PR.
+  - PR 2, `claude/practice-field-flip-allowlist` (fashraf94/TradeSeven#1105, draft), at `c1779856` (it replaced `baa580ce` on your Q-1 ruling, with a lease);
+  - reconciled, `claude/practice-field-flip-allowlist-reconciled`, at `3bc74e6d`, no PR: superseded by PR 2's commit, and safe to delete.
 - **Files, PR 1:**
   - `scripts/practice-field-founder.mjs`;
   - `scripts/practice-field-founder.test.js`;
