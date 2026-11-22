@@ -23,12 +23,11 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { candidatesFor, writtenTape, selectedForDebrief } from '../api/_utils/filmRoom/debriefPass.js';
+import { candidatesFor, writtenTape, selectedForDebrief, attributionOf } from '../api/_utils/filmRoom/debriefPass.js';
 import { buildDayDigest } from '../api/_utils/filmRoom/dayDigest.js';
 import { buildDebriefPrompt } from '../api/_utils/filmRoom/debriefPrompt.js';
 import { runDebriefCall, DEBRIEF_MODELS, MODEL_PRICES, DEBRIEF_MAX_OUTPUT_TOKENS } from '../api/_utils/filmRoom/debriefModelCall.js';
 import { checkDebriefLines } from '../api/_utils/filmRoom/debriefChecks.js';
-import { resolveAttributionAgentId } from '../api/_utils/casualClone.js';
 import { TAPE_SUBCOLLECTION } from '../src/constants/filmTape.js';
 import { etDateOf, etDayBounds, isSessionDate, closePassEndMs } from '../src/utils/tapeSchedule.js';
 import { getPreviousSessionDate } from '../src/utils/marketCalendar.js';
@@ -68,7 +67,7 @@ const dataOf = (snap) => (snap?.exists ? (typeof snap.data === 'function' ? snap
  */
 export async function runSample({
   db, ownerId, days = SAMPLE_DEFAULT_DAYS, nowMs = Date.now(), clock = Date.now, call = runDebriefCall, models = DEBRIEF_MODELS,
-  capUsd = SAMPLE_CAP_USD, resolveAttribution = resolveAttributionAgentId, outDir = SAMPLE_OUT_DIR, write = true, log = (...a) => console.log(...a),
+  capUsd = SAMPLE_CAP_USD, resolveAttribution = attributionOf, outDir = SAMPLE_OUT_DIR, write = true, log = (...a) => console.log(...a),
 }) {
   if (typeof ownerId !== 'string' || !ownerId) throw new Error('film-room-debrief-sample: --owner <uid> is required');
   const report = { generatedAt: new Date(nowMs).toISOString(), capUsd, spentUsd: 0, stopped: false, models: [...models], calls: 0, days: [] };

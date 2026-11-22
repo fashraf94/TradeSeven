@@ -48,22 +48,28 @@ describe('nextDebriefRunMs — the first run strictly after the tape was written
   });
 });
 
-describe('debriefNotYet — before the next run plus 30 minutes', () => {
-  const W = '2026-09-24T02:15:30.000Z';
+describe('debriefNotYet — before the next run plus 30 minutes, and only a run that processes this day', () => {
+  const W = '2026-09-24T02:15:30.000Z';   // Sep 23's tape, by its own night's close pass
+  const D = '2026-09-23';
   const run = Date.parse('2026-09-24T03:45:00.000Z');
   it('the grace is 30 minutes', () => { expect(DEBRIEF_NOT_YET_GRACE_MS).toBe(1_800_000); });
   it('before the run, and up to the last millisecond before run + 30 min: not yet', () => {
-    expect(debriefNotYet(W, Date.parse('2026-09-23T23:00:00.000Z'))).toBe(true);
-    expect(debriefNotYet(W, run)).toBe(true);
-    expect(debriefNotYet(W, run + DEBRIEF_NOT_YET_GRACE_MS - 1)).toBe(true);
+    expect(debriefNotYet(W, D, Date.parse('2026-09-23T23:00:00.000Z'))).toBe(true);
+    expect(debriefNotYet(W, D, run)).toBe(true);
+    expect(debriefNotYet(W, D, run + DEBRIEF_NOT_YET_GRACE_MS - 1)).toBe(true);
   });
   it('at run + 30 min and after: no longer', () => {
-    expect(debriefNotYet(W, run + DEBRIEF_NOT_YET_GRACE_MS)).toBe(false);
-    expect(debriefNotYet(W, run + 86_400_000)).toBe(false);
+    expect(debriefNotYet(W, D, run + DEBRIEF_NOT_YET_GRACE_MS)).toBe(false);
+    expect(debriefNotYet(W, D, run + 86_400_000)).toBe(false);
   });
-  it('no written instant, or no clock: never', () => {
-    expect(debriefNotYet(null, run)).toBe(false);
-    expect(debriefNotYet(W, NaN)).toBe(false);
+  it('the review\'s R6: a tape first written after its own night\'s run (a backfill, a late re-run) — the next run processes another day, and there is no catch-up: never "by the next morning"', () => {
+    expect(debriefNotYet('2026-09-24T04:00:00.000Z', D, Date.parse('2026-09-24T05:00:00.000Z'))).toBe(false);   // the next run is Sep 24's
+    expect(debriefNotYet('2026-09-26T16:00:00.000Z', '2026-09-25', Date.parse('2026-09-27T12:00:00.000Z'))).toBe(false);
+  });
+  it('no written instant, no day, or no clock: never', () => {
+    expect(debriefNotYet(null, D, run)).toBe(false);
+    expect(debriefNotYet(W, null, run)).toBe(false);
+    expect(debriefNotYet(W, D, NaN)).toBe(false);
   });
 });
 

@@ -31,8 +31,8 @@ import { readsAsFinal, keyOf, allPinsOf, comparePinsByPriority, comparePinsByTim
 import { etClock, fmtPrice, fmtPoints, numberAt } from '../../../src/screens/filmRoomV2/filmRoomModel.js';
 import { FILM_ROOM_COPY } from '../../../src/screens/filmRoomV2/filmRoomCopy.js';
 import { instantMs, promptQuoteText } from '../../../src/utils/filmRoomSubject.js';
-import { tickerOk } from '../../../src/utils/promptBoundText.js';
-import { getArchetypeDisplayName } from '../../../src/data/archetypeDisplay.js';
+import { tickerOk, unmaskedText } from '../../../src/utils/promptBoundText.js';
+import { getArchetypeDisplayName, ARCHETYPE_DISPLAY_NAMES } from '../../../src/data/archetypeDisplay.js';
 import { stableStringify, canonicalContentHash } from '../canonicalHash.js';
 
 /** The digest's shape version (§2). The record stamps it beside the digest's hash. */
@@ -59,15 +59,42 @@ export function archetypeCodeOf(tape, battle) {
   return [battle?.agentContext?.archetype, battle?.archetype, tape?.archetype].find((a) => typeof a === 'string' && a && a.toLowerCase() !== 'unknown') ?? null;
 }
 
-/** The day's checks with a strict instant, in time order (the array's order breaks a tie). */
+/**
+ * The archetype's DISPLAY name the digest and the prompt carry — only for a code the app's own table knows
+ * (ARCHETYPE_DISPLAY_NAMES): the review's M1 — an agent document's `archetype` is written by the client, so any other
+ * string is text a player could have chosen (DW-3), and getArchetypeDisplayName's humanized fallback would carry it
+ * into the system text. An unknown code is no name at all (the prompt then says "the agent").
+ */
+export function archetypeDisplayOf(code) {
+  return typeof code === 'string' && Object.prototype.hasOwnProperty.call(ARCHETYPE_DISPLAY_NAMES, code) ? getArchetypeDisplayName(code) : null;
+}
+
+/**
+ * The day's checks with a strict instant, in the writer's order at an instant — time, then tickSeq, then the array's
+ * place (the review's M5: the array's order alone let two checks at one instant trade places).
+ */
 function timedChecks(tape) {
+  const seqKey = (c) => (Number.isInteger(c?.tickSeq) ? c.tickSeq : Infinity);
   return (Array.isArray(tape.checks) ? tape.checks : [])
     .map((c, i) => ({ c, i, t: instantMs(c?.at) }))
     .filter((x) => x.t !== null)
-    .sort((a, b) => (a.t - b.t) || (a.i - b.i));
+    .sort((a, b) => (a.t - b.t) || (seqKey(a.c) - seqKey(b.c)) || (a.i - b.i));
 }
 
-/** The rationale row recorded at check `c`: the same tickSeq, else the same evaluation id. */
+/**
+ * The tickSeqs of the day's checks that hold NO strict instant — a gap row the writer mints for a check that ran and
+ * left no record, or a looser time. Such a check may sit between a swap and the timed check the digest would take as
+ * its neighbour; then that neighbour's words are not "the check before" (or after) — the review's M5: never an older
+ * check's words in its place.
+ */
+function untimedSeqs(tape) {
+  return (Array.isArray(tape.checks) ? tape.checks : []).filter((c) => instantMs(c?.at) === null).map((c) => (Number.isInteger(c?.tickSeq) ? c.tickSeq : null));
+}
+
+/**
+ * The rationale row recorded at check `c`: the same tickSeq, else the same evaluation id — and an evaluation-id match
+ * only for a row whose own tickSeq does not name another check (the review's M4).
+ */
 function rationaleRowOf(tape, c) {
   const rows = Array.isArray(tape.rationale) ? tape.rationale : [];
   if (Number.isInteger(c?.tickSeq)) {
@@ -75,16 +102,35 @@ function rationaleRowOf(tape, c) {
     if (bySeq) return bySeq;
   }
   const evalId = str(c?.evalId);
-  return evalId ? rows.find((r) => str(r?.evalId) === evalId) ?? null : null;
+  const sameCheck = (r) => !Number.isInteger(r?.tickSeq) || !Number.isInteger(c?.tickSeq) || r.tickSeq === c.tickSeq;
+  return evalId ? rows.find((r) => str(r?.evalId) === evalId && sameCheck(r)) ?? null : null;
+}
+
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/**
+ * DW-3 — the agent's own display name is player-written text (the player chose it), and the agent's recorded words can
+ * carry it (its evaluation prompt opens "You are {name}" — the review's M2): a quotation that holds the name, as a whole
+ * word in any case, as written or unmasked, is left out whole, like one that holds an id.
+ */
+function namesOf(battle) {
+  const name = typeof battle?.agentContext?.agentName === 'string' ? battle.agentContext.agentName.trim() : '';
+  return name ? [new RegExp(`(?<![\\p{L}\\p{N}])${escapeRe(name)}(?![\\p{L}\\p{N}])`, 'iu')] : [];
+}
+/** A quotation the digest may carry: within the bound, no id (CE-1), not blank (the review's M6), no player-chosen name. */
+function quoteOf(v, knownIds, names) {
+  const text = promptQuoteText(v, DIGEST_QUOTE_MAX, knownIds);
+  if (text === null || !text.trim()) return null;
+  const plain = unmaskedText(text);
+  return names.some((re) => re.test(text) || re.test(plain)) ? null : text;
 }
 
 /** The agent's words at one check, as the digest carries them — each text whole or left out; null when none is carried. */
-function saidAt(tape, check, knownIds) {
+function saidAt(tape, check, knownIds, names) {
   if (!check) return null;
   const row = rationaleRowOf(tape, check.c);
   if (!row) return null;
-  const rationale = promptQuoteText(row.rationale, DIGEST_QUOTE_MAX, knownIds);
-  const hypothesis = promptQuoteText(row.hypothesis, DIGEST_QUOTE_MAX, knownIds);
+  const rationale = quoteOf(row.rationale, knownIds, names);
+  const hypothesis = quoteOf(row.hypothesis, knownIds, names);
   if (rationale === null && hypothesis === null) return null;
   return {
     saidBy: DIGEST_SAID_BY,
@@ -117,11 +163,13 @@ function dayOf(tape, battle) {
 export function buildDayDigest({ tape, battle = null, knownIds = [] } = {}) {
   if (!isObj(tape) || !Array.isArray(tape.checks) || !Array.isArray(tape.actions)) return null;
   const known = knownIdsOf(tape, battle, knownIds);
+  const names = namesOf(battle);
   const code = archetypeCodeOf(tape, battle);
   // the front's pins, its swaps only: a strict instant and a row key to bind the words to; chosen by the front's priority
   const swapPins = allPinsOf(tape).filter((p) => p.src === 'action' && p.t !== null && str(tape.actions[p.index]?.key));
   const chosen = [...swapPins].sort(comparePinsByPriority).slice(0, DIGEST_SWAP_LIMIT).sort(comparePinsByTime);
   const checks = timedChecks(tape);
+  const untimed = untimedSeqs(tape);
   const refs = {};
   const swaps = chosen.map((p, k) => {
     const a = tape.actions[p.index];
@@ -130,8 +178,14 @@ export function buildDayDigest({ tape, battle = null, knownIds = [] } = {}) {
     const price = numberAt(tape, ['actions', p.index, 'exitPrice']);
     const before = [...checks].reverse().find((x) => x.t <= p.t) ?? null;
     const after = checks.find((x) => x.t > p.t) ?? null;
-    const saidBefore = saidAt(tape, before, known);
-    const saidAfter = saidAt(tape, after, known);
+    // a check with no strict instant between the two neighbours (by tickSeq), or one we cannot place against them at
+    // all: neither neighbour is surely the check before or after — no words rather than another check's (M5)
+    const seqOf = (x) => (Number.isInteger(x?.c?.tickSeq) ? x.c.tickSeq : null);
+    const lo = before ? seqOf(before) : -Infinity;
+    const hi = after ? seqOf(after) : Infinity;
+    const unsure = untimed.length > 0 && (lo === null || hi === null || untimed.some((s) => s === null || (s > lo && s < hi)));
+    const saidBefore = unsure ? null : saidAt(tape, before, known, names);
+    const saidAfter = unsure ? null : saidAt(tape, after, known, names);
     return {
       label,
       time: etClock(a.at),
@@ -146,7 +200,7 @@ export function buildDayDigest({ tape, battle = null, knownIds = [] } = {}) {
   return {
     digest: {
       day: dayOf(tape, battle),
-      archetype: code ? getArchetypeDisplayName(code) : null,
+      archetype: archetypeDisplayOf(code),
       swaps,
     },
     refs,

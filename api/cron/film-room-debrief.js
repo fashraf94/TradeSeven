@@ -15,7 +15,8 @@
  *      model call per battle day with a swap, the checks, one record created per battle day
  *      (agentBattles/{id}/debriefs/{etDate}).
  * Writes ONLY agentBattles/{id}/debriefs/{etDate}, with `create` (a second run never overwrites a record). Reads
- * the battles, each battle day's tape and its record — nothing else. Logs counts only: never words, ids or keys; an
+ * the battles, each battle day's tape and its record — and, for a casual clone's battle only, the clone's own agent
+ * document, for the record's attribution agent (debriefPass.js attributionOf, the cards' counter's reading). Logs counts only: never words, ids or keys; an
  * error is named by its kind, never by its message (a Firestore message can carry a document path).
  *
  * Crons do not run on Vercel preview: verification is the unit tests on the gate, the selection, the digest, the

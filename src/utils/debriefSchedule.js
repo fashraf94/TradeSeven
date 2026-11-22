@@ -35,10 +35,15 @@ export function nextDebriefRunMs(writtenAt) {
   return null;
 }
 
-/** §7: is a day with no record yet still in its not-yet window — now before the next run after its tape was written, plus 30 minutes? */
-export function debriefNotYet(tapeWrittenAt, nowMs) {
+/**
+ * §7: is a day with no record yet still in its not-yet window — now before the next run after its tape was written,
+ * plus 30 minutes — AND is that run one that processes this day (the review's R6: a tape first written after its own
+ * night's run, by a backfill or a late re-run, is never processed — one date per run, no catch-up — so "by the next
+ * morning" would promise words that never come; §7 says the line shows ONLY while now is before that run plus 30 minutes).
+ */
+export function debriefNotYet(tapeWrittenAt, etDate, nowMs) {
   const run = nextDebriefRunMs(tapeWrittenAt);
-  return run !== null && Number.isFinite(nowMs) && nowMs < run + DEBRIEF_NOT_YET_GRACE_MS;
+  return run !== null && typeof etDate === 'string' && debriefEtDateOfRun(run) === etDate && Number.isFinite(nowMs) && nowMs < run + DEBRIEF_NOT_YET_GRACE_MS;
 }
 
 /** The ET date a run at `nowMs` processes (§7: the ET date of the run). */

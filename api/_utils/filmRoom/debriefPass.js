@@ -32,7 +32,8 @@ import { buildDayDigest, digestHashOf, DAY_DIGEST_VERSION } from './dayDigest.js
 import { buildDebriefPrompt } from './debriefPrompt.js';
 import { runDebriefCall, DEBRIEF_MODEL } from './debriefModelCall.js';
 import { checkDebriefLines } from './debriefChecks.js';
-import { resolveAttributionAgentId } from '../casualClone.js';
+import { resolveRecordTargetId } from '../casualClone.js';
+import { isCasualCloneId } from '../../../src/constants/leagueTournament.js';
 
 /** §6: the record's shape version. */
 export const DEBRIEF_RECORD_VERSION = 1;
@@ -61,6 +62,28 @@ export async function candidatesFor(db, bounds) {
     for (const d of snap?.docs || []) if (!byId.has(d.id)) byId.set(d.id, { id: d.id, ...(typeof d.data === 'function' ? d.data() : d.data) });
   }
   return [...byId.values()].sort((a, b) => (a.id < b.id ? -1 : 1));
+}
+
+/**
+ * The record's `attributionAgentId` (§6: "as the cards stamp them") — the platform's one attribution rule, a casual
+ * clone's parent, else the battle's own agent: for a clone, ONE read of the clone's agent document, accepted only when
+ * it is the battle owner's own (the cards' counter's reading, cardStore.js ownerAttributionOf), then the platform's
+ * pure resolver (casualClone.js resolveRecordTargetId). Never the clone itself: a clone it cannot resolve — no document,
+ * another owner's, no parent named, a failed read — is `null`, as the cards never file under a clone (the review's R3).
+ * It prints nothing (the review's R2: the async resolver logs the ids it meets on its degraded paths).
+ * @returns {Promise<string|null>}
+ */
+export async function attributionOf(db, battle) {
+  const agentId = str(battle?.agentId);
+  if (!agentId || !isCasualCloneId(agentId)) return agentId;
+  try {
+    const clone = dataOf(await db.collection('agents').doc(agentId).get());
+    const own = isObj(clone) && clone.ownerId === battle.ownerId ? clone : null;
+    const target = resolveRecordTargetId(agentId, own);
+    return isCasualCloneId(target) ? null : str(target);
+  } catch {
+    return null;
+  }
 }
 
 /** A tiered battle on one of its battle days, whose owner the gate admits under `mode`. */
@@ -113,13 +136,13 @@ export function debriefRecordOf({ battle, etDate, attributionAgentId, digest, ta
  */
 export async function runDebriefPass({
   db, clock = Date.now, startMs = clock(), budgetMs = 300_000, mode = filmRoomDebriefMode(),
-  call = runDebriefCall, model = DEBRIEF_MODEL, resolveAttribution = resolveAttributionAgentId, log = (...a) => console.log(...a),
+  call = runDebriefCall, model = DEBRIEF_MODEL, resolveAttribution = attributionOf, log = (...a) => console.log(...a),
 }) {
   if (mode === 'off') return { skipped: true, reason: 'off' };
   const etDate = etDateOf(startMs);
   const summary = {
     etDate, mode, selected: 0, written: 0, nothing: 0, failed: 0, skipped: { noTape: 0, notWritten: 0, exists: 0, unreadable: 0 },
-    errors: 0, calls: 0, totalCostUsd: 0, notReached: [], complete: true,
+    errors: 0, calls: 0, totalCostUsd: 0, notReached: [], writeFailed: [], attributionUnresolved: 0, complete: true,
   };
   const finish = () => {
     summary.totalCostUsd = Math.round(summary.totalCostUsd * 1_000_000) / 1_000_000;
@@ -127,7 +150,7 @@ export async function runDebriefPass({
     log(LOG_PREFIX, JSON.stringify({
       selected: summary.selected, written: summary.written, nothing: summary.nothing, failed: summary.failed,
       notReached: summary.notReached.length, skipped: Object.values(summary.skipped).reduce((a, b) => a + b, 0),
-      errors: summary.errors, calls: summary.calls, totalCostUsd: summary.totalCostUsd,
+      errors: summary.errors, writeFailed: summary.writeFailed.length, attributionUnresolved: summary.attributionUnresolved, calls: summary.calls, totalCostUsd: summary.totalCostUsd,
     }));
     return summary;
   };
@@ -149,6 +172,7 @@ export async function runDebriefPass({
     if (!writtenTape(tape)) { summary.skipped.notWritten += 1; return; }
     if (debriefSnap?.exists) { summary.skipped.exists += 1; return; }
     const attributionAgentId = await resolveAttribution(db, battle);
+    if (attributionAgentId === null && str(battle.agentId)) summary.attributionUnresolved += 1;
     const knownIds = [battle.id, battle.ownerId, battle.agentId, attributionAgentId].filter((v) => typeof v === 'string' && v);
     const built = buildDayDigest({ tape, battle, knownIds });
     if (!built) { summary.skipped.unreadable += 1; return; }
@@ -182,7 +206,11 @@ export async function runDebriefPass({
     } catch (err) {
       // another run created it first: the record stands, never overwritten (`create`, §6)
       if (err?.code === 6 || err?.code === 'already-exists') { summary.skipped.exists += 1; return; }
-      throw err;
+      // any other failed write: the day keeps no record and is NAMED in the summary — its call's cost already counted
+      // in the run's total (the review's R4) — never printed
+      summary.writeFailed.push({ battleId: battle.id, etDate });
+      summary.errors += 1;
+      return;
     }
     summary[doc.status] += 1;
   }

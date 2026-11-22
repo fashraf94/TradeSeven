@@ -14,7 +14,7 @@ vi.mock('../../../src/config/featureFlags.js', async (importOriginal) => ({
   get FILM_ROOM_DEBRIEF_MODE() { return flags.debrief; },
 }));
 
-import { runDebriefPass, selectedForDebrief, debriefRecordOf, DEBRIEF_MAX_CALLS, DEBRIEF_MAX_CONCURRENT, DEBRIEF_TIME_FLOOR_MS, DEBRIEF_RECORD_VERSION } from './debriefPass.js';
+import { runDebriefPass, selectedForDebrief, debriefRecordOf, attributionOf, DEBRIEF_MAX_CALLS, DEBRIEF_MAX_CONCURRENT, DEBRIEF_TIME_FLOOR_MS, DEBRIEF_RECORD_VERSION } from './debriefPass.js';
 import { buildDayDigest, digestHashOf } from './dayDigest.js';
 import { sep23Day, SEP23_NIGHT } from '../filmTape/__fixtures__/screenFixtures.js';
 import { seedDay, OWNER } from '../filmTape/__fixtures__/tapeFixtures.js';
@@ -313,7 +313,7 @@ describe('the log: counts only (§7)', () => {
     expect(lines).toHaveLength(1);
     const [prefix, json] = [lines[0].slice(0, lines[0].indexOf(' ')), JSON.parse(lines[0].slice(lines[0].indexOf(' ') + 1))];
     expect(prefix).toBe('[film-room-debrief]');
-    expect(Object.keys(json).sort()).toEqual(['calls', 'errors', 'failed', 'notReached', 'nothing', 'selected', 'skipped', 'totalCostUsd', 'written']);
+    expect(Object.keys(json).sort()).toEqual(['attributionUnresolved', 'calls', 'errors', 'failed', 'notReached', 'nothing', 'selected', 'skipped', 'totalCostUsd', 'writeFailed', 'written']);
     for (const v of Object.values(json)) expect(typeof v).toBe('number');
     for (const s of [BATTLE_ID, 'b-other', OWNER, 'owner-2', 'Distinctive', D, BASE[tapePath(BATTLE_ID)].actions[0].key]) expect(lines[0].includes(s), s).toBe(false);
   });
@@ -330,5 +330,53 @@ describe('the log: counts only (§7)', () => {
       expect(err).not.toHaveBeenCalled();
       expect(warn).not.toHaveBeenCalled();
     } finally { err.mockRestore(); warn.mockRestore(); }
+  });
+});
+
+describe('the review round (§2 review, the record lens)', () => {
+  const CLONE = `casual-agent-${OWNER}`;
+  const cloneWorld = (cloneDoc, { hooks } = {}) => {
+    const t = world([{ id: 'b-clone', owner: OWNER, battle: { agentId: CLONE }, tape: { agentId: CLONE } }], { hooks });
+    if (cloneDoc !== undefined) t.store.set(`agents/${CLONE}`, cloneDoc);
+    return t;
+  };
+  const quietConsole = () => { const spies = ['log', 'info', 'warn', 'error', 'debug'].map((k) => vi.spyOn(console, k).mockImplementation(() => {})); return { spies, restore: () => spies.forEach((s) => s.mockRestore()) }; };
+  it('R2/R3: attributionOf — the battle\'s own agent with no read; a clone\'s parent through ONE read of the owner\'s own clone document; never the clone; nothing printed', async () => {
+    const c = quietConsole();
+    try {
+      const plain = world();
+      expect(await attributionOf(plain.db, { id: BATTLE_ID, ownerId: OWNER, agentId: 'agent-1' })).toBe('agent-1');
+      expect(plain.readLog).toEqual([]);
+      const b = { id: 'b-clone', ownerId: OWNER, agentId: CLONE };
+      const own = cloneWorld({ ownerId: OWNER, rankedAgentId: 'parent-agent-1' });
+      expect(await attributionOf(own.db, b)).toBe('parent-agent-1');
+      expect(own.readLog).toEqual([`agents/${CLONE}`]);
+      expect(await attributionOf(cloneWorld({ ownerId: 'owner-2', rankedAgentId: 'victim-agent-9' }).db, b)).toBeNull();   // another owner's
+      expect(await attributionOf(cloneWorld({ ownerId: OWNER }).db, b)).toBeNull();                                         // no parent named
+      expect(await attributionOf(cloneWorld(undefined).db, b)).toBeNull();                                                  // no clone document
+      const failing = cloneWorld({ ownerId: OWNER, rankedAgentId: 'parent-agent-1' }, { hooks: { beforeRead: (l) => { if (l === `agents/${CLONE}`) throw new Error(`PERMISSION_DENIED at agents/${CLONE}`); } } });
+      expect(await attributionOf(failing.db, b)).toBeNull();                                                                // a failed read
+      for (const s of c.spies) expect(s).not.toHaveBeenCalled();
+    } finally { c.restore(); }
+  });
+  it('R3: a clone battle the attribution cannot resolve — the record says null (never the clone), the run counts it, the log names nothing', async () => {
+    const c = quietConsole();
+    try {
+      const t = cloneWorld({ ownerId: 'owner-2', rankedAgentId: 'victim-agent-9' });
+      const lines = [];
+      const s = await runDebriefPass({ db: t.db, clock: () => RUN_MS, startMs: RUN_MS, mode: 'allowlist', call: fakeCall().call, log: (...a) => lines.push(a.join(' ')) });
+      expect(t.store.get(recordPath('b-clone')).attributionAgentId).toBeNull();
+      expect(s.attributionUnresolved).toBe(1);
+      for (const id of [CLONE, 'victim-agent-9', 'b-clone']) expect(lines.join('\n').includes(id), id).toBe(false);
+      for (const sp of c.spies) expect(sp).not.toHaveBeenCalled();
+    } finally { c.restore(); }
+  });
+  it('R4: a write that fails (not ALREADY_EXISTS) after the call — no record, the day NAMED in the summary, the call\'s cost in the total, nothing printed', async () => {
+    const t = world([], { hooks: { beforeWrite: (op, p) => { if (p === recordPath(BATTLE_ID)) throw Object.assign(new Error(`DEADLINE_EXCEEDED at ${p}`), { code: 4 }); } } });
+    const lines = [];
+    const s = await run(t, { mode: 'allowlist', call: fakeCall().call, log: (...a) => lines.push(a.join(' ')) });
+    expect([s.written, s.errors, s.writeFailed, s.totalCostUsd]).toEqual([0, 1, [{ battleId: BATTLE_ID, etDate: D }], 0.0036]);
+    expect(t.store.has(recordPath(BATTLE_ID))).toBe(false);
+    expect(lines.join('\n').includes(BATTLE_ID)).toBe(false);
   });
 });

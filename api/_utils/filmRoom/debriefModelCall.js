@@ -95,9 +95,14 @@ export function debriefRequestBody({ model = DEBRIEF_MODEL, system, user, schema
  */
 export async function runDebriefCall({ system, user, schema, model = DEBRIEF_MODEL, deadlineAt = null, create = null, now = Date.now }) {
   if (!MODEL_PRICES[model] || !THINKING_OFF[model]) throw new Error(`debrief: no model ${model}`);
+  const started = now();
+  // §3: the key is CLAUDE_API_KEY — never another. With it unset the SDK would fall back to ANTHROPIC_API_KEY (the
+  // review's R5), so no client is built and nothing is sent
+  if (!create && !(typeof process.env.CLAUDE_API_KEY === 'string' && process.env.CLAUDE_API_KEY)) {
+    return { ok: false, reason: 'model_error_no_key', usage: null, model, costUsd: null, stopReason: null, attempts: 0, elapsedMs: now() - started };
+  }
   const send = create || ((body, opts) => debriefClient().messages.create(body, opts));
   const body = debriefRequestBody({ model, system, user, schema });
-  const started = now();
   const abort = typeof AbortController === 'function' ? new AbortController() : null;
   const timer = abort && Number.isFinite(deadlineAt) ? setTimeout(() => abort.abort(), Math.max(0, deadlineAt - now())) : null;
   const done = (fields) => ({ usage: null, model, costUsd: null, stopReason: null, ...fields, elapsedMs: now() - started });

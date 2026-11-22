@@ -87,6 +87,13 @@ describe('the request (§3): one structured-output request, exactly', () => {
     await runDebriefCall(ARGS);
     expect(sdk.options).toEqual([{ apiKey: 'test-key-not-real-0001', maxRetries: 0 }]);
   });
+  it('the review\'s R5: with CLAUDE_API_KEY unset, no client is built and nothing is sent — never another variable\'s key', async () => {
+    delete process.env.CLAUDE_API_KEY;   // afterEach puts back whatever was there
+    sdk.create = async () => OK;
+    const r = await runDebriefCall(ARGS);
+    expect([r.ok, r.reason, r.attempts, r.usage, r.costUsd]).toEqual([false, 'model_error_no_key', 0, null, null]);
+    expect(sdk.options).toEqual([]);
+  });
   it('the key is never printed, logged, or returned', async () => {
     process.env.CLAUDE_API_KEY = 'test-key-not-real-0002';
     const spies = ['log', 'info', 'warn', 'error', 'debug'].map((k) => vi.spyOn(console, k).mockImplementation(() => {}));

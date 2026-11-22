@@ -552,7 +552,7 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
             onOpenAt={openTapeAt}
             doorId={doorId}
             renderAgentMark={(size) => <AgentMark battle={battle} size={size} />}
-            words={wordsOn ? { state: debriefState.status, record: debriefState.record, notYet: debriefState.status === 'missing' && debriefNotYet(tape?.writtenAt, now) } : null}
+            words={wordsOn ? { state: debriefState.status, record: debriefState.record, notYet: debriefState.status === 'missing' && debriefNotYet(tape?.writtenAt, tape?.etDate, now) } : null}
           />
           )}
         </main>
