@@ -23,7 +23,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { candidatesFor, writtenTape, selectedForDebrief, attributionOf } from '../api/_utils/filmRoom/debriefPass.js';
+import { candidatesFor, writtenTape, tapeIsFor, selectedForDebrief, attributionOf } from '../api/_utils/filmRoom/debriefPass.js';
 import { buildDayDigest } from '../api/_utils/filmRoom/dayDigest.js';
 import { buildDebriefPrompt } from '../api/_utils/filmRoom/debriefPrompt.js';
 import { runDebriefCall, DEBRIEF_MODELS, MODEL_PRICES, DEBRIEF_MAX_OUTPUT_TOKENS } from '../api/_utils/filmRoom/debriefModelCall.js';
@@ -70,7 +70,7 @@ export async function runSample({
   capUsd = SAMPLE_CAP_USD, resolveAttribution = attributionOf, outDir = SAMPLE_OUT_DIR, write = true, log = (...a) => console.log(...a),
 }) {
   if (typeof ownerId !== 'string' || !ownerId) throw new Error('film-room-debrief-sample: --owner <uid> is required');
-  const report = { generatedAt: new Date(nowMs).toISOString(), capUsd, spentUsd: 0, stopped: false, models: [...models], calls: 0, days: [] };
+  const report = { generatedAt: new Date(nowMs).toISOString(), capUsd, spentUsd: 0, stopped: false, models: [...models], calls: 0, ownerMismatch: 0, days: [] };
   let battleNo = 0;
   outer:
   for (const etDate of recentTapeDates(nowMs, days)) {
@@ -78,6 +78,8 @@ export async function runSample({
     for (const battle of battles) {
       const tape = dataOf(await db.collection('agentBattles').doc(battle.id).collection(TAPE_SUBCOLLECTION).doc(etDate).get());
       if (!writtenTape(tape)) continue;
+      // Amendment F DF-1: a tape that does not name this battle, this day and this battle's owner is never sent
+      if (!tapeIsFor(tape, battle, etDate)) { report.ownerMismatch += 1; continue; }
       battleNo += 1;
       const attribution = await resolveAttribution(db, battle);
       const knownIds = [battle.id, battle.ownerId, battle.agentId, attribution].filter((v) => typeof v === 'string' && v);

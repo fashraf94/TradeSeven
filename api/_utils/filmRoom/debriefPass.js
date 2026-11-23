@@ -13,7 +13,9 @@
 //                battle is tiered (resolveModeConfig(gameMode).label, as FilmRoomRoute.jsx tests it) and the day is one
 //                of its battle days (isBattleDay); then ONE get of `tape/{etDate}` and ONE of `debriefs/{etDate}` per
 //                battle. No collection-group query, no new index.
-//   PER DAY      no tape, a tape not written, or a record already there: skipped. Otherwise the digest
+//   PER DAY      no tape, a tape not written, a tape that does not name this battle, this day and this battle's
+//                owner (Amendment F DF-1: `ownerMismatch`, before anything else of the day is read or built), or a
+//                record already there: skipped. Otherwise the digest
 //                (dayDigest.js); a day with no swap is recorded `nothing` / `no_swaps` with NO call; else ONE call
 //                (debriefModelCall.js), the checks (debriefChecks.js), and the record CREATED once
 //                (`agentBattles/{id}/debriefs/{etDate}`, Admin SDK `create`, so no second run overwrites it).
@@ -99,7 +101,19 @@ export function selectedForDebrief(battle, etDate, mode) {
 export const writtenTape = (tape) => isObj(tape) && tape.passes?.close?.status === 'written' && Array.isArray(tape.checks) && Array.isArray(tape.actions);
 
 /**
- * The record (§6), every field stamped at write.
+ * Amendment F DF-1 (Astra's F1): the tape names THIS battle, THIS day and THIS battle's owner — `tape.battleId` is the
+ * battle's id, `tape.etDate` the run's date, `tape.ownerId` the battle's `ownerId` (a non-empty string). Checked before
+ * anything else of the day is read or built, in the pass and in the sample pack: a battle whose owner changed after the
+ * close is never handed the previous owner's tape, and no record is filed under an owner who did not play the day. No
+ * second check after the call: the record is stamped from the tape (debriefRecordOf), and the rules give it to that
+ * owner alone.
+ */
+export const tapeIsFor = (tape, battle, etDate) => isObj(tape) && str(tape.ownerId) !== null
+  && tape.battleId === battle?.id && tape.etDate === etDate && tape.ownerId === battle?.ownerId;
+
+/**
+ * The record (§6), every field stamped at write. Its owner is the TAPE's (Amendment F DF-1), never the battle
+ * snapshot's: the words describe that tape, and the tape's owner is the one who played that day.
  * @returns {object}
  */
 export function debriefRecordOf({ battle, etDate, attributionAgentId, digest, tape, call = null, status, reason = null, lines = [], dropped = [], nowIso }) {
@@ -107,7 +121,7 @@ export function debriefRecordOf({ battle, etDate, attributionAgentId, digest, ta
     version: DEBRIEF_RECORD_VERSION,
     battleId: battle.id,
     etDate,
-    ownerId: str(battle.ownerId),
+    ownerId: str(tape?.ownerId),
     attributionAgentId: str(attributionAgentId),
     archetype: str(battle.agentContext?.archetype) ?? str(tape?.archetype),
     status,
@@ -145,7 +159,7 @@ export async function runDebriefPass({
   if (mode === 'off') return { skipped: true, reason: 'off' };
   const etDate = etDateOf(startMs);
   const summary = {
-    etDate, mode, selected: 0, written: 0, nothing: 0, failed: 0, skipped: { noTape: 0, notWritten: 0, exists: 0, unreadable: 0 },
+    etDate, mode, selected: 0, written: 0, nothing: 0, failed: 0, skipped: { noTape: 0, notWritten: 0, ownerMismatch: 0, exists: 0, unreadable: 0 },
     errors: 0, calls: 0, totalCostUsd: 0, notReached: [], writeFailed: [], attributionUnresolved: 0, complete: true,
   };
   const finish = () => {
@@ -174,6 +188,8 @@ export async function runDebriefPass({
     const tape = dataOf(tapeSnap);
     if (!tape) { summary.skipped.noTape += 1; return; }
     if (!writtenTape(tape)) { summary.skipped.notWritten += 1; return; }
+    // DF-1: before anything else is read or built — no attribution read, no digest, no prompt for another's tape
+    if (!tapeIsFor(tape, battle, etDate)) { summary.skipped.ownerMismatch += 1; return; }
     if (debriefSnap?.exists) { summary.skipped.exists += 1; return; }
     const attributionAgentId = await resolveAttribution(db, battle);
     if (attributionAgentId === null && str(battle.agentId)) summary.attributionUnresolved += 1;

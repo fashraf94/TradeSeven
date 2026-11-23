@@ -139,6 +139,15 @@ describe('the line (§1): under the swap pin\'s fact, the agent\'s words, quoted
     await open({ readers: wordsReaders(recordOf([LINE_AGENT], { etDate: '2026-09-22' })) });
     expect(words()).toHaveLength(0);
   });
+  it('Astra\'s F1 (Amendment F DF-1): a record whose owner is not the tape\'s is never shown — still one read', async () => {
+    const r = wordsReaders(recordOf([LINE_AGENT], { ownerId: 'owner-previous' }));
+    await open({ readers: r });
+    expect([words().length, debriefReads(r).length]).toEqual([0, 1]);
+    m.teardown(); m.setup();
+    // the control: the same record stamped with the tape's owner shows its line
+    await open({ readers: wordsReaders(recordOf([LINE_AGENT], { ownerId: sep23Tape.ownerId })) });
+    expect(words()).toHaveLength(1);
+  });
 });
 
 describe('the states (§1)', () => {

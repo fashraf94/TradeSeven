@@ -325,15 +325,17 @@ const FlowLink = React.forwardRef(function FlowLink({ label, onClick, size = 13.
  * What a swap pin shows of the day's debrief record (D2 spec §1's states): `{ kind: 'line', i }` — the record holds a
  * line bound to THIS swap's tape row key (`actions[].key`) at `lines[i]`; `{ kind: 'notYet' }` — no record yet, before
  * the next run; null — everything else: the words off (no `words`), a read still loading or failed, a record that is
- * `nothing` or `failed`, no line for this swap, a line whose key the tape no longer holds, a record of another day. A
- * directive pin never shows any (DW-2).
+ * `nothing` or `failed`, no line for this swap, a line whose key the tape no longer holds, a record of another battle,
+ * another day or another owner (Amendment F DF-1). A directive pin never shows any (DW-2).
  */
 export function wordsOfPin(words, tape, pin) {
   if (!words || pin?.src !== 'action') return null;
   if (words.state === 'missing') return words.notYet === true ? { kind: 'notYet' } : null;
   const record = words.state === 'ready' ? words.record : null;
   if (!record || record.status !== 'written' || !Array.isArray(record.lines)) return null;
+  // the record's battle, day AND owner are the tape's on screen (Amendment F DF-1, Astra's F1) — still the one read
   if (record.battleId !== tape?.battleId || record.etDate !== tape?.etDate) return null;
+  if (typeof record.ownerId !== 'string' || !record.ownerId || record.ownerId !== tape?.ownerId) return null;
   const key = tape?.actions?.[pin.index]?.key;
   if (typeof key !== 'string' || !key) return null;
   const i = record.lines.findIndex((l) => l !== null && typeof l === 'object' && l.key === key && typeof l.text === 'string' && l.text);

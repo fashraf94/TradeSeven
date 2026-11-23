@@ -14,7 +14,7 @@ vi.mock('../../../src/config/featureFlags.js', async (importOriginal) => ({
   get FILM_ROOM_DEBRIEF_MODE() { return flags.debrief; },
 }));
 
-import { runDebriefPass, selectedForDebrief, debriefRecordOf, attributionOf, DEBRIEF_MAX_CALLS, DEBRIEF_MAX_CONCURRENT, DEBRIEF_TIME_FLOOR_MS, DEBRIEF_RECORD_VERSION } from './debriefPass.js';
+import { runDebriefPass, selectedForDebrief, debriefRecordOf, tapeIsFor, attributionOf, DEBRIEF_MAX_CALLS, DEBRIEF_MAX_CONCURRENT, DEBRIEF_TIME_FLOOR_MS, DEBRIEF_RECORD_VERSION } from './debriefPass.js';
 import { buildDayDigest, digestHashOf } from './dayDigest.js';
 import { sep23Day, SEP23_NIGHT } from '../filmTape/__fixtures__/screenFixtures.js';
 import { seedDay, OWNER } from '../filmTape/__fixtures__/tapeFixtures.js';
@@ -263,6 +263,40 @@ describe('the record (§6): every status and reason', () => {
     const args = { battle: { id: 'b', ownerId: 'o', agentContext: { archetype: 'x' } }, etDate: D, attributionAgentId: 'a', digest: { swaps: [] }, tape: { writtenAt: 'w' }, nowIso: 'n' };
     expect(debriefRecordOf({ ...args, status: 'written', reason: 'ignored' }).reason).toBeNull();
     expect(debriefRecordOf({ ...args, status: 'failed', reason: 'deadline' }).reason).toBe('deadline');
+  });
+});
+
+describe('Amendment F DF-1 (Astra\'s F1): the tape names this battle, this day and this battle\'s owner — the record is the tape\'s owner\'s', () => {
+  const battle = () => ({ id: BATTLE_ID, ...clone(BASE[`agentBattles/${BATTLE_ID}`]) });
+  it('debriefRecordOf stamps the TAPE\'s owner, never the battle snapshot\'s', () => {
+    const args = { battle: { id: 'b', ownerId: 'owner-now', agentContext: {} }, etDate: D, attributionAgentId: null, digest: { swaps: [] }, tape: { ownerId: 'owner-who-played', writtenAt: 'w' }, nowIso: 'n', status: 'nothing', reason: 'no_swaps' };
+    expect(debriefRecordOf(args).ownerId).toBe('owner-who-played');
+    expect(debriefRecordOf({ ...args, tape: { writtenAt: 'w' } }).ownerId).toBeNull();
+  });
+  it('tapeIsFor: the battle\'s id, the run\'s date, the battle\'s owner — each mismatch alone refuses, and so does an owner that is no string', () => {
+    const tape = BASE[tapePath(BATTLE_ID)];
+    const b = battle();
+    expect(tapeIsFor(tape, b, D)).toBe(true);
+    expect(tapeIsFor({ ...tape, battleId: 'b-elsewhere' }, b, D)).toBe(false);
+    expect(tapeIsFor({ ...tape, etDate: '2026-09-22' }, b, D)).toBe(false);
+    expect(tapeIsFor(tape, b, '2026-09-22')).toBe(false);
+    expect(tapeIsFor({ ...tape, ownerId: 'owner-previous' }, b, D)).toBe(false);
+    expect(tapeIsFor(tape, { ...b, ownerId: 'owner-replacement' }, D)).toBe(false);
+    expect(tapeIsFor({ ...tape, ownerId: null }, { ...b, ownerId: null }, D)).toBe(false);
+    expect(tapeIsFor({ ...tape, ownerId: '' }, { ...b, ownerId: '' }, D)).toBe(false);
+    expect(tapeIsFor(null, b, D)).toBe(false);
+  });
+  it('a mismatch is counted `ownerMismatch` and skipped before anything else is read or built — no attribution read, no call, no record; the other battle proceeds', async () => {
+    const t = world([{ id: 'b-other', owner: OWNER }]);
+    t.store.set(`agentBattles/${BATTLE_ID}`, { ...t.store.get(`agentBattles/${BATTLE_ID}`), ownerId: 'owner-replacement' });
+    process.env.COCKPIT_ALLOWLIST_UIDS = `${OWNER},owner-replacement`;
+    const f = fakeCall();
+    const asked = [];
+    const s = await run(t, { mode: 'allowlist', call: f.call, resolveAttribution: async (_db, b) => { asked.push(b.id); return b.agentId; } });
+    expect([s.selected, s.skipped.ownerMismatch, s.written, f.asked.length]).toEqual([2, 1, 1, 1]);
+    expect(asked).toEqual(['b-other']);
+    expect(t.store.has(recordPath(BATTLE_ID))).toBe(false);
+    expect(t.store.get(recordPath('b-other')).ownerId).toBe(OWNER);
   });
 });
 
