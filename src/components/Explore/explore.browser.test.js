@@ -6,7 +6,9 @@
 //   - on the reader, the primary action is inside the viewport — the panel's button or the pinned bar's, once —
 //     at the top, the middle and the bottom of the page (and every tap target is 44 px tall);
 //   - opening and closing the sheet leaves scrollY unchanged and returns focus to the opener; after the walk's
-//     close the panel reads Continue research, and the card In progress.
+//     close the panel reads Continue research, and the card In progress;
+//   - inside a story the page's tab row is not drawn, and "← Explore" brings it back with the scroll and the focus
+//     the player left (founder ruling F-1, Nov 22).
 //
 //   EXPLORE_BROWSER_URL=http://127.0.0.1:<port> or https://<smoke preview>   (the page)
 //   EXPLORE_BROWSER_CHANNEL=msedge                                          (optional; empty → Playwright's Chromium)
@@ -169,6 +171,44 @@ describe.skipIf(!BASE)('Explore in a real browser (spec §9 checks 1–5)', () =
         await page.evaluate(() => document.querySelector('[data-explore-primary]').scrollIntoView({ block: 'center' }));
         await page.waitForTimeout(500);
         expect(await page.evaluate(() => ({ body: document.activeElement === document.body, bar: Boolean(document.querySelector('[data-explore-pinned-bar]')) }))).toEqual({ body: false, bar: false });
+      } finally {
+        await ctx.close();
+      }
+    }, ROW * 2);
+
+    it(`${w}×${h}: inside a story the page's tab row is gone and "← Explore" brings it back — top and title on opening, the scroll left and the opener on return (F-1)`, async () => {
+      const { ctx, page } = await sceneAt('home', size);
+      try {
+        const tabRow = () => page.evaluate(() => [...document.querySelectorAll('button')].filter((b) => b.style.borderRadius === '24px' && b.getBoundingClientRect().height > 0).map((b) => b.textContent.trim()));
+        const shown = await tabRow();
+        expect(shown.slice(0, 2)).toEqual(['Explore', 'Markets']);
+        // the last card's Read the story, brought to the middle of the screen and marked, so the return can be measured
+        await page.evaluate(() => {
+          const reads = [...document.querySelectorAll('[data-explore-card] [data-explore-card-read], [data-explore-card] [data-explore-card-primary="read"]')].filter((b) => b.getBoundingClientRect().height > 0);
+          const b = reads.at(-1);
+          b.setAttribute('data-probe-opener', '');
+          b.scrollIntoView({ block: 'center' });
+        });
+        await page.waitForTimeout(300);
+        const before = await page.evaluate(() => ({ y: Math.round(window.scrollY), top: Math.round(document.querySelector('[data-probe-opener]').getBoundingClientRect().top) }));
+        await page.click('[data-probe-opener]');
+        await page.waitForSelector('[data-explore-screen="story"]', { timeout: ROW });
+        await page.waitForTimeout(400);
+        const inStory = await page.evaluate(() => ({
+          y: Math.round(window.scrollY),
+          title: document.activeElement?.hasAttribute('data-explore-story-title') ?? false,
+          heading: document.querySelector('h1')?.textContent.trim(),
+          back: Boolean(document.querySelector('[data-explore-back]')),
+        }));
+        expect(await tabRow()).toEqual([]);
+        expect(inStory).toEqual({ y: 0, title: true, heading: 'Explore', back: true });
+        await page.click('[data-explore-back]');
+        await page.waitForFunction(() => { const h = document.querySelector('[data-explore-home-holder]'); return h && !h.hidden; }, null, { timeout: ROW });
+        await page.waitForTimeout(400);
+        expect(await tabRow()).toEqual(shown);
+        const after = await page.evaluate(() => ({ y: Math.round(window.scrollY), top: Math.round(document.querySelector('[data-probe-opener]').getBoundingClientRect().top), focus: document.activeElement?.hasAttribute('data-probe-opener') ?? false }));
+        // the row is back BEFORE the scroll is restored: the opener sits where it was on screen (±1 px)
+        expect({ ...after, y: Math.abs(after.y - before.y) <= 1 ? before.y : after.y, top: Math.abs(after.top - before.top) <= 1 ? before.top : after.top }).toEqual({ ...before, focus: true });
       } finally {
         await ctx.close();
       }
