@@ -179,6 +179,8 @@ describe.skipIf(!BASE)('Explore in a real browser (spec §9 checks 1–5)', () =
     it(`${w}×${h}: inside a story the page's tab row is gone and "← Explore" brings it back — top and title on opening, the scroll left and the opener on return (F-1)`, async () => {
       const { ctx, page } = await sceneAt('home', size);
       try {
+        // as Safari (no scroll anchoring): Chromium's anchoring would quietly undo a row that returns after the scroll
+        await page.addStyleTag({ content: '* { overflow-anchor: none !important; }' });
         const tabRow = () => page.evaluate(() => [...document.querySelectorAll('button')].filter((b) => b.style.borderRadius === '24px' && b.getBoundingClientRect().height > 0).map((b) => b.textContent.trim()));
         const shown = await tabRow();
         expect(shown.slice(0, 2)).toEqual(['Explore', 'Markets']);
@@ -191,6 +193,7 @@ describe.skipIf(!BASE)('Explore in a real browser (spec §9 checks 1–5)', () =
         });
         await page.waitForTimeout(300);
         const before = await page.evaluate(() => ({ y: Math.round(window.scrollY), top: Math.round(document.querySelector('[data-probe-opener]').getBoundingClientRect().top) }));
+        console.log(`[F-1 ${w}x${h}] home scrolled to ${before.y}, the opener at ${before.top}`);
         await page.click('[data-probe-opener]');
         await page.waitForSelector('[data-explore-screen="story"]', { timeout: ROW });
         await page.waitForTimeout(400);

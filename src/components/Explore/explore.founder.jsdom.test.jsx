@@ -234,6 +234,23 @@ describe('F-1: no tab row inside a story', () => {
     await until(() => $('[data-explore-search]'), 'Explore again');
     expect(tabLabels()).toEqual(NEW_TABS);
   });
+  it('at \'allowlist\', a tap on Rankings while the dropped Explore tab is still leaving, then re-admitted: the row is there on Rankings (refuter G1: the open-tab gate)', async () => {
+    flags.mode = 'allowlist';
+    await openPage();
+    const m = mounted.at(-1);
+    await openStory(AI);
+    const held = deferred();
+    read.mockReturnValue(held.promise);
+    m.rerender(page({ user: { uid: 'u-explore-2' } }));
+    await flush();
+    click(buttonNamed('Rankings'));
+    held.resolve(answerOf(READS.none));
+    await flush();
+    expect($('[data-explore-tab]')).not.toBeNull(); // the old Explore tab still leaving, its last report a story
+    expect(tabLabels()).toEqual(NEW_TABS);
+    await until(() => $('[data-stub="rankings"]'), 'Rankings');
+    expect(tabLabels()).toEqual(NEW_TABS);
+  });
   it('at \'off\': the row on every tab, today\'s; the Explore tab is never drawn, so nothing can report a story', async () => {
     flags.mode = 'off';
     keep(mount(page(), { sources }));
@@ -281,5 +298,38 @@ describe('F-1: the Explore tab\'s report (its one callback)', () => {
     await flush();
     expect($('[data-explore-tab]')).toBeNull();
     expect(onInStory.mock.calls.slice(calls)).toEqual([[false]]);
+  });
+  it('the story disappearing outside an event: no DOM state ever shows the gone line with the row still away (refuter E1: the report lands before paint)', async () => {
+    let replaceStories = null;
+    function RowHarness() {
+      const [explore, setExplore] = React.useState(null);
+      const [stories, setStories] = React.useState(null);
+      const [inStory, setInStory] = React.useState(false);
+      replaceStories = setStories;
+      const shown = explore && stories ? { ...explore, stories } : explore;
+      return (
+        <>
+          <ExploreRuntime uid="u-explore-1" mode="on" onChange={setExplore} />
+          {inStory ? null : <nav data-probe-row="" />}
+          <ExploreTab explore={shown} onInStory={setInStory} />
+        </>
+      );
+    }
+    keep(mount(<RowHarness />, { sources }));
+    await until(() => card(AI.id), 'the cards');
+    await openStory(AI);
+    expect($('[data-probe-row]')).toBeNull();
+    const seen = [];
+    const mo = new MutationObserver(() => { seen.push({ gone: Boolean($('[data-explore-screen="gone"]')), row: Boolean($('[data-probe-row]')) }); });
+    globalThis.IS_REACT_ACT_ENVIRONMENT = false; // a stories answer lands in its own task, as in a browser
+    try {
+      mo.observe(document.body, { subtree: true, childList: true, attributes: true });
+      setTimeout(() => replaceStories({ status: 'ready', list: [TAP], complete: true }), 0);
+      await new Promise((r) => { setTimeout(r, 300); });
+    } finally {
+      mo.disconnect();
+      globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+    }
+    expect(seen.find((s) => s.gone)).toEqual({ gone: true, row: true });
   });
 });
