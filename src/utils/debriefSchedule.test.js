@@ -7,7 +7,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DEBRIEF_SCHEDULE, DEBRIEF_UTC_HOUR, DEBRIEF_UTC_MINUTE, DEBRIEF_UTC_WEEKDAYS, DEBRIEF_CRON_PATH, DEBRIEFS_SUBCOLLECTION, nextDebriefRunMs, debriefNotYet, debriefEtDateOfRun, DEBRIEF_NOT_YET_GRACE_MS } from './debriefSchedule.js';
+import { DEBRIEF_SCHEDULE, DEBRIEF_UTC_HOUR, DEBRIEF_UTC_MINUTE, DEBRIEF_UTC_WEEKDAYS, DEBRIEF_CRON_PATH, DEBRIEFS_SUBCOLLECTION, nextDebriefRunMs, debriefNotYet, debriefNotYetUntilMs, debriefEtDateOfRun, DEBRIEF_NOT_YET_GRACE_MS } from './debriefSchedule.js';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const VERCEL = JSON.parse(readFileSync(path.join(REPO, 'vercel.json'), 'utf8'));
@@ -53,6 +53,14 @@ describe('debriefNotYet — before the next run plus 30 minutes, and only a run 
   const D = '2026-09-23';
   const run = Date.parse('2026-09-24T03:45:00.000Z');
   it('the grace is 30 minutes', () => { expect(DEBRIEF_NOT_YET_GRACE_MS).toBe(1_800_000); });
+  it('Amendment F DF-10: debriefNotYetUntilMs is the cutoff the screen\'s timer waits for — run + 30 minutes, null when no run processes the day', () => {
+    expect(debriefNotYetUntilMs(W, D)).toBe(run + DEBRIEF_NOT_YET_GRACE_MS);
+    expect(debriefNotYetUntilMs('2026-09-24T04:00:00.000Z', D)).toBeNull();
+    expect(debriefNotYetUntilMs(null, D)).toBeNull();
+    expect(debriefNotYetUntilMs(W, null)).toBeNull();
+    // debriefNotYet is exactly "now before the cutoff"
+    for (const now of [run - 1, run + DEBRIEF_NOT_YET_GRACE_MS - 1, run + DEBRIEF_NOT_YET_GRACE_MS]) expect(debriefNotYet(W, D, now)).toBe(now < debriefNotYetUntilMs(W, D));
+  });
   it('before the run, and up to the last millisecond before run + 30 min: not yet', () => {
     expect(debriefNotYet(W, D, Date.parse('2026-09-23T23:00:00.000Z'))).toBe(true);
     expect(debriefNotYet(W, D, run)).toBe(true);

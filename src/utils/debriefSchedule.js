@@ -42,8 +42,18 @@ export function nextDebriefRunMs(writtenAt) {
  * morning" would promise words that never come; §7 says the line shows ONLY while now is before that run plus 30 minutes).
  */
 export function debriefNotYet(tapeWrittenAt, etDate, nowMs) {
+  const until = debriefNotYetUntilMs(tapeWrittenAt, etDate);
+  return until !== null && Number.isFinite(nowMs) && nowMs < until;
+}
+
+/**
+ * The not-yet window's cutoff (Amendment F DF-10): the instant the line stops showing — the next run that processes
+ * this day, plus 30 minutes — or null when no run ever does (the line never shows). The screen's display-only timer
+ * hides the line at this instant on a page left open; nothing is read again.
+ */
+export function debriefNotYetUntilMs(tapeWrittenAt, etDate) {
   const run = nextDebriefRunMs(tapeWrittenAt);
-  return run !== null && typeof etDate === 'string' && debriefEtDateOfRun(run) === etDate && Number.isFinite(nowMs) && nowMs < run + DEBRIEF_NOT_YET_GRACE_MS;
+  return run !== null && typeof etDate === 'string' && debriefEtDateOfRun(run) === etDate ? run + DEBRIEF_NOT_YET_GRACE_MS : null;
 }
 
 /** The ET date a run at `nowMs` processes (§7: the ET date of the run). */

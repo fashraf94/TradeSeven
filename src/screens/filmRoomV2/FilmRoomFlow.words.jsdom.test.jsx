@@ -162,11 +162,43 @@ describe('the states (§1)', () => {
     expect(allDefects(null)).toEqual([]);
   });
   it('the window: up to the run plus 30 minutes; at run + 30 minutes, nothing', async () => {
-    await open({ readers: wordsReaders(null), nowMs: Date.parse('2026-09-24T04:14:59.999Z') });
+    // a minute before the cutoff (DF-10's timer hides the line AT the cutoff on a page left open, so the mount is given
+    // room: the millisecond before it, as this row once read, now lapses while the page renders)
+    await open({ readers: wordsReaders(null), nowMs: Date.parse('2026-09-24T04:14:00.000Z') });
     expect(notYet()).toHaveLength(1);
     m.teardown(); m.setup();
     await open({ readers: wordsReaders(null), nowMs: Date.parse('2026-09-24T04:15:00.000Z') });
     expect(notYet()).toHaveLength(0);
+  });
+  it('Amendment F DF-10 (Astra §9): on a page left open, the line expires AT its cutoff — a display-only timer; no read more', async () => {
+    const cutoff = Date.parse('2026-09-24T04:15:00.000Z');   // the 03:45 UTC run + 30 minutes
+    // only setTimeout is faked, and it still advances with real time (so the harness's flush runs): the jump to the
+    // cutoff is ours, the page's own clock never moves
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true });
+    try {
+      const r = wordsReaders(null);
+      await open({ readers: r, nowMs: cutoff - 60_000 });
+      expect(notYet()).toHaveLength(1);
+      await act(async () => { vi.advanceTimersByTime(50_000); });
+      expect(notYet()).toHaveLength(1);                       // not before its cutoff
+      await act(async () => { vi.advanceTimersByTime(10_500); });
+      expect(notYet()).toHaveLength(0);                       // gone at it, on the same mounted page
+      selectMember('action:0');
+      expect(notYet()).toHaveLength(0);                       // and on every swap pin
+      expect(debriefReads(r)).toHaveLength(1);                // the one read, nothing more
+      expect(allDefects(null)).toEqual([]);
+    } finally { vi.useRealTimers(); }
+  });
+  it('DF-10: a page left open with a cutoff far ahead keeps the line, and leaving the screen clears its timer', async () => {
+    const r = wordsReaders(null);
+    await open({ readers: r, nowMs: Date.parse('2026-09-24T03:00:00.000Z') });
+    await act(async () => { await new Promise((res) => setTimeout(res, 200)); });
+    expect([notYet().length, debriefReads(r).length]).toEqual([1, 1]);
+    const cleared = vi.spyOn(globalThis, 'clearTimeout');
+    try {
+      m.teardown(); m.setup();
+      expect(cleared).toHaveBeenCalled();
+    } finally { cleared.mockRestore(); }
   });
   it('no record after the next run: nothing beyond the fact line', async () => {
     await open({ readers: wordsReaders(null) });   // NOW is Oct 8

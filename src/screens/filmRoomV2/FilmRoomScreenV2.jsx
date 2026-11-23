@@ -29,7 +29,7 @@ import AgentPresenceMount from '../../components/AgentPresence/AgentPresenceMoun
 import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
 import { filmRoomBattleId, resolveFilmRoomFlowMode, filmRoomFlowOn, sameFilmRoomIdentity, resolveFilmRoomDebriefMode, filmRoomDebriefOn, filmRoomFrontVerdictAsked } from '../../utils/filmRoomGate';
 // Film Room D2: when the words are written (the front's "by the next morning" window)
-import { debriefNotYet } from '../../utils/debriefSchedule.js';
+import { debriefNotYet, debriefNotYetUntilMs } from '../../utils/debriefSchedule.js';
 import { isSessionDate, isBattleDay, closePassStartMs, closePassEndMs, closePassWillTape, validFinalTradingDay, etDateOf } from '../../utils/tapeSchedule';
 import { etClock, etDateLabel, tradingTimeline, meetingAnchor } from './filmRoomModel';
 import { FILM_ROOM_COPY as COPY } from './filmRoomCopy';
@@ -56,6 +56,8 @@ import { momentsCountOf } from './filmRoomFlow.js';
 import { requestOpenBattleReview, battleReviewAtOf } from '../../components/Forge/Watchlist/ideaNavigation';
 
 const DESKTOP_QUERY = '(min-width: 1024px)';
+/** Film Room D2 (Amendment F DF-10): the longest delay setTimeout keeps (2^31 − 1 ms); a cutoff further off is never scheduled early. */
+const MAX_TIMER_MS = 2 ** 31 - 1;
 
 /** The element holding the focus now (null outside a browser). */
 const focusedNow = () => (typeof document !== 'undefined' ? document.activeElement : null);
@@ -311,6 +313,20 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
   // resolve on for this identity's owner; then ONE read of the day's record (useDebriefDay), never on the tape view
   const wordsOn = front && filmRoomDebriefOn(debriefMode, flowVerdict);
   const debriefState = useDebriefDay(battleId, day, wordsOn, readers, flowOwnerId);
+  // Amendment F DF-10 (Astra §9): the not-yet line EXPIRES on a page left open — a display-only timer at its cutoff
+  // (the run that processes this day, plus 30 minutes). `now` is the mount's instant; the timer counts from it the time
+  // the page has been open. It hides the line and nothing else: no read, no state the words' read keys on.
+  const notYetUntil = wordsOn && debriefState.status === 'missing' ? debriefNotYetUntilMs(tape?.writtenAt, tape?.etDate) : null;
+  const [openedAt] = useState(() => Date.now());
+  const [notYetLapsed, setNotYetLapsed] = useState(null);
+  useEffect(() => {
+    if (notYetUntil === null || notYetLapsed === notYetUntil) return undefined;
+    const delay = notYetUntil - (now + (Date.now() - openedAt));
+    if (delay > MAX_TIMER_MS) return undefined;   // past what a timer can wait: never sooner than its cutoff
+    const id = setTimeout(() => setNotYetLapsed(notYetUntil), Math.max(0, delay));
+    return () => clearTimeout(id);
+  }, [notYetUntil, notYetLapsed, now, openedAt]);
+  const notYetShown = debriefState.status === 'missing' && notYetLapsed !== notYetUntil && debriefNotYet(tape?.writtenAt, tape?.etDate, now);
   // the review's DR-7 / DR-2, as Amendment B DB-4 makes it (Astra's F4): A GESTURE IN PROGRESS KEEPS THE TAPE. While
   // the front's conditions are still unknown — the verdict on its way, or the day still being read — a pointer-down
   // inside the tape, a key-down inside it, or a focus move onto one of its controls keeps the tape for this visit, from
@@ -552,7 +568,7 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
             onOpenAt={openTapeAt}
             doorId={doorId}
             renderAgentMark={(size) => <AgentMark battle={battle} size={size} />}
-            words={wordsOn ? { state: debriefState.status, record: debriefState.record, notYet: debriefState.status === 'missing' && debriefNotYet(tape?.writtenAt, tape?.etDate, now) } : null}
+            words={wordsOn ? { state: debriefState.status, record: debriefState.record, notYet: notYetShown } : null}
           />
           )}
         </main>
