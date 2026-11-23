@@ -45,7 +45,7 @@ export function debriefSystemText(digest) {
     `- ${EVIDENCE_RULE}`,
     '- At most one line per swap, about that swap only. Write in the first person, as yourself, to your own player.',
     `- At most two short sentences, in plain words, under ${DEBRIEF_LINE_MAX} characters.`,
-    '- Say what happened. For a swap you made, your recorded words say why. For a swap you did not make, say plainly who made it: your recorded words are only what you said at those checks, never the reason it was made.',
+    '- Say what happened. For a swap you made, say why only where your recorded words say it. For a swap you did not make, say plainly who made it: your recorded words are only what you said at those checks, never the reason it was made.',
     '- No numbers of any kind: no digits, no number words, no ordinals. Your player sees the numbers beside your words already.',
     "- Name no symbol except the swap's own and those in its recorded words.",
     '- No verdict: never say whether the swap was good or bad, give no grade, draw no lesson, and never claim that anything was proven.',

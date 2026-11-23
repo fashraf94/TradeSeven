@@ -51,7 +51,9 @@ describe('the system text (§3, §4)', () => {
   });
   it('DF-9: never presents the recorded words as the reason for a swap the agent did not make', () => {
     expect(sys).toContain('For a swap you did not make, say plainly who made it: your recorded words are only what you said at those checks, never the reason it was made.');
-    expect(sys).toContain('For a swap you made, your recorded words say why.');
+    // the fix round's review (M-5): the words may be about another swap (a deferred execution, a shared tick) — so never 'your words say why'
+    expect(sys).toContain('For a swap you made, say why only where your recorded words say it.');
+    expect(sys.includes('your recorded words say why')).toBe(false);
   });
   it('holds nothing of the day but the archetype\'s name: no symbol, no time, no words — those are the user text\'s', () => {
     for (const s of ['MSFT', 'CRWD', '12:45', 'PLTR is pressing', '498.79', 'Quinzel']) expect(sys.includes(s), s).toBe(false);

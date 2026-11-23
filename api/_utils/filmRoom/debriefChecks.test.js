@@ -354,7 +354,7 @@ describe('Amendment F DF-5 — the declared limits: the contract is the checks, 
 
 describe('the fix round\'s review, the player lens (P-1 to P-9): each case its own row, written literally', () => {
   it('P-1 (DF-4): every terminal run counts whatever follows it — a dash, a star, an emoji, a bracket, a mark or an opening quote glued after it hides no end', () => {
-    for (const t of ['MSFT stalled.— The rule sold it.— CRWD came in.—', 'MSFT stalled.* The rule sold it.* CRWD came in.*', 'MSFT stalled.🙂 The rule sold it.🙂 CRWD came in.🙂', 'MSFT stalled.】 The rule sold it.】 CRWD came in.】', 'MSFT stalled.( The rule sold it.( CRWD came in.(', 'MSFT stalled.́ The rule sold it.́ CRWD came in.', 'MSFT stalled!“The rule sold it!” CRWD came in!', 'It went well. It was quiet.~ Then CRWD.']) expect(verdict(t), t).toBe('shape');
+    for (const t of ['MSFT stalled.— The rule sold it.— CRWD came in.—', 'MSFT stalled.* The rule sold it.* CRWD came in.*', 'MSFT stalled.🙂 The rule sold it.🙂 CRWD came in.🙂', 'MSFT stalled.】 The rule sold it.】 CRWD came in.】', 'MSFT stalled.( The rule sold it.( CRWD came in.(', 'MSFT stalled.\u0301 The rule sold it.\u0301 CRWD came in.', 'MSFT stalled!“The rule sold it!” CRWD came in!', 'It went well. It was quiet.~ Then CRWD.']) expect(verdict(t), t).toBe('shape');
   });
   it('P-1: DF-4\'s exemptions still hold — an abbreviation, a period inside a word or a number, an inner ellipsis', () => {
     for (const t of ['U.S. names held. Fine.', 'It ran on node.js here. Fine.', 'I waited… then it held. Fine.', "This one wasn't my call. MSFT had stopped moving."]) expect(verdict(t), t).toBeNull();
@@ -381,7 +381,7 @@ describe('the fix round\'s review, the player lens (P-1 to P-9): each case its o
     expect(verdict('MSFT stalled fïve times.')).toBe('number_word');
     expect(verdict('I watched NVDÁ instead.')).toBe('symbol');
     for (const t of ['It was the bėst exit.', 'A göod trade.', 'You should′ve sold.']) expect(verdict(t, 's2'), t).toBe('forbidden');
-    expect(verdict('I śold MSFT.')).toBe('maker');
+    expect(verdict('I s\u0301old MSFT.')).toBe('maker');
     // the kept line is the model's text exactly — the third reading is checked, never stored
     expect(run([{ swap: 's2', text: 'Café PLTR held.' }]).lines).toEqual([{ label: 's2', text: 'Café PLTR held.' }]);
   });

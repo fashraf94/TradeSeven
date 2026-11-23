@@ -95,8 +95,13 @@ export function playerTextsOf(tape) {
   return out;
 }
 
-/** DF-2's comparison form: NFKC with the invisible characters removed, lower case, punctuation removed — words. */
-const overlapWordsOf = (text) => unmaskedText(text).toLowerCase().replace(/\p{P}+/gu, ' ').split(/\s+/u).filter(Boolean);
+/**
+ * DF-2's comparison form: NFKC, lower case, punctuation removed — words. A word is a run of letters, marks and digits;
+ * an apostrophe inside it is removed ("don't" and "dont" are one word); every other character — punctuation, a symbol
+ * (a backtick, "$", "~", an emoji), a space or an invisible character — separates words (the fix round's review, M-1 to
+ * M-3: a quoting mark glued to a word, or an invisible joiner between the player's words, hides no run).
+ */
+const overlapWordsOf = (text) => String(text).normalize('NFKC').toLowerCase().replace(/[\p{Default_Ignorable_Code_Point}\p{Cf}]/gu, ' ').replace(/['’‘ʼ′`]/gu, '').split(/[^\p{L}\p{M}\p{N}]+/u).filter(Boolean);
 /** DF-2: the run is five words. */
 export const ECHO_RUN_WORDS = 5;
 /** DF-2: a player text under three words is never matched. */
@@ -234,7 +239,10 @@ function saidAt(tape, c, policy) {
  *   With a tickSeq: `atSwap` is the eligible words of the check whose tickSeq is the action's; `before` the nearest
  *   LOWER check by tickSeq (the writer's order — reliably ordered, whatever the instants) that has eligible words, a
  *   check without them skipped. When that nearest worded check has no strict instant, it has no clock to say, and an
- *   older check's words never stand in for it: no `before`.
+ *   older check's words never stand in for it: no `before`. Nor when a check with NO tickSeq but eligible words may lie
+ *   between that check and the swap — at an instant after it and at or before the swap's, or at no strict instant at
+ *   all (the fix round's review, M-4: the writer absorbs a lost tick's evaluation as an entry-only row with no
+ *   tickSeq, and its words, not the older check's, are the words before the swap).
  *   With no tickSeq (the time fallback): `before` is the latest timed check at or before the swap's instant with
  *   eligible words; no `atSwap`; and DE-14's conservative rule (the review's M5) stands — when a check with no strict
  *   instant may lie between that check and the first timed check after the swap (by tickSeq), or cannot be placed at
@@ -246,7 +254,10 @@ function quotationsOf(tape, a, swapT, checks, untimed, policy) {
     const own = all.find((c) => c.tickSeq === a.tickSeq) ?? null;
     const lower = all.filter((c) => Number.isInteger(c.tickSeq) && c.tickSeq < a.tickSeq).sort((x, y) => y.tickSeq - x.tickSeq);
     const worded = lower.find((c) => eligibleWordsAt(tape, c, policy) !== null) ?? null;
-    return { before: worded ? saidAt(tape, worded, policy) : null, atSwap: own ? saidAt(tape, own, policy) : null };
+    const wordedT = worded ? instantMs(worded.at) : null;
+    const between = all.some((c) => !Number.isInteger(c.tickSeq) && eligibleWordsAt(tape, c, policy) !== null
+      && (instantMs(c.at) === null || (instantMs(c.at) <= swapT && (wordedT === null || instantMs(c.at) > wordedT))));
+    return { before: worded && !between ? saidAt(tape, worded, policy) : null, atSwap: own ? saidAt(tape, own, policy) : null };
   }
   const before = [...checks].reverse().find((x) => x.t <= swapT && eligibleWordsAt(tape, x.c, policy) !== null) ?? null;
   const next = checks.find((x) => x.t > swapT) ?? null;

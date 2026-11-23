@@ -537,3 +537,49 @@ describe('Amendment F DF-3 (Astra\'s F3): every opaque reference the tape holds 
     }
   });
 });
+
+describe('the fix round\'s review, the model lens (M-1 to M-4)', () => {
+  const carried = (playerText, words) => {
+    const tape = clone(SEP.tape);
+    tape.directives[0].playerText = playerText;
+    tape.rationale.find((x) => x.tickSeq === 16).rationale = words;
+    return buildDayDigest({ tape, battle: SEP.battle }).digest.swaps[1].atSwap?.rationale === words;
+  };
+  it('M-1 (DF-2): a quoting symbol glued to the player\'s words hides no run — a backtick, "~", "$", "+", "|", an emoji, a braille blank', () => {
+    expect(carried('Sell everything right now.', 'The player wrote `Sell everything right now`, at noon.')).toBe(false);
+    expect(carried('Protect the lead into the close.', 'The player wrote `Protect the lead into the close` at noon.')).toBe(false);
+    expect(carried('Sell everything right now.', 'The coach said ~Sell everything right now~ today.')).toBe(false);
+    expect(carried('Sell $PLTR at the close', 'Sell PLTR at the close, on the plan.')).toBe(false);
+    for (const glue of ['+', ' | ', ' 🚀 ', '\u2800']) expect(carried('Hold PLTR through the close today', `Hold${glue}PLTR through the close today.`), JSON.stringify(glue)).toBe(false);
+    expect(carried('Hold PLTR through the close today', 'PLTR held into the check.')).toBe(true);   // the control
+  });
+  it('M-2 (DF-2): an apostrophe inside a word is removed, not a word break — "don\'t" and "dont" match; "Don\'t sell." is two words, never matched', () => {
+    expect(carried("Don't sell PLTR today.", 'I will dont sell PLTR today, on the plan.')).toBe(false);
+    expect(carried('Dont sell PLTR today.', "Per the plan: don't sell PLTR today.")).toBe(false);
+    expect(carried("Don't sell.", "PLTR held; don't sell yet, I said.")).toBe(true);
+  });
+  it('M-3 (DF-2): an invisible joiner or a filler between the player\'s words separates them — the run still matches', () => {
+    for (const sep of ['\u200B', '\u3164', '\u2800']) expect(carried(['Rotate', 'hard', 'into', 'memory'].join(sep), 'Rotate hard into memory, the player said.'), JSON.stringify(sep)).toBe(false);
+  });
+  it('M-4 (DF-9), through the real writer: a lost tick\'s evaluation absorbed as an entry-only row with no tickSeq lies between — no `before`, never the older check\'s words', async () => {
+    const fx = await sep23Day();
+    fx.ticks = fx.ticks.filter((t) => t.tickSeq !== 15);
+    const store = seedDay({}, fx);
+    for (const v of fx.intradayViews || []) store[`agentBattles/${fx.battleId}/intradayViews/${v.id}`] = { evaluatedAt: v.evaluatedAt, ownerId: OWNER };
+    const t = makeTapeDb(store);
+    await writeTapeDay(fx.battleId, fx.etDate, { db: t.db, now: SEP23_NIGHT });
+    const tape = t.store.get(`agentBattles/${fx.battleId}/tape/${fx.etDate}`);
+    const absorbed = tape.checks.find((c) => c.tickSeq === null && c.rowSource === 'entry' && String(c.at).startsWith('2026-09-23T17:45'));
+    expect(absorbed, 'the writer\'s entry-only row for the lost tick').toBeTruthy();
+    const s2 = buildDayDigest({ tape, battle: { id: fx.battleId, ...t.store.get(`agentBattles/${fx.battleId}`) } }).digest.swaps[1];
+    expect([s2.before, s2.atSwap?.at]).toEqual([undefined, '2:00 PM']);
+  }, 60_000);
+  it('M-4: an entry-only check with words OUTSIDE the window (before the nearest worded check, or after the swap) changes nothing', () => {
+    for (const at of ['2026-09-23T17:20:00.000Z', '2026-09-23T18:10:00.000Z']) {
+      const tape = clone(SEP.tape);
+      tape.checks.push({ key: 'eval:x', rowSource: 'entry', tickSeq: null, at, evalId: 'eval-x' });
+      tape.rationale.push({ key: 'r:x', evalId: 'eval-x', tickSeq: null, at, rationale: 'An absorbed evaluation.', hypothesis: null });
+      expect(buildDayDigest({ tape, battle: SEP.battle }).digest.swaps[1].before?.at, at).toBe('1:45 PM');
+    }
+  });
+});
