@@ -1,0 +1,299 @@
+{
+  "none": {
+    "quota": {
+      "investigationsToday": 0,
+      "perDay": 3,
+      "framingsToday": 0,
+      "framingsPerDay": 10,
+      "stepsToday": 0,
+      "stepsPerDay": 30
+    },
+    "items": []
+  },
+  "progress": {
+    "quota": {
+      "investigationsToday": 1,
+      "perDay": 3,
+      "framingsToday": 0,
+      "framingsPerDay": 10,
+      "stepsToday": 0,
+      "stepsPerDay": 30
+    },
+    "items": [
+      {
+        "itemRef": {
+          "recordKind": "exploreStories",
+          "recordId": "sample-ai-buildout"
+        },
+        "itemVersion": 2,
+        "open": {
+          "sessionId": "5e5e5e5e-0000-4000-8000-000000000001",
+          "question": "Which chip suppliers have evidence of meaningful exposure to AI spending?",
+          "lastTurnAt": null,
+          "filled": 1,
+          "parts": 6,
+          "stepsLeft": 8,
+          "findingsCount": 3
+        },
+        "last": null
+      }
+    ]
+  },
+  "ledger": {
+    "quota": {
+      "investigationsToday": 1,
+      "perDay": 3,
+      "framingsToday": 0,
+      "framingsPerDay": 10,
+      "stepsToday": 0,
+      "stepsPerDay": 30
+    },
+    "items": [
+      {
+        "itemRef": {
+          "recordKind": "exploreStories",
+          "recordId": "sample-ai-buildout"
+        },
+        "itemVersion": 2,
+        "open": {
+          "sessionId": "5e5e5e5e-0000-4000-8000-000000000002",
+          "question": "Which chip suppliers have evidence of meaningful exposure to AI spending?",
+          "lastTurnAt": null,
+          "filled": null,
+          "parts": 6,
+          "stepsLeft": 10,
+          "findingsCount": 1
+        },
+        "last": null
+      }
+    ]
+  },
+  "saved": {
+    "quota": {
+      "investigationsToday": 1,
+      "perDay": 3,
+      "framingsToday": 0,
+      "framingsPerDay": 10,
+      "stepsToday": 0,
+      "stepsPerDay": 30
+    },
+    "items": [
+      {
+        "itemRef": {
+          "recordKind": "exploreStories",
+          "recordId": "sample-ai-buildout"
+        },
+        "itemVersion": 2,
+        "open": null,
+        "last": {
+          "sessionId": "5e5e5e5e-0000-4000-8000-000000000003",
+          "ended": "saved",
+          "at": "2026-11-21T15:43:00.000Z"
+        }
+      }
+    ]
+  },
+  "concluded": {
+    "quota": {
+      "investigationsToday": 1,
+      "perDay": 3,
+      "framingsToday": 0,
+      "framingsPerDay": 10,
+      "stepsToday": 0,
+      "stepsPerDay": 30
+    },
+    "items": [
+      {
+        "itemRef": {
+          "recordKind": "exploreStories",
+          "recordId": "sample-ai-buildout"
+        },
+        "itemVersion": 2,
+        "open": null,
+        "last": {
+          "sessionId": "5e5e5e5e-0000-4000-8000-000000000004",
+          "ended": "concluded",
+          "at": "2026-11-21T15:25:00.000Z"
+        }
+      }
+    ]
+  },
+  "both": {
+    "quota": {
+      "investigationsToday": 2,
+      "perDay": 3,
+      "framingsToday": 0,
+      "framingsPerDay": 10,
+      "stepsToday": 0,
+      "stepsPerDay": 30
+    },
+    "items": [
+      {
+        "itemRef": {
+          "recordKind": "exploreStories",
+          "recordId": "sample-ai-buildout"
+        },
+        "itemVersion": 2,
+        "open": {
+          "sessionId": "5e5e5e5e-0000-4000-8000-000000000006",
+          "question": "Which power-equipment businesses have a sourced connection to the buildout?",
+          "lastTurnAt": null,
+          "filled": 1,
+          "parts": 6,
+          "stepsLeft": 9,
+          "findingsCount": 1
+        },
+        "last": {
+          "sessionId": "5e5e5e5e-0000-4000-8000-000000000005",
+          "ended": "concluded",
+          "at": "2026-11-21T15:05:00.000Z"
+        }
+      }
+    ]
+  },
+  "limit": {
+    "quota": {
+      "investigationsToday": 3,
+      "perDay": 3,
+      "framingsToday": 0,
+      "framingsPerDay": 10,
+      "stepsToday": 0,
+      "stepsPerDay": 30
+    },
+    "items": [
+      {
+        "itemRef": {
+          "recordKind": "exploreStories",
+          "recordId": "sample-utility-load"
+        },
+        "itemVersion": 4,
+        "open": {
+          "sessionId": "5e5e5e5e-0000-4000-8000-000000000007",
+          "question": "Do any utilities earn more because data centers moved in?",
+          "lastTurnAt": null,
+          "filled": 0,
+          "parts": 6,
+          "stepsLeft": 10,
+          "findingsCount": 1
+        },
+        "last": null
+      }
+    ]
+  },
+  "gone": {
+    "quota": {
+      "investigationsToday": 1,
+      "perDay": 3,
+      "framingsToday": 0,
+      "framingsPerDay": 10,
+      "stepsToday": 0,
+      "stepsPerDay": 30
+    },
+    "items": [
+      {
+        "itemRef": {
+          "recordKind": "exploreStories",
+          "recordId": "sample-unpublished-1"
+        },
+        "itemVersion": 1,
+        "open": {
+          "sessionId": "5e5e5e5e-0000-4000-8000-000000000008",
+          "question": "Who keeps the fee?",
+          "lastTurnAt": null,
+          "filled": 0,
+          "parts": 6,
+          "stepsLeft": 10,
+          "findingsCount": 1
+        },
+        "last": null
+      }
+    ]
+  },
+  "walkAfterOpen": {
+    "quota": {
+      "investigationsToday": 1,
+      "perDay": 3,
+      "framingsToday": 0,
+      "framingsPerDay": 10,
+      "stepsToday": 0,
+      "stepsPerDay": 30
+    },
+    "items": [
+      {
+        "itemRef": {
+          "recordKind": "exploreStories",
+          "recordId": "sample-ai-buildout"
+        },
+        "itemVersion": 2,
+        "open": {
+          "sessionId": "7d7d7d7d-0000-4000-8000-000000000001",
+          "question": "Which chip suppliers have evidence of meaningful exposure to AI spending?",
+          "lastTurnAt": null,
+          "filled": 0,
+          "parts": 6,
+          "stepsLeft": 10,
+          "findingsCount": 1
+        },
+        "last": null
+      }
+    ]
+  },
+  "walkAfterStep": {
+    "quota": {
+      "investigationsToday": 1,
+      "perDay": 3,
+      "framingsToday": 0,
+      "framingsPerDay": 10,
+      "stepsToday": 0,
+      "stepsPerDay": 30
+    },
+    "items": [
+      {
+        "itemRef": {
+          "recordKind": "exploreStories",
+          "recordId": "sample-ai-buildout"
+        },
+        "itemVersion": 2,
+        "open": {
+          "sessionId": "7d7d7d7d-0000-4000-8000-000000000001",
+          "question": "Which chip suppliers have evidence of meaningful exposure to AI spending?",
+          "lastTurnAt": null,
+          "filled": 0,
+          "parts": 6,
+          "stepsLeft": 9,
+          "findingsCount": 3
+        },
+        "last": null
+      }
+    ]
+  },
+  "walkAfterPart": {
+    "quota": {
+      "investigationsToday": 1,
+      "perDay": 3,
+      "framingsToday": 0,
+      "framingsPerDay": 10,
+      "stepsToday": 0,
+      "stepsPerDay": 30
+    },
+    "items": [
+      {
+        "itemRef": {
+          "recordKind": "exploreStories",
+          "recordId": "sample-ai-buildout"
+        },
+        "itemVersion": 2,
+        "open": {
+          "sessionId": "7d7d7d7d-0000-4000-8000-000000000001",
+          "question": "Which chip suppliers have evidence of meaningful exposure to AI spending?",
+          "lastTurnAt": null,
+          "filled": 1,
+          "parts": 6,
+          "stepsLeft": 9,
+          "findingsCount": 3
+        },
+        "last": null
+      }
+    ]
+  }
+}

@@ -12,7 +12,8 @@
 // (api/_utils/filmRoom/practiceFieldSeam.js → bookStore.js → here), so it imports the flag and the allowlist
 // reader and nothing else.
 //
-// TESTS: the shipped value is 'off', and the accounting is exercised end to end by synthetic fixtures. A test sets
+// TESTS: the shipped value is 'allowlist' (since the B0 flip), and the accounting is exercised end to end by synthetic
+// fixtures. A test sets
 // the mode with setPracticeFieldModeForTests, which throws outside the vitest runner (the practiceFieldSeam.js
 // idiom) — production can never move the mode except by the flag's own line. The flag module itself is never
 // mocked (BUILD_RULES §4: a test's import of this module is the dependency-surface guard).

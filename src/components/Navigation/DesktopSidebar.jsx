@@ -6,6 +6,8 @@ import React, { useState } from 'react';
 import { Swords, Newspaper, Hammer, Clock, Settings, Flame, Trophy, PanelLeftClose, PanelLeftOpen, LogOut, Search, Bomb } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { TOURNAMENT_TAB_ENABLED, LEAGUE_HIDE_ENABLED } from '../../config/featureFlags';
+// Explore Build 1 (spec §6): the Search entry reads "Explore" at 'on' only — read at render, never at module scope.
+import { exploreMode } from '../../config/exploreFlags';
 
 const NAV_ITEMS = [
   { id: 'compete', label: 'Compete', Icon: Swords, screen: 'dashboard' },
@@ -246,7 +248,7 @@ export default function DesktopSidebar({
         {NAV_ITEMS.map((item) => (
           <NavItem
             key={item.id}
-            item={item}
+            item={item.id === 'search' && exploreMode() === 'on' ? { ...item, label: 'Explore' } : item}
             active={isActive(item)}
             collapsed={collapsed}
             hovered={hoveredId === item.id}

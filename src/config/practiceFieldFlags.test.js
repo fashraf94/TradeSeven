@@ -31,9 +31,9 @@ function walk(dir, out = []) {
 }
 
 describe('PRACTICE_FIELD_MODE — the pin (BUILD_RULES §2)', () => {
-  it("is 'off': the idea book is dark — nobody is admitted and no Practice Field code path runs in any cron", () => {
+  it("is 'allowlist': the founder's book first — creation and admission admit only the cockpit list, and only the founder door creates a book", () => {
     // THE ROW THAT MOVES WITH A FLIP ('off' → 'allowlist' → 'on'), in the flip PR's own commit; a rollback moves it back.
-    expect(PRACTICE_FIELD_MODE).toBe('off');
+    expect(PRACTICE_FIELD_MODE).toBe('allowlist');
   });
 
   it('the allowed values: exactly off · allowlist · on, frozen, in walk order, and the shipped value is one of them', () => {

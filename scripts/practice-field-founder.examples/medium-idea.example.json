@@ -1,0 +1,28 @@
+{
+  "_notes": [
+    "An example idea for the MEDIUM slot. Edit it, then: admit --file <this file> --dry-run --uid <uid>, then the same with --go.",
+    "_notes is removed before anything is sent. Every other field is the idea contract (api/_utils/practiceField/contract.js).",
+    "thesis.text: what you expect and why, at most 400 characters. thesis.author: keep 'founder_fixture'.",
+    "slot: 'medium' (the positional horizon). One idea per slot per book.",
+    "names: 1 to 4 stocks of the house universe, never a fund. Here three large, liquid banks.",
+    "comparison: { type: 'sector_fund', symbols: [one fund] }. Every name must be in the fund's sector (XLF = Financials).",
+    "lines: one per name; distancePct is how far below the entry price the line sits. Medium slot: from 0.06 to 0.15.",
+    "capitalUsd: whole cents. The medium slot may reserve at most 30% of the book's marked equity ($30,000 of a new $100,000 book), and the treasury must keep 10% unreserved.",
+    "weights: optional; left out, the names are equal. origin and sources: keep as they are — the door sets a founder fixture's origin itself."
+  ],
+  "thesis": {
+    "text": "Large US banks keep earning a wide net interest margin while credit stays clean; over the next weeks these three should beat the financials fund.",
+    "author": "founder_fixture"
+  },
+  "slot": "medium",
+  "names": ["JPM", "BAC", "GS"],
+  "comparison": { "type": "sector_fund", "symbols": ["XLF"] },
+  "lines": [
+    { "symbol": "JPM", "distancePct": 0.1 },
+    { "symbol": "BAC", "distancePct": 0.1 },
+    { "symbol": "GS", "distancePct": 0.1 }
+  ],
+  "capitalUsd": 25000,
+  "origin": { "kind": "founder_fixture", "initiatedBy": "agent" },
+  "sources": []
+}

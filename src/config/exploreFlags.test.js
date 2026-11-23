@@ -1,0 +1,77 @@
+// src/config/exploreFlags.test.js
+//
+// Explore Build 1 — THE SWITCH'S PIN (BUILD_RULES §2; spec
+// docs/specs/20261121_EXPLORE_BUILD_1_SPEC_V1_1.md §6; build prompt K-2).
+// EXPLORE_MODE is a STRING TRI-STATE in its own module: pinned directly here (the
+// pin, the allowed values, the literal and its Pinned-by pointer, the call-time
+// reader), never a DARK_BY_DESIGN key — the guard scans `*_ENABLED` booleans only —
+// and noted by name in that block instead. A flip moves the first row below in its
+// own founder PR.
+
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { describe, it, expect } from 'vitest';
+import { EXPLORE_MODE, EXPLORE_MODES, exploreMode } from './exploreFlags.js';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const SRC = readFileSync(path.join(HERE, 'exploreFlags.js'), 'utf8').replace(/\r\n/g, '\n');
+const GUARD = readFileSync(path.join(HERE, 'flagPinGuard.test.js'), 'utf8').replace(/\r\n/g, '\n');
+const FEATURE_FLAGS = readFileSync(path.join(HERE, 'featureFlags.js'), 'utf8');
+const SELF = readFileSync(fileURLToPath(import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+const ROLLBACK = "one step back at a time ('on' → 'allowlist' → 'off') by moving the literal and its pin together; at 'off' the page is today's and nothing of Explore loads";
+
+describe('EXPLORE_MODE — the pin (BUILD_RULES §2; spec §6, K-2)', () => {
+  it("is 'off' — one step back at a time ('on' → 'allowlist' → 'off') by moving the literal and its pin together; at 'off' the page is today's and nothing of Explore loads", () => {
+    // THE ROW THAT MOVES WITH A FLIP ('off' → 'allowlist' → 'on'), in the flip PR's own commit; a rollback moves it back.
+    expect(EXPLORE_MODE).toBe('off');
+    expect(exploreMode()).toBe('off');
+  });
+
+  it('the allowed values: exactly off · allowlist · on, frozen, in walk order, and the shipped value is one of them', () => {
+    expect(EXPLORE_MODES).toEqual(['off', 'allowlist', 'on']);
+    expect(Object.isFrozen(EXPLORE_MODES)).toBe(true);
+    expect(EXPLORE_MODES).toContain(EXPLORE_MODE);
+  });
+
+  it('is a plain string literal with a Pinned-by pointer naming this file, and its runway and rollback are written beside it', () => {
+    expect(SRC).toMatch(/^export const EXPLORE_MODE = '(off|allowlist|on)';$/m);
+    const idx = SRC.indexOf('export const EXPLORE_MODE = ');
+    const preceding = SRC.slice(0, idx).split('\n').slice(-2).join('\n');
+    expect(preceding).toContain('Pinned by: exploreFlags.test.js');
+    const doc = SRC.slice(SRC.lastIndexOf('/**', idx), idx);
+    expect(doc).toContain('RUNWAY:');
+    expect(doc).toContain('Never a build PR');
+    expect(doc).toContain(ROLLBACK);
+    expect(SELF).toContain(`"is '${EXPLORE_MODE}' — ${ROLLBACK}"`);
+  });
+
+  it('the reader resolves at call time and maps any value outside the three to off', () => {
+    const body = /export function exploreMode\(\) \{\s*([^}]*)\}/.exec(SRC)[1];
+    expect(body.trim()).toBe("return EXPLORE_MODE === 'allowlist' || EXPLORE_MODE === 'on' ? EXPLORE_MODE : 'off';");
+    // the reader's rule, run over every value it could meet
+    const ruleOf = (v) => (v === 'allowlist' || v === 'on' ? v : 'off');
+    for (const v of ['off', 'allowlist', 'on', 'ON', 'true', '', null, undefined, true, 1]) expect(ruleOf(v)).toBe(EXPLORE_MODES.includes(v) ? v : 'off');
+  });
+
+  it('imports nothing and is never read at module scope by itself (a call-time reader only)', () => {
+    expect(SRC).not.toMatch(/^\s*import\b/m);
+    expect(SRC).not.toMatch(/\brequire\(/);
+    const reads = SRC.split('\n').filter((l) => /\bEXPLORE_MODE\b/.test(l) && !/^\s*(\/\/|\*|\/\*)/.test(l));
+    expect(reads).toEqual([
+      `export const EXPLORE_MODE = '${EXPLORE_MODE}';`, // value-neutral: a flip moves only the first row (review D-2)
+      "  return EXPLORE_MODE === 'allowlist' || EXPLORE_MODE === 'on' ? EXPLORE_MODE : 'off';",
+    ]);
+  });
+
+  it('never a DARK_BY_DESIGN key (the guard scans *_ENABLED booleans only), but noted by name in that block', () => {
+    expect(GUARD).not.toMatch(/^\s*EXPLORE_MODE\s*:/m);
+    expect(GUARD).toContain('EXPLORE_MODE intentionally ABSENT');
+    expect(GUARD).toContain('exploreFlags.test.js asserts both halves');
+  });
+
+  it('no boolean twin exists, and the switch is not a line in featureFlags.js (the entry-chunk reason in the module header)', () => {
+    expect(SRC).not.toMatch(/^export const EXPLORE_ENABLED\b/m);
+    expect(FEATURE_FLAGS).not.toMatch(/EXPLORE_MODE/);
+  });
+});

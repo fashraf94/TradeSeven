@@ -142,9 +142,9 @@ afterEach(() => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-describe('kind isolation on every quarterly core — unconditional (run at mode on AND at the shipped mode off)', () => {
-  for (const mode of ['on', null]) {
-    const label = mode === null ? "mode 'off' (shipped)" : "mode 'on'";
+describe('kind isolation on every quarterly core — unconditional (run at mode on AND at mode off)', () => {
+  for (const mode of ['on', 'off']) {
+    const label = mode === 'off' ? "mode 'off'" : "mode 'on'";
 
     it(`${label}: runBookEval never evaluates an idea book — no model call, nothing written`, async () => {
       const db = makeMandateFakeDb();
@@ -585,7 +585,7 @@ describe('the shared snapshot\'s build set, by book kind (build prompt §5)', ()
   it("mode 'off': an idea book is invisible to the build — alone it is an idle skip; beside a quarterly book the build is the quarterly book's own", async () => {
     const db = makeMandateFakeDb();
     const { bookId } = await populatedIdeaBook(db);
-    setPracticeFieldModeForTests(null);
+    setPracticeFieldModeForTests('off');
     const before = snapshotOfStore(db, '');
     const body = await evalOnce(db);
     expect(body).toMatchObject({ noop: true, reason: 'mandate_idle_skip' });
@@ -824,7 +824,7 @@ describe('the close sweep: dispatch by kind, and one snapshot per date (B-STAMP)
   it("mode 'off': the idea book is NOT closed — not by its own close, and never by closeBook — and the sweep still completes", async () => {
     const db = makeMandateFakeDb({ 'mandates/q1': quarterlyBook() });
     const { bookId, ideaId } = await populatedIdeaBook(db);
-    setPracticeFieldModeForTests(null);
+    setPracticeFieldModeForTests('off');
     const ideaBefore = JSON.stringify(getIdea(db, bookId, ideaId));
     const positionsBefore = JSON.stringify(getBook(db, bookId).portfolio);
     const first = await closeOnce(db, DAYS.d1);
@@ -845,7 +845,7 @@ describe('the close sweep: dispatch by kind, and one snapshot per date (B-STAMP)
   it("mode 'off' with an idea book ALONE: an idle skip, completion and retention as with no book at all — the hidden book is not \"a book that appeared\"", async () => {
     const db = makeMandateFakeDb();
     const { bookId } = await populatedIdeaBook(db);
-    setPracticeFieldModeForTests(null);
+    setPracticeFieldModeForTests('off');
     const body = await closeOnce(db, DAYS.d1);
     expect(body).toMatchObject({ ok: true, reason: 'mandate_idle_skip', closed: 0, complete: true });
     expect(quotesSpy).not.toHaveBeenCalled();
@@ -931,7 +931,7 @@ describe('T1a-2a — the real sweeps: sales at the window, the lines at the clos
     const seeded = makeMandateFakeDb();
     const { bookId } = await populatedIdeaBook(seeded);
     await windDownBook(seeded, { uid: 'owner-1' });
-    setPracticeFieldModeForTests(null);
+    setPracticeFieldModeForTests('off');
     const before = snapshotOfStore(seeded, `mandates/${bookId}`);
     const { db, reads } = withReadLog(seeded);
     const evalBody = await evalOnce(db, DAYS.d2);
