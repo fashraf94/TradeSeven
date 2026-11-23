@@ -55,6 +55,7 @@ const SCENES = {
   'story-finished': { title: 'Story · a thesis saved (View it), and a new one may start', read: READS.saved, open: AI_ID },
   gated: { title: 'No access · reading and saving only', read: GATED, open: AI_ID },
   limit: { title: "The day's limit · three used", read: READS.limit, open: AI_ID },
+  'search-limit': { title: "Search at the day's limit · type anything: no own-words row, the limit line in its place", read: READS.limit },
   'read-failed': { title: "The research read failed · Couldn't check your research", read: FAILED, open: AI_ID },
   empty: { title: 'No stories to explore yet', read: READS.none, stories: [] },
   walk: { title: 'THE WALK · read → choose → edit → Work this idea → the real sheet → close → Continue research', walk: true },
