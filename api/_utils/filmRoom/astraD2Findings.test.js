@@ -140,3 +140,23 @@ describe('F3 — every opaque reference the tape holds is a known id (DF-3)', ()
     expect(buildDebriefPrompt(buildDayDigest({ tape, battle: SEP.battle }).digest).user.includes(key)).toBe(false);
   });
 });
+
+describe('F4 — sentence ends by Unicode property (DF-4)', () => {
+  it('three short Latin clauses, each ending in an Arabic question mark: dropped as shape', () => {
+    const { digest } = buildDayDigest(SEP);
+    expect(checkDebriefLines({ lines: [{ swap: 's2', text: 'It moved؟ I watched؟ I waited؟' }] }, digest)).toEqual({ ok: true, lines: [], dropped: [{ label: 's2', reason: 'shape' }] });
+  });
+});
+
+describe('F5 — the contract\'s checks (DF-5): a verdict, and a claim of a decision the agent did not make', () => {
+  it('"I made an excellent trade." on the stall rule\'s swap: dropped', () => {
+    const { digest } = buildDayDigest(SEP);
+    const r = checkDebriefLines({ lines: [{ swap: 's1', text: 'I made an excellent trade.' }] }, digest);
+    expect([r.lines, r.dropped]).toEqual([[], [{ label: 's1', reason: 'forbidden' }]]);
+  });
+  it('"I sold MSFT for CRWD." on the stall rule\'s swap: dropped', () => {
+    const { digest } = buildDayDigest(SEP);
+    const r = checkDebriefLines({ lines: [{ swap: 's1', text: 'I sold MSFT for CRWD.' }] }, digest);
+    expect([r.lines, r.dropped]).toEqual([[], [{ label: 's1', reason: 'maker' }]]);
+  });
+});

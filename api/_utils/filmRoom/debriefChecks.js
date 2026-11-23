@@ -4,31 +4,44 @@
 // each line passes EVERY check or is DROPPED, with the reason code of the first check it fails, in the table's order —
 //   1 label        the item names a label in the digest, and no earlier item named it
 //   2 shape        the text is a string of 1 to 160 code points after trimming, with no line break and at most two
-//                  sentence ends
+//                  sentence ends — counted by Unicode property (Amendment F DF-4: \p{Sentence_Terminal}, with the
+//                  ellipsis; a run of terminals counts once); and (DF-5) no link (a URL or `www.`), no email-like
+//                  token, no `<` or `>`
 //   3 digit        no digit (any numeric character: a full-width or another script's digit, a fraction, a numeral)
 //   4 number_word  no number word: the cardinals zero to twenty and their tens, hundred, thousand, million, billion,
 //                  dozen, single, half, double, triple, twice, and the ordinals first to tenth — whole words, any case,
-//                  with their inflections (sixes, dozens, halves, doubled, tripling)
+//                  with their inflections (sixes, dozens, halves, doubled, tripling). Each occurrence judged on its
+//                  own (Amendment F DF-8, narrowing Amendment E DE-7): "one" passes only after "this", "that" or "no",
+//                  before punctuation, the line's end or a word of a fixed list, in a line with no other number word
 //   5 symbol       every token of two to five capitals that is a symbol in the app's directory (the symbol directory's
 //                  tickers, api/_utils/rankingConfig.js TICKER_TO_SECTOR, and the crypto list) is that swap's sold or
-//                  bought symbol, or appears in its quotations
-//   6 identifier   no identifier: the exact ids the pass knows (battle, owner, agent) and every ID_SHAPES shape
+//                  bought symbol, or appears in its quotations — `before` and `atSwap` (DF-9)
+//   6 identifier   no identifier: THE inventory the pass hands in (dayDigest.js knownIdsOf — the battle, owner and
+//                  agent ids and every opaque reference the tape holds, Amendment F DF-3) and every ID_SHAPES shape
 //                  (src/utils/promptBoundText.js — the same policy the digest's quotations pass)
 //   7 forbidden    no word or phrase on the Film Room's forbidden list (filmRoomCopy.js FORBIDDEN_WORDS — ONE
-//                  production constant, the prompt's too), matched whole and case-insensitively, inflections included
-// Checks 3 to 7 read the text as its disguises would be taken off (promptBoundText.js unmaskedText: NFKC — a
+//                  production constant, the prompt's too), matched whole and case-insensitively, inflections included;
+//                  and (DF-5) no verdict pattern: an evaluative word within two words before trade, swap, call, move,
+//                  decision, choice, exit or entry, or an outcome phrase (VERDICT_WORDS, VERDICT_NOUNS, OUTCOME_PHRASES)
+//   8 maker        (DF-5) on a swap the agent did not make, no claim of its decision: "I" and a decision verb in any
+//                  tense form, or "my call", "my choice" …, unless "not", "n't" or "no" falls within the three words
+//                  before the claim
+// THE CONTRACT (Amendment F DF-5, the founder's decision): every shown line passed every check — no more. A sentence can
+// still read as a judgment without a listed word, and a company named in words or a ticker in lower case is a declared
+// limit; the instruction and the first nights' reading carry the rest.
+// Checks 2 to 8 read the text as its disguises would be taken off (promptBoundText.js unmaskedText: NFKC — a
 // full-width digit or capital becomes ASCII — and the invisible characters removed), and the text as written.
 // NOTHING IS REWRITTEN: a kept line is the model's text exactly, trimmed; a line that fails is dropped, never repaired
 // and never asked again. An output that is not `{ lines: [...] }` has no lines: `parse` (the record is `failed`).
 
-import { FORBIDDEN_WORDS } from '../../../src/screens/filmRoomV2/filmRoomCopy.js';
+import { FORBIDDEN_WORDS, FILM_ROOM_COPY } from '../../../src/screens/filmRoomV2/filmRoomCopy.js';
 import { holdsIdentifier, unmaskedText } from '../../../src/utils/promptBoundText.js';
 import { TICKER_TO_SECTOR } from '../rankingConfig.js';
 import { VALID_CRYPTO_SYMBOLS } from '../agentCryptoAssets.js';
 import { DEBRIEF_LINE_MAX } from './debriefPrompt.js';
 
 /** The checks, in order, by their reason codes (§5). */
-export const CHECK_REASONS = Object.freeze(['label', 'shape', 'digit', 'number_word', 'symbol', 'identifier', 'forbidden']);
+export const CHECK_REASONS = Object.freeze(['label', 'shape', 'digit', 'number_word', 'symbol', 'identifier', 'forbidden', 'maker']);
 /** §5 check 2: at most two sentence ends. */
 export const MAX_SENTENCE_ENDS = 2;
 
@@ -76,8 +89,79 @@ function forbiddenFormsOf(w) {
 const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /** Whole words, any case: no letter or digit on either side. A phrase's spaces match any run of spaces or hyphens and dashes (P4). */
 const wholeWords = (forms) => new RegExp(`(?<![\\p{L}\\p{N}])(?:${forms.map((f) => escape(f).replace(/ /g, '[\\s\\-\\u2010-\\u2015]+')).join('|')})(?![\\p{L}\\p{N}])`, 'iu');
-const NUMBER_WORD = wholeWords(NUMBER_WORDS.flatMap(numberFormsOf));
+const NUMBER_WORD_ALL = new RegExp(wholeWords(NUMBER_WORDS.flatMap(numberFormsOf)).source, 'giu');
 const FORBIDDEN = wholeWords(FORBIDDEN_WORDS.flatMap(forbiddenFormsOf));
+
+/**
+ * Amendment F DF-8 (narrowing Amendment E DE-7): "one" is no quantity in "This one wasn't my call" — so "one" passes
+ * when all three hold: "this", "that" or "no" comes directly before it; directly after it comes punctuation, the end of
+ * the line, or a word of ONE_FOLLOWERS; and the line holds no other number word. Each occurrence is judged on its own.
+ */
+export const ONE_FOLLOWERS = Object.freeze(['was', "wasn't", 'is', "isn't", 'has', "hasn't", 'had', "hadn't", 'did', "didn't", 'went', 'came', 'moved', 'stayed', 'held', 'got', 'felt', 'looked']);
+const ONE_BEFORE = /(?:^|[^\p{L}\p{N}'’])(?:this|that|no)\s+$/iu;
+// a follower's apostrophe in either form (wasn't, wasn’t); the longer forms first, and never the start of a longer word
+const ONE_AFTER = new RegExp(`^(?:$|\\p{P}|\\s+(?:${[...ONE_FOLLOWERS].sort((a, b) => b.length - a.length).map((w) => escape(w).replace("'", "['’]")).join('|')})(?![\\p{L}\\p{N}'’]))`, 'iu');
+/** Check 4 over one representation: every number-word occurrence fails it but a pronoun "one" alone in its line (DF-8). */
+function holdsNumberWord(text) {
+  const found = [...text.matchAll(NUMBER_WORD_ALL)];
+  if (!found.length) return false;
+  if (found.length > 1) return true;   // the line holds another number word: no "one" in it passes
+  const [m] = found;
+  const pronoun = m[0].toLowerCase() === 'one' && ONE_BEFORE.test(text.slice(0, m.index)) && ONE_AFTER.test(text.slice(m.index + m[0].length));
+  return !pronoun;
+}
+
+/**
+ * Amendment F DF-5 — check 7's verdict patterns: an evaluative word within two words before a decision noun ("an
+ * excellent trade", "the right call", "a smart little move"), and the outcome phrases. Each word whole, any case; a
+ * phrase's space any run of spaces, hyphens or dashes.
+ */
+export const VERDICT_WORDS = Object.freeze(['good', 'great', 'excellent', 'smart', 'wise', 'clever', 'solid', 'strong', 'right', 'bad', 'poor', 'terrible', 'wrong', 'weak', 'dumb', 'costly']);
+export const VERDICT_NOUNS = Object.freeze(['trade', 'swap', 'call', 'move', 'decision', 'choice', 'exit', 'entry']);
+export const OUTCOME_PHRASES = Object.freeze(['paid off', 'worked out', 'backfired', 'cost me', 'cost us', 'helped me', 'helped us', 'hurt me', 'hurt us', 'nailed it', 'blew it']);
+const JOIN = '[\\s\\-\\u2010-\\u2015]+';
+const nounForms = VERDICT_NOUNS.flatMap((n) => [n, n === 'entry' ? 'entries' : (n === 'choice' ? 'choices' : `${n}s`)]);
+const VERDICT_PATTERN = new RegExp(`(?<![\\p{L}\\p{N}])(?:${VERDICT_WORDS.join('|')})(?:${JOIN}[\\p{L}\\p{N}'’]+)?${JOIN}(?:${nounForms.join('|')})(?![\\p{L}\\p{N}])`, 'iu');
+const OUTCOME = wholeWords(OUTCOME_PHRASES);
+
+/**
+ * Amendment F DF-5 — check 8, `maker`: on a swap the agent did not make, the agent claims no decision — "I" and one of
+ * DECISION_VERBS in any tense form (made, chose, decided, picked, sold, bought, swapped, moved, rotated, exited, traded),
+ * or "my" and one of MY_DECISIONS. "I" may carry its contraction (I've, I'd, I'll, I'm) and up to two of CLAIM_BRIDGE
+ * between it and the verb ("I have sold", "I had already chosen", "I did sell"). A claim is not a claim when "not",
+ * "n't" or "no" falls within the three words before it ("This one wasn't my call"). A denial inside the verb phrase
+ * ("I didn't sell", "I did not sell") is no claim at all: the bridge holds no negative.
+ */
+export const DECISION_VERBS = Object.freeze({
+  make: ['make', 'makes', 'made', 'making'], choose: ['choose', 'chooses', 'chose', 'chosen', 'choosing'],
+  decide: ['decide', 'decides', 'decided', 'deciding'], pick: ['pick', 'picks', 'picked', 'picking'],
+  sell: ['sell', 'sells', 'sold', 'selling'], buy: ['buy', 'buys', 'bought', 'buying'],
+  swap: ['swap', 'swaps', 'swapped', 'swapping'], move: ['move', 'moves', 'moved', 'moving'],
+  rotate: ['rotate', 'rotates', 'rotated', 'rotating'], exit: ['exit', 'exits', 'exited', 'exiting'],
+  trade: ['trade', 'trades', 'traded', 'trading'],
+});
+export const MY_DECISIONS = Object.freeze(['call', 'choice', 'decision', 'pick', 'move', 'trade']);
+export const CLAIM_BRIDGE = Object.freeze(['am', 'was', 'have', 'has', 'had', 'will', 'would', 'did', 'do', 'just', 'then', 'also', 'already', 'finally', 'myself']);
+const I_CLAIM = new RegExp(`(?<![\\p{L}\\p{N}'’])i(?:['’](?:m|ve|d|ll))?(?:\\s+(?:${CLAIM_BRIDGE.join('|')})){0,2}\\s+(?:${Object.values(DECISION_VERBS).flat().join('|')})(?![\\p{L}\\p{N}])`, 'giu');
+const MY_CLAIM = new RegExp(`(?<![\\p{L}\\p{N}])my\\s+(?:${MY_DECISIONS.map((w) => `${w}s?`).join('|')})(?![\\p{L}\\p{N}])`, 'giu');
+const NEGATION = /^(?:not|no|.*n['’]t)$/iu;
+/** Does `text` hold a claim of the decision — one not negated within the three words before it? */
+function claimsDecision(text) {
+  for (const re of [I_CLAIM, MY_CLAIM]) {
+    for (const m of text.matchAll(re)) {
+      const before = text.slice(0, m.index).split(/\s+/u).map((w) => w.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}'’]+$/gu, '')).filter(Boolean).slice(-3);
+      if (!before.some((w) => NEGATION.test(w))) return true;
+    }
+  }
+  return false;
+}
+/** The maker words of the agent's own swap (the digest's maker field, copy table): check 8 reads every other maker. */
+const AGENT_MAKER = FILM_ROOM_COPY.debrief.makers.agent;
+
+/** Amendment F DF-5 — check 2's links, emails and markup: a URL (a scheme and "://") or "www.", an email-like token, "<" or ">". */
+const LINK = /(?<![\p{L}\p{N}])[a-z][a-z0-9+.-]*:\/\/|(?<![\p{L}\p{N}])www\./iu;
+const EMAIL = /[^\s@]+@[^\s@]+\.[^\s@]+/u;
+const MARKUP = /[<>]/u;
 /** §5 check 3: any numeric character, in any script. */
 const DIGIT = /\p{N}/u;
 /** §5 check 2: a line break of any kind. */
@@ -92,26 +176,33 @@ const INVISIBLE_OR_CONTROL = /[\p{Cf}\p{Default_Ignorable_Code_Point}]/u;
 const ANY_LETTER = /\p{L}/u;
 const NON_LATIN_LETTER = /(?![\p{Script=Latin}])\p{L}/u;
 /**
- * §5 check 2: the sentence ends (the review's P5, P6) — a run of terminal punctuation, in any of its forms (. ! ? and
- * their full-width, ideographic and doubled forms), closing quotes and brackets after it, at a space or the text's end.
- * Not an end: an ellipsis inside the text ("I waited… then sold"), or the period of a common abbreviation (vs., U.S.).
+ * §5 check 2: the sentence ends — Amendment F DF-4 (Astra's F4): by Unicode property, \p{Sentence_Terminal} (. ! ? and
+ * every script's and form's terminal: the Arabic question mark, the ideographic full stop, ‼, ‽ …), with the ellipsis
+ * (which the property leaves out) as before. A RUN of terminals counts once, whitespace between them included ("?!",
+ * "? !", ". . ."), closing quotes and brackets after it. It ends a sentence at a space, at the text's end, or directly
+ * before a letter (the review's P5, P6; "It moved؟I watched؟"); a run of periods only before a CAPITAL, and not after a
+ * single letter ("U.S", "e.g" go on). Not an end: an ellipsis inside the text, the sentence going on in lower case
+ * ("I waited… then sold"), or the period of a common abbreviation (vs., U.S.).
  */
-const TERMINAL_RUN = /[.!?。！？．｡‼⁇⁈⁉﹒﹖﹗…]+["'”’»›」』)\]]*(?=\s|$)/gu;
+const TERM = '[\\p{Sentence_Terminal}…]';
+const CLOSERS = '["\'”’»›」』)\\]]';
+const TERMINAL_RUN = new RegExp(`${TERM}(?:\\s*${TERM})*${CLOSERS}*(?=\\s|$|\\p{L})`, 'gu');
 const ABBREVIATIONS = new Set(['vs', 'etc', 'e.g', 'i.e', 'mr', 'mrs', 'ms', 'dr', 'inc', 'corp', 'co', 'jr', 'sr', 'st', 'u.s', 'u.k', 'a.m', 'p.m', 'approx', 'est']);
 function sentenceEndsOf(text) {
   let n = 0;
   const end = text.trimEnd().length;
   for (const m of text.matchAll(TERMINAL_RUN)) {
-    const run = m[0].replace(/["'”’»›」』)\]]+$/, '');
+    const run = m[0].replace(new RegExp(`${CLOSERS}+$`, 'u'), '').replace(/\s+/gu, '');
+    const after = text.slice(m.index + m[0].length);
     const atEnd = m.index + m[0].length >= end;
+    const word = text.slice(0, m.index).split(/\s/).pop();
+    // directly before a letter: a run of periods ends a sentence only before a capital, and never after a single letter
+    if (/^\p{L}/u.test(after) && /^\.+$/u.test(run) && (!/^\p{Lu}/u.test(after) || [...word.replace(/[^\p{L}]/gu, '')].length < 2 || ABBREVIATIONS.has(word.toLowerCase()))) continue;
     // an ellipsis inside the text, the sentence going on in lower case ("I waited… then sold"); before a capital it ends
     // one (the refuter's N1: "went quiet… I let it go… AAPL had the pull…" is three)
-    const next = text.slice(m.index + m[0].length).trimStart().charAt(0);
-    if (!atEnd && /^(?:…+|\.{2,})$/.test(run) && /\p{Ll}/u.test(next)) continue;
-    if (run === '.') {
-      const word = text.slice(0, m.index).split(/\s/).pop().toLowerCase();
-      if (ABBREVIATIONS.has(word)) continue;
-    }
+    const next = after.trimStart().charAt(0);
+    if (!atEnd && /^(?:…+|\.{2,})$/u.test(run) && /\p{Ll}/u.test(next)) continue;
+    if (run === '.' && ABBREVIATIONS.has(word.toLowerCase())) continue;
     n += 1;
   }
   return n;
@@ -135,30 +226,32 @@ function capitalTokens(text) {
   return out;
 }
 
-/** The symbols a swap's line may name: its own two, and every capital token in its quotations. */
+/** The symbols a swap's line may name: its own two, and every capital token in its quotations — `before` and `atSwap` (DF-9). */
 function allowedSymbolsOf(swap) {
   const out = new Set([swap?.sold, swap?.bought].filter((s) => typeof s === 'string' && s));
-  for (const said of [swap?.before, swap?.after]) {
+  for (const said of [swap?.before, swap?.atSwap]) {
     for (const k of ['rationale', 'hypothesis']) if (typeof said?.[k] === 'string') for (const t of capitalTokens(unmaskedText(said[k]))) out.add(t);
   }
   return out;
 }
 
-/** The first check a trimmed text fails (checks 2 to 7), or null when it passes them all. */
+/** The first check a trimmed text fails (checks 2 to 8), or null when it passes them all. */
 export function failingCheckOf(text, swap, knownIds = []) {
   if (typeof text !== 'string') return 'shape';
   const n = codePoints(text);
   if (n < 1 || n > DEBRIEF_LINE_MAX || LINE_BREAK.test(text)) return 'shape';
   if (INVISIBLE_OR_CONTROL.test(text) || !ANY_LETTER.test(text) || NON_LATIN_LETTER.test(text)) return 'shape';
   const plain = unmaskedText(text);
-  if (Math.max(sentenceEndsOf(text), sentenceEndsOf(plain)) > MAX_SENTENCE_ENDS) return 'shape';
   const both = (re) => re.test(text) || re.test(plain);
+  if (Math.max(sentenceEndsOf(text), sentenceEndsOf(plain)) > MAX_SENTENCE_ENDS) return 'shape';
+  if (both(LINK) || both(EMAIL) || both(MARKUP)) return 'shape';
   if (both(DIGIT)) return 'digit';
-  if (both(NUMBER_WORD)) return 'number_word';
+  if (holdsNumberWord(text) || holdsNumberWord(plain)) return 'number_word';
   const allowed = allowedSymbolsOf(swap);
   for (const t of new Set([...capitalTokens(text), ...capitalTokens(plain)])) if (DIRECTORY_SYMBOLS.has(t) && !allowed.has(t)) return 'symbol';
   if (holdsIdentifier(text, knownIds)) return 'identifier';
-  if (both(FORBIDDEN)) return 'forbidden';
+  if (both(FORBIDDEN) || both(VERDICT_PATTERN) || both(OUTCOME)) return 'forbidden';
+  if (swap?.maker !== AGENT_MAKER && (claimsDecision(text) || claimsDecision(plain))) return 'maker';
   return null;
 }
 

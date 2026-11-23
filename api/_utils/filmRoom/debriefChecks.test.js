@@ -13,7 +13,7 @@ const DIGEST = {
   day: { final: false },
   archetype: 'Momentum',
   swaps: [
-    { label: 's1', time: '12:45 PM', maker: 'the stall rule', sold: 'MSFT', bought: 'CRWD', after: { saidBy: 'the agent', at: '12:45 PM', rationale: 'The rule took MSFT; PLTR is still the one I wait on.' } },
+    { label: 's1', time: '12:45 PM', maker: 'the stall rule', sold: 'MSFT', bought: 'CRWD', atSwap: { saidBy: 'the agent', at: '12:45 PM', rationale: 'The rule took MSFT; PLTR is still the one I wait on.' } },
     { label: 's2', time: '2:00 PM', maker: 'your agent', sold: 'DE', bought: 'PLTR' },
   ],
 };
@@ -22,16 +22,16 @@ const run = (lines) => checkDebriefLines({ lines }, DIGEST, { knownIds: KNOWN })
 /** One line for s1: kept (null) or the reason it was dropped. */
 const verdict = (text, swap = 's1') => { const r = run([{ swap, text }]); return r.lines.length ? null : r.dropped[0].reason; };
 
-describe('the table (§5): seven checks, in order', () => {
+describe('the table (§5, with Amendment F DF-5\'s check 8): eight checks, in order', () => {
   it('the reason codes, in the table\'s order', () => {
-    expect(CHECK_REASONS).toEqual(['label', 'shape', 'digit', 'number_word', 'symbol', 'identifier', 'forbidden']);
+    expect(CHECK_REASONS).toEqual(['label', 'shape', 'digit', 'number_word', 'symbol', 'identifier', 'forbidden', 'maker']);
   });
   it('a clean line passes every check and is kept exactly, trimmed', () => {
     const r = run([{ swap: 's1', text: "  That wasn't my call. MSFT had stopped moving.  " }]);
     expect(r).toEqual({ ok: true, lines: [{ label: 's1', text: "That wasn't my call. MSFT had stopped moving." }], dropped: [] });
   });
-  it("AS BUILT, A QUESTION: the spec's own §0 example — \"This one wasn't my call. MSFT had stopped moving.\" — is dropped by check 4 (`one` is a cardinal on §5's list; the report asks)", () => {
-    expect(verdict("This one wasn't my call. MSFT had stopped moving.")).toBe('number_word');
+  it("Amendment E DE-7 as Amendment F DF-8 narrows it (the build report's Q-7): the spec's own §0 example — \"This one wasn't my call. MSFT had stopped moving.\" — passes", () => {
+    expect(verdict("This one wasn't my call. MSFT had stopped moving.")).toBeNull();
   });
   it('a line failing two checks is dropped with the FIRST in the table\'s order', () => {
     expect(verdict('Best move at 4 PM.')).toBe('digit');
@@ -202,7 +202,7 @@ describe('the review round (§2 review, the player lens)', () => {
     expect(verdict('MSFT sat at support all morning.')).toBeNull();
   });
   it('P5: sentence ends — an abbreviation\'s period and an ellipsis inside the text are none', () => {
-    for (const t of ['I chose CRWD vs. MSFT. The stall made the call.', 'Late in the U.S. session. I moved to CRWD.', 'I waited… then sold MSFT. It had stalled.', 'I waited... then sold MSFT. It had stalled.']) expect(verdict(t), t).toBeNull();
+    for (const t of ['It chose CRWD vs. MSFT. The stall made the call.', 'Late in the U.S. session. It moved to CRWD.', 'I waited… then sold MSFT. It had stalled.', 'I waited... then sold MSFT. It had stalled.']) expect(verdict(t), t).toBeNull();
   });
   it('P6: terminal punctuation in its other forms counts — three such ends: `shape`', () => {
     for (const t of ['MSFT！ It stalled！ I bought CRWD！', 'MSFT。 It stalled。 I bought CRWD。', 'MSFT‼ It stalled‼ I bought CRWD‼', 'MSFT.» It stalled.» I bought CRWD.»']) expect(verdict(t), t).toBe('shape');
@@ -228,5 +228,126 @@ describe("the refuter's round (§2 review)", () => {
   });
   it('N2: a forbidden word with "-ed" or "-ing" is `forbidden` (bested, besting, lessoned)', () => {
     for (const t of ['CRWD bested MSFT all day.', 'CRWD was besting MSFT.', 'I was lessoned by MSFT.', 'MSFT kept worsting.']) expect(verdict(t), t).toBe('forbidden');
+  });
+});
+
+describe('Amendment F DF-4 (Astra\'s F4): sentence ends by Unicode property — a run counts once', () => {
+  it('three ends of any script\'s terminal — the Arabic question mark, the Urdu full stop, the interrobang — `shape`; with or without a space after each', () => {
+    for (const t of ['It moved؟ I watched؟ I waited؟', 'It moved؟I watched؟I waited؟', 'It moved۔ I watched۔ I waited۔', 'It moved‽ I watched‽ I waited‽', 'It moved？I watched？I waited？']) expect(verdict(t), t).toBe('shape');
+    expect(verdict('It moved؟ I watched.')).toBeNull();   // two
+  });
+  it('a run of terminals is one end — together or with spaces between', () => {
+    for (const t of ['Wait?! Then go.', 'Wait? ! Then go.', 'Wait?? Then go.', 'Wait . . . then go. Fine.']) expect(verdict(t), t).toBeNull();
+  });
+  it('a period directly before a capital ends a sentence — but never after a single letter or an abbreviation; before a lower-case letter, never', () => {
+    expect(verdict('Done.Then sold.Then waited.')).toBe('shape');
+    for (const t of ['U.S. names held. Fine.', 'e.g. this held. Fine.', 'The rule held, vs.Then nothing. Fine.', 'It ran on node.js here. Fine.']) expect(verdict(t), t).toBeNull();
+  });
+  it('the ellipsis still counts (the property leaves it out): before a capital it ends one, inside before lower case it does not', () => {
+    expect(verdict('It went quiet… I let it go… It held…')).toBe('shape');
+    expect(verdict('I waited… then it held. Fine.')).toBeNull();
+  });
+});
+
+describe('Amendment F DF-5 — check 2: no link, no email-like token, no markup', () => {
+  it('a URL with any scheme, or "www.": `shape`', () => {
+    for (const t of ['See https://example.com today.', 'See http://example.com today.', 'See ftp://example.com today.', 'Read www.example.com now.', 'Read WWW.EXAMPLE.COM now.', 'Read ｗｗｗ.example.com now.']) expect(verdict(t, 's2'), t).toBe('shape');
+  });
+  it('an email-like token: `shape`', () => {
+    for (const t of ['Mail me at a@b.co please.', 'Write to desk@trading.example today.']) expect(verdict(t, 's2'), t).toBe('shape');
+  });
+  it('a "<" or ">" — as written or full-width: `shape`', () => {
+    for (const t of ['PLTR <b>held</b>.', 'PLTR > DE today.', 'PLTR ＜ held.', 'PLTR ﹥ held.']) expect(verdict(t, 's2'), t).toBe('shape');
+  });
+  it('a period in an ordinary word and an at-sign alone are no link', () => {
+    for (const t of ['PLTR held at the open.', 'I sold DE @ the open.']) expect(verdict(t, 's2'), t).toBeNull();
+  });
+});
+
+describe('Amendment F DF-5 — check 7\'s verdict patterns (`forbidden`), on the agent\'s own swap so no other check fires', () => {
+  it('each evaluative word within two words before a decision noun', () => {
+    for (const t of [
+      'That was a good trade.', 'A great swap for PLTR.', 'An excellent call on PLTR.', 'A smart move into PLTR.', 'A wise decision on DE.', 'A clever choice, PLTR.',
+      'A solid exit from DE.', 'A strong entry into PLTR.', 'The right call on PLTR.', 'A bad trade, DE out.', 'A poor swap for PLTR.', 'A terrible call on DE.',
+      'The wrong move on DE.', 'A weak exit from DE.', 'A dumb trade on DE.', 'A costly swap, DE out.',
+    ]) expect(verdict(t, 's2'), t).toBe('forbidden');
+  });
+  it('each decision noun, singular and plural; one word between them; any case and full-width', () => {
+    for (const t of ['Good trades on PLTR.', 'Good swaps here.', 'Good calls here.', 'Good moves here.', 'Good decisions here.', 'Good choices here.', 'Good exits here.', 'Good entries here.', 'A smart little move.', 'A GOOD TRADE.', 'Ａ ｇｏｏｄ trade.', 'A good-trade day.']) expect(verdict(t, 's2'), t).toBe('forbidden');
+  });
+  it('each outcome phrase', () => {
+    for (const t of ['It paid off.', 'It worked out.', 'It backfired.', 'It cost me.', 'It cost us.', 'It helped me.', 'It helped us.', 'It hurt me.', 'It hurt us.', 'I nailed it.', 'I blew it.']) expect(verdict(t, 's2'), t).toBe('forbidden');
+  });
+  it('not a verdict: two words between, no decision noun, or the noun first', () => {
+    for (const t of ['PLTR held strong into the move.', 'A good while later PLTR moved.', 'The trade went through at the open.', 'Right after the check, DE went out.']) expect(verdict(t, 's2'), t).toBeNull();
+  });
+});
+
+describe('Amendment F DF-5 — check 8 `maker`: on a swap the agent did not make, no claim of its decision', () => {
+  it('"I" and each decision verb, in each tense form', () => {
+    for (const t of [
+      'I make the calls here.', 'I made the swap.', 'I am making room.', 'I chose CRWD.', 'I have chosen CRWD.', 'I choose CRWD.', 'I decided on CRWD.', 'I decide it now.', 'I picked CRWD.', 'I pick CRWD.',
+      'I sold MSFT.', 'I sell MSFT here.', 'I was selling MSFT.', 'I bought CRWD.', 'I buy CRWD.', 'I swapped MSFT out.', 'I swap MSFT out.', 'I moved to CRWD.', 'I rotated into CRWD.',
+      'I exited MSFT.', 'I traded MSFT away.', 'I am trading MSFT away.',
+    ]) expect(verdict(t, 's1'), t).toBe('maker');
+  });
+  it('"I" with its contraction or up to two bridging words, in either apostrophe', () => {
+    for (const t of ["I've sold MSFT.", 'I’ve sold MSFT.', "I'd already sold MSFT.", 'I had already chosen CRWD.', 'I did sell MSFT.', 'I just sold MSFT.', 'i sold MSFT.']) expect(verdict(t, 's1'), t).toBe('maker');
+  });
+  it('"my" and each decision noun', () => {
+    for (const t of ['My call held.', 'It was my choice.', 'It was my decision.', 'CRWD was my pick.', 'It was my move.', 'It was my trade.', 'Those were my calls.']) expect(verdict(t, 's1'), t).toBe('maker');
+  });
+  it('a claim with "not", "n\'t" or "no" within the three words before it is no claim — the spec\'s example passes', () => {
+    for (const t of ["This one wasn't my call.", 'This one wasn’t my call.', 'It was not my call.', 'No, my call came later.', 'Not that I sold MSFT.', "Don't think I sold MSFT."]) expect(verdict(t, 's1'), t).toBeNull();
+  });
+  it('a denial inside the verb phrase is no claim; the rule\'s decision, said as the rule\'s, passes', () => {
+    for (const t of ["I didn't sell MSFT.", 'I did not sell MSFT.', 'The rule sold MSFT, my plan waited.', 'I watched the rule take MSFT.']) expect(verdict(t, 's1'), t).toBeNull();
+  });
+  it('a negation four words back does not reach the claim', () => {
+    expect(verdict('Not at all the rule: I sold MSFT.', 's1')).toBe('maker');
+  });
+  it('on the agent\'s own swap a claim is the truth: kept', () => {
+    for (const t of ['I sold DE for PLTR.', 'It was my call.', 'I chose PLTR.']) expect(verdict(t, 's2'), t).toBeNull();
+  });
+  it('every maker that is not the agent is read — the risk rule, the guardrail, the meeting, one not recorded', () => {
+    for (const maker of ['the risk rule', 'the guardrail', 'the gameplan meeting', 'a maker not recorded']) {
+      const r = checkDebriefLines({ lines: [{ swap: 's1', text: 'I sold MSFT.' }] }, { swaps: [{ label: 's1', maker, sold: 'MSFT', bought: 'CRWD' }] });
+      expect(r.dropped, maker).toEqual([{ label: 's1', reason: 'maker' }]);
+    }
+  });
+});
+
+describe('Amendment F DF-8 (narrowing Amendment E DE-7): "one" — per occurrence', () => {
+  it('the ruling\'s three: "This one wasn\'t my call." passes; "I kept that one share." and "This one wasn\'t my call; one of them was." are dropped', () => {
+    expect(verdict("This one wasn't my call.")).toBeNull();
+    expect(verdict('I kept that one share.', 's2')).toBe('number_word');
+    expect(verdict("This one wasn't my call; one of them was.")).toBe('number_word');
+  });
+  it('after "this", "that" or "no", before punctuation, the end or a listed word: passes', () => {
+    for (const t of ['That one held.', 'No one moved.', 'This one.', 'That one, though.', 'This one was quick.', 'That one got away.', 'This one felt slow.', 'That one looked flat.', 'This one stayed put.', 'That one came back.', 'This one went out.', 'No one held it.', 'This one isn’t mine.', 'That one hadn’t moved.', 'This one did nothing.', 'That one has gone.']) expect(verdict(t, 's2'), t).toBeNull();
+  });
+  it('every other "one" is a count: dropped', () => {
+    for (const t of ['The one swap I chose.', 'One of my swaps.', 'Only one held.', 'That one share held.', 'This one stock held.', 'One held.', 'Those ones held.', 'No one moved first.', 'This one was mine; that one was not.']) expect(verdict(t, 's2'), t).toBe('number_word');
+  });
+  it('the line is kept exactly — the exception rewrites nothing', () => {
+    expect(run([{ swap: 's1', text: "  This one wasn't my call.  " }]).lines).toEqual([{ label: 's1', text: "This one wasn't my call." }]);
+  });
+});
+
+describe('DF-9 — check 5 reads `before` and `atSwap`; `after` is gone', () => {
+  const digestOf = (said) => ({ swaps: [{ label: 's1', maker: 'your agent', sold: 'DE', bought: 'PLTR', ...said }] });
+  const one = (said, text) => { const r = checkDebriefLines({ lines: [{ swap: 's1', text }] }, digestOf(said)); return r.lines.length ? null : r.dropped[0].reason; };
+  it('a symbol found only in `atSwap`: kept; only in `before`: kept', () => {
+    expect(one({ atSwap: { rationale: 'PANW sits at its level.' } }, 'PANW is next.')).toBeNull();
+    expect(one({ before: { hypothesis: 'PANW is next in line.' } }, 'PANW is next.')).toBeNull();
+  });
+  it('a symbol only in a field named `after` no longer permits it: dropped', () => {
+    expect(one({ after: { rationale: 'PANW sits at its level.' } }, 'PANW is next.')).toBe('symbol');
+  });
+});
+
+describe('Amendment F DF-5 — the declared limits: the contract is the checks, not a semantic guarantee', () => {
+  it('a ticker in lower case and a company named in words pass check 5 (Astra\'s F5, declared)', () => {
+    for (const t of ['I watched nvda.', 'Nvidia ran instead.']) expect(verdict(t, 's1'), t).toBeNull();
   });
 });
