@@ -30,7 +30,8 @@
 // still read as a judgment without a listed word, and a company named in words or a ticker in lower case is a declared
 // limit; the instruction and the first nights' reading carry the rest.
 // Checks 2 to 8 read the text as its disguises would be taken off (promptBoundText.js unmaskedText: NFKC — a
-// full-width digit or capital becomes ASCII — and the invisible characters removed), and the text as written.
+// full-width digit or capital becomes ASCII — and the invisible characters removed), the same with its combining marks
+// taken off and the apostrophe's look-alikes read as one (bareText, the fix round's review P-7), and the text as written.
 // NOTHING IS REWRITTEN: a kept line is the model's text exactly, trimmed; a line that fails is dropped, never repaired
 // and never asked again. An output that is not `{ lines: [...] }` has no lines: `parse` (the record is `failed`).
 
@@ -100,7 +101,9 @@ const FORBIDDEN = wholeWords(FORBIDDEN_WORDS.flatMap(forbiddenFormsOf));
 export const ONE_FOLLOWERS = Object.freeze(['was', "wasn't", 'is', "isn't", 'has', "hasn't", 'had', "hadn't", 'did', "didn't", 'went', 'came', 'moved', 'stayed', 'held', 'got', 'felt', 'looked']);
 const ONE_BEFORE = /(?:^|[^\p{L}\p{N}'’])(?:this|that|no)\s+$/iu;
 // a follower's apostrophe in either form (wasn't, wasn’t); the longer forms first, and never the start of a longer word
-const ONE_AFTER = new RegExp(`^(?:$|\\p{P}|\\s+(?:${[...ONE_FOLLOWERS].sort((a, b) => b.length - a.length).map((w) => escape(w).replace("'", "['’]")).join('|')})(?![\\p{L}\\p{N}'’]))`, 'iu');
+// punctuation counts only where it ENDS the word — "one-share", "one/share" give a quantity (the review's P-4); a
+// contraction's "'s" ("that one's mine") is the pronoun's
+const ONE_AFTER = new RegExp(`^(?:$|['’]s(?![\\p{L}\\p{N}])|\\p{P}(?![\\p{L}\\p{N}])|\\s+(?:${[...ONE_FOLLOWERS].sort((a, b) => b.length - a.length).map((w) => escape(w).replace("'", "['’]")).join('|')})(?![\\p{L}\\p{N}'’]))`, 'iu');
 /** Check 4 over one representation: every number-word occurrence fails it but a pronoun "one" alone in its line (DF-8). */
 function holdsNumberWord(text) {
   const found = [...text.matchAll(NUMBER_WORD_ALL)];
@@ -119,18 +122,23 @@ function holdsNumberWord(text) {
 export const VERDICT_WORDS = Object.freeze(['good', 'great', 'excellent', 'smart', 'wise', 'clever', 'solid', 'strong', 'right', 'bad', 'poor', 'terrible', 'wrong', 'weak', 'dumb', 'costly']);
 export const VERDICT_NOUNS = Object.freeze(['trade', 'swap', 'call', 'move', 'decision', 'choice', 'exit', 'entry']);
 export const OUTCOME_PHRASES = Object.freeze(['paid off', 'worked out', 'backfired', 'cost me', 'cost us', 'helped me', 'helped us', 'hurt me', 'hurt us', 'nailed it', 'blew it']);
-const JOIN = '[\\s\\-\\u2010-\\u2015]+';
+// between the words: any run of spaces and punctuation ("a good, clean move" — the review's P-3); the one word between
+// them may be hyphenated ("a good well-timed move")
+const JOIN = '[\\s\\p{P}]+';
 const nounForms = VERDICT_NOUNS.flatMap((n) => [n, n === 'entry' ? 'entries' : (n === 'choice' ? 'choices' : `${n}s`)]);
-const VERDICT_PATTERN = new RegExp(`(?<![\\p{L}\\p{N}])(?:${VERDICT_WORDS.join('|')})(?:${JOIN}[\\p{L}\\p{N}'’]+)?${JOIN}(?:${nounForms.join('|')})(?![\\p{L}\\p{N}])`, 'iu');
+const VERDICT_PATTERN = new RegExp(`(?<![\\p{L}\\p{N}])(?:${VERDICT_WORDS.join('|')})(?:${JOIN}[\\p{L}\\p{N}'’]+(?:[\\-\\u2010-\\u2015][\\p{L}\\p{N}'’]+)*)?${JOIN}(?:${nounForms.join('|')})(?![\\p{L}\\p{N}])`, 'iu');
 const OUTCOME = wholeWords(OUTCOME_PHRASES);
 
 /**
  * Amendment F DF-5 — check 8, `maker`: on a swap the agent did not make, the agent claims no decision — "I" and one of
  * DECISION_VERBS in any tense form (made, chose, decided, picked, sold, bought, swapped, moved, rotated, exited, traded),
- * or "my" and one of MY_DECISIONS. "I" may carry its contraction (I've, I'd, I'll, I'm) and up to two of CLAIM_BRIDGE
- * between it and the verb ("I have sold", "I had already chosen", "I did sell"). A claim is not a claim when "not",
- * "n't" or "no" falls within the three words before it ("This one wasn't my call"). A denial inside the verb phrase
- * ("I didn't sell", "I did not sell") is no claim at all: the bridge holds no negative.
+ * or "my" and one of MY_DECISIONS. "I" may carry its contraction (I've, I'd, I'll, I'm) and up to three bridging words
+ * between it and the verb — CLAIM_BRIDGE or any "-ly" word ("I have sold", "I have been selling", "I would have
+ * already sold", "I quickly sold", "I alone chose"); "my" may take one word before its noun ("my own call", "my final
+ * decision"). A claim is not a claim when "not", "n't" or "no" falls within the three words before it IN ITS OWN CLAUSE
+ * ("This one wasn't my call"; but "It wasn't close. I chose CRWD." is a claim — the review's P-5: a window that ends
+ * at . ; : ! ? , or a dash only drops more). A denial inside the verb phrase ("I didn't sell", "I did not sell") is no
+ * claim at all: the bridge holds no negative.
  */
 export const DECISION_VERBS = Object.freeze({
   make: ['make', 'makes', 'made', 'making'], choose: ['choose', 'chooses', 'chose', 'chosen', 'choosing'],
@@ -141,15 +149,20 @@ export const DECISION_VERBS = Object.freeze({
   trade: ['trade', 'trades', 'traded', 'trading'],
 });
 export const MY_DECISIONS = Object.freeze(['call', 'choice', 'decision', 'pick', 'move', 'trade']);
-export const CLAIM_BRIDGE = Object.freeze(['am', 'was', 'have', 'has', 'had', 'will', 'would', 'did', 'do', 'just', 'then', 'also', 'already', 'finally', 'myself']);
-const I_CLAIM = new RegExp(`(?<![\\p{L}\\p{N}'’])i(?:['’](?:m|ve|d|ll))?(?:\\s+(?:${CLAIM_BRIDGE.join('|')})){0,2}\\s+(?:${Object.values(DECISION_VERBS).flat().join('|')})(?![\\p{L}\\p{N}])`, 'giu');
-const MY_CLAIM = new RegExp(`(?<![\\p{L}\\p{N}])my\\s+(?:${MY_DECISIONS.map((w) => `${w}s?`).join('|')})(?![\\p{L}\\p{N}])`, 'giu');
+export const CLAIM_BRIDGE = Object.freeze(['am', 'was', 'have', 'has', 'had', 'been', 'will', 'shall', 'would', 'did', 'do', 'just', 'then', 'also', 'already', 'finally', 'myself', 'alone']);
+const I_CLAIM = new RegExp(`(?<![\\p{L}\\p{N}'’])i(?:['’](?:m|ve|d|ll))?(?:\\s+(?:${CLAIM_BRIDGE.join('|')}|\\p{L}+ly)){0,3}\\s+(?:${Object.values(DECISION_VERBS).flat().join('|')})(?![\\p{L}\\p{N}])`, 'giu');
+const MY_CLAIM = new RegExp(`(?<![\\p{L}\\p{N}])my(?:\\s+[\\p{L}'’\\-]+)?\\s+(?:${MY_DECISIONS.map((w) => `${w}s?`).join('|')})(?![\\p{L}\\p{N}])`, 'giu');
 const NEGATION = /^(?:not|no|.*n['’]t)$/iu;
-/** Does `text` hold a claim of the decision — one not negated within the three words before it? */
+/** Where a clause ends, for the negation window: . ; : ! ? … , or a dash. */
+const CLAUSE_END = /[.;:!?…,‐-―]/u;
+/** Does `text` hold a claim of the decision — one not negated within the three words before it, in its own clause? */
 function claimsDecision(text) {
   for (const re of [I_CLAIM, MY_CLAIM]) {
     for (const m of text.matchAll(re)) {
-      const before = text.slice(0, m.index).split(/\s+/u).map((w) => w.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}'’]+$/gu, '')).filter(Boolean).slice(-3);
+      const head = text.slice(0, m.index);
+      let cut = -1;
+      for (let i = head.length - 1; i >= 0; i -= 1) if (CLAUSE_END.test(head[i])) { cut = i; break; }
+      const before = head.slice(cut + 1).split(/\s+/u).map((w) => w.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}'’]+$/gu, '')).filter(Boolean).slice(-3);
       if (!before.some((w) => NEGATION.test(w))) return true;
     }
   }
@@ -158,9 +171,13 @@ function claimsDecision(text) {
 /** The maker words of the agent's own swap (the digest's maker field, copy table): check 8 reads every other maker. */
 const AGENT_MAKER = FILM_ROOM_COPY.debrief.makers.agent;
 
-/** Amendment F DF-5 — check 2's links, emails and markup: a URL (a scheme and "://") or "www.", an email-like token, "<" or ">". */
-const LINK = /(?<![\p{L}\p{N}])[a-z][a-z0-9+.-]*:\/\/|(?<![\p{L}\p{N}])www\./iu;
-const EMAIL = /[^\s@]+@[^\s@]+\.[^\s@]+/u;
+/**
+ * Amendment F DF-5 — check 2's links, emails and markup: a URL — any scheme and "://" (spaces around its parts too), or
+ * a web, file, script, data or mail scheme and its colon alone ("https:evil.io", "data:text/html" — the review's P-9) —
+ * or "www."; an email-like token (a word, "@", a word); "<" or ">".
+ */
+const LINK = /(?<![\p{L}\p{N}])(?:[a-z][a-z0-9+.-]*\s*:\s*\/\s*\/|(?:https?|ftp|file|data|javascript|mailto)\s*:)|(?<![\p{L}\p{N}])www\./iu;
+const EMAIL = /[\p{L}\p{N}._%+-]+@[\p{L}\p{N}-]+/u;
 const MARKUP = /[<>]/u;
 /** §5 check 3: any numeric character, in any script. */
 const DIGIT = /\p{N}/u;
@@ -179,25 +196,26 @@ const NON_LATIN_LETTER = /(?![\p{Script=Latin}])\p{L}/u;
  * §5 check 2: the sentence ends — Amendment F DF-4 (Astra's F4): by Unicode property, \p{Sentence_Terminal} (. ! ? and
  * every script's and form's terminal: the Arabic question mark, the ideographic full stop, ‼, ‽ …), with the ellipsis
  * (which the property leaves out) as before. A RUN of terminals counts once, whitespace between them included ("?!",
- * "? !", ". . ."), closing quotes and brackets after it. It ends a sentence at a space, at the text's end, or directly
- * before a letter (the review's P5, P6; "It moved؟I watched؟"); a run of periods only before a CAPITAL, and not after a
- * single letter ("U.S", "e.g" go on). Not an end: an ellipsis inside the text, the sentence going on in lower case
- * ("I waited… then sold"), or the period of a common abbreviation (vs., U.S.).
+ * "? !", ". . ."). EVERY run counts, whatever follows it (the fix round's review, P-1: a dash, an emoji or a mark glued
+ * after a terminal hides no end), but for the exemptions DF-4 keeps: a run of periods directly before a letter or a
+ * digit ends a sentence only before a CAPITAL, and not after a single letter or an abbreviation ("U.S", "e.g",
+ * "node.js", "3.5" go on); an ellipsis inside the text, the sentence going on in lower case ("I waited… then sold");
+ * the period of a common abbreviation (vs., U.S.).
  */
 const TERM = '[\\p{Sentence_Terminal}…]';
-const CLOSERS = '["\'”’»›」』)\\]]';
-const TERMINAL_RUN = new RegExp(`${TERM}(?:\\s*${TERM})*${CLOSERS}*(?=\\s|$|\\p{L})`, 'gu');
+const TERMINAL_RUN = new RegExp(`${TERM}(?:\\s*${TERM})*`, 'gu');
 const ABBREVIATIONS = new Set(['vs', 'etc', 'e.g', 'i.e', 'mr', 'mrs', 'ms', 'dr', 'inc', 'corp', 'co', 'jr', 'sr', 'st', 'u.s', 'u.k', 'a.m', 'p.m', 'approx', 'est']);
 function sentenceEndsOf(text) {
   let n = 0;
   const end = text.trimEnd().length;
   for (const m of text.matchAll(TERMINAL_RUN)) {
-    const run = m[0].replace(new RegExp(`${CLOSERS}+$`, 'u'), '').replace(/\s+/gu, '');
+    const run = m[0].replace(/\s+/gu, '');
     const after = text.slice(m.index + m[0].length);
     const atEnd = m.index + m[0].length >= end;
     const word = text.slice(0, m.index).split(/\s/).pop();
-    // directly before a letter: a run of periods ends a sentence only before a capital, and never after a single letter
-    if (/^\p{L}/u.test(after) && /^\.+$/u.test(run) && (!/^\p{Lu}/u.test(after) || [...word.replace(/[^\p{L}]/gu, '')].length < 2 || ABBREVIATIONS.has(word.toLowerCase()))) continue;
+    // directly before a letter or a digit: a run of periods ends a sentence only before a capital, and never after a
+    // single letter or an abbreviation
+    if (/^[\p{L}\p{N}]/u.test(after) && /^\.+$/u.test(run) && (!/^\p{Lu}/u.test(after) || [...word.replace(/[^\p{L}]/gu, '')].length < 2 || ABBREVIATIONS.has(word.toLowerCase()))) continue;
     // an ellipsis inside the text, the sentence going on in lower case ("I waited… then sold"); before a capital it ends
     // one (the refuter's N1: "went quiet… I let it go… AAPL had the pull…" is three)
     const next = after.trimStart().charAt(0);
@@ -235,6 +253,13 @@ function allowedSymbolsOf(swap) {
   return out;
 }
 
+/**
+ * The fix round's review (P-7): a third representation the checks read — the unmasked text with its combining marks
+ * taken off (NFD, \p{M} removed: "fïve", "NVDÁ", "bėst" read as "five", "NVDA", "best") and the apostrophe's look-alikes
+ * (‘ ′ ` ʼ) read as one. Checked only, never shown: a kept line is still the model's text exactly.
+ */
+const bareText = (plain) => plain.normalize('NFD').replace(/\p{M}/gu, '').normalize('NFC').replace(/[‘′`ʼ]/gu, '\'');
+
 /** The first check a trimmed text fails (checks 2 to 8), or null when it passes them all. */
 export function failingCheckOf(text, swap, knownIds = []) {
   if (typeof text !== 'string') return 'shape';
@@ -242,16 +267,18 @@ export function failingCheckOf(text, swap, knownIds = []) {
   if (n < 1 || n > DEBRIEF_LINE_MAX || LINE_BREAK.test(text)) return 'shape';
   if (INVISIBLE_OR_CONTROL.test(text) || !ANY_LETTER.test(text) || NON_LATIN_LETTER.test(text)) return 'shape';
   const plain = unmaskedText(text);
-  const both = (re) => re.test(text) || re.test(plain);
-  if (Math.max(sentenceEndsOf(text), sentenceEndsOf(plain)) > MAX_SENTENCE_ENDS) return 'shape';
+  const bare = bareText(plain);
+  const reps = [text, plain, bare];
+  const both = (re) => reps.some((r) => re.test(r));
+  if (Math.max(...reps.map(sentenceEndsOf)) > MAX_SENTENCE_ENDS) return 'shape';
   if (both(LINK) || both(EMAIL) || both(MARKUP)) return 'shape';
   if (both(DIGIT)) return 'digit';
-  if (holdsNumberWord(text) || holdsNumberWord(plain)) return 'number_word';
+  if (reps.some(holdsNumberWord)) return 'number_word';
   const allowed = allowedSymbolsOf(swap);
-  for (const t of new Set([...capitalTokens(text), ...capitalTokens(plain)])) if (DIRECTORY_SYMBOLS.has(t) && !allowed.has(t)) return 'symbol';
+  for (const t of new Set(reps.flatMap(capitalTokens))) if (DIRECTORY_SYMBOLS.has(t) && !allowed.has(t)) return 'symbol';
   if (holdsIdentifier(text, knownIds)) return 'identifier';
   if (both(FORBIDDEN) || both(VERDICT_PATTERN) || both(OUTCOME)) return 'forbidden';
-  if (swap?.maker !== AGENT_MAKER && (claimsDecision(text) || claimsDecision(plain))) return 'maker';
+  if (swap?.maker !== AGENT_MAKER && reps.some(claimsDecision)) return 'maker';
   return null;
 }
 

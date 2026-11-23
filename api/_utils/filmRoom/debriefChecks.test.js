@@ -298,7 +298,7 @@ describe('Amendment F DF-5 — check 8 `maker`: on a swap the agent did not make
     for (const t of ['My call held.', 'It was my choice.', 'It was my decision.', 'CRWD was my pick.', 'It was my move.', 'It was my trade.', 'Those were my calls.']) expect(verdict(t, 's1'), t).toBe('maker');
   });
   it('a claim with "not", "n\'t" or "no" within the three words before it is no claim — the spec\'s example passes', () => {
-    for (const t of ["This one wasn't my call.", 'This one wasn’t my call.', 'It was not my call.', 'No, my call came later.', 'Not that I sold MSFT.', "Don't think I sold MSFT."]) expect(verdict(t, 's1'), t).toBeNull();
+    for (const t of ["This one wasn't my call.", 'This one wasn’t my call.', 'It was not my call.', 'Not that I sold MSFT.', "Don't think I sold MSFT."]) expect(verdict(t, 's1'), t).toBeNull();
   });
   it('a denial inside the verb phrase is no claim; the rule\'s decision, said as the rule\'s, passes', () => {
     for (const t of ["I didn't sell MSFT.", 'I did not sell MSFT.', 'The rule sold MSFT, my plan waited.', 'I watched the rule take MSFT.']) expect(verdict(t, 's1'), t).toBeNull();
@@ -349,5 +349,44 @@ describe('DF-9 — check 5 reads `before` and `atSwap`; `after` is gone', () => 
 describe('Amendment F DF-5 — the declared limits: the contract is the checks, not a semantic guarantee', () => {
   it('a ticker in lower case and a company named in words pass check 5 (Astra\'s F5, declared)', () => {
     for (const t of ['I watched nvda.', 'Nvidia ran instead.']) expect(verdict(t, 's1'), t).toBeNull();
+  });
+});
+
+describe('the fix round\'s review, the player lens (P-1 to P-9): each case its own row, written literally', () => {
+  it('P-1 (DF-4): every terminal run counts whatever follows it — a dash, a star, an emoji, a bracket, a mark or an opening quote glued after it hides no end', () => {
+    for (const t of ['MSFT stalled.— The rule sold it.— CRWD came in.—', 'MSFT stalled.* The rule sold it.* CRWD came in.*', 'MSFT stalled.🙂 The rule sold it.🙂 CRWD came in.🙂', 'MSFT stalled.】 The rule sold it.】 CRWD came in.】', 'MSFT stalled.( The rule sold it.( CRWD came in.(', 'MSFT stalled.́ The rule sold it.́ CRWD came in.', 'MSFT stalled!“The rule sold it!” CRWD came in!', 'It went well. It was quiet.~ Then CRWD.']) expect(verdict(t), t).toBe('shape');
+  });
+  it('P-1: DF-4\'s exemptions still hold — an abbreviation, a period inside a word or a number, an inner ellipsis', () => {
+    for (const t of ['U.S. names held. Fine.', 'It ran on node.js here. Fine.', 'I waited… then it held. Fine.', "This one wasn't my call. MSFT had stopped moving."]) expect(verdict(t), t).toBeNull();
+  });
+  it('P-2 and P-6 (DF-5 check 8): any tense form — up to three bridging words, an "-ly" word, "alone"; "my" with one word before its noun', () => {
+    for (const t of ['I have been selling MSFT.', 'I would have already sold MSFT.', 'I will have sold MSFT.', 'I quickly sold MSFT.', 'I alone chose CRWD.', 'I then quickly sold MSFT.', 'It was my own call.', 'It was my final decision.']) expect(verdict(t), t).toBe('maker');
+  });
+  it('P-5 (check 8): the negation window ends at its clause — a "not", "n\'t" or "no" in another clause, or before a comma, is no denial', () => {
+    for (const t of ["It wasn't close. I chose CRWD.", 'Not gonna lie, I sold MSFT.', "Don't worry, I chose CRWD.", 'No question, my call.', 'No, my call came later.', "Can't lie: I sold MSFT."]) expect(verdict(t), t).toBe('maker');
+    for (const t of ["This one wasn't my call.", 'It was not my call.', 'Not that I sold MSFT.']) expect(verdict(t), t).toBeNull();
+  });
+  it('P-7: the apostrophe\'s look-alikes in a contraction — "I′ve", "I‘ve", "I`ve sold" — are a claim', () => {
+    for (const t of ['I′ve sold MSFT.', 'I‘ve sold MSFT.', 'I`ve sold MSFT.']) expect(verdict(t), t).toBe('maker');
+  });
+  it('P-3 (DF-5 check 7): the words between may hold punctuation, and the one word between may be hyphenated', () => {
+    for (const t of ['A good, clean move.', 'A good well-timed move.', 'A great — quick — swap.']) expect(verdict(t, 's2'), t).toBe('forbidden');
+    expect(verdict('PLTR held strong into the move.', 's2')).toBeNull();
+  });
+  it('P-4 (DF-8): punctuation after "one" counts only where it ends the word — "one-share" is a quantity; "one\'s" is the pronoun\'s', () => {
+    for (const t of ['I kept that one-share lot.', 'I kept that one–share lot.', 'I kept that one/share lot.']) expect(verdict(t, 's2'), t).toBe('number_word');
+    for (const t of ['That one’s a share.', "That one's done.", 'I kept that one.']) expect(verdict(t, 's2'), t).toBeNull();
+  });
+  it('P-7: a combining mark hides no number word, symbol, verdict or claim — the checks also read the text with its marks taken off', () => {
+    expect(verdict('MSFT stalled fïve times.')).toBe('number_word');
+    expect(verdict('I watched NVDÁ instead.')).toBe('symbol');
+    for (const t of ['It was the bėst exit.', 'A göod trade.', 'You should′ve sold.']) expect(verdict(t, 's2'), t).toBe('forbidden');
+    expect(verdict('I śold MSFT.')).toBe('maker');
+    // the kept line is the model's text exactly — the third reading is checked, never stored
+    expect(run([{ swap: 's2', text: 'Café PLTR held.' }]).lines).toEqual([{ label: 's2', text: 'Café PLTR held.' }]);
+  });
+  it('P-9 (DF-5 check 2): a URL by a web, file, script, data or mail scheme and its colon alone, or with spaces around "://"; an email-like token without a dot', () => {
+    for (const t of ['See https:/evil.io for more.', 'See https:evil.io for more.', 'See data:text/html,hi for more.', 'See https ://evil.io for more.', 'Run javascript:alert now.', 'Mail bob@evilcorp for more.']) expect(verdict(t, 's2'), t).toBe('shape');
+    for (const t of ['I sold DE @ the open.', 'PLTR held at the open.']) expect(verdict(t, 's2'), t).toBeNull();
   });
 });
