@@ -52,7 +52,8 @@
 // a `debriefs` collection or path (DEBRIEFS_READ), proved on a synthetic graph as the `plays` rule is. And for the
 // `debrief` path, FAIL-CLOSED LOADS (Build C CF-11's cheap step, taken here first): a module of its closure that names
 // `eval`, calls `Function` (with or without `new`), or loads `node:vm` or `node:worker_threads` (either spelling) makes
-// the walk throw. Twenty-two roots on ten paths.
+// the walk throw. Build D Amendment E DE-8: the founder-run sample pack (scripts/film-room-debrief-sample.mjs) calls
+// the model too, so it is the path's third root. Twenty-three roots on ten paths.
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
@@ -90,8 +91,9 @@ export const MODEL_PATHS = Object.freeze({
   tournament: Object.freeze(['api/cron/tournament-orchestrator.js', 'api/tournament/produce-agent-boards.js']),
   // Film Room C2 (Amendment C CC-1): the Mandate manager — its evaluation cron and its prompt assembler
   mandate: Object.freeze(['api/cron/mandate-evaluate.js', 'api/_utils/mandatePromptAssembly.js']),
-  // Film Room D2 (D2 spec §10, DW-11): the agent's words — the nightly job and its prompt builder
-  debrief: Object.freeze(['api/cron/film-room-debrief.js', 'api/_utils/filmRoom/debriefPrompt.js']),
+  // Film Room D2 (D2 spec §10, DW-11): the agent's words — the nightly job and its prompt builder; and (Build D
+  // Amendment E DE-8) the founder-run sample pack, which calls the same model
+  debrief: Object.freeze(['api/cron/film-room-debrief.js', 'api/_utils/filmRoom/debriefPrompt.js', 'scripts/film-room-debrief-sample.mjs']),
 });
 
 /** Every root list, pinned whole (review L4-1): a root dropped from any path reds this, whatever the walk still reaches. */
@@ -105,7 +107,7 @@ export const MODEL_PATH_ROOTS = Object.freeze({
   debate: ['api/agent/debate.js'],
   tournament: ['api/cron/tournament-orchestrator.js', 'api/tournament/produce-agent-boards.js'],
   mandate: ['api/cron/mandate-evaluate.js', 'api/_utils/mandatePromptAssembly.js'],
-  debrief: ['api/cron/film-room-debrief.js', 'api/_utils/filmRoom/debriefPrompt.js'],
+  debrief: ['api/cron/film-room-debrief.js', 'api/_utils/filmRoom/debriefPrompt.js', 'scripts/film-room-debrief-sample.mjs'],
 });
 
 /** What each path's walk must reach — the non-vacuity oracle: modules the path is known to use, none of them a root of that path (review L2-3). */
@@ -158,8 +160,12 @@ const EXCLUSIVE_REACH = Object.freeze({
   // C2: the manager's cron alone reaches its batch transport; the prompt assembler is covered whole by the cron
   'api/cron/mandate-evaluate.js': 'api/_utils/mandateBatchTransport.js',
   'api/_utils/mandatePromptAssembly.js': { coveredBy: ['api/cron/mandate-evaluate.js'] },
-  // D2: the job alone reaches its pass; the prompt builder is covered whole by the job
-  'api/cron/film-room-debrief.js': 'api/_utils/filmRoom/debriefPass.js',
+  // D2: the prompt builder is covered whole by the job. Amendment E DE-8: the job and the sample pack reach the same
+  // modules but their own entry points (the pass, the call, the digest, the checks — Astra's D2 review §8), so neither
+  // reaches a module the other does not: each is covered by the other, the roots themselves excluded as for every
+  // `coveredBy`; dropping both is what the whole-list pin above catches
+  'api/cron/film-room-debrief.js': { coveredBy: ['scripts/film-room-debrief-sample.mjs'] },
+  'scripts/film-room-debrief-sample.mjs': { coveredBy: ['api/cron/film-room-debrief.js'] },
   'api/_utils/filmRoom/debriefPrompt.js': { coveredBy: ['api/cron/film-room-debrief.js'] },
 });
 
@@ -358,12 +364,14 @@ describe('ONE DOOR — no model path reaches the ledger or reads plays', () => {
     // C2 (CC-1): the Mandate manager's path joins the list — the one key added to this pin
     expect(Object.keys(MODEL_PATHS).sort()).toEqual(['batchReview', 'chat', 'debate', 'debrief', 'deploy', 'evaluator', 'mandate', 'reflection', 'tournament', 'voice']);
     expect(MODEL_PATHS.mandate).toEqual(['api/cron/mandate-evaluate.js', 'api/_utils/mandatePromptAssembly.js']);
-    // Film Room D2 (D2 spec §10, DW-11): the `debrief` path's two roots
-    expect(MODEL_PATHS.debrief).toEqual(['api/cron/film-room-debrief.js', 'api/_utils/filmRoom/debriefPrompt.js']);
-    // CE-6: twenty-two roots on ten paths (twenty on nine before D2), as every record of this census states it
+    // Film Room D2 (D2 spec §10, DW-11): the `debrief` path's roots — three since Build D Amendment E DE-8: the sample
+    // pack calls a model, so the one-door rule holds for it as for the job
+    expect(MODEL_PATHS.debrief).toEqual(['api/cron/film-room-debrief.js', 'api/_utils/filmRoom/debriefPrompt.js', 'scripts/film-room-debrief-sample.mjs']);
+    // CE-6: twenty-three roots on ten paths (twenty on nine before D2, twenty-two before DE-8), as every record of this
+    // census states it
     expect(Object.keys(MODEL_PATHS)).toHaveLength(10);
-    expect(Object.values(MODEL_PATHS).flat()).toHaveLength(22);
-    expect(new Set(Object.values(MODEL_PATHS).flat()).size).toBe(22);
+    expect(Object.values(MODEL_PATHS).flat()).toHaveLength(23);
+    expect(new Set(Object.values(MODEL_PATHS).flat()).size).toBe(23);
   });
 
   it('no non-vacuity oracle entry is a root of its own path (review L2-3), and every root either reaches a module no other root reaches, or is covered whole by another root', () => {
@@ -810,6 +818,23 @@ describe('D2 — the `debrief` model path (D2 spec §10, DW-11)', () => {
     expect(oneDoorDefectsOf('debrief', MODEL_PATHS.debrief.map(abs))).toEqual([]);
     const { seen } = closureOf(MODEL_PATHS.debrief.map(abs));
     for (const not of [...LEDGER_MODULES, EXCERPT_MODULE, NAMED_EXCEPTIONS[0].importer]) expect([...seen].some((f) => path.resolve(f) === path.resolve(abs(not))), not).toBe(false);
+  });
+  it('Build D Amendment E DE-8: the sample pack is the path\'s third root — its own walk reaches the pass, the call, the digest and the checks, and passes the fail-closed loads', () => {
+    const sample = abs('scripts/film-room-debrief-sample.mjs');
+    const { seen } = closureOf([sample]);
+    for (const known of [...KNOWN_REACH.debrief, 'api/_utils/filmRoom/debriefPass.js', 'api/_utils/filmRoom/debriefPrompt.js']) expect([...seen].some((f) => path.resolve(f) === path.resolve(abs(known))), known).toBe(true);
+    expect(() => debriefClosureOf([sample])).not.toThrow();
+    expect(oneDoorDefectsOf('debrief', [sample])).toEqual([]);
+  });
+  it('DE-8: a planted import of the ledger from the sample pack fails the census — static and dynamic; the clean walk passes', () => {
+    const sample = abs('scripts/film-room-debrief-sample.mjs');
+    for (const line of ["import '../api/_utils/filmRoom/cardStore.js';", "export const planted = () => import('../api/_utils/filmRoom/cardStore.js');"]) {
+      const read = (f) => (path.resolve(f) === path.resolve(sample) ? `${readSource(f)}\n${line}\n` : readSource(f));
+      const defects = oneDoorDefectsOf('debrief', MODEL_PATHS.debrief.map(abs), { read });
+      expect(defects.filter((d) => d.startsWith('ledger: ')), line).toHaveLength(1);
+      expect(defects[0]).toMatch(/film-room-debrief-sample\.mjs.*cardStore\.js/s);
+    }
+    expect(oneDoorDefectsOf('debrief', MODEL_PATHS.debrief.map(abs))).toEqual([]);
   });
 });
 
