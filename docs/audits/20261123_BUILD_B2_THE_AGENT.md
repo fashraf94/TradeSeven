@@ -1,6 +1,6 @@
 # Build B2 — the agent drafts and checks the idea book (T1b + T1d, launch scope)
 
-**Date:** 23 Nov 2026 · **Branch:** `claude/practice-field-b2-agent` · **Final commit:** `df782278` (code frozen at `f9478053`; the two commits after it are a test allowlist's counts and one test row) · **Base:** `main` `e505f3bb` · **PR:** draft (its number is added when it opens)
+**Date:** 23 Nov 2026 · **Branch:** `claude/practice-field-b2-agent` · **Final commit:** `df782278` (code frozen at `f9478053`; the two commits after it are a test allowlist's counts and one test row) · **Base:** `main` `e505f3bb` · **PR:** the draft PR opened from this branch (this report is its last commit; every check below ran on `df782278`, the commit before it)
 
 **State:** built, reviewed (three lenses, every finding refuted or confirmed), battery run, final checks green. **Both new switches ship off.** Not merged; CI not watched.
 
