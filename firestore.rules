@@ -148,6 +148,42 @@ service cloud.firestore {
       allow write: if false;  // Admin SDK only
     }
 
+    // ═══════════════════════════════════════════
+    // Explore (Build 1, spec docs/specs/20261121_EXPLORE_BUILD_1_SPEC_V1_1.md §5.2)
+    // ═══════════════════════════════════════════
+    // Bookmarks: users/{uid}/exploreBookmarks/{storyId}, exactly
+    // { storyId, storyVersion, title, savedAt }. The owner reads and deletes;
+    // a create or update carries exactly those four keys, storyId equal to the
+    // document id (the route's story id rule), a whole-number version, a
+    // bounded title and a timestamp. No one else reads or writes. The cap of
+    // 50 per player is the client's (BOOKMARKS_MAX), not counted here.
+    match /users/{userId}/exploreBookmarks/{storyId} {
+      allow read, delete: if request.auth != null && request.auth.uid == userId;
+      allow create, update: if request.auth != null
+                            && request.auth.uid == userId
+                            && storyId.matches('^[A-Za-z0-9_-]{1,200}$')
+                            && request.resource.data.keys().hasOnly(['storyId', 'storyVersion', 'title', 'savedAt'])
+                            && request.resource.data.keys().hasAll(['storyId', 'storyVersion', 'title', 'savedAt'])
+                            && request.resource.data.storyId == storyId
+                            && request.resource.data.storyVersion is int
+                            && request.resource.data.storyVersion >= 0
+                            && request.resource.data.title is string
+                            && request.resource.data.title.size() > 0
+                            && request.resource.data.title.size() <= 200
+                            && request.resource.data.savedAt is timestamp;
+    }
+
+    // Explore stories: a signed-in player reads a published story only
+    // (founder ruling SQ-9, Nov 22, 2026): a draft, or any document whose
+    // stored status is not 'published', is not readable by a client, and a
+    // list must filter on status == 'published'. Written only by the content
+    // pipeline (Admin SDK). The Work an idea route reads them with its own
+    // credentials.
+    match /exploreStories/{storyId} {
+      allow read: if request.auth != null && resource.data.status == 'published';
+      allow create, update, delete: if false;
+    }
+
     // Draft aggregates — system-generated global stats
     match /draftAggregates/{doc} {
       allow read: if request.auth != null;
