@@ -347,7 +347,7 @@ Not defects: things to look at while the founder and FT_QA use Explore at `'allo
 
 Nothing below is done by this PR. Each is its own step, in this order:
 
-1. **Deploy the two rules blocks** (`firestore.rules`: `users/{uid}/exploreBookmarks/{storyId}` and `exploreStories/{storyId}`) to production, and **the one composite index** (`firestore.indexes.json`: `exploreStories` `status ASC, publishedAt DESC`). Without the index the stories read fails ("Couldn't load stories"); without the rules both reads are denied.
+1. **Deploy the two rules blocks** (`firestore.rules`: `users/{uid}/exploreBookmarks/{storyId}` and `exploreStories/{storyId}`) to production, and **the one composite index** (`firestore.indexes.json`: `exploreStories` `status ASC, publishedAt DESC`). Without the index the stories read fails ("Couldn't load stories"); without the rules both reads are denied. Since the founder's round (SQ-9, §16) the stories block lets a signed-in player read only documents whose stored `status` is `'published'`: **drafts are not readable** by any client, and a list must filter on `status == 'published'` (the page's own query does).
 2. **Publish the AI-buildout collection** with real companies and real sources, in spec §5.1's shape, every `id` matching `^[A-Za-z0-9_-]{1,200}$`, every story with a whole-number `version`, `publishedAt` stored as one type across the collection (a Firestore timestamp is best: mixed types sort by type), no `sample` field, and the §11 content rules (one basis per connection; the reporter's reading qualified in the text).
 3. **A one-line founder PR** setting `EXPLORE_MODE = 'allowlist'` in `src/config/exploreFlags.js`, moving the first row of `src/config/exploreFlags.test.js` in the same commit. Rollback: one step back with its pin row.
 4. Later, `'on'`: the same one-line PR, which also reconciles the three nav label rows of `src/components/Navigation/leagueHide.nav.jsdom.test.jsx` that list the entry as "Search" (pin the switch in that suite's mocks, or move the label).
@@ -399,3 +399,155 @@ On the smoke preview, on an iPhone, `?exploreFixture=walk` unless another scene 
 12. **The other states** (from `?exploreFixture=index`): `story-finished` (Thesis saved, *View it*); `gated` (no access: the gated line, no start button); `limit` (the day's limit: no start button, Save for later instead); `read-failed` ("Couldn't check your research", Try again); `bookmark-gone`; `progress-gone`; `stories-failed`; `empty`.
 13. **The old tabs:** Markets, Rankings, Institutional, Screen and Correlations are all there and work as before. (On the smoke page they read the preview's own market data; anything that needs you signed in may show its own sign-in or failed state there.)
 14. **Live app:** nothing has changed anywhere: the Search page says Discover, its first tab is Explore (the movers), and the nav says Search.
+
+## 16. The founder's round (Nov 22)
+
+**Smoke preview (founder's phone; never merged):** **https://trade-seven-mb5e06gut-fais-projects-bc179554.vercel.app/?exploreFixture=walk** — branch `claude/explore-build-1-smoke` at `3c8c6ce9`: the round's final code `58932a30` plus the same two smoke-only commits as before (cherry-picked unchanged) and one more, the `search-limit` scene. The docs commit after `58932a30` changes no client file. `?exploreFixture=index` lists every scene; `?exploreFixture=search-limit` is new. The checklist's items 1–4 (§16.10) were checked on this deployed preview by script at 393×852 (touch): 5 of 5 checks pass.
+
+The founder walked the first smoke preview, approved the desktop story page as built, ruled on SQ-6 to SQ-10, and asked for one layout change (F-1). The rulings are in the spec as **Amendment A (Nov 22, 2026)**, word for word. This round makes the four changes they call for and nothing else. The larger redesign of the front page and the phone story page is its own design round and build.
+
+### 16.1 Verdict
+
+| Item | Result |
+|---|---|
+| Ships dark | **Yes.** `EXPLORE_MODE` is still `'off'`; no flag file changed in this round. At `'off'` the Search page renders what `main` renders: the reviewer's and the refuter's own probes rendered `main`'s `SearchDiscover` beside the head's on every tab and with the overlay open, at mobile and desktop width, and found identical HTML, no read and no Explore module loaded |
+| The four changes | **Built:** SQ-7 (the line), SQ-8 (search at the limit), SQ-9 (published stories only), F-1 (no tab row in a story). SQ-6 and SQ-10: no change, as ruled |
+| Full Linux suite on the final tree | **exit 0.** 1,636 files; 37,692 rows: **37,495 passed, 0 failed**, 197 skipped (the 18 browser rows, which skip without a page, plus 179 in files this build does not touch) |
+| `npm run lint:gate` | **exit 0** |
+| `npm run test:rules` | **exit 0**: 47 files, **876 rows** (`exploreBookmarks.rules.mjs`: 35, was 30) |
+| Minified build | **exit 0** |
+| Baselines | **Unchanged:** 10 files, 485 rows, all passing |
+| Protected paths | `SharedResearch/`, `CommandCenter/`, `api/`, the service: `git diff --stat origin/main` **empty**. `firestore.indexes.json` and `src/config/` not touched by this round |
+| Bundle diff (this round) | 2 files change content: the Explore tab's chunk (+417 B) and the Search chunk (+21 B); the CSS identical; 55 more differ in hashed names only |
+| Mutations | **17 of 17 killed** (16 in the jsdom rows, 1 in the rules); control run 231 of 231 green |
+| Browser rows (headless Edge, the deployed smoke preview) | **18 of 18** at 1280×900, 393×852, 320×700 (the 15 existing + the new F-1 row at each size) |
+| Review (BUILD_RULES §2) | One reviewer, one refuter, each on its own `git archive` tree: **no code defect**. Three test gaps (V-1, G1, E1), each closed with a row and a mutant that the row kills |
+
+**Ready for the founder's merge · dark.**
+
+### 16.2 Base and the merge of `main`
+
+`git fetch origin` first. The PR head was `4ab15855`, as the prompt said; PR #1106 open and a draft. `origin/main` was `b258266f` (#1104, #1105: the Practice Field founder door and its flag flip). Merged in alone at **`7868dc77`** (no conflict; `main`'s 14 files share none with this build). `7868dc77` is the bundle diff's base: `4ab15855` on the merged `main`. The round's commits on top: `dd6cdb92` (the four changes and their rows), `ea89e451` (review V-1), `d53cd6df` (the F-1 browser row), `58932a30` (the refuter's two rows; the browser row measures as Safari), then this docs commit. The branch `claude/explore-build-1` is checked out in another worktree (`explore-build-1-164eab`, clean, at `4ab15855`); that worktree was not touched: the round was built in this session's worktree and pushed as `HEAD:claude/explore-build-1`, a fast-forward from `4ab15855`.
+
+### 16.3 The changes
+
+| # | Ruling | Where | What | Rows |
+|---|---|---|---|---|
+| 1 | SQ-7 | `src/components/Explore/exploreCopy.js:117` | "Your agent's first step checks the story against its source." | `explore.guard.test.js:181` "the founder's lines of Nov 22, word for word" (new); `explore.screens.jsdom.test.jsx:206` reads the line from the copy, unedited |
+| 2 | SQ-8 | `ExploreSearch.jsx:41` `atLimit = access && atLimitOf(research.quota)` — `atLimitOf` from `exploreView.js:117`, the panel's own test (`ExplorePanel.jsx:134`), never a second rule; `ExploreSearch.jsx:93-96`: at the limit the own-words row is not drawn and one `role="status"` line takes its place; `exploreCopy.js:77` the line, `{perDay}` from `research.quota.perDay` | Read `ready`, three or more characters, at the limit: no own-words row, the line last. "No story on this yet." still above it when nothing matched; company results unchanged. Below the limit, gated, failed: unchanged | `explore.founder.jsdom.test.jsx:100-145` (6 rows): a planted 7 of 7 (a number no rule would compute) with no match and with a company match; 8 of 7 and fewer than three characters; 6 of 7 (the own-words row, no line); gated and failed (no row, no line) |
+| 3 | SQ-9 | `firestore.rules:182-185` (the `exploreStories` block and its comment only) | `allow read: if request.auth != null && resource.data.status == 'published';` — no client write, as before. The page's query already filters on `status == 'published'` (`exploreSources.js`), unchanged | `test/rules/exploreBookmarks.rules.mjs:146-168` (5 new rows): a published story by id, and a list filtered to published, allowed; a draft by id denied (three signed-in players); a document with no status denied; an unfiltered list, the page's order without the filter, and a list filtered to `draft` denied; signed out denied by id and by the page's query. Every client write still denied (the existing rows) |
+| 4 | F-1 | `ExploreTab.jsx:62-64` (`storyShown`: the view is a story **and** the stories are loaded **and** the story is among them; one layout effect reports it; one reports `false` on unmount), `:133`, `:138` (open and ← Explore report in the same handler as the view change); `SearchDiscover.jsx:62-63` (one boolean; `hideTabRow = withExplore && activeTab === EXPLORE_HOME && inStory`), `:159-160` (the row not drawn), `:213` (`onInStory={setInStory}`, the one callback prop) | Inside a story the tab row is not drawn; the heading stays; "← Explore" and a story that disappears bring it back. Never hidden on another tab, on Explore's home, or at `'off'`. No context, no global, no stored value. The pinned bar, the sheet host and close-and-return are untouched | `explore.founder.jsdom.test.jsx:150-334` (11 rows), `explore.browser.test.js:179` (×3 sizes) — §16.4 |
+
+**Why the handlers report, and not only an effect.** The row is ~60 px above the content. If the page heard about the view change one commit late, "← Explore" would restore the scroll while the row is still away and the row would then push the page down by its height; `.ftx-root` turns scroll anchoring off, and iPhone Safari has none, so nothing would correct it. Opening a story and "← Explore" therefore call `onInStory` in the same event handler as `setView`: React batches both into one commit, and the tab's scroll-and-focus effect runs with the row already gone or back. The layout effect covers what no handler sees (the story disappearing, the snapshot going away) before paint; the unmount report covers a dropped tab.
+
+### 16.4 The F-1 rows
+
+| Row | What it holds |
+|---|---|
+| founder `:150` (×2, `'on'` and `'allowlist'`) | Home shows the row; a story hides it, the heading "Explore" and "← Explore" stay, focus on the title; "← Explore" brings the row back, scroll restored to where the player left (640), focus on the opener |
+| founder `:166` | Each `window.scrollTo` sees the row as its view has it: opening scrolls with the row already gone, "← Explore" with the row already back (the ordering above) |
+| founder `:175` | A story opened from search hides it; a second story after "← Explore" again |
+| founder `:188` | The row on every other tab, and on Explore's home after each |
+| founder `:199` | The story disappearing (a player change at `'on'` whose stories no longer hold it): the row back while the stories load and once they are ready without it (review V-1) |
+| founder `:219` | At `'allowlist'`, the Explore tab dropped with a story open: the row back **at once** (while the old tab is still leaving under the page's exit animation), on Markets; and on Explore's home when the new player is admitted |
+| founder `:237` | The same drop, a tap on Rankings during the exit, then re-admitted: the row on Rankings (refuter G1) |
+| founder `:254` | At `'off'`: the row on every tab, today's labels; the Explore tab never drawn; no read |
+| founder `:281` | The tab's one callback: `true` on a story, `false` on "← Explore", exactly one `false` when the tab is taken away with a story open |
+| founder `:302` | The story disappearing outside an event (its own task, as in a browser): no DOM state shows the gone line with the row still away (refuter E1) |
+| browser `:179` (1280, 393, 320) | On the smoke page, with scroll anchoring off (as Safari): the row on home; a story at the top, focus on its title, no row, heading and "← Explore" there; back: the row back, the scroll the player left (304 / 630 / 1,011 px) and the opener where it was on screen (±1 px), focus on it. With "← Explore"'s handler report removed this row fails at all three sizes; with anchoring left on, Chromium hid the bug at 1280 and 393, so the row turns it off |
+
+### 16.5 Edited rows, and why
+
+Every existing row passes **unedited**, except:
+
+| Row | Why |
+|---|---|
+| `test/rules/exploreBookmarks.rules.mjs:183` "ONE bookmarks block and ONE stories block, as built" | It pins the stories block's text line by line; its read line is now `allow read: if request.auth != null && resource.data.status == 'published';` (SQ-9). The bookmarks lines and the write line are unchanged |
+
+Comments only (no row): the rules file's header, the stories block's comment in `firestore.rules`, and `explore.browser.test.js`'s header. No row quoted the old SQ-7 line (the screens row reads it from the copy), and no existing row asserted the tab row inside a story.
+
+### 16.6 Tests and checks
+
+Every check ran on the final code tree `58932a30` (`main` `b258266f` merged in), in a private WSL worktree of `~/pd-ci` (`~/pd-exb1f`; its own `npm ci`, the branch's lockfile `e457c10d0317` differs from `pd-ci`'s). Each result read from its exit code and its own report.
+
+| Check | Result |
+|---|---|
+| Full Linux suite (`TZ=UTC flock /tmp/pd-suite.lock npx vitest run --maxWorkers=8 --reporter=json`) | **exit 0.** 1,636 files (1,634 + this round's founder file + `main`'s `scripts/practice-field-founder.test.js`); 37,692 rows: **37,495 passed, 0 failed, 197 skipped** |
+| `npm run lint:gate` | **exit 0** |
+| `npm run test:rules` (Windows, JDK 21, the emulator, an LF `git archive` of the head) | **exit 0.** 47 files, 876 rows; `exploreBookmarks.rules.mjs` 35 |
+| Minified build | **exit 0**; the bundle diff §16.7 |
+| Browser rows (headless Edge, the deployed smoke preview) | **18 of 18** (also 18 of 18 on the local smoke page) |
+| Mutations | **17 of 17 killed**, §16.8 |
+| The request guard | `explore.requests.jsdom.test.jsx`: a scripted run of the whole page still makes one read and nothing else (1 row, unedited, passing) |
+
+**Baselines, on the final tree, unchanged:** `sharedResearch.boundary` 59 · `SharedResearchSheetBody.b6a` 27, `.builder` 156, `.flows` 37, `.review` 34, `.states` 38 · `screenerAdapter` 37 · `ScreenerView.saveLink` 3 · `CorrelationLab.smoke` 84 · `flagPinGuard` 10 — **485, all passing**.
+
+**The build's own rows:** `explore.guard` 50 (+1) · `exploreView` 59 · `explore.screens` 45 · `explore.review` 26 · `explore.sheet` 19 · `explore.page` 14 · `explore.requests` 1 · `__fixtures__/exploreReads` 2 · `config/exploreFlags` 7 · **`explore.founder` 17 (new)** — **240 rows, all passing** — plus 18 browser rows and 35 rules rows. `Navigation/leagueHide.nav.jsdom.test.jsx` (9) passes unedited.
+
+### 16.7 The bundle diff (this round only)
+
+`vite build` in the WSL worktree, on `7868dc77` (`4ab15855` on the merged `main`) and on the head `58932a30`; every file compared by bytes, then with chunk hashes masked.
+
+| Files | What | Why |
+|---|---|---|
+| `ExploreTab` | 47,791 → 48,208 (**+417 B**) | the search's limit line and its test; the story report (`storyShown`, two layout effects, two handler calls); the new copy line |
+| `SearchDiscover` | 23,867 → 23,888 (**+21 B**) | the one boolean, the row's condition, the callback prop |
+| CSS (`index-Bt3Ms9P_.css`) and 11 more | **identical** | — |
+| 55 more, the entry `index-*.js` and `index.html` among them | **hashed names only** (same size, equal with hashes masked) | they name the two renamed chunks (the entry's preload table) |
+| their source maps | follow their chunks | — |
+
+**In one line:** the Explore tab's chunk +417 B and the Search chunk +21 B; CSS identical; 55 more differ in hashed names only. The minified head built from `58932a30` is byte-identical to the round's first build (`dd6cdb92`): the later commits are rows only.
+
+### 16.8 The mutation table
+
+Each mutant is one edit (or a named pair) to the source, run against the Explore rows (8 files), judged by the exit code **and** the JSON report (deleted first), each file restored from `git show 58932a30:<path>` and checked by SHA-256. Control first: 231 of 231 green. M24 ran in the rules suite (on its own LF snapshot; `firestore.rules` SHA-256 `aa71123ba7a9a337…` before and after).
+
+| Id | Prompt # | Mutant | File | Verdict | Rows failed | A row that fails |
+|---|---|---|---|---|---|---|
+| M21 | 1 | the own-words row shows at the limit | `ExploreSearch.jsx` | **KILLED** | 2 | SQ-8 "no match: … the limit line in the own-words row's place" |
+| M22 | 2 | the limit line reads a constant (`3`) instead of `quota.perDay` | `ExploreSearch.jsx` | **KILLED** | 3 | SQ-8 "no match …" (planted 7) |
+| M23 | 3 | the limit line shows below the limit | `ExploreSearch.jsx` | **KILLED** | 2 | SQ-8 "below the limit (6 of 7) … no limit line" |
+| M24 | 4 | the rule lets a signed-in player read a draft (`allow read: if request.auth != null;`) | `firestore.rules` | **KILLED** | 4 | "SQ-9: a draft read by id is denied" (also no status, unfiltered list, the posture row) |
+| M25 | 5 | the tab row shows inside a story (the page never hears the tab) | `SearchDiscover.jsx` | **KILLED** | 6 | F-1 "at 'on': home shows the row; a story hides it …" |
+| M26a | 6 | the row stays hidden after "← Explore" (the page keeps only a `true`) | `SearchDiscover.jsx` | **KILLED** | 6 | F-1 "at 'on': … '← Explore' brings it back" |
+| M26b | 6 | "← Explore" does not report in its handler (the row returns one commit after the scroll) | `ExploreTab.jsx` | **KILLED** | 1 | F-1 "the scroll … on '← Explore' with the row already back"; also the browser F-1 row at all three sizes |
+| M26c | 6 | opening does not report in its handler | `ExploreTab.jsx` | **KILLED** | 1 | the same scroll-order row |
+| M27a | 7 | the page's gate dropped (`hideTabRow = inStory`) | `SearchDiscover.jsx` | **KILLED** | 2 | F-1 "the Explore tab dropped with a story open: the row is back at once" |
+| M27b | 7 | the tab does not report `false` on unmount | `ExploreTab.jsx` | **KILLED** | 1 | the tab's report "… false when it unmounts with a story open" |
+| M27c | 7 | both of M27a and M27b | both | **KILLED** | 3 | both rows |
+| M28 | 8 | at `'off'` the row can be hidden (`mode === 'off' \|\| …`) | `SearchDiscover.jsx` | **KILLED** | 2 | F-1 "at 'off': the row on every tab"; page K-2 |
+| M29 | — | SQ-7 reverted ("its sources") | `exploreCopy.js` | **KILLED** | 1 | guard "the founder's lines of Nov 22" |
+| M30 | — | the limit by a second rule (`used > perDay`) | `ExploreSearch.jsx` | **KILLED** | 2 | SQ-8 "no match …" (7 of 7) |
+| M31 | — | the story-exists term dropped (review V-1) | `ExploreTab.jsx` | **KILLED** | 2 | F-1 "the story disappearing brings the row back" |
+| M32 | — | the open-tab term dropped (refuter G1) | `SearchDiscover.jsx` | **KILLED** | 1 | F-1 "a tap on Rankings while the dropped Explore tab is still leaving …" |
+| M33 | — | the report effect after paint (`useEffect`, refuter E1) | `ExploreTab.jsx` | **KILLED** | 1 | the tab's report "the story disappearing outside an event …" |
+
+**Said plainly about M28.** At `'off'` nothing can report a story: the callback is handed only to the Explore tab, which `'off'` never draws, and `withExplore` is `false`. A mutant that merely drops a term of the condition is therefore unreachable at `'off'` (it changes nothing there). The only way to hide the row at `'off'` is a condition that does not wait for the tab's report, so M28 writes one in (`mode === 'off' || …`), and two rows kill it. **Equivalent mutants** (no reachable state differs, each argued by the reviewer and checked by the refuter): dropping `withExplore` alone from the page's condition (`activeTab === EXPLORE_HOME` already implies it, `SearchDiscover.jsx:52`); dropping `access` from `atLimit` (`ownWords` already requires it); dropping the stories' `status === 'ready'` term (every other stories state has an empty list).
+
+### 16.9 The review
+
+The branch is past the BUILD_RULES §2 threshold, so this round was reviewed in proportion: **one reviewer and one refuter on the round's own diff** (`7868dc77..`), each on its own LF `git archive` trees (the head, the pre-round tree, `main`), read-only on git. Lenses in one pass: the `'off'` identity, the rule, the limit's source, focus and scroll with the tab row leaving and returning.
+
+| Id | Who | Finding | Refuter | Done |
+|---|---|---|---|---|
+| V-1 | reviewer | The "story disappearing" row asserted while the new stories were still **loading**, so no row guarded the story-exists term (a mutant dropping it survived) | CONFIRMED; the fix kills both variants | **FIXED** (`ea89e451`): the row waits for the stories to be ready without the story; M31 |
+| G1 | refuter | The reviewer called "drop the open-tab term" equivalent; it is not: during a dropped tab's 200 ms exit, a tap on Rankings and a re-admission reach a state where it hides the row on Rankings. The code is right; no row pinned it | — | **ROW ADDED** (`58932a30`); M32 |
+| E1 | refuter | The reviewer called "report effect after paint" equivalent; it is not: a story that disappears outside an event commits one DOM state with the gone line and no row, which a browser can paint. The code (a layout effect) is right; no row pinned it | — | **ROW ADDED** (`58932a30`); M33 |
+
+**Claimed sound and checked:** the `'off'` identity (two independent probes of `main`'s page beside the head's, every tab and the overlay, mobile and desktop: identical HTML, no read, no Explore module; each probe's control mutation showed it could see a change); the rule (the only client read is the published-filtered query in `exploreSources.js`; the Work an idea route reads with the Admin SDK; a by-id get of a **missing** document is now denied rather than answered "not found" — no client does one); the limit's source (`atLimitOf` over the read's quota only; during the re-read after a sheet close the search and the panel show the same quota); focus (a sheet started from the own-words row that ends at the limit: on close the line replaces the row and focus goes to the screen's anchor, not `<body>`, by the existing B-1 path); no new React warnings (the founder file prints none; the Explore and Search files' warnings are the same seven as before the round); nothing changed in the pinned bar, the sheet host, close-and-return, the old tabs or at desktop width. **None refuted.**
+
+### 16.10 The founder's phone checklist
+
+On the new smoke preview, on an iPhone.
+
+1. **A story has no tab row.** `?exploreFixture=walk`: open a story. Explore, Markets and Rankings are gone from the top. "← Explore" is there.
+2. **Back brings it back.** Tap "← Explore". The tab row is back and you are where you were on the front page.
+3. **The first step line.** In the panel it now reads "against its source".
+4. **Search at the limit.** `?exploreFixture=search-limit`: type anything. There is no "from your own words" row; a line says you have used today's investigations.
+5. **Everything else is as it was:** start, close, Continue research, Save for later.
+
+Items 1–4 checked on the deployed preview by script (393×852, touch): the row on home (Explore, Markets, Rankings, Institutional, Screen, Correlations), gone in the story with "← Explore" there, back after it; the panel's line "…against its source."; `search-limit` with "anything at all" typed: no own-words row, "No story on this yet." then "You've used today's 3 investigations. Try this one tomorrow." (`role="status"`). Item 5: the browser rows' walk (start, close, Continue research) passes on the same preview.
+
+### 16.11 The WSL trees
+
+`~/pd-exb1f` (a worktree of `~/pd-ci`, its own `node_modules`) and `~/pd-exb1f-runs` were removed under the suite lock after the checks; `pd-ci`'s HEAD was never moved. **Space freed: about 1.0 GB** (897 MB the worktree with its `node_modules`, 127 MB the runs and the two builds, by `du -sh`; 885,049,586 bytes apparent).

@@ -412,3 +412,27 @@ Any change to Work an idea's server or sheet. The angle as scope and carried rep
 - FQ-3, when Work an idea opens beyond the allowlist.
 - B6b: the angle as starting scope, carried reporting, and the direction field's return.
 - The AssetResearch modal's section as "Explore filtered to one stock" (after the beta).
+
+---
+
+## Amendment A (Nov 22, 2026)
+
+The founder walked the smoke preview on Nov 22, 2026. The desktop story page is approved as built. His rulings on the build report's open questions (SQ-6 to SQ-10), and one layout change (F-1), word for word:
+
+| # | Ruling |
+|---|---|
+| **SQ-6** | **Accepted.** The three small shared chunks stay. No change. |
+| **SQ-7** | **Change the line.** "against its sources" becomes "against its source". |
+| **SQ-8** | **Hide the own-words row at the daily limit**, and say why in its place. |
+| **SQ-9** | **Players read published stories only.** Tighten the rule. |
+| **SQ-10** | **Leave form C as built.** The question on a finished investigation goes to the Work an idea chat as a later server ask. No change. |
+| **F-1** | **Inside a story, the page's tab row is not shown.** Explore, Markets, Rankings and the rest belong to the front page. The story has its own "← Explore" link. |
+
+What they change in this spec, as built in the founder's round (build report §16):
+
+- **§4, the first step:** the line reads "Your agent's first step checks the story against its source." (SQ-7).
+- **§3.3, search:** at the daily limit (the read's `quota`, by the panel's own test), the own-words row is not drawn; in its place one line, "You've used today's {perDay} investigations. Try this one tomorrow." (SQ-8).
+- **§5.2, the stories rule:** a signed-in player may read an `exploreStories` document only when its stored `status` is `'published'`; drafts are not readable; no client write (SQ-9).
+- **§3.1 and §3.4, the page and the reader:** while a story is open, the Search page draws no tab row (its heading stays); "← Explore" brings it back. Every other tab, Explore's home and `'off'` are unchanged (F-1).
+
+A larger redesign of the front page and the phone story page follows as its own design round and its own build.
