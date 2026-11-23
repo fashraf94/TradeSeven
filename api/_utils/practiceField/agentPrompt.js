@@ -99,6 +99,7 @@ function systemText({ desk, identity, thesesOn }) {
   lines.push('## Your answer');
   lines.push(`Call the tool ${AGENT_TOOL_NAME} exactly once, and write nothing else. Give exactly one action for each of your open ideas: hold (change nothing) or exit (settle it early; code sells at the next session's first window). Write a note on the book of at most ${AGENT_NOTE_MAX_CODE_POINTS} characters, and each reason in one line of at most ${AGENT_REASON_MAX_CODE_POINTS}.`);
   lines.push('One idea is one observation. Never use the words "validated", "proven" or "supported" about any idea or result.');
+  lines.push('This is a routine daily check with a small output budget: think briefly, then call the tool.');
   if (thesesOn) {
     lines.push('');
     lines.push('## Saved theses');

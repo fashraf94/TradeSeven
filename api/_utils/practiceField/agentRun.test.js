@@ -285,6 +285,50 @@ describe('review fixes: what is work, and what a drafting call needs', () => {
   });
 });
 
+describe('review A-1, A-2, A-7: what a later fire may never do', () => {
+  it('A-1: an answer that did not validate, its fallback write lost — the next fire does NOT call again', async () => {
+    const ctx = await foundersBook();
+    await windowsAndClose(ctx, D1);
+    const fake = fakeTransport(() => toolResponse({ bookNote: 'n'.repeat(601), actions: [], drafts: [] }));
+    const realTx = ctx.db.runTransaction.bind(ctx.db);
+    let failed = 0;
+    ctx.db.runTransaction = async (fn, o) => { if (failed === 0 && /partPatch\(desk, part\)/.test(String(fn))) { failed += 1; throw new Error('the function was stopped'); } return realTx(fn, o); };
+    await expect(runDeskCheck(ctx.db, ctx.bookRef, { session: D1, desk: 'shadow', transport: fake.transport, clock: () => agentNowOf(D1) })).rejects.toThrow(/stopped/);
+    ctx.db.runTransaction = realTx;
+    const res = await runDeskCheck(ctx.db, ctx.bookRef, { session: D1, desk: 'shadow', transport: fake.transport, clock: () => agentNowOf(D1) });
+    expect(fake.calls).toHaveLength(1);
+    expect(res).toMatchObject({ source: 'code_fallback', reason: 'answer_invalid:bookNote:too_long' });
+  });
+
+  it('A-2: a desk left mid-way (a timeout, its retry deferred) on a book paused meanwhile spends nothing more', async () => {
+    const ctx = await foundersBook();
+    await windowsAndClose(ctx, D1);
+    let t = agentNowOf(D1).getTime();
+    const fake = fakeTransport(() => { t += 200_000; return transportError(); });
+    const first = await runDeskCheck(ctx.db, ctx.bookRef, { session: D1, desk: 'shadow', transport: fake.transport, clock: () => new Date(t), deadlineMs: t + 130_000 });
+    expect(first).toMatchObject({ status: 'deferred', calls: 1 });
+    const book = getBook(ctx.db, ctx.bookId);
+    ctx.db._store.set(`mandates/${ctx.bookId}`, { data: { ...book, drafting: 'paused' }, version: 99 });
+    const res = await runDeskCheck(ctx.db, ctx.bookRef, { session: D1, desk: 'shadow', transport: fake.transport, clock: () => new Date(t) });
+    expect(fake.calls).toHaveLength(1);
+    expect(res).toMatchObject({ source: 'code_fallback', reason: 'spend_stopped:drafting_paused' });
+    expect(getBook(ctx.db, ctx.bookId).spend.calls).toBe(1);
+  });
+
+  it('A-7: an operation already reserved is never called under again (the close row lost the desk\'s record)', async () => {
+    const ctx = await foundersBook();
+    await windowsAndClose(ctx, D1);
+    const fake = fakeTransport(({ request }) => toolResponse(holdAll(request)));
+    await runDeskCheck(ctx.db, ctx.bookRef, { session: D1, desk: 'shadow', transport: fake.transport, clock: () => agentNowOf(D1) });
+    const path = `mandates/${ctx.bookId}/windows/${D1}_close`;
+    const row = ctx.db._get(path);
+    ctx.db._store.set(path, { data: { ...row, agent: { ...row.agent, desks: {} } }, version: 99 });
+    const res = await runDeskCheck(ctx.db, ctx.bookRef, { session: D1, desk: 'shadow', transport: fake.transport, clock: () => agentNowOf(D1) });
+    expect(fake.calls).toHaveLength(1);
+    expect(res).toMatchObject({ source: 'code_fallback', reason: 'attempt_already_reserved' });
+  });
+});
+
 describe('a crash after the answer was stored: the replay acts on the stored answer, with no second call', () => {
   it('the final write fails; the next fire finds the answer on the close row, admits its draft once and writes the part', async () => {
     const ctx = await foundersBook();

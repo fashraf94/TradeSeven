@@ -266,6 +266,12 @@ export async function runDeskCheck(db, bookRef, { session, desk, transport = sea
   let callsThisFire = 0;
 
   if (!answer) {
+    // Review A-2: a book paused (or winding down) after an earlier fire left this desk mid-way spends nothing more.
+    if (work.stoppedBy) return fallback(`spend_stopped:${work.stoppedBy}`, { attempts, calledModel: attempts.length > 0 });
+    // Review A-1: what an attempt SETTLED decides, whether or not the fallback written after it survived. An answer that did
+    // not validate, a call refused outright, or a call cut short by a crash is never followed by another call.
+    const final = attempts.find((a) => a.state === 'settled' && (a.outcome === 'invalid_answer' || a.outcome === 'interrupted' || (a.outcome === 'transport_error' && a.retryable === false)));
+    if (final) return fallback(final.outcome === 'invalid_answer' ? `answer_invalid:${final.invalidReason ?? 'unknown'}` : (final.outcome === 'interrupted' ? 'interrupted_call' : 'transport_refused'), { attempts, calledModel: true });
     if (attempts.length >= AGENT_MAX_ATTEMPTS) return fallback('attempts_spent', { attempts, calledModel: attempts.length > 0 });
     // The prompt's inputs, each bounded and read-only.
     const epochSnap = await epochRefOf(bookRef, book).get();
@@ -339,6 +345,8 @@ export async function runDeskCheck(db, bookRef, { session, desk, transport = sea
         return res;
       });
       if (!reserved.ok) return fallback(`spend_refused:${reserved.code}`, { attempts, calledModel: attempts.length > 0, manifest });
+      // Review A-7: an operation already reserved (or settled) is never called under again — the close row lost its record.
+      if (reserved.idempotentReplay) return fallback('attempt_already_reserved', { attempts, calledModel: true, manifest });
       attempts.push({ n, opId, state: 'reserved', reservedAt, maxChargeUsd: reserved.maxChargeUsd, inputHash: manifest.inputHash, outcome: null });
 
       let response = null;

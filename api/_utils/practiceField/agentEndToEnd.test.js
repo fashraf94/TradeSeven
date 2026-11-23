@@ -234,7 +234,7 @@ describe('the saved theses: the same history with their sub-switch on, and off',
 describe('the run is reproducible byte for byte', () => {
   // The pinned evidence (build B2's first pin). A change here is a change to what the agent's run records: re-pin it only
   // with a reviewed change, leaf-compared, and carry the figures into the build report.
-  const EXPECTED_AGENT_DUMP = { sha256: 'c596e17bdfc209a41671565cf78ee55a21977bd7e7b1ee24e6cf8a3c534ff56e', bytes: 828454 };
+  const EXPECTED_AGENT_DUMP = { sha256: 'd43681cb11cca117f53a9a17be0c591a3656986117205d01ae66ede7a5c155c6', bytes: 828454 };
   it('the final store of the theses-off run, dumped and pinned', { timeout: 60_000 }, async () => {
     const { ctx } = await runBook({ theses: false });
     const dump = dumpStore(ctx.db);
