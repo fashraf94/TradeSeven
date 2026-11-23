@@ -58,7 +58,8 @@ import {
 import { extractAgentToolInput, validateAgentAnswer } from './agentTool.js';
 import { assembleAgentRequest, archetypeIdentityOf, shadowIdentity } from './agentPrompt.js';
 import { candidatesOf, namesTakenByBook, readPriorNotes, readSavedTheses } from './agentSources.js';
-import { draftSlots } from './agentDrafting.js';
+import { draftSlots, draftOpIdOf } from './agentDrafting.js';
+import { ideaIdFor } from './admission.js';
 import { exitIdeaByManager } from './managerExit.js';
 import { epochRefOf } from './ideaBook.js';
 import { windowsRefOf } from './windowLedger.js';
@@ -372,7 +373,7 @@ export async function runDeskCheck(db, bookRef, { session, desk, transport = sea
   }
   const after = (await bookRef.get()).data();
   const drafted = await draftFromAnswer(db, bookRef, {
-    book: after, ideas: nowIdeas, session, desk, answer, slotsToDraft: deskWorkOf(after, nowIdeas, desk, { spentSlots }).emptySlots, thesisRefs, clock,
+    book: after, ideas: nowIdeas, session, desk, answer, slotsToDraft: slotsToDraftNow(after, nowIdeas, { bookId: bookRef.id, session, desk, answer, spentSlots }), thesisRefs, clock,
   });
   // What the desk's attempts were charged, summed in whole nano-dollars (each charge is one, as spend.js wrote it).
   const chargedNanos = attempts.reduce((sum, at) => sum + (Number.isFinite(at.chargedUsd) ? incurredChargeNanos(at.chargedUsd) : 0), 0);
@@ -385,6 +386,20 @@ export async function runDeskCheck(db, bookRef, { session, desk, transport = sea
     attempts, manifest: manifest ? { ...manifest, ...tokens, chargedUsd: chargedNanos / 1e9 } : null, thesisRefs, thesesSkipped,
   });
   return { desk, status: 'done', calls: callsThisFire, source: AGENT_NOTE_SOURCE.MODEL };
+}
+
+/**
+ * The slots a desk drafts from its answer now: its empty slots (refill attempt unspent), and — on a REPLAY after a crash
+ * between an admission and the part's write — any of its slots already held by THIS session's own draft (the idea its
+ * deterministic operation made), so the replay records that draft as admitted (agentDrafting.js finds the idea by its id)
+ * instead of refusing it for a slot that is no longer empty. Pure.
+ */
+export function slotsToDraftNow(book, ideas, { bookId, session, desk, answer, spentSlots }) {
+  const empty = deskWorkOf(book, ideas, desk, { spentSlots }).emptySlots;
+  const ownToday = (answer?.drafts || [])
+    .filter((d) => DESKS[desk].slots.includes(d.slot) && (book.slots?.[d.slot] ?? null) === ideaIdFor(bookId, draftOpIdOf({ session, desk, slot: d.slot, index: d.index })))
+    .map((d) => d.slot);
+  return [...new Set([...empty, ...ownToday])];
 }
 
 /** The drafting of a desk's empty slots from its stored answer (agentDrafting.js), with this close's candidates. */

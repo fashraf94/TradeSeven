@@ -107,6 +107,17 @@ export async function draftSlots(db, { desk, bookId, session, drafts, slotsToDra
     if (!Object.hasOwn(refill, d.slot)) { refuse([{ code: 'slot_not_empty', slot: d.slot }]); continue; }
     if (waiting.has(d.slot)) { considered.push({ ...entry, outcome: DRAFT_OUTCOME.WAITING, refusals: [] }); continue; }
     if (done.has(d.slot)) { considered.push({ ...entry, outcome: DRAFT_OUTCOME.NOT_CHOSEN, refusals: [] }); continue; }
+    const opId = draftOpIdOf({ session, desk, slot: d.slot, index: d.index });
+    const ideaId = ideaIdFor(bookId, opId);
+    // A REPLAY finds the idea it already made — admitted — before anything else is judged: its names are the book's now
+    // (no longer candidates) and its slot is no longer empty, and neither is a reason to refuse what was admitted.
+    const existing = await db.collection('mandates').doc(bookId).collection('ideas').doc(ideaId).get();
+    if (existing.exists) {
+      considered.push({ ...entry, outcome: DRAFT_OUTCOME.ADMITTED, refusals: [], ideaId, capitalUsd: existing.data()?.contract?.capitalUsd ?? null, idempotentReplay: true });
+      refill[d.slot] = { attempted: true, spent: true, admittedIdeaId: ideaId, waitingOn: null };
+      done.add(d.slot);
+      continue;
+    }
     // The source.
     let source;
     if (d.source.kind === 'saved_thesis') {
@@ -118,16 +129,6 @@ export async function draftSlots(db, { desk, bookId, session, drafts, slotsToDra
     const notCandidates = d.names.filter((n) => !candidateSymbols.has(normSymbol(n)));
     if (notCandidates.length > 0) { refuse(notCandidates.map((symbol) => ({ code: 'name_not_a_candidate', symbol }))); continue; }
 
-    const opId = draftOpIdOf({ session, desk, slot: d.slot, index: d.index });
-    const ideaId = ideaIdFor(bookId, opId);
-    // A replay finds the idea it already made: admitted, before any probe.
-    const existing = await db.collection('mandates').doc(bookId).collection('ideas').doc(ideaId).get();
-    if (existing.exists) {
-      considered.push({ ...entry, outcome: DRAFT_OUTCOME.ADMITTED, refusals: [], ideaId, capitalUsd: existing.data()?.contract?.capitalUsd ?? null, idempotentReplay: true });
-      refill[d.slot] = { attempted: true, spent: true, admittedIdeaId: ideaId, waitingOn: null };
-      done.add(d.slot);
-      continue;
-    }
     // Sized by code: the probe reads the permitted maximum at this instant, then admission runs with exactly it — at the
     // SAME instant, so both measure the same mark set.
     const nowIso = clock().toISOString();

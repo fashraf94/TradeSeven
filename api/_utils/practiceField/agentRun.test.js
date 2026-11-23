@@ -159,6 +159,25 @@ describe('transport errors: one retry, reserved too', () => {
     expect(deskPartsOf(ctx.db, ctx.bookId, D1).shadow).toMatchObject({ thesesSkipped: [{ listId: null, reason: 'theses_read_failed' }] });
   });
 
+  it('a saved card that fails the reply\'s requirements is SKIPPED, with why; a whole one reaches the prompt as T1', async () => {
+    restoreAgent();
+    restoreAgent = setPracticeFieldAgentForTests({ agent: true, theses: true });
+    const ctx = await foundersBook();
+    await windowsAndClose(ctx, D1);
+    const card = (listId, savedAt) => ({ schemaVersion: 1, watchlistId: listId, hypothesisVersion: 1, sessionId: 's', researchWorkId: `rw_${listId}`, savedAt, statement: `Thesis of ${listId}.`, names: { value: ['AAPL'] }, why: { reasons: [] }, wrongIf: { text: 'x', priceLines: [] }, timeFrame: { label: 'months' }, findingIds: ['f1'] });
+    const list = (listId, savedAt, extra = {}) => ({ watchlistId: listId, userId: ctx.uid, status: 'committed', researchWorkId: `rw_${listId}`, attribution: { agentId: 'a', at: savedAt }, thesisCard: card(listId, savedAt), ...extra });
+    for (const [id, at, extra] of [['wl_ok', '2026-11-10T12:00:00.000Z', {}], ['wl_nostamp', '2026-11-11T12:00:00.000Z', { attribution: null }], ['wl_nofinding', '2026-11-12T12:00:00.000Z', {}]]) {
+      ctx.db._store.set(`watchlists/${id}`, { data: list(id, at, extra), version: 1 });
+      ctx.db._store.set(`researchWork/rw_${id}`, { data: { findings: id === 'wl_nofinding' ? [] : [{ findingId: 'f1', fact: 'a fact', source: { label: 's' } }] }, version: 1 });
+    }
+    const { part, calls } = await shadowAfter(({ request }) => toolResponse(holdAll(request)), { ctx });
+    expect(part.thesesSkipped).toEqual([{ listId: 'wl_nofinding', reason: 'finding_ids_unresolved' }, { listId: 'wl_nostamp', reason: 'provenance_stamp_missing' }]);
+    const msg = calls[0].request.content.messages[0].content;
+    expect(msg.match(/<saved_thesis /g)).toHaveLength(1);
+    expect(msg).toContain('Thesis of wl_ok.');
+    expect(part.thesisRefs).toEqual({ T1: 'wl_ok' });
+  });
+
   it('a 400 (the request itself refused) is NOT retried: one call, the code fallback, the status recorded', async () => {
     const err400 = Object.assign(transportError('invalid_request_error'), { status: 400 });
     const { res, calls, part } = await shadowAfter(() => err400);
@@ -231,6 +250,31 @@ describe('a replay of the same session never calls twice', () => {
     expect(res).toMatchObject({ status: 'done', source: 'code_fallback', reason: 'interrupted_call' });
     expect(deskPartsOf(ctx.db, ctx.bookId, D1).shadow.attempts).toMatchObject([{ n: 1, state: 'settled', outcome: 'interrupted', unpriced: true, chargedUsd: 0.1625 }]);
     expect(getBook(ctx.db, ctx.bookId).spend).toMatchObject({ reservedUsd: 0.1625, settledUsd: 0.1625 });
+  });
+});
+
+describe('a crash after the answer was stored: the replay acts on the stored answer, with no second call', () => {
+  it('the final write fails; the next fire finds the answer on the close row, admits its draft once and writes the part', async () => {
+    const ctx = await foundersBook();
+    await windowsAndClose(ctx, D1);
+    const fake = fakeTransport(({ request }) => toolResponse(holdAll(request, { drafts: [draft({ slot: 'long', names: ['MSFT'] })] })));
+    const realTx = ctx.db.runTransaction.bind(ctx.db);
+    const isFinalWrite = (fn) => /writePart|partPatch\(desk, part\)/.test(String(fn));
+    let failed = 0;
+    // The reservation (1), the settlement with the answer (2), the admission's probe and admission, then the part's write.
+    ctx.db.runTransaction = async (fn, o) => { if (failed === 0 && isFinalWrite(fn)) { failed += 1; throw new Error('the function was stopped'); } return realTx(fn, o); };
+    await expect(runDeskCheck(ctx.db, ctx.bookRef, { session: D1, desk: 'shadow', transport: fake.transport, clock: () => agentNowOf(D1) })).rejects.toThrow(/stopped/);
+    ctx.db.runTransaction = realTx;
+    const stored = deskPartsOf(ctx.db, ctx.bookId, D1).shadow;
+    expect(stored).toMatchObject({ status: 'in_progress', answer: { drafts: [{ slot: 'long', names: ['MSFT'] }] } });
+    const longId = getBook(ctx.db, ctx.bookId).slots.long;
+    expect(longId).toBeTruthy(); // admitted before the crash
+    const res = await runDeskCheck(ctx.db, ctx.bookRef, { session: D1, desk: 'shadow', transport: fake.transport, clock: () => agentNowOf(D1) });
+    expect(res).toMatchObject({ status: 'done', source: 'model', calls: 0 });
+    expect(fake.calls).toHaveLength(1);
+    const part = deskPartsOf(ctx.db, ctx.bookId, D1).shadow;
+    expect(part.considered).toMatchObject([{ outcome: 'admitted', ideaId: longId, idempotentReplay: true }]);
+    expect(getBook(ctx.db, ctx.bookId).openIdeaIds.filter((id) => id === longId)).toHaveLength(1);
   });
 });
 

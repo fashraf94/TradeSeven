@@ -154,6 +154,16 @@ describe('the tool and its validation (§1, B11)', () => {
       expect(tool.input_schema.properties.drafts.items.properties.slot.enum).toEqual(desk === 'shadow' ? ['medium', 'long'] : ['short']);
     }
   });
+  it('the contract freezes the drafting desk only when the draft names one, and refuses a desk that is not the slot\'s (B2-7)', async () => {
+    const { normalizeIdeaContract } = await import('./contract.js');
+    const { contractOf } = await import('./__testsupport__/fixtures.js');
+    const base = contractOf({ slot: 'long', names: ['AAPL'] });
+    expect(normalizeIdeaContract(base).contract).not.toHaveProperty('desk'); // a founder's contract: as before
+    expect(normalizeIdeaContract({ ...base, desk: 'shadow' }).contract.desk).toBe('shadow');
+    expect(normalizeIdeaContract({ ...base, desk: 'archetype' }).refusals).toEqual([{ code: 'desk_slot_mismatch', desk: 'archetype', slot: 'long' }]);
+    expect(normalizeIdeaContract({ ...base, desk: 'film_room' }).refusals).toEqual([{ code: 'desk_invalid' }]);
+  });
+
   it('desks: by slot, and a frozen desk wins over the slot\'s', () => {
     expect([deskOfSlot('short'), deskOfSlot('medium'), deskOfSlot('long'), deskOfSlot('x')]).toEqual(['archetype', 'shadow', 'shadow', null]);
     expect(deskOfIdea({ contract: { slot: 'medium' } })).toBe('shadow');
