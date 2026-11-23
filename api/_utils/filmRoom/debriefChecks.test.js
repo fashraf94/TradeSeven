@@ -5,7 +5,7 @@
 // production lists (a word dropped from a list must fail a row). A failing line is DROPPED, never repaired.
 
 import { describe, it, expect } from 'vitest';
-import { checkDebriefLines, CHECK_REASONS, NUMBER_WORDS, DIRECTORY_SYMBOLS, MAX_SENTENCE_ENDS } from './debriefChecks.js';
+import { checkDebriefLines, CHECK_REASONS, NUMBER_WORDS, DIRECTORY_SYMBOLS, MAX_SENTENCE_ENDS, ONE_FOLLOWERS, CLAIM_BRIDGE, DECISION_VERBS, MY_DECISIONS } from './debriefChecks.js';
 import { DEBRIEF_LINE_MAX } from './debriefPrompt.js';
 import { FORBIDDEN_WORDS } from '../../../src/screens/filmRoomV2/filmRoomCopy.js';
 
@@ -407,5 +407,24 @@ describe('the fix round\'s refuter round, the checks', () => {
   });
   it('the third reading folds more apostrophe look-alikes: ‛ ‵ ´', () => {
     for (const t of ['I‛ve sold MSFT.', 'I‵ve sold MSFT.', 'I´ve sold MSFT.']) expect(verdict(t), t).toBe('maker');
+  });
+});
+
+describe('the tests\' lens, check 8\'s window and the pinned lists', () => {
+  it('the window is exactly three words: "not" three back is a denial; four back is not; "no" is a negator', () => {
+    expect(verdict('Not the rule I sold MSFT.')).toBeNull();          // "not" three words before "I"
+    expect(verdict('Not at the rule I sold MSFT.')).toBe('maker');      // four words before: outside the window
+    expect(verdict('No doubt I sold MSFT.')).toBeNull();                // "no" two words before — DF-5's letter
+    expect(verdict('No longer my call.')).toBeNull();
+    expect(verdict('Longer than my call.')).toBe('maker');              // the control: no negator
+  });
+  it('ONE_FOLLOWERS, CLAIM_BRIDGE, DECISION_VERBS and MY_DECISIONS are pinned whole (DF-8\'s list; DF-5\'s verbs and nouns)', () => {
+    expect(ONE_FOLLOWERS).toEqual(['was', "wasn't", 'is', "isn't", 'has', "hasn't", 'had', "hadn't", 'did', "didn't", 'went', 'came', 'moved', 'stayed', 'held', 'got', 'felt', 'looked']);
+    expect(CLAIM_BRIDGE).toEqual(['am', 'was', 'have', 'has', 'had', 'been', 'be', 'being', 'will', 'shall', 'would', 'did', 'do', 'just', 'then', 'also', 'already', 'finally', 'myself', 'alone', 'now', 'still', 'later', 'soon', 'even', 'instead', 'too']);
+    expect(Object.keys(DECISION_VERBS)).toEqual(['make', 'choose', 'decide', 'pick', 'sell', 'buy', 'swap', 'move', 'rotate', 'exit', 'trade']);
+    expect(Object.values(DECISION_VERBS).flat()).toHaveLength(45);
+    expect(MY_DECISIONS).toEqual(['call', 'choice', 'decision', 'pick', 'move', 'trade']);
+    for (const t of ['That one is gone.', "That one hasn't moved.", 'That one had gone.', "That one didn't move."]) expect(verdict(t, 's2'), t).toBeNull();
+    for (const t of ['I makes it.', 'I chooses CRWD.', 'I am choosing CRWD.', 'I decides it.', 'I am deciding.', 'I picks CRWD.', 'I am picking CRWD.', 'I sells MSFT.', 'I buys CRWD.', 'I am buying CRWD.', 'I swaps MSFT.', 'I am swapping MSFT.', 'I move MSFT out.', 'I moves MSFT out.', 'I am moving MSFT out.', 'I rotate out.', 'I rotates out.', 'I am rotating out.', 'I exit MSFT.', 'I exits MSFT.', 'I am exiting MSFT.', 'I trade MSFT away.', 'I trades MSFT away.']) expect(verdict(t), t).toBe('maker');
   });
 });

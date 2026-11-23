@@ -332,7 +332,9 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
     const id = setTimeout(() => setNotYetLapsed(notYetUntil), delay);
     return () => clearTimeout(id);
   }, [notYetUntil, notYetLapsed, now, openedAt]);
-  const notYetShown = notYetUntil !== null && notYetLapsed !== notYetUntil && debriefNotYet(tape?.writtenAt, tape?.etDate, now);
+  // judged at THIS render's instant — the mount's plus the time the page has been open (the tests' lens, R-3): a read
+  // landing after the cutoff renders no line at all, so none enters the page even for the layout effect to remove
+  const notYetShown = notYetUntil !== null && notYetLapsed !== notYetUntil && debriefNotYet(tape?.writtenAt, tape?.etDate, now + (Date.now() - openedAt));
   // the review's DR-7 / DR-2, as Amendment B DB-4 makes it (Astra's F4): A GESTURE IN PROGRESS KEEPS THE TAPE. While
   // the front's conditions are still unknown — the verdict on its way, or the day still being read — a pointer-down
   // inside the tape, a key-down inside it, or a focus move onto one of its controls keeps the tape for this visit, from

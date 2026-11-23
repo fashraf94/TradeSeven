@@ -132,6 +132,9 @@ describe('F3 — every opaque reference the tape holds is a known id (DF-3)', ()
     ].filter((v) => typeof v === 'string' && v);
     expect(SEP.tape.actions).toHaveLength(3);
     expect(keys.filter((k) => !holdsIdentifier(k, ids))).toEqual([]);
+    // the tests' lens: Sep 23's tick and evaluation ids embed the battle id, so `holdsIdentifier` would know them through
+    // it — each reference must be IN the inventory itself
+    expect(keys.filter((k) => !ids.includes(k))).toEqual([]);
   });
   it('a quotation that holds a swap\'s key is left out whole', () => {
     const tape = clone(SEP.tape);

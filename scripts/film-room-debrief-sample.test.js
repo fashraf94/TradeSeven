@@ -154,3 +154,25 @@ describe('the days and the arguments', () => {
     expect(argsOf(['--days', '99'])).toEqual({ ownerId: null, days: 3 });
   });
 });
+
+describe('the tests\' lens: the sample pack binds the tape as the pass does (Amendment F DF-1) and hands the one inventory to check 6 (DF-3)', () => {
+  const tapeKey = () => `agentBattles/${BATTLE_ID}/tape/${D}`;
+  it('DF-1: a tape naming another battle, or another day, is never sent — counted `ownerMismatch`', async () => {
+    for (const patch of [{ battleId: 'b-elsewhere' }, { etDate: '2026-09-22' }]) {
+      const t = world();
+      t.store.set(tapeKey(), { ...t.store.get(tapeKey()), ...patch });
+      const f = fakeCall();
+      const { report } = await runSample({ db: t.db, ownerId: OWNER, days: 1, nowMs: AFTER, call: f.call, resolveAttribution, write: false, log: () => {} });
+      expect([f.asked.length, report.ownerMismatch], JSON.stringify(patch)).toEqual([0, 1]);
+    }
+  });
+  it('DF-3: a run id only the tape holds reaches check 6 — the line naming it is dropped `identifier`', async () => {
+    const t = world();
+    const tape = t.store.get(tapeKey());
+    tape.checks[0].runId = 'nightrun-alpha';
+    t.store.set(tapeKey(), tape);
+    const call = async (req) => ({ ok: true, output: { lines: [{ swap: 's2', text: 'Filed under nightrun-alpha tonight.' }] }, usage: { input: 1, output: 1 }, model: req.model, attempts: 1, costUsd: 0.001, stopReason: 'end_turn' });
+    const { report } = await runSample({ db: t.db, ownerId: OWNER, days: 1, nowMs: AFTER, call, models: ['claude-sonnet-5-5'], resolveAttribution, write: false, log: () => {} });
+    expect(report.days[0].swaps[1].models['claude-sonnet-5-5']).toEqual({ dropped: 'identifier' });
+  });
+});

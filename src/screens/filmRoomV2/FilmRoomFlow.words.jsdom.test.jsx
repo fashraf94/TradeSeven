@@ -367,7 +367,13 @@ describe('the fix round\'s review, the record lens (R-2, R-3, R-5)', () => {
       const plain = r.readDebrief;
       r.readDebrief = (...a) => new Promise((res) => { release = () => res(plain(...a)); });
       await open({ readers: r, nowMs: cutoff - 30_000 });
-      const mo = new MutationObserver(() => { if (notYet().length) seen.push('line'); });
+      // every node ever ADDED is recorded (the tests' lens: the live page read after act's flush could never see a line
+      // added and removed in one pass)
+      const NOT_YET = '[data-flow-debrief-notyet]';
+      const mo = new MutationObserver((recs) => {
+        for (const rec of recs) for (const n of rec.addedNodes) if (n.nodeType === 1 && (n.matches(NOT_YET) || n.querySelector(NOT_YET))) seen.push('added');
+        if (notYet().length) seen.push('line');
+      });
       mo.observe(m.container, { childList: true, subtree: true });
       await act(async () => { vi.advanceTimersByTime(31_000); });
       await act(async () => { release(); });
@@ -382,6 +388,21 @@ describe('the fix round\'s review, the record lens (R-2, R-3, R-5)', () => {
     const rec = recordOf([LINE_AGENT]);
     delete rec.battleId;
     await open({ readers: wordsReaders(rec, { [D]: tape }) });
+    expect(words()).toHaveLength(0);
+  });
+  it('the tests\' lens (F08, F12): a record and a tape that both lack the owner, or both lack the day, show no line', async () => {
+    const noOwner = clone(sep23Tape);
+    delete noOwner.ownerId;
+    const rec = recordOf([LINE_AGENT]);
+    delete rec.ownerId;
+    await open({ readers: wordsReaders(rec, { [D]: noOwner }) });
+    expect(words()).toHaveLength(0);
+    m.teardown(); m.setup();
+    const noDay = recordOf([LINE_AGENT]);
+    delete noDay.etDate;
+    const tapeNoDay = clone(sep23Tape);
+    delete tapeNoDay.etDate;
+    await open({ readers: wordsReaders(noDay, { [D]: tapeNoDay }) });
     expect(words()).toHaveLength(0);
   });
 });

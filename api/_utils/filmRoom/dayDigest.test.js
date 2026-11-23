@@ -611,3 +611,27 @@ describe('the fix round\'s refuter round, DF-2 and DF-9', () => {
     expect(buildDayDigest({ tape, battle: SEP.battle }).digest.swaps[1].before).toBeUndefined();
   });
 });
+
+describe('the tests\' lens, DF-2 and DF-9', () => {
+  const echoOf = (field, d) => {
+    const tape = clone(SEP.tape);
+    for (const x of tape.directives) for (const k of ['playerText', 'canonicalText', 'retainedDirectiveText']) x[k] = null;
+    tape.directives[d][field] = 'Rotate hard into memory names today';
+    tape.rationale.find((x) => x.tickSeq === 16).rationale = 'PLTR held; rotate hard into memory names today, as planned.';
+    return buildDayDigest({ tape, battle: SEP.battle }).digest.swaps[1].atSwap.rationale;
+  };
+  it('each of the directive\'s three fields is read on its own — a distinct sentinel in each leaves the echo out', () => {
+    for (const field of ['playerText', 'canonicalText', 'retainedDirectiveText']) expect(echoOf(field, 1), field).toBeUndefined();
+    const tape = clone(SEP.tape);
+    tape.directives[1].canonicalText = 'CANONSENTINEL';
+    tape.directives[1].retainedDirectiveText = 'RETAINEDSENTINEL';
+    expect(playerTextsOf(tape)).toEqual(expect.arrayContaining(['CANONSENTINEL', 'RETAINEDSENTINEL']));
+  });
+  it('DF-9: an entry-only worded check with NO strict instant at all may lie between — no `before`', () => {
+    const tape = clone(SEP.tape);
+    tape.checks.push({ key: 'eval:untimed', rowSource: 'entry', tickSeq: null, at: null, evalId: 'eval-untimed' });
+    tape.rationale.push({ key: 'r:untimed', evalId: 'eval-untimed', tickSeq: null, at: null, rationale: 'An unplaceable evaluation.', hypothesis: null });
+    const s2 = buildDayDigest({ tape, battle: SEP.battle }).digest.swaps[1];
+    expect([s2.before, s2.atSwap.at]).toEqual([undefined, '2:00 PM']);
+  });
+});
