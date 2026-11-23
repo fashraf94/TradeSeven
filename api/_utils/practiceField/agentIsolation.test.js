@@ -59,12 +59,14 @@ describe('with the agent off, the pass reads nothing and calls nothing', () => {
 });
 
 describe('the close snapshot\'s inputs (§2: a sweep.js build-input change, gated)', () => {
-  const emptyBook = { kind: 'idea_book', status: 'active', drafting: 'on', windDown: null, slots: { short: null, medium: 'idea_x', long: null } };
+  const emptyBook = { kind: 'idea_book', bookId: 'pf_b', status: 'active', drafting: 'on', windDown: null, slots: { short: null, medium: 'idea_x', long: null } };
   const fullBook = { ...emptyBook, slots: { short: 'a', medium: 'b', long: 'c' } };
   const inputs = (db, over) => practiceFieldBuildInputs(db, { ideaHeldTickers: ['JPM'], quarterlyActive: false, ideaBookIds: [], ...over });
+  /** A store whose full book holds three ideas of the given statuses. */
+  const withIdeas = (statuses) => makeMandateFakeDb(Object.fromEntries(['a', 'b', 'c'].map((id, i) => [`mandates/pf_b/ideas/${id}`, { ideaId: id, status: statuses[i] }])));
 
   it('UNCHANGED with the agent off — on the close fire too — on any slot tick, and with no book that may draft', async () => {
-    const db = makeMandateFakeDb();
+    const db = withIdeas(['holding', 'holding', 'holding']);
     set('on', { agent: false });
     const base = await inputs(db, {});
     expect(base.tick).toMatchObject({ candidateUniverse: [], minCandidateCapacity: 0 });
@@ -76,6 +78,18 @@ describe('the close snapshot\'s inputs (§2: a sweep.js build-input change, gate
     expect(JSON.stringify(await inputs(db, { closeTick: true, ideaBooks: [{ ...emptyBook, status: 'draining' }] }))).toBe(JSON.stringify(base));
     expect(ideaBookMayDraft(emptyBook)).toBe(true);
     expect(ideaBookMayDraft({ ...emptyBook, windDown: { requestedAt: 'x' } })).toBe(false);
+  });
+
+  it('review B-1: a full book whose slot may FREE at this close (an entry timing out; an idea resolving) keeps the universe too', async () => {
+    set('on', { agent: true });
+    const base = await inputs(withIdeas(['holding', 'holding', 'holding']), { closeTick: true, ideaBooks: [fullBook] });
+    expect(base.tick).toMatchObject({ candidateUniverse: [] });
+    for (const status of ['accepted', 'line_hit_exit_pending', 'settled']) {
+      const out = await inputs(withIdeas(['holding', status, 'holding']), { closeTick: true, ideaBooks: [fullBook] });
+      expect(out.tick, status).not.toHaveProperty('candidateUniverse');
+    }
+    // An idea that cannot be read counts as one that may free: the universe is kept (one more quote call, never one fewer).
+    expect((await inputs(makeMandateFakeDb(), { closeTick: true, ideaBooks: [fullBook] })).tick).not.toHaveProperty('candidateUniverse');
   });
 
   it('a DRAFTING close keeps the default candidate universe in its snapshot — its quotes only: the daily build is unchanged', async () => {

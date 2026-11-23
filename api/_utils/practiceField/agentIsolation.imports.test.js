@@ -14,10 +14,15 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { importSpecifiersOf } from '../filmRoom/__fixtures__/jsSource.js';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 
-/** The local-import closure of `entry` (repo-relative, posix), stopping at (but including) `stops`. Comments are not imports. */
+/**
+ * The local-import closure of `entry` (repo-relative, posix), stopping at (but including) `stops`. Imports are read by the
+ * repo's own parser (filmRoom/__fixtures__/jsSource.js — every static, dynamic and re-export specifier), so no comment
+ * can hide one (review C-3: a `//` line holding `/*` fooled a regex stripper).
+ */
 function closure(entry, stops = []) {
   const seen = new Set();
   const stack = [entry];
@@ -26,9 +31,9 @@ function closure(entry, stops = []) {
     if (seen.has(rel)) continue;
     seen.add(rel);
     if (stops.includes(rel) || !rel.startsWith('api/')) continue;
-    const src = readFileSync(path.join(REPO, rel), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
-    for (const m of src.matchAll(/(?:from|import)\s*\(?\s*['"](\.[^'"]+)['"]/g)) {
-      let target = path.posix.normalize(path.posix.join(path.posix.dirname(rel), m[1]));
+    for (const spec of importSpecifiersOf(readFileSync(path.join(REPO, rel), 'utf8'), rel)) {
+      if (typeof spec !== 'string' || !spec.startsWith('.')) continue;
+      let target = path.posix.normalize(path.posix.join(path.posix.dirname(rel), spec));
       if (!target.endsWith('.js') && !target.endsWith('.mjs')) target += '.js';
       if (existsSync(path.join(REPO, target)) && !target.includes('.test.')) stack.push(target);
     }
@@ -41,9 +46,13 @@ const DEPLOYED_ENTRIES = [
   'api/agent/decide.js', 'api/_utils/agentPromptAssembly.js', 'api/_utils/agentEvalPromptAssembly.js',
   'api/_utils/agentConsolidationApply.js', 'api/_utils/agentConsolidationPrompt.js', 'api/_utils/memoryLessons.js',
   'api/_utils/agentReflectionUtils.js', 'api/_utils/reflectionOutcome.js', 'api/agent/chat.js',
+  // review C-1, C-2: the deployed agent's own crons (its eval, its batch review, its reflections) and the renderer of the
+  // player's directive and leans into both fenced assemblies.
+  'api/cron/agent-evaluate.js', 'api/cron/agent-batch-review.js', 'api/cron/process-pending-reflections.js',
+  'api/_utils/controlPromptRenderer.js', 'api/_utils/leanOverrides.js',
 ];
 /** What the idea book's agent may never reach: the deployed agent's prompt, memory, lessons, reflection, consolidation, chat, Huddle. */
-const FORBIDDEN = /^api\/(agent\/|_utils\/(agentPromptAssembly|agentEvalPromptAssembly|agentConsolidation[A-Za-z]*|memoryLessons|agentReflectionUtils|reflectionOutcome|agentMemory[A-Za-z]*|wire[A-Za-z]*|huddle\/))/;
+const FORBIDDEN = /^api\/(agent\/|cron\/(agent-|process-pending-reflections)|_utils\/(agentPromptAssembly|agentEvalPromptAssembly|agentConsolidation[A-Za-z]*|memoryLessons|agentReflectionUtils|reflectionOutcome|agentMemory[A-Za-z]*|wire[A-Za-z]*|controlPromptRenderer|leanOverrides|voiceLayer[A-Za-z]*|huddle\/))/;
 
 describe('rule 5 — the idea book\'s agent and the deployed trading agent never meet', () => {
   it('every deployed-agent entry point exists, and its closure reaches no Practice Field module', () => {

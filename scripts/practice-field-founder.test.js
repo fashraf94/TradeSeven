@@ -583,6 +583,10 @@ describe('status — read-only', () => {
       expect(text.out).toMatch(/ {4}draft 0 {5}long {2}NVDA {2}\(price_list\) {2}ADMITTED idea_[0-9a-f]+ at \$[\d,.]+/);
       expect(text.out).toContain('    draft 1     medium  TSLA  (price_list)  refused: name_not_a_candidate');
       expect(text.out).toMatch(/spend {11}2026-11: \$[\d.]+ charged, \$[\d.]+ committed of \$3\.00 {3}2 call\(s\)/);
+      // Review C-4: with the agent OFF in this checkout, status reads nothing of it — not the close row's agent block.
+      restoreAgent();
+      const off = await json(db, ['status', '--uid', UID], { nowIso: evening });
+      expect(off.body.agent).toEqual({ enabled: false, thesesEnabled: false, session: DAYS.d1, desks: null });
     } finally { restoreAgent(); }
   });
 

@@ -50,7 +50,8 @@ import { IDEA_BOOK_KIND, isIdeaBook } from '../mandateBookKind.js';
 import { priceUsage } from '../modelPriceTable.js';
 import { reserveSpend, settleSpend, incurredChargeNanos } from './spend.js';
 import { practiceFieldAgentOn, practiceFieldAgentThesesOn } from './mode.js';
-import { OPEN_IDEA_STATUSES } from './constants.js';
+import { OPEN_IDEA_STATUSES, IDEA_STATUS } from './constants.js';
+import { pendingSaleOf } from './settlement.js';
 import {
   PRACTICE_FIELD_AGENT_MODEL, AGENT_MAX_OUTPUT_TOKENS, AGENT_MAX_INPUT_TOKENS, AGENT_CALL_TIMEOUT_MS, AGENT_MAX_ATTEMPTS,
   CODE_FALLBACK_NOTE, AGENT_NOTE_SOURCE, DESKS, deskOfIdea,
@@ -122,9 +123,19 @@ export function bookSpendStop(book) {
   return null;
 }
 
-/** What a desk owns on the book right now. Pure. A book whose spend is stopped gives no desk any work. */
+/**
+ * Can the desk act on this idea at all? Only one `holding`, with no sale pending on any holding and no result: an idea not
+ * yet entered, one selling at a line, or one settling would ignore an exit (§4), so it is context, never work.
+ */
+export const actionableIdea = (i) => i?.status === IDEA_STATUS.HOLDING && i.result == null
+  && !Object.values(i.ledger?.holdings || {}).some((h) => pendingSaleOf(h) != null);
+
+/**
+ * What a desk owns on the book right now. Pure. Its WORK is an idea it can act on (actionableIdea) or an empty slot it may
+ * draft; its other open ideas are shown as context. A book whose spend is stopped gives no desk any work.
+ */
 export function deskWorkOf(book, ideas, desk, { spentSlots = new Set() } = {}) {
-  const deskIdeas = ideas.filter((i) => OPEN_IDEA_STATUSES.includes(i.status) && deskOfIdea(i) === desk);
+  const deskIdeas = ideas.filter((i) => OPEN_IDEA_STATUSES.includes(i.status) && deskOfIdea(i) === desk && actionableIdea(i));
   const stopped = book.status !== 'active' || bookSpendStop(book) !== null;
   const emptySlots = stopped ? [] : DESKS[desk].slots.filter((s) => (book.slots?.[s] ?? null) === null && !spentSlots.has(s));
   return { deskIdeas: stopped ? [] : deskIdeas, emptySlots, hasWork: !stopped && (deskIdeas.length > 0 || emptySlots.length > 0), stoppedBy: stopped ? (bookSpendStop(book) ?? 'book_not_active') : null };
@@ -140,6 +151,11 @@ export function retryableTransportError(err) {
   const status = Number(err?.status);
   if (!Number.isInteger(status)) return true;
   return status === 408 || status === 409 || status === 429 || status >= 500;
+}
+
+/** Review B-3: the saved theses' labels the prompt carried (T1…Tn, trimmed from the end), and no other. Pure. */
+export function thesisRefsKept(refs, keptCount) {
+  return Object.fromEntries(Object.entries(refs || {}).filter(([label]) => /^T\d+$/.test(label) && Number(label.slice(1)) <= keptCount));
 }
 
 /** The usage figures kept on an attempt. */
@@ -189,7 +205,10 @@ export async function runDeskCheck(db, bookRef, { session, desk, transport = sea
     const waiting = Object.entries(prior.refill || {}).filter(([, r]) => r?.spent === false && r?.attempted === true).map(([s]) => s);
     if (prior.source !== AGENT_NOTE_SOURCE.MODEL || waiting.length === 0 || !prior.answer) return { desk, status: 'already_done', calls: 0 };
     const ideas = await readIdeas(book);
-    const stillEmpty = waiting.filter((s) => (book.slots?.[s] ?? null) === null && book.drafting !== 'paused' && !book.windDown);
+    // A waiting slot that is still empty — or already held by THIS session's own draft (a retry that admitted and then died
+    // before its write: replayed, so the record says admitted).
+    const draftable = slotsToDraftNow(book, ideas, { bookId: bookRef.id, session, desk, answer: prior.answer, spentSlots: new Set() });
+    const stillEmpty = waiting.filter((s) => draftable.includes(s));
     if (stillEmpty.length === 0) return { desk, status: 'already_done', calls: 0 };
     const drafted = await draftFromAnswer(db, bookRef, { book, ideas, session, desk, answer: prior.answer, slotsToDraft: stillEmpty, thesisRefs: prior.thesisRefs || {}, clock });
     const refill = { ...prior.refill, ...drafted.refill };
@@ -255,8 +274,16 @@ export async function runDeskCheck(db, bookRef, { session, desk, transport = sea
     const snapshotKey = row.closeSnapshotKey ?? `${session}_close`;
     const snapSnap = await db.collection('mandateUniverseSnapshots').doc(snapshotKey).get();
     const candidates = work.emptySlots.length > 0 && snapSnap.exists ? candidatesOf(snapSnap.data(), namesTakenByBook(book, ideas)) : [];
+    // Review B-1: a slot is offered for drafting only when this close priced a candidate. Without one (the close snapshot
+    // was built without the universe), drafting would be a paid call with nothing to draft from: the slot is not offered,
+    // its attempt stays unspent, and the next close drafts it. A desk left with nothing else to do makes no call.
+    const offeredSlots = candidates.length > 0 ? work.emptySlots : [];
+    if (work.deskIdeas.length === 0 && offeredSlots.length === 0 && attempts.length === 0) {
+      await writePart({ ...base, status: 'done', completedAt: clock().toISOString(), calledModel: false, source: AGENT_NOTE_SOURCE.NO_WORK, note: null, fallbackReason: null, stoppedBy: null, draftingSkipped: 'no_candidates', actions: [], considered: [], refill: {}, attempts: [], manifest: null });
+      return { desk, status: 'done', calls: 0, source: AGENT_NOTE_SOURCE.NO_WORK, reason: 'no_candidates' };
+    }
     let theses = null;
-    if (desk === 'shadow' && DESKS.shadow.readsTheses && practiceFieldAgentThesesOn() && work.emptySlots.length > 0) {
+    if (desk === 'shadow' && DESKS.shadow.readsTheses && practiceFieldAgentThesesOn() && offeredSlots.length > 0) {
       // Fenced: a failed read of the saved theses costs the desk its theses, never its check.
       try {
         const read = await readSavedTheses(db, { uid: book.userId });
@@ -278,12 +305,15 @@ export async function runDeskCheck(db, bookRef, { session, desk, transport = sea
       return out;
     };
     const deskIdeas = await rowsOf(work.deskIdeas);
-    const otherIdeas = await rowsOf(ideas.filter((i) => OPEN_IDEA_STATUSES.includes(i.status) && deskOfIdea(i) !== desk));
+    const deskIdeaIds = new Set(work.deskIdeas.map((i) => i.ideaId));
+    const otherIdeas = await rowsOf(ideas.filter((i) => OPEN_IDEA_STATUSES.includes(i.status) && !deskIdeaIds.has(i.ideaId)));
     const assembled = assembleAgentRequest({
-      desk, identity, session, snapshotKey, book, deskIdeas, otherIdeas, emptySlots: work.emptySlots, priorNotes, candidates, theses,
+      desk, identity, session, snapshotKey, book, deskIdeas, otherIdeas, emptySlots: offeredSlots, priorNotes, candidates, theses,
     });
     if (!assembled.ok) return fallback(assembled.code, { attempts, calledModel: false });
-    manifest = { ...assembled.manifest, ...(theses !== null ? { thesesSkipped } : {}) };
+    // Review B-3: a label the prompt dropped (the ceiling trims theses from the end) no longer resolves to a saved list.
+    if (theses !== null) thesisRefs = thesisRefsKept(thesisRefs, assembled.manifest.counts.theses);
+    manifest = { ...assembled.manifest, offeredSlots, ...(theses !== null ? { thesesSkipped } : {}) };
 
     for (let n = attempts.length + 1; n <= AGENT_MAX_ATTEMPTS; n += 1) {
       if (clock().getTime() + timeoutMs + AGENT_CALL_MARGIN_MS > deadlineMs) {
@@ -373,7 +403,9 @@ export async function runDeskCheck(db, bookRef, { session, desk, transport = sea
   }
   const after = (await bookRef.get()).data();
   const drafted = await draftFromAnswer(db, bookRef, {
-    book: after, ideas: nowIdeas, session, desk, answer, slotsToDraft: slotsToDraftNow(after, nowIdeas, { bookId: bookRef.id, session, desk, answer, spentSlots }), thesisRefs, clock,
+    book: after, ideas: nowIdeas, session, desk, answer, thesisRefs, clock,
+    // Only the slots the prompt offered (manifest.offeredSlots — review B-1): one not offered keeps its attempt for the next close.
+    slotsToDraft: slotsToDraftNow(after, nowIdeas, { bookId: bookRef.id, session, desk, answer, spentSlots }).filter((s) => (manifest?.offeredSlots ?? []).includes(s)),
   });
   // What the desk's attempts were charged, summed in whole nano-dollars (each charge is one, as spend.js wrote it).
   const chargedNanos = attempts.reduce((sum, at) => sum + (Number.isFinite(at.chargedUsd) ? incurredChargeNanos(at.chargedUsd) : 0), 0);

@@ -68,7 +68,7 @@ describe('the prompt (§3)', () => {
     const system = r.content.system[0].text;
     expect(system).toMatch(/You are the archetype desk .* under the frozen identity of the Trend Follower/);
     expect(system).toMatch(/You have no chart evidence yet\. Make no chart reads/);
-    expect(r.content.messages[0].content).toMatch(/## The other desk's ideas \(context only: you may not act on them\)\n- idea_aaa/);
+    expect(r.content.messages[0].content).toMatch(/## Other ideas on the book — the other desk's, and yours that are entering, selling or settling \(context only: you may not act on them\)\n- idea_aaa/);
     expect(r.manifest.identity).toEqual({ kind: 'archetype', codeId: 'momentum_chaser', identityVersion: EPOCH.archetypeIdentityVersion });
   });
 

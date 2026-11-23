@@ -397,7 +397,8 @@ async function parseAlertsOf(db, book, ideas) {
 async function agentCheckOf(db, bookId, book) {
   const session = typeof book.execState?.lastCloseKey === 'string' ? book.execState.lastCloseKey : null;
   const out = { enabled: practiceFieldAgentOn(), thesesEnabled: practiceFieldAgentThesesOn(), session, desks: null };
-  if (session === null) return out;
+  // With the agent off in this checkout nothing of it is read (review C-4): the flag's own promise.
+  if (session === null || !out.enabled) return out;
   const row = dataOf(await db.collection('mandates').doc(bookId).collection('windows').doc(`${session}_close`).get());
   const desks = row?.agent?.desks ?? null;
   if (!desks) return out;

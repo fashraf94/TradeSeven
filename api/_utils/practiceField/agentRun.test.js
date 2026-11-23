@@ -9,7 +9,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { setPracticeFieldModeForTests, setPracticeFieldAgentForTests } from './mode.js';
 import { admitIdea } from './admission.js';
-import { runDeskCheck, runIdeaBookAgentPass, callWithTimeout, AGENT_MODEL_SEAT, deskWorkOf } from './agentRun.js';
+import { runDeskCheck, runIdeaBookAgentPass, callWithTimeout, AGENT_MODEL_SEAT, deskWorkOf, thesisRefsKept } from './agentRun.js';
 import { CODE_FALLBACK_NOTE, AGENT_MAX_OUTPUT_TOKENS, AGENT_MAX_INPUT_TOKENS, PRACTICE_FIELD_AGENT_MODEL } from './agentConfig.js';
 import { PRACTICE_FIELD_MIN_CALL_MAX_CHARGE_USD } from './constants.js';
 import { maxCallChargeUsd } from './spend.js';
@@ -250,6 +250,38 @@ describe('a replay of the same session never calls twice', () => {
     expect(res).toMatchObject({ status: 'done', source: 'code_fallback', reason: 'interrupted_call' });
     expect(deskPartsOf(ctx.db, ctx.bookId, D1).shadow.attempts).toMatchObject([{ n: 1, state: 'settled', outcome: 'interrupted', unpriced: true, chargedUsd: 0.1625 }]);
     expect(getBook(ctx.db, ctx.bookId).spend).toMatchObject({ reservedUsd: 0.1625, settledUsd: 0.1625 });
+  });
+});
+
+describe('review fixes: what is work, and what a drafting call needs', () => {
+  it('C-5: an idea the desk cannot act on (not entered, selling, settling) is context, not work — no call is paid for it', () => {
+    const book = { status: 'active', drafting: 'on', windDown: null, slots: { short: 'i1', medium: 'm', long: 'l' } };
+    const idea = (status, holdings = { XOM: { shares: 1 } }) => ({ ideaId: 'i1', status, contract: { slot: 'short' }, ledger: { holdings }, result: null });
+    for (const status of ['accepted', 'entering', 'line_hit_exit_pending', 'settled']) {
+      expect(deskWorkOf(book, [idea(status)], 'archetype'), status).toMatchObject({ hasWork: false, deskIdeas: [] });
+    }
+    expect(deskWorkOf(book, [idea('holding', { XOM: { shares: 1, exitPending: { reason: 'line' } } })], 'archetype').hasWork).toBe(false);
+    expect(deskWorkOf(book, [idea('holding')], 'archetype')).toMatchObject({ hasWork: true });
+  });
+
+  it('B-1: a close that priced no candidate offers no slot — the desk with an idea is called without drafting; the desk with none is not called; no attempt is spent', async () => {
+    const ctx = await foundersBook();
+    // The founder's names, its fund and SPY only: the close snapshot of a fire built without the universe.
+    const bare = { JPM: 220, BAC: 42, GS: 520, XLF: 48, SPY: 590 };
+    await windowsAndClose(ctx, D1, bare);
+    const fake = fakeTransport(({ request }) => toolResponse(holdAll(request)));
+    const out = await runIdeaBookAgentPass(ctx.db, { date: D1, now: agentNowOf(D1), ownerToken: 't', transport: fake.transport, clock: () => agentNowOf(D1) });
+    expect(out.calls).toBe(1);
+    expect(fake.calls.map((c) => c.desk)).toEqual(['shadow']);
+    expect(fake.calls[0].request.content.messages[0].content).toMatch(/## Your empty slots to draft for\n\(none: draft nothing\)/);
+    const parts = deskPartsOf(ctx.db, ctx.bookId, D1);
+    expect(parts.shadow).toMatchObject({ source: 'model', refill: {}, manifest: { offeredSlots: [] } });
+    expect(parts.archetype).toMatchObject({ source: 'no_work', calledModel: false, draftingSkipped: 'no_candidates', refill: {} });
+  });
+
+  it('B-3: only the labels the prompt carried resolve to a saved list', () => {
+    expect(thesisRefsKept({ T1: 'a', T2: 'b', T3: 'c', T5: 'e' }, 2)).toEqual({ T1: 'a', T2: 'b' });
+    expect(thesisRefsKept({ T1: 'a', X: 'z' }, 5)).toEqual({ T1: 'a' });
   });
 });
 

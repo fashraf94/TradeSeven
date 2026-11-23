@@ -133,7 +133,7 @@ function userText({ session, snapshotKey, book, deskIdeas, otherIdeas, emptySlot
   out.push('## Your open ideas');
   out.push(deskIdeas.length > 0 ? deskIdeas.map(ideaLine).join('\n') : '(none)');
   out.push('');
-  out.push('## The other desk\'s ideas (context only: you may not act on them)');
+  out.push('## Other ideas on the book — the other desk\'s, and yours that are entering, selling or settling (context only: you may not act on them)');
   out.push(otherIdeas.length > 0 ? otherIdeas.map(ideaLine).join('\n') : '(none)');
   out.push('');
   out.push('## Your empty slots to draft for');
