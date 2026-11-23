@@ -207,7 +207,10 @@ describe('F-1: no tab row inside a story', () => {
     await flush();
     expect(tabLabels()).toEqual(NEW_TABS); // the stories are loading: no story shows
     second.resolve(SAMPLE_STORIES.filter((s) => s.id !== AI.id));
-    await until(() => $('[data-explore-screen="gone"]'), 'the gone line');
+    // the stories READY without the story (review V-1: the gone line also shows while they load, so wait for the list)
+    await until(() => card(TAP.id) && !card(AI.id), 'the new stories, without the open one');
+    await flush();
+    expect($('[data-explore-screen="gone"]')).not.toBeNull();
     expect(tabLabels()).toEqual(NEW_TABS);
     click($('[data-explore-back]'));
     await until(onHome, 'home');
