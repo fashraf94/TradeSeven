@@ -102,6 +102,10 @@ const BASELINE = {
     count: 1,
     note: 'calendar: Practice Field T1a-2b-1 lastFireInSlotMs — Math.floor of an epoch-ms instant to the evaluation cron\'s 15-minute grid (the last fire inside a slot\'s window, for the window ledger\'s expected windows) — time arithmetic on integers, not money',
   },
+  'api/_utils/practiceField/spend.js': {
+    count: 4,
+    note: 'spend bound, not ledger money: Practice Field build B2 put spend.js on the closure (the agent\'s desk check is its first caller; its four sites predate B2, reviewed in T1a-2b-1\'s fix rounds). UNIT CONVERSION (1): nanosOf — Math.round of a USD figure this module itself wrote as a whole number of nano-dollars over 1e9, recovering that integer (it cannot move a nano-dollar). INCURRED CHARGE (2): incurredChargeNanos — Math.round only to snap the double\'s own error (within 16 ulps of a whole nano-dollar), else Math.ceil: a genuine fraction is rounded UP, so a charge is never understated. MAXIMUM (1): maxCallChargeMicros — Math.ceil of the most a call can cost, rounded UP to the micro-dollar, so the reservation is never below the charge',
+  },
   'api/_utils/practiceField/agentPrompt.js': {
     count: 6,
     note: 'display: Practice Field build B2 — the agent\'s PROMPT TEXT (.toFixed on dollars, percentages, prices and line levels the desk reads, in usd / pctOf / signedUsd / signedPct and the candidate and line lines). Formatting of figures already stored, never stored money: nothing the prompt formats is written back; code sizes every idea through admission (money.js)',

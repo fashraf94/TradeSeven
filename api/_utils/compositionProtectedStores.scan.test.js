@@ -877,6 +877,8 @@ describe('T1A-07 — the money store: paths, transaction ref arguments, query-de
         [`${PF}/__testsupport__/fixtures.js::closeOn::closeIdeaBook`]: 1,
         // T1a-2b-2 §1: a fixture window's catch-up, run before the fixtures' entries as the window runs it
         [`${PF}/__testsupport__/fixtures.js::catchUpAt::catchUpIdeaBook`]: 1,
+        // Build B2: the agent's session runner drives the engine's own eval pass at each window (lease, stamp, ledger row)
+        [`${PF}/__testsupport__/agentFixtures.js::runSession::runIdeaBookEvalPass`]: 1,
         // T1a-2b-3 fix round 2 (Amendment F rev 1, S-6): the sequence harness drives the real close and catch-up — each
         // history's closes, and I-5's re-run of a close on the state it left
         [`${PF}/__testsupport__/caSequences.js::runInner::closeIdeaBook`]: 1,
