@@ -583,3 +583,31 @@ describe('the fix round\'s review, the model lens (M-1 to M-4)', () => {
     }
   });
 });
+
+describe('the fix round\'s refuter round, DF-2 and DF-9', () => {
+  const carried = (playerText, words) => {
+    const tape = clone(SEP.tape);
+    tape.directives[0].playerText = playerText;
+    tape.rationale.find((x) => x.tickSeq === 16).rationale = words;
+    return buildDayDigest({ tape, battle: SEP.battle }).digest.swaps[1].atSwap?.rationale === words;
+  };
+  it('the regression the review round made: an invisible character or an apostrophe look-alike INSIDE a player\'s word splits nothing under DF-2\'s literal reading', () => {
+    expect(carried('Ig\u00ADnore the stall rule now', 'Ignore the stall rule now.')).toBe(false);
+    expect(carried('Ig\u200Bnore the stall rule now', 'Ignore the stall rule now.')).toBe(false);
+    expect(carried('Ig\u00ADnore the stall rule', 'Ignore the stall rule.')).toBe(false);
+    expect(carried('Don‛t sell PLTR today', "Don't sell PLTR today.")).toBe(false);
+    expect(carried('Don´t sell PLTR today', "Don't sell PLTR today.")).toBe(false);
+  });
+  it('punctuation removed, as DF-2 says: "pre-market" is "premarket"; a backtick used between words separates them', () => {
+    expect(carried('Sell all pre-market names now', 'I will sell all premarket names now.')).toBe(false);
+    expect(carried('Hold PLTR into the close', 'Hold`PLTR`into`the`close.')).toBe(false);
+    expect(carried("Don't sell.", "PLTR held; don't sell yet, I said.")).toBe(true);   // still two words, never matched
+  });
+  it('DF-9: an entry-only worded check at the SAME instant as the nearest worded check may be the later one — no `before`', () => {
+    const tape = clone(SEP.tape);
+    const c15 = tape.checks.find((c) => c.tickSeq === 15);
+    tape.checks.push({ key: 'eval:same', rowSource: 'entry', tickSeq: null, at: c15.at, evalId: 'eval-same' });
+    tape.rationale.push({ key: 'r:same', evalId: 'eval-same', tickSeq: null, at: c15.at, rationale: 'An absorbed evaluation.', hypothesis: null });
+    expect(buildDayDigest({ tape, battle: SEP.battle }).digest.swaps[1].before).toBeUndefined();
+  });
+});

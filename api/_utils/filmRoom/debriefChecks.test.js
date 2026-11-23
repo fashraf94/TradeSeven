@@ -390,3 +390,22 @@ describe('the fix round\'s review, the player lens (P-1 to P-9): each case its o
     for (const t of ['I sold DE @ the open.', 'PLTR held at the open.']) expect(verdict(t, 's2'), t).toBeNull();
   });
 });
+
+describe('the fix round\'s refuter round, the checks', () => {
+  it('a terminal that is not a period ends a sentence even glued before a lower-case letter (the battery\'s survivor)', () => {
+    for (const t of ['It moved!then it held!then it ran!', 'Up?down?flat?']) expect(verdict(t), t).toBe('shape');
+  });
+  it('check 8: more tense forms — "be", four bridging words, a contraction twice, a comma, a time adverb', () => {
+    for (const t of ["I'll be selling MSFT.", 'I would have already been selling MSFT.', "I'd've sold MSFT anyway.", 'I still sold MSFT.', 'I later sold MSFT.', 'I am now selling MSFT.', 'I, too, sold MSFT.']) expect(verdict(t), t).toBe('maker');
+    expect(verdict("This one wasn't my call.")).toBeNull();
+  });
+  it('check 7: a symbol between the evaluative word and the noun hides nothing', () => {
+    for (const t of ['A good 👍 move.', 'A good ✓ move.', 'A good + clean move.', 'A good → move.']) expect(verdict(t, 's2'), t).toBe('forbidden');
+  });
+  it('check 2: a websocket scheme with its colon alone', () => {
+    for (const t of ['See wss:evil.io now.', 'See ws:evil.io now.']) expect(verdict(t, 's2'), t).toBe('shape');
+  });
+  it('the third reading folds more apostrophe look-alikes: ‛ ‵ ´', () => {
+    for (const t of ['I‛ve sold MSFT.', 'I‵ve sold MSFT.', 'I´ve sold MSFT.']) expect(verdict(t), t).toBe('maker');
+  });
+});

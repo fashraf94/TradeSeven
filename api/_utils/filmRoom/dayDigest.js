@@ -96,12 +96,21 @@ export function playerTextsOf(tape) {
 }
 
 /**
- * DF-2's comparison form: NFKC, lower case, punctuation removed — words. A word is a run of letters, marks and digits;
- * an apostrophe inside it is removed ("don't" and "dont" are one word); every other character — punctuation, a symbol
- * (a backtick, "$", "~", an emoji), a space or an invisible character — separates words (the fix round's review, M-1 to
- * M-3: a quoting mark glued to a word, or an invisible joiner between the player's words, hides no run).
+ * DF-2's comparison form: NFKC, lower case, punctuation removed — words, a word being a run of letters, marks and
+ * digits. A text is read TWO ways, and a run shared under either is an echo (the fix round's review, M-1 to M-3, and its
+ * refuter's regression):
+ *   literal    the invisible characters and every punctuation mark removed — DF-2's letter ("pre-market" is
+ *              "premarket", "U.S." is "us", "Ig\u00ADnore" is "ignore"); a symbol or a space separates words
+ *   separated  every apostrophe-like mark removed ("don't" is "dont"); every other character — punctuation, a symbol
+ *              (a backtick, "$", "~", "|", an emoji), a space, an invisible character — separates words
+ * Under each reading a text of under three words gives no run. Both readings remove the apostrophe's look-alikes
+ * first, before NFKC (which turns an acute accent "´" into a space and a combining mark).
  */
-const overlapWordsOf = (text) => String(text).normalize('NFKC').toLowerCase().replace(/[\p{Default_Ignorable_Code_Point}\p{Cf}]/gu, ' ').replace(/['’‘ʼ′`]/gu, '').split(/[^\p{L}\p{M}\p{N}]+/u).filter(Boolean);
+const APOSTROPHES = /['’‘‛ʼ′‵´]/gu;   // never the backtick: used as a quoting mark, it separates words
+const prepared = (text) => String(text).replace(APOSTROPHES, '').normalize('NFKC').toLowerCase();
+const wordsLiteral = (text) => prepared(text).replace(/[\p{Default_Ignorable_Code_Point}\p{Cf}]/gu, '').replace(/\p{P}/gu, '').split(/[^\p{L}\p{M}\p{N}]+/u).filter(Boolean);
+const wordsSeparated = (text) => prepared(text).replace(/[\p{Default_Ignorable_Code_Point}\p{Cf}]/gu, ' ').split(/[^\p{L}\p{M}\p{N}]+/u).filter(Boolean);
+const overlapReadingsOf = (text) => [wordsLiteral(text), wordsSeparated(text)];
 /** DF-2: the run is five words. */
 export const ECHO_RUN_WORDS = 5;
 /** DF-2: a player text under three words is never matched. */
@@ -113,19 +122,19 @@ export const ECHO_MIN_WORDS = 3;
 export function playerRunsOf(texts) {
   const runs = [];
   for (const t of texts) {
-    const w = overlapWordsOf(t);
-    if (w.length < ECHO_MIN_WORDS) continue;
-    const n = Math.min(ECHO_RUN_WORDS, w.length);
-    for (let i = 0; i + n <= w.length; i += 1) runs.push(w.slice(i, i + n));
+    for (const w of overlapReadingsOf(t)) {
+      if (w.length < ECHO_MIN_WORDS) continue;
+      const n = Math.min(ECHO_RUN_WORDS, w.length);
+      for (let i = 0; i + n <= w.length; i += 1) runs.push(w.slice(i, i + n));
+    }
   }
   return runs;
 }
-/** Does `text` share one of `runs`, word for word? */
+/** Does `text` share one of `runs`, word for word, under either reading? */
 export function echoesPlayer(text, runs) {
   if (!runs.length) return false;
-  const w = overlapWordsOf(text);
-  const joined = ` ${w.join(' ')} `;
-  return runs.some((r) => joined.includes(` ${r.join(' ')} `));
+  const joined = overlapReadingsOf(text).map((w) => ` ${w.join(' ')} `);
+  return runs.some((r) => { const run = ` ${r.join(' ')} `; return joined.some((j) => j.includes(run)); });
 }
 
 /** The archetype's code, the subtitle's rule (FilmRoomScreenV2 headerParts): the battle's, else the tape's; never 'unknown'. */
@@ -256,7 +265,7 @@ function quotationsOf(tape, a, swapT, checks, untimed, policy) {
     const worded = lower.find((c) => eligibleWordsAt(tape, c, policy) !== null) ?? null;
     const wordedT = worded ? instantMs(worded.at) : null;
     const between = all.some((c) => !Number.isInteger(c.tickSeq) && eligibleWordsAt(tape, c, policy) !== null
-      && (instantMs(c.at) === null || (instantMs(c.at) <= swapT && (wordedT === null || instantMs(c.at) > wordedT))));
+      && (instantMs(c.at) === null || (instantMs(c.at) <= swapT && (wordedT === null || instantMs(c.at) >= wordedT))));
     return { before: worded && !between ? saidAt(tape, worded, policy) : null, atSwap: own ? saidAt(tape, own, policy) : null };
   }
   const before = [...checks].reverse().find((x) => x.t <= swapT && eligibleWordsAt(tape, x.c, policy) !== null) ?? null;

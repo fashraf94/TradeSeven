@@ -124,7 +124,7 @@ export const VERDICT_NOUNS = Object.freeze(['trade', 'swap', 'call', 'move', 'de
 export const OUTCOME_PHRASES = Object.freeze(['paid off', 'worked out', 'backfired', 'cost me', 'cost us', 'helped me', 'helped us', 'hurt me', 'hurt us', 'nailed it', 'blew it']);
 // between the words: any run of spaces and punctuation ("a good, clean move" — the review's P-3); the one word between
 // them may be hyphenated ("a good well-timed move")
-const JOIN = '[\\s\\p{P}]+';
+const JOIN = '[\\s\\p{P}\\p{S}]+';   // symbols too ("a good 👍 move" — the refuter's round)
 const nounForms = VERDICT_NOUNS.flatMap((n) => [n, n === 'entry' ? 'entries' : (n === 'choice' ? 'choices' : `${n}s`)]);
 const VERDICT_PATTERN = new RegExp(`(?<![\\p{L}\\p{N}])(?:${VERDICT_WORDS.join('|')})(?:${JOIN}[\\p{L}\\p{N}'’]+(?:[\\-\\u2010-\\u2015][\\p{L}\\p{N}'’]+)*)?${JOIN}(?:${nounForms.join('|')})(?![\\p{L}\\p{N}])`, 'iu');
 const OUTCOME = wholeWords(OUTCOME_PHRASES);
@@ -149,8 +149,10 @@ export const DECISION_VERBS = Object.freeze({
   trade: ['trade', 'trades', 'traded', 'trading'],
 });
 export const MY_DECISIONS = Object.freeze(['call', 'choice', 'decision', 'pick', 'move', 'trade']);
-export const CLAIM_BRIDGE = Object.freeze(['am', 'was', 'have', 'has', 'had', 'been', 'will', 'shall', 'would', 'did', 'do', 'just', 'then', 'also', 'already', 'finally', 'myself', 'alone']);
-const I_CLAIM = new RegExp(`(?<![\\p{L}\\p{N}'’])i(?:['’](?:m|ve|d|ll))?(?:\\s+(?:${CLAIM_BRIDGE.join('|')}|\\p{L}+ly)){0,3}\\s+(?:${Object.values(DECISION_VERBS).flat().join('|')})(?![\\p{L}\\p{N}])`, 'giu');
+// the refuter's round: "I'll be selling", "I'd've sold", "I still sold", "I, too, sold" — contractions twice, four
+// bridging words, a comma between them
+export const CLAIM_BRIDGE = Object.freeze(['am', 'was', 'have', 'has', 'had', 'been', 'be', 'being', 'will', 'shall', 'would', 'did', 'do', 'just', 'then', 'also', 'already', 'finally', 'myself', 'alone', 'now', 'still', 'later', 'soon', 'even', 'instead', 'too']);
+const I_CLAIM = new RegExp(`(?<![\\p{L}\\p{N}'’])i(?:['’](?:m|ve|d|ll|re)){0,2}(?:[\\s,]+(?:${CLAIM_BRIDGE.join('|')}|\\p{L}+ly)){0,4},?\\s+(?:${Object.values(DECISION_VERBS).flat().join('|')})(?![\\p{L}\\p{N}])`, 'giu');
 const MY_CLAIM = new RegExp(`(?<![\\p{L}\\p{N}])my(?:\\s+[\\p{L}'’\\-]+)?\\s+(?:${MY_DECISIONS.map((w) => `${w}s?`).join('|')})(?![\\p{L}\\p{N}])`, 'giu');
 const NEGATION = /^(?:not|no|.*n['’]t)$/iu;
 /** Where a clause ends, for the negation window: . ; : ! ? … , or a dash. */
@@ -176,7 +178,7 @@ const AGENT_MAKER = FILM_ROOM_COPY.debrief.makers.agent;
  * a web, file, script, data or mail scheme and its colon alone ("https:evil.io", "data:text/html" — the review's P-9) —
  * or "www."; an email-like token (a word, "@", a word); "<" or ">".
  */
-const LINK = /(?<![\p{L}\p{N}])(?:[a-z][a-z0-9+.-]*\s*:\s*\/\s*\/|(?:https?|ftp|file|data|javascript|mailto)\s*:)|(?<![\p{L}\p{N}])www\./iu;
+const LINK = /(?<![\p{L}\p{N}])(?:[a-z][a-z0-9+.-]*\s*:\s*\/\s*\/|(?:https?|wss?|ftp|file|data|javascript|mailto)\s*:)|(?<![\p{L}\p{N}])www\./iu;
 const EMAIL = /[\p{L}\p{N}._%+-]+@[\p{L}\p{N}-]+/u;
 const MARKUP = /[<>]/u;
 /** §5 check 3: any numeric character, in any script. */
@@ -256,9 +258,10 @@ function allowedSymbolsOf(swap) {
 /**
  * The fix round's review (P-7): a third representation the checks read — the unmasked text with its combining marks
  * taken off (NFD, \p{M} removed: "fïve", "NVDÁ", "bėst" read as "five", "NVDA", "best") and the apostrophe's look-alikes
- * (‘ ′ ` ʼ) read as one. Checked only, never shown: a kept line is still the model's text exactly.
+ * (‘ ‛ ′ ‵ ` ´ ʼ) read as one — folded on the text as written, before NFKC turns "´" into a space and a mark.
+ * Checked only, never shown: a kept line is still the model's text exactly.
  */
-const bareText = (plain) => plain.normalize('NFD').replace(/\p{M}/gu, '').normalize('NFC').replace(/[‘′`ʼ]/gu, '\'');
+const bareText = (text) => unmaskedText(String(text).replace(/[‘‛′‵`´ʼ]/gu, '\'')).normalize('NFD').replace(/\p{M}/gu, '').normalize('NFC');
 
 /** The first check a trimmed text fails (checks 2 to 8), or null when it passes them all. */
 export function failingCheckOf(text, swap, knownIds = []) {
@@ -267,7 +270,7 @@ export function failingCheckOf(text, swap, knownIds = []) {
   if (n < 1 || n > DEBRIEF_LINE_MAX || LINE_BREAK.test(text)) return 'shape';
   if (INVISIBLE_OR_CONTROL.test(text) || !ANY_LETTER.test(text) || NON_LATIN_LETTER.test(text)) return 'shape';
   const plain = unmaskedText(text);
-  const bare = bareText(plain);
+  const bare = bareText(text);
   const reps = [text, plain, bare];
   const both = (re) => reps.some((r) => re.test(r));
   if (Math.max(...reps.map(sentenceEndsOf)) > MAX_SENTENCE_ENDS) return 'shape';
