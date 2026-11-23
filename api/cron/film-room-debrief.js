@@ -25,7 +25,7 @@
 
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { filmRoomDebriefMode } from '../_utils/filmRoom/debriefGate.js';
-import { runDebriefPass } from '../_utils/filmRoom/debriefPass.js';
+import { runDebriefPass, publicSummaryOf, errorKindOf } from '../_utils/filmRoom/debriefPass.js';
 
 export const config = { maxDuration: 300 };
 
@@ -44,10 +44,12 @@ export default async function handler(req, res, { getDb = getFirebaseAdmin, pass
   if (mode === 'off') return res.status(200).json({ skipped: true, reason: 'off' });
   try {
     const summary = await pass({ db: getDb(), clock: Date.now, startMs, budgetMs: config.maxDuration * 1000, mode });
-    return res.status(200).json({ ...summary, ms: Date.now() - startMs });
+    // Amendment F DF-6 (Astra's F6): the ONE public projection the log prints — counts and the total cost, never a
+    // battle id, a day or a key
+    return res.status(200).json(publicSummaryOf(summary));
   } catch (err) {
-    // never the message: it can carry a document path, and so an id
-    console.error(`${LOG_PREFIX} handler error`, JSON.stringify({ kind: err?.name ?? 'Error', code: Number.isInteger(err?.code) ? err.code : null }));
+    // never the message: it can carry a document path, and so an id; the kind from a fixed set (DF-6)
+    console.error(`${LOG_PREFIX} handler error`, JSON.stringify({ kind: errorKindOf(err), code: Number.isInteger(err?.code) ? err.code : null }));
     return res.status(500).json({ error: 'debrief_pass_failed' });
   }
 }

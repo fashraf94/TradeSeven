@@ -23,7 +23,8 @@
 //                checked before each battle and before each call (maxDuration 300). A day not reached keeps no record
 //                and is named in the run's summary.
 //   THE LOG      counts only — never words, ids or keys; an error is counted, never printed (a Firestore error's
-//                message can carry a document path, and so an id).
+//                message can carry a document path, and so an id). The log and the HTTP response share ONE public
+//                projection (Amendment F DF-6, publicSummaryOf); the named work items stay inside the pass.
 
 import { TAPE_SUBCOLLECTION } from '../../../src/constants/filmTape.js';
 import { DEBRIEFS_SUBCOLLECTION } from '../../../src/utils/debriefSchedule.js';
@@ -140,6 +141,35 @@ export function debriefRecordOf({ battle, etDate, attributionAgentId, digest, ta
 }
 
 /**
+ * Amendment F DF-6 (Astra's F6): THE PUBLIC PROJECTION of a run's summary — counts and the total cost only, its key set
+ * pinned (PUBLIC_SUMMARY_KEYS). The log and the HTTP response (api/cron/film-room-debrief.js) both answer with it, and
+ * nothing else of the summary: the named work items (`notReached`, `writeFailed`, each a battle id and a day) stay
+ * inside the pass, counted here. Any value that is not a finite count reads 0.
+ */
+export const PUBLIC_SUMMARY_KEYS = Object.freeze([
+  'selected', 'written', 'nothing', 'failed',
+  'skippedNoTape', 'skippedNotWritten', 'skippedOwnerMismatch', 'skippedExists', 'skippedUnreadable',
+  'notReached', 'writeFailed', 'attributionUnresolved', 'errors', 'calls', 'totalCostUsd',
+]);
+export function publicSummaryOf(summary) {
+  const s = isObj(summary) ? summary : {};
+  const sk = isObj(s.skipped) ? s.skipped : {};
+  const n = (v) => (Array.isArray(v) ? v.length : (Number.isFinite(v) ? v : 0));
+  return {
+    selected: n(s.selected), written: n(s.written), nothing: n(s.nothing), failed: n(s.failed),
+    skippedNoTape: n(sk.noTape), skippedNotWritten: n(sk.notWritten), skippedOwnerMismatch: n(sk.ownerMismatch), skippedExists: n(sk.exists), skippedUnreadable: n(sk.unreadable),
+    notReached: n(s.notReached), writeFailed: n(s.writeFailed), attributionUnresolved: n(s.attributionUnresolved), errors: n(s.errors), calls: n(s.calls), totalCostUsd: n(s.totalCostUsd),
+  };
+}
+
+/**
+ * DF-6: an error's kind, from a fixed set — a thrown value's own `name` is printed only when it is one of these; any
+ * other is 'Error'. (Its message is never printed: a Firestore message can carry a document path, and so an id.)
+ */
+export const ERROR_KINDS = Object.freeze(['Error', 'TypeError', 'RangeError', 'ReferenceError', 'SyntaxError', 'AbortError', 'TimeoutError', 'FirebaseError']);
+export const errorKindOf = (err) => (ERROR_KINDS.includes(err?.name) ? err.name : 'Error');
+
+/**
  * The pass for the ET date of `startMs`.
  * @param {object} p
  * @param {object} p.db              Admin Firestore
@@ -164,12 +194,8 @@ export async function runDebriefPass({
   };
   const finish = () => {
     summary.totalCostUsd = Math.round(summary.totalCostUsd * 1_000_000) / 1_000_000;
-    // counts only: never words, ids or keys
-    log(LOG_PREFIX, JSON.stringify({
-      selected: summary.selected, written: summary.written, nothing: summary.nothing, failed: summary.failed,
-      notReached: summary.notReached.length, skipped: Object.values(summary.skipped).reduce((a, b) => a + b, 0),
-      errors: summary.errors, writeFailed: summary.writeFailed.length, attributionUnresolved: summary.attributionUnresolved, calls: summary.calls, totalCostUsd: summary.totalCostUsd,
-    }));
+    // counts only: the ONE public projection the HTTP response also answers with (DF-6)
+    log(LOG_PREFIX, JSON.stringify(publicSummaryOf(summary)));
     return summary;
   };
   if (!isSessionDate(etDate)) { summary.notSession = true; return finish(); }

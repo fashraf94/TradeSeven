@@ -160,3 +160,23 @@ describe('F5 — the contract\'s checks (DF-5): a verdict, and a claim of a deci
     expect([r.lines, r.dropped]).toEqual([[], [{ label: 's1', reason: 'maker' }]]);
   });
 });
+
+describe('F6 — the response carries counts, never a battle id (DF-6)', () => {
+  const through = async (t, over) => {
+    const res = mkRes();
+    const pass = (a) => runDebriefPass({ ...a, db: t.db, clock: () => RUN_MS, startMs: RUN_MS, call: fakeCall().call, resolveAttribution, log: quiet, ...over });
+    await handler(BEARER, res, { getDb: () => t.db, pass });
+    return res;
+  };
+  it('the time floor: the day not reached is never named in the body', async () => {
+    const res = await through(world(), { clock: () => RUN_MS + 290_000 });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.stringify(res.body).includes(BATTLE_ID)).toBe(false);
+  });
+  it('a paid create that fails: the body never names the day', async () => {
+    const t = world({ hooks: { beforeWrite: (op, p) => { if (p === recordPath(BATTLE_ID)) throw Object.assign(new Error(`DEADLINE_EXCEEDED at ${p}`), { code: 4 }); } } });
+    const res = await through(t, {});
+    expect(res.statusCode).toBe(200);
+    expect(JSON.stringify(res.body).includes(BATTLE_ID)).toBe(false);
+  });
+});

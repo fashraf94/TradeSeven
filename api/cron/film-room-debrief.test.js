@@ -12,6 +12,7 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
 }));
 
 import handler, { config } from './film-room-debrief.js';
+import { publicSummaryOf, PUBLIC_SUMMARY_KEYS } from '../_utils/filmRoom/debriefPass.js';
 
 const mkRes = () => ({ statusCode: null, body: null, status(c) { this.statusCode = c; return this; }, json(b) { this.body = b; return this; } });
 const CRON = { headers: { 'x-vercel-cron': '1' } };
@@ -50,7 +51,10 @@ describe('the handler', () => {
     const res = mkRes();
     await handler({ headers: { authorization: 'Bearer cron-secret-for-test' } }, res, { getDb: () => db, pass });
     expect(res.statusCode).toBe(200);
-    expect(res.body).toMatchObject({ etDate: '2026-09-23', written: 1 });
+    // Amendment F DF-6: the body is the public projection — counts and the cost, the pinned keys; nothing else of the summary
+    expect(res.body).toEqual(publicSummaryOf({ written: 1 }));
+    expect(Object.keys(res.body)).toEqual([...PUBLIC_SUMMARY_KEYS]);
+    expect('etDate' in res.body).toBe(false);
     const args = pass.mock.calls[0][0];
     expect([args.db, args.mode, args.budgetMs, Number.isFinite(args.startMs)]).toEqual([db, 'allowlist', 300_000, true]);
   });
@@ -64,6 +68,16 @@ describe('the handler', () => {
       const printed = err.mock.calls.flat().join(" ");
       expect(printed).not.toContain('b-secret-id');
       expect(printed).toContain('"code":5');
+    } finally { err.mockRestore(); }
+  });
+  it('DF-6: the error\'s kind is one of a fixed set — a thrown value whose name carries a path prints "Error"', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const pass = async () => { throw Object.assign(new Error('x'), { name: 'agentBattles/b-secret-id' }); };
+      await handler(CRON, mkRes(), { getDb: () => ({}), pass });
+      const printed = err.mock.calls.flat().join(' ');
+      expect(printed).not.toContain('b-secret-id');
+      expect(printed).toContain('"kind":"Error"');
     } finally { err.mockRestore(); }
   });
 });

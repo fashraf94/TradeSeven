@@ -14,7 +14,7 @@ vi.mock('../../../src/config/featureFlags.js', async (importOriginal) => ({
   get FILM_ROOM_DEBRIEF_MODE() { return flags.debrief; },
 }));
 
-import { runDebriefPass, selectedForDebrief, debriefRecordOf, tapeIsFor, attributionOf, DEBRIEF_MAX_CALLS, DEBRIEF_MAX_CONCURRENT, DEBRIEF_TIME_FLOOR_MS, DEBRIEF_RECORD_VERSION } from './debriefPass.js';
+import { runDebriefPass, selectedForDebrief, debriefRecordOf, tapeIsFor, attributionOf, publicSummaryOf, errorKindOf, PUBLIC_SUMMARY_KEYS, ERROR_KINDS, DEBRIEF_MAX_CALLS, DEBRIEF_MAX_CONCURRENT, DEBRIEF_TIME_FLOOR_MS, DEBRIEF_RECORD_VERSION } from './debriefPass.js';
 import { buildDayDigest, digestHashOf } from './dayDigest.js';
 import { sep23Day, SEP23_NIGHT } from '../filmTape/__fixtures__/screenFixtures.js';
 import { seedDay, OWNER } from '../filmTape/__fixtures__/tapeFixtures.js';
@@ -300,6 +300,51 @@ describe('Amendment F DF-1 (Astra\'s F1): the tape names this battle, this day a
   });
 });
 
+describe('Amendment F DF-6 (Astra\'s F6): one public projection — counts and the total cost, its key set pinned; the named items stay inside', () => {
+  const logged = async (t, over) => {
+    const lines = [];
+    const s = await run(t, { mode: 'allowlist', log: (...a) => lines.push(a.join(' ')), ...over });
+    return { s, json: JSON.parse(lines[0].slice(lines[0].indexOf(' ') + 1)) };
+  };
+  const noIds = (json) => { const text = JSON.stringify(json); for (const id of [BATTLE_ID, 'b-0000', 'b-0001', D, OWNER]) expect(text.includes(id), id).toBe(false); };
+  it('a full run: exactly the pinned keys, every one a number — the log line equals publicSummaryOf of the summary', async () => {
+    const { s, json } = await logged(world(), { call: fakeCall().call });
+    expect(Object.keys(json)).toEqual([...PUBLIC_SUMMARY_KEYS]);
+    expect(json).toEqual(publicSummaryOf(s));
+    expect(json).toMatchObject({ selected: 1, written: 1, calls: 1, totalCostUsd: 0.0036, notReached: 0, writeFailed: 0 });
+    noIds(json);
+  });
+  it('the time floor and the call cap: the days not reached are counted — the summary names them, the projection never', async () => {
+    const floor = await logged(world([{ id: 'b-0000', owner: OWNER }]), { call: fakeCall().call, clock: () => RUN_MS + 290_000 });
+    expect([floor.s.notReached.length, floor.json.notReached, Object.keys(floor.json)]).toEqual([2, 2, [...PUBLIC_SUMMARY_KEYS]]);
+    noIds(floor.json);
+    const many = Array.from({ length: DEBRIEF_MAX_CALLS + 1 }, (_, i) => ({ id: `b-${String(i).padStart(4, '0')}`, owner: OWNER }));
+    const cap = await logged(world(many), { call: fakeCall().call });
+    expect([cap.json.calls, cap.json.notReached, Object.keys(cap.json)]).toEqual([DEBRIEF_MAX_CALLS, 2, [...PUBLIC_SUMMARY_KEYS]]);
+    noIds(cap.json);
+  });
+  it('a paid create that fails: counted, its cost kept — and never named', async () => {
+    const t = world([], { hooks: { beforeWrite: (op, p) => { if (p === recordPath(BATTLE_ID)) throw Object.assign(new Error(`DEADLINE_EXCEEDED at ${p}`), { code: 4 }); } } });
+    const { s, json } = await logged(t, { call: fakeCall().call });
+    expect(s.writeFailed).toEqual([{ battleId: BATTLE_ID, etDate: D }]);
+    expect([json.writeFailed, json.errors, json.totalCostUsd, Object.keys(json)]).toEqual([1, 1, 0.0036, [...PUBLIC_SUMMARY_KEYS]]);
+    noIds(json);
+  });
+  it('every skip is its own count; anything that is not a finite count reads 0', () => {
+    expect(publicSummaryOf({ skipped: { noTape: 1, notWritten: 2, ownerMismatch: 3, exists: 4, unreadable: 5 }, notReached: [{ battleId: 'x' }], written: 'seven', totalCostUsd: NaN })).toEqual({
+      selected: 0, written: 0, nothing: 0, failed: 0, skippedNoTape: 1, skippedNotWritten: 2, skippedOwnerMismatch: 3, skippedExists: 4, skippedUnreadable: 5,
+      notReached: 1, writeFailed: 0, attributionUnresolved: 0, errors: 0, calls: 0, totalCostUsd: 0,
+    });
+    expect(Object.keys(publicSummaryOf(null))).toEqual([...PUBLIC_SUMMARY_KEYS]);
+  });
+  it('an error\'s kind is one of a fixed set — any other name reads "Error"', () => {
+    expect(ERROR_KINDS).toEqual(['Error', 'TypeError', 'RangeError', 'ReferenceError', 'SyntaxError', 'AbortError', 'TimeoutError', 'FirebaseError']);
+    expect(errorKindOf(new TypeError('x'))).toBe('TypeError');
+    expect(errorKindOf(Object.assign(new Error('x'), { name: 'agentBattles/b-secret-id' }))).toBe('Error');
+    expect(errorKindOf(null)).toBe('Error');
+  });
+});
+
 describe('Amendment F DF-3 (Astra\'s F3): ONE inventory — the digest\'s quotation policy and check 6 read the same list', () => {
   it('a run id only the tape holds (no shape would know it): a line naming it is dropped as `identifier`', async () => {
     const tape = clone(BASE[tapePath(BATTLE_ID)]);
@@ -360,7 +405,9 @@ describe('the log: counts only (§7)', () => {
     expect(lines).toHaveLength(1);
     const [prefix, json] = [lines[0].slice(0, lines[0].indexOf(' ')), JSON.parse(lines[0].slice(lines[0].indexOf(' ') + 1))];
     expect(prefix).toBe('[film-room-debrief]');
-    expect(Object.keys(json).sort()).toEqual(['attributionUnresolved', 'calls', 'errors', 'failed', 'notReached', 'nothing', 'selected', 'skipped', 'totalCostUsd', 'writeFailed', 'written']);
+    // Amendment F DF-6: the log line IS the public projection — its key set pinned
+    expect(Object.keys(json)).toEqual([...PUBLIC_SUMMARY_KEYS]);
+    expect(PUBLIC_SUMMARY_KEYS).toEqual(['selected', 'written', 'nothing', 'failed', 'skippedNoTape', 'skippedNotWritten', 'skippedOwnerMismatch', 'skippedExists', 'skippedUnreadable', 'notReached', 'writeFailed', 'attributionUnresolved', 'errors', 'calls', 'totalCostUsd']);
     for (const v of Object.values(json)) expect(typeof v).toBe('number');
     for (const s of [BATTLE_ID, 'b-other', OWNER, 'owner-2', 'Distinctive', D, BASE[tapePath(BATTLE_ID)].actions[0].key]) expect(lines[0].includes(s), s).toBe(false);
   });
