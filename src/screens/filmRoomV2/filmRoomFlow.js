@@ -16,7 +16,7 @@
 // class). Nothing here composes a sentence, and nothing holds anyone's words:
 // a quotation is a path, a word is a copy key (filmRoomCopy.js FILM_ROOM_COPY.flow).
 
-import { numberAt, exitMakerOf, directiveCardOf, sessionOf, etClock, etWhen, etDateLabel, fmtPoints, swapOrdinals, swapAnchor, SCREEN_AGGREGATE_CLASSES } from './filmRoomModel';
+import { numberAt, exitMakerOf, directiveCardOf, sessionOf, etClock, etWhen, etDateLabel, fmtPoints, swapOrdinals, swapAnchor, SCREEN_AGGREGATE_CLASSES } from './filmRoomModel.js';
 import { validFinalTradingDay } from '../../utils/tapeSchedule.js';
 // Amendment B DB-6 (Astra's F6): THE one strict instant parser (Build C CE-3) — no second parser on the front
 import { instantMs } from '../../utils/filmRoomSubject.js';
@@ -70,15 +70,17 @@ const agg = (key, value) => ({ value, aggregate: FLOW_AGGREGATES[key], cls: SCRE
 /**
  * THE BATTLE'S FINAL DAY, ONLY ON EVIDENCE (Amendment B DB-2; Astra's F2) — the one predicate the model, its tests and
  * the harness share. The tape records this day as the battle's last (`isFinalDay` true: the writer's one reading of
- * the validated timeline, tapeAssemble.js); or, for a tape written before that field existed (NO `isFinalDay` key at
- * all), the tape's battle block says `completed` AND the battle document's validated final trading day
- * (validFinalTradingDay, src/utils/tapeSchedule.js) is this date. `false` — an earlier day, whose tape can carry a
- * completed battle block (the review's NUM-1 / CH-4) — and `null` — the timeline did not validate, the writer
- * keeping its doubt — are any other day (§4.1): its date, the last check's values, no final point.
+ * the validated timeline, tapeAssemble.js) AND its battle block says `completed` (Amendment C DC-1: the tape view's
+ * result card states a result only for a completed battle, and the front never states one where it doesn't); or, for
+ * a tape written before that field existed (NO `isFinalDay` key at all), the tape's battle block says `completed` AND
+ * the battle document's validated final trading day (validFinalTradingDay, src/utils/tapeSchedule.js) is this date.
+ * `false` — an earlier day, whose tape can carry a completed battle block (the review's NUM-1 / CH-4) — and `null` —
+ * the timeline did not validate, the writer keeping its doubt — are any other day (§4.1): its date, the last check's
+ * values, no final point.
  */
 export function isFinalDayOf(tape, battle = null) {
   if (!isObj(tape)) return false;
-  if (tape.isFinalDay === true) return true;
+  if (tape.isFinalDay === true) return isObj(tape.battle) && tape.battle.status === 'completed';
   if (Object.prototype.hasOwnProperty.call(tape, 'isFinalDay')) return false;
   return isObj(tape.battle) && tape.battle.status === 'completed' && typeof tape.etDate === 'string' && validFinalTradingDay(battle) === tape.etDate;
 }
@@ -248,7 +250,8 @@ export function linesOf(tape, domain = domainOf(tape), battle = null) {
 
 /**
  * The low mark (§5, FL-6): the player's lowest SCORED CHECK — the earliest wins a tie — with its value bound by
- * its path and its clock. `eligible` holds the day's rule: at least three scored checks, and the low is not the
+ * its path and its clock. Lowest and tied are decided on DISPLAYED hundredths (Amendment C DC-8, BUILD_RULES §9): two
+ * checks the label would show alike are a tie, whatever their raw values, and the final is compared the same way. `eligible` holds the day's rule: at least three scored checks, and the low is not the
  * line's lowest END. The line's last point is never the low; and the DRAWN FINAL takes part in the minimum (Amendment
  * A DA-8, as Astra qualified it in DB-14) — but not in the count of three: a final that displays at or below the
  * lowest check leaves no mark, since the line's lowest point is then its end ("Low −92" can't stand over a line
@@ -258,13 +261,16 @@ export function linesOf(tape, domain = domainOf(tape), battle = null) {
 export function lowOf(tape, lines = linesOf(tape)) {
   const rows = orderedRows(tape, 'total').filter(drawn);
   if (!rows.length) return null;
+  // every value as the reader compares them — the checks in the low's label, the final in the key: displayed hundredths
+  const shown = (v) => hundredthsOfShown(fmtPoints(v));
   let low = rows[0];
-  for (const r of rows) if (r.v < low.v || (r.v === low.v && r.t < low.t)) low = r;   // a tie: the earliest check
+  for (const r of rows) {
+    const a = shown(r.v); const b = shown(low.v);
+    if (a < b || (a === b && r.t < low.t)) low = r;   // a tie on what is shown: the earliest check (DC-8)
+  }
   const points = lines.you.points;
   const last = points[points.length - 1];
   const isLast = Boolean(last && last.i === low.i && !last.final);
-  // the two as the reader compares them: the final in the key, the low in its label — their displayed hundredths
-  const shown = (v) => hundredthsOfShown(fmtPoints(v));
   const end = points.find((p) => p.final);
   const endAtOrBelow = Boolean(end && shown(end.v) !== null && shown(low.v) !== null && shown(end.v) <= shown(low.v));
   return { index: low.i, t: low.t, value: numberAt(tape, ['checks', low.i, 'scores', 'total']), clock: etClock(tape.checks[low.i].at), eligible: rows.length >= 3 && !isLast && !endAtOrBelow };
@@ -334,6 +340,11 @@ export function allPinsOf(tape) {
 
 const byTime = (a, b) => (a.t - b.t) || (RANK[a.kind] - RANK[b.kind]) || (a.order < b.order ? -1 : a.order > b.order ? 1 : 0);
 const byPriority = (a, b) => (RANK[a.kind] - RANK[b.kind]) || byTime(a, b);
+/**
+ * THE FRONT'S PIN ORDERS, for the D2 day digest (api/_utils/filmRoom/dayDigest.js, D2 spec §2: its swaps "chosen as the
+ * front chooses pins … and listed in time order"): one priority for both — never a second copy of it.
+ */
+export { byTime as comparePinsByTime, byPriority as comparePinsByPriority };
 
 /**
  * The chosen pins (FL-5): at most five, chosen by priority — the agent's swaps, then the directives, then the other
@@ -352,6 +363,10 @@ export function choosePins(tape, { domain = domainOf(tape), battle = null, lines
     n: k + 1,
     ordinal: agg('ordinal', k + 1),
     frac: domain && span > 0 ? Math.min(1, Math.max(0, (p.t - domain.startMs) / span)) : 0,
+    // Amendment D DD-4: the pin's CLAMPED elapsed time from the axis's start, in whole milliseconds, and the span it is
+    // measured over — what the grouping compares exactly (groupPins), before any coordinate is computed
+    dt: domain && span > 0 ? Math.min(span, Math.max(0, p.t - domain.startMs)) : 0,
+    span,
     v: heightAt(lines.you.runs, p.t),
   }));
   return { pins, more: agg('more', all.length - pins.length) };
@@ -364,15 +379,25 @@ export function choosePins(tape, { domain = domainOf(tape), battle = null, lines
  * place, takes the shape of its highest-priority member, and is labelled with its range — its first and its last
  * number, "2–4" (Amendment A DA-15) — when it holds more than one. Computed ONCE per paint (layoutOf): the chart draws
  * these groups and the panel steps through the same ones.
+ *
+ * EXACT (Amendment D DD-4, Astra's N5): "closer than 44 px" is decided on the pins' CLAMPED elapsed times, before any
+ * coordinate is computed — separation × drawable span < 44 × time span, every operand an integer (whole milliseconds,
+ * the measured width in whole pixels), so two pins exactly 44 px apart start two groups at every width; subtracting two
+ * rounded floating-point centres once made 44 read 43.999999999999986. Pins handed in without their instants (a
+ * caller's synthetic `frac` alone) compare their fractions' separation the same way, still before any coordinate.
  */
 export function groupPins(pins, width) {
   const w = isNum(width) && width > 0 ? width : 0;
+  const drawable = Math.max(0, w - 2 * FLOW_AXIS_INSET);
+  const timed = (p) => Number.isSafeInteger(p?.dt) && Number.isSafeInteger(p?.span) && p.span > 0;
+  const closer = (p, first) => (timed(p) && timed(first) && p.span === first.span
+    ? Math.abs(p.dt - first.dt) * drawable < FLOW_PIN_TOUCH * p.span
+    : Math.abs(p.frac - first.frac) * drawable < FLOW_PIN_TOUCH);
   const groups = [];
   for (const p of pins) {
-    const x = axisX(p.frac, w);
     const g = groups[groups.length - 1];
-    if (g && Math.abs(x - g.x) < FLOW_PIN_TOUCH) g.members.push(p);
-    else groups.push({ x, members: [p] });
+    if (g && closer(p, g.members[0])) g.members.push(p);
+    else groups.push({ x: axisX(p.frac, w), members: [p] });
   }
   return groups.map((g) => ({
     x: g.x,

@@ -22,9 +22,12 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { FILM_ROOM_COPY as COPY } from './filmRoomCopy';
 import { C, tint, plain, When, Quotation } from './FilmRoomKit';
-import { fmtPoints, fmtPrice } from './filmRoomModel';
+import { fmtPoints, fmtPrice, etDateLabel } from './filmRoomModel';
 import { formatNumberPath } from '../../constants/filmTape';
 import { flowOf, layoutOf, panelOf, FLOW_PIN_TOUCH, FLOW_AXIS_INSET } from './filmRoomFlow.js';
+// Film Room D2: the record's date, from its strict instant, in ET
+import { etDateOf } from '../../utils/tapeSchedule.js';
+import { instantMs } from '../../utils/filmRoomSubject.js';
 
 const F = COPY.flow;
 const NUM = { fontVariantNumeric: 'tabular-nums' };
@@ -316,9 +319,58 @@ const FlowLink = React.forwardRef(function FlowLink({ label, onClick, size = 13.
   );
 });
 
+// ── the agent's words (Film Room D2 spec §1; DW-1, DW-2) ────────────────────
+
+/**
+ * What a swap pin shows of the day's debrief record (D2 spec §1's states): `{ kind: 'line', i }` — the record holds a
+ * line bound to THIS swap's tape row key (`actions[].key`) at `lines[i]`; `{ kind: 'notYet' }` — no record yet, before
+ * the next run; null — everything else: the words off (no `words`), a read still loading or failed, a record that is
+ * `nothing` or `failed`, no line for this swap, a line whose key the tape no longer holds, a record of another battle,
+ * another day or another owner (Amendment F DF-1). A directive pin never shows any (DW-2).
+ */
+export function wordsOfPin(words, tape, pin) {
+  if (!words || pin?.src !== 'action') return null;
+  if (words.state === 'missing') return words.notYet === true ? { kind: 'notYet' } : null;
+  const record = words.state === 'ready' ? words.record : null;
+  if (!record || record.status !== 'written' || !Array.isArray(record.lines)) return null;
+  // the record's battle, day AND owner are the tape's on screen (Amendment F DF-1, Astra's F1) — still the one read
+  if (typeof record.battleId !== 'string' || !record.battleId || typeof record.etDate !== 'string' || !record.etDate) return null;
+  if (record.battleId !== tape?.battleId || record.etDate !== tape?.etDate) return null;
+  if (typeof record.ownerId !== 'string' || !record.ownerId || record.ownerId !== tape?.ownerId) return null;
+  const key = tape?.actions?.[pin.index]?.key;
+  if (typeof key !== 'string' || !key) return null;
+  const i = record.lines.findIndex((l) => l !== null && typeof l === 'object' && l.key === key && typeof l.text === 'string' && l.text);
+  return i < 0 ? null : { kind: 'line', i };
+}
+
+/** The record's date in the design's small treatment ("Sep 23"): its writtenAt's ET date — only from a strict instant. */
+const debriefDateOf = (record) => (instantMs(record?.writtenAt) === null ? null : etDateLabel(etDateOf(record.writtenAt), { short: true }));
+
+/**
+ * One line of the agent's words (D2 spec §1): the agent's mark, as beside a directive's reply; the words as a quotation
+ * bound to the record's `lines[i].text` in the document labelled `debrief` — its attribution ("the agent", the instant)
+ * kept for assistive technology, hidden visually (`preview`) —; beside them the record's date.
+ */
+function AgentWords({ record, i, renderAgentMark, narrow }) {
+  const date = debriefDateOf(record);
+  return (
+    <div data-flow-said="agent-words" data-flow-debrief-line={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, minWidth: 0 }}>
+      <span style={{ width: 26, flexShrink: 0, display: 'inline-flex', justifyContent: 'center' }}>{renderAgentMark(22)}</span>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+        {/* never clamped (the review's P2): the words are shown nowhere else, so the whole line — at most 160 code points
+            (§5) — is the player's to read; `preview` keeps the attribution for assistive technology only */}
+        <Quotation doc={record} path={['lines', i, 'text']} by="agent" at={['writtenAt']} size={narrow ? 14.5 : 15.5} weight={500} color={C.ink} docLabel="debrief" preview />
+        {date ? <span data-flow-debrief-date="" style={{ fontSize: 11, lineHeight: 1.4, color: C.ink3 }}><When>{date}</When></span> : null}
+      </div>
+    </div>
+  );
+}
+
 /** The pin panel (§7): the selected pin's fact, its quotations, its link; the stepper for a merged pin; "n more". */
-function FlowPanel({ tape, flow, group, pin, onStep, onOpenAt, renderAgentMark, narrow }) {
+function FlowPanel({ tape, flow, group, pin, onStep, onOpenAt, renderAgentMark, narrow, words = null }) {
   const panel = panelOf(tape, pin);
+  // D2: the agent's words on a swap pin — between the fact line and the link (D2 spec §1)
+  const said = wordsOfPin(words, tape, pin);
   const at = group.members.indexOf(pin);
   const step = (d) => { const to = at + d; if (to >= 0 && to < group.members.length) onStep(group.members[to]); };
   const quote = (who, words) => (
@@ -339,6 +391,8 @@ function FlowPanel({ tape, flow, group, pin, onStep, onOpenAt, renderAgentMark, 
       </div>
       {panel.src === 'directive' && panel.player ? quote('player', panel.player) : null}
       {panel.src === 'directive' && panel.reply ? quote('agent', panel.reply) : null}
+      {said?.kind === 'line' ? <AgentWords record={words.record} i={said.i} renderAgentMark={renderAgentMark} narrow={narrow} /> : null}
+      {said?.kind === 'notYet' ? <p data-flow-debrief-notyet="" style={{ margin: '0 0 0 36px', fontSize: 12.5, lineHeight: 1.45, color: C.ink2 }}>{COPY.debrief.notYet}</p> : null}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginLeft: 36 }}>
         <FlowLink label={F.openThis} onClick={() => onOpenAt(panel.link.anchor)} data={{ 'data-flow-pin-link': panel.link.anchor }} />
         {group.merged ? (
@@ -388,8 +442,11 @@ function Tiles({ counts, cols }) {
  * @param {Function} props.onOpenAt        a pin's link: the tape, at that anchor (`swap-n` or `directives`)
  * @param {string}   props.doorId          the door's id — focus comes back to it from the tape (§10)
  * @param {Function} props.renderAgentMark the agent's mark at a size, beside its quoted reply
+ * @param {object|null} [props.words]    Film Room D2: the day's debrief record as the shell read it —
+ *                                         `{ state, record, notYet }` — only where the words are on for the owner;
+ *                                         null (the words off) renders the front exactly as D1 did
  */
-export default function FilmRoomFlow({ tape, battle = null, desktop = false, oneDay = true, moments = null, onOpenTape, onOpenAt, doorId, renderAgentMark = () => null }) {
+export default function FilmRoomFlow({ tape, battle = null, desktop = false, oneDay = true, moments = null, onOpenTape, onOpenAt, doorId, renderAgentMark = () => null, words = null }) {
   const narrow = useNarrow() && !desktop;
   const L = desktop ? FLOW_LAYOUT.desktop : narrow ? FLOW_LAYOUT.narrow : FLOW_LAYOUT.phone;
   const flow = flowOf(tape, { oneDay, battle });
@@ -421,7 +478,7 @@ export default function FilmRoomFlow({ tape, battle = null, desktop = false, one
       {/* §7: with no pin, the quiet line — but never beside rows the chart could not place (no instant): then the
           count of them alone, on the full tape (the review's NUM-3: "Nothing stood out" next to "6 more" contradicted) */}
       {pin && group
-        ? <FlowPanel tape={tape} flow={flow} group={group} pin={pin} onStep={(m) => setSelectedN(m.n)} onOpenAt={onOpenAt} renderAgentMark={renderAgentMark} narrow={narrow} />
+        ? <FlowPanel tape={tape} flow={flow} group={group} pin={pin} onStep={(m) => setSelectedN(m.n)} onOpenAt={onOpenAt} renderAgentMark={renderAgentMark} narrow={narrow} words={words} />
         : flow.more.value > 0
           ? <p data-flow-more="" style={{ margin: 0, fontSize: 12.5, color: C.ink2 }}><FlowAgg a={flow.more} /> {F.more}</p>
           : <p data-flow-quiet="" style={{ margin: 0, fontSize: 16, lineHeight: 1.5, color: C.ink }}>{F.nothing}</p>}

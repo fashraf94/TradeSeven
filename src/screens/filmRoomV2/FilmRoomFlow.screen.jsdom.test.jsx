@@ -24,6 +24,9 @@ vi.mock('../../config/featureFlags', async (importOriginal) => ({
   ...(await importOriginal()),
   get FILM_ROOM_FLOW_MODE() { return flags.flow; },
   get FILM_ROOM_CARDS_MODE() { return flags.cards; },
+  // Film Room D2: a D1 suite — the agent's words (FILM_ROOM_DEBRIEF_MODE, merged at 'allowlist') are pinned off here;
+  // D2's own suites (FilmRoomFlow.words.*) cover them on
+  get FILM_ROOM_DEBRIEF_MODE() { return 'off'; },
 }));
 
 import FilmRoomScreenV2 from './FilmRoomScreenV2.jsx';

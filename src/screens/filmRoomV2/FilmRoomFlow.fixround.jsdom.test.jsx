@@ -365,7 +365,10 @@ describe('item 4 — DA-15: a merged pin shows its range', () => {
     const flow = flowOf(sep23Tape, { battle: battleOf(sep23Tape) });
     for (let w = 256; w <= 1440; w += 1) {
       const xs = layoutOf(flow, w, 150).groups.map((g) => g.x);
-      for (let k = 1; k < xs.length; k += 1) if (!(xs[k] - xs[k - 1] >= 44)) throw new Error(`${w}: groups ${k} and ${k + 1} are ${xs[k] - xs[k - 1]} px apart`);
+      // Build D Amendment D DD-4: two groups EXACTLY 44 px apart are two (their touch areas meet, never overlap) — at 616
+      // px groups 3 and 4 are, and subtracting their floating-point centres reads 43.99999999999994; the measurement
+      // allows that rounding (a billionth of a pixel), never a real overlap
+      for (let k = 1; k < xs.length; k += 1) if (!(xs[k] - xs[k - 1] >= 44 - 1e-9)) throw new Error(`${w}: groups ${k} and ${k + 1} are ${xs[k] - xs[k - 1]} px apart`);
     }
     for (const w of [256, 296, 350, 639]) {
       stubChartWidth(w);

@@ -601,7 +601,49 @@ export const SPEC_QUOTE_CHANNELS = Object.freeze([
   { re: /^cards\.[A-Za-z0-9_-]+\.stageHistory\[\d+\]\.(reason|thesis)$/, by: 'your agent', at: (p) => [...p.slice(0, 4), 'consideredAt'] },
   // CA-4: the agent's closing note on a result, at the note's own closingNoteAt
   { re: /^cards\.[A-Za-z0-9_-]+\.result\.closingNote$/, by: 'your agent', at: (p) => [...p.slice(0, 3), 'closingNoteAt'] },
+  // Film Room D2 (D2 spec §1, DW-1): the agent's words on a swap pin — the DEBRIEF RECORD (`docs.debrief`) at
+  // `lines[i].text`, credited "the agent" at the record's own writtenAt
+  { re: /^lines\[\d+\]\.text$/, by: 'the agent', at: () => ['writtenAt'] },
 ]);
+
+/**
+ * Film Room D2 (D2 spec §1) — the not-yet line, PINNED HERE from the spec (never read from the copy table): what a swap
+ * pin says while the day has no record yet, before the next run.
+ */
+export const SPEC_DEBRIEF_NOT_YET = "Your agent's words arrive by the next morning.";
+
+/**
+ * Film Room D2 (D2 spec §1, DW-1, DW-2) — the agent's words on the front, judged against the documents: every shown line
+ * is a direct quotation of a WRITTEN record of this tape's battle and day, at `lines[i].text`, and sits in the panel of
+ * the one swap whose tape row key that line names — never a directive's panel, never a line whose key the tape does not
+ * hold; at most one line per panel; its date is the record's writtenAt's ET date. `docs.tape`, `docs.debrief`.
+ */
+export function debriefWordsDefects(container, docs = {}) {
+  const bad = [];
+  const { tape, debrief } = docs;
+  for (const el of container.querySelectorAll('[data-flow-said="agent-words"]')) {
+    const q = el.querySelector('[data-quote-path]');
+    const where = q?.getAttribute('data-quote-path') ?? '';
+    const m = /^lines\[(\d+)\]\.text$/.exec(where);
+    if (!q || q.getAttribute('data-quote-doc') !== 'debrief' || !m) { bad.push(`agent words not bound to a debrief line: “${where}”`); continue; }
+    const line = debrief?.lines?.[Number(m[1])];
+    if (!debrief || debrief.status !== 'written' || debrief.battleId !== tape?.battleId || debrief.etDate !== tape?.etDate) bad.push(`${where}: not a written record of this tape's day`);
+    const panel = el.closest('[data-flow-panel]');
+    const member = panel?.getAttribute('data-flow-panel-member') ?? '';
+    const [src, index] = member.split(':');
+    if (src !== 'action') { bad.push(`${where}: in a ${src || 'missing'} panel, not a swap's`); continue; }
+    if (!line || line.key !== tape?.actions?.[Number(index)]?.key) bad.push(`${where}: its key is not this swap's row key`);
+    if (panel.querySelectorAll('[data-flow-said="agent-words"]').length !== 1) bad.push(`${where}: more than one line in a panel`);
+    const date = el.querySelector('[data-flow-debrief-date] [data-time]')?.textContent ?? null;
+    const want = debrief?.writtenAt ? MONTH_DAY.format(new Date(`${ET_DAY_KEY.format(new Date(Date.parse(debrief.writtenAt)))}T12:00:00.000Z`)) : null;
+    if (date !== want) bad.push(`${where}: dated “${date}”, the record says “${want}”`);
+  }
+  for (const el of container.querySelectorAll('[data-flow-debrief-notyet]')) {
+    if (el.textContent !== SPEC_DEBRIEF_NOT_YET) bad.push(`not-yet line reads “${el.textContent}”`);
+    if (el.closest('[data-flow-panel]')?.getAttribute('data-flow-panel-member')?.split(':')[0] !== 'action') bad.push('not-yet line outside a swap panel');
+  }
+  return bad;
+}
 
 /**
  * The quotation element `node` sits in when it is BOUND to its path: it is the quotation component (its element
@@ -808,8 +850,10 @@ const flowMs = instantMs;
 function lowestCheckOf(tape) {
   let low = null;
   (Array.isArray(tape?.checks) ? tape.checks : []).forEach((c, i) => {
-    const v = c?.scores?.total; const t = flowMs(c?.at);
-    if (typeof v !== 'number' || !Number.isFinite(v) || t === null) return;
+    const raw = c?.scores?.total; const t = flowMs(c?.at);
+    if (typeof raw !== 'number' || !Number.isFinite(raw) || t === null) return;
+    // Build D Amendment C DC-8: lowest and tied on the DISPLAYED hundredths — the value to two places, as shown
+    const v = Math.round(Number(raw.toFixed(2)) * 100);
     if (!low || v < low.v || (v === low.v && t < low.t)) low = { i, v, t };
   });
   return low ? low.i : null;
@@ -845,6 +889,8 @@ export const SPEC_FLOW_COPY = Object.freeze([
   'more on the full tape', 'Open this on the full tape', "Some of this day's record is incomplete. The full tape says what.",
   'Nothing stood out in this game.', 'This game', 'This day', 'Trading', 'Working with you', 'of', 'swaps were its own call',
   'directives filed', 'moment to take home, on the full tape', 'moments to take home, on the full tape', 'Open the full tape',
+  // Film Room D2 (D2 spec §1): a swap pin's not-yet line
+  "Your agent's words arrive by the next morning.",
 ]);
 
 /** A chart member's instant, from the tape: `action:i` → actions[i].at, `directive:j` → directives[j].filedAt. */

@@ -19,6 +19,9 @@ vi.mock('../../config/featureFlags', async (importOriginal) => ({
   ...(await importOriginal()),
   get FILM_ROOM_FLOW_MODE() { return flags.flow; },
   get FILM_ROOM_CARDS_MODE() { return flags.cards; },
+  // Film Room D2: a D1 suite — the agent's words (FILM_ROOM_DEBRIEF_MODE, merged at 'allowlist') are pinned off here;
+  // D2's own suites (FilmRoomFlow.words.*) cover them on
+  get FILM_ROOM_DEBRIEF_MODE() { return 'off'; },
 }));
 
 import FilmRoomScreenV2 from './FilmRoomScreenV2.jsx';
@@ -486,7 +489,9 @@ describe('the review round (fix round) — the shell', () => {
     expect(backLabel()).toBe('‹ Game flow');
     m.render(screen({ battle: battleOf(sep23Tape, { ownerId: 'owner-b' }), readers, cardsApi, onBack }));
     await m.flush();
-    expect(backLabel()).toBe('‹ Game flow');   // B's answer still pending: the front may yet be there
+    // Build D Amendment D DD-3 (Astra's N3): the return was A's entry — B, pending, never inherits it (this line read
+    // "Game flow" before D2; FilmRoomFlow.d2carried.jsdom.test.jsx holds the reproduction)
+    expect(backLabel()).toBe('‹ Dashboard');
     answerB(false); await m.flush();
     expect(backLabel()).toBe('‹ Dashboard');
     m.click(m.q('header button')); await m.flush();

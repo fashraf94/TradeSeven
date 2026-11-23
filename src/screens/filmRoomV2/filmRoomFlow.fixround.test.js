@@ -74,10 +74,10 @@ describe('item 1 — F2: a day is final only on evidence (Amendment B DB-2)', ()
     const t = (v) => { const x = clone(sep23Tape); x.isFinalDay = v; return x; };
     expect([true, false, null].map((v) => isFinalDayOf(t(v), battleOf(sep23Tape)))).toEqual([true, false, null].map((v) => v === true));
     expect(['won', 'date', 'date']).toEqual([true, false, null].map((v) => flowOf(t(v), { battle: battleOf(sep23Tape) }).heading.kind));
-    // DB-2's letter: `true` is the writer's reading of the validated timeline, whatever the copied battle block says
-    // (the head also required `completed` — the report's §11 asks whether that should stay)
+    // Build D Amendment C DC-1 (the report's §11 Q1, ruled): `true` is final only beside a battle block that says
+    // `completed` — an active one reads as any other day (filmRoomFlow.d2carried.test.js holds the reproduction)
     const active = t(true); active.battle.status = 'active';
-    expect(isFinalDayOf(active)).toBe(true);
+    expect(isFinalDayOf(active)).toBe(false);
   });
   it('NO isFinalDay field (a tape written before it): final only when the battle completed AND its validated final trading day is this date', () => {
     const legacy = (status = 'completed') => { const x = clone(sep23Tape); delete x.isFinalDay; x.battle.status = status; return x; };

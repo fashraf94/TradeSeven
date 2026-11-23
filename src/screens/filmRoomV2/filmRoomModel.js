@@ -10,9 +10,9 @@
 // Spec: docs/specs/FILM_ROOM_BUILD_A_TAPE_SPEC_V1_2_20260927.md §7, §8 and
 // Amendment E (docs/specs/FILM_ROOM_BUILD_A_TAPE_SPEC_V1_2_AMENDMENT_E_20261008.md).
 
-import { classOfNumber, PROVENANCE_CLASSES, NON_CHECK_STATES } from '../../constants/filmTape';
-import { getSessionForDate } from '../../utils/marketCalendar';
-import { etDateOf } from '../../utils/tapeSchedule';
+import { classOfNumber, PROVENANCE_CLASSES, NON_CHECK_STATES } from '../../constants/filmTape.js';
+import { getSessionForDate } from '../../utils/marketCalendar.js';
+import { etDateOf } from '../../utils/tapeSchedule.js';
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -202,7 +202,7 @@ export function sessionOf(etDate) {
  * length and the harness's oracle share. It lives in src/utils/tapeSchedule.js since Film Room B1 W2, so the tape
  * writer reads the same timeline; re-exported here unchanged.
  */
-export { tradingTimeline } from '../../utils/tapeSchedule';
+export { tradingTimeline } from '../../utils/tapeSchedule.js';
 
 /** "Tue, Sep 23, 2026" / "Sep 23" for an ET trading date `YYYY-MM-DD`. */
 export function etDateLabel(etDate, { short = false } = {}) {

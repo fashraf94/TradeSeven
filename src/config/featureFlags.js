@@ -3679,3 +3679,50 @@ export const FILM_ROOM_FLOW_MODE = 'allowlist';
 
 /** The three walked states, in walk order. */
 export const FILM_ROOM_FLOW_MODES = Object.freeze(['off', 'allowlist', 'on']);
+
+/**
+ * FILM_ROOM_DEBRIEF_MODE — the Film Room's AGENT'S WORDS on the front's swap
+ * pins (Build D2 spec docs/specs/FILM_ROOM_BUILD_D2_WORDS_SPEC_V1_20261121.md
+ * §8, ruling DW-9; build report docs/audits/20261122_BUILD_FILM_ROOM_D2_WORDS.md),
+ * a STRING TRI-STATE after the FILM_ROOM_FLOW_MODE pattern. It resolves
+ * PER BATTLE OWNER, on both sides:
+ *   server  api/_utils/filmRoom/debriefGate.js — the nightly job
+ *           (api/cron/film-room-debrief.js) reads it at CALL time: 'off'
+ *           answers { skipped: true } before any read; 'allowlist' writes
+ *           only for the owners the cockpit's SERVER-SIDE allowlist admits
+ *           (isCockpitOwnerAllowlisted, read at call time); 'on' for every
+ *           tiered battle's owner.
+ *   client  src/utils/filmRoomGate.js resolveFilmRoomDebriefMode and
+ *           filmRoomDebriefOn — the words show on the front only where the
+ *           flow AND the debrief both resolve on; in 'allowlist' through the
+ *           same cached verdict the flow and the cards read
+ *           (readFilmRoomVerdict — the GET /api/agent/cockpit-status
+ *           `allowlisted` answer for the caller's own battle), never a second
+ *           request for a battle.
+ *   'off'       — the words for nobody: the job reads, calls and writes
+ *                 nothing; the front, its reads and its storage are D1's byte
+ *                 for byte (no debrief record is read).
+ *   'allowlist' — the words only for the owners the allowlist admits; everyone
+ *                 else is exactly 'off'.
+ *   'on'        — the words for every owner.
+ * Unknown values resolve to 'off' (fail closed). The words are written by ONE
+ * model call per battle day with a swap (api/_utils/filmRoom/debriefModelCall.js)
+ * and stored in agentBattles/{id}/debriefs/{etDate};
+ * NOTHING THE AGENT SEES OR TRADES READS ANY OF IT (the one-door census's
+ * `debrief` path and its rule).
+ *
+ * CURRENT: 'allowlist' (merged at this value by Film Room D2, DW-9): the job
+ * writes from the first night after deploy for the allowlist's owners only;
+ * their reads work once the founder deploys the `debriefs` rules block.
+ * RUNWAY: 'allowlist' → 'on', its own founder PR, never a build PR. Each step
+ * moves the pin row in src/config/filmRoomDebriefFlags.test.js in the same
+ * commit (BUILD_RULES §2). ROLLBACK: one line, this value back to 'off', with
+ * its pin row. A string tri-state, so it is pinned DIRECTLY — never a
+ * DARK_BY_DESIGN key (the flag-pin guard scans `*_ENABLED = true|false` only;
+ * the FILM_ROOM_FLOW_MODE precedent).
+ */
+// Pinned by: filmRoomDebriefFlags.test.js (a STRING tri-state — pinned directly, outside flagPinGuard's `*_ENABLED` scan; this value and the pin move together — BUILD_RULES §2).
+export const FILM_ROOM_DEBRIEF_MODE = 'allowlist';
+
+/** The three walked states, in walk order. */
+export const FILM_ROOM_DEBRIEF_MODES = Object.freeze(['off', 'allowlist', 'on']);

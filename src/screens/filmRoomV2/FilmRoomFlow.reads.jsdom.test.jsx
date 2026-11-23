@@ -20,6 +20,9 @@ vi.mock('../../config/featureFlags', async (importOriginal) => ({
   ...(await importOriginal()),
   get FILM_ROOM_FLOW_MODE() { return flags.flow; },
   get FILM_ROOM_CARDS_MODE() { return 'off'; },
+  // Film Room D2: a D1 suite — the agent's words (FILM_ROOM_DEBRIEF_MODE, merged at 'allowlist') are pinned off here;
+  // D2's own suites (FilmRoomFlow.words.*) cover them on, with their one read
+  get FILM_ROOM_DEBRIEF_MODE() { return 'off'; },
 }));
 const fs = vi.hoisted(() => ({ calls: [], docs: {} }));
 vi.mock('../../firebase/config', () => ({ db: { name: 'db' }, auth: {}, default: {} }));

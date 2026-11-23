@@ -23,15 +23,17 @@
 //             door, unchanged; back on the tape returns to the front ("Game
 //             flow"). Everywhere else the screen is the one above, byte for byte.
 
-import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { FILM_TAPE_WRITE_ENABLED, isAgentPresenceOn } from '../../config/featureFlags';
 import AgentPresenceMount from '../../components/AgentPresence/AgentPresenceMount';
 import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
-import { filmRoomBattleId, resolveFilmRoomFlowMode, filmRoomFlowOn } from '../../utils/filmRoomGate';
+import { filmRoomBattleId, resolveFilmRoomFlowMode, filmRoomFlowOn, sameFilmRoomIdentity, resolveFilmRoomDebriefMode, filmRoomDebriefOn, filmRoomFrontVerdictAsked } from '../../utils/filmRoomGate';
+// Film Room D2: when the words are written (the front's "by the next morning" window)
+import { debriefNotYet, debriefNotYetUntilMs } from '../../utils/debriefSchedule.js';
 import { isSessionDate, isBattleDay, closePassStartMs, closePassEndMs, closePassWillTape, validFinalTradingDay, etDateOf } from '../../utils/tapeSchedule';
 import { etClock, etDateLabel, tradingTimeline, meetingAnchor } from './filmRoomModel';
 import { FILM_ROOM_COPY as COPY } from './filmRoomCopy';
-import { useTapeDay, useSeriesDay, useIdeaVersion, firestoreReaders } from './filmRoomData';
+import { useTapeDay, useSeriesDay, useIdeaVersion, useDebriefDay, firestoreReaders } from './filmRoomData';
 // Film Room C2 item 5 (Amendment C CC-7): the idea the battle carried (Amendment D CD-8), read for the subject line under
 // cards mode only
 import { carriedIdeaOf } from '../../utils/filmRoomSubject';
@@ -54,6 +56,8 @@ import { momentsCountOf } from './filmRoomFlow.js';
 import { requestOpenBattleReview, battleReviewAtOf } from '../../components/Forge/Watchlist/ideaNavigation';
 
 const DESKTOP_QUERY = '(min-width: 1024px)';
+/** Film Room D2 (Amendment F DF-10): the longest delay setTimeout keeps (2^31 − 1 ms); a cutoff further off is never scheduled early. */
+const MAX_TIMER_MS = 2 ** 31 - 1;
 
 /** The element holding the focus now (null outside a browser). */
 const focusedNow = () => (typeof document !== 'undefined' ? document.activeElement : null);
@@ -265,20 +269,27 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
   // B DB-12, Astra's F12: the reader's cache keys by owner — a refreshed owner on the same battle id is a new question,
   // pending until its own answer, never the last owner's).
   const flowMode = resolveFilmRoomFlowMode();
+  // Film Room D2 (D2 spec §8, DW-9): the agent's words read THE SAME verdict, for the same identity — asked through the one
+  // seam only where the flow needs it ('allowlist') or, once the flow is 'on', where the words still do (filmRoomGate.js
+  // filmRoomFrontVerdictAsked); the flow 'off' shows no front, so no words and no question
+  const debriefMode = resolveFilmRoomDebriefMode();
   const flowOwnerId = typeof battle?.ownerId === 'string' ? battle.ownerId : null;
+  // Amendment D DD-3 (Astra's N3, N4): ONE identity record — the battle id and the nullable owner, two fields compared
+  // strictly — for the verdict, the front-seen marker and the "Game flow" return (filmRoomGate.js)
+  const identity = useMemo(() => ({ battleId, ownerId: flowOwnerId }), [battleId, flowOwnerId]);
   // a screen opened at a moment can never show the front (§3), so its verdict is never asked for the flow (the review's OP-2)
   const [openedAtMoment] = useState(() => openAt != null);
-  const [flowAnswer, setFlowAnswer] = useState(() => ({ battleId, ownerId: flowOwnerId, verdict: undefined }));
+  const [flowAnswer, setFlowAnswer] = useState(() => ({ identity, verdict: undefined }));
   useEffect(() => {
-    if (flowMode !== 'allowlist' || openedAtMoment || !battleId || typeof cardsApi?.readVerdict !== 'function') return undefined;
+    if (!filmRoomFrontVerdictAsked(flowMode, debriefMode) || openedAtMoment || !battleId || typeof cardsApi?.readVerdict !== 'function') return undefined;
     let live = true;
     Promise.resolve()
-      .then(() => cardsApi.readVerdict(battleId, { ownerId: flowOwnerId }))
-      .then((v) => { if (live && mounted.current) setFlowAnswer({ battleId, ownerId: flowOwnerId, verdict: v === true }); })
-      .catch(() => { if (live && mounted.current) setFlowAnswer({ battleId, ownerId: flowOwnerId, verdict: false }); });
+      .then(() => cardsApi.readVerdict(identity.battleId, { ownerId: identity.ownerId }))
+      .then((v) => { if (live && mounted.current) setFlowAnswer({ identity, verdict: v === true }); })
+      .catch(() => { if (live && mounted.current) setFlowAnswer({ identity, verdict: false }); });
     return () => { live = false; };
-  }, [flowMode, openedAtMoment, battleId, flowOwnerId, cardsApi]);
-  const flowVerdict = flowAnswer.battleId === battleId && flowAnswer.ownerId === flowOwnerId ? flowAnswer.verdict : undefined;
+  }, [flowMode, debriefMode, openedAtMoment, battleId, identity, cardsApi]);
+  const flowVerdict = sameFilmRoomIdentity(flowAnswer.identity, identity) ? flowAnswer.verdict : undefined;
   const flowOn = filmRoomFlowOn(flowMode, flowVerdict);
   // §3 — the screen opens on the front when the flow resolves on, the screen was NOT opened at a moment (`openAt`,
   // as App handed it at mount) and the day has a written tape; otherwise as it opened before Build D. `onTape`: the
@@ -288,25 +299,68 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
   // front that is still being read keeps the front's frame (its header, the day picker under the player's focus)
   // instead of painting the tape's layout for a moment (the review's DR-1). It belongs, as the flow's answer does
   // (DB-12), to the battle and the owner the front showed for: a refreshed owner's pending tape is a new question, and
-  // keeps DB-4's guard (the fix round review's FRC-1).
+  // keeps DB-4's guard (the fix round review's FRC-1). Both `fromFront` and `seenFront` hold the IDENTITY they belong to
+  // (DD-3) — never a joined string, so a missing owner and the owner "null" are two (Astra's N4).
   const [onTape, setOnTape] = useState(false);
-  const [fromFront, setFromFront] = useState(false);
-  const flowKey = `${battleId}|${flowOwnerId}`;
+  const [fromFrontFor, setFromFrontFor] = useState(null);
   const [seenFrontFor, setSeenFrontFor] = useState(null);
-  const seenFront = seenFrontFor === flowKey;
+  const seenFront = sameFilmRoomIdentity(seenFrontFor, identity);
   const frontIntent = flowOn && !openedAtMoment && !onTape;
   const front = frontIntent && written;
   const frontFrame = !front && frontIntent && seenFront && tapeState.status === 'loading';
-  useEffect(() => { if (front && !seenFront) setSeenFrontFor(flowKey); }, [front, seenFront, flowKey]);
+  useEffect(() => { if (front && !seenFront) setSeenFrontFor(identity); }, [front, seenFront, identity]);
+  // Film Room D2 (D2 spec §1, §9; DW-10): the agent's words — only where the front shows for this day and the words
+  // resolve on for this identity's owner; then ONE read of the day's record (useDebriefDay), never on the tape view
+  const wordsOn = front && filmRoomDebriefOn(debriefMode, flowVerdict);
+  const debriefState = useDebriefDay(battleId, day, wordsOn, readers, flowOwnerId);
+  // Amendment F DF-10 (Astra §9): the not-yet line EXPIRES on a page left open — a display-only timer at its cutoff
+  // (the run that processes this day, plus 30 minutes). `now` is the mount's instant; the timer counts from it the time
+  // the page has been open. It hides the line and nothing else: no read, no state the words' read keys on.
+  // The promise is made only for a tape the pass will read (the fix round's review, R-2, with Amendment F DF-1): one
+  // that names this battle and this battle's owner — the pass skips any other day as `ownerMismatch`, and no words come.
+  const tapeIsThisBattles = typeof tape?.ownerId === 'string' && tape.ownerId !== '' && tape.ownerId === flowOwnerId && tape?.battleId === battleId;
+  const notYetUntil = wordsOn && debriefState.status === 'missing' && tapeIsThisBattles ? debriefNotYetUntilMs(tape?.writtenAt, tape?.etDate) : null;
+  const [openedAt] = useState(() => Date.now());
+  const [notYetLapsed, setNotYetLapsed] = useState(null);
+  // a layout effect (the review's R-3): a cutoff already past when the line would commit — a read landing late, a day
+  // left and returned to — is marked lapsed before the browser paints, so the line is never drawn after its cutoff
+  useLayoutEffect(() => {
+    if (notYetUntil === null || notYetLapsed === notYetUntil) return undefined;
+    const delay = notYetUntil - (now + (Date.now() - openedAt));
+    if (delay <= 0) { setNotYetLapsed(notYetUntil); return undefined; }
+    if (delay > MAX_TIMER_MS) return undefined;   // past what a timer can wait: never sooner than its cutoff
+    const id = setTimeout(() => setNotYetLapsed(notYetUntil), delay);
+    return () => clearTimeout(id);
+  }, [notYetUntil, notYetLapsed, now, openedAt]);
+  // judged at THIS render's instant — the mount's plus the time the page has been open (the tests' lens, R-3): a read
+  // landing after the cutoff renders no line at all, so none enters the page even for the layout effect to remove
+  const notYetShown = notYetUntil !== null && notYetLapsed !== notYetUntil && debriefNotYet(tape?.writtenAt, tape?.etDate, now + (Date.now() - openedAt));
   // the review's DR-7 / DR-2, as Amendment B DB-4 makes it (Astra's F4): A GESTURE IN PROGRESS KEEPS THE TAPE. While
   // the front's conditions are still unknown — the verdict on its way, or the day still being read — a pointer-down
   // inside the tape, a key-down inside it, or a focus move onto one of its controls keeps the tape for this visit, from
   // the gesture's START: the gesture's own activation (its pointer-up, its key-up) then runs once, natively, on the
   // element still under it. It replaces the click guard, which held only at the click — after an admission between
-  // the press and the release had already swapped the element away. Once the front has shown, or on a settled page,
-  // nothing does but a door; an untouched page still opens on the front when admitted.
+  // the press and the release had already swapped the element away. Amendment C DC-4: a CLICK is a fourth trigger —
+  // assistive technology and voice control can send a click with nothing before it; it holds the tape, and runs once.
+  // Once the front has shown, or on a settled page, nothing does but a door; an untouched page still opens on the
+  // front when admitted.
   const unsettled = (flowMode === 'allowlist' && flowVerdict === undefined) || tapeState.status === 'loading';
-  const holdTape = () => { if (flowMode !== 'off' && !seenFront && !onTape && !front && unsettled) setOnTape(true); };
+  const holdable = flowMode !== 'off' && !seenFront && !onTape && !front && unsettled;
+  const holdTape = () => { if (holdable) setOnTape(true); };
+  // Amendment D DD-2 (Astra's N2; Amendment C DC-5): a WHEEL or TRACKPAD scroll is interaction too — of the tape's own
+  // scroll container, the document included (the page scrolls the document, not the screen's element), so it is heard
+  // on the window, and only while a hold is possible. A `scroll` event alone is not: a programmatic scroll or the page
+  // re-anchoring under a layout shift fires one with no viewer behind it. Layout effects, so the listener is gone in
+  // the same commit that shows the front — no wheel can land between the front's paint and its removal; the listener
+  // reads the hold's conditions of the latest render.
+  const holdRef = useRef(holdTape);
+  useLayoutEffect(() => { holdRef.current = holdTape; });
+  useLayoutEffect(() => {
+    if (!holdable || typeof window === 'undefined') return undefined;
+    const onWheel = () => holdRef.current();
+    window.addEventListener('wheel', onWheel, { capture: true, passive: true });
+    return () => window.removeEventListener('wheel', onWheel, { capture: true });
+  }, [holdable]);
   // BA-49, the first-open notice: marked seen once it has been SHOWN on the tape it qualifies — the tape layout, the
   // flow's answer in, the day's read done — never used up by a paint the front then replaces (the review's DR-3).
   // Where the flow is off for this owner — the mode 'off', or 'allowlist' answered no — that is the first paint it
@@ -433,16 +487,18 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
   // focus on its panel; a pin's link shows the tape at that swap or the directives, in Study, focused there — the
   // screen's own jump; "Game flow" returns to the front and puts the focus back on the door.
   const doorId = `${idBase}-flow-door`;
-  const openTape = () => { setOnTape(true); setFromFront(true); setDepth('glance'); setPendingJump(panelOf('glance')); };
-  const openTapeAt = (anchor) => { setOnTape(true); setFromFront(true); setDepth('study'); setPendingJump({ id: anchor, focus: true }); };
+  const openTape = () => { setOnTape(true); setFromFrontFor(identity); setDepth('glance'); setPendingJump(panelOf('glance')); };
+  const openTapeAt = (anchor) => { setOnTape(true); setFromFrontFor(identity); setDepth('study'); setPendingJump({ id: anchor, focus: true }); };
   // the way back waits for the day's tape (a day still being read has no door yet — the review's DR-5); and, deferred,
   // it carries the screen's focus-origin guard (Amendment B DB-11, Astra's F11): it lands only while the focus is still
   // where the press left it, or nowhere — never taken from a control the player has moved to since
-  const backToFront = () => { setOnTape(false); setFromFront(false); setPendingJump({ id: doorId, focus: true, scroll: false, when: 'tape', from: focusedNow() }); };
+  const backToFront = () => { setOnTape(false); setFromFrontFor(null); setPendingJump({ id: doorId, focus: true, scroll: false, when: 'tape', from: focusedNow() }); };
   // "Game flow" only where there is a front (Amendment B DB-10, Astra's F10): the day on screen has a written tape, or is
   // still being read; a day with no tape, a failed read or an unwritten day gets the back control it always had — and so
-  // does a tape whose (refreshed) owner the flow is now off for (the review's FRC-2)
-  const backHere = fromFront && !front && !flowOffHere && (tapeState.status === 'loading' || written);
+  // does a tape whose (refreshed) owner the flow is now off for (the review's FRC-2). Amendment D DD-3 (Astra's N3): the
+  // return renders only for the IDENTITY whose front was entered — a refreshed owner, pending or answered, never
+  // inherits another identity's door; the same identity keeps it while a day is read (DC-3)
+  const backHere = sameFilmRoomIdentity(fromFrontFor, identity) && !front && !flowOffHere && (tapeState.status === 'loading' || written);
   // §9: the cards line counts the moments the tape view would offer (the prepared case's own rule) — only under cards
   const momentCount = cardsOn && written && tagsStateOf(tape) === 'ready' ? momentsOfTape(tape).length : 0;
 
@@ -520,6 +576,7 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
             onOpenAt={openTapeAt}
             doorId={doorId}
             renderAgentMark={(size) => <AgentMark battle={battle} size={size} />}
+            words={wordsOn ? { state: debriefState.status, record: debriefState.record, notYet: notYetShown } : null}
           />
           )}
         </main>
@@ -528,7 +585,7 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
   }
 
   return (
-    <div data-screen="film-room-v2" onPointerDownCapture={holdTape} onKeyDownCapture={holdTape} onFocusCapture={holdTape} style={{ minHeight: '100vh', background: C.bg, color: C.ink, display: 'flex', flexDirection: 'column' }}>
+    <div data-screen="film-room-v2" onPointerDownCapture={holdTape} onKeyDownCapture={holdTape} onFocusCapture={holdTape} onClickCapture={holdTape} style={{ minHeight: '100vh', background: C.bg, color: C.ink, display: 'flex', flexDirection: 'column' }}>
       <header style={{ background: C.raised }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%', maxWidth: desktop ? 1240 : undefined, margin: '0 auto', boxSizing: 'border-box', padding: desktop ? '8px 24px 12px' : '6px 12px 10px' }}>
         {topRow}

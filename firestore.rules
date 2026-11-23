@@ -581,6 +581,21 @@ service cloud.firestore {
         }
       }
 
+      // Film Room D2 (spec docs/specs/FILM_ROOM_BUILD_D2_WORDS_SPEC_V1_20261121.md
+      // §6, ruling DW-6; the founder's FD-5): the agent's words for one battle
+      // day — CREATED once by the nightly job through the Admin SDK (which
+      // bypasses rules), read by the owner the document itself names, exactly
+      // as the tape's rule reads it. No client writes, the owner's included. A
+      // record that does not exist is denied (resource is null) — the front
+      // reads that as "no record". Proven by
+      // test/rules/filmRoomDebriefs.rules.mjs (npm run test:rules). The founder
+      // deploys it; until then a client read is denied and the screen shows no
+      // words.
+      match /debriefs/{etDate} {
+        allow read: if request.auth != null && resource.data.ownerId == request.auth.uid;
+        allow write: if false;
+      }
+
       // ID-1 Build 2 (shape note V1.7 §4, ruling Q-ID1-7): the activation
       // pointers, one immutable record per holding lifetime, created by the
       // observer through the Admin SDK only. SERVER-ONLY in V1: no client read
