@@ -180,3 +180,21 @@ describe('F6 — the response carries counts, never a battle id (DF-6)', () => {
     expect(JSON.stringify(res.body).includes(BATTLE_ID)).toBe(false);
   });
 });
+
+describe('F7 — the paid endpoint requires its secret (DF-7)', () => {
+  const tried = async (req) => {
+    const getDb = vi.fn(); const pass = vi.fn(async () => ({}));
+    const res = mkRes();
+    await handler(req, res, { getDb, pass });
+    return [res.statusCode, getDb.mock.calls.length, pass.mock.calls.length];
+  };
+  it('the `x-vercel-cron` header alone: 401 — no database, no pass', async () => {
+    expect(await tried({ headers: { 'x-vercel-cron': '1' } })).toEqual([401, 0, 0]);
+  });
+  it('no secret configured: "Bearer undefined" is refused — no database, no pass', async () => {
+    delete process.env.CRON_SECRET;
+    expect(await tried({ headers: { authorization: 'Bearer undefined' } })).toEqual([401, 0, 0]);
+    process.env.CRON_SECRET = '';
+    expect(await tried({ headers: { authorization: 'Bearer ' } })).toEqual([401, 0, 0]);
+  });
+});

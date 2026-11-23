@@ -8,7 +8,9 @@
  * close pass: model calls never share the tape writer's 300-second budget, and a failure here never touches the tape.
  *
  * The handler is auth + gate + wiring:
- *   1. the cron guard every cron has (the Vercel cron header, or `Authorization: Bearer $CRON_SECRET`);
+ *   1. its secret (Amendment F DF-7): `CRON_SECRET` set and non-empty, and `Authorization: Bearer $CRON_SECRET` —
+ *      the Vercel cron header alone no longer admits a request. THE FOUNDER'S PRECONDITION: with no CRON_SECRET in
+ *      the production environment, every scheduled run answers 401 and writes nothing;
  *   2. FILM_ROOM_DEBRIEF_MODE read at CALL time (api/_utils/filmRoom/debriefGate.js): 'off' answers
  *      200 { skipped: true } before the Firestore handle is even taken — zero reads, zero calls, zero writes;
  *   3. the pass (api/_utils/filmRoom/debriefPass.js): the ET date of the run, its admitted tiered battle days, one
@@ -33,10 +35,12 @@ const LOG_PREFIX = '[film-room-debrief]';
 
 export default async function handler(req, res, { getDb = getFirebaseAdmin, pass = runDebriefPass } = {}) {
   const startMs = Date.now();
-  // The platform's cron guard, as every other cron.
-  const isVercelCron = req.headers['x-vercel-cron'] === '1';
-  const authHeader = req.headers.authorization;
-  if (!isVercelCron && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  // Amendment F DF-7 (Astra's F7): the paid endpoint requires its secret — 401 before the gate and before any read
+  // unless CRON_SECRET is set and non-empty AND the request carries `Authorization: Bearer <CRON_SECRET>`. The
+  // `x-vercel-cron` header alone no longer admits a request (Vercel sends the bearer on every scheduled run when the
+  // secret is set). This endpoint only: the other crons keep their own guard (the founder's separate item).
+  const secret = process.env.CRON_SECRET;
+  if (typeof secret !== 'string' || secret === '' || req.headers?.authorization !== `Bearer ${secret}`) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   // The gate, read at CALL time, before any Firestore access.
