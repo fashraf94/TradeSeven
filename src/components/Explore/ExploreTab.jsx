@@ -39,7 +39,7 @@ function useMatches(query) {
 
 const focusQuietly = (el) => { if (el && el.isConnected && typeof el.focus === 'function') el.focus({ preventScroll: true }); };
 
-export default function ExploreTab({ explore = null, onOpenResearch, stocksData = [], isMobile = false, sidebarCollapsed = false, SheetHost = ExploreSheetHost }) {
+export default function ExploreTab({ explore = null, onOpenResearch, stocksData = [], isMobile = false, sidebarCollapsed = false, onInStory, SheetHost = ExploreSheetHost }) {
   const [view, setView] = useState({ kind: 'home' });
   const [choices, setChoices] = useState({});
   const [sheet, setSheet] = useState(null);
@@ -53,6 +53,15 @@ export default function ExploreTab({ explore = null, onOpenResearch, stocksData 
   const phoneSheet = useMatches(PHONE_SHEET);
   const viewRef = useRef(view);
   viewRef.current = view;
+
+  // F-1 (founder, Nov 22): inside a story the page does not draw its tab row. The page is told through `onInStory`:
+  // true only while this tab shows a story that exists (the stories loaded, the story among them). Opening a story
+  // and ← Explore tell it in the same handler as the view change, so the row leaves and returns in the SAME commit as
+  // the view, before the scroll and the focus below run; the effect covers the rest (the story disappearing, the
+  // snapshot going away); and this tab reports false when it unmounts.
+  const storyShown = view.kind === 'story' && explore?.stories?.status === 'ready' && explore.stories.list.some((s) => s.id === view.storyId);
+  useLayoutEffect(() => { onInStory?.(storyShown); }, [storyShown, onInStory]);
+  useLayoutEffect(() => () => { onInStory?.(false); }, [onInStory]);
 
   // After a view change: the scroll and the focus the change asked for (never a scroll on focus).
   useLayoutEffect(() => {
@@ -121,10 +130,12 @@ export default function ExploreTab({ explore = null, onOpenResearch, stocksData 
     });
     afterView.current = { scrollTo: 0, focus: 'title' };
     setView({ kind: 'story', storyId });
+    onInStory?.(true);
   };
   const back = () => {
     afterView.current = { scrollTo: homeScroll.current, focus: 'opener' };
     setView({ kind: 'home' });
+    onInStory?.(false);
   };
 
   const openSheet = (entry, event) => {

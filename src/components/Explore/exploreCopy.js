@@ -73,6 +73,8 @@ export const EXPLORE_COPY = Object.freeze({
     ownWordsNote: 'Opens Work an idea with your words. Nothing starts until you continue there.',
     noStory: 'No story on this yet.',
     noStoryNoAccess: 'No story on this yet. Try a company name or ticker.',
+    /** In the own-words row's place at the daily limit (founder ruling SQ-8, Nov 22): {perDay} is the read's quota. */
+    limit: (perDay) => `You've used today's ${perDay} investigations. Try this one tomorrow.`,
     company: (symbol, name) => `${symbol} · ${name}`,
     companyNote: 'Opens the company’s research',
   }),
@@ -112,7 +114,7 @@ export const EXPLORE_COPY = Object.freeze({
     startsRows: Object.freeze({ story: 'Story', question: 'Question', angle: 'Angle', firstStep: 'First step', companies: 'Companies', open: 'Still open' }),
     startsStory: (title, reporter, date) => `“${title}”${[reporter, date].filter(Boolean).length ? ` · ${[reporter, date].filter(Boolean).join(', ')}` : ''}`,
     startsQuestion: 'Your question steers every search.',
-    startsFirstStep: "Your agent's first step checks the story against its sources.",
+    startsFirstStep: "Your agent's first step checks the story against its source.",
     startsCompanies: 'Searches start from the companies this story names.',
     startsOpen: (unknown) => `Still open: ${unknown}`,
     cost: (perDay, used) => `Uses 1 of your ${perDay} investigations today · ${used} used`,

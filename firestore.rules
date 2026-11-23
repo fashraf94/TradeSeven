@@ -173,10 +173,14 @@ service cloud.firestore {
                             && request.resource.data.savedAt is timestamp;
     }
 
-    // Explore stories: signed-in reads; written only by the content pipeline
-    // (Admin SDK). The Work an idea route reads them with its own credentials.
+    // Explore stories: a signed-in player reads a published story only
+    // (founder ruling SQ-9, Nov 22, 2026): a draft, or any document whose
+    // stored status is not 'published', is not readable by a client, and a
+    // list must filter on status == 'published'. Written only by the content
+    // pipeline (Admin SDK). The Work an idea route reads them with its own
+    // credentials.
     match /exploreStories/{storyId} {
-      allow read: if request.auth != null;
+      allow read: if request.auth != null && resource.data.status == 'published';
       allow create, update, delete: if false;
     }
 

@@ -6,8 +6,9 @@
 //   users/{uid}/exploreBookmarks/{storyId}   the player's bookmarks, exactly { storyId, storyVersion, title, savedAt }:
 //     the owner reads and deletes; a create or update carries exactly those four keys, storyId equal to the document
 //     id, a whole-number version, a bounded title and a timestamp. No one else reads or writes.
-//   exploreStories/{storyId}                 signed-in reads; no client write (the content pipeline writes with the
-//     Admin SDK; the Work an idea route reads with its own credentials).
+//   exploreStories/{storyId}                 a signed-in player reads a published story only (founder ruling SQ-9,
+//     Nov 22, 2026: drafts are not readable); no client write (the content pipeline writes with the Admin SDK; the
+//     Work an idea route reads with its own credentials).
 //
 // THE CLAIMS:
 //   · the owner creates, updates, reads, lists and deletes their bookmark (positive controls — a misloaded or
@@ -15,7 +16,9 @@
 //   · another player, a privileged-claims context and an unauthenticated client can do none of it;
 //   · each missing key, each extra key, a mismatched id, a version that is not a whole number ≥ 0, a blank or long
 //     title, and a savedAt that is not a timestamp are each refused;
-//   · any signed-in player reads the stories; an unauthenticated client cannot; no one writes one;
+//   · a signed-in player reads a published story, by id or by a query filtered to published; a draft, a document
+//     with no status, an unfiltered list and a list filtered to another status are refused; an unauthenticated
+//     client reads none; no one writes one;
 //   · the rules text carries exactly these two blocks.
 //
 // Not part of the default vitest run (no `.test.` in the filename). Run: npm run test:rules
@@ -139,6 +142,30 @@ describe('the stories: signed-in reads, no client writes', () => {
     const got = await assertSucceeds(getDocs(query(collection(asOwner(), 'exploreStories'), where('status', '==', 'published'), orderBy('publishedAt', 'desc'), limit(12))));
     expect(got.docs.map((d) => d.id)).toEqual([STORY_ID]);
   });
+  // Founder ruling SQ-9 (Nov 22, 2026): players read published stories only.
+  it('SQ-9: a published story read by id is allowed; a list filtered to published is allowed', async () => {
+    await assertSucceeds(getDoc(doc(asOwner(), STORY)));
+    const got = await assertSucceeds(getDocs(query(collection(asOther(), 'exploreStories'), where('status', '==', 'published'))));
+    expect(got.docs.map((d) => d.id)).toEqual([STORY_ID]);
+  });
+  it('SQ-9: a draft read by id is denied, for every signed-in player', async () => {
+    await assertFails(getDoc(doc(asOwner(), 'exploreStories/draft-1')));
+    await assertFails(getDoc(doc(asOther(), 'exploreStories/draft-1')));
+    await assertFails(getDoc(doc(asPrivileged(), 'exploreStories/draft-1')));
+  });
+  it('SQ-9: a document with no status is denied by id', async () => {
+    await seed('exploreStories/no-status-1', { title: 'No status', version: 0 });
+    await assertFails(getDoc(doc(asOwner(), 'exploreStories/no-status-1')));
+  });
+  it('SQ-9: a list with no status filter is denied; a list filtered to another status is denied', async () => {
+    await assertFails(getDocs(collection(asOwner(), 'exploreStories')));
+    await assertFails(getDocs(query(collection(asOwner(), 'exploreStories'), orderBy('publishedAt', 'desc'), limit(12))));
+    await assertFails(getDocs(query(collection(asOwner(), 'exploreStories'), where('status', '==', 'draft'))));
+  });
+  it('SQ-9: signed out, a published story is denied by id and by the page\'s query', async () => {
+    await assertFails(getDoc(doc(asAnon(), STORY)));
+    await assertFails(getDocs(query(collection(asAnon(), 'exploreStories'), where('status', '==', 'published'), orderBy('publishedAt', 'desc'), limit(12))));
+  });
   it('an unauthenticated client cannot read them', async () => {
     await assertFails(getDoc(doc(asAnon(), STORY)));
     await assertFails(getDocs(collection(asAnon(), 'exploreStories')));
@@ -170,7 +197,7 @@ describe('the posture is written down', () => {
       '&& request.resource.data.savedAt is timestamp;',
     ]]);
     expect(ruleBlocks(RULES_TEXT, /\/exploreStories\/\{storyId\}/)).toEqual([[
-      'allow read: if request.auth != null;',
+      "allow read: if request.auth != null && resource.data.status == 'published';",
       'allow create, update, delete: if false;',
     ]]);
   });

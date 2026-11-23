@@ -178,6 +178,11 @@ describe('the words (K-13, E-1)', () => {
     expect(EXPLORE_COPY.panel.onePerStory).toBe('One investigation per story. Continue this one to take it further.');
     expect(Object.values(EXPLORE_COPY.story.basis)).toEqual(['Source cited', "Reporter's reading", 'No source yet']);
   });
+  it('the founder\'s lines of Nov 22, word for word (SQ-7: "its source"; SQ-8: search at the daily limit)', () => {
+    expect(EXPLORE_COPY.panel.startsFirstStep).toBe("Your agent's first step checks the story against its source.");
+    expect(EXPLORE_COPY.search.limit(3)).toBe("You've used today's 3 investigations. Try this one tomorrow.");
+    expect(EXPLORE_COPY.search.limit(7)).toBe("You've used today's 7 investigations. Try this one tomorrow.");
+  });
   it('"What starts with it" never says that the sources or the company leads travel into the investigation (spec §4, N-3)', () => {
     const starts = [EXPLORE_COPY.panel.startsQuestion, EXPLORE_COPY.panel.startsFirstStep, EXPLORE_COPY.panel.startsCompanies].join(' ');
     expect(starts).not.toMatch(/lead|scope|carr(y|ies)|comes with|source references/i);

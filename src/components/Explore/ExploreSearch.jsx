@@ -8,7 +8,8 @@
 //      uses, never a copy): a tap opens AssetResearch;
 //   3. "Work '{text}' from your own words", always last, from three characters, ONLY when the research read is
 //      ready (K-12): a tap opens the sheet's own-words start with the text in it; nothing is sent until the player
-//      continues there.
+//      continues there. At the daily limit (the read's quota, by the panel's own atLimitOf — founder ruling SQ-8,
+//      Nov 22, 2026) the row is not drawn: in its place, one line saying the day's investigations are used.
 // Never a dead end: with no story and no company, "No story on this yet." — and for a player without access, the
 // line that points at companies instead; said only once the stories read has answered (review A-3). There is no
 // "not available" row. Typing sends nothing.
@@ -16,7 +17,7 @@
 import React, { useMemo, useState } from 'react';
 import { matchCompanies, researchAssetOf } from '../Search/companyMatch';
 import { EXPLORE_COPY } from './exploreCopy';
-import { OWN_WORDS_MIN, RESEARCH, storyMatchesOf } from './exploreView';
+import { OWN_WORDS_MIN, RESEARCH, atLimitOf, storyMatchesOf } from './exploreView';
 import { S, T, rowBtnStyle, wash } from './exploreStyle';
 import { Eyebrow, Icon, Tag } from './exploreParts';
 
@@ -36,6 +37,8 @@ export default function ExploreSearch({ stories, storiesReady = true, research, 
   const storyRows = typed ? storyMatchesOf(stories, typed).slice(0, STORY_ROWS) : [];
   const companies = typed ? matchCompanies(typed).slice(0, COMPANY_ROWS) : [];
   const access = research?.status === RESEARCH.READY;
+  // At the daily limit (founder ruling SQ-8): the panel's own test on the read's own quota, never a second rule.
+  const atLimit = access && atLimitOf(research.quota);
   const ownWords = access && typed.length >= OWN_WORDS_MIN;
 
   return (
@@ -87,7 +90,10 @@ export default function ExploreSearch({ stories, storiesReady = true, research, 
           {storiesReady && storyRows.length === 0 && companies.length === 0 && (
             <p role="status" style={S.meta} data-explore-no-story="">{access ? COPY.noStory : COPY.noStoryNoAccess}</p>
           )}
-          {ownWords && (
+          {ownWords && atLimit && (
+            <p role="status" style={S.meta} data-explore-search-limit="">{COPY.limit(research.quota.perDay)}</p>
+          )}
+          {ownWords && !atLimit && (
             <button
               type="button"
               className="ftx-rowbtn"

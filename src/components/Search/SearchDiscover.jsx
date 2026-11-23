@@ -56,6 +56,11 @@ const SearchDiscover = ({ user, isMobile, isDesktop, setScreen, stocksData, side
   const tabs = withExplore
     ? [{ id: EXPLORE_HOME, label: 'Explore' }, ...TABS.map((tab) => (tab.id === 'explore' ? { ...tab, label: 'Markets' } : tab))]
     : TABS;
+  // Inside a story the tab row is not drawn (founder ruling F-1, Nov 22): the Explore tab says so through onInStory
+  // (false when it unmounts). Hidden ONLY while Explore is on, its tab is the open one, and a story shows — never on
+  // another tab, on Explore's home, or at 'off'.
+  const [inStory, setInStory] = useState(false);
+  const hideTabRow = withExplore && activeTab === EXPLORE_HOME && inStory;
 
   const onOpenResearch = (asset) => { touched.current = true; setResearchAsset(asset); };
 
@@ -151,7 +156,8 @@ const SearchDiscover = ({ user, isMobile, isDesktop, setScreen, stocksData, side
       </motion.div>
       )}
 
-      {/* Main Tabs */}
+      {/* Main Tabs — not inside an Explore story */}
+      {hideTabRow ? null : (
       <div style={{
         display: 'flex',
         gap: '8px',
@@ -185,6 +191,7 @@ const SearchDiscover = ({ user, isMobile, isDesktop, setScreen, stocksData, side
           </button>
         ))}
       </div>
+      )}
 
       {/* Tab Content */}
       <AnimatePresence mode="wait">
@@ -203,6 +210,7 @@ const SearchDiscover = ({ user, isMobile, isDesktop, setScreen, stocksData, side
                 stocksData={stocksData}
                 isMobile={isMobile}
                 sidebarCollapsed={sidebarCollapsed}
+                onInStory={setInStory}
               />
             </Suspense>
           )}
