@@ -40,8 +40,8 @@ afterEach(() => {
 });
 
 describe('the mode gate (rule 5)', () => {
-  it('the SHIPPED value is off: nobody is admitted, nothing is live', () => {
-    setPracticeFieldModeForTests(null);
+  it("'off': nobody is admitted, nothing is live", () => {
+    setPracticeFieldModeForTests('off');
     expect(practiceFieldMode()).toBe('off');
     expect(practiceFieldLive()).toBe(false);
     expect(practiceFieldAdmits('owner-1')).toBe(false);
@@ -86,7 +86,7 @@ describe('the mode gate (rule 5)', () => {
 
 describe("mode 'off' makes every Practice Field path a no-op, before any read", () => {
   it('creation, admission, release, the seam, the entry pass, one entry, the sales pass, one sale, the eval pass, the close and the draining-book passes all answer without touching the database', async () => {
-    setPracticeFieldModeForTests(null); // the shipped value
+    setPracticeFieldModeForTests('off');
     const { admitIdea, releaseIdea } = await import('./admission.js');
     const { enterIdea, runIdeaBookEntryPass } = await import('./entry.js');
     const { closeIdeaBook, catchUpIdeaBook } = await import('./close.js');
@@ -295,7 +295,7 @@ describe('the Film Room\'s two helpers (Amendment B item 1) and the seam they ar
   });
 
   it("with the mode 'off', bookForOwner answers null WITHOUT A READ — the Film Room behaves exactly as before", async () => {
-    setPracticeFieldModeForTests(null); // the shipped value
+    setPracticeFieldModeForTests('off');
     expect(await bookForOwner(untouchable, { uid: 'owner-1', attributionAgentId: 'agent-ranked-1' })).toBeNull();
     expect(await seamBookForOwner(untouchable, { uid: 'owner-1', attributionAgentId: 'agent-ranked-1' })).toBeNull();
     setPracticeFieldModeForTests('allowlist');

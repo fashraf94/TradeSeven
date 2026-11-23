@@ -1,0 +1,14 @@
+{
+  "_notes": [
+    "A ruling on an ambiguous corporate action (kind conflict): an unsettled conflict, a possible re-date, a ruled id revised since, or a refused share-basis record.",
+    "Required: ideaId, kind 'conflict', recordId (the action's id, from status), decision.",
+    "decision 'payload' needs payload: ONE of the payloads the record saw, exactly — e.g. { \"amount\": 0.25 } for a dividend, { \"ratio\": 2 } for a split.",
+    "decision 'none' declines the action on every ledger that records it (and is the only answer to a refused share-basis record); then leave payload out.",
+    "No ratio or actionId for this kind."
+  ],
+  "ideaId": "idea_REPLACE_WITH_THE_IDEA_ID_FROM_STATUS",
+  "kind": "conflict",
+  "recordId": "REPLACE_WITH_THE_ACTION_ID_FROM_STATUS",
+  "decision": "payload",
+  "payload": { "amount": 0.25 }
+}
