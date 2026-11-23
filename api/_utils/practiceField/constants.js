@@ -138,11 +138,11 @@ export const PRACTICE_FIELD_MARK_MAX_AGE_MS = 30 * 60 * 1000;
  * THE SMALLEST CALL THE IDEA BOOK MAKES, as the most it can cost (USD) — the spend module's `exhausted` is DERIVED from it
  * (spend.js; Astra T2B-04, the founder's Q2 ruling): a month whose remaining room under the $3 bound is below this figure
  * can fit no call, and reads exhausted. SET BY BUILD B2 from its one caller, the agent's desk check: spend.js
- * maxCallChargeUsd of claude-sonnet-5-5 with 41,000 input tokens (40,000 bytes + the 1,000-token allowance) and 8,000
- * output tokens = 41,000 × $2 × 1.25 + 8,000 × $10 per million = $0.1025 + $0.08 = $0.1825 (agentConfig.js; a test binds
+ * maxCallChargeUsd of claude-sonnet-5-5 with 41,000 input tokens (40,000 bytes + the 1,000-token allowance) and 6,000
+ * output tokens = 41,000 × $2 × 1.25 + 6,000 × $10 per million = $0.1025 + $0.06 = $0.1625 (agentConfig.js; a test binds
  * the two). It was a $0.05 placeholder before the caller existed.
  */
-export const PRACTICE_FIELD_MIN_CALL_MAX_CHARGE_USD = 0.1825;
+export const PRACTICE_FIELD_MIN_CALL_MAX_CHARGE_USD = 0.1625;
 
 /** Why a holding is waiting to be sold before the idea's endpoint (Amendment E1, E11). */
 export const EXIT_REASON = Object.freeze({ LINE: 'line', DELISTING: 'delisting' });

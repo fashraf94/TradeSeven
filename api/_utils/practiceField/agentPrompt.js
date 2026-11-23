@@ -93,6 +93,7 @@ function systemText({ desk, identity, thesesOn }) {
   lines.push(`- Price lines: one per name, a distance below its entry price — short ${pctOf(band.short.min)} to ${pctOf(band.short.max)}, medium ${pctOf(band.medium.min)} to ${pctOf(band.medium.max)}, long ${pctOf(band.long.min)} to ${pctOf(band.long.max)}. Write it as a fraction: 0.08 is 8%.`);
   lines.push(`- Capital: code sets it to the slot's permitted maximum (short up to ${pctOf(cap.short)} of the book, medium ${pctOf(cap.medium)}, long ${pctOf(cap.long)}), keeping at least ${pctOf(PRACTICE_FIELD_SLOTS.B2_CASH_FLOOR_SHARE)} of the book in cash and inside every position and sector cap. You never set money.`);
   lines.push('- Comparison: same_stock_held (the same shares, held unchanged), sector_fund (the names\' own sector fund, one symbol) or frozen_basket (2 to 8 other universe stocks, fixed at the start).');
+  lines.push(`- The no-difference band: at its review an idea within ${PRACTICE_FIELD_SLOTS.B4_BAND_SHARE_OF_RESERVED * 100}% of its capital of its comparison reads "within the band" — neither ahead nor behind.`);
   lines.push(`- One idea per slot. At most ${AGENT_DRAFTS_PER_CALL} drafts; code admits at most one per empty slot, in your order, and enters it at the next session's first window.`);
   lines.push('');
   lines.push('## Your answer');

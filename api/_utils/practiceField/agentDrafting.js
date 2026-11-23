@@ -97,6 +97,7 @@ export async function draftSlots(db, { desk, bookId, session, drafts, slotsToDra
   const considered = [];
   const refill = {};
   const done = new Set();
+  const waiting = new Set();
   for (const slot of slotsToDraft) refill[slot] = { attempted: false, spent: false, admittedIdeaId: null, waitingOn: null };
 
   for (const d of drafts) {
@@ -104,6 +105,7 @@ export async function draftSlots(db, { desk, bookId, session, drafts, slotsToDra
     const refuse = (refusals) => { considered.push({ ...entry, outcome: DRAFT_OUTCOME.REFUSED, refusals: refusals.map(refusalRecord) }); };
     if (!deskSlots.includes(d.slot)) { refuse([{ code: 'slot_not_this_desks', slot: d.slot }]); continue; }
     if (!Object.hasOwn(refill, d.slot)) { refuse([{ code: 'slot_not_empty', slot: d.slot }]); continue; }
+    if (waiting.has(d.slot)) { considered.push({ ...entry, outcome: DRAFT_OUTCOME.WAITING, refusals: [] }); continue; }
     if (done.has(d.slot)) { considered.push({ ...entry, outcome: DRAFT_OUTCOME.NOT_CHOSEN, refusals: [] }); continue; }
     // The source.
     let source;
@@ -126,14 +128,15 @@ export async function draftSlots(db, { desk, bookId, session, drafts, slotsToDra
       done.add(d.slot);
       continue;
     }
-    // Sized by code: the probe reads the permitted maximum at this instant, then admission runs with exactly it.
+    // Sized by code: the probe reads the permitted maximum at this instant, then admission runs with exactly it — at the
+    // SAME instant, so both measure the same mark set.
     const nowIso = clock().toISOString();
     const probe = await previewAdmission(db, { bookId, contract: draftContractOf(d, { desk, source, capitalUsd: PROBE_CAPITAL_USD }), opId, nowIso });
     let answer;
     if (!probe.shapeOk || !probe.ok) answer = { ok: false, refusals: probe.refusals, binding: probe.binding };
     else if (!(probe.permittedMaxUsd > 0)) answer = { ok: false, refusals: [{ code: 'no_capital_headroom' }], binding: probe.binding };
     else {
-      answer = await admitIdea(db, { bookId, contract: draftContractOf(d, { desk, source, capitalUsd: probe.permittedMaxUsd }), opId, nowIso: clock().toISOString() });
+      answer = await admitIdea(db, { bookId, contract: draftContractOf(d, { desk, source, capitalUsd: probe.permittedMaxUsd }), opId, nowIso });
     }
     refill[d.slot] = { ...refill[d.slot], attempted: true };
     if (answer.ok) {
@@ -148,7 +151,7 @@ export async function draftSlots(db, { desk, bookId, session, drafts, slotsToDra
     if (codes.length > 0 && codes.every((c) => TRANSIENT_ADMISSION_CODES.has(c))) {
       considered.push({ ...entry, outcome: DRAFT_OUTCOME.WAITING, refusals: (answer.refusals || []).map(refusalRecord) });
       refill[d.slot] = { attempted: true, spent: false, admittedIdeaId: null, waitingOn: [...new Set(codes)] };
-      done.add(d.slot);
+      waiting.add(d.slot);
       continue;
     }
     refuse(answer.refusals?.length ? answer.refusals : [{ code: 'refused' }]);

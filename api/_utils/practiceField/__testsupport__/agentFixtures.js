@@ -6,7 +6,8 @@
 
 import { runIdeaBookAgentPass } from '../agentRun.js';
 import { AGENT_TOOL_NAME } from '../agentTool.js';
-import { windowAt, closeOn, closeNowOf } from './fixtures.js';
+import { runIdeaBookEvalPass } from '../sweep.js';
+import { storeTickSnapshot, closeOn, closeNowOf, tickOf, slotNowOf } from './fixtures.js';
 
 /** The stocks every fixture close prices (a slice of the house universe across sectors) and the funds the ideas need. */
 export const CANDIDATE_PRICES = Object.freeze({
@@ -122,12 +123,16 @@ export function fakeTransport(script) {
 export const agentNowOf = (date) => new Date(closeNowOf(date).getTime() + 5 * 60_000);
 
 /**
- * One whole session of a book: the three windows (each with that session's quotes), the close, then the agent pass at
- * the close with the given transport. Returns `{ windows, close, agent }`.
+ * One whole session of a book, as the engine's cron runs it: the idea-book EVAL PASS at each of the three windows (each
+ * with that session's quotes; its lease, stamp and window-ledger row), the close, then the agent pass at the close with
+ * the given transport. Returns `{ windows, close, agent }`.
  */
 export async function runSession(db, bookId, date, { quotes, transport, slots = ['open30', 'midday', 'preClose'], clock } = {}) {
   const windows = [];
-  for (const slot of slots) windows.push(await windowAt(db, bookId, { date, slot, quotes }));
+  for (const slot of slots) {
+    await storeTickSnapshot(db, date, slot, quotes);
+    windows.push(await runIdeaBookEvalPass(db, { tick: tickOf(date, slot), now: slotNowOf(date, slot), ownerToken: `fixture-${date}-${slot}` }));
+  }
   const close = await closeOn(db, bookId, date, quotes);
   const now = agentNowOf(date);
   const agent = await runIdeaBookAgentPass(db, { date, now, ownerToken: `fixture-${date}`, transport, clock: clock ?? (() => now) });

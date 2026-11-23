@@ -30,8 +30,11 @@ import { PRACTICE_FIELD_SLOTS } from '../../../src/data/practiceFieldSlots.js';
 /** Ruling B2-5: the agent's model, as one constant. */
 export const PRACTICE_FIELD_AGENT_MODEL = 'claude-sonnet-5-5';
 
-/** The declared output cap: `max_tokens` on every request, and the reservation's output ceiling. */
-export const AGENT_MAX_OUTPUT_TOKENS = 8_000;
+/**
+ * The declared output cap: `max_tokens` on every request, and the reservation's output ceiling. Thinking runs inside it
+ * (the seam cannot turn it off), so it is the thinking and the answer together.
+ */
+export const AGENT_MAX_OUTPUT_TOKENS = 6_000;
 
 /** The fixed input ceiling: UTF-8 bytes of the system blocks + the messages + the tool's JSON. */
 export const AGENT_INPUT_BYTES_CEILING = 40_000;
@@ -42,8 +45,14 @@ export const AGENT_TOOL_OVERHEAD_TOKENS = 1_000;
 /** The reservation's input ceiling: every byte at most one token, plus the allowance. */
 export const AGENT_MAX_INPUT_TOKENS = AGENT_INPUT_BYTES_CEILING + AGENT_TOOL_OVERHEAD_TOKENS;
 
-/** How long one call may take before it counts as a transport failure (the cron's whole budget is 300 s). */
-export const AGENT_CALL_TIMEOUT_MS = 75_000;
+/**
+ * How long one call may take before it counts as a transport failure. Sized so that a FULL-LENGTH answer fits: 6,000
+ * output tokens in 110 s is about 55 tokens a second, and an answer that uses its whole cap at a slower rate times out (and
+ * is charged its whole reservation, then retried once). The cron's budget is 290 s of a 300-s function, and the book's
+ * lease lasts 300 s: two desks of one call each fit one fire; a retry pushes the second desk to the next close fire
+ * (fifteen minutes later — the deadline guard, agentRun.js), never past the lease.
+ */
+export const AGENT_CALL_TIMEOUT_MS = 110_000;
 
 /** One call and, on a transport failure only, one retry — each reserved under its own operation. */
 export const AGENT_MAX_ATTEMPTS = 2;

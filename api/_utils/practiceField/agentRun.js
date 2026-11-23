@@ -111,12 +111,34 @@ function sessionsLeft(session, due) {
   return n;
 }
 
-/** What a desk owns on the book right now. Pure. */
+/**
+ * Why a book's desks make no call at all, or null. Shared contract V2 §3.2: "Paused stops drafting and model spend" —
+ * so a paused book, or one winding down, is not checked by either desk (code still sells at its lines and settles).
+ */
+export function bookSpendStop(book) {
+  if (book?.drafting === 'paused') return 'drafting_paused';
+  if (book?.windDown) return 'wind_down';
+  return null;
+}
+
+/** What a desk owns on the book right now. Pure. A book whose spend is stopped gives no desk any work. */
 export function deskWorkOf(book, ideas, desk, { spentSlots = new Set() } = {}) {
   const deskIdeas = ideas.filter((i) => OPEN_IDEA_STATUSES.includes(i.status) && deskOfIdea(i) === desk);
-  const draftingAllowed = book.status === 'active' && book.drafting !== 'paused' && !book.windDown;
-  const emptySlots = draftingAllowed ? DESKS[desk].slots.filter((s) => (book.slots?.[s] ?? null) === null && !spentSlots.has(s)) : [];
-  return { deskIdeas, emptySlots, hasWork: deskIdeas.length > 0 || emptySlots.length > 0 };
+  const stopped = book.status !== 'active' || bookSpendStop(book) !== null;
+  const emptySlots = stopped ? [] : DESKS[desk].slots.filter((s) => (book.slots?.[s] ?? null) === null && !spentSlots.has(s));
+  return { deskIdeas: stopped ? [] : deskIdeas, emptySlots, hasWork: !stopped && (deskIdeas.length > 0 || emptySlots.length > 0), stoppedBy: stopped ? (bookSpendStop(book) ?? 'book_not_active') : null };
+}
+
+/**
+ * Is a transport error worth the one retry? A timeout, a network error (no HTTP status), or an HTTP 408, 409, 429 or 5xx —
+ * what may pass on a second try. A 4xx that says the request itself is wrong (400, 401, 403, 404, 413, 422…) is not
+ * retried: it would fail the same way, and cost a second reservation.
+ */
+export function retryableTransportError(err) {
+  if (err?.code === 'agent_call_timeout') return true;
+  const status = Number(err?.status);
+  if (!Number.isInteger(status)) return true;
+  return status === 408 || status === 409 || status === 429 || status >= 500;
 }
 
 /** The usage figures kept on an attempt. */
@@ -195,7 +217,7 @@ export async function runDeskCheck(db, bookRef, { session, desk, transport = sea
   };
 
   if (!prior && !work.hasWork) {
-    await writePart({ ...base, status: 'done', completedAt: clock().toISOString(), calledModel: false, source: AGENT_NOTE_SOURCE.NO_WORK, note: null, fallbackReason: null, actions: [], considered: [], refill: {}, attempts: [], manifest: null });
+    await writePart({ ...base, status: 'done', completedAt: clock().toISOString(), calledModel: false, source: AGENT_NOTE_SOURCE.NO_WORK, note: null, fallbackReason: null, stoppedBy: work.stoppedBy, actions: [], considered: [], refill: {}, attempts: [], manifest: null });
     return { desk, status: 'done', calls: 0, source: AGENT_NOTE_SOURCE.NO_WORK };
   }
 
@@ -234,10 +256,16 @@ export async function runDeskCheck(db, bookRef, { session, desk, transport = sea
     const candidates = work.emptySlots.length > 0 && snapSnap.exists ? candidatesOf(snapSnap.data(), namesTakenByBook(book, ideas)) : [];
     let theses = null;
     if (desk === 'shadow' && DESKS.shadow.readsTheses && practiceFieldAgentThesesOn() && work.emptySlots.length > 0) {
-      const read = await readSavedTheses(db, { uid: book.userId });
-      theses = read.theses;
-      thesisRefs = read.refs;
-      thesesSkipped = read.skipped;
+      // Fenced: a failed read of the saved theses costs the desk its theses, never its check.
+      try {
+        const read = await readSavedTheses(db, { uid: book.userId });
+        theses = read.theses;
+        thesisRefs = read.refs;
+        thesesSkipped = read.skipped;
+      } catch (err) {
+        console.error(`${LOG_PREFIX} ${bookRef.id} ${session} the saved theses could not be read — the Shadow desk drafts without them: ${err.message}`);
+        thesesSkipped = [{ listId: null, reason: 'theses_read_failed' }];
+      }
     }
     const priorNotes = await readPriorNotes(bookRef, { session, desk });
     const rowsOf = async (list) => {
@@ -311,7 +339,7 @@ export async function runDeskCheck(db, bookRef, { session, desk, transport = sea
         const done = {
           n, opId, state: 'settled', reservedAt, maxChargeUsd: reserved.maxChargeUsd, inputHash: manifest.inputHash, outcome, settledAt,
           chargedUsd: s.chargedUsd ?? null, unpriced, usage,
-          ...(transportError ? { error: String(transportError.code || transportError.name || 'error').slice(0, 60) } : {}),
+          ...(transportError ? { error: String(transportError.code || transportError.name || 'error').slice(0, 60), httpStatus: Number.isInteger(Number(transportError.status)) ? Number(transportError.status) : null, retryable: retryableTransportError(transportError) } : {}),
           ...(invalidReason ? { invalidReason: String(invalidReason).slice(0, 120) } : {}),
           ...(response?.stop_reason ? { stopReason: String(response.stop_reason).slice(0, 40) } : {}),
         };
@@ -322,8 +350,8 @@ export async function runDeskCheck(db, bookRef, { session, desk, transport = sea
       });
       attempts[attempts.length - 1] = settledAttempt;
       if (validated) { answer = validated; break; }
-      if (transportError && n < AGENT_MAX_ATTEMPTS) continue; // one retry, on a transport error only
-      return fallback(transportError ? 'transport_failed' : `answer_invalid:${invalidReason}`, { attempts, calledModel: true, manifest, callsThisFire });
+      if (transportError && retryableTransportError(transportError) && n < AGENT_MAX_ATTEMPTS) continue; // one retry, on a retryable transport error only
+      return fallback(transportError ? (retryableTransportError(transportError) ? 'transport_failed' : 'transport_refused') : `answer_invalid:${invalidReason}`, { attempts, calledModel: true, manifest, callsThisFire });
     }
     if (!answer) return fallback('transport_failed', { attempts, calledModel: true, manifest, callsThisFire });
   }
@@ -399,7 +427,15 @@ export async function runIdeaBookAgentPass(db, {
       if (!lease.acquired) { out.leaseSkips += 1; continue; }
       let checked = false;
       for (const desk of DESK_ORDER) {
-        const res = await runDeskCheck(db, bookRef, { session: date, desk, transport, clock, deadlineMs, timeoutMs });
+        // A fence per desk: one desk's failure is counted and never costs the other desk its check.
+        let res;
+        try {
+          res = await runDeskCheck(db, bookRef, { session: date, desk, transport, clock, deadlineMs, timeoutMs });
+        } catch (err) {
+          out.errors += 1;
+          console.error(`${LOG_PREFIX} ${bookRef.id} ${desk} desk failed for ${date}: ${err.message}`);
+          continue;
+        }
         out.calls += res.calls;
         if (res.status === 'done' && res.reason !== 'drafts_retried') checked = true;
         if (res.source === AGENT_NOTE_SOURCE.CODE_FALLBACK && res.status === 'done') out.fallbacks += 1;

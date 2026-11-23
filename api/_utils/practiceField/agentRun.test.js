@@ -65,7 +65,7 @@ describe('the call, and its spend', () => {
 
   it('PRACTICE_FIELD_MIN_CALL_MAX_CHARGE_USD is the real maximum of the agent\'s call', () => {
     expect(maxCallChargeUsd({ modelId: PRACTICE_FIELD_AGENT_MODEL, maxInputTokens: AGENT_MAX_INPUT_TOKENS, maxOutputTokens: AGENT_MAX_OUTPUT_TOKENS })).toBe(PRACTICE_FIELD_MIN_CALL_MAX_CHARGE_USD);
-    expect(PRACTICE_FIELD_MIN_CALL_MAX_CHARGE_USD).toBe(0.1825);
+    expect(PRACTICE_FIELD_MIN_CALL_MAX_CHARGE_USD).toBe(0.1625);
   });
 
   it('a scripted good answer: reserved before, settled after at its usage, the answer stored, the note written under the desk\'s name', async () => {
@@ -79,11 +79,11 @@ describe('the call, and its spend', () => {
     expect(part).toMatchObject({ desk: 'shadow', deskName: 'The Shadow desk', status: 'done', source: 'model', note: 'Holding steady; nothing material changed.' });
     expect(part.actions).toEqual([{ ideaId: ctx.mediumId, action: 'hold', reason: 'The thesis still holds against its comparison.', outcome: 'held' }]);
     expect(part.attempts).toHaveLength(1);
-    expect(part.attempts[0]).toMatchObject({ n: 1, state: 'settled', outcome: 'answered', unpriced: false, maxChargeUsd: 0.1825, chargedUsd: 0.03 });
+    expect(part.attempts[0]).toMatchObject({ n: 1, state: 'settled', outcome: 'answered', unpriced: false, maxChargeUsd: 0.1625, chargedUsd: 0.03 });
     // 6,000 × $2 + 1,800 × $10 per million = $0.012 + $0.018
     const book = getBook(ctx.db, ctx.bookId);
     expect(book.spend).toMatchObject({ reservedUsd: 0.03, settledUsd: 0.03, calls: 1, exhausted: false });
-    expect(ctx.db._get(`mandates/${ctx.bookId}/spendOps/agent:${D1}:shadow#1`)).toMatchObject({ state: 'settled', modelId: 'claude-sonnet-5-5', maxInputTokens: 41000, maxOutputTokens: 8000, cacheTtl: 'none', serverTools: [] });
+    expect(ctx.db._get(`mandates/${ctx.bookId}/spendOps/agent:${D1}:shadow#1`)).toMatchObject({ state: 'settled', modelId: 'claude-sonnet-5-5', maxInputTokens: 41000, maxOutputTokens: 6000, cacheTtl: 'none', serverTools: [] });
     expect(part.manifest).toMatchObject({ model: 'claude-sonnet-5-5', desk: 'shadow', inputTokens: 6000, outputTokens: 1800, chargedUsd: 0.03 });
     expect(JSON.stringify(part.manifest)).not.toMatch(/Holding steady|research-led/); // the manifest never carries the text
   });
@@ -113,7 +113,7 @@ describe('the code fallback: an answer that does not validate changes nothing', 
     ['an unknown field', (request) => toolResponse({ ...holdAll(request), capitalUsd: 50000 }), /^answer_invalid:answer:unknown_field:capitalUsd$/],
     ['no tool call at all', () => ({ stop_reason: 'end_turn', content: [{ type: 'text', text: 'I would hold.' }], usage: { input_tokens: 5000, output_tokens: 200 } }), /^answer_invalid:no_tool_call$/],
     ['a refusal', () => ({ stop_reason: 'refusal', content: [], usage: { input_tokens: 5000, output_tokens: 10 } }), /^answer_invalid:refusal$/],
-    ['an answer cut off at max_tokens', (request) => toolResponse(holdAll(request), { stopReason: 'max_tokens', outputTokens: 8000 }), /^answer_invalid:max_tokens$/],
+    ['an answer cut off at max_tokens', (request) => toolResponse(holdAll(request), { stopReason: 'max_tokens', outputTokens: 6000 }), /^answer_invalid:max_tokens$/],
   ];
   for (const [name, respond, reason] of fallbackCases) {
     it(`${name}: the code-built note, nothing changed, the call charged what it cost, no retry`, async () => {
@@ -137,10 +137,43 @@ describe('transport errors: one retry, reserved too', () => {
     const { res, calls, part, ctx } = await shadowAfter(({ request, n }) => (n === 1 ? transportError() : toolResponse(holdAll(request))));
     expect(calls).toHaveLength(2);
     expect(res).toMatchObject({ status: 'done', source: 'model', calls: 2 });
-    expect(part.attempts.map((a) => [a.n, a.outcome, a.unpriced, a.chargedUsd])).toEqual([[1, 'transport_error', true, 0.1825], [2, 'answered', false, 0.03]]);
+    expect(part.attempts.map((a) => [a.n, a.outcome, a.unpriced, a.chargedUsd])).toEqual([[1, 'transport_error', true, 0.1625], [2, 'answered', false, 0.03]]);
     expect(part.attempts[0].error).toBe('agent_call_timeout');
-    expect(getBook(ctx.db, ctx.bookId).spend).toMatchObject({ reservedUsd: 0.2125, settledUsd: 0.2125, calls: 2 });
+    expect(getBook(ctx.db, ctx.bookId).spend).toMatchObject({ reservedUsd: 0.1925, settledUsd: 0.1925, calls: 2 });
     expect(ctx.db._get(`mandates/${ctx.bookId}/spendOps/agent:${D1}:shadow#2`)).toMatchObject({ state: 'settled' });
+  });
+
+  it('the saved theses\' read failing (their query, never run against production) costs the Shadow desk its theses, never its check', async () => {
+    restoreAgent();
+    restoreAgent = setPracticeFieldAgentForTests({ agent: true, theses: true });
+    const ctx = await foundersBook();
+    await windowsAndClose(ctx, D1);
+    const failing = new Proxy(ctx.db, { get(t, k) { if (k === 'collection') return (name) => { if (name === 'watchlists') throw new Error('FAILED_PRECONDITION: the query needs an index'); return t.collection(name); }; const v = t[k]; return typeof v === 'function' ? v.bind(t) : v; } });
+    const fake = fakeTransport(({ request }) => toolResponse(holdAll(request)));
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const res = await runDeskCheck(failing, ctx.bookRef, { session: D1, desk: 'shadow', transport: fake.transport, clock: () => agentNowOf(D1) });
+      expect(res).toMatchObject({ status: 'done', source: 'model', calls: 1 });
+    } finally { errors.mockRestore(); }
+    expect(fake.calls[0].request.content.messages[0].content).not.toMatch(/saved_thesis/);
+    expect(deskPartsOf(ctx.db, ctx.bookId, D1).shadow).toMatchObject({ thesesSkipped: [{ listId: null, reason: 'theses_read_failed' }] });
+  });
+
+  it('a 400 (the request itself refused) is NOT retried: one call, the code fallback, the status recorded', async () => {
+    const err400 = Object.assign(transportError('invalid_request_error'), { status: 400 });
+    const { res, calls, part } = await shadowAfter(() => err400);
+    expect(calls).toHaveLength(1);
+    expect(res).toMatchObject({ source: 'code_fallback', reason: 'transport_refused' });
+    expect(part.attempts).toMatchObject([{ n: 1, outcome: 'transport_error', httpStatus: 400, retryable: false, unpriced: true }]);
+  });
+
+  it('a 529 (overloaded) or a 429 IS retried once', async () => {
+    for (const status of [529, 429]) {
+      const err = Object.assign(transportError('overloaded_error'), { status });
+      const { calls, part } = await shadowAfter(({ request, n }) => (n === 1 ? err : toolResponse(holdAll(request))));
+      expect(calls, String(status)).toHaveLength(2);
+      expect(part.attempts.map((a) => [a.outcome, a.httpStatus ?? null, a.retryable ?? null])).toEqual([['transport_error', status, true], ['answered', null, null]]);
+    }
   });
 
   it('two timeouts: the code fallback, both charged their maximum, and no third call', async () => {
@@ -148,7 +181,7 @@ describe('transport errors: one retry, reserved too', () => {
     expect(calls).toHaveLength(2);
     expect(res).toMatchObject({ status: 'done', source: 'code_fallback', reason: 'transport_failed' });
     expect(part).toMatchObject({ source: 'code_fallback', note: CODE_FALLBACK_NOTE, fallbackReason: 'transport_failed' });
-    expect(getBook(ctx.db, ctx.bookId).spend).toMatchObject({ reservedUsd: 0.365, settledUsd: 0.365, calls: 2 });
+    expect(getBook(ctx.db, ctx.bookId).spend).toMatchObject({ reservedUsd: 0.325, settledUsd: 0.325, calls: 2 });
   });
 
   it('the module\'s own timeout turns a call that never answers into a transport error', async () => {
@@ -196,8 +229,8 @@ describe('a replay of the same session never calls twice', () => {
     const res = await runDeskCheck(ctx.db, ctx.bookRef, { session: D1, desk: 'shadow', transport: fake.transport, clock: () => agentNowOf(D1) });
     expect(fake.calls).toHaveLength(1);
     expect(res).toMatchObject({ status: 'done', source: 'code_fallback', reason: 'interrupted_call' });
-    expect(deskPartsOf(ctx.db, ctx.bookId, D1).shadow.attempts).toMatchObject([{ n: 1, state: 'settled', outcome: 'interrupted', unpriced: true, chargedUsd: 0.1825 }]);
-    expect(getBook(ctx.db, ctx.bookId).spend).toMatchObject({ reservedUsd: 0.1825, settledUsd: 0.1825 });
+    expect(deskPartsOf(ctx.db, ctx.bookId, D1).shadow.attempts).toMatchObject([{ n: 1, state: 'settled', outcome: 'interrupted', unpriced: true, chargedUsd: 0.1625 }]);
+    expect(getBook(ctx.db, ctx.bookId).spend).toMatchObject({ reservedUsd: 0.1625, settledUsd: 0.1625 });
   });
 });
 
@@ -262,19 +295,51 @@ describe('the two desks (B2-7)', () => {
     expect(getIdea(ctx.db, ctx.bookId, ctx.mediumId).status).toBe('holding');
   });
 
-  it('a desk with no work makes no call: drafting paused leaves the archetype desk nothing; the Shadow desk still checks its idea', async () => {
+  it('a desk with no work makes no call: the Shadow desk with its slots full and no idea of its own is not called; the archetype desk is', async () => {
+    const ctx = await seedBook({ nowIso: etIso(DAYS.admit, 9, 0) });
+    // A book whose medium and long slots are taken by ideas not yet entered and owned by no desk the Shadow desk acts on
+    // is not this case; the plain one: the archetype desk has an empty short slot, the Shadow desk has work too. So the
+    // no-work desk is built directly: the Shadow desk's slots hold the archetype desk's... — see deskWorkOf below.
+    const book = getBook(ctx.db, ctx.bookId);
+    const full = { ...book, slots: { short: null, medium: 'idea_m', long: 'idea_l' } };
+    const otherDesks = [{ ideaId: 'idea_m', status: 'accepted', contract: { slot: 'medium', desk: 'archetype' } }];
+    expect(deskWorkOf(full, otherDesks, 'shadow')).toMatchObject({ hasWork: false, deskIdeas: [], emptySlots: [], stoppedBy: null });
+    expect(deskWorkOf(full, otherDesks, 'archetype')).toMatchObject({ hasWork: true, emptySlots: ['short'] });
+  });
+
+  it('A PAUSED BOOK SPENDS NOTHING (contract V2 §3.2: "Paused stops drafting and model spend"): neither desk is called; each says why', async () => {
     const ctx = await foundersBook();
     await windowsAndClose(ctx, D1);
     const book = getBook(ctx.db, ctx.bookId);
     ctx.db._store.set(`mandates/${ctx.bookId}`, { data: { ...book, drafting: 'paused' }, version: 99 });
-    expect(deskWorkOf({ ...book, drafting: 'paused' }, [], 'archetype')).toMatchObject({ hasWork: false, emptySlots: [] });
+    expect(deskWorkOf({ ...book, drafting: 'paused' }, [], 'archetype')).toMatchObject({ hasWork: false, emptySlots: [], stoppedBy: 'drafting_paused' });
     const fake = fakeTransport(({ request }) => toolResponse(holdAll(request)));
     const out = await runIdeaBookAgentPass(ctx.db, { date: D1, now: agentNowOf(D1), ownerToken: 't', transport: fake.transport, clock: () => agentNowOf(D1) });
-    expect(fake.calls.map((c) => c.desk)).toEqual(['shadow']);
-    expect(out.calls).toBe(1);
+    expect(fake.calls).toEqual([]);
+    expect(out.calls).toBe(0);
     const parts = deskPartsOf(ctx.db, ctx.bookId, D1);
-    expect(parts.archetype).toMatchObject({ source: 'no_work', calledModel: false, note: null, attempts: [] });
-    expect(parts.shadow.work).toEqual({ openIdeaIds: [ctx.mediumId], emptySlots: [] }); // paused: no slot to draft
+    for (const desk of ['shadow', 'archetype']) expect(parts[desk], desk).toMatchObject({ source: 'no_work', calledModel: false, note: null, attempts: [], stoppedBy: 'drafting_paused' });
+    expect(getBook(ctx.db, ctx.bookId).spend).toBeUndefined();
+    expect(deskWorkOf({ ...book, windDown: { requestedAt: 'x' } }, [], 'shadow')).toMatchObject({ hasWork: false, stoppedBy: 'wind_down' });
+  });
+
+  it('ONE DESK\'S FAILURE NEVER COSTS THE OTHER ITS CHECK: the Shadow desk throws (its first transaction fails); the archetype desk still checks', async () => {
+    const ctx = await foundersBook();
+    await windowsAndClose(ctx, D1);
+    const realTx = ctx.db.runTransaction.bind(ctx.db);
+    let txs = 0;
+    // The book's lease is the first transaction; the Shadow desk's reservation is the second.
+    ctx.db.runTransaction = async (fn, o) => { txs += 1; if (txs === 2) throw new Error('a store outage'); return realTx(fn, o); };
+    const fake = fakeTransport(({ request }) => toolResponse(holdAll(request)));
+    const out = await runIdeaBookAgentPass(ctx.db, { date: D1, now: agentNowOf(D1), ownerToken: 't', transport: fake.transport, clock: () => agentNowOf(D1) });
+    ctx.db.runTransaction = realTx;
+    expect(out).toMatchObject({ errors: 1, calls: 1 });
+    expect(fake.calls.map((c) => c.desk)).toEqual(['archetype']);
+    expect(deskPartsOf(ctx.db, ctx.bookId, D1).archetype).toMatchObject({ source: 'model' });
+    // …and the next fire serves the Shadow desk: nothing was reserved for it.
+    const again = await runIdeaBookAgentPass(ctx.db, { date: D1, now: agentNowOf(D1), ownerToken: 't2', transport: fake.transport, clock: () => agentNowOf(D1) });
+    expect(again).toMatchObject({ errors: 0, calls: 1 });
+    expect(deskPartsOf(ctx.db, ctx.bookId, D1).shadow).toMatchObject({ source: 'model' });
   });
 });
 

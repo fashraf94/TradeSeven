@@ -10,6 +10,9 @@
 //   • on 20 Nov the archetype desk EXITS its short idea: the endpoint is that close's, the settlement sale fills at the
 //     next session's first window (23 Nov), the idea is resulted, and the desk drafts the slot again at that close;
 //   • notes are written at every close, each under its desk's name; the spend stays under B9 ($3 a month);
+//   • THE REFUSAL PATHS AND THE CODE FALLBACK inside the run: on day 1 the archetype desk's first draft is outside the
+//     rails (refused, on the considered list) and its second is admitted; on 24 Nov the Shadow desk's call fails twice
+//     (two timeouts: the code-built note, nothing changed) and the next session runs normally; 27 Nov closes early;
 //   • the same history with the saved theses' sub-switch on — the Shadow desk drafts from the owner's saved thesis
 //     (origin `research`, the saved list as its source) — and with it off (the price list, origin `market_scan`).
 // The book is reconciled after every session and the final store is dumped and pinned.
@@ -25,7 +28,7 @@ import { MONTHLY_SPEND_BOUND_USD } from './spend.js';
 import { CODE_FALLBACK_NOTE } from './agentConfig.js';
 import { seedBook, getBook, getIdea, etIso, DAYS, dumpStore, bannedWordsOnResults } from './__testsupport__/fixtures.js';
 import {
-  quotesOn, foundersMediumIdea, fakeTransport, toolResponse, holdAll, draft, runSession, deskPartsOf,
+  quotesOn, foundersMediumIdea, fakeTransport, toolResponse, transportError, holdAll, draft, runSession, deskPartsOf,
 } from './__testsupport__/agentFixtures.js';
 
 let restoreMode;
@@ -45,6 +48,7 @@ function sessions(n = 13) {
 }
 const EARLY_CLOSE = '2026-11-27';
 const EXIT_SESSION = '2026-11-20';
+const FAIL_SESSION = '2026-11-24';
 
 /** The owner's saved thesis: a committed list with its card, its research record, its provenance stamp. */
 function seedSavedThesis(db, uid) {
@@ -78,6 +82,7 @@ function scriptedDesks(date) {
   return ({ desk, request, emptySlots, openIdeaIds }) => {
     const d = date();
     if (desk === 'shadow') {
+      if (d === FAIL_SESSION) return transportError(); // both attempts time out: the code fallback
       const theses = /<saved_thesis label="T1"/.test(request.content.messages[0].content);
       const drafts = emptySlots.includes('long')
         ? [theses ? draft({ slot: 'long', names: ['AAPL', 'MSFT'], source: { kind: 'saved_thesis', thesisRef: 'T1' }, thesis: 'The saved thesis: Apple and Microsoft keep compounding.' }) : draft({ slot: 'long', names: ['MSFT', 'NVDA'] })]
@@ -87,7 +92,9 @@ function scriptedDesks(date) {
     const actions = openIdeaIds.map((ideaId) => (d === EXIT_SESSION
       ? { ideaId, action: 'exit', reason: 'The breakout failed; the setup no longer holds.' }
       : { ideaId, action: 'hold', reason: 'Still inside its ten-session window.' }));
-    const drafts = emptySlots.includes('short') ? [draft({ slot: 'short', names: shortNames[shortDrafts++ % 3] })] : [];
+    // Day 1: a first draft outside the rails (a 20% short line; B5 allows 3%–8%), then one inside them.
+    const outside = d === DAYS.d1 ? [draft({ slot: 'short', names: ['XOM'], distance: 0.2 })] : [];
+    const drafts = emptySlots.includes('short') ? [...outside, draft({ slot: 'short', names: shortNames[shortDrafts++ % 3] })] : [];
     return toolResponse({ bookNote: `Archetype desk, ${d}: short-term only.`, actions, drafts }, { inputTokens: 4800, outputTokens: 1500 });
   };
 }
@@ -121,15 +128,26 @@ describe('the agent end to end — thirteen sessions of the founder\'s book (sav
     const { ctx, fake, days, results, mediumId } = await runBook({ theses: false });
     expect(days).toHaveLength(13);
     expect(days).toContain(EARLY_CLOSE);
-    // Every close: both desks checked, a note under each name, from the model.
+    // Every close: both desks checked, a note under each name — from the model, but on FAIL_SESSION, where the Shadow desk's
+    // two attempts timed out and its note is code's.
     for (const { date, agent } of results) {
-      expect(agent, date).toMatchObject({ books: 1, checked: 1, calls: 2, fallbacks: 0, errors: 0 });
       const parts = deskPartsOf(ctx.db, ctx.bookId, date);
-      expect(parts.shadow, date).toMatchObject({ deskName: 'The Shadow desk', source: 'model', note: `Shadow desk, ${date}: the banks hold their line against XLF.` });
       expect(parts.archetype, date).toMatchObject({ deskName: 'The archetype desk', source: 'model', note: `Archetype desk, ${date}: short-term only.` });
-      expect(parts.shadow.note).not.toBe(CODE_FALLBACK_NOTE);
+      if (date === FAIL_SESSION) {
+        expect(agent, date).toMatchObject({ books: 1, checked: 1, calls: 3, fallbacks: 1, errors: 0 });
+        expect(parts.shadow).toMatchObject({ deskName: 'The Shadow desk', source: 'code_fallback', note: CODE_FALLBACK_NOTE, fallbackReason: 'transport_failed', actions: [], considered: [] });
+        expect(parts.shadow.attempts.map((a) => [a.outcome, a.unpriced])).toEqual([['transport_error', true], ['transport_error', true]]);
+        continue;
+      }
+      expect(agent, date).toMatchObject({ books: 1, checked: 1, calls: 2, fallbacks: 0, errors: 0 });
+      expect(parts.shadow, date).toMatchObject({ deskName: 'The Shadow desk', source: 'model', note: `Shadow desk, ${date}: the banks hold their line against XLF.` });
     }
-    expect(fake.calls).toHaveLength(26);
+    expect(fake.calls).toHaveLength(27);
+    // The session after the fallback ran normally, and the fallback changed nothing: the medium idea still held.
+    expect(deskPartsOf(ctx.db, ctx.bookId, '2026-11-25').shadow).toMatchObject({ source: 'model' });
+    // Day 1's refused draft is on the considered list with its code; the next one was admitted.
+    expect(deskPartsOf(ctx.db, ctx.bookId, days[0]).archetype.considered.map((c) => [c.index, c.outcome, c.refusals.map((r) => r.code)]))
+      .toEqual([[0, 'refused', ['line_distance_out_of_band']], [1, 'admitted', []]]);
 
     // Day 1's drafts were admitted at its close and entered at day 2's first window.
     const ideas = ideasOf(ctx);
@@ -168,14 +186,20 @@ describe('the agent end to end — thirteen sessions of the founder\'s book (sav
 
     // The founder's medium idea: the Shadow desk's, held at every close, untouched by the archetype desk.
     expect(getIdea(ctx.db, ctx.bookId, mediumId).status).toBe('holding');
-    for (const { date } of results) expect(deskPartsOf(ctx.db, ctx.bookId, date).shadow.actions.map((a) => [a.ideaId, a.outcome])).toContainEqual([mediumId, 'held']);
+    for (const { date } of results.filter((r) => r.date !== FAIL_SESSION)) expect(deskPartsOf(ctx.db, ctx.bookId, date).shadow.actions.map((x) => [x.ideaId, x.outcome])).toContainEqual([mediumId, 'held']);
 
-    // The early-close session (27 Nov) was checked like any other.
-    expect(deskPartsOf(ctx.db, ctx.bookId, EARLY_CLOSE).shadow.status).toBe('done');
+    // THE EARLY-CLOSE SESSION (27 Nov, carried condition): its windows were served at the early-close geometry, its close
+    // ran, and both desks checked the book after it, like any other session.
+    const earlyRow = ctx.db._get(`mandates/${ctx.bookId}/windows/${EARLY_CLOSE}_close`);
+    expect(earlyRow.session).toMatchObject({ expected: ['open30', 'midday', 'preClose', 'close'], missing: [] });
+    expect(earlyRow.agent.desks.shadow).toMatchObject({ status: 'done', source: 'model' });
+    expect(earlyRow.agent.desks.archetype).toMatchObject({ status: 'done', source: 'model' });
+    expect(results.find((r) => r.date === EARLY_CLOSE).agent).toMatchObject({ calls: 2, fallbacks: 0 });
 
-    // THE SPEND (B9): 26 calls, each reserved at its $0.1825 maximum and settled at what it cost; the month under $3.
+    // THE SPEND (B9): 27 calls (26 and one retry), each reserved at its $0.1625 maximum and settled at what it cost (a
+    // timeout at its whole maximum); November under $3.
     const book = getBook(ctx.db, ctx.bookId);
-    const novCalls = results.filter((r) => r.date < '2026-12-01').length * 2;
+    const novCalls = results.filter((r) => r.date < '2026-12-01').length * 2 + 1;
     expect(book.spend.month).toBe('2026-12');
     expect(book.spend.lastMonth).toMatchObject({ month: '2026-11', calls: novCalls, exhausted: false });
     expect(book.spend.lastMonth.reservedUsd).toBeLessThan(MONTHLY_SPEND_BOUND_USD);
@@ -210,7 +234,7 @@ describe('the saved theses: the same history with their sub-switch on, and off',
 describe('the run is reproducible byte for byte', () => {
   // The pinned evidence (build B2's first pin). A change here is a change to what the agent's run records: re-pin it only
   // with a reviewed change, leaf-compared, and carry the figures into the build report.
-  const EXPECTED_AGENT_DUMP = { sha256: '0249436f6c4d2f92c686a17c4aa793931bb55dcd3e0fdfe100cea1d196f1a7c8', bytes: 789706 };
+  const EXPECTED_AGENT_DUMP = { sha256: '5ea3af6522d5429cd53a56e68817060e73ac2adeabcd3dfabc010c3ec91f493e', bytes: 827713 };
   it('the final store of the theses-off run, dumped and pinned', { timeout: 60_000 }, async () => {
     const { ctx } = await runBook({ theses: false });
     const dump = dumpStore(ctx.db);
