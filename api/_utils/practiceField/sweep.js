@@ -60,7 +60,7 @@ import { makeParseReportingFetcher } from './caParseReport.js';
 import { etDateOfMs } from './windows.js';
 import { nextSessionDate } from './windows.js';
 import { recordWindowAttempt } from './windowLedger.js';
-import { practiceFieldLive } from './mode.js';
+import { practiceFieldLive, practiceFieldAgentOn } from './mode.js';
 import { PRACTICE_FIELD_BOOK_REGISTRY_ID } from './constants.js';
 
 const LOG_PREFIX = '[PracticeFieldSweep]';
@@ -120,7 +120,23 @@ async function ideaBooksOfStatus(db, status) {
 }
 
 /**
+ * Build B2 (§2): may this idea book DRAFT at its next close — active, drafting not paused, no wind-down, a slot empty?
+ * Pure. (Whether the slot's desk still has its refill attempt this session is the agent's own question; at the close
+ * snapshot's build no desk has run yet.)
+ */
+export function ideaBookMayDraft(book) {
+  return isIdeaBook(book) && book.status === 'active' && book.drafting !== 'paused' && !book.windDown
+    && ['short', 'medium', 'long'].some((s) => (book.slots?.[s] ?? null) === null);
+}
+
+/**
  * The snapshot builders' inputs when at least one idea book is active.
+ *
+ * Build B2 (§2) — THE CANDIDATE UNIVERSE ON A DRAFTING CLOSE. On the CLOSE fire (`closeTick`), when the agent is on and an
+ * active idea book may draft (`ideaBooks`, ideaBookMayDraft), the close snapshot's build carries the shared candidate
+ * universe — its QUOTES only: the daily build is unchanged (no top-up of the day's slow layer), and the candidate floor
+ * stays 0 (a small universe never reads as degraded). The desks' candidate list is read from that stored snapshot. With the
+ * agent off, on any slot tick, or with no book to draft for, the inputs are exactly as before.
  *
  * T1a-2b-4 adds two things to the DAILY build's inputs only (never the slot snapshots'):
  *   • THE PARSE REPORT (Astra T2D-12; caParseReport.js): the daily build fetches the corporate actions of the symbols an
@@ -137,7 +153,7 @@ async function ideaBooksOfStatus(db, status) {
  *   active idea books hold, and which books they are
  * @returns {Promise<{ daily: object, tick: object, coverageCount: number }>}
  */
-export async function practiceFieldBuildInputs(db, { ideaHeldTickers = [], quarterlyActive, coverageData, ideaBookIds = [], now = new Date() }) {
+export async function practiceFieldBuildInputs(db, { ideaHeldTickers = [], quarterlyActive, coverageData, ideaBookIds = [], now = new Date(), closeTick = false, ideaBooks = [] }) {
   // `coverageData` is the coverage document the draining-query fallback ALREADY read this fire (coverageFromStandIn):
   // handed on, so that path needs no second read — a second one failing would throw into the fire the fallback is
   // there to protect (third refuter pass, 9a). On every other path it is undefined and the document is read here.
@@ -163,9 +179,11 @@ export async function practiceFieldBuildInputs(db, { ideaHeldTickers = [], quart
   // T2D-12: the parse-reporting wrapper, only when an idea book's coverage requires a symbol of this build.
   const parseReporting = practiceFieldLive() && dailyCoverage.length > 0
     ? { fetchCorporateActions: makeParseReportingFetcher(db, { symbols: dailyCoverage }) } : {};
+  // Build B2: the close snapshot of a drafting fire keeps the default candidate universe (see the header).
+  const draftingClose = closeTick === true && !quarterlyActive && practiceFieldAgentOn() && ideaBooks.some(ideaBookMayDraft);
   return {
     daily: { ...withoutDefault, coverageTickers: dailyCoverage, staticClassifications: fundStaticClassifications(), ...parseReporting },
-    tick: { ...withoutDefault, coverageTickers, ...(quarterlyActive ? {} : { minCandidateCapacity: 0 }) },
+    tick: { ...(draftingClose ? {} : withoutDefault), coverageTickers, ...(quarterlyActive ? {} : { minCandidateCapacity: 0 }) },
     coverageCount: reserved.length,
   };
 }

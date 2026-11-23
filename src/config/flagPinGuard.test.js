@@ -58,6 +58,9 @@ const FLAG_SOURCE_MODULES = [
   'src/config/perGameLoadoutFlags.js',
   // The chart's evidence, PR B: the daily sweep's flag, a module of its own (its header says why).
   'src/config/setupEvidenceSweepFlags.js',
+  // Practice Field build B2: the agent's two boolean sub-switches live beside PRACTICE_FIELD_MODE (a string, which
+  // buildFlagMap still does not see — it scans `*_ENABLED` booleans only).
+  'src/config/practiceFieldFlags.js',
 ];
 
 // ── Deliberately-dark flags (founder ruling 2026-08-10: keep the loud tripwire) ─
@@ -111,6 +114,11 @@ const DARK_BY_DESIGN = {
   // false mocks and did not move with the flip.
   WIRE_NEWSLINE_ENABLED:
     'Wire runway step 7 (LAST) — requires WIRE_WRITES_ENABLED; flips last at founder discretion',
+  // Practice Field build B2 (founder ruling PF-4): the agent ships off, so merging spends nothing.
+  PRACTICE_FIELD_AGENT_ENABLED:
+    'Practice Field B2 (ruling PF-4) — the agent\'s one check per desk per session at the close (claude-sonnet-5-5, reserved against the book\'s $3 month). Off on merge; the founder flips it in his own one-line PR after the build report\'s §7 steps, moving the pin in practiceFieldFlags.test.js to true AND removing this entry in the same commit',
+  PRACTICE_FIELD_AGENT_THESES_ENABLED:
+    'Practice Field B2 (ruling PF-5) — the owner\'s saved theses as a drafting source for the Shadow desk; its own sub-switch, off on merge, flipped by its own founder PR (pin in practiceFieldFlags.test.js, this entry removed in the same commit). Does nothing while PRACTICE_FIELD_AGENT_ENABLED is false',
   EDITORIAL_REVIEW_ENABLED:
     'Wire runway step 5 — flips after WIRE_WRITES_ENABLED (first Sunday after writes)',
   // COMPOSITION_EPOCH_FENCE_ENABLED intentionally ABSENT: it flipped true at

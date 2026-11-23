@@ -19,9 +19,18 @@
 // call), never assumed (§3.3/§6.3, D-20).
 //
 // Version 2 = the P5 rate-semantics change (batch flag + cache components).
+// Version 3 = Practice Field build B2 (founder ruling B2-5): Claude Sonnet 5.5
+// added, read from Anthropic's official pricing page on 2026-11-23
+// (https://docs.claude.com/en/docs/about-claude/pricing, which redirects to
+// https://platform.claude.com/docs/en/about-claude/pricing): base input
+// $2 / MTok, 5-minute cache write $2.50 (= 1.25x, the table's multiplier),
+// output $10 / MTok. Its cache hits are $0.10 / MTok (0.05x base) on that
+// page; the table's single 0.1x read multiplier overstates them (never
+// understates) — the idea book's agent writes no cache, so it bills none.
+// No existing rate changed.
 // The version is the audit trail for every derived estUsd on daily rows.
 
-export const MODEL_PRICE_TABLE_VERSION = 2;
+export const MODEL_PRICE_TABLE_VERSION = 3;
 
 export const CACHE_WRITE_INPUT_MULTIPLIER = 1.25; // 5-minute-TTL cache write premium
 export const CACHE_READ_INPUT_MULTIPLIER = 0.1;
@@ -33,6 +42,9 @@ export const MODEL_PRICES_PER_MTOK = Object.freeze({
   // Haiku 4.5 — the mandate manager's P1-pinned seat (mandateGenerationConfig).
   'claude-haiku-4-5-20251001': Object.freeze({ inputPerMTok: 1.0, outputPerMTok: 5.0 }),
   'claude-haiku-4-5': Object.freeze({ inputPerMTok: 1.0, outputPerMTok: 5.0 }),
+  // Sonnet 5.5 — the Practice Field agent's seat (build B2, ruling B2-5); read 2026-11-23 from
+  // https://platform.claude.com/docs/en/about-claude/pricing (docs.claude.com's pricing page, redirected).
+  'claude-sonnet-5-5': Object.freeze({ inputPerMTok: 2.0, outputPerMTok: 10.0 }),
 });
 
 const alertedUnknown = new Set();

@@ -74,6 +74,8 @@ function contractFingerprintInput(contract) {
     thesis: contract.thesis, slot: contract.slot, names: contract.names, weights: contract.weights,
     comparison: { type: contract.comparison.type, symbols: contract.comparison.symbols },
     lines: contract.lines, capitalUsd: contract.capitalUsd, origin: contract.origin, sources: contract.sources,
+    // Build B2: the drafting desk, only when the draft named one (a founder's contract fingerprints as before).
+    ...(contract.desk !== undefined ? { desk: contract.desk } : {}),
   };
 }
 
@@ -451,6 +453,52 @@ export async function admitIdea(db, { bookId, contract: rawContract, opId, nowIs
     };
   });
 }
+
+/**
+ * Build B2 (ruling B2-3) — THE SIZING PROBE: what admission WOULD permit for a draft, READ-ONLY. "Code sizes and clamps":
+ * the agent names the slot, names, comparison, lines and thesis; code sets the capital to the slot's permitted maximum
+ * under the rails and the cash floor. One transaction that makes exactly admitIdea's reads and runs the same pure
+ * evaluation (evaluateAdmission) at the same server instant, and writes NOTHING. The draft's own capital is a placeholder
+ * here; the caller then admits with `capitalUsd` set to the answer's `permittedMaxUsd`, and admitIdea checks everything
+ * again in its own transaction. `opId` names the would-be idea (its coverage reference).
+ *
+ * @returns {Promise<{ ok: boolean, refusals: Array<object>, permittedMaxUsd: number|null, binding: Array<object>, shapeOk: boolean }>}
+ *   `refusals` leave out the capital limits, which the placeholder decides nothing about
+ */
+export async function previewAdmission(db, { bookId, contract: rawContract, opId, nowIso } = {}) {
+  if (!db) throw new Error('previewAdmission: db required');
+  if (!idOk(bookId) || !idOk(opId)) throw new Error('previewAdmission: bookId and opId are required');
+  if (!isInstant(nowIso)) throw new Error('previewAdmission: nowIso must be an ISO instant');
+  const shape = normalizeIdeaContract(rawContract);
+  if (!practiceFieldLive()) return { ok: false, refusals: [...shape.refusals, { code: 'mode_not_admitted' }], permittedMaxUsd: null, binding: [], shapeOk: shape.contract !== null };
+  if (shape.contract === null) return { ok: false, refusals: shape.refusals, permittedMaxUsd: null, binding: [], shapeOk: false };
+  const bookRef = db.collection('mandates').doc(bookId);
+  const ideaRefKey = coverageRef(bookId, ideaIdFor(bookId, opId));
+  return db.runTransaction(async (tx) => {
+    const bookSnap = await tx.get(bookRef);
+    if (!bookSnap.exists || !isIdeaBook(bookSnap.data())) return { ok: false, refusals: [{ code: 'book_not_found' }], permittedMaxUsd: null, binding: [], shapeOk: true };
+    const book = bookSnap.data();
+    const epochSnap = await tx.get(epochRefOf(bookRef, book));
+    const epoch = epochSnap.exists ? epochSnap.data() : null;
+    const ideas = [];
+    for (const id of book.openIdeaIds || []) {
+      const snap = await tx.get(bookRef.collection('ideas').doc(id));
+      if (snap.exists) ideas.push(snap.data());
+    }
+    const coverageSnap = await tx.get(coverageRefOf(db));
+    const coverageData = coverageSnap.exists ? coverageSnap.data() : null;
+    const markSet = await readAdmissionMarkSet(tx, db, { nowIso });
+    assertReconciled(book, ideas);
+    const verdict = evaluateAdmission({
+      book, epoch, ideas, coverageData, contract: shape.contract, ideaRefKey, nowIso, admitsOwner: practiceFieldAdmits(book.userId), markSet,
+    });
+    const refusals = verdict.refusals.filter((r) => !CAPITAL_LIMIT_CODES.has(r.code));
+    return { ok: refusals.length === 0, refusals, permittedMaxUsd: verdict.permittedMaxUsd, binding: verdict.binding, shapeOk: true };
+  });
+}
+
+/** The refusals a capital limit gives (evaluateAdmission check 7): a sizing probe's placeholder capital decides none of them. */
+export const CAPITAL_LIMIT_CODES = new Set(['capital_exceeds_slot_cap', 'cash_floor_breached', 'single_position_cap_exceeded', 'sector_cap_exceeded']);
 
 /**
  * The release of an idea that never filled, as the next state of the book, the idea and the coverage document.

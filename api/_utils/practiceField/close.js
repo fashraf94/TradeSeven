@@ -792,39 +792,12 @@ function closeFilledIdea(idea, {
   const nothingHeld = Object.keys(next.ledger.holdings).length === 0;
   if (running && next.result == null && (date >= dueSession || nothingHeld)) {
     const kind = date > dueSession ? ENDPOINT_KIND.LATE : (date === dueSession ? ENDPOINT_KIND.DUE_SESSION : ENDPOINT_KIND.EARLY_RESOLUTION);
-    const built = buildEndpoint({
-      idea: next, valuations: { idea: ownV.valuation, comparison: cmpV.valuation, spy: spyV.valuation },
+    const settled = settleIdeaAtEndpoint(next, {
+      valuations: { idea: ownV.valuation, comparison: cmpV.valuation, spy: spyV.valuation },
       date, kind, observed, caughtUp: catchUp === true, snapshotMeta, nowIso,
     });
-    endpointRow = built.endpointRow;
-    // Everything still held waits for the ONE settlement sale (E7): a line exit still pending becomes it, keeping the
-    // record of how long it has waited.
-    const holdings = Object.fromEntries(Object.entries(next.ledger.holdings).map(([sym, h]) => {
-      const { exitPending, ...rest } = h;
-      return [sym, {
-        ...rest,
-        settlementPending: {
-          session: date, at: nowIso,
-          replacedExit: exitPending ? { reason: exitPending.reason, session: exitPending.session } : null,
-          waiting: exitPending?.waiting ?? null,
-        },
-      }];
-    }));
-    const statusHistory = [...(next.statusHistory || []), { status: IDEA_STATUS.SETTLED, at: nowIso }];
-    next = {
-      ...next,
-      status: IDEA_STATUS.SETTLED,
-      statusHistory,
-      ledger: { ...next.ledger, holdings },
-      result: built.result,
-      endpoint: {
-        session: date, kind, valueUsd: built.endpointRow.idea.valueUsd, cashUsd: built.endpointRow.idea.cashUsd,
-        holdingsNetUsd: built.endpointRow.idea.holdingsNetUsd, snapshotKey: snapshotMeta.key,
-      },
-      settledAt: nowIso,
-      processQuality: built.result.processQuality,
-      blockedBy: built.result.processDetail.blockedBy,
-    };
+    endpointRow = settled.endpointRow;
+    next = settled.nextIdea;
   }
   // E14: a settled idea with nothing left to sell is `resulted` at this same close — one that reached its endpoint
   // holding nothing, or (E11) one whose last waiting holding a delisting's cash has just closed. The caller returns
@@ -842,6 +815,70 @@ function closeFilledIdea(idea, {
   }
   const coverageChanged = own.renames.length + cmp.renames.length + spy.renames.length > 0;
   return { nextIdea: next, row, endpointRow, returnedCents: 0, resolved: false, ownApplied: own.applied, ownFrozen: ownV.frozen, alerts, coverageChanged, adjusted, shareCorrections: ruled?.shareCorrections ?? [] };
+}
+
+/**
+ * STEP 5 OF THE CLOSE — THE ENDPOINT AND ITS SETTLEMENT (E4, E7), as one pure step shared by the close (above) and, since
+ * build B2, by the manager's early exit (managerExit.js; ruling B2-1): the endpoint row and the result (settlement.js
+ * buildEndpoint), every holding still held waiting for the ONE settlement sale — a line exit still pending becomes it,
+ * keeping the record of how long it has waited — the idea `settled`, its endpoint and its process quality. The sale itself
+ * is the settlement sale every settled idea gets (exits.js), at the first window after `nowIso`. `reason` (B2-1:
+ * `manager_exit`) is written on each holding's settlement record ONLY when given, so the close's own records are
+ * unchanged byte for byte. Pure.
+ *
+ * @returns {{ nextIdea: object, endpointRow: object }}
+ */
+export function settleIdeaAtEndpoint(next, { valuations, date, kind, observed, caughtUp, snapshotMeta, nowIso, reason = undefined }) {
+  const built = buildEndpoint({ idea: next, valuations, date, kind, observed, caughtUp, snapshotMeta, nowIso });
+  const holdings = Object.fromEntries(Object.entries(next.ledger.holdings).map(([sym, h]) => {
+    const { exitPending, ...rest } = h;
+    return [sym, {
+      ...rest,
+      settlementPending: {
+        session: date, at: nowIso,
+        ...(reason !== undefined ? { reason } : {}),
+        replacedExit: exitPending ? { reason: exitPending.reason, session: exitPending.session } : null,
+        waiting: exitPending?.waiting ?? null,
+      },
+    }];
+  }));
+  const statusHistory = [...(next.statusHistory || []), { status: IDEA_STATUS.SETTLED, at: nowIso }];
+  return {
+    endpointRow: built.endpointRow,
+    nextIdea: {
+      ...next,
+      status: IDEA_STATUS.SETTLED,
+      statusHistory,
+      ledger: { ...next.ledger, holdings },
+      result: built.result,
+      endpoint: {
+        session: date, kind, valueUsd: built.endpointRow.idea.valueUsd, cashUsd: built.endpointRow.idea.cashUsd,
+        holdingsNetUsd: built.endpointRow.idea.holdingsNetUsd, snapshotKey: snapshotMeta.key,
+      },
+      settledAt: nowIso,
+      processQuality: built.result.processQuality,
+      blockedBy: built.result.processDetail.blockedBy,
+    },
+  };
+}
+
+/**
+ * THE READS A RESULT PACKET NEEDS (T1a-2b-1 §3; Astra T2B-03), shared by the close (step 7) and the manager's exit: the
+ * idea's inception row, and its own row of every close from its entry session up to (not including) `before`, in order —
+ * a missing one recorded as missing (the packet then refuses). Reads only, in the caller's transaction.
+ *
+ * @returns {Promise<{ inception: object|null, rows: Array<object> }>}
+ */
+export async function readIdeaEvidenceRows(tx, bookRef, ideaId, { entered, before }) {
+  const rowsRef = bookRef.collection('ideas').doc(ideaId).collection('rows');
+  const snap = await tx.get(rowsRef.doc('inception'));
+  const inception = snap.exists ? snap.data() : null;
+  const rows = [];
+  for (let s = entered; typeof s === 'string' && s < before; s = nextSessionDate(s)) {
+    const r = await tx.get(rowsRef.doc(s));
+    rows.push(r.exists ? r.data() : { date: s, missing: true });
+  }
+  return { inception, rows };
 }
 
 /**
@@ -1316,17 +1353,9 @@ async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false, w
     const inceptions = {};
     const closeRowsOf = {};
     for (const ideaId of Object.keys(endpoints)) {
-      const rowsRef = bookRef.collection('ideas').doc(ideaId).collection('rows');
-      const snap = await tx.get(rowsRef.doc('inception'));
-      inceptions[ideaId] = snap.exists ? snap.data() : null;
-      const rows = [];
-      const entered = nextIdeas.get(ideaId)?.entry?.sessionDate ?? null;
-      for (let s = entered; typeof s === 'string' && s < session; s = nextSessionDate(s)) {
-        const r = await tx.get(rowsRef.doc(s));
-        rows.push(r.exists ? r.data() : { date: s, missing: true });
-      }
-      rows.push(ideaRows[ideaId]);
-      closeRowsOf[ideaId] = rows;
+      const read = await readIdeaEvidenceRows(tx, bookRef, ideaId, { entered: nextIdeas.get(ideaId)?.entry?.sessionDate ?? null, before: session });
+      inceptions[ideaId] = read.inception;
+      closeRowsOf[ideaId] = [...read.rows, ideaRows[ideaId]];
     }
     // 8. The session's intraday window rows (windows.js names the windows the book was due).
     const windowRows = {};

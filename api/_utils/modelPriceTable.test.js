@@ -55,8 +55,9 @@ describe('priceUsage', () => {
     expect(r).toMatchObject({ tokensIn: 0, tokensOut: 0, estUsd: 0 });
   });
   it('the table is versioned and covers the P1-pinned mandate seat', () => {
-    // v2 = the P5 rate-semantics change (batch flag + cache components).
-    expect(MODEL_PRICE_TABLE_VERSION).toBe(2);
+    // v2 = the P5 rate-semantics change (batch flag + cache components); v3 = Sonnet 5.5 added (Practice Field B2-5).
+    expect(MODEL_PRICE_TABLE_VERSION).toBe(3);
+    expect(MODEL_PRICES_PER_MTOK['claude-sonnet-5-5']).toEqual({ inputPerMTok: 2.0, outputPerMTok: 10.0 });
     expect(MODEL_PRICES_PER_MTOK['claude-haiku-4-5-20251001']).toEqual({ inputPerMTok: 1.0, outputPerMTok: 5.0 });
   });
 });

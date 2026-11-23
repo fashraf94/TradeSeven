@@ -33,6 +33,9 @@ const C015 = call(8_000, 1_000); //          $0.015
 const C010 = call(72_000, 2_000); //         $0.10
 const C050 = call(320_000, 20_000); //       $0.50
 const C150 = call(80_000, 10_000); //        $0.15
+const C020 = call(80_000, 20_000); //        $0.20
+const C030 = call(160_000, 20_000); //       $0.30
+const C270 = call(2_000_000, 40_000); //     $2.70
 const C290 = call(2_000_000, 80_000); //     $2.90
 const C300 = call(2_000_000, 100_000); //    $3.00
 const C310 = call(2_000_000, 120_000); //    $3.10
@@ -102,10 +105,10 @@ describe('reserveSpend — the maximum is reserved, and must fit', () => {
     expect(await reserve(ctx, { ...C300, opId: 'all-of-it' })).toMatchObject({ ok: true, maxChargeUsd: 3, reservedUsd: 3, exhausted: true });
     expect(spendOf(ctx)).toMatchObject({ month: '2026-11', reservedUsd: 3, exhausted: true, exhaustedAt: NOV, exhaustedBy: { opId: 'all-of-it', reason: 'reservation', roomUsd: 0 } });
     expect(await reserve(ctx, { ...call(1, 1), opId: 'one-more' })).toMatchObject({ ok: false, code: 'spend_exhausted', roomUsd: 0 });
-    // …and twenty calls of $0.15 make $3 exactly, too.
+    // …and fifteen calls of $0.20 make $3 exactly, too (B2: each leaves at least the smallest call's $0.1825 until the last).
     const many = await seedBook({ uid: 'owner-2', opId: 'c2' });
-    for (let i = 0; i < 20; i += 1) expect((await reserve(many, { ...C150, opId: `call-${i}` })).ok, String(i)).toBe(true);
-    expect(spendOf(many)).toMatchObject({ reservedUsd: 3, calls: 20, exhausted: true });
+    for (let i = 0; i < 15; i += 1) expect((await reserve(many, { ...C020, opId: `call-${i}` })).ok, String(i)).toBe(true);
+    expect(spendOf(many)).toMatchObject({ reservedUsd: 3, calls: 15, exhausted: true });
     expect(await reserve(many, { ...call(1, 1), opId: 'one-more' })).toMatchObject({ ok: false, code: 'spend_exhausted' });
   });
 
@@ -119,18 +122,19 @@ describe('reserveSpend — the maximum is reserved, and must fit', () => {
 
   it('the founder\'s Q2 ruling — a refused call does NOT exhaust the month: a smaller call that fits is still reserved', async () => {
     const ctx = await seedBook();
-    await reserve(ctx, { ...C290, opId: 'big' });
-    expect(spendOf(ctx)).toMatchObject({ reservedUsd: 2.9, exhausted: false }); // $0.10 of room ≥ the smallest call's $0.05
+    await reserve(ctx, { ...C270, opId: 'big' });
+    // (B2: the smallest call is the agent's $0.1825 — constants.js — so the room left here is $0.30.)
+    expect(spendOf(ctx)).toMatchObject({ reservedUsd: 2.7, exhausted: false }); // $0.30 of room ≥ the smallest call's $0.1825
     expect(await reserve(ctx, { ...C050, opId: 'too-big' })).toMatchObject({ ok: false, code: 'spend_would_exceed' });
-    expect(spendOf(ctx)).toMatchObject({ reservedUsd: 2.9, exhausted: false, exhaustedAt: null, exhaustedBy: null });
-    expect(await reserve(ctx, { ...C015, opId: 'small' })).toMatchObject({ ok: true, reservedUsd: 2.915, exhausted: false });
+    expect(spendOf(ctx)).toMatchObject({ reservedUsd: 2.7, exhausted: false, exhaustedAt: null, exhaustedBy: null });
+    expect(await reserve(ctx, { ...C015, opId: 'small' })).toMatchObject({ ok: true, reservedUsd: 2.715, exhausted: false });
     expect(spendOf(ctx).calls).toBe(2);
   });
 
-  it('`exhausted` is derived from the room against PRACTICE_FIELD_MIN_CALL_MAX_CHARGE_USD (a placeholder T1b sets)', () => {
-    expect(PRACTICE_FIELD_MIN_CALL_MAX_CHARGE_USD).toBe(0.05);
-    expect(spendExhausted({ boundUsd: 3, reservedUsd: 2.95 })).toBe(false); // exactly the smallest call's room
-    expect(spendExhausted({ boundUsd: 3, reservedUsd: 2.950001 })).toBe(true);
+  it('`exhausted` is derived from the room against PRACTICE_FIELD_MIN_CALL_MAX_CHARGE_USD (set by B2 from the agent call)', () => {
+    expect(PRACTICE_FIELD_MIN_CALL_MAX_CHARGE_USD).toBe(0.1825);
+    expect(spendExhausted({ boundUsd: 3, reservedUsd: 2.8175 })).toBe(false); // exactly the smallest call's room
+    expect(spendExhausted({ boundUsd: 3, reservedUsd: 2.817501 })).toBe(true);
     expect(spendExhausted({ boundUsd: 3, reservedUsd: 3.2 })).toBe(true);
     expect(spendExhausted({ reservedUsd: 0 })).toBe(false);
   });
@@ -158,8 +162,8 @@ describe('reserveSpend — the maximum is reserved, and must fit', () => {
     expect(await settle(ctx, { opId: 'a', actualUsd: 1.4 })).toMatchObject({ ok: true, chargedUsd: 1.4 });
     await reserve(ctx, { ...C050, opId: 'b' }); // outstanding at $0.50
     expect(spendOf(ctx)).toMatchObject({ reservedUsd: 1.9, settledUsd: 1.4 });
-    expect(await reserve(ctx, { ...call(800_000, 1), opId: 'c' })).toMatchObject({ ok: true, reservedUsd: 2.900005 });
-    expect(await reserve(ctx, { ...C010, opId: 'd' })).toMatchObject({ ok: false, code: 'spend_would_exceed' });
+    expect(await reserve(ctx, { ...call(600_000, 1), opId: 'c' })).toMatchObject({ ok: true, reservedUsd: 2.650005, exhausted: false });
+    expect(await reserve(ctx, { ...C050, opId: 'd' })).toMatchObject({ ok: false, code: 'spend_would_exceed' });
   });
 
   it('a replay of the same operation reserves once — in a later month too; the same id with another model, ceiling or purpose is a conflict', async () => {
@@ -277,28 +281,28 @@ describe('settleSpend — the charge as it is, the unused part released', () => 
 
   it('released room ends a derived exhaustion: the month at $3 by its reservations reads exhausted until a settlement gives room back', async () => {
     const ctx = await seedBook();
-    await reserve(ctx, { ...C290, opId: 'big' });
-    await reserve(ctx, { ...C010, opId: 'last' });
+    await reserve(ctx, { ...C270, opId: 'big' });
+    await reserve(ctx, { ...C030, opId: 'last' });
     expect(spendOf(ctx)).toMatchObject({ reservedUsd: 3, exhausted: true, exhaustedBy: { opId: 'last', reason: 'reservation' } });
-    expect(await settle(ctx, { opId: 'big', actualUsd: 0.31 })).toMatchObject({ ok: true, releasedUsd: 2.59, reservedUsd: 0.41, exhausted: false });
+    expect(await settle(ctx, { opId: 'big', actualUsd: 0.31 })).toMatchObject({ ok: true, releasedUsd: 2.39, reservedUsd: 0.61, exhausted: false });
     expect(spendOf(ctx)).toMatchObject({ exhausted: false, exhaustedAt: null, exhaustedBy: null });
-    expect(await reserve(ctx, { ...C290, opId: 'again' })).toMatchObject({ ok: false, code: 'spend_would_exceed' }); // 0.41 + 2.90 > 3
-    expect(await reserve(ctx, { ...C050, opId: 'fits' })).toMatchObject({ ok: true, reservedUsd: 0.91 });
+    expect(await reserve(ctx, { ...C290, opId: 'again' })).toMatchObject({ ok: false, code: 'spend_would_exceed' }); // 0.61 + 2.90 > 3
+    expect(await reserve(ctx, { ...C050, opId: 'fits' })).toMatchObject({ ok: true, reservedUsd: 1.11 });
   });
 
   it('a charge ABOVE the reserved maximum should be impossible: if it happens it is recorded as it is — never clamped — flagged `charge_above_reservation`, and logged', async () => {
     const ctx = await seedBook();
-    await reserve(ctx, { ...C290, opId: 'big' });
+    await reserve(ctx, { ...C270, opId: 'big' });
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
       const out = await settle(ctx, { opId: 'big', actualUsd: 3.2 });
       expect(out).toMatchObject({
         ok: true, chargedUsd: 3.2, releasedUsd: 0, reservedUsd: 3.2, exhausted: true,
-        flags: [CHARGE_ABOVE_RESERVATION], chargeAboveReservation: { reservedMaxUsd: 2.9, chargedUsd: 3.2, overUsd: 0.3 },
+        flags: [CHARGE_ABOVE_RESERVATION], chargeAboveReservation: { reservedMaxUsd: 2.7, chargedUsd: 3.2, overUsd: 0.5 },
       });
       expect(errors.mock.calls.map((c) => c[0]).filter((m) => /PRACTICE_FIELD_CHARGE_ABOVE_RESERVATION/.test(m))).toHaveLength(1);
     } finally { errors.mockRestore(); }
-    expect(opOf(ctx, 'big')).toMatchObject({ chargedUsd: 3.2, actualUsd: 3.2, chargeAboveReservation: { reservedMaxUsd: 2.9, chargedUsd: 3.2, overUsd: 0.3 } });
+    expect(opOf(ctx, 'big')).toMatchObject({ chargedUsd: 3.2, actualUsd: 3.2, chargeAboveReservation: { reservedMaxUsd: 2.7, chargedUsd: 3.2, overUsd: 0.5 } });
     expect(spendOf(ctx)).toMatchObject({ reservedUsd: 3.2, settledUsd: 3.2, exhausted: true, exhaustedBy: { opId: 'big', reason: CHARGE_ABOVE_RESERVATION } });
     expect(await reserve(ctx, { ...call(1, 1), opId: 'next' })).toMatchObject({ ok: false, code: 'spend_exhausted' });
   });
@@ -439,11 +443,11 @@ describe('a new month starts empty', () => {
 });
 
 describe('nothing on the money path consults it', () => {
-  it('no product module imports spend.js (no caller exists yet: T1b\'s model calls are the first)', () => {
+  it('one product module imports spend.js — the agent\'s desk check (B2), its first caller — and nothing on the money path does', () => {
     const dir = new URL('.', import.meta.url);
     const importers = readdirSync(dir).filter((f) => f.endsWith('.js') && !f.includes('.test.') && f !== 'spend.js')
       .filter((f) => /from '\.\/spend\.js'/.test(readFileSync(new URL(f, dir), 'utf8')));
-    expect(importers).toEqual([]);
+    expect(importers).toEqual(['agentRun.js']);
     for (const f of ['close.js', 'exits.js', 'entry.js', 'settlement.js', 'sweep.js', 'fills.js', 'ledger.js', 'marks.js']) {
       expect(readFileSync(new URL(f, dir), 'utf8'), f).not.toMatch(/reserveSpend|settleSpend|spend\.js|\.spend\b|spendOps/);
     }

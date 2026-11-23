@@ -31,8 +31,8 @@ import { mandateSectorOf, frictionForSymbol, fundStaticClassifications } from '.
 const MANDATE_SECTORS = [...new Set(Object.values(CANDIDATE_SECTOR_SEED))].sort();
 
 describe('the founder slots B1–B9 (shared contract V2 §13)', () => {
-  it('are the contract\'s values exactly, at version 1', () => {
-    expect(PRACTICE_FIELD_SLOTS_VERSION).toBe(1);
+  it('are the contract\'s values exactly, at version 2 (B2-4: the origin vocabulary gained market_scan; no slot value moved)', () => {
+    expect(PRACTICE_FIELD_SLOTS_VERSION).toBe(2);
     expect(PRACTICE_FIELD_SLOTS).toEqual({
       B1_SLOT_CAP_SHARE: { short: 0.20, medium: 0.30, long: 0.40 },
       B2_CASH_FLOOR_SHARE: 0.10,
@@ -66,7 +66,7 @@ describe('the founder slots B1–B9 (shared contract V2 §13)', () => {
   });
 
   it('the origin vocabulary (direction note ruling 6; Amendment C §6)', () => {
-    expect(PRACTICE_FIELD_ORIGIN_KINDS).toEqual(['signaldrop', 'conversation', 'game_moment', 'film_room_card', 'research', 'agent_prior_ideas', 'founder_fixture']);
+    expect(PRACTICE_FIELD_ORIGIN_KINDS).toEqual(['signaldrop', 'conversation', 'game_moment', 'film_room_card', 'research', 'agent_prior_ideas', 'founder_fixture', 'market_scan']);
     expect(PRACTICE_FIELD_INITIATED_BY).toEqual(['player', 'agent']);
     expect(PRACTICE_FIELD_SOURCELESS_ORIGIN).toBe('founder_fixture');
     expect(Object.isFrozen(PRACTICE_FIELD_ORIGIN_KINDS)).toBe(true);

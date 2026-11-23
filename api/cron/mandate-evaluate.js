@@ -51,13 +51,14 @@ import { harvestOpenBatches, submitMandateBatch, hasOpenBatch } from '../_utils/
 // Practice Field T1a-1: the book-kind discriminant (unconditional isolation) and the idea book's own passes
 // (reached only when PRACTICE_FIELD_MODE is not 'off').
 import { isIdeaBook, splitActiveBooks } from '../_utils/mandateBookKind.js';
-import { practiceFieldLive } from '../_utils/practiceField/mode.js';
+import { practiceFieldLive, practiceFieldAgentOn } from '../_utils/practiceField/mode.js';
 import {
   practiceFieldBuildInputs, runIdeaBookEvalPass, withDrainingIdeaBooks, runDrainingIdeaBookCloses, ideaCloseLeftUnclosed,
   readIdeaBookPresence,
   coverageFromStandIn,
 } from '../_utils/practiceField/sweep.js';
 import { closeIdeaBook } from '../_utils/practiceField/close.js';
+import { runIdeaBookAgentPass } from '../_utils/practiceField/agentRun.js';
 
 // §6.2 telemetryPatch moved to modelPriceTable.js in P5 (the batch harvest
 // bills without importing a cron entrypoint); re-exported here so existing
@@ -125,7 +126,7 @@ export async function idleAcquisitionCheck(db, activeSnap) {
  *
  * @returns {Promise<{ heldTickers: string[], daily: object, tick: object }>}
  */
-export async function snapshotBuildInputs(db, view) {
+export async function snapshotBuildInputs(db, view, { closeTick = false } = {}) {
   const books = view.visibleDocs.map((d) => d.data());
   if (view.ideaCount === 0) return { heldTickers: unionHeldTickers(books), daily: {}, tick: {} };
   // The candidate universe is wanted when a quarterly book is active — or when a quarterly batch is still open
@@ -143,6 +144,9 @@ export async function snapshotBuildInputs(db, view) {
     // T1a-2a: when the Practice Field's draining query failed, its fallback already read the coverage document
     // (withDrainingIdeaBooks); it is handed on so this build makes no second read. Undefined on every other fire.
     coverageData: coverageFromStandIn(view.visibleDocs),
+    // Practice Field build B2: the close fire's snapshot keeps the candidate universe when the agent will draft (sweep.js).
+    closeTick,
+    ideaBooks: books.filter((b) => isIdeaBook(b)),
   });
   return { heldTickers: unionHeldTickers(books.filter((b) => !isIdeaBook(b))), daily: pf.daily, tick: pf.tick };
 }
@@ -870,7 +874,7 @@ export async function runCloseSweep(req, res, { now, closeTick, db = getFirebase
         logIdleSkip({ window: 'close', tickKey: closeTick.closeKey, date, check: idle });
         summary.reason = 'mandate_idle_skip';
       } else {
-        const build = await snapshotBuildInputs(db, view);
+        const build = await snapshotBuildInputs(db, view, { closeTick: true });
         const heldTickers = build.heldTickers;
         // Idempotent daily slow layer — normally already built by the day's first
         // eval fire; a zero-eval day (all books slow-tier + missed slots) builds
@@ -1036,6 +1040,20 @@ export async function runCloseSweep(req, res, { now, closeTick, db = getFirebase
         summary.errors++;
         summary.drainingIdeaBooks = { failed: true };
         console.error(`${LOG_PREFIX} PRACTICE_FIELD_DRAINING_CLOSE_FAILED for ${date} — the close sweep continues: ${drainErr.message}`);
+      }
+    }
+
+    // Practice Field build B2 — THE AGENT'S CHECK: after every idea book's close for the date has committed, one model
+    // call per desk with work (api/_utils/practiceField/agentRun.js). Nothing is read unless PRACTICE_FIELD_AGENT_ENABLED
+    // is on. Fenced: its failures are its own (the desk's note falls back to code on the close row) and never touch
+    // this fire's completion; a desk the time budget did not reach is served by the next close fire in the window.
+    if (practiceFieldAgentOn() && !deferred) {
+      try {
+        const agent = await runIdeaBookAgentPass(db, { date, now, ownerToken, presence: ideaBookPresence, deadlineMs: startedAt + TIME_BUDGET_MS });
+        if (agent.books > 0 || agent.errors > 0) summary.ideaBookAgent = agent;
+      } catch (agentErr) {
+        summary.ideaBookAgent = { failed: true };
+        console.error(`${LOG_PREFIX} PRACTICE_FIELD_AGENT_PASS_FAILED for ${date} — the close sweep continues: ${agentErr.message}`);
       }
     }
 
