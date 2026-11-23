@@ -1,0 +1,12 @@
+{
+  "_notes": [
+    "A ruling on ONE late proposal of an open idea (kind late_adjustment). status lists each open record with its idea and record id.",
+    "Required: ideaId (the idea, from status), kind 'late_adjustment', recordId (the proposal's id, from status: late_<ledger>_<actionId>), decision.",
+    "decision: 'approve' (the next observed close posts its net) or 'decline' (it closes and nothing posts). No ratio, payload or actionId.",
+    "An approval is refused (409) while the proposal's blockers stand; status prints the proposal so you can see them in the close's alert."
+  ],
+  "ideaId": "idea_REPLACE_WITH_THE_IDEA_ID_FROM_STATUS",
+  "kind": "late_adjustment",
+  "recordId": "late_ledger_REPLACE_WITH_THE_RECORD_ID_FROM_STATUS",
+  "decision": "approve"
+}

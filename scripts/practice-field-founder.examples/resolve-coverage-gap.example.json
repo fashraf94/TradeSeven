@@ -1,0 +1,13 @@
+{
+  "_notes": [
+    "A ruling on a corporate-action coverage gap (kind coverage_gap): an open gap (ca_coverage_gap_<SYMBOL>_<since>) or a sold holding's doubt (ca_closed_doubt_<SYMBOL>_<date>).",
+    "Required: ideaId, kind 'coverage_gap', recordId (from status), decision.",
+    "decision 'no_action': there was no action in the gap's dates; the doubt clears.",
+    "decision 'row' needs actionId: one row of the stored backfill for the symbol, dated inside the gap; when that id carries more than one payload, add payload naming the one taken.",
+    "Never a ratio for this kind (the door refuses it)."
+  ],
+  "ideaId": "idea_REPLACE_WITH_THE_IDEA_ID_FROM_STATUS",
+  "kind": "coverage_gap",
+  "recordId": "ca_coverage_gap_REPLACE_WITH_THE_RECORD_ID_FROM_STATUS",
+  "decision": "no_action"
+}
