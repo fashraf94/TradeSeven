@@ -40,6 +40,14 @@ function requestOn(desk, { theses = null, ceilingBytes } = {}) {
   });
 }
 
+describe('the candidates (§2)', () => {
+  it('refuter, on B-1: a snapshot built WITHOUT the house universe lists no candidate — not even a priced name the book just freed', () => {
+    const snap = closeSnapshot('2026-11-16', { ...quotesOn(), XOM: 101.2 });
+    expect(candidatesOf(snap, new Set()).map((c) => c.symbol)).toContain('XOM'); // control: the same document, the universe kept
+    expect(candidatesOf({ ...snap, candidateUniverseOmitted: true }, new Set())).toEqual([]);
+  });
+});
+
 describe('the prompt (§3)', () => {
   it('the Shadow desk: its fixed brief, its idea with gap and days left, its empty slot, the candidates, the rails, what it does not carry', () => {
     const r = requestOn('shadow');

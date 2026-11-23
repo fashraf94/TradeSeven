@@ -326,6 +326,48 @@ describe('review A-1, A-2, A-7: what a later fire may never do', () => {
     const res = await runDeskCheck(ctx.db, ctx.bookRef, { session: D1, desk: 'shadow', transport: fake.transport, clock: () => agentNowOf(D1) });
     expect(fake.calls).toHaveLength(1);
     expect(res).toMatchObject({ source: 'code_fallback', reason: 'attempt_already_reserved' });
+    // The attempt is written back (the settled operation's), never dropped.
+    expect(deskPartsOf(ctx.db, ctx.bookId, D1).shadow.attempts).toMatchObject([{ n: 1, state: 'settled', outcome: 'interrupted', recordLost: true }]);
+  });
+
+  it('A-7, the reservation still OPEN when the row lost its record: settled at its maximum, its attempt kept; no call, then or later', async () => {
+    const ctx = await foundersBook();
+    await windowsAndClose(ctx, D1);
+    const realTx = ctx.db.runTransaction.bind(ctx.db);
+    let txs = 0;
+    ctx.db.runTransaction = async (fn, o) => { txs += 1; if (txs === 2) throw new Error('the function was stopped'); return realTx(fn, o); };
+    const fake = fakeTransport(({ request }) => toolResponse(holdAll(request)));
+    await expect(runDeskCheck(ctx.db, ctx.bookRef, { session: D1, desk: 'shadow', transport: fake.transport, clock: () => agentNowOf(D1) })).rejects.toThrow(/stopped/);
+    ctx.db.runTransaction = realTx;
+    const opId = deskPartsOf(ctx.db, ctx.bookId, D1).shadow.attempts[0].opId;
+    const path = `mandates/${ctx.bookId}/windows/${D1}_close`;
+    const row = ctx.db._get(path);
+    ctx.db._store.set(path, { data: { ...row, agent: { ...row.agent, desks: {} } }, version: 99 });
+    const res = await runDeskCheck(ctx.db, ctx.bookRef, { session: D1, desk: 'shadow', transport: fake.transport, clock: () => agentNowOf(D1) });
+    expect(fake.calls).toHaveLength(1);
+    expect(res).toMatchObject({ source: 'code_fallback', reason: 'attempt_already_reserved' });
+    expect(ctx.db._get(`mandates/${ctx.bookId}/spendOps/${opId}`)).toMatchObject({ state: 'settled', chargedUsd: 0.1625 });
+    expect(deskPartsOf(ctx.db, ctx.bookId, D1).shadow.attempts).toMatchObject([{ n: 1, opId, state: 'settled', outcome: 'interrupted', recordLost: true, chargedUsd: 0.1625 }]);
+    const again = await runDeskCheck(ctx.db, ctx.bookRef, { session: D1, desk: 'shadow', transport: fake.transport, clock: () => agentNowOf(D1) });
+    expect(again).toMatchObject({ status: 'already_done', calls: 0 });
+    expect(fake.calls).toHaveLength(1);
+  });
+
+  it('refuter R-1: the reservation\'s own commit landed and the transaction RE-RAN (an ambiguous commit) — the call goes ahead, once, and settles', async () => {
+    const ctx = await foundersBook();
+    await windowsAndClose(ctx, D1);
+    const realTx = ctx.db.runTransaction.bind(ctx.db);
+    let txs = 0;
+    ctx.db.runTransaction = async (fn, o) => { txs += 1; if (txs === 1) { await realTx(fn, o); return realTx(fn, o); } return realTx(fn, o); };
+    const fake = fakeTransport(({ request }) => toolResponse(holdAll(request)));
+    const res = await runDeskCheck(ctx.db, ctx.bookRef, { session: D1, desk: 'shadow', transport: fake.transport, clock: () => agentNowOf(D1) });
+    ctx.db.runTransaction = realTx;
+    expect(fake.calls).toHaveLength(1);
+    expect(res).toMatchObject({ status: 'done', source: 'model', calls: 1 });
+    const part = deskPartsOf(ctx.db, ctx.bookId, D1).shadow;
+    expect(part.attempts).toMatchObject([{ n: 1, state: 'settled', outcome: 'answered', unpriced: false }]);
+    expect(ctx.db._get(`mandates/${ctx.bookId}/spendOps/${part.attempts[0].opId}`)).toMatchObject({ state: 'settled' });
+    expect(getBook(ctx.db, ctx.bookId).spend.calls).toBe(1);
   });
 });
 

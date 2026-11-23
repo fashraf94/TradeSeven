@@ -56,6 +56,9 @@ export const AGENT_CANDIDATES_MAX = 200;
  * @returns {Array<{ symbol: string, sector: string|null, lastClose: number }>}  sorted by symbol
  */
 export function candidatesOf(snapshot, taken = new Set()) {
+  // Refuter, on review B-1: a snapshot built WITHOUT the house universe (idea books only) lists no candidate — its names
+  // are the book's own holdings and coverage, priced for marks. A name freed at the close is not a candidate from it.
+  if (snapshot?.candidateUniverseOmitted === true) return [];
   const out = [];
   for (const [raw, e] of Object.entries(snapshot?.symbols || {})) {
     const sym = normSymbol(raw);

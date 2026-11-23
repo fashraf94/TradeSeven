@@ -338,6 +338,23 @@ export async function runDeskCheck(db, bookRef, { session, desk, transport = sea
         });
         if (!res.ok) return res;
         const cur = r.data()?.agent?.desks?.[desk] ?? null;
+        if (res.idempotentReplay) {
+          // Refuter R-1: the transaction RE-RAN after its own commit landed (an ambiguous commit is retried by the SDK).
+          // The row it read holds THIS attempt, reserved at this instant, under this fire's lease: the reservation is
+          // ours, and the call goes ahead under it.
+          const mine = (cur?.attempts || []).find((a) => a.opId === opId);
+          if (res.state === 'reserved' && mine?.state === 'reserved' && mine.reservedAt === reservedAt) return { ...res, ownCommit: true };
+          // Review A-7: otherwise the close row lost the operation's record. Never call under it. A reservation still open
+          // is settled at its maximum (it may have been billed), and the attempt is written back, so nothing is stranded.
+          const s = res.state === 'reserved' ? await settleSpend(tx, b, { opId, unpriced: true }, { nowIso: reservedAt }) : null;
+          const lost = {
+            n, opId, state: 'settled', reservedAt: mine?.reservedAt ?? null, maxChargeUsd: res.maxChargeUsd, inputHash: manifest.inputHash,
+            outcome: 'interrupted', recordLost: true, unpriced: true, chargedUsd: s?.chargedUsd ?? null, settledAt: reservedAt,
+          };
+          const kept = (cur?.attempts || []).filter((a) => a.opId !== opId);
+          tx.update(rowRef, partPatch(desk, { ...base, ...(cur || {}), status: 'in_progress', calledModel: true, attempts: [...kept, lost], manifest, thesisRefs, thesesSkipped }));
+          return { ...res, lostAttempt: lost, attemptsNow: [...kept, lost] };
+        }
         const attempt = { n, opId, state: 'reserved', reservedAt, maxChargeUsd: res.maxChargeUsd, inputHash: manifest.inputHash, outcome: null };
         tx.update(rowRef, partPatch(desk, {
           ...base, ...(cur || {}), status: 'in_progress', calledModel: true, attempts: [...attempts, attempt], manifest, thesisRefs, thesesSkipped,
@@ -345,8 +362,8 @@ export async function runDeskCheck(db, bookRef, { session, desk, transport = sea
         return res;
       });
       if (!reserved.ok) return fallback(`spend_refused:${reserved.code}`, { attempts, calledModel: attempts.length > 0, manifest });
-      // Review A-7: an operation already reserved (or settled) is never called under again — the close row lost its record.
-      if (reserved.idempotentReplay) return fallback('attempt_already_reserved', { attempts, calledModel: true, manifest });
+      // Review A-7: an operation the close row lost the record of is never called under again; its attempt is kept.
+      if (reserved.lostAttempt) return fallback('attempt_already_reserved', { attempts: reserved.attemptsNow, calledModel: true, manifest });
       attempts.push({ n, opId, state: 'reserved', reservedAt, maxChargeUsd: reserved.maxChargeUsd, inputHash: manifest.inputHash, outcome: null });
 
       let response = null;
