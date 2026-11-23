@@ -520,6 +520,19 @@ describe('drafting: the rails, the candidates, the sizing', () => {
     expect(part.refill).toEqual({ long: { attempted: true, spent: true, admittedIdeaId: getBook(ctx.db, ctx.bookId).slots.long, waitingOn: null } });
   });
 
+  it('a draft citing a saved thesis the prompt did not carry (theses off: no label resolves) is refused thesis_source_unknown, before any sizing; the next draft is tried', async () => {
+    const { part, ctx } = await shadowAfter(({ request }) => toolResponse(holdAll(request, {
+      drafts: [
+        draft({ slot: 'long', names: ['MSFT'], source: { kind: 'saved_thesis', thesisRef: 'T1' } }),
+        draft({ slot: 'long', names: ['AAPL', 'AMZN'] }),
+      ],
+    })));
+    expect(part.considered.map((c) => [c.index, c.outcome, c.refusals.map((r) => r.code)])).toEqual([[0, 'refused', ['thesis_source_unknown']], [1, 'admitted', []]]);
+    const idea = getIdea(ctx.db, ctx.bookId, getBook(ctx.db, ctx.bookId).slots.long);
+    expect(idea.contract.origin.kind).toBe('market_scan');
+    expect(idea.contract.names).toEqual(['AAPL', 'AMZN']);
+  });
+
   it('at most one draft per empty slot, in the agent\'s order: the second admissible draft for the slot is "not chosen"', async () => {
     const { part } = await shadowAfter(({ request }) => toolResponse(holdAll(request, {
       drafts: [draft({ slot: 'long', names: ['MSFT', 'NVDA'] }), draft({ slot: 'long', names: ['AAPL'] })],
