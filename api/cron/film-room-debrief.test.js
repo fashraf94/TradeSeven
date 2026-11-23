@@ -107,3 +107,27 @@ describe('the handler', () => {
     } finally { err.mockRestore(); }
   });
 });
+
+describe('the fix round\'s review, the record lens (R-1, R-6)', () => {
+  it('R-1: a thrown value whose name getter throws still gets the fixed 500 — and its message is never printed', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const pass = async () => { throw { get name() { throw new Error('agentBattles/b-LEAK3'); }, get code() { throw new Error('agentBattles/b-LEAK4'); } }; };
+      const res = mkRes();
+      await handler(CRON, res, { getDb: () => ({}), pass });
+      expect([res.statusCode, res.body]).toEqual([500, { error: 'debrief_pass_failed' }]);
+      const printed = err.mock.calls.flat().join(' ');
+      expect(printed).not.toContain('b-LEAK');
+      expect(printed).toContain('"kind":"Error","code":null');
+    } finally { err.mockRestore(); }
+  });
+  it('R-6 (DF-7): a secret of only spaces is no secret — its matching bearer is refused', async () => {
+    for (const secret of [' ', '\t', '  ']) {
+      process.env.CRON_SECRET = secret;
+      const getDb = vi.fn(); const pass = vi.fn();
+      const res = mkRes();
+      await handler({ headers: { authorization: `Bearer ${secret}` } }, res, { getDb, pass });
+      expect([res.statusCode, getDb.mock.calls.length, pass.mock.calls.length], JSON.stringify(secret)).toEqual([401, 0, 0]);
+    }
+  });
+});

@@ -343,3 +343,45 @@ describe('the harness oracle bites (debriefWordsDefects)', () => {
     expect(debriefWordsDefects(m.container, { tape: sep23Tape, debrief: record })).toContain('lines[0].text: dated “Sep 24”, the record says “Sep 23”');
   });
 });
+
+describe('the fix round\'s review, the record lens (R-2, R-3, R-5)', () => {
+  const BEFORE_RUN = Date.parse('2026-09-24T03:00:00.000Z');
+  it('R-2 (DF-1): no not-yet promise for a tape the pass will skip — one that names another owner or another battle', async () => {
+    await open({ readers: wordsReaders(null), nowMs: BEFORE_RUN });
+    expect(notYet()).toHaveLength(1);   // the control: this battle's own tape
+    for (const tape of [{ ...clone(sep23Tape), ownerId: 'owner-previous' }, { ...clone(sep23Tape), battleId: 'b-other' }]) {
+      m.teardown(); m.setup();
+      const r = wordsReaders(null, { [D]: tape });
+      await open({ readers: r, nowMs: BEFORE_RUN });
+      expect([notYet().length, words().length], JSON.stringify([tape.ownerId, tape.battleId])).toEqual([0, 0]);
+    }
+  });
+  it('R-3 (DF-10): a read that lands after the cutoff never commits the line — not even for one frame', async () => {
+    const cutoff = Date.parse('2026-09-24T04:15:00.000Z');
+    // the clock too: the screen measures how long the page has been open with Date.now
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'], shouldAdvanceTime: true });
+    const seen = [];
+    let release;
+    try {
+      const r = wordsReaders(null);
+      const plain = r.readDebrief;
+      r.readDebrief = (...a) => new Promise((res) => { release = () => res(plain(...a)); });
+      await open({ readers: r, nowMs: cutoff - 30_000 });
+      const mo = new MutationObserver(() => { if (notYet().length) seen.push('line'); });
+      mo.observe(m.container, { childList: true, subtree: true });
+      await act(async () => { vi.advanceTimersByTime(31_000); });
+      await act(async () => { release(); });
+      await m.flush();
+      mo.disconnect();
+      expect([seen, notYet().length, debriefReads(r).length]).toEqual([[], 0, 1]);
+    } finally { vi.useRealTimers(); }
+  });
+  it('R-5 (DF-1): a record and a tape that both lack the battle id show no line', async () => {
+    const tape = clone(sep23Tape);
+    delete tape.battleId;
+    const rec = recordOf([LINE_AGENT]);
+    delete rec.battleId;
+    await open({ readers: wordsReaders(rec, { [D]: tape }) });
+    expect(words()).toHaveLength(0);
+  });
+});

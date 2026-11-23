@@ -109,7 +109,7 @@ export const writtenTape = (tape) => isObj(tape) && tape.passes?.close?.status =
  * second check after the call: the record is stamped from the tape (debriefRecordOf), and the rules give it to that
  * owner alone.
  */
-export const tapeIsFor = (tape, battle, etDate) => isObj(tape) && str(tape.ownerId) !== null
+export const tapeIsFor = (tape, battle, etDate) => isObj(tape) && str(tape.ownerId) !== null && str(tape.battleId) !== null && str(tape.etDate) !== null
   && tape.battleId === battle?.id && tape.etDate === etDate && tape.ownerId === battle?.ownerId;
 
 /**
@@ -167,7 +167,12 @@ export function publicSummaryOf(summary) {
  * other is 'Error'. (Its message is never printed: a Firestore message can carry a document path, and so an id.)
  */
 export const ERROR_KINDS = Object.freeze(['Error', 'TypeError', 'RangeError', 'ReferenceError', 'SyntaxError', 'AbortError', 'TimeoutError', 'FirebaseError']);
-export const errorKindOf = (err) => (ERROR_KINDS.includes(err?.name) ? err.name : 'Error');
+// each property read ONCE, inside a try (the fix round's review, R-1: an accessor could pass the test on its first read
+// and print anything on a second; a throwing getter must not escape the handler's catch)
+const readOnce = (err, k) => { try { return err?.[k]; } catch { return undefined; } };
+export const errorKindOf = (err) => { const name = readOnce(err, 'name'); return ERROR_KINDS.includes(name) ? name : 'Error'; };
+/** DF-6: an error's code — an integer, read once, else null. */
+export const errorCodeOf = (err) => { const code = readOnce(err, 'code'); return Number.isInteger(code) ? code : null; };
 
 /**
  * The pass for the ET date of `startMs`.

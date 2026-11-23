@@ -23,7 +23,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { candidatesFor, writtenTape, tapeIsFor, selectedForDebrief, attributionOf, errorKindOf } from '../api/_utils/filmRoom/debriefPass.js';
+import { candidatesFor, writtenTape, tapeIsFor, selectedForDebrief, attributionOf, errorKindOf, errorCodeOf } from '../api/_utils/filmRoom/debriefPass.js';
 import { buildDayDigest, knownIdsOf } from '../api/_utils/filmRoom/dayDigest.js';
 import { buildDebriefPrompt } from '../api/_utils/filmRoom/debriefPrompt.js';
 import { runDebriefCall, DEBRIEF_MODELS, MODEL_PRICES, DEBRIEF_MAX_OUTPUT_TOKENS } from '../api/_utils/filmRoom/debriefModelCall.js';
@@ -157,7 +157,7 @@ const invokedDirectly = process.argv[1] && import.meta.url.endsWith(process.argv
 if (invokedDirectly) {
   main().catch((err) => {
     // never the message: it can carry a document path, and so an id
-    console.error('[film-room-debrief-sample] failed', JSON.stringify({ kind: errorKindOf(err), code: Number.isInteger(err?.code) ? err.code : null }));
+    console.error('[film-room-debrief-sample] failed', JSON.stringify({ kind: errorKindOf(err), code: errorCodeOf(err) }));
     process.exitCode = 1;
   });
 }

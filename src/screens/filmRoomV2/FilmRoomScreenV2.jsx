@@ -316,17 +316,23 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
   // Amendment F DF-10 (Astra §9): the not-yet line EXPIRES on a page left open — a display-only timer at its cutoff
   // (the run that processes this day, plus 30 minutes). `now` is the mount's instant; the timer counts from it the time
   // the page has been open. It hides the line and nothing else: no read, no state the words' read keys on.
-  const notYetUntil = wordsOn && debriefState.status === 'missing' ? debriefNotYetUntilMs(tape?.writtenAt, tape?.etDate) : null;
+  // The promise is made only for a tape the pass will read (the fix round's review, R-2, with Amendment F DF-1): one
+  // that names this battle and this battle's owner — the pass skips any other day as `ownerMismatch`, and no words come.
+  const tapeIsThisBattles = typeof tape?.ownerId === 'string' && tape.ownerId !== '' && tape.ownerId === flowOwnerId && tape?.battleId === battleId;
+  const notYetUntil = wordsOn && debriefState.status === 'missing' && tapeIsThisBattles ? debriefNotYetUntilMs(tape?.writtenAt, tape?.etDate) : null;
   const [openedAt] = useState(() => Date.now());
   const [notYetLapsed, setNotYetLapsed] = useState(null);
-  useEffect(() => {
+  // a layout effect (the review's R-3): a cutoff already past when the line would commit — a read landing late, a day
+  // left and returned to — is marked lapsed before the browser paints, so the line is never drawn after its cutoff
+  useLayoutEffect(() => {
     if (notYetUntil === null || notYetLapsed === notYetUntil) return undefined;
     const delay = notYetUntil - (now + (Date.now() - openedAt));
+    if (delay <= 0) { setNotYetLapsed(notYetUntil); return undefined; }
     if (delay > MAX_TIMER_MS) return undefined;   // past what a timer can wait: never sooner than its cutoff
-    const id = setTimeout(() => setNotYetLapsed(notYetUntil), Math.max(0, delay));
+    const id = setTimeout(() => setNotYetLapsed(notYetUntil), delay);
     return () => clearTimeout(id);
   }, [notYetUntil, notYetLapsed, now, openedAt]);
-  const notYetShown = debriefState.status === 'missing' && notYetLapsed !== notYetUntil && debriefNotYet(tape?.writtenAt, tape?.etDate, now);
+  const notYetShown = notYetUntil !== null && notYetLapsed !== notYetUntil && debriefNotYet(tape?.writtenAt, tape?.etDate, now);
   // the review's DR-7 / DR-2, as Amendment B DB-4 makes it (Astra's F4): A GESTURE IN PROGRESS KEEPS THE TAPE. While
   // the front's conditions are still unknown — the verdict on its way, or the day still being read — a pointer-down
   // inside the tape, a key-down inside it, or a focus move onto one of its controls keeps the tape for this visit, from

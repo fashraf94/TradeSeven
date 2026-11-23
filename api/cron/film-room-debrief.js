@@ -27,7 +27,7 @@
 
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { filmRoomDebriefMode } from '../_utils/filmRoom/debriefGate.js';
-import { runDebriefPass, publicSummaryOf, errorKindOf } from '../_utils/filmRoom/debriefPass.js';
+import { runDebriefPass, publicSummaryOf, errorKindOf, errorCodeOf } from '../_utils/filmRoom/debriefPass.js';
 
 export const config = { maxDuration: 300 };
 
@@ -40,7 +40,8 @@ export default async function handler(req, res, { getDb = getFirebaseAdmin, pass
   // `x-vercel-cron` header alone no longer admits a request (Vercel sends the bearer on every scheduled run when the
   // secret is set). This endpoint only: the other crons keep their own guard (the founder's separate item).
   const secret = process.env.CRON_SECRET;
-  if (typeof secret !== 'string' || secret === '' || req.headers?.authorization !== `Bearer ${secret}`) {
+  // (a secret of only spaces is no secret: the fix round's review, R-6)
+  if (typeof secret !== 'string' || secret.trim() === '' || req.headers?.authorization !== `Bearer ${secret}`) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   // The gate, read at CALL time, before any Firestore access.
@@ -53,7 +54,7 @@ export default async function handler(req, res, { getDb = getFirebaseAdmin, pass
     return res.status(200).json(publicSummaryOf(summary));
   } catch (err) {
     // never the message: it can carry a document path, and so an id; the kind from a fixed set (DF-6)
-    console.error(`${LOG_PREFIX} handler error`, JSON.stringify({ kind: errorKindOf(err), code: Number.isInteger(err?.code) ? err.code : null }));
+    console.error(`${LOG_PREFIX} handler error`, JSON.stringify({ kind: errorKindOf(err), code: errorCodeOf(err) }));
     return res.status(500).json({ error: 'debrief_pass_failed' });
   }
 }

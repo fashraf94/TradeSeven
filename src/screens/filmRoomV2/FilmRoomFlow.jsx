@@ -334,6 +334,7 @@ export function wordsOfPin(words, tape, pin) {
   const record = words.state === 'ready' ? words.record : null;
   if (!record || record.status !== 'written' || !Array.isArray(record.lines)) return null;
   // the record's battle, day AND owner are the tape's on screen (Amendment F DF-1, Astra's F1) — still the one read
+  if (typeof record.battleId !== 'string' || !record.battleId || typeof record.etDate !== 'string' || !record.etDate) return null;
   if (record.battleId !== tape?.battleId || record.etDate !== tape?.etDate) return null;
   if (typeof record.ownerId !== 'string' || !record.ownerId || record.ownerId !== tape?.ownerId) return null;
   const key = tape?.actions?.[pin.index]?.key;

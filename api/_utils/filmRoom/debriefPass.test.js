@@ -14,7 +14,7 @@ vi.mock('../../../src/config/featureFlags.js', async (importOriginal) => ({
   get FILM_ROOM_DEBRIEF_MODE() { return flags.debrief; },
 }));
 
-import { runDebriefPass, selectedForDebrief, debriefRecordOf, tapeIsFor, attributionOf, publicSummaryOf, errorKindOf, PUBLIC_SUMMARY_KEYS, ERROR_KINDS, DEBRIEF_MAX_CALLS, DEBRIEF_MAX_CONCURRENT, DEBRIEF_TIME_FLOOR_MS, DEBRIEF_RECORD_VERSION } from './debriefPass.js';
+import { runDebriefPass, selectedForDebrief, debriefRecordOf, tapeIsFor, attributionOf, publicSummaryOf, errorKindOf, errorCodeOf, PUBLIC_SUMMARY_KEYS, ERROR_KINDS, DEBRIEF_MAX_CALLS, DEBRIEF_MAX_CONCURRENT, DEBRIEF_TIME_FLOOR_MS, DEBRIEF_RECORD_VERSION } from './debriefPass.js';
 import { buildDayDigest, digestHashOf } from './dayDigest.js';
 import { sep23Day, SEP23_NIGHT } from '../filmTape/__fixtures__/screenFixtures.js';
 import { seedDay, OWNER } from '../filmTape/__fixtures__/tapeFixtures.js';
@@ -529,5 +529,26 @@ describe("the refuter's round (§2 review)", () => {
       expect(t.readLog).toEqual(['agents/' + CLONE]);   // refused at the clone: the parent is never read
       for (const sp of c.spies) expect(sp).not.toHaveBeenCalled();
     } finally { c.restore(); }
+  });
+});
+
+describe('the fix round\'s review, the record lens (R-1, R-5)', () => {
+  it('R-1 (DF-6): the error\'s name and code are each read once — an accessor passing the test then printing a path, or a getter that throws, prints "Error" / null', () => {
+    let reads = 0;
+    const sly = { get name() { reads += 1; return reads === 1 ? 'TypeError' : 'agentBattles/b-LEAK/tape/2026-09-23'; } };
+    expect(errorKindOf(sly)).toBe('TypeError');
+    expect(reads).toBe(1);
+    const throwing = { get name() { throw new Error('agentBattles/b-LEAK3'); }, get code() { throw new Error('agentBattles/b-LEAK4'); } };
+    expect([errorKindOf(throwing), errorCodeOf(throwing)]).toEqual(['Error', null]);
+    let codeReads = 0;
+    expect(errorCodeOf({ get code() { codeReads += 1; return codeReads === 1 ? 5 : 'b-LEAK2'; } })).toBe(5);
+    expect([errorCodeOf({ code: 5 }), errorCodeOf({ code: '5' }), errorCodeOf(null)]).toEqual([5, null, null]);
+  });
+  it('R-5 (DF-1): a missing battle id or day on both sides is no match — the tape must name them as strings', () => {
+    const tape = BASE[tapePath(BATTLE_ID)];
+    const b = { id: BATTLE_ID, ...clone(BASE[`agentBattles/${BATTLE_ID}`]) };
+    expect(tapeIsFor({ ...tape, battleId: undefined }, { ...b, id: undefined }, D)).toBe(false);
+    expect(tapeIsFor({ ...tape, etDate: undefined }, b, undefined)).toBe(false);
+    expect(tapeIsFor({ ...tape, battleId: '' }, { ...b, id: '' }, D)).toBe(false);
   });
 });
