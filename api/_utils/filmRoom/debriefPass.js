@@ -30,7 +30,7 @@ import { DEBRIEFS_SUBCOLLECTION } from '../../../src/utils/debriefSchedule.js';
 import { resolveModeConfig } from '../../../src/constants/agentGameModes.js';
 import { isBattleDay, isSessionDate, etDayBounds, etDateOf } from '../../../src/utils/tapeSchedule.js';
 import { filmRoomDebriefMode, filmRoomDebriefOnFor } from './debriefGate.js';
-import { buildDayDigest, digestHashOf, DAY_DIGEST_VERSION } from './dayDigest.js';
+import { buildDayDigest, knownIdsOf, digestHashOf, DAY_DIGEST_VERSION } from './dayDigest.js';
 import { buildDebriefPrompt } from './debriefPrompt.js';
 import { runDebriefCall, DEBRIEF_MODEL } from './debriefModelCall.js';
 import { checkDebriefLines } from './debriefChecks.js';
@@ -193,7 +193,9 @@ export async function runDebriefPass({
     if (debriefSnap?.exists) { summary.skipped.exists += 1; return; }
     const attributionAgentId = await resolveAttribution(db, battle);
     if (attributionAgentId === null && str(battle.agentId)) summary.attributionUnresolved += 1;
-    const knownIds = [battle.id, battle.ownerId, battle.agentId, attributionAgentId].filter((v) => typeof v === 'string' && v);
+    // THE inventory (Amendment F DF-3): every id the day knows, every opaque reference its tape holds — built once,
+    // handed to the digest's quotation policy and to check 6 alike
+    const knownIds = knownIdsOf(tape, battle, [attributionAgentId]);
     const built = buildDayDigest({ tape, battle, knownIds });
     if (!built) { summary.skipped.unreadable += 1; return; }
     const { digest, refs } = built;

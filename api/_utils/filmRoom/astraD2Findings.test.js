@@ -100,3 +100,43 @@ describe('F1 — the record belongs to the tape\'s owner (DF-1)', () => {
     expect(f.asked).toHaveLength(0);
   });
 });
+
+describe('F2 — a player\'s words the agent echoed never reach the model (DF-2)', () => {
+  const ECHO = 'Keep the chip names on a short leash into the close, and lighten up if they stall.';
+  const with16 = (tape, text) => { const r = tape.rationale.find((x) => x.tickSeq === 16); r.rationale = text; return tape; };
+  it('the same sentence in a directive\'s player text and in the evaluation at check 16: it is in neither turn', () => {
+    const tape = with16(clone(SEP.tape), ECHO);
+    tape.directives[0].playerText = ECHO;
+    const p = buildDebriefPrompt(buildDayDigest({ tape, battle: SEP.battle }).digest);
+    expect([p.user.includes(ECHO), p.system.includes(ECHO)]).toEqual([false, false]);
+  });
+  it('five words of the player\'s, inside a longer quotation: the whole quotation is left out', () => {
+    const tape = with16(clone(SEP.tape), `PLTR held into the check, so the chip names on a short leash went first. ${'DE goes out.'}`);
+    tape.directives[0].playerText = ECHO;
+    expect(buildDebriefPrompt(buildDayDigest({ tape, battle: SEP.battle }).digest).user.includes('short leash')).toBe(false);
+  });
+  it('a meeting\'s words the owner can edit, echoed: left out', () => {
+    const tape = with16(clone(SEP.tape), 'Rotating out of DE because the desk wants fewer industrials.');
+    tape.meetings = [{ key: 'gpm_1|2026-09-23T17:00:00.000Z', createdAt: '2026-09-23T17:00:00.000Z', status: 'approved', resolvedBy: 'player', legs: [], diagnosis: 'the desk wants fewer industrials' }];
+    expect(buildDebriefPrompt(buildDayDigest({ tape, battle: SEP.battle }).digest).user.includes('fewer industrials')).toBe(false);
+  });
+});
+
+describe('F3 — every opaque reference the tape holds is a known id (DF-3)', () => {
+  it('each key the writer emits for Sep 23 — the swaps\' keys, the checks\' evaluation, tick and run ids, the rationale\'s evaluation ids — is recognised', () => {
+    const ids = knownIdsOf(SEP.tape, SEP.battle);
+    const keys = [
+      ...SEP.tape.actions.map((a) => a.key),
+      ...SEP.tape.checks.flatMap((c) => [c.evalId, c.tickId, c.runId]),
+      ...SEP.tape.rationale.map((r) => r.evalId),
+    ].filter((v) => typeof v === 'string' && v);
+    expect(SEP.tape.actions).toHaveLength(3);
+    expect(keys.filter((k) => !holdsIdentifier(k, ids))).toEqual([]);
+  });
+  it('a quotation that holds a swap\'s key is left out whole', () => {
+    const tape = clone(SEP.tape);
+    const key = tape.actions[1].key;
+    tape.rationale.find((x) => x.tickSeq === 16).rationale = `Logged as ${key} at the check.`;
+    expect(buildDebriefPrompt(buildDayDigest({ tape, battle: SEP.battle }).digest).user.includes(key)).toBe(false);
+  });
+});

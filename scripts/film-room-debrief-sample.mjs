@@ -24,7 +24,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { candidatesFor, writtenTape, tapeIsFor, selectedForDebrief, attributionOf } from '../api/_utils/filmRoom/debriefPass.js';
-import { buildDayDigest } from '../api/_utils/filmRoom/dayDigest.js';
+import { buildDayDigest, knownIdsOf } from '../api/_utils/filmRoom/dayDigest.js';
 import { buildDebriefPrompt } from '../api/_utils/filmRoom/debriefPrompt.js';
 import { runDebriefCall, DEBRIEF_MODELS, MODEL_PRICES, DEBRIEF_MAX_OUTPUT_TOKENS } from '../api/_utils/filmRoom/debriefModelCall.js';
 import { checkDebriefLines } from '../api/_utils/filmRoom/debriefChecks.js';
@@ -82,7 +82,8 @@ export async function runSample({
       if (!tapeIsFor(tape, battle, etDate)) { report.ownerMismatch += 1; continue; }
       battleNo += 1;
       const attribution = await resolveAttribution(db, battle);
-      const knownIds = [battle.id, battle.ownerId, battle.agentId, attribution].filter((v) => typeof v === 'string' && v);
+      // the pass's one inventory (Amendment F DF-3), for the digest and check 6 alike
+      const knownIds = knownIdsOf(tape, battle, [attribution]);
       const built = buildDayDigest({ tape, battle, knownIds });
       if (!built) continue;
       const day = { etDate, battle: `battle ${battleNo}`, swaps: built.digest.swaps.map((s) => ({ label: s.label, fact: factOf(s), models: {} })), calls: [] };

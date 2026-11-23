@@ -300,6 +300,18 @@ describe('Amendment F DF-1 (Astra\'s F1): the tape names this battle, this day a
   });
 });
 
+describe('Amendment F DF-3 (Astra\'s F3): ONE inventory — the digest\'s quotation policy and check 6 read the same list', () => {
+  it('a run id only the tape holds (no shape would know it): a line naming it is dropped as `identifier`', async () => {
+    const tape = clone(BASE[tapePath(BATTLE_ID)]);
+    tape.checks[0].runId = 'nightrun-alpha';
+    const t = world([], {});
+    t.store.set(tapePath(BATTLE_ID), tape);
+    await run(t, { mode: 'allowlist', call: fakeCall({ lines: [{ swap: 's2', text: 'Filed under nightrun-alpha tonight.' }, { swap: 's1', text: "That wasn't my call." }] }).call });
+    const rec = t.store.get(recordPath(BATTLE_ID));
+    expect([rec.lines.map((l) => l.label), rec.dropped]).toEqual([['s1'], [{ label: 's2', reason: 'identifier' }]]);
+  });
+});
+
 describe('the bounds (§7)', () => {
   /** n more battles, each a copy of Sep 23 under its own id, all the allowlisted owner's. */
   const many = (n) => Array.from({ length: n }, (_, i) => ({ id: `b-${String(i).padStart(4, '0')}`, owner: OWNER }));

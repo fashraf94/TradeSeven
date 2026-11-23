@@ -8,13 +8,21 @@
 //           chose it), and at most eight swaps, chosen as the front chooses its pins (the agent's swaps first, then the
 //           others, each group in time order) and listed in time order — each with its label (s1, s2, … in time
 //           order), its ET clock, its maker in the copy table's words (facts, never the agent's), its symbols, its
-//           exit price as the front's fact line formats it, and the agent's OWN recorded words at the check before it
-//           and at the check after it, each marked as said by the agent at that check;
+//           exit price as the front's fact line formats it, and the agent's OWN recorded words (Build D Amendment E
+//           DE-10, as Amendment F DF-9 defines it) — `atSwap`, at the check where the swap ran (the check whose
+//           tickSeq is the action's), and `before`, at the nearest lower check that recorded eligible words (a check
+//           without words is skipped, never taken as the nearest); an action with no tickSeq falls back to time:
+//           `before` is the latest timed check at or before its instant with eligible words, no `atSwap`, and the
+//           review's M5 (DE-14) still leaves the words out when an untimed check may lie between — each marked as said
+//           by the agent at that check;
 //   refs    each label's tape row key — the prompt never sees it.
 // LABELS, NEVER IDS: no id of any kind, no directive or other player-written text, no plan, meeting, card, ledger,
 // moment excerpt, replay path or old nightly review. A quotation is the agent's rationale or hypothesis, each at most
-// 500 code points, carried WHOLE or not at all: one over its bound, or holding an identifier (Build C CE-1 — an id the
-// day knows, or any shape the platform mints, through src/utils/promptBoundText.js), is left out, never cut. A symbol
+// 500 code points, carried WHOLE or not at all: one over its bound, holding an identifier (Build C CE-1 — an id the
+// day knows, every opaque reference its tape holds included (Amendment F DF-3), or any shape the platform mints,
+// through src/utils/promptBoundText.js), or echoing the player's own words (Amendment F DF-2: a run of five words, or
+// the whole of a shorter player text, shared with any player-written or player-editable text of the same tape day —
+// read for that test only, never carried), is left out, never cut. A symbol
 // is carried only as a ticker (the symbol directory's shape). A swap with no strict instant, or with no row key to bind
 // its words to, is not in the digest.
 //
@@ -48,10 +56,71 @@ const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const str = (v) => (typeof v === 'string' && v ? v : null);
 const RESULTS = Object.freeze(['win', 'loss', 'draw']);
 
-/** Every id the day knows — the tape's and the battle's — for the quotation policy (CE-1 item 1). */
+/**
+ * Amendment F DF-3 (Astra's F3): every opaque reference the tape day holds — `actions[].key`, `checks[].evalId`,
+ * `checks[].tickId`, `checks[].runId` and `rationale[].evalId`.
+ */
+export function tapeRefsOf(tape) {
+  const rows = (k) => (Array.isArray(tape?.[k]) ? tape[k] : []).filter(isObj);
+  return [
+    ...rows('actions').map((a) => a.key),
+    ...rows('checks').flatMap((c) => [c.evalId, c.tickId, c.runId]),
+    ...rows('rationale').map((r) => r.evalId),
+  ].filter((v) => typeof v === 'string' && v);
+}
+
+/**
+ * Every id the day knows — the tape's and the battle's, and every opaque reference the tape holds (DF-3) — THE
+ * inventory: the pass builds it once and hands the same list to the digest's quotation policy (CE-1 item 1) and to
+ * check 6 (debriefChecks.js).
+ */
 export function knownIdsOf(tape, battle, extra = []) {
-  const ids = [tape?.battleId, tape?.ownerId, tape?.agentId, battle?.id, battle?.agentBattleId, battle?.ownerId, battle?.agentId, ...extra];
+  const ids = [tape?.battleId, tape?.ownerId, tape?.agentId, battle?.id, battle?.agentBattleId, battle?.ownerId, battle?.agentId, ...tapeRefsOf(tape), ...extra];
   return [...new Set(ids.filter((v) => typeof v === 'string' && v))];
+}
+
+/**
+ * Amendment F DF-2 (Astra's F2) — the player-written or player-editable text the tape day holds: the directives'
+ * `playerText`, `canonicalText` and `retainedDirectiveText`, and every text field of `meetings[]` (an owner can edit the
+ * meeting history — Build C CD-16). Read for the overlap test only: none of it is ever carried. The agent's reply is
+ * the agent's own, not listed.
+ */
+export function playerTextsOf(tape) {
+  const out = [];
+  for (const d of Array.isArray(tape?.directives) ? tape.directives : []) {
+    if (isObj(d)) for (const k of ['playerText', 'canonicalText', 'retainedDirectiveText']) if (typeof d[k] === 'string') out.push(d[k]);
+  }
+  const strings = (v) => { if (typeof v === 'string') out.push(v); else if (Array.isArray(v)) v.forEach(strings); else if (isObj(v)) Object.values(v).forEach(strings); };
+  for (const m of Array.isArray(tape?.meetings) ? tape.meetings : []) if (isObj(m)) strings(m);
+  return out;
+}
+
+/** DF-2's comparison form: NFKC with the invisible characters removed, lower case, punctuation removed — words. */
+const overlapWordsOf = (text) => unmaskedText(text).toLowerCase().replace(/\p{P}+/gu, ' ').split(/\s+/u).filter(Boolean);
+/** DF-2: the run is five words. */
+export const ECHO_RUN_WORDS = 5;
+/** DF-2: a player text under three words is never matched. */
+export const ECHO_MIN_WORDS = 3;
+/**
+ * The runs a quotation may not share with the player's texts: each player text's every run of five words, or the whole
+ * text when it is shorter (three or four words); a text under three words gives none.
+ */
+export function playerRunsOf(texts) {
+  const runs = [];
+  for (const t of texts) {
+    const w = overlapWordsOf(t);
+    if (w.length < ECHO_MIN_WORDS) continue;
+    const n = Math.min(ECHO_RUN_WORDS, w.length);
+    for (let i = 0; i + n <= w.length; i += 1) runs.push(w.slice(i, i + n));
+  }
+  return runs;
+}
+/** Does `text` share one of `runs`, word for word? */
+export function echoesPlayer(text, runs) {
+  if (!runs.length) return false;
+  const w = overlapWordsOf(text);
+  const joined = ` ${w.join(' ')} `;
+  return runs.some((r) => joined.includes(` ${r.join(' ')} `));
 }
 
 /** The archetype's code, the subtitle's rule (FilmRoomScreenV2 headerParts): the battle's, else the tape's; never 'unknown'. */
@@ -134,27 +203,58 @@ const INVISIBLE_OR_CONTROL = /[\p{Cf}\p{Default_Ignorable_Code_Point}]/u;
  * and nothing invisible or directional — a right-to-left override would reach the model as text the reader never sees
  * (the review's P1; the checks drop a line that copies one).
  */
-function quoteOf(v, knownIds, names) {
-  const text = promptQuoteText(v, DIGEST_QUOTE_MAX, knownIds);
+function quoteOf(v, policy) {
+  const text = promptQuoteText(v, DIGEST_QUOTE_MAX, policy.knownIds);
   if (text === null || !text.trim() || INVISIBLE_OR_CONTROL.test(text)) return null;
   const plain = unmaskedText(text);
-  return names.some((re) => re.test(text) || re.test(plain)) ? null : text;
+  if (policy.names.some((re) => re.test(text) || re.test(plain))) return null;
+  // DF-2: a quotation that shares a run of the player's own words is left out whole
+  return echoesPlayer(text, policy.playerRuns) ? null : text;
 }
 
-/** The agent's words at one check, as the digest carries them — each text whole or left out; null when none is carried. */
-function saidAt(tape, check, knownIds, names) {
-  if (!check) return null;
-  const row = rationaleRowOf(tape, check.c);
+/** The eligible words recorded at check `c` — each text whole or left out; null when none is eligible. */
+function eligibleWordsAt(tape, c, policy) {
+  const row = rationaleRowOf(tape, c);
   if (!row) return null;
-  const rationale = quoteOf(row.rationale, knownIds, names);
-  const hypothesis = quoteOf(row.hypothesis, knownIds, names);
+  const rationale = quoteOf(row.rationale, policy);
+  const hypothesis = quoteOf(row.hypothesis, policy);
   if (rationale === null && hypothesis === null) return null;
-  return {
-    saidBy: DIGEST_SAID_BY,
-    at: etClock(check.c.at),
-    ...(rationale !== null ? { rationale } : {}),
-    ...(hypothesis !== null ? { hypothesis } : {}),
-  };
+  return { ...(rationale !== null ? { rationale } : {}), ...(hypothesis !== null ? { hypothesis } : {}) };
+}
+
+/** The agent's words at one check, as the digest carries them — only a check with a strict instant (its clock); null when none. */
+function saidAt(tape, c, policy) {
+  if (!c || instantMs(c.at) === null) return null;
+  const words = eligibleWordsAt(tape, c, policy);
+  return words ? { saidBy: DIGEST_SAID_BY, at: etClock(c.at), ...words } : null;
+}
+
+/**
+ * DF-9 — a swap's two quotations: `{ before, atSwap }`, each a carried quotation or null.
+ *   With a tickSeq: `atSwap` is the eligible words of the check whose tickSeq is the action's; `before` the nearest
+ *   LOWER check by tickSeq (the writer's order — reliably ordered, whatever the instants) that has eligible words, a
+ *   check without them skipped. When that nearest worded check has no strict instant, it has no clock to say, and an
+ *   older check's words never stand in for it: no `before`.
+ *   With no tickSeq (the time fallback): `before` is the latest timed check at or before the swap's instant with
+ *   eligible words; no `atSwap`; and DE-14's conservative rule (the review's M5) stands — when a check with no strict
+ *   instant may lie between that check and the first timed check after the swap (by tickSeq), or cannot be placed at
+ *   all, the words are left out rather than another check's taken.
+ */
+function quotationsOf(tape, a, swapT, checks, untimed, policy) {
+  const all = (Array.isArray(tape.checks) ? tape.checks : []).filter(isObj);
+  if (Number.isInteger(a.tickSeq)) {
+    const own = all.find((c) => c.tickSeq === a.tickSeq) ?? null;
+    const lower = all.filter((c) => Number.isInteger(c.tickSeq) && c.tickSeq < a.tickSeq).sort((x, y) => y.tickSeq - x.tickSeq);
+    const worded = lower.find((c) => eligibleWordsAt(tape, c, policy) !== null) ?? null;
+    return { before: worded ? saidAt(tape, worded, policy) : null, atSwap: own ? saidAt(tape, own, policy) : null };
+  }
+  const before = [...checks].reverse().find((x) => x.t <= swapT && eligibleWordsAt(tape, x.c, policy) !== null) ?? null;
+  const next = checks.find((x) => x.t > swapT) ?? null;
+  const seqOf = (x) => (Number.isInteger(x?.c?.tickSeq) ? x.c.tickSeq : null);
+  const lo = before ? seqOf(before) : -Infinity;
+  const hi = next ? seqOf(next) : Infinity;
+  const unsure = untimed.length > 0 && (lo === null || hi === null || untimed.some((s) => s === null || (s > lo && s < hi)));
+  return { before: unsure || !before ? null : saidAt(tape, before.c, policy), atSwap: null };
 }
 
 /** The day: final or not by the front's own predicate; on a final day the result word, and both finals where the key shows both. */
@@ -179,8 +279,8 @@ function dayOf(tape, battle) {
  */
 export function buildDayDigest({ tape, battle = null, knownIds = [] } = {}) {
   if (!isObj(tape) || !Array.isArray(tape.checks) || !Array.isArray(tape.actions)) return null;
-  const known = knownIdsOf(tape, battle, knownIds);
-  const names = namesOf(battle);
+  // the quotation policy: every id the day knows (DF-3), the agent's chosen name (DW-3), the player's runs (DF-2)
+  const policy = { knownIds: knownIdsOf(tape, battle, knownIds), names: namesOf(battle), playerRuns: playerRunsOf(playerTextsOf(tape)) };
   const code = archetypeCodeOf(tape, battle);
   // the front's pins, its swaps only: a strict instant and a row key to bind the words to; chosen by the front's priority
   const swapPins = allPinsOf(tape).filter((p) => p.src === 'action' && p.t !== null && str(tape.actions[p.index]?.key));
@@ -193,16 +293,7 @@ export function buildDayDigest({ tape, battle = null, knownIds = [] } = {}) {
     const label = `s${k + 1}`;
     refs[label] = a.key;
     const price = numberAt(tape, ['actions', p.index, 'exitPrice']);
-    const before = [...checks].reverse().find((x) => x.t <= p.t) ?? null;
-    const after = checks.find((x) => x.t > p.t) ?? null;
-    // a check with no strict instant between the two neighbours (by tickSeq), or one we cannot place against them at
-    // all: neither neighbour is surely the check before or after — no words rather than another check's (M5)
-    const seqOf = (x) => (Number.isInteger(x?.c?.tickSeq) ? x.c.tickSeq : null);
-    const lo = before ? seqOf(before) : -Infinity;
-    const hi = after ? seqOf(after) : Infinity;
-    const unsure = untimed.length > 0 && (lo === null || hi === null || untimed.some((s) => s === null || (s > lo && s < hi)));
-    const saidBefore = unsure ? null : saidAt(tape, before, known, names);
-    const saidAfter = unsure ? null : saidAt(tape, after, known, names);
+    const { before, atSwap } = quotationsOf(tape, a, p.t, checks, untimed, policy);
     return {
       label,
       time: etClock(a.at),
@@ -210,8 +301,8 @@ export function buildDayDigest({ tape, battle = null, knownIds = [] } = {}) {
       ...(tickerOk(a.symbolOut) ? { sold: a.symbolOut } : {}),
       ...(tickerOk(a.symbolIn) ? { bought: a.symbolIn } : {}),
       ...(price ? { soldAt: fmtPrice(price.value) } : {}),
-      ...(saidBefore ? { before: saidBefore } : {}),
-      ...(saidAfter ? { after: saidAfter } : {}),
+      ...(before ? { before } : {}),
+      ...(atSwap ? { atSwap } : {}),
     };
   });
   return {

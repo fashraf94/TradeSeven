@@ -19,7 +19,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import {
-  buildDayDigest, canonicalDigestJson, digestHashOf, knownIdsOf, archetypeCodeOf, archetypeDisplayOf, DAY_DIGEST_VERSION, DIGEST_SWAP_LIMIT, DIGEST_QUOTE_MAX, DIGEST_SAID_BY, PLATFORM_DEFAULT_AGENT_NAME,
+  buildDayDigest, canonicalDigestJson, digestHashOf, knownIdsOf, tapeRefsOf, playerTextsOf, playerRunsOf, echoesPlayer, ECHO_RUN_WORDS, ECHO_MIN_WORDS, archetypeCodeOf, archetypeDisplayOf, DAY_DIGEST_VERSION, DIGEST_SWAP_LIMIT, DIGEST_QUOTE_MAX, DIGEST_SAID_BY, PLATFORM_DEFAULT_AGENT_NAME,
 } from './dayDigest.js';
 import { sep23Day, SEP23_NIGHT } from '../filmTape/__fixtures__/screenFixtures.js';
 import { seedDay, OWNER } from '../filmTape/__fixtures__/tapeFixtures.js';
@@ -46,7 +46,7 @@ let SEP;
 beforeAll(async () => { SEP = await sep23AtNight(); });
 
 /** Pinned: the canonical JSON's SHA-256 of the Sep 23 digest (DAY_DIGEST_VERSION 1). A change to what the model reads moves it. */
-const SEP23_DIGEST_SHA256 = '0e345ebfb269150e2bebb91aa88c6925590664cd0292593a2bdbe5a7f52ccf05';   // the §2 review's M1: was 2cc5d560…c481 with the humanized "Momentum"
+const SEP23_DIGEST_SHA256 = 'd3b346b1c17a2113cd6bd410e6e922c0eec692ec0505164c38a80162af26c111';   // the D2 fix round (DE-10/DF-9): the same quotations, `after` now `atSwap` — was 0e345ebf…f05; the §2 review's M1 before that: 2cc5d560…c481 with the humanized "Momentum"
 
 describe('the golden — the Sep 23 digest, through the real writer', () => {
   it('is pinned by the SHA-256 of its canonical JSON (the build report prints it whole)', () => {
@@ -64,16 +64,22 @@ describe('the golden — the Sep 23 digest, through the real writer', () => {
     ]);
     expect(refs).toEqual(Object.fromEntries(SEP.tape.actions.map((a, i) => [`s${i + 1}`, a.key])));
   });
-  it('each swap carries the agent\'s words at the latest check at or before it and at the first check after it — marked as its own, at that check', () => {
+  it('DE-10 / DF-9: each swap carries the agent\'s words at the check where it ran (`atSwap`, the action\'s tickSeq) and at the nearest earlier check with words (`before`) — Sep 23\'s sequences 11, 16 and 20', () => {
     const { digest } = buildDayDigest(SEP);
-    const s2 = digest.swaps[1];   // 2:00:05 PM: the check before is 1:45 PM's (seq 15), the check after 2:00 PM's (seq 16, 2:00:20)
-    const r15 = SEP.tape.rationale.find((r) => r.tickSeq === 15);
-    const r16 = SEP.tape.rationale.find((r) => r.tickSeq === 16);
-    expect(s2.before).toEqual({ saidBy: DIGEST_SAID_BY, at: '1:45 PM', rationale: r15.rationale, hypothesis: r15.hypothesis });
-    expect(s2.after).toEqual({ saidBy: DIGEST_SAID_BY, at: '2:00 PM', rationale: r16.rationale, hypothesis: r16.hypothesis });
-    // 12:45:08 PM: the check before is 12:30 PM's (seq 10), the check after 12:45 PM's (seq 11)
-    expect(digest.swaps[0].before.at).toBe('12:30 PM');
-    expect(digest.swaps[0].after.rationale).toBe(SEP.tape.rationale.find((r) => r.tickSeq === 11).rationale);
+    const r = (seq) => SEP.tape.rationale.find((x) => x.tickSeq === seq);
+    expect(SEP.tape.actions.map((a) => a.tickSeq)).toEqual([11, 16, 20]);
+    // s2, the agent's own swap (seq 16): its deciding words are its atSwap — "PLTR held into the check, so DE goes out…"
+    const s2 = digest.swaps[1];
+    expect(s2.atSwap).toEqual({ saidBy: DIGEST_SAID_BY, at: '2:00 PM', rationale: r(16).rationale, hypothesis: r(16).hypothesis });
+    expect(s2.atSwap.rationale.startsWith('PLTR held into the check, so DE goes out')).toBe(true);
+    expect(s2.before).toEqual({ saidBy: DIGEST_SAID_BY, at: '1:45 PM', rationale: r(15).rationale, hypothesis: r(15).hypothesis });
+    // s1, the stall rule's (seq 11): the words at its own check, and at 12:30 PM's (seq 10)
+    expect([digest.swaps[0].atSwap.at, digest.swaps[0].atSwap.rationale, digest.swaps[0].before.at]).toEqual(['12:45 PM', r(11).rationale, '12:30 PM']);
+    // s3 (seq 20): its own check recorded no words — no atSwap; before is 2:45 PM's (seq 19)
+    expect(r(20)).toBeUndefined();
+    expect([digest.swaps[2].atSwap, digest.swaps[2].before.at]).toEqual([undefined, '2:45 PM']);
+    // `after` is gone
+    for (const s of digest.swaps) expect('after' in s).toBe(false);
   });
   it('the day: Sep 23 reads as final — the result word and both finals, as the front\'s key shows them; the archetype\'s display name', () => {
     const { digest } = buildDayDigest(SEP);
@@ -85,13 +91,13 @@ describe('the golden — the Sep 23 digest, through the real writer', () => {
 });
 
 describe('what the digest holds, and nothing else (DW-3)', () => {
-  const ALLOWED_SWAP = ['label', 'time', 'maker', 'sold', 'bought', 'soldAt', 'before', 'after'];
+  const ALLOWED_SWAP = ['label', 'time', 'maker', 'sold', 'bought', 'soldAt', 'before', 'atSwap'];
   const ALLOWED_SAID = ['saidBy', 'at', 'rationale', 'hypothesis'];
   it('every swap\'s fields, and every quotation\'s, are the listed ones — no other key anywhere', () => {
     const { digest } = buildDayDigest(SEP);
     for (const s of digest.swaps) {
       for (const k of Object.keys(s)) expect(ALLOWED_SWAP, k).toContain(k);
-      for (const said of [s.before, s.after].filter(Boolean)) for (const k of Object.keys(said)) expect(ALLOWED_SAID, k).toContain(k);
+      for (const said of [s.before, s.atSwap].filter(Boolean)) for (const k of Object.keys(said)) expect(ALLOWED_SAID, k).toContain(k);
     }
     for (const k of Object.keys(digest.day)) expect(['final', 'result', 'finals'], k).toContain(k);
   });
@@ -131,7 +137,7 @@ describe('what the digest holds, and nothing else (DW-3)', () => {
 });
 
 describe('a quotation is carried WHOLE or not at all (Build C CE-1; §2)', () => {
-  /** Sep 23 with the rationale at the check after s2 (seq 16) replaced. */
+  /** Sep 23 with the rationale at s2's own check (seq 16, its atSwap) replaced. */
   const withRationale16 = (fields) => {
     const tape = clone(SEP.tape);
     Object.assign(tape.rationale.find((r) => r.tickSeq === 16), fields);
@@ -140,8 +146,8 @@ describe('a quotation is carried WHOLE or not at all (Build C CE-1; §2)', () =>
   it('a rationale holding an id the day knows is left out whole — its hypothesis beside it still carried', () => {
     const tape = withRationale16({ rationale: `Swapped on battle ${SEP.tape.battleId} for the push.` });
     const s2 = buildDayDigest({ tape, battle: SEP.battle }).digest.swaps[1];
-    expect(s2.after.rationale).toBeUndefined();
-    expect(s2.after.hypothesis).toBe(tape.rationale.find((r) => r.tickSeq === 16).hypothesis);
+    expect(s2.atSwap.rationale).toBeUndefined();
+    expect(s2.atSwap.hypothesis).toBe(tape.rationale.find((r) => r.tickSeq === 16).hypothesis);
     const json = canonicalDigestJson(buildDayDigest({ tape, battle: SEP.battle }).digest);
     expect(json.includes('Swapped on battle')).toBe(false);   // never cut: no part of it remains
     expect(json.includes('for the push')).toBe(false);
@@ -149,32 +155,32 @@ describe('a quotation is carried WHOLE or not at all (Build C CE-1; §2)', () =>
   it('a quotation holding an id SHAPE the platform mints (a Firestore auto-id) is left out whole', () => {
     const tape = withRationale16({ hypothesis: 'See Ab3dEf7hIj9kLm1nOp5q for why PLTR held.' });
     const s2 = buildDayDigest({ tape, battle: SEP.battle }).digest.swaps[1];
-    expect(s2.after.hypothesis).toBeUndefined();
+    expect(s2.atSwap.hypothesis).toBeUndefined();
     expect(canonicalDigestJson(buildDayDigest({ tape, battle: SEP.battle }).digest).includes('for why PLTR held')).toBe(false);
   });
   it('an id the CALLER knows (the attribution agent) is left out too', () => {
     const tape = withRationale16({ rationale: 'Parent agent zz-parent-agent-77 said so.' });
-    expect(buildDayDigest({ tape, battle: SEP.battle }).digest.swaps[1].after.rationale).toBe('Parent agent zz-parent-agent-77 said so.');
-    expect(buildDayDigest({ tape, battle: SEP.battle, knownIds: ['zz-parent-agent-77'] }).digest.swaps[1].after.rationale).toBeUndefined();
+    expect(buildDayDigest({ tape, battle: SEP.battle }).digest.swaps[1].atSwap.rationale).toBe('Parent agent zz-parent-agent-77 said so.');
+    expect(buildDayDigest({ tape, battle: SEP.battle, knownIds: ['zz-parent-agent-77'] }).digest.swaps[1].atSwap.rationale).toBeUndefined();
   });
   it('the bound: exactly 500 code points is carried; 501 is left out, never cut — an astral character counts once', () => {
     const at500 = `${'a'.repeat(DIGEST_QUOTE_MAX - 1)}😀`;
     const at501 = `${'a'.repeat(DIGEST_QUOTE_MAX)}😀`;
     expect(DIGEST_QUOTE_MAX).toBe(500);
-    expect(buildDayDigest({ tape: withRationale16({ rationale: at500 }), battle: SEP.battle }).digest.swaps[1].after.rationale).toBe(at500);
-    const out = buildDayDigest({ tape: withRationale16({ rationale: at501 }), battle: SEP.battle }).digest.swaps[1].after;
+    expect(buildDayDigest({ tape: withRationale16({ rationale: at500 }), battle: SEP.battle }).digest.swaps[1].atSwap.rationale).toBe(at500);
+    const out = buildDayDigest({ tape: withRationale16({ rationale: at501 }), battle: SEP.battle }).digest.swaps[1].atSwap;
     expect(out.rationale).toBeUndefined();
     expect(canonicalDigestJson(out).includes('aaaa')).toBe(false);
   });
   it('both texts left out: the check\'s words are not carried at all (no empty quotation)', () => {
     const tape = withRationale16({ rationale: `x ${SEP.tape.ownerId} x`, hypothesis: `y ${SEP.tape.agentId} y` });
-    expect(buildDayDigest({ tape, battle: SEP.battle }).digest.swaps[1].after).toBeUndefined();
+    expect(buildDayDigest({ tape, battle: SEP.battle }).digest.swaps[1].atSwap).toBeUndefined();
   });
   it('a check with no recorded words gives no quotation — never an older check\'s words in its place', () => {
     const tape = clone(SEP.tape);
     tape.rationale = tape.rationale.filter((r) => r.tickSeq !== 16);
     const s2 = buildDayDigest({ tape, battle: SEP.battle }).digest.swaps[1];
-    expect(s2.after).toBeUndefined();
+    expect(s2.atSwap).toBeUndefined();
     expect(s2.before.at).toBe('1:45 PM');
   });
 });
@@ -301,24 +307,24 @@ describe('the review round (§2 review, the model lens)', () => {
       const tape = clone(SEP.tape);
       tape.rationale.find((r) => r.tickSeq === 16).rationale = words;
       const s2 = buildDayDigest({ tape, battle }).digest.swaps[1];
-      expect(s2.after.rationale, words).toBeUndefined();
+      expect(s2.atSwap.rationale, words).toBeUndefined();
       expect(canonicalDigestJson(buildDayDigest({ tape, battle }).digest).toLowerCase().includes('quinzel'), words).toBe(false);
     }
     // a longer word that only contains the name is not the name
     const short = { ...clone(SEP.battle), agentContext: { ...SEP.battle.agentContext, agentName: 'Max' } };
     const tape = clone(SEP.tape);
     tape.rationale.find((r) => r.tickSeq === 16).rationale = 'The maximum held into the check.';
-    expect(buildDayDigest({ tape, battle: short }).digest.swaps[1].after.rationale).toBe('The maximum held into the check.');
+    expect(buildDayDigest({ tape, battle: short }).digest.swaps[1].atSwap.rationale).toBe('The maximum held into the check.');
   });
   it('M4: a rationale row found by evaluation id only when its own tickSeq names no other check', () => {
     const tape = clone(SEP.tape);
     tape.rationale = tape.rationale.filter((r) => r.tickSeq !== 16);
     tape.rationale.find((r) => r.tickSeq === 14).evalId = tape.checks.find((c) => c.tickSeq === 16).evalId;
-    expect(buildDayDigest({ tape, battle: SEP.battle }).digest.swaps[1].after).toBeUndefined();
+    expect(buildDayDigest({ tape, battle: SEP.battle }).digest.swaps[1].atSwap).toBeUndefined();
     // the same id on a row that names no tickSeq at all is that check's
     const r14 = tape.rationale.find((r) => r.tickSeq === 14);
     r14.tickSeq = null;
-    expect(buildDayDigest({ tape, battle: SEP.battle }).digest.swaps[1].after.rationale).toBe(r14.rationale);
+    expect(buildDayDigest({ tape, battle: SEP.battle }).digest.swaps[1].atSwap.rationale).toBe(r14.rationale);
   });
   it('M5: two checks at one instant are ordered by tickSeq, never by their places in the array', () => {
     const tape = clone(SEP.tape);
@@ -333,22 +339,35 @@ describe('the review round (§2 review, the model lens)', () => {
     expect(digestHashOf(buildDayDigest({ tape: swapped, battle: SEP.battle }).digest)).toBe(a);
     expect(buildDayDigest({ tape: swapped, battle: SEP.battle }).digest.swaps[1].before.rationale).toBe(SEP.tape.rationale.find((r) => r.tickSeq === 15).rationale);
   });
-  it('M5: a check with no strict instant between a swap\'s timed neighbours (a gap row, a looser time) — neither neighbour\'s words are carried, never an older check\'s', () => {
+  it('M5, narrowed to the time fallback (DE-14, DF-9): a swap with no tickSeq and a check with no strict instant between its timed neighbours (a gap row, a looser time) — no words, never an older check\'s', () => {
+    for (const at of [null, '2026-09-23 17:45:20']) {
+      const tape = clone(SEP.tape);
+      tape.actions[1].tickSeq = null;
+      tape.checks.find((c) => c.tickSeq === 15).at = at;
+      const s2 = buildDayDigest({ tape, battle: SEP.battle }).digest.swaps[1];
+      expect([s2.before, s2.atSwap], String(at)).toEqual([undefined, undefined]);
+    }
+    // an untimed check far from the swap leaves its neighbours as they were
+    const tape = clone(SEP.tape);
+    tape.actions[1].tickSeq = null;
+    tape.checks.find((c) => c.tickSeq === 3).at = null;
+    expect(buildDayDigest({ tape, battle: SEP.battle }).digest.swaps[1].before.at).toBe('1:45 PM');
+  });
+  it('M5 with a tickSeq (DE-14: matching by tickSeq depends on no other check\'s instant): an untimed check elsewhere changes nothing; the nearest worded check itself untimed has no clock — no `before`, never an older check\'s words in its place', () => {
+    const far = clone(SEP.tape);
+    far.checks.find((c) => c.tickSeq === 3).at = null;
+    expect(digestHashOf(buildDayDigest({ tape: far, battle: SEP.battle }).digest)).toBe(digestHashOf(buildDayDigest(SEP).digest));
     for (const at of [null, '2026-09-23 17:45:20']) {
       const tape = clone(SEP.tape);
       tape.checks.find((c) => c.tickSeq === 15).at = at;
       const s2 = buildDayDigest({ tape, battle: SEP.battle }).digest.swaps[1];
-      expect([s2.before, s2.after], String(at)).toEqual([undefined, undefined]);
+      expect([s2.before, s2.atSwap.at], String(at)).toEqual([undefined, '2:00 PM']);
     }
-    // an untimed check far from the swap leaves its neighbours as they were
-    const tape = clone(SEP.tape);
-    tape.checks.find((c) => c.tickSeq === 3).at = null;
-    expect(buildDayDigest({ tape, battle: SEP.battle }).digest.swaps[1].before.at).toBe('1:45 PM');
   });
   it('M6: a quotation of only spaces is no quotation', () => {
     const tape = clone(SEP.tape);
     Object.assign(tape.rationale.find((r) => r.tickSeq === 16), { rationale: '   ', hypothesis: ' \t ' });
-    expect(buildDayDigest({ tape, battle: SEP.battle }).digest.swaps[1].after).toBeUndefined();
+    expect(buildDayDigest({ tape, battle: SEP.battle }).digest.swaps[1].atSwap).toBeUndefined();
   });
 });
 
@@ -357,32 +376,164 @@ describe('the review round (§2 review, the player lens)', () => {
     for (const words of ['PLTR holds. \u202Eedart dab a saw tI', 'Hold\u200Bing PLTR.', 'Hold\u2060ing PLTR.', 'Soft\u00ADly out.']) {
       const tape = clone(SEP.tape);
       tape.rationale.find((r) => r.tickSeq === 16).rationale = words;
-      expect(buildDayDigest({ tape, battle: SEP.battle }).digest.swaps[1].after?.rationale, JSON.stringify(words)).toBeUndefined();
+      expect(buildDayDigest({ tape, battle: SEP.battle }).digest.swaps[1].atSwap?.rationale, JSON.stringify(words)).toBeUndefined();
     }
     const tape = clone(SEP.tape);
     tape.rationale.find((r) => r.tickSeq === 16).rationale = 'Café PLTR holds.';
-    expect(buildDayDigest({ tape, battle: SEP.battle }).digest.swaps[1].after?.rationale).toBe('Café PLTR holds.');   // an accented letter is no disguise
+    expect(buildDayDigest({ tape, battle: SEP.battle }).digest.swaps[1].atSwap?.rationale).toBe('Café PLTR holds.');   // an accented letter is no disguise
   });
 });
 
 describe("the refuter's round (§2 review)", () => {
   const withName = (agentName) => ({ ...clone(SEP.battle), agentContext: { ...SEP.battle.agentContext, agentName } });
-  const s2After = (battle, words) => {
+  const s2AtSwap = (battle, words) => {
     const tape = clone(SEP.tape);
     tape.rationale.find((r) => r.tickSeq === 16).rationale = words;
-    return buildDayDigest({ tape, battle }).digest.swaps[1].after?.rationale;
+    return buildDayDigest({ tape, battle }).digest.swaps[1].atSwap?.rationale;
   };
   it('M2: the name with its words joined by more spaces, a hyphen or a dash is left out too', () => {
     const battle = withName('Quinzel Marrowby');
-    for (const words of ['QUINZEL   MARROWBY waits.', 'Quinzel-Marrowby waits.', 'Quinzel\u2014Marrowby waits.', 'quinzel\tmarrowby waits.']) expect(s2After(battle, words), JSON.stringify(words)).toBeUndefined();
-    expect(s2After(withName('Quinzel-Marrowby'), 'Quinzel Marrowby waits.')).toBeUndefined();   // a hyphenated name, written with a space
-    expect(s2After(battle, 'Quinzel waits for PLTR.')).toBe('Quinzel waits for PLTR.');           // one word of it is not the name
+    for (const words of ['QUINZEL   MARROWBY waits.', 'Quinzel-Marrowby waits.', 'Quinzel\u2014Marrowby waits.', 'quinzel\tmarrowby waits.']) expect(s2AtSwap(battle, words), JSON.stringify(words)).toBeUndefined();
+    expect(s2AtSwap(withName('Quinzel-Marrowby'), 'Quinzel Marrowby waits.')).toBeUndefined();   // a hyphenated name, written with a space
+    expect(s2AtSwap(battle, 'Quinzel waits for PLTR.')).toBe('Quinzel waits for PLTR.');           // one word of it is not the name
   });
   it("N4: the platform's default name ('Agent', which no player chose) leaves no quotation out for saying \"agent\"", () => {
     expect(PLATFORM_DEFAULT_AGENT_NAME).toBe('Agent');
     const src = readFileSync(path.join(HERE, '..', 'agentBattleService.js'), 'utf8');
     expect(src.includes("agentName: agentData.name || 'Agent',")).toBe(true);   // the snapshot's own default, read where it is written
-    for (const name of ['Agent', 'agent', ' AGENT ']) expect(s2After(withName(name), 'The agent holds PLTR into the check.'), name).toBe('The agent holds PLTR into the check.');
-    expect(s2After(withName('Agent Smith'), 'Agent Smith holds PLTR.')).toBeUndefined();          // a chosen name holding the word is still a name
+    for (const name of ['Agent', 'agent', ' AGENT ']) expect(s2AtSwap(withName(name), 'The agent holds PLTR into the check.'), name).toBe('The agent holds PLTR into the check.');
+    expect(s2AtSwap(withName('Agent Smith'), 'Agent Smith holds PLTR.')).toBeUndefined();          // a chosen name holding the word is still a name
+  });
+});
+
+describe('Build D Amendment E DE-10, exactly as Amendment F DF-9 defines it (Astra §8\'s list)', () => {
+  const r = (seq) => SEP.tape.rationale.find((x) => x.tickSeq === seq);
+  const s2Of = (tape) => buildDayDigest({ tape, battle: SEP.battle }).digest.swaps[1];
+  it('every writer mechanism: the swap\'s own check by its tickSeq, whoever made it', () => {
+    for (const mechanism of [...Object.keys(MAKER_KEYS), 'not-a-known-mechanism']) {
+      const tape = clone(SEP.tape);
+      tape.actions[1].mechanism = mechanism;
+      const s2 = s2Of(tape);
+      expect([s2.atSwap.at, s2.atSwap.rationale, s2.before.at], mechanism).toEqual(['2:00 PM', r(16).rationale, '1:45 PM']);
+    }
+  });
+  it('shared-tick actions: two swaps captured at one tick both carry that check\'s words', () => {
+    const tape = clone(SEP.tape);
+    tape.actions.push({ ...clone(tape.actions[1]), key: 'swap:2026-09-23T18:00:06.000Z|ETN|NOW', at: '2026-09-23T18:00:06.000Z', mechanism: 'guardrail', symbolOut: 'ETN', symbolIn: 'NOW' });
+    const { digest } = buildDayDigest({ tape, battle: SEP.battle });
+    const both = digest.swaps.filter((s) => s.atSwap?.at === '2:00 PM');
+    expect(both.map((s) => [s.maker, s.atSwap.rationale, s.before.at])).toEqual([['your agent', r(16).rationale, '1:45 PM'], ['the guardrail', r(16).rationale, '1:45 PM']]);
+  });
+  it('deferred execution: a swap executed at a later tick than the check that decided it carries the deciding words as `before`', () => {
+    const tape = clone(SEP.tape);
+    tape.actions[1].tickSeq = 17;
+    const s2 = s2Of(tape);
+    expect([s2.atSwap.at, s2.atSwap.rationale, s2.before.at, s2.before.rationale]).toEqual(['2:15 PM', r(17).rationale, '2:00 PM', r(16).rationale]);
+  });
+  it('no own words: the swap\'s check recorded none — no `atSwap`, and never another check\'s words in its place', () => {
+    const tape = clone(SEP.tape);
+    tape.rationale = tape.rationale.filter((x) => x.tickSeq !== 16);
+    const s2 = s2Of(tape);
+    expect([s2.atSwap, s2.before.at]).toEqual([undefined, '1:45 PM']);
+  });
+  it('an intervening wordless check is skipped, never counted as the nearest — by tickSeq, and in the time fallback', () => {
+    const tape = clone(SEP.tape);
+    tape.rationale = tape.rationale.filter((x) => x.tickSeq !== 15);
+    expect([s2Of(tape).before.at, s2Of(tape).before.rationale]).toEqual(['1:30 PM', r(14).rationale]);
+    tape.actions[1].tickSeq = null;
+    expect([s2Of(tape).before.at, s2Of(tape).atSwap]).toEqual(['1:30 PM', undefined]);
+  });
+  it('the time fallback — no tickSeq (null, or none at all): `before` is the latest timed check at or before the instant with words; no `atSwap`', () => {
+    for (const set of [(a) => { a.tickSeq = null; }, (a) => { delete a.tickSeq; }]) {
+      const tape = clone(SEP.tape);
+      set(tape.actions[1]);
+      const s2 = s2Of(tape);
+      // 2:00:05 PM: the 2:00 PM check is stamped 2:00:20, after the instant — the latest at or before is 1:45 PM's
+      expect([s2.before.at, s2.before.rationale, s2.atSwap]).toEqual(['1:45 PM', r(15).rationale, undefined]);
+    }
+  });
+  it('the canonical digest holds `atSwap` and never `after`', () => {
+    const json = canonicalDigestJson(buildDayDigest(SEP).digest);
+    expect(json.includes('"after"')).toBe(false);
+    expect(json.includes('"atSwap"')).toBe(true);
+  });
+});
+
+describe('Amendment F DF-2 (Astra\'s F2): a quotation that echoes the player\'s own words is left out whole', () => {
+  const withWords16 = (text, tapeOver = (t) => t) => {
+    const tape = tapeOver(clone(SEP.tape));
+    tape.rationale.find((x) => x.tickSeq === 16).rationale = text;
+    return buildDayDigest({ tape, battle: SEP.battle }).digest.swaps[1].atSwap?.rationale;
+  };
+  it('the player\'s texts: the directives\' playerText, canonicalText and retainedDirectiveText, and every text field of meetings[] — never the agent\'s reply', () => {
+    const tape = clone(SEP.tape);
+    tape.directives[0].agentReply = 'AGENT REPLY TEXT';
+    tape.meetings = [{ key: 'gpm_1|x', status: 'approved', resolvedBy: 'player', diagnosis: 'DIAGNOSIS TEXT', legs: [{ symbolOut: 'DE', symbolIn: 'PLTR' }] }];
+    const texts = playerTextsOf(tape);
+    for (const d of SEP.tape.directives) for (const k of ['playerText', 'canonicalText', 'retainedDirectiveText']) if (typeof d[k] === 'string') expect(texts, k).toContain(d[k]);
+    expect(texts).toEqual(expect.arrayContaining(['DIAGNOSIS TEXT', 'player', 'gpm_1|x', 'DE', 'PLTR']));
+    expect(texts).not.toContain('AGENT REPLY TEXT');
+  });
+  it('the run, exactly: five shared words are an echo; four are not', () => {
+    const runs = playerRunsOf(['Please keep the chip names on a short leash today.']);
+    expect(ECHO_RUN_WORDS).toBe(5);
+    expect(echoesPlayer('I kept the chip names in view.', runs)).toBe(false);          // "the chip names" — three
+    expect(echoesPlayer('Watch chip names on a short fuse.', runs)).toBe(true);        // "chip names on a short" — five
+    expect(echoesPlayer('names on a short leash', runs)).toBe(true);
+    expect(echoesPlayer('on a short leash today', runs)).toBe(true);
+    expect(echoesPlayer('a short leash today', runs)).toBe(false);                     // four
+    expect(echoesPlayer('short leash today please keep', runs)).toBe(false);           // no run crosses the text's two ends
+  });
+  it('a player text of three or four words is matched whole; under three never', () => {
+    expect(ECHO_MIN_WORDS).toBe(3);
+    expect(echoesPlayer('I will tighten the stop now.', playerRunsOf(['Tighten the stop.']))).toBe(true);
+    expect(echoesPlayer('I will tighten the downside stop now.', playerRunsOf(['Tighten the stop.']))).toBe(false);
+    expect(echoesPlayer('Protect the lead into the close.', playerRunsOf(['Protect the lead']))).toBe(true);
+    expect(echoesPlayer('I would sell now.', playerRunsOf(['Sell now.']))).toBe(false);
+    expect(echoesPlayer('Sell now.', playerRunsOf(['Sell now!']))).toBe(false);
+  });
+  it('compared after NFKC, lower case and punctuation removed — a hyphen, a full-width letter or a capital hides nothing', () => {
+    const runs = playerRunsOf(['Keep the chip-names on a short leash.']);
+    expect(echoesPlayer('KEEP THE CHIP NAMES ON', runs)).toBe(true);
+    expect(echoesPlayer('ｋeep the chip names on', runs)).toBe(true);
+    expect(echoesPlayer('keep, the chip — names on', runs)).toBe(true);
+  });
+  it('through the digest: an echo is left out whole, its hypothesis beside it still carried; the control without the player\'s text carries it', () => {
+    const tape = clone(SEP.tape);
+    tape.directives[0].playerText = 'Lighten the industrials before the close today.';
+    tape.rationale.find((x) => x.tickSeq === 16).rationale = 'Lighten the industrials before the close: DE goes out.';
+    const s2 = buildDayDigest({ tape, battle: SEP.battle }).digest.swaps[1];
+    expect(s2.atSwap.rationale).toBeUndefined();
+    expect(s2.atSwap.hypothesis).toBe(SEP.tape.rationale.find((x) => x.tickSeq === 16).hypothesis);
+    expect(canonicalDigestJson(buildDayDigest({ tape, battle: SEP.battle }).digest).toLowerCase().includes('lighten the industrials')).toBe(false);
+    expect(withWords16('Lighten the industrials before the close: DE goes out.')).toBe('Lighten the industrials before the close: DE goes out.');
+  });
+  it('a meeting\'s words, and the player\'s texts, never reach the digest — even when nothing echoes them', () => {
+    const tape = clone(SEP.tape);
+    tape.meetings = [{ key: 'gpm_1|2026-09-23T17:00:00.000Z', createdAt: '2026-09-23T17:00:00.000Z', status: 'approved', resolvedBy: 'player', legs: [], diagnosis: 'MEETINGWORDSSENTINEL rotate later' }];
+    const json = canonicalDigestJson(buildDayDigest({ tape, battle: SEP.battle }).digest);
+    expect(json.includes('MEETINGWORDSSENTINEL')).toBe(false);
+    for (const t of playerTextsOf(SEP.tape)) expect(json.includes(t), t).toBe(false);
+  });
+});
+
+describe('Amendment F DF-3 (Astra\'s F3): every opaque reference the tape holds is in THE inventory', () => {
+  it('tapeRefsOf: actions[].key, checks[].evalId / tickId / runId, rationale[].evalId — and knownIdsOf holds every one (membership, not a shape)', () => {
+    const tape = clone(SEP.tape);
+    tape.checks[0].runId = 'nightrun-alpha';   // Sep 23's writer records no runId: one planted
+    const refs = tapeRefsOf(tape);
+    const want = [...tape.actions.map((a) => a.key), ...tape.checks.flatMap((c) => [c.evalId, c.tickId, c.runId]), ...tape.rationale.map((x) => x.evalId)].filter((v) => typeof v === 'string' && v);
+    expect(refs).toEqual(want);
+    expect(refs).toContain('nightrun-alpha');
+    const inventory = knownIdsOf(tape, SEP.battle);
+    for (const ref of want) expect(inventory, ref).toContain(ref);
+  });
+  it('a quotation holding a run id or an evaluation id the tape holds — no shape would know them — is left out whole', () => {
+    for (const [plant, words] of [[(t) => { t.checks[0].runId = 'nightrun-alpha'; }, 'Logged under nightrun-alpha.'], [(t) => { t.rationale[0].evalId = 'evaluation-kilo'; }, 'Filed as evaluation-kilo here.']]) {
+      const tape = clone(SEP.tape);
+      plant(tape);
+      tape.rationale.find((x) => x.tickSeq === 16).rationale = words;
+      expect(buildDayDigest({ tape, battle: SEP.battle }).digest.swaps[1].atSwap.rationale, words).toBeUndefined();
+    }
   });
 });
