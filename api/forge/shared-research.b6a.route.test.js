@@ -246,7 +246,7 @@ const at = (minute) => new Date(Date.parse('2026-11-20T15:00:00.000Z') + minute 
 describe('X-1: GET ?list=explore', () => {
   it('no investigations: { quota, items: [] } — the quota as every answer carries it', async () => {
     const b = await exploreRead();
-    expect(Object.keys(b)).toEqual(['quota', 'items']);
+    expect(Object.keys(b)).toEqual(['quota', 'items', 'agent']); // B6c X-9 adds `agent` (additive)
     expect(b.items).toEqual([]);
     expect(b.quota).toEqual({ investigationsToday: 0, perDay: 3, framingsToday: 0, framingsPerDay: 10, stepsToday: 0, stepsPerDay: 30 });
   });
@@ -292,7 +292,7 @@ describe('X-1: GET ?list=explore', () => {
     const c = await post({ action: 'close', sessionId: o.session.sessionId, reason: 'concluded' });
     expect(c.statusCode).toBe(200);
     const { items } = await exploreRead();
-    expect(items).toEqual([{ itemRef: { recordKind: 'exploreStories', recordId: EXPLORE.id }, itemVersion: 3, open: null, last: { sessionId: o.session.sessionId, ended: 'concluded', at: c.body.record.endedAt } }]);
+    expect(items).toEqual([{ itemRef: { recordKind: 'exploreStories', recordId: EXPLORE.id }, itemVersion: 3, open: null, last: { sessionId: o.session.sessionId, ended: 'concluded', at: c.body.record.endedAt, question: Q1, statement: null } }]);
   });
   it('one discarded: not reported — the story has no item', async () => {
     const o = await opened();
@@ -305,7 +305,7 @@ describe('X-1: GET ?list=explore', () => {
     const id = o.session.sessionId;
     const saved = await ledgerSave(id);
     const { items } = await exploreRead();
-    expect(items).toEqual([{ itemRef: { recordKind: 'exploreStories', recordId: EXPLORE.id }, itemVersion: 3, open: null, last: { sessionId: id, ended: 'saved', at: sessionDoc(id).adoption.at } }]);
+    expect(items).toEqual([{ itemRef: { recordKind: 'exploreStories', recordId: EXPLORE.id }, itemVersion: 3, open: null, last: { sessionId: id, ended: 'saved', at: sessionDoc(id).adoption.at, question: Q1, statement: null } }]);
     expect(sessionDoc(id).adoption.watchlistId).toBe(saved.watchlistId);
   });
   it('an open one and an earlier closed one on the same story: both, each in its place; a later discard does not hide an earlier conclusion', async () => {
@@ -318,16 +318,16 @@ describe('X-1: GET ?list=explore', () => {
     const { items } = await exploreRead();
     expect(items).toHaveLength(1);
     expect(items[0].open).toMatchObject({ sessionId: second.session.sessionId, question: Q2 });
-    expect(items[0].last).toEqual({ sessionId: first.session.sessionId, ended: 'concluded', at: closed.body.record.endedAt });
+    expect(items[0].last).toEqual({ sessionId: first.session.sessionId, ended: 'concluded', at: closed.body.record.endedAt, question: Q1, statement: null });
     // the newer one discarded: the story's last ended investigation is still the concluded one
     await post({ action: 'close', sessionId: second.session.sessionId, reason: 'abandoned' });
     const after = (await exploreRead()).items;
-    expect(after).toEqual([{ itemRef: { recordKind: 'exploreStories', recordId: EXPLORE.id }, itemVersion: 3, open: null, last: { sessionId: first.session.sessionId, ended: 'concluded', at: closed.body.record.endedAt } }]);
+    expect(after).toEqual([{ itemRef: { recordKind: 'exploreStories', recordId: EXPLORE.id }, itemVersion: 3, open: null, last: { sessionId: first.session.sessionId, ended: 'concluded', at: closed.body.record.endedAt, question: Q1, statement: null } }]);
   });
   it('two ended on one story: the newer is the last — a saved one after a concluded one, and the other way round', async () => {
     const older = plant({ n: 1, storyId: EXPLORE.id, status: 'completed', createdAt: at(1), updatedAt: at(2) });
     const newer = plant({ n: 2, storyId: EXPLORE.id, status: 'completed', createdAt: at(3), updatedAt: at(4), adoption: { watchlistId: 'wl-2', version: 1, at: at(4), statement: 'x' } });
-    expect((await exploreRead()).items.map((i) => i.last)).toEqual([{ sessionId: newer.sessionId, ended: 'saved', at: at(4) }]);
+    expect((await exploreRead()).items.map((i) => i.last)).toEqual([{ sessionId: newer.sessionId, ended: 'saved', at: at(4), question: 'Question 2', statement: 'x' }]);
     plant({ n: 3, storyId: 'ai-power-2', status: 'completed', createdAt: at(5), updatedAt: at(6), adoption: { watchlistId: 'wl-3', version: 1, at: at(6) } });
     const last = plant({ n: 4, storyId: 'ai-power-2', status: 'completed', createdAt: at(7), updatedAt: at(8) });
     const { items } = await exploreRead();
@@ -356,7 +356,7 @@ describe('X-1: GET ?list=explore', () => {
     state.user = { uid: 'u2' };
     expect((await exploreRead()).items).toEqual([]);
   });
-  it('the document bound: the two session queries, the window, the window\'s sessions the queries missed, the open ones\' records outside it — 191 documents with the quota; no write', async () => {
+  it('the document bound: the two session queries, the window, the window\'s sessions the queries missed, the open and last-ended ones\' records outside it — 221 documents with the quota (B6c X-8: was 191), plus the agents query (X-9); no write', async () => {
     // The double answers an unordered query in the order documents were written, so the queries take the first planted
     // of each status: 40 open (the oldest), 40 completed (older), then 50 completed (the newest, the window's) — the
     // window then holds no session the queries returned, and no open investigation's record.
@@ -373,8 +373,8 @@ describe('X-1: GET ?list=explore', () => {
     state.db = { ...real, collection: (name) => wrapQ(real.collection(name)) };
     const writes = env.writes.length;
     const b = await exploreRead();
-    expect([EXPLORE_OPEN_READ, EXPLORE_ENDED_READ, EXPLORE_RECORDS_READ, EXPLORE_DOCS_MAX]).toEqual([30, 30, 50, 191]);
-    expect(docs).toBe(EXPLORE_DOCS_MAX);
+    expect([EXPLORE_OPEN_READ, EXPLORE_ENDED_READ, EXPLORE_RECORDS_READ, EXPLORE_DOCS_MAX]).toEqual([30, 30, 50, 221]);
+    expect(docs).toBe(EXPLORE_DOCS_MAX + 1); // + the agents query's one document (the seed's one agent; B6c X-9)
     expect(b.items.filter((i) => i.open)).toHaveLength(30);
     expect(b.items.filter((i) => i.last)).toHaveLength(30 + 50);
     expect(b.items.every((i) => Number.isSafeInteger(i.itemVersion))).toBe(true);
@@ -386,7 +386,7 @@ describe('X-1: GET ?list=explore', () => {
     for (let n = 49; n < 120; n++) plant({ n, storyId: `st-${n}`, status: 'completed', createdAt: at(n), updatedAt: at(n) }); // beyond it
     const newer = plant({ n: 200, storyId: 'st-0', status: 'completed', createdAt: at(300), updatedAt: at(301), adoption: { watchlistId: 'wl-1', version: 1, at: at(301) } });
     const { items } = await exploreRead();
-    expect(items.find((i) => i.itemRef.recordId === 'st-0').last).toEqual({ sessionId: newer.sessionId, ended: 'saved', at: at(301) });
+    expect(items.find((i) => i.itemRef.recordId === 'st-0').last).toEqual({ sessionId: newer.sessionId, ended: 'saved', at: at(301), question: 'Question 200', statement: null });
     // the query: st-0 and st-20…st-48; the window: st-0's save and st-71…st-119; st-49…st-70 are in neither
     const ended = items.map((i) => i.itemRef.recordId);
     expect(ended).toContain('st-48');
@@ -398,7 +398,7 @@ describe('X-1: GET ?list=explore', () => {
   it('an Explore save is kept when 50 newer research records of other kinds push it out of the window (review RF-2): the completed query holds it', async () => {
     const saved = plant({ n: 1, storyId: EXPLORE.id, status: 'completed', createdAt: at(1), updatedAt: at(2), adoption: { watchlistId: 'wl-1', version: 1, at: at(2) } });
     for (let n = 10; n < 70; n++) plant({ n, storyId: `ft-${n}`, kind: 'fantasyTimesStories', status: 'completed', createdAt: at(n), updatedAt: at(n) });
-    expect((await exploreRead()).items).toEqual([{ itemRef: { recordKind: 'exploreStories', recordId: EXPLORE.id }, itemVersion: 1, open: null, last: { sessionId: saved.sessionId, ended: 'saved', at: at(2) } }]);
+    expect((await exploreRead()).items).toEqual([{ itemRef: { recordKind: 'exploreStories', recordId: EXPLORE.id }, itemVersion: 1, open: null, last: { sessionId: saved.sessionId, ended: 'saved', at: at(2), question: 'Question 1', statement: null } }]);
   });
   it('an open investigation the open query left out (31 open at once) is found through its record in the window (review RF-3)', async () => {
     const older = plant({ n: 1, storyId: EXPLORE.id, status: 'completed', createdAt: at(1), updatedAt: at(2) });
@@ -406,7 +406,7 @@ describe('X-1: GET ?list=explore', () => {
     const newest = plant({ n: 100, storyId: EXPLORE.id, createdAt: at(100), stepsUsed: 3 });
     const item = (await exploreRead()).items.find((i) => i.itemRef.recordId === EXPLORE.id);
     expect(item.open).toMatchObject({ sessionId: newest.sessionId, stepsLeft: 7, question: 'Question 100' });
-    expect(item.last).toEqual({ sessionId: older.sessionId, ended: 'concluded', at: at(2) });
+    expect(item.last).toEqual({ sessionId: older.sessionId, ended: 'concluded', at: at(2), question: 'Question 1', statement: null });
   });
   it('a session two reads saw differently counts once, as ended (review RF-4): never both open and last', () => {
     const open = { sessionId: 's-1', status: 'open', updatedAt: at(1) };
@@ -428,7 +428,7 @@ describe('X-1: GET ?list=explore', () => {
     });
     state.db = { ...real, collection: (name) => wrapQ(real.collection(name)) };
     expect((await exploreRead()).items).toEqual([]);
-    expect(docs).toBe(1 + 3); // the quota and the window's three records: no session read, none queried back
+    expect(docs).toBe(1 + 3 + 1); // the quota and the window's three records: no session read, none queried back; + the agent (B6c X-9)
   });
   it('a read writes nothing, and a second read answers the same', async () => {
     await opened();
@@ -568,6 +568,6 @@ describe('X-7: the statement saved is recorded on the session\'s adoption, and t
     const g = await get({ sessionId: s.sessionId });
     expect(g.body.session.adoption).toEqual({ watchlistId: 'wl-old', version: 1, at: at(2) });
     const { items } = await exploreRead();
-    expect(items[0].last).toEqual({ sessionId: s.sessionId, ended: 'saved', at: at(2) });
+    expect(items[0].last).toEqual({ sessionId: s.sessionId, ended: 'saved', at: at(2), question: 'Question 1', statement: null });
   });
 });
