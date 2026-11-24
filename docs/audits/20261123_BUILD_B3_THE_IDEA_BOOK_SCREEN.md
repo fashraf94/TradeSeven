@@ -402,3 +402,53 @@ About 1 hour 45 minutes, from the first commit (24 Nov, 11:14 CST) to this repor
 
 - R5 (§9.7) is recorded for your ruling.
 - Astra confirms this round.
+
+## 10. The screen on
+
+**Date:** 24 Nov 2026 · **Base:** `origin/main` `a97fed6f` (contains the merge of PR #1111, `0eb766ff`) · **Branch:** `claude/practice-field-screen-on` · **Astra's confirmation:** `docs/audits/20261124_ASTRA_CONFIRMATION_B3.md`, committed byte-identical first (`3398a22d`, SHA-256 `b13ab0d77403539acff3610f31ce9c1d53c89e394906d9630e457cccddb6936e`) · **The flip:** `f51452bb`. `PRACTICE_FIELD_MODE` stays `'allowlist'`: only a uid on the allowlist gets the card. Not merged; CI not watched.
+
+### 10.1 The founder's ruling B3-13 (verbatim)
+
+**The founder's ruling, B3-13: B3-C01 is recorded, not a blocker**
+
+- **What she found:** a page read that spans a close can show one name's P/L under the earlier date, when that close also clears a ledger hold beside a carried mark. The next read is correct.
+- **Why it is recorded:** it needs a read in the instant of the close, a carried mark, a conflicting vendor record and a founder ruling, all on one day. The standing bar is that rare races and vendor faults are recorded, not chased. The stop rule for B3 was one review, one fix round and one confirmation.
+- **When it is closed:** together with R5, by one change (the reader takes the book, its ideas and its rows from one consistent read), **before any player other than the founder is shown the screen.** It belongs to the next build, B4.
+
+### 10.2 Astra's confirmation
+
+- **Merge with the screen switch off: MERGE.** All 64 non-map production files matched the base byte for byte; the disabled card and hub made zero book requests; the endpoint's privacy checks are unchanged.
+- **The screen for the founder's own book: NOT READY,** on one blocker, B3-C01 (a read spanning a close that clears a ledger hold beside a carried mark), ruled B3-13 above.
+- **Her confirmation rows all passed:** A01 (the two ledger failures, and 34/34 hold-and-release variants), A02, A03, A04, A06, A08, A09, A11, B3-10 and A10 (bounded reads).
+
+### 10.3 What the flip changed
+
+- `src/config/practiceFieldScreenFlags.js`: `PRACTICE_FIELD_SCREEN_ENABLED = true` (its docstring now says on, and a kill switch).
+- `src/config/practiceFieldScreenFlags.test.js`: the pin to `true`; its guard row turned around (the `DARK_BY_DESIGN` entry is gone).
+- `src/config/flagPinGuard.test.js`: the `PRACTICE_FIELD_SCREEN_ENABLED` entry removed from `DARK_BY_DESIGN`, an "intentionally ABSENT" note in its place.
+- **Two other pins went red with the flip,** fixed in the same commit with one mock line each that pins the switch off for that suite; no assertion moved:
+  - `src/components/CommandCenter/CommandCenterHub.researchDoor.jsdom.test.jsx`: its "no request" rows (4) saw the card's `GET /api/practice-field/book`.
+  - `src/components/CommandCenter/CommandCenterHub.s3.jsdom.test.jsx`: its "one agent read feeds both" rows (2) count `useAuthIdentity` calls against `useAgent` calls, and the card's `useIdeaBook` calls `useAuthIdentity` too (4 against 2).
+  The card's own suites (`IdeaBookEntry.jsdom.test.jsx`, `IdeaBookScreen.jsdom.test.jsx`) cover it on.
+  **A question for you:** these two are behaviour suites written for the hub before the card, not pin tests. I read "fix that pin" as covering them, since a mock line moves no assertion. If you would rather they assert the card's request, say so and B4 can move them.
+
+Nothing else changed: no change to `PRACTICE_FIELD_MODE`, the agent's switches, any fenced file, rules or indexes.
+
+### 10.4 Open for B4
+
+- **B3-C01** (Astra's confirmation): a read spanning a close that clears a ledger hold beside a carried mark can show a name's P/L under the earlier date.
+- **R5** (§9.7): a close landing between the first reads and the History query.
+
+Both are closed by one change, the reader taking the book, its ideas and its rows from one consistent read, **before any player other than the founder is shown the screen** (B3-13).
+
+### 10.5 The checks, once, at the flip (`f51452bb`)
+
+All three ran in WSL Ubuntu in a clean worktree at the commit, `TZ=UTC`.
+
+| Check | Command | Exit | Result |
+|---|---|---|---|
+| The full Linux suite | `npx vitest run --maxWorkers=8` | **0** | Test Files **1673 passed** (1673) · Tests **38265 passed** \| 197 skipped (38462) · 0 failed · 350 s. The exit code is read from the JSON reporter (`success: true`, 0 failed): the launching `wsl.exe` returned before the run ended, so its own exit line was lost; the run itself completed in WSL. `shadowCpuQuoteIntegrityFlags.test.js`, red on the CRLF Windows tree only, passed here. |
+| The lint gate | `npm run lint:gate` | **0** | No output |
+| The build | `npx vite build` | **0** | `✓ 4258 modules transformed.` `✓ built in 26.40s` |
+
+The rules suite is not among this PR's checks and is unaffected: no file under `test/` or `scripts/` reads the switch, and `firestore.rules` and `firestore.indexes.json` are unchanged. The pushed head differs from `f51452bb` by this section only. No real Firestore, model or EODHD call was made, and no `.env` file was read.
