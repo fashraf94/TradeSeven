@@ -19,7 +19,8 @@
 //   2. CALL through the Mandate engine's seam (callMandateModelDirect — called, never edited), with this module's own
 //      timeout;
 //   3. SETTLE what it cost (modelPriceTable.js priceUsage over the reported usage), or — no readable usage: a transport
-//      error, a timeout — `unpriced`, charged its whole reservation; in the same transaction the attempt's outcome and, when
+//      error, a timeout, or a reply whose usage is missing or unreadable (B2-A04; readableUsage) — `unpriced`, charged its
+//      whole reservation, never $0; in the same transaction the attempt's outcome and, when
 //      the answer validates (agentTool.js), THE ANSWER ITSELF, stored on the close row before anything acts on it.
 // ONE RETRY, on a transport error only, reserved as attempt #2. An answer that does not validate is not retried.
 // A REPLAY NEVER CALLS TWICE: a stored answer is acted on again (every action is idempotent); a desk part that is done is
@@ -40,6 +41,11 @@
 // `code_fallback` or `no_work`), every attempt with its reservation and charge, and the manifest (what went in, never the
 // text). No rules or index change.
 //
+// THE ROW'S WINDOW-LEVEL SUMMARY (Astra B2-A03). Every write of a desk's part — each in a transaction that read the row —
+// also rewrites the row's `modelCalled`, `outcome` and `agent.summary`, DERIVED (never incremented) from both desks' parts
+// as the row then holds them (agentWindowSummaryOf): an earlier desk's work stands when the next records none, a paid
+// fallback reads apart from an executed proposal, and a replay that writes the same parts writes the same summary.
+//
 // NOTHING HERE READS THE DEPLOYED TRADING AGENT (its prompts, memory, consolidation) and nothing here reaches it: the desk's
 // identity is the fixed Shadow brief or the epoch's frozen archetype identity (agentIsolation.imports.test.js).
 
@@ -59,11 +65,11 @@ import {
 import { extractAgentToolInput, validateAgentAnswer } from './agentTool.js';
 import { assembleAgentRequest, archetypeIdentityOf, shadowIdentity } from './agentPrompt.js';
 import { candidatesOf, namesTakenByBook, readPriorNotes, readSavedTheses } from './agentSources.js';
-import { draftSlots, draftOpIdOf } from './agentDrafting.js';
+import { draftSlots, draftOpIdOf, DRAFT_OUTCOME } from './agentDrafting.js';
 import { ideaIdFor } from './admission.js';
-import { exitIdeaByManager } from './managerExit.js';
+import { exitIdeaByManager, EXIT_OUTCOME } from './managerExit.js';
 import { epochRefOf } from './ideaBook.js';
-import { windowsRefOf } from './windowLedger.js';
+import { windowsRefOf, closeCodeActed, WINDOW_OUTCOME } from './windowLedger.js';
 import { windowRowId, CLOSE_WINDOW, nextSessionDate } from './windows.js';
 
 const LOG_PREFIX = '[PracticeFieldAgent]';
@@ -101,9 +107,52 @@ export async function callWithTimeout(transport, request, timeoutMs = AGENT_CALL
 
 const opIdOf = (session, desk, n) => `agent:${session}:${desk}#${n}`;
 const closeRowRefOf = (bookRef, session) => windowsRefOf(bookRef).doc(windowRowId(session, CLOSE_WINDOW));
-const partPatch = (desk, part) => ({
-  [`agent.desks.${desk}`]: part, 'agent.version': AGENT_CLOSE_ROW_VERSION, 'agent.model': PRACTICE_FIELD_AGENT_MODEL,
-});
+
+/**
+ * B2-A03 — THE CLOSE ROW'S WINDOW-LEVEL SUMMARY, derived from the row's code block and BOTH desks' parts (`desks`: the parts
+ * as the row will hold them after this write). Pure.
+ *   modelCalled   some desk recorded a call (its own `calledModel` — the one source the desk's part keeps);
+ *   outcome       model_action (an exit settled or a draft admitted from a model answer) › model_fallback (a desk paid for a
+ *                 call and fell back to code) › code_action (code acted at the close) › model_no_change (called; nothing
+ *                 executed) › no_model_action. The summary keeps what the one word cannot: the calls per desk, the exits
+ *                 and admissions, the desks whose paid call fell back, and whether code acted.
+ */
+export function agentWindowSummaryOf(row, desks) {
+  const calls = {};
+  const paidFallbacks = [];
+  let modelCalled = false;
+  let exits = 0;
+  let admissions = 0;
+  for (const desk of DESK_ORDER) {
+    const p = desks?.[desk];
+    if (!p) continue;
+    const attempts = Array.isArray(p.attempts) ? p.attempts.length : 0;
+    calls[desk] = attempts;
+    if (p.calledModel === true) modelCalled = true;
+    if (p.source === AGENT_NOTE_SOURCE.MODEL) {
+      exits += (p.actions || []).filter((a) => a?.outcome === EXIT_OUTCOME.SETTLED).length;
+      admissions += (p.considered || []).filter((c) => c?.outcome === DRAFT_OUTCOME.ADMITTED).length;
+    }
+    if (p.source === AGENT_NOTE_SOURCE.CODE_FALLBACK && attempts > 0) paidFallbacks.push(desk);
+  }
+  const codeActed = closeCodeActed(row?.code);
+  let outcome = WINDOW_OUTCOME.NO_MODEL_ACTION;
+  if (exits + admissions > 0) outcome = WINDOW_OUTCOME.MODEL_ACTION;
+  else if (paidFallbacks.length > 0) outcome = WINDOW_OUTCOME.MODEL_FALLBACK;
+  else if (codeActed) outcome = WINDOW_OUTCOME.CODE_ACTION;
+  else if (modelCalled) outcome = WINDOW_OUTCOME.MODEL_NO_CHANGE;
+  const callsTotal = Object.values(calls).reduce((n, c) => n + c, 0);
+  return { modelCalled, outcome, summary: { calls, callsTotal, exits, admissions, paidFallbacks, codeActed } };
+}
+
+/** A desk's part as the close row's write (B2-A03: with the window-level summary, from the row this transaction read). */
+const partPatch = (desk, part, rowData) => {
+  const s = agentWindowSummaryOf(rowData, { ...(rowData?.agent?.desks || {}), [desk]: part });
+  return {
+    [`agent.desks.${desk}`]: part, 'agent.version': AGENT_CLOSE_ROW_VERSION, 'agent.model': PRACTICE_FIELD_AGENT_MODEL,
+    'agent.summary': s.summary, modelCalled: s.modelCalled, outcome: s.outcome,
+  };
+};
 
 /** The sessions from after `session` through `due` (the idea's review), or null when the walk leaves the calendar. */
 function sessionsLeft(session, due) {
@@ -158,6 +207,20 @@ export function thesisRefsKept(refs, keptCount) {
   return Object.fromEntries(Object.entries(refs || {}).filter(([label]) => /^T\d+$/.test(label) && Number(label.slice(1)) <= keptCount));
 }
 
+/**
+ * B2-A04: is a reply's usage READABLE — an object whose input and output counts are whole numbers (input above zero: every
+ * call sends a prompt), with any cache count present a whole number too? A reply whose usage is missing or unreadable is
+ * charged its whole reservation (`unpriced`), never priced from zeros. Its answer is still acted on: only the charge changes.
+ * Pure.
+ */
+export function readableUsage(u) {
+  const count = (v) => Number.isInteger(v) && v >= 0;
+  const optional = (v) => v === undefined || v === null || count(v);
+  return u !== null && typeof u === 'object' && !Array.isArray(u)
+    && count(u.input_tokens) && u.input_tokens > 0 && count(u.output_tokens)
+    && optional(u.cache_read_input_tokens) && optional(u.cache_creation_input_tokens);
+}
+
 /** The usage figures kept on an attempt. */
 const usageOf = (u) => (u && typeof u === 'object' ? {
   inputTokens: Number(u.input_tokens) || 0, outputTokens: Number(u.output_tokens) || 0,
@@ -196,7 +259,7 @@ export async function runDeskCheck(db, bookRef, { session, desk, transport = sea
     await db.runTransaction(async (tx) => {
       const snap = await tx.get(rowRef);
       if (!snap.exists) throw new Error('the close row is gone');
-      tx.update(rowRef, partPatch(desk, part));
+      tx.update(rowRef, partPatch(desk, part, snap.data()));
     });
   };
 
@@ -210,7 +273,7 @@ export async function runDeskCheck(db, bookRef, { session, desk, transport = sea
     const draftable = slotsToDraftNow(book, ideas, { bookId: bookRef.id, session, desk, answer: prior.answer, spentSlots: new Set() });
     const stillEmpty = waiting.filter((s) => draftable.includes(s));
     if (stillEmpty.length === 0) return { desk, status: 'already_done', calls: 0 };
-    const drafted = await draftFromAnswer(db, bookRef, { book, ideas, session, desk, answer: prior.answer, slotsToDraft: stillEmpty, thesisRefs: prior.thesisRefs || {}, clock });
+    const drafted = await draftFromAnswer(db, bookRef, { book, ideas, session, desk, answer: prior.answer, slotsToDraft: stillEmpty, thesisRefs: prior.thesisRefs || {}, clock, snapshotKey: closeSnapshotKeyOf(row, session) });
     const refill = { ...prior.refill, ...drafted.refill };
     const considered = [...(prior.considered || []).filter((c) => !stillEmpty.includes(c.slot)), ...drafted.considered.filter((c) => stillEmpty.includes(c.slot))];
     await writePart({ ...prior, refill, considered, retriedAt: clock().toISOString() });
@@ -252,7 +315,7 @@ export async function runDeskCheck(db, bookRef, { session, desk, transport = sea
       const settled = await settleSpend(tx, b, { opId: open.opId, unpriced: true }, { nowIso: clock().toISOString() });
       const cur = r.data()?.agent?.desks?.[desk] ?? prior;
       const nextAttempts = (cur.attempts || []).map((a) => (a.opId === open.opId ? { ...a, state: 'settled', outcome: 'interrupted', unpriced: true, chargedUsd: settled.chargedUsd ?? a.maxChargeUsd, settledAt: clock().toISOString() } : a));
-      tx.update(rowRef, partPatch(desk, { ...cur, attempts: nextAttempts }));
+      tx.update(rowRef, partPatch(desk, { ...cur, attempts: nextAttempts }, r.data()));
     });
     const after = (await rowRef.get()).data()?.agent?.desks?.[desk] ?? {};
     return fallback('interrupted_call', { attempts: after.attempts, calledModel: true, manifest: after.manifest ?? null });
@@ -277,9 +340,9 @@ export async function runDeskCheck(db, bookRef, { session, desk, transport = sea
     const epochSnap = await epochRefOf(bookRef, book).get();
     const identity = desk === 'shadow' ? shadowIdentity() : archetypeIdentityOf(epochSnap.exists ? epochSnap.data() : null);
     if (!identity) return fallback('identity_unavailable', { attempts, calledModel: false });
-    const snapshotKey = row.closeSnapshotKey ?? `${session}_close`;
-    const snapSnap = await db.collection('mandateUniverseSnapshots').doc(snapshotKey).get();
-    const candidates = work.emptySlots.length > 0 && snapSnap.exists ? candidatesOf(snapSnap.data(), namesTakenByBook(book, ideas)) : [];
+    const snapshotKey = closeSnapshotKeyOf(row, session);
+    const closeCandidates = await closeCandidatesOf(db, { snapshotKey, session, book, ideas });
+    const candidates = work.emptySlots.length > 0 ? closeCandidates : [];
     // Review B-1: a slot is offered for drafting only when this close priced a candidate. Without one (the close snapshot
     // was built without the universe), drafting would be a paid call with nothing to draft from: the slot is not offered,
     // its attempt stays unspent, and the next close drafts it. A desk left with nothing else to do makes no call.
@@ -352,13 +415,13 @@ export async function runDeskCheck(db, bookRef, { session, desk, transport = sea
             outcome: 'interrupted', recordLost: true, unpriced: true, chargedUsd: s?.chargedUsd ?? null, settledAt: reservedAt,
           };
           const kept = (cur?.attempts || []).filter((a) => a.opId !== opId);
-          tx.update(rowRef, partPatch(desk, { ...base, ...(cur || {}), status: 'in_progress', calledModel: true, attempts: [...kept, lost], manifest, thesisRefs, thesesSkipped }));
+          tx.update(rowRef, partPatch(desk, { ...base, ...(cur || {}), status: 'in_progress', calledModel: true, attempts: [...kept, lost], manifest, thesisRefs, thesesSkipped }, r.data()));
           return { ...res, lostAttempt: lost, attemptsNow: [...kept, lost] };
         }
         const attempt = { n, opId, state: 'reserved', reservedAt, maxChargeUsd: res.maxChargeUsd, inputHash: manifest.inputHash, outcome: null };
         tx.update(rowRef, partPatch(desk, {
           ...base, ...(cur || {}), status: 'in_progress', calledModel: true, attempts: [...attempts, attempt], manifest, thesisRefs, thesesSkipped,
-        }));
+        }, r.data()));
         return res;
       });
       if (!reserved.ok) return fallback(`spend_refused:${reserved.code}`, { attempts, calledModel: attempts.length > 0, manifest });
@@ -375,7 +438,7 @@ export async function runDeskCheck(db, bookRef, { session, desk, transport = sea
         transportError = err;
       }
       // What it cost: the reported usage, priced; no usage (an error, a timeout, an unreadable answer) is unpriced.
-      const usage = response ? usageOf(response.usage) : null;
+      const usage = response && readableUsage(response.usage) ? usageOf(response.usage) : null;
       const priced = usage ? priceUsage(PRACTICE_FIELD_AGENT_MODEL, response.usage) : null;
       const unpriced = !(priced && priced.priced === true && Number.isFinite(priced.estUsd));
       let outcome;
@@ -395,13 +458,14 @@ export async function runDeskCheck(db, bookRef, { session, desk, transport = sea
         const done = {
           n, opId, state: 'settled', reservedAt, maxChargeUsd: reserved.maxChargeUsd, inputHash: manifest.inputHash, outcome, settledAt,
           chargedUsd: s.chargedUsd ?? null, unpriced, usage,
+          ...(response && usage === null ? { usageUnreadable: true } : {}),
           ...(transportError ? { error: String(transportError.code || transportError.name || 'error').slice(0, 60), httpStatus: Number.isInteger(Number(transportError.status)) ? Number(transportError.status) : null, retryable: retryableTransportError(transportError) } : {}),
           ...(invalidReason ? { invalidReason: String(invalidReason).slice(0, 120) } : {}),
           ...(response?.stop_reason ? { stopReason: String(response.stop_reason).slice(0, 40) } : {}),
         };
         const cur = r.data()?.agent?.desks?.[desk] ?? {};
         const nextAttempts = (cur.attempts || []).map((a) => (a.opId === opId ? done : a));
-        tx.update(rowRef, partPatch(desk, { ...cur, attempts: nextAttempts, ...(validated ? { answer: validated } : {}) }));
+        tx.update(rowRef, partPatch(desk, { ...cur, attempts: nextAttempts, ...(validated ? { answer: validated } : {}) }, r.data()));
         return done;
       });
       attempts[attempts.length - 1] = settledAttempt;
@@ -428,7 +492,7 @@ export async function runDeskCheck(db, bookRef, { session, desk, transport = sea
   }
   const after = (await bookRef.get()).data();
   const drafted = await draftFromAnswer(db, bookRef, {
-    book: after, ideas: nowIdeas, session, desk, answer, thesisRefs, clock,
+    book: after, ideas: nowIdeas, session, desk, answer, thesisRefs, clock, snapshotKey: closeSnapshotKeyOf(row, session),
     // Only the slots the prompt offered (manifest.offeredSlots — review B-1): one not offered keeps its attempt for the next close.
     slotsToDraft: slotsToDraftNow(after, nowIdeas, { bookId: bookRef.id, session, desk, answer, spentSlots }).filter((s) => (manifest?.offeredSlots ?? []).includes(s)),
   });
@@ -459,15 +523,25 @@ export function slotsToDraftNow(book, ideas, { bookId, session, desk, answer, sp
   return [...new Set([...empty, ...ownToday])];
 }
 
+/** The close snapshot a desk's check reads: the one its close row names (the session's `_close` snapshot). */
+const closeSnapshotKeyOf = (row, session) => row?.closeSnapshotKey ?? `${session}_close`;
+
+/**
+ * B2-A01 — THE ONE CANDIDATE SELECTOR of a desk's check: this close's candidates (agentSources.js candidatesOf, which keeps
+ * only a name marked with THIS session's close). The prompt's list and drafting's check both read it, over the same snapshot.
+ */
+async function closeCandidatesOf(db, { snapshotKey, session, book, ideas }) {
+  const snap = await db.collection('mandateUniverseSnapshots').doc(snapshotKey).get();
+  return snap.exists ? candidatesOf(snap.data(), namesTakenByBook(book, ideas), { session }) : [];
+}
+
 /** The drafting of a desk's empty slots from its stored answer (agentDrafting.js), with this close's candidates. */
-async function draftFromAnswer(db, bookRef, { book, ideas, session, desk, answer, slotsToDraft, thesisRefs, clock }) {
+async function draftFromAnswer(db, bookRef, { book, ideas, session, desk, answer, slotsToDraft, thesisRefs, clock, snapshotKey }) {
   if (slotsToDraft.length === 0 || answer.drafts.length === 0) {
     const considered = answer.drafts.map((d) => ({ index: d.index, slot: d.slot, names: d.names, thesis: d.thesis, comparison: d.comparison, lines: d.lines, source: d.source, outcome: 'refused', refusals: [{ code: DESKS[desk].slots.includes(d.slot) ? 'slot_not_empty' : 'slot_not_this_desks', slot: d.slot }] }));
     return { considered, refill: {} };
   }
-  const snapshotKey = `${session}_close`;
-  const snapSnap = await db.collection('mandateUniverseSnapshots').doc(snapshotKey).get();
-  const candidates = snapSnap.exists ? candidatesOf(snapSnap.data(), namesTakenByBook(book, ideas)) : [];
+  const candidates = await closeCandidatesOf(db, { snapshotKey, session, book, ideas });
   return draftSlots(db, {
     desk, bookId: bookRef.id, session, drafts: answer.drafts, slotsToDraft, candidateSymbols: new Set(candidates.map((c) => c.symbol)), snapshotKey, thesisRefs, clock,
   });

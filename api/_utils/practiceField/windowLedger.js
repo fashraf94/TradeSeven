@@ -11,7 +11,12 @@
 //                     but look (a waiting sale or entry is looking: nothing filled), else `code_action`;
 //   the CLOSE row     written in the close's own transaction (close.js closeNextSession), create-once, with the
 //                     session's summary: the windows the book was due (windows.js ideaBookWindowsOf — the ONE
-//                     source of the schedule), the windows served, and the windows missing.
+//                     source of the schedule), the windows served, and the windows missing. It is created with
+//                     `modelCalled: false` and code's own outcome; when the agent checks the book at the close (build
+//                     B2, agentRun.js), each desk's write to the row's `agent` block — in the SAME transaction — also
+//                     rewrites the row's window-level `modelCalled` and `outcome` and `agent.summary`, derived from BOTH
+//                     desks' recorded parts (Astra B2-A03; agentRun.js agentWindowSummaryOf). With the agent off nothing
+//                     but the close writes the row, and it reads exactly as before.
 //
 // SERVED MEANS A WHOLE, CLEAN PASS. A row reads `served: true` only when the window's pass completed with no error
 // — the same condition the pass stamps `execState.lastIdeaTickKey` on. An attempt that errored, or could not finish
@@ -47,8 +52,17 @@ import { ideaBookWindowsOf, windowRowId, CLOSE_WINDOW, nextSessionDate, etDateOf
 
 /** The window ledger's own version (its own family; starts at 1). */
 export const WINDOW_LEDGER_VERSION = 1;
-/** What a window's row says came of it, while no model is called. */
-export const WINDOW_OUTCOME = Object.freeze({ NO_MODEL_ACTION: 'no_model_action', CODE_ACTION: 'code_action' });
+/**
+ * What a window's row says came of it. An intraday row, and a close row the agent has not checked, use the first two only
+ * (no model is called there). The agent's check at the close (B2-A03; agentRun.js agentWindowSummaryOf) uses the rest:
+ *   model_action     a proposal the model made was executed (an exit settled, a draft admitted);
+ *   model_fallback   a paid call ended in the code fallback (nothing the model said was acted on);
+ *   model_no_change  the model was called and nothing it proposed was executed (it held, or every draft was refused).
+ */
+export const WINDOW_OUTCOME = Object.freeze({
+  NO_MODEL_ACTION: 'no_model_action', CODE_ACTION: 'code_action',
+  MODEL_ACTION: 'model_action', MODEL_FALLBACK: 'model_fallback', MODEL_NO_CHANGE: 'model_no_change',
+});
 /** How many of a window's attempts its row keeps in full (the counts are kept whole). */
 export const WINDOW_ATTEMPTS_KEPT = 12;
 
@@ -300,6 +314,16 @@ export function windowOnlySessionsBefore(book, before, limit) {
 }
 
 /**
+ * Did code act at a session's close (its row's `code` block): an endpoint reached, an idea resulted, an entry timed out, or
+ * the book closed. The ONE test — the close row's own outcome and the agent's window summary (agentRun.js) both read it. Pure.
+ */
+export function closeCodeActed(code) {
+  if (code == null || typeof code !== 'object') return false;
+  const some = (v) => Array.isArray(v) && v.length > 0;
+  return some(code.endpoints) || some(code.ideasResulted) || some(code.entriesTimedOut) || code.bookClosed === true;
+}
+
+/**
  * The close's row and its missed windows. Pure: `windowRows` is every expected intraday window's row as the close's
  * transaction read it (`null` when absent). `valued: false` is a session the window cursor accounts for that the
  * valuation does not close (T2B-02): no money was valued and nothing was read for it but its window rows, so it names
@@ -320,7 +344,7 @@ export function buildCloseWindowRow({ bookId, book, session, windowRows, observe
     entriesTimedOut: [...code.cancelled],
     bookClosed: bookClosed === true,
   } : { caughtUpSession: null, ideasValued: 0, endpoints: [], ideasResulted: [], entriesTimedOut: [], bookClosed: false };
-  const acted = closeCode.endpoints.length > 0 || closeCode.ideasResulted.length > 0 || closeCode.entriesTimedOut.length > 0 || closeCode.bookClosed;
+  const acted = closeCodeActed(closeCode);
   const row = {
     schemaVersion: WINDOW_LEDGER_VERSION,
     bookId,

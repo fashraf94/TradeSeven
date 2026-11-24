@@ -3,8 +3,13 @@
 // Practice Field build B2 — WHAT A DESK MAY READ BEFORE ITS CALL (§2, §3), each bounded, READ-ONLY:
 //
 //   candidatesOf        the CANDIDATE LIST: every name the house universe carries (symbols.js isUniverseStock) that THIS
-//                       close's stored snapshot prices (a complete quote), less the names the book's ideas already hold
-//                       or have pending (admission would refuse them). Compact: symbol, sector, last close. Pure.
+//                       close's stored snapshot prices WITH THIS SESSION'S CLOSE — the book's own session-aware mark check,
+//                       marks.js closeMarkQuality, reads `vendor_time` (Astra B2-A01: a correctly timed last trade from an
+//                       earlier session is `carried_forward` and is no candidate; neither is a pre-open print nor a quote
+//                       with no vendor time, which cannot show its session) — less the names the book's ideas already hold
+//                       or have pending (admission would refuse them). Compact: symbol, sector, last close. Pure. It is
+//                       the ONE selector: the prompt's list and drafting's check (agentDrafting.js name_not_a_candidate)
+//                       are both this function over the same snapshot (agentRun.js closeCandidatesOf).
 //
 //   readPriorNotes      the desk's own last three notes, from the close rows of the sessions before this one (the window
 //                       ledger, `mandates/{bookId}/windows/{session}_close` — the rows the owner can already read),
@@ -38,6 +43,8 @@ import {
   AGENT_THESIS_TEXT_MAX, AGENT_THESIS_REASONS_MAX, AGENT_NOTE_SOURCE,
 } from './agentConfig.js';
 import { windowRowId, CLOSE_WINDOW } from './windows.js';
+import { closeMarkQuality } from './marks.js';
+import { MARK_QUALITY } from './constants.js';
 
 /** The saved card's field on a saved list (Shared Research thesis.js THESIS_CARD_FIELD) — read here, never written. */
 const SAVED_CARD_FIELD = 'thesisCard';
@@ -53,9 +60,13 @@ export const AGENT_CANDIDATES_MAX = 200;
  * The candidate list from THIS close's stored snapshot. Pure.
  * @param {object} snapshot  the stored `${date}_close` document
  * @param {Set<string>} taken  names an idea of the book holds or has pending
+ * @param {{ session: string }} opts  the session being judged (ET date): a snapshot of another session lists no candidate,
+ *   and a name is listed only when its mark is that session's close (closeMarkQuality → vendor_time)
  * @returns {Array<{ symbol: string, sector: string|null, lastClose: number }>}  sorted by symbol
  */
-export function candidatesOf(snapshot, taken = new Set()) {
+export function candidatesOf(snapshot, taken = new Set(), { session } = {}) {
+  // B2-A01: no session, or a snapshot built for another one, prices no candidate of this session.
+  if (typeof session !== 'string' || snapshot?.sessionDate !== session) return [];
   // Refuter, on review B-1: a snapshot built WITHOUT the house universe (idea books only) lists no candidate — its names
   // are the book's own holdings and coverage, priced for marks. A name freed at the close is not a candidate from it.
   if (snapshot?.candidateUniverseOmitted === true) return [];
@@ -64,6 +75,8 @@ export function candidatesOf(snapshot, taken = new Set()) {
     const sym = normSymbol(raw);
     if (sym === null || taken.has(sym) || !isUniverseStock(sym)) continue;
     if (e?.complete !== true || !(Number.isFinite(e.price) && e.price > 0)) continue;
+    // B2-A01: the session's own close, by the book's own classifier (marks.js) — never a carried or unproven print.
+    if (closeMarkQuality(e, session).quality !== MARK_QUALITY.VENDOR_TIME) continue;
     out.push({ symbol: sym, sector: mandateSectorOf(sym), lastClose: e.price });
   }
   out.sort((a, b) => (a.symbol < b.symbol ? -1 : (a.symbol > b.symbol ? 1 : 0)));
