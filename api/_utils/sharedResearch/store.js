@@ -15,6 +15,7 @@
 //   adoptIdea                  `adopt`: shared mechanics + one origin adapter
 //   readInvestigation, listOpen, readQuota, and the stored-fact reads
 //   readExploreStory, readExploreInvestigations   an Explore story at `open`; Explore's read (B6a X-2, X-1)
+//   readExploreAgent / exploreAgentOf             the read's `agent` (B6c X-9)
 //
 // The quota: `sharedResearchQuota/{uid}` (the player's day) and
 // `sharedResearchQuota/_global` (the app's day), both reset when the ET date
@@ -32,7 +33,7 @@ import {
 } from '../hypothesisRecords/model.js';
 import { capTickersArray, splitRetiredTickers } from '../watchlistValidation.js';
 import { ARCHETYPE_IDENTITY_VERSION } from '../archetypeVersionConstants.js';
-import { baggerbombLoadoutOf } from '../../../src/constants/perGameLoadout.js';
+import { baggerbombLoadoutOf, bookIdOf } from '../../../src/constants/perGameLoadout.js';
 import {
   PER_DAY, FRAMINGS_PER_DAY, GLOBAL_STEPS_PER_DAY_DEFAULT, GLOBAL_FRAMINGS_PER_DAY_DEFAULT, ADOPTABLE_HORIZONS,
   STEP_CALLS_PER_DAY, GLOBAL_STEP_CALLS_FACTOR,
@@ -200,8 +201,9 @@ export async function readExploreStory(db, storyId) {
  *   - the newest research records: the deployed (userId, createdAt desc) index listOpen reads, at most
  *     EXPLORE_RECORDS_READ. The session of each open or completed Explore investigation there that the two queries did
  *     not return is read by id — so the newest investigations are always held (review HB-2, RF-2, RF-3).
- * Then the record of each open investigation the window does not hold. A session held twice counts once, ended if any
- * read saw it ended (RF-4). At most EXPLORE_DOCS_MAX documents with the quota.
+ * Then the record of each open investigation the window does not hold, and (B6c X-8) of each last-ended one — its
+ * `question` — read by id the same way. A session held twice counts once, ended if any read saw it ended (RF-4). At most
+ * EXPLORE_DOCS_MAX documents with the quota (the agent, X-9, is readExploreAgent's).
  */
 export async function readExploreInvestigations(db, { uid }) {
   const mine = db.collection(SESSIONS_COLLECTION).where('userId', '==', uid).where('entry.itemRef.recordKind', '==', EXPLORE_RECORD_KIND);
@@ -217,13 +219,38 @@ export async function readExploreInvestigations(db, { uid }) {
   const sessions = [...sessionsByIdOf([[...queried.values()], found.filter((s) => isOwnedSession(s, uid))]).values()];
   const live = livePerStoryOf(sessions);
   const last = lastPerStoryOf(sessions);
-  const records = await Promise.all([...live.values()].map(async (s) => {
+  // the open investigations' records and the last-ended ones' (B6c X-8): an open and an ended session are never one
+  const records = await Promise.all([...live.values(), ...last.values()].map(async (s) => {
     if (!s.researchWorkId) return [s.sessionId, null];
     if (newest.has(s.researchWorkId)) return [s.sessionId, newest.get(s.researchWorkId)];
     const r = dataOf(await researchWorkRefOf(db, s.researchWorkId).get());
     return [s.sessionId, isOwnedRecord(r, uid) ? r : null];
   }));
   return exploreItemsOf({ live, last, records: new Map(records) });
+}
+
+/**
+ * B6c X-9 — the player's agent as Explore's read tells it, shaped from the agent `readRankedAgent` returns (the rule
+ * `open` uses: the first agent that is neither a training nor a casual clone, owned by the caller — attributionIn's
+ * owner check), or null when the player has none. Pure.
+ *   id             the agent document's id, the one equip targets
+ *   name           partnerNameOf(agent): null when blank (the sheet then says "your agent")
+ *   equippedList   the BaggerBomb list the next game carries (baggerbombLoadoutOf(agent).book: the stored slot, or the
+ *                  default from the League fields while the slot is absent): `{ id: bookIdOf(book), name }` with the
+ *                  book's name trimmed or null; null when the book has no id
+ */
+export function exploreAgentOf(agent, uid) {
+  if (!agent || agent.ownerId !== uid) return null;
+  let book = null;
+  try { book = baggerbombLoadoutOf(agent)?.book ?? null; } catch { book = null; }
+  const listId = bookIdOf(book);
+  const listName = typeof book?.name === 'string' && book.name.trim() ? book.name.trim() : null;
+  return { id: agent.id, name: partnerNameOf(agent), equippedList: listId ? { id: listId, name: listName } : null };
+}
+
+/** B6c X-9 — the read's `agent`: one agents query (readRankedAgent's), nothing else read for it. Never refuses. */
+export async function readExploreAgent(db, { uid }) {
+  return exploreAgentOf(await readRankedAgent(db, uid), uid);
 }
 
 /** The caller's OWN drop, or null — another owner's drop is not found (spec §6.3). */
