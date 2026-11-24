@@ -145,7 +145,7 @@ describe('the idea book document and its epoch', () => {
     const b = book();
     expect(b).toMatchObject({
       kind: 'idea_book', userId: 'owner-1', status: 'active', revision: 0, attributionAgentId: 'agent-ranked-1',
-      archetypeCodeId: 'diversifier', contractVersion: 2, slotsVersion: 1, fundsVersion: 1, sectorBridgeVersion: 1,
+      archetypeCodeId: 'diversifier', contractVersion: 2, slotsVersion: 2, fundsVersion: 1, sectorBridgeVersion: 1,
       currentEpochId: 'epoch-0001', drafting: 'on', windDown: null,
       treasury: { unreservedCash: 100000 }, slots: { short: null, medium: null, long: null }, openIdeaIds: [],
     });
@@ -175,7 +175,7 @@ describe('the idea book document and its epoch', () => {
     });
     expect(isSectorCapCorrected(e.gateConfig)).toBe(true);
     expect(e.rails).toEqual({
-      slotsVersion: 1, slotCapShare: { short: 0.2, medium: 0.3, long: 0.4 }, namesPerIdea: { min: 1, max: 4 },
+      slotsVersion: 2, slotCapShare: { short: 0.2, medium: 0.3, long: 0.4 }, namesPerIdea: { min: 1, max: 4 },
       lineDistance: { short: { min: 0.03, max: 0.08 }, medium: { min: 0.06, max: 0.15 }, long: { min: 0.1, max: 0.25 } },
     });
     expect(e).toMatchObject({ frictionModelVersion: 'p3_cap_tier_v1', fundsVersion: 1, contractVersion: 2, configVersion: 1, openedAt: NOW });

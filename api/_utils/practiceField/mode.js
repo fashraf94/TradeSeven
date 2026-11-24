@@ -18,11 +18,16 @@
 // idiom) — production can never move the mode except by the flag's own line. The flag module itself is never
 // mocked (BUILD_RULES §4: a test's import of this module is the dependency-surface guard).
 
-import { PRACTICE_FIELD_MODE, PRACTICE_FIELD_MODES } from '../../../src/config/practiceFieldFlags.js';
+import {
+  PRACTICE_FIELD_MODE, PRACTICE_FIELD_MODES, PRACTICE_FIELD_AGENT_ENABLED, PRACTICE_FIELD_AGENT_THESES_ENABLED,
+} from '../../../src/config/practiceFieldFlags.js';
 import { readCockpitAllowlist } from '../callRecords/allowlist.js';
 
 const OFF = 'off';
 let testOverride = null;
+// Build B2: the agent's two sub-switches, overridable in tests only (null: the flag's own value).
+let agentOverride = null;
+let thesesOverride = null;
 
 /** The mode as the server reads it NOW: one of the walked states, else 'off'. Never throws. */
 export function practiceFieldMode() {
@@ -48,6 +53,30 @@ export function practiceFieldAdmits(uid) {
   return false;
 }
 
+/**
+ * Build B2 (ruling PF-4): does the AGENT run — the desks' one check per session at the close, and the close
+ * snapshot's candidate universe on a drafting fire? Only while the mode is not 'off' AND its own sub-switch is on.
+ * Read at call time; never throws.
+ */
+export function practiceFieldAgentOn() {
+  try {
+    if (!practiceFieldLive()) return false;
+    return (agentOverride !== null ? agentOverride : PRACTICE_FIELD_AGENT_ENABLED) === true;
+  } catch {
+    return false;
+  }
+}
+
+/** Build B2 (ruling PF-5): are the owner's saved theses a drafting source? Only with the agent on. Never throws. */
+export function practiceFieldAgentThesesOn() {
+  try {
+    if (!practiceFieldAgentOn()) return false;
+    return (thesesOverride !== null ? thesesOverride : PRACTICE_FIELD_AGENT_THESES_ENABLED) === true;
+  } catch {
+    return false;
+  }
+}
+
 /** Is this process a test run (the vitest runner sets VITEST; production never does)? */
 const isTestRun = () => typeof process !== 'undefined' && Boolean(process.env?.VITEST) && process.env?.NODE_ENV !== 'production';
 
@@ -60,4 +89,16 @@ export function setPracticeFieldModeForTests(mode) {
   const previous = testOverride;
   testOverride = mode;
   return () => { testOverride = previous; };
+}
+
+/**
+ * TESTS ONLY — set the agent's sub-switches (`{ agent, theses }`, each a boolean, or `null` to return to the flag;
+ * an omitted key is left as it is). Returns the restore. Throws outside the vitest runner.
+ */
+export function setPracticeFieldAgentForTests({ agent, theses } = {}) {
+  if (!isTestRun()) throw new Error('setPracticeFieldAgentForTests is for tests only');
+  const previous = { agent: agentOverride, theses: thesesOverride };
+  if (agent !== undefined) agentOverride = agent;
+  if (theses !== undefined) thesesOverride = theses;
+  return () => { agentOverride = previous.agent; thesesOverride = previous.theses; };
 }

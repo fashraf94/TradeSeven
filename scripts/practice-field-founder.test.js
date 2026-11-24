@@ -551,6 +551,45 @@ describe('status — read-only', () => {
     }
   });
 
+  it('build B2: the latest close row\'s agent check — each desk\'s note under its name, its actions and reasons, the drafts considered — and this month\'s spend against the bound', async () => {
+    const { setPracticeFieldAgentForTests } = await import('../api/_utils/practiceField/mode.js');
+    const { runIdeaBookAgentPass } = await import('../api/_utils/practiceField/agentRun.js');
+    const { fakeTransport, toolResponse, holdAll, draft, agentNowOf } = await import('../api/_utils/practiceField/__testsupport__/agentFixtures.js');
+    const restoreAgent = setPracticeFieldAgentForTests({ agent: true, theses: false });
+    try {
+      const { db, bookId, ideaId } = await founderBook({ contract: contractOf({ names: ['AAPL', 'MSFT'] }) });
+      await enterAt(db, bookId, ideaId, { date: DAYS.d1, quotes: QUOTES });
+      await closeOn(db, bookId, DAYS.d1, QUOTES);
+      const fake = fakeTransport(({ desk, request }) => toolResponse(holdAll(request, {
+        note: `${desk} says hold`, drafts: desk === 'shadow' ? [draft({ slot: 'long', names: ['NVDA'] }), draft({ slot: 'medium', names: ['TSLA'] })] : [],
+      })));
+      await runIdeaBookAgentPass(db, { date: DAYS.d1, now: agentNowOf(DAYS.d1), ownerToken: 't', transport: fake.transport, clock: () => agentNowOf(DAYS.d1) });
+      const evening = new Date(closeNowOf(DAYS.d1).getTime() + 3600_000).toISOString();
+      const before = dumpStore(db);
+      const r = await json(db, ['status', '--uid', UID], { nowIso: evening });
+      expect(dumpStore(db)).toBe(before);
+      expect(r.body.agent).toMatchObject({ enabled: true, thesesEnabled: false, session: DAYS.d1 });
+      expect(r.body.agent.desks.shadow).toMatchObject({ name: 'The Shadow desk', source: 'model', note: 'shadow says hold', calls: 1, actions: [] });
+      expect(r.body.agent.desks.shadow.considered.map((c) => [c.index, c.outcome, c.refusals])).toEqual([[0, 'admitted', []], [1, 'refused', ['name_not_a_candidate']]]);
+      expect(r.body.agent.desks.archetype).toMatchObject({ name: 'The archetype desk', source: 'model', note: 'archetype says hold' });
+      expect(r.body.agent.desks.archetype.actions).toEqual([{ ideaId, action: 'hold', reason: 'The thesis still holds against its comparison.', outcome: 'held' }]);
+      expect(r.body.spend).toMatchObject({ month: '2026-11', boundUsd: 3, calls: 2, exhausted: false });
+      expect(r.body.spend.settledUsd).toBeGreaterThan(0);
+      const text = await cli(db, ['status', '--uid', UID], { nowIso: evening });
+      expect(text.out).toMatch(/agent {11}on in this checkout \(saved theses off\) {3}latest check: 2026-11-16/);
+      expect(text.out).toContain('  The Shadow desk   model');
+      expect(text.out).toContain('    note        "shadow says hold"');
+      expect(text.out).toMatch(/ {4}action {6}idea_[0-9a-f]+ {2}hold → held/);
+      expect(text.out).toMatch(/ {4}draft 0 {5}long {2}NVDA {2}\(price_list\) {2}ADMITTED idea_[0-9a-f]+ at \$[\d,.]+/);
+      expect(text.out).toContain('    draft 1     medium  TSLA  (price_list)  refused: name_not_a_candidate');
+      expect(text.out).toMatch(/spend {11}2026-11: \$[\d.]+ charged, \$[\d.]+ committed of \$3\.00 {3}2 call\(s\)/);
+      // Review C-4: with the agent OFF in this checkout, status reads nothing of it — not the close row's agent block.
+      restoreAgent();
+      const off = await json(db, ['status', '--uid', UID], { nowIso: evening });
+      expect(off.body.agent).toEqual({ enabled: false, thesesEnabled: false, session: DAYS.d1, desks: null });
+    } finally { restoreAgent(); }
+  });
+
   it('sessionsLeft: trading sessions from today through the due session, both counted; 0 once it has passed', () => {
     expect(sessionsLeft('2026-11-16', '2026-11-16')).toBe(1);
     expect(sessionsLeft('2026-11-16', '2026-11-20')).toBe(5);
