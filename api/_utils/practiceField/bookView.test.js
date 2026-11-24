@@ -94,6 +94,9 @@ describe('allotCents: each name\'s value at a row\'s marks sums EXACTLY to the r
     // Unequal remainders (A .9, B .2, C .6 of a cent): one cent left goes to A, the largest, never to the smallest.
     const unequal = { markedHoldingsValue: 3.02, quantities: { A: 1, B: 1, C: 1 }, marks: { A: { mark: 1.009 }, B: { mark: 1.002 }, C: { mark: 1.006 } } };
     expect(Object.fromEntries(allotCents(unequal))).toEqual({ A: 101, B: 100, C: 101 });
+    // Floors, never rounds (the refuter's case): two names of 100.6¢ against a 201¢ total give A 101, B 100.
+    const tie = { markedHoldingsValue: 2.01, quantities: { A: 1, B: 1 }, marks: { A: { mark: 1.006 }, B: { mark: 1.006 } } };
+    expect(Object.fromEntries(allotCents(tie))).toEqual({ A: 101, B: 100 });
   });
 });
 

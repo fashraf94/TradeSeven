@@ -54,7 +54,7 @@ function IdeaBookLayer({ read, onClose }) {
   const onKeyDown = (e) => { if (e.key === 'Escape') onClose(); };
   return createPortal(
     // tabIndex -1: a click on plain text keeps focus inside the layer, so Escape still reaches it (review C2).
-    <div role="dialog" aria-modal="true" aria-label="Idea book" tabIndex={-1} onKeyDown={onKeyDown} data-ib="layer" className="ib-scroll" style={{ position: 'fixed', inset: 0, zIndex: 1100, overflowY: 'auto', overscrollBehavior: 'contain', outline: 'none', background: IB.bg }}>
+    <div role="dialog" aria-modal="true" aria-label="Idea book" tabIndex={-1} onKeyDown={onKeyDown} data-ib="layer" style={{ position: 'fixed', inset: 0, zIndex: 1100, overflowY: 'auto', overscrollBehavior: 'contain', outline: 'none', background: IB.bg }}>
       <IdeaBookScreen read={read} onClose={onClose} />
     </div>,
     document.body,
