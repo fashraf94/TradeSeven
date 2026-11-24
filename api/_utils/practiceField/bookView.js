@@ -16,13 +16,16 @@
 //   today's change        the book's markedEquity at the last close less at the close before it, in whole cents; its
 //                         percent of the earlier one (deriveToday)
 //   since open            markedEquity less portfolio.initialValue, as a percent of initialValue (deriveSinceOpen)
-//   SPY since open        SPY's close mark at the book's first entry session to its mark at the last close, both read
-//                         from the book's own idea rows (B3-6; never a shared snapshot, which is deleted after 120 days)
+//   SPY since open        SPY's quote at the book's first fill (the first entered idea's inception row, its SPY leg) to
+//                         its vendor-timed close mark at the last close: both from the book's own records (B3-6; never a
+//                         shared snapshot, which is deleted after 120 days)
 //   a position's value    each name's shares × mark at the close, by the engine's own markBook, whole cents allotted so
 //                         the names of an idea sum EXACTLY to its row's markedHoldingsValue (BUILD_RULES §9; allotCents)
 //   open P/L              that position value less the holding's costBasisTotal
 //   day P/L               that position value less the same name's at the close before (the same allotment on that
-//                         row); a name bought at this session's window: less its costBasisTotal
+//                         row; under its old symbol on the session a ticker change renamed it); a name bought at this
+//                         session's window: less its costBasisTotal. None when the close before carried its mark or
+//                         was not observed (it would span two sessions). Income is not in it: a dividend is the idea's cash
 //   distance to the line  (mark − level) / mark, in percent, one decimal; "near" under 1% (the mock-up's rule)
 //   day n of N            N is the slot's length; sessions left is the agent's own count (agentRun.js sessionsLeft: the
 //                         sessions after the last close up to the due one); n = N − sessions left
@@ -46,7 +49,7 @@ import {
   FAILED_CHECK, BUYS_NEXT_WINDOW, SELLS_NEXT_WINDOW, PAPER_MONEY, PAUSED_LINE, WINDING_DOWN_LINE, SLOT_NAMES, DESK_COPY,
   SOURCE_CHIPS, SOURCE_CHIP_UNKNOWN, COMPARISON_NAMES, NAME_SENTENCES, GROUP_LINES, SELLING_WORDS, OPEN_SLOT, STRIP,
   MARKS_AS_OF, MARKS_AS_OF_UNOBSERVED, DRAFT_OUTCOMES, REFUSAL_REASONS, REFUSAL_UNMAPPED, QUALITY_REASONS, QUALITY_REASON_UNKNOWN,
-  ROW_REASON_HELD, ROW_REASON_UNKNOWN, ENDED_WORDS, ENDED_UNKNOWN, UNMEASURABLE_REASONS, UNMEASURABLE_STANDING, UNMEASURABLE_UNKNOWN,
+  ROW_REASON_HELD, ROW_REASON_STANDING, ROW_REASON_UNKNOWN, EXIT_NOT_CARRIED, ENDED_WORDS, ENDED_UNKNOWN, UNMEASURABLE_REASONS, UNMEASURABLE_STANDING, UNMEASURABLE_UNKNOWN,
   EVIDENCE_UNCHECKED, NOT_MEASURABLE, RESULT_COLUMNS, RESULT_VALUE_UNKNOWN, NO_FINISHED_IDEAS,
 } from './bookViewCopy.js';
 
@@ -169,12 +172,20 @@ export function deriveToday(last, prev) {
   return { ...signedAmount(diff), pct: prevCents > 0 ? pctText((diff * 100) / prevCents) : null };
 }
 
-/** Since open: the last close's equity less the book's opening value, as a percent of it. */
+/** A displayed percent that rounded to zero carries no sign, and so no colour either. */
+const dirOfText = (text, n) => (text.startsWith('+') || text.startsWith(MINUS) ? dirOf(n) : 0);
+
+/**
+ * Since open: the last close's equity less the book's opening value, as a percent of it. A row below full quality shows
+ * no figure here either (the same rule as today's change and every P/L): a dash.
+ */
 export function deriveSinceOpen(last, initialValue) {
   if (!isPlain(last) || !(Number(initialValue) > 0)) return null;
+  if (last.fullQuality !== true) return { pct: '—', dir: 0 };
   const initCents = toCents(initialValue);
   const diff = toCents(last.markedEquity) - initCents;
-  return { pct: pctText((diff * 100) / initCents), dir: dirOf(diff) };
+  const pct = pctText((diff * 100) / initCents);
+  return { pct, dir: dirOfText(pct, diff) };
 }
 
 // ── THE NAMES ────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -192,7 +203,7 @@ function rowReason(row, date) {
       if (m?.quality !== MARK_QUALITY.VENDOR_TIME) return qualityReason(sym, m?.quality, date);
     }
   }
-  if ((row?.standingQualityReasons || []).length > 0) return ROW_REASON_HELD;
+  if ((row?.standingQualityReasons || []).length > 0) return ROW_REASON_STANDING;
   return row?.fullQuality === false ? ROW_REASON_HELD : ROW_REASON_UNKNOWN(dayLabel(date));
 }
 
@@ -221,16 +232,35 @@ function symbolsOf(idea) {
   return (idea?.contract?.names || []).map(upper);
 }
 
-/** One name of a live idea at the last close (its row `last`, the row before `prev`). */
-function nameView(idea, sym, { last, lastAllot, prevAllot, session, boughtThisSession }) {
+/**
+ * The symbol a name had at the close before: its own, or — on the session a ticker change renamed it (close.js renames the
+ * line, `renamedFrom`) — the old one, so its day P/L still has a base.
+ */
+function prevSymbolOf(line, sym, prev, session) {
+  if (prev?.quantities?.[sym] !== undefined) return sym;
+  const renamed = (line?.renamedFrom || []).filter((r) => r?.appliedOn === session).map((r) => upper(r.symbol));
+  return renamed.find((s) => prev?.quantities?.[s] !== undefined) ?? null;
+}
+
+/**
+ * One name of a live idea at the last close (its row `last`, the row before `prev`). `boughtThisSession`: bought at this
+ * session's window and valued at this close; `boughtAfterClose`: bought at a window after the last close (no mark yet).
+ */
+function nameView(idea, sym, { last, prev, lastAllot, prevAllot, session, boughtThisSession, boughtAfterClose = false }) {
   const line = (idea.lines || []).find((l) => upper(l.symbol) === sym) || null;
   const holding = idea.ledger?.holdings?.[sym] ?? null;
-  const base = { symbol: sym, isNew: boughtThisSession };
-  if (!holding) return { ...base, isNew: false, ...soldSentence(idea, sym), mark: null, line: priceText(line?.level ?? null) };
+  const base = { symbol: sym, isNew: boughtThisSession || boughtAfterClose };
+  // A sold name keeps its entry (its fill, while no split has moved it) and its line.
+  const soldEntry = line && (line.adjustments || []).length === 0 ? priceText(line.fillPrice ?? null) : null;
+  if (!holding) return { ...base, isNew: false, ...soldSentence(idea, sym), mark: null, entry: soldEntry, line: priceText(line?.level ?? null) };
   const entry = priceText(holding.avgCost ?? null);
   const level = priceText(line?.level ?? null);
+  // A delisting with no cash amount: the holding waits to be sold, at its carried mark — said so, never as missing data.
+  if (holding.exitPending?.reason === 'delisting') {
+    return { ...base, state: 'delisted', text: NAME_SENTENCES.delistedWaiting, mark: null, entry, line: level, shares: SHARES.format(holding.shares) };
+  }
   const m = last?.marks?.[sym];
-  if (!m || !last?.quantities?.[sym]) {
+  if (boughtAfterClose || !m || !last?.quantities?.[sym]) {
     return { ...base, state: 'bought_today', text: NAME_SENTENCES.boughtToday, mark: null, entry, line: level, shares: SHARES.format(holding.shares) };
   }
   const shares = SHARES.format(last.quantities[sym]);
@@ -239,7 +269,11 @@ function nameView(idea, sym, { last, lastAllot, prevAllot, session, boughtThisSe
   }
   const valueCents = lastAllot.get(sym) ?? 0;
   const costCents = toCents(holding.costBasisTotal ?? 0);
-  const prevCents = boughtThisSession ? costCents : (prevAllot.has(sym) ? prevAllot.get(sym) : null);
+  // The day's base: what it cost (bought this session), else its value at the close before — only when that close's
+  // mark was the vendor's own (a carried or unobserved one would make "P/L Day" span two sessions: no figure, a dash).
+  const prevSym = boughtThisSession ? null : prevSymbolOf(line, sym, prev, session);
+  const prevOk = prevSym !== null && prev?.observed !== false && prev?.marks?.[prevSym]?.quality === MARK_QUALITY.VENDOR_TIME;
+  const prevCents = boughtThisSession ? costCents : (prevOk && prevAllot.has(prevSym) ? prevAllot.get(prevSym) : null);
   const distancePct = Number.isFinite(line?.level) && m.mark > 0 ? ((m.mark - line.level) * 100) / m.mark : null;
   const near = distancePct !== null && distancePct < NEAR_LINE_PCT;
   const out = {
@@ -253,14 +287,14 @@ function nameView(idea, sym, { last, lastAllot, prevAllot, session, boughtThisSe
     entry,
     line: level,
     distance: distancePct === null ? null : {
-      text: `${pctText(distancePct, 1).replace(/^\+/, '')} away`,
+      text: distancePct < 0
+        ? NAME_SENTENCES.belowLine(pctText(-distancePct, 1).replace(/^\+/, ''))
+        : `${pctText(distancePct, 1).replace(/^\+/, '')} away`,
       near,
       gauge: Math.max(0, 1 - Math.min(1, Math.max(0, distancePct) / GAUGE_FULL_PCT)),
     },
   };
-  const pending = holding.exitPending ?? null;
-  if (pending?.reason === 'line') return { ...out, state: 'line_hit', text: NAME_SENTENCES.lineHit };
-  if (pending?.reason === 'delisting') return { ...out, state: 'line_hit', text: NAME_SENTENCES.delistedWaiting };
+  if (holding.exitPending?.reason === 'line') return { ...out, state: 'line_hit', text: NAME_SENTENCES.lineHit };
   return out;
 }
 
@@ -305,12 +339,18 @@ function callOf(part, ideaId, desk, session) {
   if (part.source === AGENT_NOTE_SOURCE.CODE_FALLBACK) return { failed: true, text: FAILED_CHECK };
   const a = (part.actions || []).find((x) => x?.ideaId === ideaId);
   if (!a || !str(a.reason)) return null;
-  return { kind: a.action === 'exit' ? 'Exit' : 'Hold', text: a.reason, deskName: DESK_COPY[desk].name, date: dayLabel(session) };
+  const call = { kind: a.action === 'exit' ? 'Exit' : 'Hold', text: a.reason, deskName: DESK_COPY[desk].name, date: dayLabel(session) };
+  // An Exit code did not carry out (refused, or nothing to do): said beside it, so it never reads as done.
+  if (a.action === 'exit' && a.outcome !== 'exit_settled') call.notCarriedOut = EXIT_NOT_CARRIED(a.outcome);
+  return call;
 }
+
+/** The idea's length in sessions: the frozen contract's own, else its slot's (they agree today). */
+const sessionsOfIdea = (idea, slot) => (Number.isInteger(idea?.contract?.schedule?.sessions) && idea.contract.schedule.sessions > 0 ? idea.contract.schedule.sessions : slotSessions(slot));
 
 function groupOf(slot, idea, ctx) {
   const desk = idea ? (deskOfIdea(idea) ?? deskOfSlot(slot)) : deskOfSlot(slot);
-  const sessions = slotSessions(slot);
+  const sessions = sessionsOfIdea(idea, slot);
   const head = { slot, slotName: SLOT_NAMES[slot], slotLabel: `${SLOT_NAMES[slot]} · ${sessions} sessions`, desk, deskName: DESK_COPY[desk].name };
   if (!idea) {
     return { ...head, state: 'open', text: OPEN_SLOT.row(SLOT_NAMES[slot], DESK_COPY[desk].the, ctx.looks), names: [] };
@@ -330,12 +370,13 @@ function groupOf(slot, idea, ctx) {
   const prev = rows.prev ?? null;
   const entered = idea.entry?.sessionDate ?? null;
   const boughtThisSession = entered !== null && entered === session;
+  const boughtAfterClose = entered !== null && (session === null || entered > session);
   const lastAllot = allotCents(last);
   const prevAllot = allotCents(prev);
-  const names = symbolsOf(idea).map((sym) => nameView(idea, sym, { last, lastAllot, prevAllot, session, boughtThisSession }));
+  const names = symbolsOf(idea).map((sym) => nameView(idea, sym, { last, prev, lastAllot, prevAllot, session, boughtThisSession, boughtAfterClose }));
   const due = idea.contract?.schedule?.dueSession ?? null;
   // Bought at a window after the last close: held, with no close mark yet.
-  if (!last || (entered !== null && (session === null || entered > session))) {
+  if (!last || boughtAfterClose) {
     return { ...common, state: 'holding', line: GROUP_LINES.boughtToday, gap: null, call: null, names, namesText: names.map((n) => n.symbol).join(' · ') };
   }
   const left = Math.min(sessions, Math.max(0, sessionsLeftOf(session, due) ?? sessions));
@@ -361,13 +402,18 @@ function groupOf(slot, idea, ctx) {
 function settledTodayGroupOf(slot, f) {
   const idea = f.idea;
   const desk = deskOfIdea(idea) ?? deskOfSlot(slot);
-  const sessions = slotSessions(slot);
-  const names = symbolsOf(idea).map((sym) => ({ symbol: sym, isNew: false, mark: null, ...soldSentence(idea, sym) }));
+  const sessions = sessionsOfIdea(idea, slot);
+  const names = symbolsOf(idea).map((sym) => {
+    const line = (idea.lines || []).find((l) => upper(l.symbol) === sym) || null;
+    const entry = line && (line.adjustments || []).length === 0 ? priceText(line.fillPrice ?? null) : null;
+    return { symbol: sym, isNew: false, mark: null, entry, line: priceText(line?.level ?? null), ...soldSentence(idea, sym) };
+  });
   return {
     slot, slotName: SLOT_NAMES[slot], slotLabel: `${SLOT_NAMES[slot]} · ${sessions} sessions`, desk, deskName: DESK_COPY[desk].name,
     state: 'settled_today', line: GROUP_LINES.settledToday,
     gap: f.view.notMeasurable ? { notMeasurable: NOT_MEASURABLE } : f.view.gap,
-    thesis: thesisOf(idea, desk), source: sourceChipOf(idea), call: f.view.lastCall, names,
+    // The manager's exit is a past call here (made at its endpoint), never today's.
+    thesis: thesisOf(idea, desk), source: sourceChipOf(idea), call: null, lastCall: f.view.lastCall, names,
     namesText: names.map((n) => n.symbol).join(' · '),
   };
 }
@@ -375,9 +421,12 @@ function settledTodayGroupOf(slot, f) {
 // ── THE STRIP ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
- * One line per desk for the last close: the close row's agent block (held, exit called, admitted, passed on, or the failed
- * check) and code's facts dated that session (the desk's ideas bought at its window, and names sold at their lines). A desk
- * with nothing to say has no line.
+ * One line per desk for the last close, ONLY for a desk that checked the book at that close (its part on the close row says
+ * the model wrote, or the check failed): what it held, the exits it called, what it admitted and passed on, or the failed
+ * check — and, as code's facts of that session in the desk's lane, its OWN ideas bought at the window (an idea the desk
+ * drafted: `contract.desk`) and its names sold at their lines ("by code"). With the agent off, a paused book, or a desk with
+ * no work, nothing is credited to a desk: no line (a founder's idea is never "opened" by a desk). A desk with nothing to say
+ * has no line.
  */
 export function deriveStrip({ session, deskParts, ideas, finishedIdeas, rows = new Map() }) {
   if (!isDate(session)) return [];
@@ -390,15 +439,18 @@ export function deriveStrip({ session, deskParts, ideas, finishedIdeas, rows = n
   const out = [];
   for (const desk of DESK_ORDER) {
     const part = deskParts[desk];
+    const checked = part?.source === AGENT_NOTE_SOURCE.MODEL || part?.source === AGENT_NOTE_SOURCE.CODE_FALLBACK;
+    if (!checked) continue;
     const mine = all.filter((i) => deskOfIdea(i) === desk);
     const words = [];
-    const opened = mine.filter((i) => i.entry?.sessionDate === session).flatMap(symbolsOf);
+    const opened = mine.filter((i) => i.entry?.sessionDate === session && i.contract?.desk === desk).flatMap(symbolsOf);
     if (opened.length > 0) words.push(STRIP.opened(opened));
-    const failed = part?.source === AGENT_NOTE_SOURCE.CODE_FALLBACK;
-    if (part && !failed) {
+    const failed = part.source === AGENT_NOTE_SOURCE.CODE_FALLBACK;
+    if (!failed) {
       const admitted = (part.considered || []).filter((c) => c?.outcome === 'admitted').flatMap((c) => (c.names || []).map(upper));
       if (admitted.length > 0) words.push(STRIP.admitted(admitted));
-      const heldIds = new Set((part.actions || []).filter((a) => a?.outcome === 'held').map((a) => a.ideaId));
+      // Held: the desk's hold, and an Exit code did not carry out (the idea is still held, unchanged).
+      const heldIds = new Set((part.actions || []).filter((a) => a?.outcome === 'held' || (a?.action === 'exit' && a?.outcome !== 'exit_settled')).map((a) => a.ideaId));
       // (An idea bought at this session's window is said as opened, not held again: the mock-up's state 3.)
       const held = mine.filter((i) => heldIds.has(i.ideaId) && i.entry?.sessionDate !== session).reduce((n, i) => n + heldAtClose(i).length, 0);
       if (held > 0) words.push(STRIP.held(held));
@@ -408,7 +460,7 @@ export function deriveStrip({ session, deskParts, ideas, finishedIdeas, rows = n
     }
     const sold = mine.flatMap((i) => (i.ledger?.saleReceipts || []).filter((r) => r?.kind === 'line_exit' && r?.sessionDate === session).map((r) => upper(r.symbol)));
     if (sold.length > 0) words.push(STRIP.soldAtLine(sold));
-    if (part && !failed) {
+    if (!failed) {
       const passed = (part.considered || []).filter((c) => c?.outcome === 'refused' || c?.outcome === 'not_chosen').length;
       if (passed > 0) words.push(STRIP.passedOn(passed));
     }
@@ -470,15 +522,20 @@ function desksOf({ session, deskParts, groups, archetypeName, looks }) {
 // ── HISTORY ──────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
- * Is a finished idea's result packet whole (B2 §8: its own hash AND its receipt parts)? Pure.
+ * Is a finished idea's result packet whole (B2 §8: its own hash AND its receipt parts) and THIS idea's (its book and idea
+ * ids, and each part's, are the ones it is read under — review A2: a validly sealed packet of another idea is refused)? Pure.
  * @returns {{ ok: boolean, problems: string[] }}
  */
-export function packetCheck(packet, parts) {
+export function packetCheck(packet, parts, { bookId = null, ideaId = null } = {}) {
   if (!isPlain(packet)) return { ok: false, problems: ['packet:missing'] };
   const problems = [];
   if (!verifyPacket(packet)) problems.push('packet:hash');
   problems.push(...resultPacketPartProblems(packet, parts || {}));
   if (!isPlain(packet.result)) problems.push('packet:result_missing');
+  if (packet.bookId !== bookId || packet.ideaId !== ideaId) problems.push('packet:not_this_idea');
+  for (const [id, doc] of Object.entries(parts || {})) {
+    if (isPlain(doc) && (doc.bookId !== bookId || doc.ideaId !== ideaId)) problems.push(`part:${id}:not_this_idea`);
+  }
   return { ok: problems.length === 0, problems };
 }
 
@@ -506,15 +563,15 @@ function columnsOf(result, gap) {
   ];
 }
 
-/** One finished idea for History (and for its slot's "settled today" group). */
-export function finishedView(f) {
+/** One finished idea for History (and for its slot's "settled today" group). `bookId`: the book it is read under. */
+export function finishedView(f, { bookId = null } = {}) {
   const idea = f.idea;
   const slot = idea?.contract?.slot ?? null;
   const desk = deskOfIdea(idea) ?? deskOfSlot(slot);
-  const check = packetCheck(f.packet, f.parts);
+  const check = packetCheck(f.packet, f.parts, { bookId, ideaId: idea?.ideaId ?? null });
   const result = check.ok ? f.packet.result : null;
   const kind = result?.endpointKind ?? null;
-  const sessions = slotSessions(slot);
+  const sessions = sessionsOfIdea(idea, slot);
   const ended = (ENDED_WORDS[kind] ?? ENDED_UNKNOWN)(sessions);
   const base = {
     namesText: (idea?.contract?.names || []).map(upper).join(' · '),
@@ -535,7 +592,8 @@ export function finishedView(f) {
     ? { ...signedAmount(toCents(econ.gapUsd)), pct: pctText(econ.gapPctOfReserved), vs: comparisonName(idea.contract) }
     : null;
   const notMeasurable = result.economicResult === 'unmeasurable' ? { reasons: unmeasurableReasons(result) } : null;
-  return { ...base, gap: notMeasurable ? null : gap, notMeasurable, columns: columnsOf(result, gap), lastCall };
+  // A result that cannot be measured shows no gap anywhere: not in the list, not under its Result column (review B1).
+  return { ...base, gap: notMeasurable ? null : gap, notMeasurable, columns: columnsOf(result, notMeasurable ? null : gap), lastCall };
 }
 
 // ── THE VIEW ─────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -550,7 +608,8 @@ export function finishedView(f) {
  * @param {{ last?: object, prev?: object }} input.dailyRows   the book's rows at the last close and the one before
  * @param {object|null} input.closeRow   windows/{session}_close (the agent's block), or null
  * @param {Array<{ idea, packet, parts }>} input.finished   finished ideas, newest first (≤ HISTORY_LIMIT)
- * @param {{ session: string, row: object }|null} input.firstEntry   the book's first entered idea's row at its entry
+ * @param {{ session: string, inception: object }|null} input.firstEntry   the book's first entered idea: its entry
+ *                                       session and its inception row (`rows/inception`, the entry's fills and their quotes)
  * @param {boolean} input.agentOn       practiceFieldAgentOn(): do the desks look tonight?
  * @param {string|null} input.archetypeName  the archetype desk's archetype, for its lane
  */
@@ -564,7 +623,7 @@ export function buildBookView({ book, ideas = [], rows = new Map(), dailyRows = 
   const looks = agentOn === true && !paused && !windingDown;
   const deskParts = { shadow: deskPartOf(closeRow, 'shadow'), archetype: deskPartOf(closeRow, 'archetype') };
   const byId = new Map(ideas.map((i) => [i.ideaId, i]));
-  const finishedViews = finished.map((f) => ({ ...f, view: finishedView(f) }));
+  const finishedViews = finished.map((f) => ({ ...f, view: finishedView(f, { bookId: book?.bookId ?? null }) }));
 
   // The groups, one per slot in order.
   const ctx = { session, rows, deskParts, looks };
@@ -588,13 +647,17 @@ export function buildBookView({ book, ideas = [], rows = new Map(), dailyRows = 
     const since = deriveSinceOpen(last, book?.portfolio?.initialValue);
     first = since ? { kind: 'since', label: `Since ${dayLabel(firstEntry.session)}`, value: since.pct, dir: since.dir } : null;
   }
-  // SPY since the book's first entry session, from the book's own rows (B3-6): that row's SPY close and the last close's.
+  // SPY since the book opened (B3-6), from the book's own records: SPY's quote at the book's FIRST fill (the first entered
+  // idea's inception row, its SPY leg — the same window the book's first money went in, which "since" measures from) to its
+  // vendor-timed close mark at the last close (the first idea row there with a clean one). Either missing: a dash.
   let spy = { label: 'SPY', value: '—' };
-  const spyNow = ideas.map((i) => rows.get(i.ideaId)?.last).find((r) => r && r.date === session && r.spyMarks?.[PRACTICE_FIELD_BENCHMARK_SYMBOL]);
-  const startMark = firstEntry?.row?.spyMarks?.[PRACTICE_FIELD_BENCHMARK_SYMBOL] ?? null;
-  const nowMark = spyNow?.spyMarks?.[PRACTICE_FIELD_BENCHMARK_SYMBOL] ?? null;
-  if (startMark && nowMark && startMark.quality === MARK_QUALITY.VENDOR_TIME && nowMark.quality === MARK_QUALITY.VENDOR_TIME && startMark.mark > 0) {
-    spy = { label: 'SPY', value: pctText(((nowMark.mark - startMark.mark) * 100) / startMark.mark), since: dayLabel(firstEntry.session) };
+  const startLeg = (firstEntry?.inception?.legs?.spy || []).find((r) => upper(r?.symbol) === PRACTICE_FIELD_BENCHMARK_SYMBOL) ?? null;
+  const startMark = startLeg && Number(startLeg.mark) > 0 && typeof startLeg.markVendorTimeIso === 'string' ? startLeg.mark : null;
+  const nowMark = ideas.map((i) => rows.get(i.ideaId)?.last?.date === session ? rows.get(i.ideaId).last.spyMarks?.[PRACTICE_FIELD_BENCHMARK_SYMBOL] : null)
+    .find((m) => m && m.quality === MARK_QUALITY.VENDOR_TIME && Number(m.mark) > 0)?.mark ?? null;
+  if (startMark !== null && nowMark !== null && first?.kind === 'since') {
+    const pct = pctText(((nowMark - startMark) * 100) / startMark);
+    spy = { label: 'SPY', value: pct, since: dayLabel(firstEntry.session) };
   }
   const line = {
     value: moneyText(valueCents),

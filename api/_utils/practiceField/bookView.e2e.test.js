@@ -12,6 +12,7 @@ import { setPracticeFieldModeForTests } from './mode.js';
 import { readBookView } from './bookViewRead.js';
 import { allotCents, pctText } from './bookView.js';
 import { toCents } from './money.js';
+import { nextSessionDate } from './windows.js';
 import { runBookHistory, historySessions, EARLY_CLOSE, EXIT_SESSION, FAIL_SESSION } from './__testsupport__/bookViewFixtures.js';
 
 const cents = (text) => {
@@ -97,11 +98,24 @@ describe('the view after every close of the B2 history agrees with the stored ro
             const base0 = idea.entry.sessionDate === date ? toCents(h.costBasisTotal) : before.get(n.symbol);
             expect(cents(n.plDay.text), `${date} ${n.symbol} day`).toBe(cents(n.positionValue) - base0);
           }
+          // Day n of N, on the agent's own count (agentRun.js sessionsLeft) to the frozen due session: n + left = N.
+          const N = idea.contract.schedule.sessions;
+          let left = 0;
+          for (let s = date; s < idea.contract.schedule.dueSession; s = nextSessionDate(s)) left += 1;
+          expect([g.day, g.of, g.sessionsLeft], `${date} ${g.slot} days`).toEqual([N - Math.min(N, left), N, Math.min(N, left)]);
         }
 
-        // The reads: bounded by the reader's own formula (bookViewRead.js header), I ≤ 6 ideas, no receipt parts here.
+        // SPY since open: the first entered idea's inception SPY leg quote, to the last close's clean SPY mark.
+        const firstIdea = [...c.db._store.keys()].filter((p) => new RegExp(`^${base}/ideas/[^/]+$`).test(p)).map((p) => c.db._get(p))
+          .filter((i) => i.entry?.sessionDate).sort((a, b) => (a.entry.sessionDate < b.entry.sessionDate ? -1 : 1))[0];
+        const startQuote = c.db._get(`${base}/ideas/${firstIdea.ideaId}/rows/inception`).legs.spy.find((r) => r.symbol === 'SPY').mark;
+        const nowMark = Object.values(book.slots).filter(Boolean).map((id) => c.db._get(`${base}/ideas/${id}/rows/${date}`)?.spyMarks?.SPY)
+          .find((m) => m && m.quality === 'vendor_time')?.mark;
+        expect(v.line.spy.value, `${date} SPY`).toBe(pctText(((nowMark - startQuote) * 100) / startQuote));
+
+        // The reads: bounded by the reader's own formula (bookViewRead.js header: 46 + 3·I + 20·P), no receipt parts here.
         const ideasRead = (book.openIdeaIds || []).length + Object.values(book.slots || {}).filter(Boolean).length;
-        expect(count.docs, date).toBeLessThanOrEqual(2 + ideasRead + 2 + 2 * ideasRead + 1 + 20 * 2 + 1 + 1);
+        expect(count.docs, date).toBeLessThanOrEqual(46 + 3 * ideasRead);
         expect(count.queries, date).toBe(3);
 
         // No id of the owner, the book or an idea reaches the view.

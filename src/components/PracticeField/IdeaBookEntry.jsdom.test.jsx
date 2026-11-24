@@ -17,7 +17,7 @@ vi.mock('../../services/authIdentity', () => ({ useAuthIdentity: () => state.ide
 vi.mock('../../utils/fetchWithAuth', () => ({
   fetchWithAuth: async (url, opts) => {
     state.calls.push({ url, opts, uid: state.identity.uid });
-    const a = typeof state.answer === 'function' ? state.answer() : state.answer;
+    const a = typeof state.answer === 'function' ? await state.answer() : state.answer;
     return { ok: a.status >= 200 && a.status < 300, status: a.status, json: async () => a.body };
   },
 }));
@@ -152,6 +152,75 @@ describe('the switch on: the card, its read and the page', () => {
     await flush();
     expect(state.calls.map((c) => c.uid)).toEqual(['owner-1', 'owner-2']);
     expect(m.host.querySelector('[data-ib="entry-card"]')).toBeNull();
+  });
+
+  it('an identity changed IN PLACE never shows the earlier owner\x27s book — not at once, not when its answer lands last (review C10)', async () => {
+    // owner-1 has a book on screen; the identity becomes owner-2 without a remount: the card goes at that very render.
+    const m = await mount(<IdeaBookEntry />);
+    expect(m.host.querySelector('[data-ib="entry-card"]')).not.toBeNull();
+    let releaseTwo;
+    state.answer = () => new Promise((r) => { releaseTwo = () => r({ status: 200, body: { book: null } }); });
+    state.identity = { resolved: true, uid: 'owner-2', authEpoch: 2 };
+    m.render(<IdeaBookEntry />);
+    expect(m.host.querySelector('[data-ib="entry-card"]')).toBeNull();
+    releaseTwo();
+    await flush();
+    // owner-3 asks while owner-2's slow read is still out; owner-2's answer (a book) lands last and is never shown.
+    let releaseLate;
+    state.answer = () => new Promise((r) => { releaseLate = () => r({ status: 200, body: { book: viewOf('full') } }); });
+    state.identity = { resolved: true, uid: 'owner-2', authEpoch: 3 };
+    m.render(<IdeaBookEntry />);
+    await flush();
+    const lateForEpoch3 = releaseLate;
+    state.answer = () => ({ status: 200, body: { book: null } });
+    state.identity = { resolved: true, uid: 'owner-3', authEpoch: 4 };
+    m.render(<IdeaBookEntry />);
+    await flush();
+    lateForEpoch3();
+    await flush();
+    expect(state.calls.map((c) => c.uid)).toEqual(['owner-1', 'owner-2', 'owner-2', 'owner-3']);
+    expect(m.host.querySelector('[data-ib="entry-card"]')).toBeNull();
+  });
+
+  it('never reads on a timer: hours pass with no read', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval'] });
+    try {
+      await mount(<IdeaBookEntry />);
+      const before = state.calls.length;
+      act(() => { vi.advanceTimersByTime(6 * 60 * 60 * 1000); });
+      await flush();
+      expect(state.calls.length).toBe(before);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('after a 404 the window regaining focus does not ask again for that owner (review A5)', async () => {
+    let now = 5_000_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    state.answer = { status: 404, body: { error: 'disabled' } };
+    await mount(<IdeaBookEntry />);
+    expect(state.calls).toHaveLength(1);
+    now += 60_000;
+    act(() => { window.dispatchEvent(new Event('focus')); });
+    await flush();
+    expect(state.calls).toHaveLength(1);
+  });
+
+  it('a card that remounts (the phone Overview coming back) draws its last answer at once, then reads again (review C8)', async () => {
+    const first = await mount(<IdeaBookEntry />);
+    expect(first.host.querySelector('[data-ib="entry-card"]')).not.toBeNull();
+    act(() => first.root.unmount());
+    mounted = [];
+    let release;
+    state.answer = () => new Promise((r) => { release = () => r({ status: 200, body: { book: viewOf('sample') } }); });
+    const root = createRoot(appRoot);
+    act(() => root.render(<IdeaBookEntry />));
+    mounted.push({ root });
+    expect(appRoot.querySelector('[data-ib="entry-card"]')).not.toBeNull(); // before its answer
+    release();
+    await flush();
+    expect(state.calls).toHaveLength(2);
   });
 
   it('a signed-out or unresolved identity asks nothing', async () => {

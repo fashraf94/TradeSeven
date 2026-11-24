@@ -7,7 +7,8 @@
 // NO POLL, NO LISTENER ON A STORE, NO TICKING: marks are as of the last close. It reads on these triggers only:
 //   - mount, and a change of owner or auth epoch;
 //   - `refresh()` — the page's open;
-//   - the window regaining focus, or the page becoming visible again (two listeners, removed on unmount).
+//   - the window regaining focus, or the page becoming visible again (two listeners, removed on unmount; one read for a
+//     focus and a visibility change together; none after a 404 for the same owner).
 // With `enabled` false (the screen switch off) it reads nothing, registers nothing and stays `idle`. A 404 is the
 // server's "off for you" (the mode, the switch or the mode's gate): a settled `off`, never retried as an error. A read that
 // fails keeps the last good answer.
@@ -24,6 +25,11 @@ export const IDEA_BOOK_PATH = '/api/practice-field/book';
 export const REFOCUS_QUIET_MS = 2000;
 
 const IDLE = Object.freeze({ key: null, status: 'idle', book: null, error: null });
+/**
+ * The last good answer, for the current owner and epoch only (another key never reads it, and a new key clears it): a card
+ * that remounts — the phone Overview tab coming back — draws at once and reads again behind it, instead of popping in.
+ */
+const LAST_GOOD = /* @__PURE__ */ new Map();
 
 /** One read of the endpoint: `{ status: 'ready', book }`, `{ status: 'off' }`, or a thrown error. */
 export async function fetchIdeaBook() {
@@ -53,11 +59,13 @@ export default function useIdeaBook({ enabled, fetcher = fetchIdeaBook }) {
   const identity = useAuthIdentity();
   const uid = enabled && identity?.resolved === true && typeof identity.uid === 'string' ? identity.uid : null;
   const key = uid ? `${uid}:${identity.authEpoch ?? ''}` : null;
-  const [read, setRead] = useState(IDLE);
+  const [read, setRead] = useState(() => (key && LAST_GOOD.get(key)) || IDLE);
   const keyRef = useRef(key);
   keyRef.current = key;
   const seqRef = useRef(0);
   const lastRef = useRef(0);
+  // A 404 is settled for this owner and epoch: the window regaining focus does not ask again (review A5).
+  const offRef = useRef(null);
 
   const load = useCallback(async () => {
     if (!key) return;
@@ -67,7 +75,11 @@ export default function useIdeaBook({ enabled, fetcher = fetchIdeaBook }) {
     try {
       const out = await fetcher();
       if (keyRef.current !== key || seq !== seqRef.current) return;
-      setRead({ key, status: out.status, book: out.book ?? null, error: null });
+      const next = { key, status: out.status, book: out.book ?? null, error: null };
+      if (out.status === 'off') offRef.current = key;
+      LAST_GOOD.clear();
+      if (out.status === 'ready') LAST_GOOD.set(key, next);
+      setRead(next);
     } catch (err) {
       if (keyRef.current !== key || seq !== seqRef.current) return;
       setRead((prev) => (prev.key === key && prev.status === 'ready'
@@ -79,7 +91,7 @@ export default function useIdeaBook({ enabled, fetcher = fetchIdeaBook }) {
   useEffect(() => {
     if (!key) { setRead(IDLE); return undefined; }
     load();
-    const again = () => { if (Date.now() - lastRef.current >= REFOCUS_QUIET_MS) load(); };
+    const again = () => { if (offRef.current !== key && Date.now() - lastRef.current >= REFOCUS_QUIET_MS) load(); };
     const onFocus = () => again();
     const onVisible = () => { if (document.visibilityState === 'visible') again(); };
     window.addEventListener('focus', onFocus);

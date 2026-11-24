@@ -43,7 +43,7 @@ export const IB_CSS = `
 .ib-root, .ib-root * { -webkit-font-smoothing: antialiased; }
 .ib-tap { transition: transform .12s ease, background .15s ease, box-shadow .2s ease; }
 .ib-tap:active { transform: scale(.985); }
-.ib-row:hover { background: rgba(var(--ft-scrim-rgb), 0.035) !important; }
+@media (hover: hover) { .ib-row:hover { background: rgba(var(--ft-scrim-rgb), 0.035) !important; } }
 .ib-tap:focus-visible { outline: 2px solid var(--ft-teal); outline-offset: 2px; }
 .ib-scroll { scrollbar-width: none; }
 .ib-scroll::-webkit-scrollbar { width: 0; height: 0; }

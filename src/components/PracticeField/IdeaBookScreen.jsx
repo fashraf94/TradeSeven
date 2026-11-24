@@ -20,12 +20,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { IB, HAIR, mono, signColor, BOOK_TEXT, RESET, IB_CSS } from './ideaBookStyle';
 import { Eyebrow, Icon, DeskMark, Quote, Chip, CallWord, BookSays, LineGauge } from './IdeaBookParts';
-import { IDEA_BOOK_COPY, layoutOfWidth } from './ideaBookCopy';
+import { IDEA_BOOK_COPY, layoutOfWidth, PHONE_MAX_PX, finishedKeyOf } from './ideaBookCopy';
 
 const MODE = {
   p320: { cols: 'minmax(0,1fr) 56px 70px 70px', fs: 11.5, pad: 4 },
   p390: { cols: 'minmax(0,1fr) 68px 88px 88px', fs: 12.5, pad: 6 },
-  desk: { cols: 'minmax(0,1fr) 96px 210px 120px 120px', fs: 13, pad: 10 },
+  // "To its line" gives way first (review C1): never wider than the mock-up's 210, never pushing a figure out of its row.
+  desk: { cols: 'minmax(64px,1fr) 96px minmax(0,210px) 120px 120px', fs: 13, pad: 10 },
 };
 const LEDGER_COLS = '46px repeat(3, minmax(0,1fr))';
 const amountOf = (a, sm) => (a ? (sm ? a.short : a.text) : null);
@@ -90,11 +91,22 @@ export function BookLine({ line, layout }) {
 
 export function Tabs({ tab, setTab, layout, tabs = IDEA_BOOK_COPY.tabs }) {
   const sm = layout === 'p320';
+  // The tabs pattern: one tab in the Tab order, the arrow keys (and Home, End) move between them (review C13).
+  const onKeyDown = (e) => {
+    const i = tabs.findIndex(([k]) => k === tab);
+    const to = e.key === 'ArrowRight' ? (i + 1) % tabs.length : e.key === 'ArrowLeft' ? (i - 1 + tabs.length) % tabs.length
+      : e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : -1;
+    if (to < 0) return;
+    e.preventDefault();
+    setTab(tabs[to][0]);
+    e.currentTarget.querySelector(`#ib-tab-${tabs[to][0]}`)?.focus();
+  };
   return (
-    <div role="tablist" aria-label="Idea book" className="ib-scroll" style={{ display: 'flex', gap: sm ? 8 : 20, padding: '0 4px', borderBottom: HAIR, overflowX: 'auto' }}>
+    <div role="tablist" aria-label="Idea book" className="ib-scroll" onKeyDown={onKeyDown} style={{ display: 'flex', gap: sm ? 8 : 20, padding: '0 4px', borderBottom: HAIR, overflowX: 'auto' }}>
       {tabs.map(([k, l]) => (
         <button
-          key={k} type="button" role="tab" id={`ib-tab-${k}`} aria-selected={tab === k} aria-controls={`ib-panel-${k}`}
+          key={k} type="button" role="tab" id={`ib-tab-${k}`} aria-selected={tab === k} aria-controls={tab === k ? `ib-panel-${k}` : undefined}
+          tabIndex={tab === k ? 0 : -1}
           className="ib-tap" onClick={() => setTab(k)}
           style={{ ...RESET, position: 'relative', minHeight: 44, padding: '0 2px', flexShrink: 0, whiteSpace: 'nowrap', boxShadow: tab === k ? `inset 0 -2px 0 ${IB.ink}` : 'none' }}
         >
@@ -149,7 +161,7 @@ function Ledger({ names, children }) {
               <span style={num}>{n.mark ?? '—'}</span>
               <span style={num}>{n.line ?? '—'}</span>
             </div>
-            {sold || n.state === 'bought_today' || n.state === 'line_hit' ? <div style={{ ...mono(11, IB.ink2), marginTop: 4, lineHeight: 1.4 }}>{n.text}</div> : null}
+            {sold || n.state === 'bought_today' || n.state === 'line_hit' || n.state === 'delisted' ? <div style={{ ...mono(11, IB.ink2), marginTop: 4, lineHeight: 1.4 }}>{n.text}</div> : null}
             {n.state === 'waiting' ? <div style={{ fontSize: 12, color: IB.ink2, marginTop: 4 }}>{n.text}</div> : null}
             {n.distance && n.state !== 'waiting' ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5 }}>
@@ -172,7 +184,9 @@ function Ledger({ names, children }) {
 }
 
 function Words({ g }) {
-  const c = g.call;
+  // Today's call; or, for an idea that finished today, its last call (made at its endpoint, never today's — review C4).
+  const c = g.call ?? g.lastCall ?? null;
+  const label = g.call ? IDEA_BOOK_COPY.todaysCall : IDEA_BOOK_COPY.lastCall;
   return (
     <>
       {g.thesis ? (
@@ -184,9 +198,10 @@ function Words({ g }) {
       {g.state !== 'entering' && c ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, minHeight: 22 }}>
-            <Eyebrow>{IDEA_BOOK_COPY.todaysCall}</Eyebrow>{c.kind ? <CallWord kind={c.kind} /> : null}
+            <Eyebrow>{label}</Eyebrow>{c.kind ? <CallWord kind={c.kind} /> : null}
           </div>
           {c.failed ? <div style={{ ...BOOK_TEXT, fontSize: 13 }}>{c.text}</div> : <Quote size={13.5} cap={IDEA_BOOK_COPY.afterClose(c.deskName, c.date)}>{c.text}</Quote>}
+          {c.notCarriedOut ? <div data-ib="not-carried-out" style={{ ...BOOK_TEXT, fontSize: 12.5, paddingLeft: 13 }}>{c.notCarriedOut}</div> : null}
           {g.selling ? <BookSays>{`${g.selling.rest[0].toUpperCase()}${g.selling.rest.slice(1)}.`}</BookSays> : null}
         </div>
       ) : null}
@@ -282,7 +297,7 @@ export function PosTable({ view, layout, open, setOpen, inline = true }) {
             <div key={g.slot} data-ib-group={g.slot} data-ib-state={g.state} style={{ borderRadius: 12, boxShadow: io ? `0 0 0 1px ${IB.hair2}` : 'none' }}>
               <button
                 type="button" className="ib-tap" aria-expanded={io} onClick={() => tog(g.slot)}
-                aria-label={`${g.slotName} idea, ${g.deskName}, ${g.line}${gap?.text ? `, gap ${gap.text} versus ${gap.vs}` : ''}${g.selling ? `, ${IDEA_BOOK_COPY.sellsLabel(g.selling.word, g.selling.rest)}` : ''}`}
+                aria-label={`${g.slotName} idea, ${g.deskName}, ${g.line}${gap?.text ? `, gap ${gap.text} versus ${gap.vs}` : gap?.waiting ? `, ${IDEA_BOOK_COPY.waitingData}` : gap?.notMeasurable ? `, ${gap.notMeasurable}` : ''}${g.selling ? `, ${IDEA_BOOK_COPY.sellsLabel(g.selling.word, g.selling.rest)}` : ''}`}
                 style={{ ...RESET, display: 'grid', gridTemplateColumns: '24px minmax(0,1fr) auto 14px', columnGap: 8, alignItems: 'center', width: '100%', minHeight: 44, padding: '4px 6px', borderRadius: 10, background: IB.surface }}
               >
                 <DeskMark desk={g.desk} deskName={g.deskName} size={24} />
@@ -304,7 +319,7 @@ export function PosTable({ view, layout, open, setOpen, inline = true }) {
                 const o = open === k;
                 const near = n.distance?.near === true && n.state === 'held';
                 const sold = n.state === 'sold_line' || n.state === 'sold';
-                const spans = sold || n.state === 'entering' || n.state === 'bought_today' || n.state === 'line_hit';
+                const spans = sold || n.state === 'entering' || n.state === 'bought_today' || n.state === 'line_hit' || n.state === 'delisted';
                 return (
                   <React.Fragment key={n.symbol}>
                     <button
@@ -377,6 +392,7 @@ function DeskSection({ d, first }) {
               : c.call ? (c.call.failed ? <div style={{ ...BOOK_TEXT, fontSize: 13 }}>{c.call.text}</div> : (
                 <>
                   <Quote size={13} cap={IDEA_BOOK_COPY.afterClose(c.call.deskName, c.call.date)}>{c.call.text}</Quote>
+                  {c.call.notCarriedOut ? <div style={{ ...BOOK_TEXT, fontSize: 12.5, paddingLeft: 13 }}>{c.call.notCarriedOut}</div> : null}
                   {c.selling ? <BookSays>{`${c.selling.rest[0].toUpperCase()}${c.selling.rest.slice(1)}.`}</BookSays> : null}
                 </>
               )) : null}
@@ -446,8 +462,8 @@ export function ResultSheet({ f, layout, onClose }) {
   const phone = layout !== 'desk';
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 2, display: 'flex', alignItems: phone ? 'flex-end' : 'center', justifyContent: 'center', padding: phone ? 0 : 24 }}>
-      <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(var(--ft-shadow-rgb), 0.72)' }} />
-      <div ref={ref} role="dialog" aria-modal="true" aria-label="Finished idea result" onKeyDown={onKeyDown} style={{ position: 'relative', width: '100%', maxWidth: phone ? 'none' : 560, maxHeight: '92%', overflowY: 'auto', boxSizing: 'border-box', background: IB.bg, border: `1px solid ${IB.hair2}`, borderRadius: phone ? '22px 22px 0 0' : 20, padding: `12px ${px}px 24px`, color: IB.ink }}>
+      <div onClick={onClose} onKeyDown={onKeyDown} style={{ position: 'absolute', inset: 0, background: 'rgba(var(--ft-shadow-rgb), 0.72)' }} />
+      <div ref={ref} role="dialog" aria-modal="true" aria-label="Finished idea result" tabIndex={-1} onKeyDown={onKeyDown} style={{ outline: 'none', position: 'relative', width: '100%', maxWidth: phone ? 'none' : 560, maxHeight: '92%', overflowY: 'auto', boxSizing: 'border-box', background: IB.bg, border: `1px solid ${IB.hair2}`, borderRadius: phone ? '22px 22px 0 0' : 20, padding: `12px ${px}px 24px`, color: IB.ink }}>
         {phone ? <div aria-hidden="true" style={{ width: 40, height: 4, borderRadius: 4, background: IB.hair2, margin: '0 auto 14px' }} /> : null}
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -491,7 +507,7 @@ export function HistoryTab({ view, onOpen }) {
     <div style={{ padding: '14px 0 0' }}>
       <Eyebrow style={{ marginBottom: 10, paddingLeft: 4 }}>{IDEA_BOOK_COPY.finished}</Eyebrow>
       {items.length ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>{items.map((f, i) => <FinishedRow key={i} f={f} onOpen={() => onOpen(i)} />)}</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>{items.map((f) => <FinishedRow key={finishedKeyOf(f)} f={f} onOpen={() => onOpen(finishedKeyOf(f))} />)}</div>
       ) : <div style={{ ...BOOK_TEXT, fontSize: 13, paddingLeft: 4 }}>{view.history.empty}</div>}
     </div>
   );
@@ -558,8 +574,9 @@ export default function IdeaBookScreen({ read, onClose, width = null, initial = 
   );
 
   let body;
+  let sheetItem = null;
   if (!read || read.status === 'idle' || read.status === 'loading') body = <Quiet>{IDEA_BOOK_COPY.loading}</Quiet>;
-  else if (read.status === 'error' || read.status === 'off') body = <Quiet sub={IDEA_BOOK_COPY.error}>{IDEA_BOOK_COPY.title}</Quiet>;
+  else if (read.status === 'error') body = <Quiet sub={IDEA_BOOK_COPY.errorSub}>{IDEA_BOOK_COPY.error}</Quiet>;
   else if (!view) body = <Quiet sub={IDEA_BOOK_COPY.emptySub}>{IDEA_BOOK_COPY.empty}</Quiet>;
   else {
     const [sk, sym] = (open || '').split('/');
@@ -589,16 +606,21 @@ export default function IdeaBookScreen({ read, onClose, width = null, initial = 
         <BookLine line={view.line} layout={layout} />
         <div style={{ marginTop: desk ? 14 : 6 }}><Tabs tab={tab} setTab={setTab} layout={layout} /></div>
         {panel(tab)}
-        {sheet !== null && view.history.items[sheet] ? <ResultSheet f={view.history.items[sheet]} layout={layout} onClose={() => setSheet(null)} /> : null}
       </>
     );
+    // (`initial.sheet` may name a position, for the picture sheet; a tap names the idea.)
+    sheetItem = sheet === null ? null : (typeof sheet === 'number' ? view.history.items[sheet] : view.history.items.find((f) => finishedKeyOf(f) === sheet)) ?? null;
   }
 
   return (
-    <div className="ib-root" data-ib-layout={layout} style={{ color: IB.ink, background: IB.bg, boxSizing: 'border-box', padding: desk ? '22px 24px 28px' : '8px 12px 24px', maxWidth: desk ? 1236 : 'none', margin: '0 auto', minHeight: '100%' }}>
+    <div className="ib-root" data-ib-layout={layout} style={{ color: IB.ink, background: IB.bg, boxSizing: 'border-box', padding: desk ? '22px 24px 28px' : '8px 12px 24px', maxWidth: desk ? 1236 : PHONE_MAX_PX, margin: '0 auto', minHeight: '100%' }}>
       <style>{IB_CSS}</style>
-      {header}
-      {body}
+      {/* While the result sheet is open, everything behind it is inert: Tab and Escape stay in the sheet (review C3). */}
+      <div data-ib="page" inert={sheetItem ? true : undefined}>
+        {header}
+        {body}
+      </div>
+      {sheetItem ? <ResultSheet f={sheetItem} layout={layout} onClose={() => setSheet(null)} /> : null}
     </div>
   );
 }

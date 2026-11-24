@@ -91,6 +91,9 @@ describe('allotCents: each name\'s value at a row\'s marks sums EXACTLY to the r
     // Three names of $1.005 each: raw $3.015, stored $3.02 (rounded once) — floors 100 each, two cents left.
     const row = { markedHoldingsValue: 3.02, quantities: { A: 1, B: 1, C: 1 }, marks: { A: { mark: 1.005 }, B: { mark: 1.005 }, C: { mark: 1.005 } } };
     expect(Object.fromEntries(allotCents(row))).toEqual({ A: 101, B: 101, C: 100 });
+    // Unequal remainders (A .9, B .2, C .6 of a cent): one cent left goes to A, the largest, never to the smallest.
+    const unequal = { markedHoldingsValue: 3.02, quantities: { A: 1, B: 1, C: 1 }, marks: { A: { mark: 1.009 }, B: { mark: 1.002 }, C: { mark: 1.006 } } };
+    expect(Object.fromEntries(allotCents(unequal))).toEqual({ A: 101, B: 100, C: 101 });
   });
 });
 
@@ -110,13 +113,32 @@ describe('the book line (B3 §1): stored figures, and the two derived ones again
     const v = buildBookView(input);
     expect(v.line.first).toEqual({ kind: 'since', label: 'Since 20 Nov', ...(() => { const s = deriveSinceOpen(input.dailyRows.last, 100_000); return { value: s.pct, dir: s.dir }; })() });
   });
-  it('B3-6: SPY since open is SPY\'s close at the book\'s first entry session to the last close\'s, from the book\'s own rows', () => {
+  it('B3-6: SPY since open is SPY\'s quote at the book\'s first fill (its inception row) to its vendor-timed close at the last close', () => {
     const input = sceneInput('sample');
-    const start = input.firstEntry.row.spyMarks.SPY.mark;
-    const now = input.rows.get('i_banks').last.spyMarks.SPY.mark;
+    const start = input.firstEntry.inception.legs.spy[0].mark;
+    const now = input.rows.get('i_energy').last.spyMarks.SPY.mark;
     expect(view('sample').line.spy).toEqual({ label: 'SPY', value: pctText(((now - start) * 100) / start), since: '20 Nov' });
-    // no first entry, or no row at the last close: a dash, never a guess
+    // no first entry: a dash, never a guess
     expect(buildBookView({ ...input, firstEntry: null }).line.spy).toEqual({ label: 'SPY', value: '—' });
+  });
+  it('B3-6: SPY takes the first CLEAN close mark there is, and none that is carried; a start quote with no vendor time is no start', () => {
+    const one = sceneInput('sample');
+    one.rows.get('i_energy').last.spyMarks.SPY = { mark: 1, quality: 'carried_forward' };
+    const now = one.rows.get('i_banks').last.spyMarks.SPY.mark;
+    expect(buildBookView(one).line.spy.value).toBe(pctText(((now - 590) * 100) / 590));
+    for (const id of ['i_energy', 'i_banks']) one.rows.get(id).last.spyMarks.SPY = { mark: 1, quality: 'carried_forward' };
+    expect(buildBookView(one).line.spy).toEqual({ label: 'SPY', value: '—' });
+    const two = sceneInput('sample');
+    two.firstEntry.inception.legs.spy[0].markVendorTimeIso = null;
+    expect(buildBookView(two).line.spy).toEqual({ label: 'SPY', value: '—' });
+  });
+  it('a percent that rounds to zero has no sign and no colour (review B note)', () => {
+    const input = sceneInput('sample');
+    input.dailyRows.last.markedEquity = 99_999.99; // −$0.01 against $100,000
+    expect(buildBookView(input).line.first).toMatchObject({ value: '0.00%', dir: 0 });
+  });
+  it('since open waits too when the last close is below full quality (review B4)', () => {
+    expect(view('waiting').line.first).toMatchObject({ kind: 'since', value: '—', dir: 0 });
   });
   it('a row below full quality on either side shows no change: Waiting on data', () => {
     expect(deriveToday({ markedEquity: 1, fullQuality: false }, { markedEquity: 1, fullQuality: true })).toEqual({ waiting: 'Waiting on data' });
@@ -341,14 +363,22 @@ describe('History: finished ideas, newest first, their endings, their gaps and t
       ['NVDA · AVGO', 'Ran its 10 sessions', '16 Dec'],
       ['KO · PEP · PG', 'Settled early by the manager', '8 Dec'],
       ['XOM · CVX', 'Ran its 10 sessions', '1 Dec'],
-      ['SLB', 'Ended early: every name was sold', '19 Nov'],
+      ['SLB', 'Ended early: nothing was left to hold', '19 Nov'],
       ['OXY', 'Ended after its review date', '13 Nov'],
       ['DVN', 'Finished', '6 Nov'],
     ]);
   });
-  it('a not-measurable result reads so, with its reasons, and no gap', () => {
+  it('a not-measurable result reads so, with its reasons, and no gap — not in the list, not under its Result column (review B1)', () => {
     expect(items()[0]).toMatchObject({ gap: null, notMeasurable: { reasons: ['One of its names had no usable closing price on its last day.'] } });
     expect(items()[4].notMeasurable.reasons).toEqual(['It was valued after its review date.']);
+    for (const i of [0, 4]) expect(items()[i].columns[1]).toEqual({ key: 'economicResult', label: 'Result', value: 'Not measurable', sub: null, dir: 0 });
+  });
+  it('a validly sealed packet that is another idea\'s is refused (review A2)', () => {
+    const input = sceneInput('history');
+    const other = input.finished.find((f) => f.idea.ideaId === 'f_kopep');
+    input.finished = input.finished.map((f) => (f.idea.ideaId === 'f_energy' ? { ...f, packet: other.packet } : f));
+    const v = buildBookView(input).history.items.find((i) => i.namesText === 'XOM · CVX');
+    expect(v).toMatchObject({ gap: null, columns: null, notMeasurable: { reasons: [EVIDENCE_UNCHECKED] } });
   });
   it('the five columns: the stored values in plain words, the gap beside the result', () => {
     const sh = items()[1];
@@ -366,6 +396,82 @@ describe('History: finished ideas, newest first, their endings, their gaps and t
   });
   it('the manager\'s exit reason is the last call', () => {
     expect(items()[1].lastCall).toMatchObject({ kind: 'Exit', deskName: 'Shadow desk', date: '7 Dec' });
+  });
+});
+
+describe('the review\'s fixes, each pinned', () => {
+  it('B2: a close before that carried its mark (or was not observed) gives no day P/L — it would span two sessions', () => {
+    const carried = sceneInput('sample');
+    carried.rows.get('i_banks').prev.marks.BAC.quality = 'carried_forward';
+    const bac = name(group(buildBookView(carried), 'medium'), 'BAC');
+    expect(bac.plDay).toBeNull();
+    expect(bac.plOpen).toBeDefined();
+    expect(name(group(buildBookView(carried), 'medium'), 'JPM').plDay).not.toBeNull();
+    const unobserved = sceneInput('sample');
+    unobserved.rows.get('i_banks').prev.observed = false;
+    expect(group(buildBookView(unobserved), 'medium').names.map((n) => n.plDay)).toEqual([null, null, null]);
+  });
+  it('B3: nothing is credited to a desk that did not check the book — agent off, no close row, or no work', () => {
+    const off = sceneInput('newToday');
+    off.closeRow = null;
+    off.agentOn = false;
+    expect(buildBookView(off).strip).toEqual([]);
+    const sold = sceneInput('lineHit');
+    sold.closeRow = null;
+    expect(buildBookView(sold).strip).toEqual([]);
+    const paused = sceneInput('paused');
+    paused.ideas.find((i) => i.ideaId === 'i_energy').entry.sessionDate = '2026-11-27';
+    expect(buildBookView(paused).strip).toEqual([]);
+  });
+  it('B3: a founder\'s idea bought today is never "opened" by a desk; a desk\'s own draft is', () => {
+    const founder = sceneInput('sample');
+    founder.ideas.find((i) => i.ideaId === 'i_banks').entry.sessionDate = '2026-11-27';
+    const v = buildBookView(founder);
+    expect(v.strip.find((s) => s.desk === 'shadow').text).not.toMatch(/opened/);
+    expect(view('newToday').strip[0].text).toBe('opened XOM, CVX');
+  });
+  it('B5: an Exit code did not carry out is said so, and the idea still counts as held', () => {
+    for (const outcome of ['refused:close_row_unusable', 'ignored_already_selling', 'ignored_not_entered']) {
+      const input = sceneInput('sample');
+      input.closeRow.agent.desks.archetype.actions = [{ ideaId: 'i_energy', action: 'exit', reason: 'Energy stopped leading.', outcome }];
+      const v = buildBookView(input);
+      const g = group(v, 'short');
+      expect(g.state, outcome).toBe('holding');
+      expect(g.call, outcome).toMatchObject({ kind: 'Exit', notCarriedOut: expect.any(String) });
+      expect(v.strip[0].text, outcome).toBe('held 2');
+    }
+    expect(group(view('exitCalled'), 'short').call.notCarriedOut).toBeUndefined();
+  });
+  it('B6: a holding a delisting left waiting says so, not "no closing price"', () => {
+    const input = sceneInput('sample');
+    const energy = input.ideas.find((i) => i.ideaId === 'i_energy');
+    energy.ledger.holdings.XOM.exitPending = { reason: 'delisting', session: '2026-11-27' };
+    input.rows.get('i_energy').last.marks.XOM.quality = 'carried_forward';
+    expect(name(group(buildBookView(input), 'short'), 'XOM')).toMatchObject({ state: 'delisted', text: 'Delisted · code sells it when a price comes', mark: null });
+  });
+  it('B8: names bought at a window after the last close carry the NEW tag', () => {
+    expect(group(view('boughtToday'), 'short').names.map((n) => [n.symbol, n.isNew])).toEqual([['XOM', true], ['CVX', true]]);
+  });
+  it('B9: on the session a ticker change renamed a name, its day P/L is against the close before under its old symbol', () => {
+    const input = sceneInput('sample');
+    const banks = input.ideas.find((i) => i.ideaId === 'i_banks');
+    const rows = input.rows.get('i_banks');
+    banks.ledger.holdings.GSX = banks.ledger.holdings.GS;
+    delete banks.ledger.holdings.GS;
+    banks.lines = banks.lines.map((l) => (l.symbol === 'GS' ? { ...l, symbol: 'GSX', renamedFrom: [{ symbol: 'GS', actionId: 'tc', appliedOn: '2026-11-27' }] } : l));
+    for (const f of ['quantities', 'marks']) { rows.last[f].GSX = rows.last[f].GS; delete rows.last[f].GS; }
+    const gsx = name(group(buildBookView(input), 'medium'), 'GSX');
+    expect(gsx.plDay).toEqual(name(group(view('sample'), 'medium'), 'GS').plDay);
+  });
+  it('C5: a sold name keeps its entry; C6: a name below its line says how far below', () => {
+    expect(name(group(view('lineHit'), 'short'), 'XOM')).toMatchObject({ entry: '118.30', line: '112.39' });
+    expect(name(group(view('lineRecognised'), 'short'), 'XOM').distance.text).toBe('0.3% below its line');
+  });
+  it('C4: a settled-today group carries the manager\'s exit as a past call, never today\'s', () => {
+    const g = group(view('settledToday'), 'long');
+    expect(g.call).toBeNull();
+    expect(g.lastCall).toMatchObject({ kind: 'Exit', date: '25 Nov' });
+    expect(g.names[0]).toMatchObject({ entry: expect.any(String), line: expect.any(String) });
   });
 });
 

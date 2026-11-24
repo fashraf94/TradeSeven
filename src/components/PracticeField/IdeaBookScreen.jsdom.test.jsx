@@ -10,7 +10,7 @@ import { createRoot } from 'react-dom/client';
 import { act } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 import IdeaBookScreen from './IdeaBookScreen';
-import { IDEA_BOOK_COPY } from './ideaBookCopy';
+import { IDEA_BOOK_COPY, layoutOfWidth, DESK_FROM_PX, PHONE_MAX_PX } from './ideaBookCopy';
 import { buildBookView } from '../../../api/_utils/practiceField/bookView.js';
 import { sceneInput } from '../../../api/_utils/practiceField/__testsupport__/bookViewScenes.js';
 import { FAILED_CHECK, BUYS_NEXT_WINDOW, PAPER_MONEY, PAUSED_LINE } from '../../../api/_utils/practiceField/bookViewCopy.js';
@@ -20,10 +20,15 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 let mounted = [];
 afterEach(() => { for (const m of mounted) act(() => m.root.unmount()); mounted = []; document.body.innerHTML = ''; });
 
+/** The server-built view of a scene (cached when unpatched: building History seals packets, which takes a moment). */
+const VIEWS = new Map();
 const viewOf = (scene, patch = null) => {
+  if (!patch && VIEWS.has(scene)) return JSON.parse(VIEWS.get(scene));
   const input = sceneInput(scene);
   if (patch) patch(input);
-  return JSON.parse(JSON.stringify(buildBookView(input)));
+  const json = JSON.stringify(buildBookView(input));
+  if (!patch) VIEWS.set(scene, json);
+  return JSON.parse(json);
 };
 function mount(el) {
   const host = document.createElement('div');
@@ -193,13 +198,71 @@ describe('the tabs, the strip and History', () => {
   });
 });
 
-describe('what the screen never does', () => {
-  it('no control that trades: every button opens, closes or switches', () => {
-    for (const scene of ['full', 'exitCalled', 'history', 'desksAdmit']) {
-      const m = screen(scene);
-      for (const b of m.host.querySelectorAll('button')) expect(b.textContent + (b.getAttribute('aria-label') || '')).not.toMatch(/\b(buy|sell|trade|approve|trim|add)\b/i);
-    }
+describe('the review\'s fixes on the screen, each pinned', () => {
+  it('C1: the desktop table starts at 1120 px; below it the phone table, centred and no wider than 640', () => {
+    expect(layoutOfWidth(1119)).toBe('p390');
+    expect(layoutOfWidth(DESK_FROM_PX)).toBe('desk');
+    const m = screen('full', { width: 1000 });
+    const root = m.host.querySelector('.ib-root');
+    expect(root.getAttribute('data-ib-layout')).toBe('p390');
+    expect(root.style.maxWidth).toBe(`${PHONE_MAX_PX}px`);
   });
+  it('C3: while the result sheet is open the page behind it is inert', () => {
+    const m = screen('history', { initial: { tab: 'history' } });
+    expect(m.host.querySelector('[data-ib="page"]').hasAttribute('inert')).toBe(false);
+    click([...m.host.querySelectorAll('button[aria-haspopup="dialog"]')][1]);
+    expect(m.host.querySelector('[data-ib="page"]').hasAttribute('inert')).toBe(true);
+    expect(m.host.querySelector('[role="dialog"]').getAttribute('tabindex')).toBe('-1');
+  });
+  it('C16: an open sheet stays on its idea when the list above it changes', () => {
+    const v = viewOf('history');
+    const read = { status: 'ready', book: v };
+    const m = mount(<IdeaBookScreen read={read} onClose={() => {}} width={390} initial={{ tab: 'history' }} />);
+    click([...m.host.querySelectorAll('button[aria-haspopup="dialog"]')].find((b) => b.textContent.includes('KO · PEP · PG')));
+    const moved = { ...v, history: { ...v.history, items: [{ ...v.history.items[2], namesText: 'NEW · IDEA', endedOn: '18 Dec' }, ...v.history.items] } };
+    act(() => m.root.render(<IdeaBookScreen read={{ status: 'ready', book: moved }} onClose={() => {}} width={390} initial={{ tab: 'history' }} />));
+    expect(m.host.querySelector('[role="dialog"] h2').textContent).toBe('KO · PEP · PG');
+  });
+  it('C13: the arrow keys move between the tabs, and only the selected tab is in the Tab order', () => {
+    const m = screen('sample');
+    const list = m.host.querySelector('[role="tablist"]');
+    expect([...list.querySelectorAll('[role="tab"]')].map((t) => t.getAttribute('tabindex'))).toEqual(['0', '-1', '-1']);
+    act(() => { list.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })); });
+    expect(m.host.querySelector('#ib-tab-desks').getAttribute('aria-selected')).toBe('true');
+    act(() => { list.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })); });
+    expect(m.host.querySelector('#ib-tab-pos').getAttribute('aria-selected')).toBe('true');
+  });
+  it('C4: a settled-today group says "Last call", never "Today\'s call"', () => {
+    const m = screen('settledToday', { initial: { open: 'long' } });
+    const panel = m.host.querySelector('[role="region"][aria-label="Long idea detail"]');
+    expect(panel.textContent).toContain('Last call');
+    expect(panel.textContent).not.toContain('Today’s call');
+  });
+  it('B5: an Exit code did not carry out is said under the call', () => {
+    const m = screen('sample', { initial: { open: 'short' }, patch: (input) => { input.closeRow.agent.desks.archetype.actions = [{ ideaId: 'i_energy', action: 'exit', reason: 'Energy stopped leading.', outcome: 'refused:x' }]; } });
+    expect(m.host.querySelector('[data-ib="not-carried-out"]').textContent).toBe('Code did not carry it out; the idea is unchanged.');
+  });
+  it('C12: near a line lifts the row with weight, never red; a sold name is dimmed; a waiting idea says so in its header', () => {
+    const near = nameRow(screen('nearLine'), 'XOM');
+    expect(near.style.background).toContain('--ft-bg-agent');
+    for (const el of near.querySelectorAll('span')) if (el.textContent === '0.7% away') expect(el.style.color).toBe('var(--ft-ink)');
+    const sold = nameRow(screen('lineHit'), 'XOM').querySelector('span span span');
+    expect(sold.style.color).toBe('var(--ft-ink-3)');
+    expect(header(screen('waiting'), 'medium').textContent).toContain('Waiting on data');
+  });
+});
+
+describe('what the screen never does', () => {
+  it('no control that trades: every button on every tab and in the result sheet opens, closes or switches', () => {
+    const check = (m, where) => {
+      for (const b of m.host.querySelectorAll('button')) expect(b.textContent + (b.getAttribute('aria-label') || ''), where).not.toMatch(/\b(buy|sell|trade|approve|trim|add)\b/i);
+    };
+    for (const scene of ['full', 'exitCalled', 'history', 'desksAdmit']) {
+      for (const tab of ['pos', 'desks', 'history']) check(screen(scene, { initial: { tab } }), `${scene}/${tab}`);
+    }
+    check(screen('history', { initial: { tab: 'history', sheet: 1 } }), 'sheet');
+    check(screen('full', { width: 1236, initial: { open: 'medium/JPM' } }), 'desktop panel');
+  }, 15_000);
   it('agent words are text, never markup', () => {
     const m = screen('sample', { initial: { tab: 'desks' }, patch: (input) => { input.closeRow.agent.desks.shadow.note = '<img src=x onerror="window.__ib_pwned=1"><b>bold</b>'; } });
     expect(m.host.querySelector('img')).toBeNull();
@@ -222,9 +285,9 @@ describe('loading, empty and error: quiet, in the page\'s own voice', () => {
     const m = mount(<IdeaBookScreen read={{ status: 'ready', book: null }} onClose={() => {}} width={390} />);
     expect(text(m)).toContain('No idea book yet.');
   });
-  it('a failed read', () => {
+  it('a failed read: its own words, not the title again (review C14)', () => {
     const m = mount(<IdeaBookScreen read={{ status: 'error', book: null }} onClose={() => {}} width={390} />);
-    expect(text(m)).toContain(IDEA_BOOK_COPY.error);
+    expect(m.host.querySelector('[role="status"]').textContent).toBe(`${IDEA_BOOK_COPY.error}${IDEA_BOOK_COPY.errorSub}`);
   });
   it('Back closes the page', () => {
     let closed = 0;

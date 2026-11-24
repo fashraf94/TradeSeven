@@ -116,7 +116,8 @@ function makeIdea({
       sources: origin === 'founder_fixture' ? [] : [{ kind: origin, ref: `${sessionBefore(start)}_close` }],
       lines: names.map((n) => ({ symbol: n.sym, distancePct: r2((1 - n.level / n.entry)) })),
       schedule: { startSession: start, dueSession: due },
-      ...(desk ? { desk } : {}),
+      // A founder's idea carries no desk (contract.js: it belongs to the desk of its slot); a desk's draft carries its own.
+      ...(desk && origin !== 'founder_fixture' ? { desk } : {}),
     },
     ...(entered ? {
       entry: { sessionDate: start, slot: 'open30', legCount: names.length },
@@ -165,6 +166,8 @@ function makeFinished({ id, slot, desk, names, endpointKind, completed, endpoint
     ideaId: id, bookId: SCENE_BOOK_ID, status: 'resulted', admittedAt: `${sessionsBefore(endpointSession, slotSessions(slot) + 1)}T21:10:00.000Z`,
     contract: { slot, names, thesis: { text: thesis, author: 'agent' }, comparison, origin: { kind: 'market_scan', initiatedBy: 'agent' }, schedule: {}, ...(desk ? { desk } : {}) },
     entry: { sessionDate: sessionsBefore(endpointSession, slotSessions(slot)) },
+    // Its lines, as the entry froze them (a resulted idea keeps them): a fill price and a level 10% below it, per name.
+    lines: names.map((sym, i) => ({ symbol: sym, side: 'below', level: 90 + i * 10, distancePct: 0.1, fillPrice: 100 + i * 11.11, adjustments: [] })),
     ledger: { cash: 0, holdings: {}, saleReceipts: names.map((s) => ({ kind: 'settlement', symbol: s, sessionDate: completed })) },
     result, endpoint: { session: endpointSession, kind: endpointKind }, liquidation: { completedSession: completed },
   };
@@ -199,9 +202,12 @@ function assemble({ session, ideas, finished = [], closeAgent = null, drafting =
   const rows = new Map(ideas.filter((x) => x.idea.entry).map((x) => [x.idea.ideaId, x.rows]));
   const firstIdea = firstEntrySession ? null : [...open, ...finished.map((f) => f.idea)].filter((i) => i.entry?.sessionDate).sort((a, b) => (a.entry.sessionDate < b.entry.sessionDate ? -1 : 1))[0];
   const firstSession = firstEntrySession ?? firstIdea?.entry?.sessionDate ?? null;
-  // The first entered idea's row at its entry session: the row itself when the scene holds it, else one with SPY's close there.
-  const held = firstIdea ? Object.values(rows.get(firstIdea.ideaId) || {}).find((r) => r && r.date === firstSession) : null;
-  const firstEntry = firstSession ? { session: firstSession, ideaId: firstIdea?.ideaId ?? null, row: held ?? { date: firstSession, spyMarks: { SPY: { mark: 590.0, quality: 'vendor_time' } } } } : null;
+  // The first entered idea's inception row (entry.js): its fills' receipts, SPY's leg among them, quoted at the first window.
+  const inception = firstSession ? {
+    rowKind: 'inception', basis: 'fill', sessionDate: firstSession,
+    legs: { idea: [], comparison: [], spy: [{ symbol: 'SPY', mark: 590.0, executedPrice: 590.03, markVendorTimeIso: `${firstSession}T14:59:00.000Z` }] },
+  } : null;
+  const firstEntry = firstSession ? { session: firstSession, ideaId: firstIdea?.ideaId ?? null, inception } : null;
   const closeRow = closeAgent ? { session: { expected: ['open30', 'midday', 'preClose', 'close'], missing: [] }, agent: { version: 1, desks: closeAgent } } : null;
   return { book, ideas: open, rows, dailyRows, closeRow, finished, firstEntry, agentOn: true, archetypeName: 'Trend Follower' };
 }
@@ -390,10 +396,9 @@ export function sceneDocs(name, { uid = SCENE_UID } = {}) {
     docs[`${base}/ideas/${f.idea.ideaId}`] = f.idea;
     docs[`${base}/ideas/${f.idea.ideaId}/evidence/result`] = f.packet;
   }
-  // The first entered idea's row at its entry session (SPY's close there).
+  // The first entered idea's inception row (SPY's quote at the book's first fill).
   if (s.firstEntry?.ideaId) {
-    const path = `${base}/ideas/${s.firstEntry.ideaId}/rows/${s.firstEntry.session}`;
-    if (!docs[path]) docs[path] = s.firstEntry.row;
+    docs[`${base}/ideas/${s.firstEntry.ideaId}/rows/inception`] = s.firstEntry.inception;
   }
   return docs;
 }

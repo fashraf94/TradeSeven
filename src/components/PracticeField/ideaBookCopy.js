@@ -33,12 +33,19 @@ export const IDEA_BOOK_COPY = /* @__PURE__ */ Object.freeze({
   loading: 'Reading the book…',
   empty: 'No idea book yet.',
   emptySub: 'When your agents open one, it shows here.',
-  error: 'The book could not be read just now. It reads again when you come back to this page.',
+  error: 'The book could not be read just now.',
+  errorSub: 'It reads again when you come back to this page.',
   waitingData: 'Waiting on data',
   sellsLabel: (word, rest) => `${word} · ${rest}`,
 });
 
-export const layoutOfWidth = (w) => (w >= 900 ? 'desk' : w < 360 ? 'p320' : 'p390');
+/**
+ * The layout by the page's own width: the mock-up's three. The desktop table needs about 580 px beside its 400 px side panel,
+ * so it starts at 1120 (review C1: from 900 its cells ran into the panel); below that the phone table, centred.
+ */
+export const DESK_FROM_PX = 1120;
+export const PHONE_MAX_PX = 640;
+export const layoutOfWidth = (w) => (w >= DESK_FROM_PX ? 'desk' : w < 360 ? 'p320' : 'p390');
 
 /** The entry card's second line: today's change, or why there is none. Composed from the view's strings; no arithmetic. */
 export function entryTodayOf(line) {
@@ -49,3 +56,6 @@ export function entryTodayOf(line) {
   if (t.waiting) return { text: t.waiting, dir: 0 };
   return { text: `${t.text} (${t.pct}) today`, dir: t.dir };
 }
+
+/** A finished idea's key on the page: what it is, not where it sits (a refetch that adds one keeps the open sheet's). */
+export const finishedKeyOf = (f) => `${f.slot}|${f.namesText}|${f.endedOn}`;

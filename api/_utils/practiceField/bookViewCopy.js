@@ -63,6 +63,8 @@ export const NAME_SENTENCES = Object.freeze({
   soldAfterDelisting: (date) => `Sold after its delisting · ${date}`,
   closedByDelisting: (date) => `Closed by its delisting · ${date}`,
   delistedWaiting: 'Delisted · code sells it when a price comes',
+  // A name below its line at the close (its sale queued): how far below, never "−0.3% away".
+  belowLine: (pct) => `${pct} below its line`,
   soldOther: (date) => `Sold · ${date}`,
   // Not drawn by the mock-up (its note: state 3 is drawn after the close): bought at a window since the last close.
   boughtToday: 'Bought today · first mark at tonight’s close',
@@ -91,6 +93,16 @@ export const OPEN_SLOT = Object.freeze({
   row: (slotName, deskThe, looks) => (looks ? `${slotName} · open · ${deskThe} looks tonight.` : `${slotName} · open`),
   desks: (deskThe, looks) => (looks ? `Open. ${deskThe[0].toUpperCase()}${deskThe.slice(1)} looks for an idea at tonight’s close.` : 'Open.'),
 });
+
+/**
+ * A desk's Exit that code did not carry out (agentRun.js action outcomes other than `exit_settled`): said beside the call,
+ * so an Exit on an idea that is still holding is never read as done.
+ */
+export const EXIT_NOT_CARRIED = (outcome) => {
+  if (typeof outcome === 'string' && outcome.startsWith('ignored_already')) return 'It was already selling, so nothing more was done.';
+  if (outcome === 'ignored_not_entered') return 'It was not bought yet, so there was nothing to sell.';
+  return 'Code did not carry it out; the idea is unchanged.';
+};
 
 /** The strip's parts, in the order they are said (B3 §1 "The strip"). */
 export const STRIP = Object.freeze({
@@ -193,12 +205,14 @@ export const QUALITY_REASONS = Object.freeze({
 export const QUALITY_REASON_UNKNOWN = (sym, date) => `${sym}’s close for ${date} is not complete yet.`;
 /** A row below full quality whose marks are all clean: an action waits, or a standing reason holds it. */
 export const ROW_REASON_HELD = 'A corporate action on this idea waits for a ruling.';
+/** A row a standing reason holds below full quality (close.js L-6): the sale stands; nothing waits. */
+export const ROW_REASON_STANDING = 'The shares this idea sold differ from the shares it was owed.';
 export const ROW_REASON_UNKNOWN = (date) => `This idea’s data for ${date} is not complete yet.`;
 
 /** How a finished idea ended (History), by its result's endpoint kind. */
 export const ENDED_WORDS = Object.freeze({
   due_session: (sessions) => `Ran its ${sessions} sessions`,
-  early_resolution: () => 'Ended early: every name was sold',
+  early_resolution: () => 'Ended early: nothing was left to hold',
   manager_exit: () => 'Settled early by the manager',
   late: () => 'Ended after its review date',
 });
