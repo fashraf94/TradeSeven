@@ -12,7 +12,8 @@
 //
 // WHAT CODE REFUSES, AS A WHOLE ANSWER (the desk falls back to the code-built note and changes nothing):
 //   • no tool call, more than one, another tool, a block of an unexpected kind, a refusal or a cut-off answer;
-//   • an unknown field at any level; a field of the wrong type;
+//   • an unknown field at any level (the reason names it only when it is a plain identifier with no result word); a
+//     field of the wrong type;
 //   • a note that is empty, longer than 600 code points (B11), holds a broken character or one of the result words
 //     ("validated", "proven", "supported");
 //   • an action naming an idea that is not one of THIS desk's open ideas (another desk's included), two actions for one
@@ -33,8 +34,8 @@
 //
 // WHAT THE CLOSE ROW STORES OF A DRAFT (B2-A06). A draft's `thesisRef` belongs to the `saved_thesis` source only: on a
 // `price_list` draft it is checked for its type (R-18) and then DROPPED, so it never reaches the stored answer or the
-// considered list. Every text of a draft that the row stores — the thesis, each name, each comparison symbol, each line's
-// symbol and a kept `thesisRef` — passes the result-word check; a draft carrying one refuses the whole answer, as the note
+// considered list. Every text of a draft that the row stores — the slot, the thesis, each name, the comparison's type and
+// each of its symbols, each line's symbol and a kept `thesisRef` — passes the result-word check; a draft carrying one refuses the whole answer, as the note
 // and the reasons do.
 //
 // What a DRAFT says about the market — a slot of the other desk, a name nobody prices, a line outside its band — is
@@ -150,7 +151,12 @@ export const AGENT_TOOL_CHOICE = Object.freeze({ type: 'auto', disable_parallel_
 
 const isPlain = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const codePoints = (s) => [...s].length;
-const unknownKeys = (obj, allowed) => Object.keys(obj).filter((k) => !allowed.includes(k));
+/**
+ * Refuter F1: an unknown field's NAME as a refusal reason carries it (the reason is stored on the close row): a plain
+ * identifier of at most 40 characters with no result word, else `?`.
+ */
+function keyForReason(k) { return /^[A-Za-z0-9_]{1,40}$/.test(k) && !carriesBannedWord(k) ? k : '?'; }
+const unknownKeys = (obj, allowed) => Object.keys(obj).filter((k) => !allowed.includes(k)).map(keyForReason);
 
 /** The block kinds an answer may carry beside its one tool call (adaptive thinking runs by default on Sonnet 5.5). */
 const ALLOWED_BLOCKS = new Set(['text', 'thinking', 'redacted_thinking', 'tool_use']);
@@ -200,15 +206,18 @@ function optionalOf(obj, key, check, at) {
 }
 
 /** B2-A06: does a stored text carry a result word? */
-const carriesBannedWord = (s) => typeof s === 'string' && BANNED_AGENT_WORDS.test(s);
+function carriesBannedWord(s) { return typeof s === 'string' && BANNED_AGENT_WORDS.test(s); }
 
 /** One draft's shape, normalised, or the reason it is refused. */
 function draftOf(d, i) {
+  // Refuter F1: the slot and the comparison's type are stored on the row too (the answer, the considered list, a
+  // refusal's detail) — they pass the result-word check like every other text of the draft.
   const at = `drafts[${i}]`;
   if (!isPlain(d)) return { error: `${at}:not_an_object` };
   const extra = unknownKeys(d, DRAFT_KEYS);
   if (extra.length > 0) return { error: `${at}:unknown_field:${extra[0]}` };
   if (typeof d.slot !== 'string' || d.slot.length === 0 || d.slot.length > 20) return { error: `${at}.slot:invalid` };
+  if (carriesBannedWord(d.slot)) return { error: `${at}.slot:banned_word` };
   const thesis = textOf(d.thesis, THESIS_MAX_CODE_POINTS, `${at}.thesis`);
   if (thesis.error) return thesis;
   if (!Array.isArray(d.names) || d.names.length === 0 || d.names.length > MAX_LIST_LEN || !d.names.every(symbolOk)) return { error: `${at}.names:invalid` };
@@ -216,6 +225,7 @@ function draftOf(d, i) {
   const cExtra = unknownKeys(d.comparison, COMPARISON_KEYS);
   if (cExtra.length > 0) return { error: `${at}.comparison:unknown_field:${cExtra[0]}` };
   if (typeof d.comparison.type !== 'string') return { error: `${at}.comparison.type:invalid` };
+  if (carriesBannedWord(d.comparison.type)) return { error: `${at}.comparison.type:banned_word` };
   const cSymbols = optionalOf(d.comparison, 'symbols', (v) => Array.isArray(v) && v.length <= MAX_LIST_LEN && v.every(symbolOk), `${at}.comparison`);
   if (cSymbols.error) return cSymbols;
   if (!Array.isArray(d.lines) || d.lines.length === 0 || d.lines.length > MAX_LIST_LEN) return { error: `${at}.lines:invalid` };

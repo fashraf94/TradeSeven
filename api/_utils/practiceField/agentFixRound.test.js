@@ -281,6 +281,8 @@ describe('B2-A03: the close row\'s window-level summary follows both desks\' rec
       paidFallback: { source: 'code_fallback', calledModel: true, attempts: [{}], actions: [], considered: [] },
       freeFallback: { source: 'code_fallback', calledModel: false, attempts: [], actions: [], considered: [] },
       inProgress: { status: 'in_progress', calledModel: true, attempts: [{ state: 'reserved' }] },
+      // Refuter F2: a later fire's fallback wrote calledModel false over a paid attempt — the attempts decide.
+      staleFlag: { source: 'code_fallback', calledModel: false, attempts: [{ state: 'settled', outcome: 'transport_error' }], actions: [], considered: [] },
     };
     const want = (code, a, b) => {
       const ps = [part[a], part[b]].filter(Boolean);
@@ -288,7 +290,7 @@ describe('B2-A03: the close row\'s window-level summary follows both desks\' rec
       if (executed) return 'model_action';
       if (ps.some((p) => p.source === 'code_fallback' && p.attempts.length > 0)) return 'model_fallback';
       if (code === acted) return 'code_action';
-      if (ps.some((p) => p.calledModel)) return 'model_no_change';
+      if (ps.some((p) => p.attempts?.length > 0)) return 'model_no_change';
       return 'no_model_action';
     };
     let n = 0;
@@ -299,14 +301,15 @@ describe('B2-A03: the close row\'s window-level summary follows both desks\' rec
           const s = agentWindowSummaryOf({ code }, desks);
           const label = `${code === acted ? 'code acted' : 'code still'} · shadow ${a} · archetype ${b}`;
           expect(s.outcome, label).toBe(want(code, a, b));
-          expect(s.modelCalled, label).toBe([part[a], part[b]].some((p) => p?.calledModel === true));
+          expect(s.modelCalled, label).toBe([part[a], part[b]].some((p) => p?.attempts?.length > 0));
           expect(s.summary.callsTotal, label).toBe((part[a]?.attempts?.length ?? 0) + (part[b]?.attempts?.length ?? 0));
           expect(s.summary.codeActed, label).toBe(code === acted);
           n += 1;
         }
       }
     }
-    expect(n).toBe(2 * 8 * 8);
+    expect(n).toBe(2 * 9 * 9);
+    expect(agentWindowSummaryOf({ code: still }, { shadow: part.staleFlag })).toMatchObject({ modelCalled: true, outcome: 'model_fallback', summary: { calls: { shadow: 1 }, paidFallbacks: ['shadow'] } });
     // A row with no code block (the window cursor's) reads code still.
     expect(agentWindowSummaryOf(null, {}).outcome).toBe('no_model_action');
   });
@@ -360,10 +363,17 @@ describe('B2-A06: a price_list draft carries no thesis label; every text the row
       [{ names: ['PROVEN'], lines: [{ symbol: 'MSFT', distancePct: 0.15 }] }, 'drafts[0].names:banned_word'],
       [{ comparison: { type: 'frozen_basket', symbols: ['AAPL', 'Validated'] } }, 'drafts[0].comparison.symbols:banned_word'],
       [{ lines: [{ symbol: 'supported', distancePct: 0.15 }] }, 'drafts[0].lines:banned_word'],
+      // Refuter F1: the slot and the comparison's type are stored too; an unknown key's name is not repeated when it is one.
+      [{ slot: 'proven' }, 'drafts[0].slot:banned_word'],
+      [{ comparison: { type: 'validated' } }, 'drafts[0].comparison.type:banned_word'],
+      [{ proven: 1 }, 'drafts[0]:unknown_field:?'],
+      [{ 'a b': 1 }, 'drafts[0]:unknown_field:?'],
     ];
     for (const [over, reason] of rows) expect(check({ ...base, ...over }), reason).toEqual({ ok: false, reason });
     // Controls: the same shapes with plain text are accepted; a saved_thesis label is kept.
     expect(check({ ...base, source: { kind: 'saved_thesis', thesisRef: 'T1' } })).toMatchObject({ ok: true, answer: { drafts: [{ source: { kind: 'saved_thesis', thesisRef: 'T1' } }] } });
     expect(check({ ...base, comparison: { type: 'frozen_basket', symbols: ['AAPL', 'AMZN'] } }).ok).toBe(true);
+    expect(check({ ...base, capitalUsd: 5 })).toEqual({ ok: false, reason: 'drafts[0]:unknown_field:capitalUsd' }); // a plain name is kept
+    expect(check({ ...base, slot: 'nowhere' }).ok).toBe(true); // an unknown slot is still refused draft by draft, at drafting
   });
 });

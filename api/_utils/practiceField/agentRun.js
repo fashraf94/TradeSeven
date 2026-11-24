@@ -111,7 +111,8 @@ const closeRowRefOf = (bookRef, session) => windowsRefOf(bookRef).doc(windowRowI
 /**
  * B2-A03 — THE CLOSE ROW'S WINDOW-LEVEL SUMMARY, derived from the row's code block and BOTH desks' parts (`desks`: the parts
  * as the row will hold them after this write). Pure.
- *   modelCalled   some desk recorded a call (its own `calledModel` — the one source the desk's part keeps);
+ *   modelCalled   some desk recorded an attempt (its `attempts`, the same source as the call counts — refuter F2: a desk's
+ *                 own `calledModel` can be written false by a later fire's fallback while it carries a paid attempt);
  *   outcome       model_action (an exit settled or a draft admitted from a model answer) › model_fallback (a desk paid for a
  *                 call and fell back to code) › code_action (code acted at the close) › model_no_change (called; nothing
  *                 executed) › no_model_action. The summary keeps what the one word cannot: the calls per desk, the exits
@@ -128,7 +129,7 @@ export function agentWindowSummaryOf(row, desks) {
     if (!p) continue;
     const attempts = Array.isArray(p.attempts) ? p.attempts.length : 0;
     calls[desk] = attempts;
-    if (p.calledModel === true) modelCalled = true;
+    if (attempts > 0) modelCalled = true;
     if (p.source === AGENT_NOTE_SOURCE.MODEL) {
       exits += (p.actions || []).filter((a) => a?.outcome === EXIT_OUTCOME.SETTLED).length;
       admissions += (p.considered || []).filter((c) => c?.outcome === DRAFT_OUTCOME.ADMITTED).length;
