@@ -2,7 +2,7 @@
 
 **Date:** 23–24 Nov 2026 · **Branch:** `claude/practice-field-b3-screen` · **Base:** `main` `2a136040` (the #1109 merge; `origin` fetched first, the worktree cut from it, tree clean) · **Code head:** `472bc4b2` · **Final checks at:** `df1fe8fb` · **PR:** the draft PR opened from this branch (this report is its last commit)
 
-**State:** built, reviewed (three lenses and a refuter; every finding fixed or recorded), battery run (56 of 57 and 19 of 19 killed). Final checks all exit 0: the Linux suite, 38,182 passed, 0 failed; the lint gate; the build, byte-identical to `main`; the rules suite, 889 of 889. **The screen's switch ships off.** Not merged; CI not watched. **Time:** about 2¾ hours, from the first commit (23 Nov, 19:55 CST) to this report (about 22:40 CST). The 8-hour checkpoint was not reached.
+**Fix round (24 Nov):** Astra’s review answered in §9 — rulings B3-9 to B3-12, fixes A01–A04, A06, A08–A11, the refuter’s R1–R4; R5 recorded. **State (build):** built, reviewed (three lenses and a refuter; every finding fixed or recorded), battery run (56 of 57 and 19 of 19 killed). Final checks all exit 0: the Linux suite, 38,182 passed, 0 failed; the lint gate; the build, byte-identical to `main`; the rules suite, 889 of 889. **The screen's switch ships off.** Not merged; CI not watched. **Time:** about 2¾ hours, from the first commit (23 Nov, 19:55 CST) to this report (about 22:40 CST). The 8-hour checkpoint was not reached.
 
 | Rule | Held |
 |---|---|
@@ -279,3 +279,126 @@ Nothing here is done by this PR. Merging it changes nothing: the switch ships `f
 3. **Who sees it:** `PRACTICE_FIELD_MODE` is `'allowlist'`, so only a uid on `COCKPIT_ALLOWLIST_UIDS` gets the card; everyone else gets a quiet 404 and no card.
 4. **Check it** on the preview, then production: open the Command Center (phone Overview, or the desktop's side column) and find the Idea book card above Recent activity; open it and compare with the picture sheet and the mock-up. With the agent still off, expect no strip lines and no desk notes.
 5. **To stop it**, revert the flip commit.
+
+## 9. Fix round, Astra's review
+
+**Date:** 24 Nov 2026 · **Started at:** `a8683e40` (the PR head Astra reviewed; `origin` fetched first, `origin/main` still `2a136040`) · **Review:** `docs/audits/20261124_ASTRA_REVIEW_B3.md`, committed byte-identical first (`f64fea84`, SHA-256 `a9ce66c74145b7203fff0a4ed63e11df618fca46e87edadd2978f2d2692388f8`) · **Code head:** `e18aed95` · **Final checks at:** `098df906 (tests only after the code head)` · **The screen's switch still ships off.** Not merged; CI not watched.
+
+### 9.1 In plain terms
+
+Astra found that the screen could show figures it should not, on days the engine itself says are not final:
+
+- **A name could show its value and P/L while its idea's ledger was on hold** (an unresolved corporate action, or a late payment waiting for your approval). Now every name of a held idea reads "Waiting on data", with the reason, and shows no money figure. A name that waits only because its own price is late still waits alone; its siblings keep their figures.
+- **The book's headline showed a value on a day the last close was not final** (a day with no close recorded, or a first close with a late price). Now the headline reads "Waiting on data" with one plain sentence, and today's change, since-open and SPY show a dash. Cash still shows. The Command Center card says the same (ruling B3-11).
+- **SPY could start at the second fill of the first day.** It now starts at the book's first fill, by the stored fill time.
+- **A close landing while the page reads could show $0.00 for the day under the old date.** The reader now notices that the book and its rows disagree, reads once more, and never measures a day against itself.
+- **Your own thesis was signed by the desk that manages it.** Now a thesis is signed by who wrote it: "The founder", or the drafting desk. The managing desk stays on the idea and on its calls (ruling B3-12).
+- Smaller items: "Entered today · N sessions" on an idea's first close; the page closes when the screen is switched off while it is open; an Exit that code did not carry out is said so in the strip, never counted as "held"; the read bound is corrected.
+- **The build question (A05)** was settled by your ruling B3-9: a source map is not the shipped app. Nothing was built for it.
+
+One refuter then broke the first version of the hold rule in a case close.js also holds (a founder's correction not yet posted). That and three smaller findings are fixed (§9.7).
+
+### 9.2 The founder's rulings for this round (verbatim)
+
+| # | Ruling |
+|---|---|
+| **B3-9** (A05) | **A source map is not the shipped app.** With the switch off, the test is: every non-map file of the production build is byte-identical to `main`, and no request is made. The hub's `.js.map` may differ. **Do not build Astra's build-time wiring.** Record the ruling and the two map digests in the report |
+| **B3-10** (A07, amends Q-5) | **The page shows what the last close recorded.** If a desk checked the book at that close, its strip line, calls and notes show, whatever the agent switch says now. With the agent off, later closes record no desk work, so they are empty from the next close. Only the forward-looking lines ("the desk looks tonight") follow the switch. **No code change; one test row** |
+| **B3-11** (A02) | **A book line below full quality waits.** The headline value, today's change, since-open and SPY read as waiting. Cash still shows. The entry card says the same |
+| **B3-12** (A06) | **A thesis is signed by who wrote it.** The managing desk stays on the group and on its own calls |
+
+**B3-9's two map digests** (Astra's, verbatim, review §B3-A05): base `5ba52150103646e155e2859ae230d7c31ba38aaa78cd539749a935fbac1c7cd4`, PR `613a5bd72d912e345dfa5eef99316ae8e37e76a0eb1041eaeaf8d7582c46fe0e`. This round's own build (WSL, `main` `2a136040` against the final head, §9.9): `main` `51897822dfec6dd68009292eee80d94499a6ba7e219d1a29e39b05828312a965`, this branch `f1a246b25fbaecc016a60294740c26d645f09c210bba36dd1db6af3a44e761b3` (`assets/CommandCenterHub-BjyaK3Ey.js.map`). The digests differ from Astra's because a source map embeds the builder's paths; what matters under B3-9 is that every non-map file matches.
+
+**B3-10 amends** Q-5, reading R-9 and §8 step 4: with the agent off, the strip, calls and notes still show what the last close recorded; they empty from the next close, which records no desk work.
+
+### 9.3 Each fix, by file and line
+
+| Item | Fix | Where |
+|---|---|---|
+| **A01** | One helper, `ledgerHeld(row, idea)`, inverts close.js's own `fullQuality`. An observed row below full quality is held by its ledger when it names a standing reason, or when every mark of its three legs is the vendor's own (nothing but a hold can then keep it below). Beside a non-vendor mark the row cannot say: for the last close the idea as that close wrote it answers (its three ledgers' open holds, and a founder's correction not yet posted, as close.js tests them); for the row before, it counts as held. A held idea's names wait with the hold's reason and no figure; its gap gives the hold's reason. The comment says how close.js records a hold. | `bookView.js:215` (`ideaHasHold`), `:241` (`ledgerHeld`), `:326` (names), `:338` (the row before), `:370` (gap), `:458` |
+| **A02 / B3-11** | `lineWaits` when the last daily row exists and is below full quality: `value: null`, `waiting: { text, reason }`, `today: null`, since and SPY a dash, cash from the row's own fields. A book with no row yet is unchanged. `BOOK_VIEW_VERSION` 2 on both sides. The page and the card draw it; the card's label says it. | `bookView.js:733`, `:758`; `bookViewCopy.js:32`; `IdeaBookScreen.jsx:41`; `IdeaBookEntry.jsx:29`; `ideaBookCopy.js:51`, `:56`; `useIdeaBook.js:21` |
+| **A03** | The first inception is the idea with the earliest stored `entry.filledAt` (one writer, `Date#toISOString()` at `entry.js:317`: a fixed-width UTC string, so it sorts as the instant; the automatic single-field index; no index added). Its session names the label. | `bookViewRead.js:132` |
+| **A04** | The close writes the book's `lastCloseKey` and its daily row in one transaction, so a book and latest row that disagree mean a close landed mid-read: steps 1–3 are read once more, and the view is built from that read. The reader takes the session's own row and the latest row strictly before it (three rows read, so two closes during one read still give both); the view refuses a "previous" row that is not strictly earlier. (The harness's transactions take refs, not queries, so the re-read route.) | `bookViewRead.js:86`, `:105`, `:112`; `bookView.js:450` |
+| **A06 / B3-12** | `byline` from `contract.thesis.author`: `founder_fixture` → "The founder", `agent` → the drafting desk; anything else none. Positions and History draw `byline · date`, never "null". | `bookView.js:388`; `ideaBookCopy.js:65`; `IdeaBookScreen.jsx:200`, `:498` |
+| **A07 / B3-10** | No code. One row. | `bookView.test.js` (B3-10 row) |
+| **A08** | "Entered today · N sessions" on the entry close; `day` and `of` unchanged. The idea panel's line may now wrap at 320 (it overflowed by 3 px in the fit test). | `bookView.js:472`; `bookViewCopy.js:89`; `IdeaBookScreen.jsx:248` |
+| **A09** | A refresh answering 404 — or no book — while the page is open closes the layer (which lifts `inert`) and puts focus on the first control beside the card. | `IdeaBookEntry.jsx:74`, `:96` |
+| **A10** | The bound restated: one pass 48 + 3·I + 20·P (Astra's 47, plus the third daily row); with the re-read 53 + 4·I + 20·P; I counts unique ideas; 3 queries, 4 with the re-read. The tests count to it. | `bookViewRead.js:11` |
+| **A11** | An Exit not carried out is not a hold: "called Exit on XOM (not carried out)", its names counted once; an Exit with no name held says nothing. | `bookView.js:539`, `:546`; `bookViewCopy.js:124` |
+
+### 9.4 The rows
+
+The B3 rows are now **171 in 9 files** (141 in 8 before). New: `api/_utils/practiceField/bookView.fixRound.test.js` (20 rows, **every one through the real engine** on the in-memory store — admission, the entry at its window, `closeIdeaBook`, the founder's ruling, the catch-up — then `readBookView`), one row in `bookView.test.js`, five in the screen's jsdom file and four in the card's.
+
+| Item | Astra's confirm row, as she wrote it | Where |
+|---|---|---|
+| A01 | The conflict gone from the feed but unresolved on the ledger: AAPL (her BAC) and its sibling read "Waiting on data", with no value and no P/L — and, the close before, the mixed case (AAPL carried beside the open conflict). After the ruling: figures again, but no day P/L against the held row; one clean close later, day P/L to the cent. | `bookView.fixRound.test.js` "Astra's row: the conflict gone…" |
+| A01 | The open proposal after AAPL's sale (T2D-03's run): the surviving MSFT waits. | "…the open proposal after AAPL's sale…" |
+| A01 | Unchanged: one name's untimed mark holds that name only; its sibling keeps value, open and day P/L (state 7). | "unchanged: a row below full quality ONLY because…" |
+| A01, refuter | R1: a founder's correction not yet posted, beside a carried mark — every name waits. R2: a held row is never the next day's base. | "R1: …", "R2: …" |
+| A02 / B3-11 | One entered idea, no previous valuation, its first close below full quality (untimed AAPL): the waiting headline, no figure, cash from the row. The unobserved close with a prior row: the same. A new book with no row: unchanged. Card: the waiting headline and reason, and its label; refuter R3: a paused book's card says why. Page: the headline, no today block, since and SPY dashed, cash the only dollar figure. | fixRound "B3-A02 …" (3); `IdeaBookEntry.jsdom.test.jsx` "B3-11 …" (2); `IdeaBookScreen.jsdom.test.jsx` "B3-11 …" |
+| A03 | Two ideas entering on one day, fills at 15:02 and 17:47 UTC, SPY 500 then 550, close 560: **+12.00%** for both admission orders × both document-id orders (four rows; the fills' stored instants are asserted). | fixRound "B3-A03 …" |
+| A04 | The real 18 Nov close committed between the book read and the row read: either complete dated answer accepted, $0.00 rejected (this reader answers 18 Nov, against 17 Nov, with its re-read counted to the bound). Two closes during one read. The pure view refuses a row of the session as its "previous". | fixRound "B3-A04 …" (3) |
+| A06 / B3-12 | The founder-authored medium thesis managed by Shadow, on the B2 run: "The founder" in Positions, the group's desk Shadow, Shadow's call; in History, a founder's finished idea signed "The founder", an agent's by its drafting desk, any other author unsigned (and the caption never "null"). | fixRound "B3-A06 …" (2); `IdeaBookScreen.jsdom.test.jsx` (2) |
+| A07 / B3-10 | With the agent off and a close row holding desk records: strip, calls and notes show; the open slot says no desk looks. With the agent off and a later close row with no desk work: all empty. | `bookView.test.js` "B3-10 …" |
+| A08 | "Entered today · 10 sessions" in place of "Day 0 of 10", `day` 0 kept (scenes, the screen, the B2 run's first close; "Day 1 of 30" the next). | `bookView.test.js`, `IdeaBookScreen.jsdom.test.jsx`, `bookView.e2e.test.js` |
+| A09 | A refresh answering 404 with the page open: layer gone, `inert` lifted, focus on the next control. Refuter R4: an answer of no book, the same. | `IdeaBookEntry.jsdom.test.jsx` (2) |
+| A10 | An idea in both the open set and a slot is read once; the e2e row counts to 48 + 3·I with I unique. | fixRound "B3-A10 …"; `bookView.e2e.test.js` |
+| A11 | Refused, already selling, not entered: "called Exit on XOM, CVX (not carried out)", never "held"; beside another desk's part; an Exit with no name held says nothing. | `bookView.test.js` "B5 … B3-A11 …" |
+| Battery | A standing reason beside a carried mark; a row held with every mark fresh stays held after its hold is ruled; `deriveSinceOpen` alone. | fixRound "the battery's survivors of the fix round, pinned" |
+
+**Still passing, unchanged:** the figures to the cent on the 13-session run (§9.5), the privacy rows (`api/practice-field/book.test.js`, 15, untouched), and the switch-off rows as B3-9 states them (`IdeaBookEntry.jsdom.test.jsx`: no request, no card; the build: §9.9). Four existing rows moved, each with its fix: Day 0 → Entered today (A08); the waiting scene's `today` (B3-11); the thesis `deskName` → `byline` (B3-12); and B5's "held 2" → the not-carried-out part (A11).
+
+### 9.5 The 13-session run
+
+The B2 fixture's thirteen closes were read through the reader at `a8683e40` and at the fix code, and every field of every view diffed. **124 fields differ, every one from a fix, and no figure moved:** `version` 1 → 2 (13); `line.waiting: null` added (13); `thesis.deskName` → `thesis.byline` in groups and History (94: 47 removed, 47 added; the founder's medium idea now reads "The founder"); and "Day 0 of N" → "Entered today · N sessions" on the four entry closes. The end-to-end test's pins did not need to move; it gained the A08/A06 checks and the restated bound.
+
+### 9.6 The battery
+
+`scripts/practice-field/battery/run-battery.mjs`, tiered, with `--prior`; the mutant manifests stay in the session scratchpad (they belong to this PR's code). **Final: server 38 of 39 killed, 1 equivalent; client 12 of 12 killed.**
+
+- **First run, at `0afb8fdd`:** 46 mutants (the build's 15 that these fixes touch, its 3 whose anchors moved — V32, V09, R06 — re-anchored, and 28 new `FX` mutants, at least one per fix), `--prior` the build's three results. 31 killed, 15 survived. **12 of the 15 were not real:** they are client mutants, and the runner's default row set is the five server paths, so no jsdom row ran (the build ran its client battery with `--rows src/components/PracticeField`). The 3 real ones were pinned: V36 (`deriveSinceOpen`'s dash is now also given by B3-11's override, so only a direct row reaches it), FX05 (a standing reason beside a carried mark) and FX17/FX18 (the reader's own "last" and "previous" picks — reached only when a re-read disagrees too, which showed the third-daily-row gap in §9.7).
+- **Second run, at `e18aed95` (after the refuter's fixes):** server 39 (FX02 re-anchored; FX29 R1, FX30 R2, FX31 the third row), `--prior` the first run: **37 killed, 2 survived.** Client 12 with `--rows src/components/PracticeField` (FX11 and FX24 re-anchored; FX32 R3, FX33 R4): **12 killed.**
+  - **V27** survives as in the build: equivalent (an unobserved row's marks are all `unobserved`, `close.js:254`).
+  - **FX03** (the "every mark fresh" shortcut removed) survived because R2's careful default covers it for the row before. Pinned (`098df906`: a row held with every mark fresh stays held after its hold is ruled), re-run alone: **killed**.
+- Every tree was the commit's bytes, every baseline green (1,749 rows in 56 files; 61 in 2), no mutant broken or skipped.
+
+### 9.7 The refuter
+
+One refuter, on a snapshot of `0afb8fdd`, read-only, told to break each claim with a repro on the real engine.
+
+| # | Finding | Severity (screen on) | Disposition |
+|---|---|---|---|
+| R1 | close.js also holds a row for a founder's correction not yet posted (`founderRulings`, `correction_pending`), which is not a ledger record. Beside a carried mark, the sibling MSFT showed $9,997.00 and −$3.00. | blocker | **Fixed** (`ideaHasHold`); row on the engine's own deferred-correction path. |
+| R2 | The row before was judged from the row alone, so a row the page showed as held (a carried mark beside an open conflict) was the next day's base. | minor | **Fixed:** that row cannot rule a hold out, so it is never a base. Row. |
+| R3 | The card said "Paused" and dropped the waiting reason on a paused book. | minor | **Fixed:** "Paused · {reason}". Row. |
+| R4 | An answer of no book (its wind-down completed) while the page was open left Astra's A09 state. | minor | **Fixed:** closes like a 404. Row. |
+| R5 | A close landing after steps 1–3 (before the History read) can show one answer with the idea both live and in History. It clears on the next read; with no race, the same 17 Nov page already shows the 18 Nov window sale. | minor | **Recorded, not fixed.** The brief asked for the smaller A04 fix; closing it needs a trailing check of the book and a third pass. Your call. |
+
+What it could not break: A01's other cases, and that A01 cannot over-hold (`valueLedger` marks a row below full quality only for a non-vendor mark); B3-11 in full; A04's header race with the strict "before"; A03 (one writer, one fill path, a tie shares the snapshot); A10's sum; no write added; no other user's book reachable; the switch still `false`.
+
+A further row came from the battery: with two closes during one read, the second read's two rows did not include the row before the session, so today's change vanished. The reader now reads three daily rows.
+
+### 9.8 The pictures
+
+Re-shot from the frozen code at 390 and 320, the frames these fixes change, in place in `docs/audits/20261123_B3_PICTURES/`: `waiting` and `unobserved` (the waiting book line), `ledgerHold` (new: an idea held by its ledger, every name waiting), `newToday` and `fit` (Entered today), `nameOpen` and `ideaOpen` (the founder's byline), `entry-card` (with the waiting card). The harness measured all 57 frames: **0 overflow** (the fit test's 3 px overflow at 320 was found here and fixed). The desktop frames' thesis caption also changed ("The founder") but were not re-shot (the brief: 390 and 320).
+
+### 9.9 The checks
+
+| Check | Command | Exit | Result |
+|---|---|---|---|
+| The full Linux suite | `TZ=UTC flock /tmp/pd-suite.lock npx vitest run --maxWorkers=8` (WSL, a clean LF worktree at `098df906`) | **0** | Test Files **1657 passed** \| 14 skipped (1671) · Tests **38212 passed** \| 197 skipped (38409) · 0 failed · 348 s |
+| The lint gate | `eslint . --config eslint.gate.config.js --max-warnings 0` | **0** | No output |
+| The build (B3-9) | `npx vite build` (WSL), `main` `2a136040` and `098df906` side by side, SHA-256 of every emitted file | **0** and **0** | **125 files each. All 64 non-map files byte-identical**, hashed names included. One file differs: `assets/CommandCenterHub-BjyaK3Ey.js.map` (digests in §9.2). With the switch off no request is made (`IdeaBookEntry.jsdom.test.jsx`, the switch-off rows). The same holds for the pushed head (this report's commit), built again before the push. |
+| The rules suite | `firebase emulators:exec --only firestore … vitest run --config vitest.rules.config.mjs` (Windows) from an LF snapshot of `098df906` (`firestore.rules` checked against `git show` with `cmp`) | **0** | Test Files **48 passed** (48) · Tests **889 passed** (889). `firestore.rules`, `firestore.indexes.json` and `test/rules/` are unchanged from `main`. |
+
+No real Firestore, model or EODHD call was made, and no `.env` file was read. The picture harness started vite with placeholder Firebase values on its command line.
+
+### 9.10 Time
+
+About 1 hour 45 minutes, from the first commit (24 Nov, 11:14 CST) to this report (about 13:00 CST). The 3-hour stop was not reached.
+
+### 9.11 What remains
+
+- R5 (§9.7) is recorded for your ruling.
+- Astra confirms this round.
