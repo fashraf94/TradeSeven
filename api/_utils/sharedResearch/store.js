@@ -16,6 +16,7 @@
 //   readInvestigation, listOpen, readQuota, and the stored-fact reads
 //   readExploreStory, readExploreInvestigations   an Explore story at `open`; Explore's read (B6a X-2, X-1)
 //   readExploreAgent / exploreAgentOf             the read's `agent` (B6c X-9)
+//   equippedListOf / readEquippedList             the list equip replaces (B6c X-9, Q-3; Q-4's saved-session read)
 //
 // The quota: `sharedResearchQuota/{uid}` (the player's day) and
 // `sharedResearchQuota/_global` (the app's day), both reset when the ET date
@@ -33,7 +34,8 @@ import {
 } from '../hypothesisRecords/model.js';
 import { capTickersArray, splitRetiredTickers } from '../watchlistValidation.js';
 import { ARCHETYPE_IDENTITY_VERSION } from '../archetypeVersionConstants.js';
-import { baggerbombLoadoutOf, bookIdOf } from '../../../src/constants/perGameLoadout.js';
+import { baggerbombLoadoutOf, leagueLoadoutOf, bookIdOf } from '../../../src/constants/perGameLoadout.js';
+import { PER_GAME_LOADOUT_ENABLED } from '../../../src/config/perGameLoadoutFlags.js';
 import {
   PER_DAY, FRAMINGS_PER_DAY, GLOBAL_STEPS_PER_DAY_DEFAULT, GLOBAL_FRAMINGS_PER_DAY_DEFAULT, ADOPTABLE_HORIZONS,
   STEP_CALLS_PER_DAY, GLOBAL_STEP_CALLS_FACTOR,
@@ -230,27 +232,50 @@ export async function readExploreInvestigations(db, { uid }) {
 }
 
 /**
+ * B6c X-9 with the founder's Q-3 — the list "Use it in my next game" replaces, as `{ id, name }`, or null when none is
+ * equipped (the book has no list id). PER_GAME_LOADOUT_ENABLED is read at call time, as the equip writer reads it
+ * (api/agent/equip-watchlist.js): ON, the BaggerBomb loadout's book (the stored slot, or the default from the League
+ * fields while the slot is absent — baggerbombLoadoutOf); OFF, the League book (the ranked record's own fields —
+ * leagueLoadoutOf), since that is what the equip step then replaces and what a deploy then carries. `name` is the
+ * name stored on the book when the list was equipped (founder Q-5: kept so), trimmed, or null. Pure.
+ */
+export function equippedListOf(agent) {
+  let book = null;
+  try { book = (PER_GAME_LOADOUT_ENABLED ? baggerbombLoadoutOf(agent) : leagueLoadoutOf(agent))?.book ?? null; } catch { book = null; }
+  const listId = bookIdOf(book);
+  const listName = typeof book?.name === 'string' && book.name.trim() ? book.name.trim() : null;
+  return listId ? { id: listId, name: listName } : null;
+}
+
+/**
  * B6c X-9 — the player's agent as Explore's read tells it, shaped from the agent `readRankedAgent` returns (the rule
  * `open` uses: the first agent that is neither a training nor a casual clone, owned by the caller — attributionIn's
  * owner check), or null when the player has none. Pure.
  *   id             the agent document's id, the one equip targets
  *   name           partnerNameOf(agent): null when blank (the sheet then says "your agent")
- *   equippedList   the BaggerBomb list the next game carries (baggerbombLoadoutOf(agent).book: the stored slot, or the
- *                  default from the League fields while the slot is absent): `{ id: bookIdOf(book), name }` with the
- *                  book's name trimmed or null; null when the book has no id
+ *   equippedList   equippedListOf(agent)
  */
 export function exploreAgentOf(agent, uid) {
   if (!agent || agent.ownerId !== uid) return null;
-  let book = null;
-  try { book = baggerbombLoadoutOf(agent)?.book ?? null; } catch { book = null; }
-  const listId = bookIdOf(book);
-  const listName = typeof book?.name === 'string' && book.name.trim() ? book.name.trim() : null;
-  return { id: agent.id, name: partnerNameOf(agent), equippedList: listId ? { id: listId, name: listName } : null };
+  return { id: agent.id, name: partnerNameOf(agent), equippedList: equippedListOf(agent) };
 }
 
-/** B6c X-9 — the read's `agent`: one agents query (readRankedAgent's), nothing else read for it. Never refuses. */
+/**
+ * B6c X-9 — the read's `agent`: one agents query (readRankedAgent's), nothing else read for it. It refuses nothing:
+ * no ranked agent is `null`. A failing query (an I/O error) still fails the whole read, as any of its reads would
+ * (review H-6).
+ */
 export async function readExploreAgent(db, { uid }) {
   return exploreAgentOf(await readRankedAgent(db, uid), uid);
+}
+
+/**
+ * B6c, the founder's Q-4 — the list a saved thesis's "Use it in my next game" would replace, for GET ?sessionId= on a
+ * saved thesis-builder session only: the caller's ranked agent's equippedListOf, or null (no ranked agent, or no list
+ * equipped). One agents query. A failing query fails the read, as above.
+ */
+export async function readEquippedList(db, { uid }) {
+  return exploreAgentOf(await readRankedAgent(db, uid), uid)?.equippedList ?? null;
 }
 
 /** The caller's OWN drop, or null — another owner's drop is not found (spec §6.3). */

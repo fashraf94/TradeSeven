@@ -53,7 +53,7 @@ import {
   failStep, closeInvestigation, normalizeAdoption, adoptIdea, readQuota, listOpen, readPrevious, AGENTS_COLLECTION, SHARED_RESEARCH_ADAPTER,
   openOwnWords, applyCard, adoptThesis,
 } from '../_utils/sharedResearch/store.js';
-import { readExploreStory, readExploreInvestigations, readExploreAgent } from '../_utils/sharedResearch/store.js';
+import { readExploreStory, readExploreInvestigations, readExploreAgent, readEquippedList } from '../_utils/sharedResearch/store.js';
 import { namesInScopeOf, openingFindingsOf, dropTextOf, dropTopicOf, storedRowsOf } from '../_utils/sharedResearch/opening.js';
 import { companiesOf, projectionOf, resolveSymbol, splitRole, answerStaleOf } from '../_utils/sharedResearch/companies.js';
 import { adoptPreviewOf, isPreviewRev } from '../_utils/sharedResearch/adoptPreview.js';
@@ -66,6 +66,9 @@ import { retrieve, queryOf } from '../_utils/sharedResearch/retrieval.js';
 import { BASELINE, selectMethod, effectiveMethodFor, citedSourceOf, methodRefOf } from '../_utils/sharedResearch/method.js';
 
 export const config = { maxDuration: 30 };
+
+/** B6c Q-4: a session its save closed — `completed`, carrying its adoption's list (written with the record's `saved_to_list`). */
+const isSavedSession = (session) => session?.status === 'completed' && typeof session.adoption?.watchlistId === 'string' && session.adoption.watchlistId.length > 0;
 
 /** Timing inside the 30 s function (routine 10, §6.4): persistence starts by 28 s; the model waits at most 25 s, 16 s after a retrieval. */
 export const DEADLINE_MS = 28_000;
@@ -159,7 +162,7 @@ async function handleGet(req, res, { db, uid }) {
   if (req.query?.list === 'open') return res.status(200).json({ open: await listOpen(db, { uid }), quota: quotaViewOf(day) });
   // B6a X-1: Explore's one read — the day's quota and, per Explore story investigated, its open and last-ended
   // investigation (api/_utils/sharedResearch/explore.js). No write. B6c X-9: and the player's agent (null when none;
-  // nothing refused for it), read in parallel.
+  // nothing refused for it), read in parallel. A failing agents query fails the read, as any of its reads would (H-6).
   if (req.query?.list === 'explore') {
     const [items, agent] = await Promise.all([readExploreInvestigations(db, { uid }), readExploreAgent(db, { uid })]);
     return res.status(200).json({ quota: quotaViewOf(day), items, agent });
@@ -179,6 +182,10 @@ async function handleGet(req, res, { db, uid }) {
       storedRows: await storedRowsFor(db, session),
       previous: await readPrevious(db, { uid, session }),
       quota: quotaViewOf(day),
+      // B6c, the founder's Q-4: on a SAVED thesis only, the list "Use it in my next game" would replace — or the saved
+      // list itself, when it is already equipped — so the saved screen says which (store.js equippedListOf, with Q-3).
+      // One agents query, read for this case only; every other answer is unchanged.
+      ...(isSavedSession(session) ? { equippedList: await readEquippedList(db, { uid }) } : {}),
     });
   }
   return res.status(200).json({

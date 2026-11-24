@@ -66,6 +66,9 @@ const investigationOf = (body, prior) => ({
   previous: body.previous !== undefined ? body.previous : prior?.previous ?? null,
   // the thesis builder's card (B4): every builder answer carries it; a ledger answer never does
   thesis: body.thesis !== undefined ? body.thesis : prior?.thesis ?? null,
+  // B6c Q-4: only a GET on a saved thesis carries the list equip would replace; the key stays absent otherwise, so the
+  // saved screen falls back to its equippedListLabel prop (screens/ThesisSaved.jsx)
+  ...(body.equippedList !== undefined ? { equippedList: body.equippedList } : {}),
 });
 
 /** A request that may have reached the server without its answer reaching us: none came, or a 5xx. */
