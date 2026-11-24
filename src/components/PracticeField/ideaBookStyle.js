@@ -7,21 +7,23 @@
 import { cssVar } from '../../theme/cssTokens';
 
 /** The palette (ff-ui.jsx FF), as tokens. */
-export const IB = Object.freeze({
-  bg: cssVar('bg-dashboard'),
-  surface: cssVar('bg-card'),
-  raised: cssVar('bg-agent'),
+// A plain object of pure-marked calls, so with the screen switch off Rollup drops every line here (an Object.freeze or an
+// unmarked call at module level survives tree-shaking and ships dead in the hub chunk).
+export const IB = {
+  bg: /* @__PURE__ */ cssVar('bg-dashboard'),
+  surface: /* @__PURE__ */ cssVar('bg-card'),
+  raised: /* @__PURE__ */ cssVar('bg-agent'),
   hair: 'rgba(var(--ft-scrim-rgb), 0.07)',
   hair2: 'rgba(var(--ft-scrim-rgb), 0.12)',
-  ink: cssVar('ink'),
-  ink2: cssVar('ink-2'),
-  ink3: cssVar('ink-3'),
-  pos: cssVar('pos'),
-  neg: cssVar('neg'),
-  teal: cssVar('teal'),
-  monoNear: cssVar('agent-mono-near'),
-  tealCore: cssVar('agent-teal-core'),
-});
+  ink: /* @__PURE__ */ cssVar('ink'),
+  ink2: /* @__PURE__ */ cssVar('ink-2'),
+  ink3: /* @__PURE__ */ cssVar('ink-3'),
+  pos: /* @__PURE__ */ cssVar('pos'),
+  neg: /* @__PURE__ */ cssVar('neg'),
+  teal: /* @__PURE__ */ cssVar('teal'),
+  monoNear: /* @__PURE__ */ cssVar('agent-mono-near'),
+  tealCore: /* @__PURE__ */ cssVar('agent-teal-core'),
+};
 export const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace";
 export const HAIR = `1px solid ${IB.hair}`;
 /** The book's numbers: mono, tabular. */

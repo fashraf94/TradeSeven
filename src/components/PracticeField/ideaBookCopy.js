@@ -4,15 +4,15 @@
 // every word about the book itself; api/_utils/practiceField/bookViewCopy.js). Data and pure functions only.
 
 /** The screen's own chrome words (the view carries everything about the book). */
-export const IDEA_BOOK_COPY = Object.freeze({
+export const IDEA_BOOK_COPY = /* @__PURE__ */ Object.freeze({
   title: 'Idea book',
   breadcrumb: 'Command Center / Idea book',
   afterCloseWord: 'after the close',
   back: 'Back to Command Center',
-  tabs: Object.freeze([['pos', 'Positions'], ['desks', 'Desks'], ['history', 'History']]),
-  heads: Object.freeze(['Symbol', 'Mark', 'P/L Open', 'P/L Day']),
-  headsDesk: Object.freeze(['Symbol', 'Mark', 'To its line', 'P/L Open', 'P/L Day']),
-  ledgerHeads: Object.freeze(['Name', 'Entry', 'Now', 'Line']),
+  tabs: /* @__PURE__ */ Object.freeze([['pos', 'Positions'], ['desks', 'Desks'], ['history', 'History']]),
+  heads: /* @__PURE__ */ Object.freeze(['Symbol', 'Mark', 'P/L Open', 'P/L Day']),
+  headsDesk: /* @__PURE__ */ Object.freeze(['Symbol', 'Mark', 'To its line', 'P/L Open', 'P/L Day']),
+  ledgerHeads: /* @__PURE__ */ Object.freeze(['Name', 'Entry', 'Now', 'Line']),
   cash: 'Cash',
   since: 'Since yesterday',
   todaysCall: 'Today’s call',
