@@ -22,6 +22,8 @@ vi.mock('../../config/sharedResearchFlags', () => ({ get SHARED_RESEARCH_MODE() 
 const { userState } = vi.hoisted(() => ({ userState: { user: { displayName: 'Flash', username: 'flash' } } }));
 vi.mock('../../contexts/UserContext', () => ({ useUser: () => userState }));
 vi.mock('../../firebase/config', () => ({ db: {}, auth: {}, default: {} }));
+// The screen-on PR (ruling B3-13): this suite was written for the hub without the idea book card; its switch is pinned off here (the card's own suites cover it on).
+vi.mock('../../config/practiceFieldScreenFlags', () => ({ PRACTICE_FIELD_SCREEN_ENABLED: false }));
 vi.mock('firebase/auth', () => ({ getAuth: () => ({ currentUser: { getIdToken: async () => 'token' } }) }));
 const r = vi.hoisted(() => ({ identity: null, agent: null, window: null, market: null, lists: [] }));
 vi.mock('../../services/authIdentity', () => ({ useAuthIdentity: () => r.identity }));

@@ -14,12 +14,12 @@
  * PRACTICE_FIELD_SCREEN_ENABLED — the idea book screen: a read-only positions page for the owner of an idea book
  * (Positions, Desks and History), its one endpoint `GET /api/practice-field/book`, and the Command Center entry card.
  *
- * DARK ON MERGE (ruling B3-8): with it false the client makes no request, renders no card and changes nothing on the
+ * ON (the founder's screen-on PR, ruling B3-13), and a kill switch: with it false the client makes no request, renders no card and changes nothing on the
  * hub; the endpoint answers 404 before it authenticates or reads. It also needs PRACTICE_FIELD_MODE not 'off', and the
  * caller admitted by that mode (mode.js practiceFieldAdmits).
- * Runway: false ships with B3; the founder's own one-line PR flips it, moving this literal, its pin row in
+ * Runway: false shipped with B3 (B3-8); the screen-on PR flipped it, moving this literal, its pin row in
  * practiceFieldScreenFlags.test.js and its DARK_BY_DESIGN entry in flagPinGuard.test.js in one commit (BUILD_RULES §2).
- * Rollback: the same line back.
+ * Rollback: the literal and its pin row back to false; the DARK_BY_DESIGN entry stays out (a kill switch now).
  */
 // Pinned by: practiceFieldScreenFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const PRACTICE_FIELD_SCREEN_ENABLED = false;
+export const PRACTICE_FIELD_SCREEN_ENABLED = true;

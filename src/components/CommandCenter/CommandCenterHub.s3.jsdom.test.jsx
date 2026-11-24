@@ -22,6 +22,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 const { userState } = vi.hoisted(() => ({ userState: { user: { displayName: 'Flash', username: 'flash' } } }));
 vi.mock('../../contexts/UserContext', () => ({ useUser: () => userState }));
 vi.mock('../../firebase/config', () => ({ db: {}, auth: {}, default: {} }));
+// The screen-on PR (ruling B3-13): this suite was written for the hub without the idea book card; its switch is pinned off here (the card's own suites cover it on).
+vi.mock('../../config/practiceFieldScreenFlags', () => ({ PRACTICE_FIELD_SCREEN_ENABLED: false }));
 // The Daily Regime Brief's read (hooks/useDailyRegimeBrief.js) is not under test here. Left real it reaches Firestore (`db` is `{}`),
 // fails, and its 1.5 s retry can outlive this file (the PR #1003 CI flake). `loading` is the state the real read held for those 1.5 s.
 vi.mock('../../hooks/useDailyRegimeBrief', () => ({
