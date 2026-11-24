@@ -72,7 +72,8 @@ describe('day n of N: the agent\'s own count of sessions left (agentRun.js sessi
   });
   it('a group says Day N − left of N, from the slot and the due session: the entry close is day 0, the due close day N', () => {
     expect(group(view('sample'), 'medium')).toMatchObject({ line: 'Day 4 of 30', day: 4, of: 30, sessionsLeft: 26, sessionsLeftText: '26 sessions left' });
-    expect(group(view('newToday'), 'short')).toMatchObject({ line: 'Day 0 of 10', sessionsLeft: 10 });
+    // Q-3 as agreed (B3-A08): the entry close reads "Entered today · N sessions"; its numeric day and N are unchanged.
+    expect(group(view('newToday'), 'short')).toMatchObject({ line: 'Entered today · 10 sessions', day: 0, of: 10, sessionsLeft: 10 });
     expect(group(view('reviewDate'), 'short')).toMatchObject({ line: 'Day 10 of 10', sessionsLeft: 0 });
   });
 });
@@ -146,7 +147,12 @@ describe('the book line (B3 §1): stored figures, and the two derived ones again
   });
   it('a row below full quality on either side shows no change: Waiting on data', () => {
     expect(deriveToday({ markedEquity: 1, fullQuality: false }, { markedEquity: 1, fullQuality: true })).toEqual({ waiting: 'Waiting on data' });
-    expect(view('waiting').line.today).toEqual({ waiting: 'Waiting on data' });
+    // The close BEFORE below full quality, the last one clean: today's change waits; the headline shows (B3-11 is the last's).
+    const prevHeld = sceneInput('sample');
+    prevHeld.dailyRows.prev.fullQuality = false;
+    expect(buildBookView(prevHeld).line).toMatchObject({ today: { waiting: 'Waiting on data' }, waiting: null, value: moneyText(toCents(prevHeld.dailyRows.last.markedEquity)) });
+    // The LAST below full quality: the whole line waits instead (B3-11; its own rows below).
+    expect(view('waiting').line.today).toBeNull();
   });
 });
 
@@ -263,6 +269,28 @@ describe('the states (the design of record\'s ten, and the ones it does not draw
     expect(g.names.map((n) => n.state)).toEqual(['bought_today', 'bought_today']);
   });
 
+  it('B3-10 (review B3-A07): with the agent off, a close row that holds desk records still shows them — what the last close recorded; only "looks tonight" follows the switch', () => {
+    // The agent switch off NOW, the last close's row holding both desks' records (switched off after a recorded check).
+    const input = { ...sceneInput('sample'), agentOn: false };
+    expect(input.closeRow.agent.desks.shadow.source).toBe('model');
+    const v = buildBookView(input);
+    expect(v.strip.map((s) => s.desk)).toEqual(['archetype', 'shadow']);
+    expect(v.strip.find((s) => s.desk === 'shadow').text).toBe('held 3 · passed on 3 drafts');
+    expect(group(v, 'medium').call).toMatchObject({ kind: 'Hold', deskName: 'Shadow desk' });
+    expect(v.desks.find((d) => d.desk === 'shadow').note).toMatchObject({ failed: false, text: expect.any(String) });
+    // The forward-looking line follows the switch: no desk looks tonight.
+    expect(group(v, 'long').text).toBe('Long · open');
+    expect(v.desks.flatMap((d) => d.calls).filter((c) => c.state === 'open').map((c) => c.text)).toEqual(['Open.']);
+    // With the agent off, a later close records no desk work: its row has none, and the page is empty of it.
+    const later = { ...sceneInput('sample'), agentOn: false };
+    const idle = { status: 'done', source: 'no_work', note: null, stoppedBy: 'agent_off', actions: [], considered: [] };
+    later.closeRow = { ...later.closeRow, agent: { version: 1, desks: { archetype: idle, shadow: idle } } };
+    const w = buildBookView(later);
+    expect(w.strip).toEqual([]);
+    expect(group(w, 'medium').call).toBeNull();
+    expect(w.desks.map((d) => d.note)).toEqual([null, null]);
+  });
+
   it('a session nobody observed: every name waits on data, and the timestamp says the marks are carried', () => {
     const v = view('unobserved');
     expect(v.asOf.text).toBe('No close was recorded for 27 Nov; marks are carried from the last one.');
@@ -274,7 +302,8 @@ describe('the states (the design of record\'s ten, and the ones it does not draw
     const jpm = name(g, 'JPM');
     expect(jpm).toMatchObject({ mark: '304.85', entry: '301.20', line: '271.08', shares: '27', distance: { text: '11.1% away', near: false } });
     expect(jpm.positionValue).toBe(moneyText(toCents(27 * 304.85)));
-    expect(g).toMatchObject({ thesis: { deskName: 'Shadow desk' }, call: { kind: 'Hold', deskName: 'Shadow desk', date: '27 Nov' }, sessionsLeftText: '26 sessions left' });
+    // (B3-12: the banks thesis is the founder's — signed so — while the Shadow desk manages the idea and makes its call.)
+    expect(g).toMatchObject({ desk: 'shadow', deskName: 'Shadow desk', thesis: { byline: 'The founder' }, call: { kind: 'Hold', deskName: 'Shadow desk', date: '27 Nov' }, sessionsLeftText: '26 sessions left' });
   });
 
   it('the fit test: four names, NEW on a five-letter symbol, five-figure amounts with a no-cents form, the long reason whole', () => {
@@ -434,7 +463,7 @@ describe('the review\'s fixes, each pinned', () => {
     expect(v.strip.find((s) => s.desk === 'shadow').text).not.toMatch(/opened/);
     expect(view('newToday').strip[0].text).toBe('opened XOM, CVX');
   });
-  it('B5: an Exit code did not carry out is said so, and the idea still counts as held', () => {
+  it('B5: an Exit code did not carry out is said so; B3-A11: in the strip it is an Exit not carried out, never "held"', () => {
     for (const outcome of ['refused:close_row_unusable', 'ignored_already_selling', 'ignored_not_entered']) {
       const input = sceneInput('sample');
       input.closeRow.agent.desks.archetype.actions = [{ ideaId: 'i_energy', action: 'exit', reason: 'Energy stopped leading.', outcome }];
@@ -442,8 +471,17 @@ describe('the review\'s fixes, each pinned', () => {
       const g = group(v, 'short');
       expect(g.state, outcome).toBe('holding');
       expect(g.call, outcome).toMatchObject({ kind: 'Exit', notCarriedOut: expect.any(String) });
-      expect(v.strip[0].text, outcome).toBe('held 2');
+      // The names are said once, as not carried out, and are not counted as held.
+      expect(v.strip[0].text, outcome).toBe('called Exit on XOM, CVX (not carried out)');
     }
+    // Beside a hold of another idea: each counted once, in its own part.
+    const both = sceneInput('sample');
+    both.closeRow.agent.desks.shadow.actions = [{ ideaId: 'i_banks', action: 'exit', reason: 'Banks stopped leading.', outcome: 'refused:close_row_unusable' }];
+    expect(buildBookView(both).strip.find((s) => s.desk === 'shadow').text).toBe('called Exit on JPM, BAC, GS (not carried out) · passed on 3 drafts');
+    // An Exit on an idea with no name held at the close (not bought yet) names nothing: no part, and no "held".
+    const entering = sceneInput('newBook');
+    entering.closeRow.agent.desks.shadow.actions = [{ ideaId: 'i_banks', action: 'exit', reason: 'Not yet.', outcome: 'ignored_not_entered' }];
+    expect(buildBookView(entering).strip.map((s) => s.text).join(' | ')).not.toMatch(/held|not carried out/);
     expect(group(view('exitCalled'), 'short').call.notCarriedOut).toBeUndefined();
   });
   it('B6: a holding a delisting left waiting says so, not "no closing price"', () => {

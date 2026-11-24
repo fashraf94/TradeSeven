@@ -245,6 +245,38 @@ describe('the switch on: the card, its read and the page', () => {
     expect(state.calls).toHaveLength(1);
   });
 
+  it('B3-11 (B3-A02): the card draws the waiting headline and its reason, and says so to a screen reader — no figure', async () => {
+    const v = viewOf('waiting');
+    state.answer = { status: 200, body: { book: v } };
+    const m = await mount(<IdeaBookEntry />);
+    const card = m.host.querySelector('[data-ib="entry-card"]');
+    expect(card.textContent).toContain('Waiting on data');
+    expect(card.textContent).toContain(v.line.waiting.reason);
+    expect(card.textContent).not.toMatch(/\$/);
+    expect(card.getAttribute('aria-label')).toBe(`Idea book, Waiting on data, ${v.line.waiting.reason}. Open`);
+  });
+
+  it('B3-A09: a refresh that answers 404 while the page is open closes the page, lifts inert, and puts focus beside the card', async () => {
+    let now = 7_000_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const m = await mount(<div><IdeaBookEntry /><button type="button" data-next="">Recent activity</button></div>);
+    const card = m.host.querySelector('[data-ib="entry-card"]');
+    card.focus();
+    click(card);
+    await flush();
+    expect(document.querySelector('[data-ib="layer"]')).not.toBeNull();
+    expect(appRoot.hasAttribute('inert')).toBe(true);
+    // The gate closes while the page is open: the next read answers 404.
+    state.answer = { status: 404, body: { error: 'disabled' } };
+    now += 60_000;
+    act(() => { window.dispatchEvent(new Event('focus')); });
+    await flush();
+    expect(document.querySelector('[data-ib="layer"]')).toBeNull();
+    expect(appRoot.hasAttribute('inert')).toBe(false);
+    expect(m.host.querySelector('[data-ib="entry-card"]')).toBeNull();
+    expect(document.activeElement).toBe(m.host.querySelector('[data-next]'));
+  });
+
   it('a card that remounts (the phone Overview coming back) draws its last answer at once, then reads again (review C8)', async () => {
     const first = await mount(<IdeaBookEntry />);
     expect(first.host.querySelector('[data-ib="entry-card"]')).not.toBeNull();

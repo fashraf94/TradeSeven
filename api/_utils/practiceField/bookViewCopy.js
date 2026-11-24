@@ -25,6 +25,14 @@ export const PAPER_MONEY = 'Paper money. Your agents run this book; you watch.';
 export const PAUSED_LINE = 'Code still sells at lines.';
 /** Not drawn by the mock-up: a book winding down (contract §3.2). */
 export const WINDING_DOWN_LINE = 'No new ideas. Code still sells at lines and settles what is open.';
+/**
+ * Ruling B3-11 (review B3-A02): the book line while the last close's row is below full quality — the headline, and its one
+ * fixed reason. Today's change, since open and SPY show no figure; cash still shows.
+ */
+export const BOOK_WAITING = 'Waiting on data';
+export const BOOK_WAITING_REASON = 'The last close’s data is not complete yet.';
+/** Ruling B3-12 (review B3-A06): a thesis is signed by who wrote it — the founder, or the desk that drafted it. */
+export const THESIS_BY_FOUNDER = 'The founder';
 
 /** The slots in order, with their names and lengths (the idea record's window table; windows.js slotSessions). */
 export const SLOT_NAMES = Object.freeze({ short: 'Short', medium: 'Medium', long: 'Long' });
@@ -77,6 +85,8 @@ export const GROUP_LINES = Object.freeze({
   boughtToday: 'Bought today',
   settledToday: 'Settled today',
   day: (n, of) => `Day ${n} of ${of}`,
+  /** Q-3 as agreed (review B3-A08): the close of the session an idea entered, in place of "Day 0 of N". */
+  enteredToday: (of) => `Entered today · ${of} sessions`,
   sessionsLeft: (n) => `${n} session${n === 1 ? '' : 's'} left`,
 });
 
@@ -110,6 +120,8 @@ export const STRIP = Object.freeze({
   admitted: (symbols) => `admitted ${symbols.join(', ')}`,
   held: (n) => `held ${n}`,
   exit: (symbols) => `called Exit on ${symbols.join(', ')}`,
+  /** Review B3-A11: an Exit code did not carry out — said as such, never counted as held. */
+  exitNotCarried: (symbols) => `called Exit on ${symbols.join(', ')} (not carried out)`,
   soldAtLine: (symbols) => `${symbols.join(', ')} sold at ${symbols.length === 1 ? 'its line' : 'their lines'} by code`,
   passedOn: (n) => `passed on ${n} draft${n === 1 ? '' : 's'}`,
   sep: ' · ',

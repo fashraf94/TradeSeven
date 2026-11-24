@@ -8,12 +8,19 @@
 // `practiceFieldBooks/{uid}` names a book; the answer is that book only when it exists, is an idea book, is THIS uid's
 // (`userId`) and is still open (`active` or `draining`). A stale, foreign or closed claim answers `{ book: null }`.
 //
-// THE READS, every one bounded — at most 2 + I + 2 + 2·I + 1 + 20·(1 + 1 + P) + 1 + 1 documents, that is 46 + 3·I + 20·P:
-// I the book's open and slotted ideas (at most six), P a packet's receipt parts (at most RESULT_PARTS_READ_MAX; the engine's
-// own bound makes three). Reads that depend on nothing else run in parallel:
+// THE READS, every one bounded. One pass reads at most 2 + I + 2 + 2·I + 1 + 20·(1 + 1 + P) + 1 + 1 documents, that is
+// 47 + 3·I + 20·P (review B3-A10: the sum was once stated one short); with the one re-read below (steps 1 to 3 again, at
+// most 2 + I + 2 more), at most 51 + 4·I + 20·P in all. I counts the UNIQUE ideas the book's open set and slots name (at
+// most six; an idea in both is read once), P a packet's receipt parts (at most RESULT_PARTS_READ_MAX; the engine's own
+// bound makes three). Queries: 3, or 4 with the re-read. Reads that depend on nothing else run in parallel:
 //   1. the claim, then the book;
 //   2. the ideas its slots and open set name, each once;
-//   3. the book's two latest rows (`dailyRows`, ordered by `date`, two);
+//   3. the book's two latest rows (`dailyRows`, ordered by `date`, two). A CLOSE LANDING DURING THE READ (review B3-A04):
+//      the close writes the book's `execState.lastCloseKey` and its `dailyRows/{session}` in ONE transaction (close.js),
+//      so a book read before a close and its rows read after it disagree — the book names one session, the latest row
+//      another. Then steps 1 to 3 are read ONCE more and the view is built from that second read only. Whatever it reads,
+//      the row "before" is the latest row of a session strictly before the book's (here and in the view), never the
+//      session's own;
 //   4. each filled idea's row at the last close and at the close before it (two documents by id);
 //   5. the last close's window row (`windows/{session}_close`: the agent's notes, calls and drafts);
 //   6. History: the book's finished ideas, newest first, at most 20 — ONE single field, `liquidation.completedSession`,
@@ -21,8 +28,12 @@
 //      not in the range), served by the automatic single-field index, so no index is added — and each one's result packet,
 //      then (only when the packet's own hash holds) its receipt parts; the view checks both, and that they are THIS idea's,
 //      before anything of the result is shown (B2 §8);
-//   7. the book's first entered idea (`entry.sessionDate` > '', ordered on that field alone, limit 1) and its inception row
-//      (`rows/inception`): SPY's quote at the book's first fill, for "SPY since open" (B3-6).
+//   7. the book's FIRST FILL (review B3-A03): the idea with the earliest stored `entry.filledAt` (`> ''`, ordered on that
+//      field alone, limit 1 — the automatic single-field index, so no index is added) and its inception row
+//      (`rows/inception`): SPY's quote at the book's first fill, for "SPY since open" (B3-6); that idea's entry session
+//      names the label. `filledAt` is one writer's `Date#toISOString()` (entry.js), a fixed-width UTC string, so its
+//      order is the order of the instants. (Ordering by the entry's session date took one idea of the first DAY, which
+//      could be its second fill.)
 
 import { isIdeaBook } from '../mandateBookKind.js';
 import { getArchetypeDefinition } from '../archetypeRegistry.js';
@@ -61,18 +72,13 @@ async function packetOf(ideaRef) {
   return { packet, parts: Object.fromEntries(ids.map((id, i) => [id, dataOf(docs[i])])) };
 }
 
-/**
- * Everything the view needs, read once. Returns `{ book: null }` when the caller has no open idea book; otherwise
- * `{ book: <the view> }`.
- */
-export async function readBookView(db, { uid, agentOn = false }) {
+/** Steps 1 to 3: the book, the ideas it names, and its two latest rows. Null when the caller has no open idea book. */
+async function readBookAndRows(db, uid) {
   const own = await ownOpenBook(db, uid);
-  if (!own) return { book: null };
+  if (!own) return null;
   const { bookId, book } = own;
   const bookRef = db.collection('mandates').doc(bookId);
   const ideasRef = bookRef.collection('ideas');
-
-  // 2. The ideas the slots and the open set name; 3. the book's two latest rows.
   const ids = [...new Set([...(book.openIdeaIds || []), ...Object.values(book.slots || {})].filter((v) => typeof v === 'string' && v.length > 0))];
   const [ideaSnaps, dailySnap] = await Promise.all([
     Promise.all(ids.map((id) => ideasRef.doc(id).get())),
@@ -83,8 +89,27 @@ export async function readBookView(db, { uid, agentOn = false }) {
     return data ? { ...data, ideaId: id } : null;
   }).filter(Boolean);
   const daily = dailySnap.docs.map((d) => d.data()).filter((r) => isPlain(r) && isDate(r.date));
-  const dailyRows = { last: daily[0] ?? null, prev: daily[1] ?? null };
-  const session = isDate(book.execState?.lastCloseKey) ? book.execState.lastCloseKey : (dailyRows.last?.date ?? null);
+  return { bookId, book, bookRef, ideasRef, ideas, daily };
+}
+
+/** Do the book and its latest row name the same session? (The close writes both in one transaction.) */
+const agrees = (r) => (isDate(r.book.execState?.lastCloseKey) ? r.book.execState.lastCloseKey : null) === (r.daily[0]?.date ?? null);
+
+/**
+ * Everything the view needs, read once (or, when a close landed during the read, steps 1 to 3 twice: the header).
+ * Returns `{ book: null }` when the caller has no open idea book; otherwise `{ book: <the view> }`.
+ */
+export async function readBookView(db, { uid, agentOn = false }) {
+  let read = await readBookAndRows(db, uid);
+  if (read && !agrees(read)) read = await readBookAndRows(db, uid);
+  if (!read) return { book: null };
+  const { bookId, book, bookRef, ideasRef, ideas, daily } = read;
+  const session = isDate(book.execState?.lastCloseKey) ? book.execState.lastCloseKey : (daily[0]?.date ?? null);
+  // The book's row at its session, and the latest row strictly before it (never the session's own: B3-A04).
+  const dailyRows = {
+    last: daily.find((r) => r.date === session) ?? null,
+    prev: session === null ? null : (daily.find((r) => r.date < session) ?? null),
+  };
   const prevSession = dailyRows.prev?.date ?? null;
 
   // 4. Each filled idea's rows; 5. the close row; 6. History; 7. the first entered idea — all at once.
@@ -103,7 +128,7 @@ export async function readBookView(db, { uid, agentOn = false }) {
       const done = snap.docs.map((d) => ({ ...d.data(), ideaId: d.id })).filter((idea) => idea.status === 'resulted' && isDate(idea.liquidation?.completedSession));
       return Promise.all(done.map(async (idea) => ({ idea, ...(await packetOf(ideasRef.doc(idea.ideaId))) })));
     });
-  const firstRead = ideasRef.where('entry.sessionDate', '>', '').orderBy('entry.sessionDate', 'asc').limit(1).get()
+  const firstRead = ideasRef.where('entry.filledAt', '>', '').orderBy('entry.filledAt', 'asc').limit(1).get()
     .then(async (snap) => {
       const firstDoc = snap.docs[0] ?? null;
       const firstSession = firstDoc?.data()?.entry?.sessionDate ?? null;

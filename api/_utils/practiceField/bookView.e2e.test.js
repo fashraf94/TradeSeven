@@ -105,17 +105,19 @@ describe('the view after every close of the B2 history agrees with the stored ro
           expect([g.day, g.of, g.sessionsLeft], `${date} ${g.slot} days`).toEqual([N - Math.min(N, left), N, Math.min(N, left)]);
         }
 
-        // SPY since open: the first entered idea's inception SPY leg quote, to the last close's clean SPY mark.
+        // SPY since open: the book's first FILL's inception SPY leg quote (the earliest entry.filledAt, B3-A03), to the last
+        // close's clean SPY mark.
         const firstIdea = [...c.db._store.keys()].filter((p) => new RegExp(`^${base}/ideas/[^/]+$`).test(p)).map((p) => c.db._get(p))
-          .filter((i) => i.entry?.sessionDate).sort((a, b) => (a.entry.sessionDate < b.entry.sessionDate ? -1 : 1))[0];
+          .filter((i) => i.entry?.filledAt).sort((a, b) => (Date.parse(a.entry.filledAt) - Date.parse(b.entry.filledAt)))[0];
         const startQuote = c.db._get(`${base}/ideas/${firstIdea.ideaId}/rows/inception`).legs.spy.find((r) => r.symbol === 'SPY').mark;
         const nowMark = Object.values(book.slots).filter(Boolean).map((id) => c.db._get(`${base}/ideas/${id}/rows/${date}`)?.spyMarks?.SPY)
           .find((m) => m && m.quality === 'vendor_time')?.mark;
         expect(v.line.spy.value, `${date} SPY`).toBe(pctText(((nowMark - startQuote) * 100) / startQuote));
 
-        // The reads: bounded by the reader's own formula (bookViewRead.js header: 46 + 3·I + 20·P), no receipt parts here.
-        const ideasRead = (book.openIdeaIds || []).length + Object.values(book.slots || {}).filter(Boolean).length;
-        expect(count.docs, date).toBeLessThanOrEqual(46 + 3 * ideasRead);
+        // The reads: bounded by the reader's own formula (bookViewRead.js header: one pass, 47 + 3·I + 20·P — review B3-A10),
+        // no receipt parts here and no close during the read. I counts the UNIQUE ideas the open set and the slots name.
+        const ideasRead = new Set([...(book.openIdeaIds || []), ...Object.values(book.slots || {}).filter(Boolean)]).size;
+        expect(count.docs, date).toBeLessThanOrEqual(47 + 3 * ideasRead);
         expect(count.queries, date).toBe(3);
 
         // No id of the owner, the book or an idea reaches the view.
@@ -136,5 +138,8 @@ describe('the view after every close of the B2 history agrees with the stored ro
     expect(at(FAIL_SESSION).strip.find((s) => s.desk === 'shadow')).toMatchObject({ failed: true });
     expect(at(EARLY_CLOSE).day).toBe('Fri 27 Nov');
     expect(at(days[0]).groups.find((g) => g.slot === 'medium').names.every((n) => n.isNew)).toBe(true);
+    // B3-A08: the entry close reads "Entered today"; the next, Day 1. B3-A06: the founder's thesis is the founder's.
+    expect(at(days[0]).groups.find((g) => g.slot === 'medium')).toMatchObject({ line: 'Entered today · 30 sessions', day: 0, thesis: { byline: 'The founder' }, deskName: 'Shadow desk' });
+    expect(at(days[1]).groups.find((g) => g.slot === 'medium')).toMatchObject({ line: 'Day 1 of 30', day: 1 });
   });
 });

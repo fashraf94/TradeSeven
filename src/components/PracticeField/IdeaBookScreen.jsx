@@ -20,7 +20,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { IB, HAIR, mono, signColor, BOOK_TEXT, RESET, IB_CSS } from './ideaBookStyle';
 import { Eyebrow, Icon, DeskMark, Quote, Chip, CallWord, BookSays, LineGauge } from './IdeaBookParts';
-import { IDEA_BOOK_COPY, layoutOfWidth, PHONE_MAX_PX, finishedKeyOf } from './ideaBookCopy';
+import { IDEA_BOOK_COPY, layoutOfWidth, PHONE_MAX_PX, finishedKeyOf, thesisCapOf } from './ideaBookCopy';
 
 const MODE = {
   p320: { cols: 'minmax(0,1fr) 56px 70px 70px', fs: 11.5, pad: 4 },
@@ -37,7 +37,13 @@ export function BookLine({ line, layout }) {
   const wide = layout === 'desk';
   const sm = layout === 'p320';
   const t = line.today;
-  const value = <div data-ib="value" style={{ ...mono(wide ? 40 : sm ? 26 : 30, IB.ink, 700), letterSpacing: '-0.03em', lineHeight: 1.1, whiteSpace: 'nowrap' }}>{line.value}</div>;
+  // B3-11: the last close below full quality — the headline waits, with its one reason, and no figure (the reason wraps).
+  const value = line.waiting ? (
+    <div data-ib="value" data-ib-waiting="" style={{ minWidth: 0 }}>
+      <div style={{ fontSize: wide ? 26 : sm ? 19 : 21, fontWeight: 700, letterSpacing: '-0.02em', lineHeight: 1.15, color: IB.ink2 }}>{line.waiting.text}</div>
+      <div style={{ ...BOOK_TEXT, color: IB.ink3, marginTop: 3 }}>{line.waiting.reason}</div>
+    </div>
+  ) : <div data-ib="value" style={{ ...mono(wide ? 40 : sm ? 26 : 30, IB.ink, 700), letterSpacing: '-0.03em', lineHeight: 1.1, whiteSpace: 'nowrap' }}>{line.value}</div>;
   const today = t ? (
     <div data-ib="today" style={{ textAlign: wide ? 'left' : 'right', paddingBottom: wide ? 5 : 2 }}>
       {t.waiting
@@ -191,7 +197,7 @@ function Words({ g }) {
     <>
       {g.thesis ? (
         <div>
-          <Quote size={13.5} cap={`${g.thesis.deskName}${g.thesis.date ? ` · ${g.thesis.date}` : ''}`}>{g.thesis.text}</Quote>
+          <Quote size={13.5} cap={thesisCapOf(g.thesis)}>{g.thesis.text}</Quote>
           <div style={{ marginTop: 8, paddingLeft: 13 }}><Chip>{g.source}</Chip></div>
         </div>
       ) : null}
@@ -488,7 +494,7 @@ export function ResultSheet({ f, layout, onClose }) {
         ) : null}
         {f.notMeasurable ? <div style={{ ...BOOK_TEXT, marginTop: 12 }}><span style={{ color: IB.ink, fontWeight: 700 }}>Not measurable</span>: {f.notMeasurable.reasons.join(' ')}</div> : null}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 16 }}>
-          {f.thesis ? <div><Eyebrow style={{ marginBottom: 10 }}>{IDEA_BOOK_COPY.idea}</Eyebrow><Quote size={13.5} cap={`${f.thesis.deskName}${f.thesis.date ? ` · ${f.thesis.date}` : ''}`}>{f.thesis.text}</Quote></div> : null}
+          {f.thesis ? <div><Eyebrow style={{ marginBottom: 10 }}>{IDEA_BOOK_COPY.idea}</Eyebrow><Quote size={13.5} cap={thesisCapOf(f.thesis)}>{f.thesis.text}</Quote></div> : null}
           {f.lastCall ? (
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}><Eyebrow>{IDEA_BOOK_COPY.lastCall}</Eyebrow><CallWord kind={f.lastCall.kind} /></div>

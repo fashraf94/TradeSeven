@@ -47,15 +47,22 @@ export const DESK_FROM_PX = 1120;
 export const PHONE_MAX_PX = 640;
 export const layoutOfWidth = (w) => (w >= DESK_FROM_PX ? 'desk' : w < 360 ? 'p320' : 'p390');
 
+/** The entry card's headline: the book's value, or — the last close below full quality (B3-11) — the waiting words. */
+export const entryHeadlineOf = (line) => (line.waiting ? line.waiting.text : line.value);
+
 /** The entry card's second line: today's change, or why there is none. Composed from the view's strings; no arithmetic. */
 export function entryTodayOf(line) {
   if (line.paused) return { text: 'Paused', dir: 0 };
+  if (line.waiting) return { text: line.waiting.reason, dir: 0 };
   if (line.first?.kind === 'opens') return { text: `${line.first.label} ${line.first.value}`, dir: 0 };
   const t = line.today;
   if (!t) return null;
   if (t.waiting) return { text: t.waiting, dir: 0 };
   return { text: `${t.text} (${t.pct}) today`, dir: t.dir };
 }
+
+/** A thesis's caption: who wrote it (B3-12: none when the view names nobody) and the day it was admitted. */
+export const thesisCapOf = (t) => [t.byline, t.date].filter(Boolean).join(' · ') || null;
 
 /** A finished idea's key on the page: what it is, not where it sits (a refetch that adds one keeps the open sheet's). */
 export const finishedKeyOf = (f) => `${f.slot}|${f.namesText}|${f.endedOn}`;

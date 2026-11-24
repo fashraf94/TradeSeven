@@ -120,7 +120,8 @@ function makeIdea({
       ...(desk && origin !== 'founder_fixture' ? { desk } : {}),
     },
     ...(entered ? {
-      entry: { sessionDate: start, slot: 'open30', legCount: names.length },
+      // (B3-A03: the fill's instant, as entry.js stores it — the open30 window, 10:02 Eastern.)
+      entry: { sessionDate: start, slot: 'open30', legCount: names.length, filledAt: `${start}T15:02:00.000Z` },
       lines: names.map((n) => ({ symbol: n.sym, side: 'below', level: n.level, distancePct: r2(1 - n.level / n.entry), fillPrice: n.entry, adjustments: [] })),
       ledger: { cash: cashNow, holdings, saleReceipts, corporateActionReceipts: [] },
     } : { ledger: { cash: capital, holdings: {}, saleReceipts: [], corporateActionReceipts: [] } }),
@@ -165,7 +166,7 @@ function makeFinished({ id, slot, desk, names, endpointKind, completed, endpoint
   const idea = {
     ideaId: id, bookId: SCENE_BOOK_ID, status: 'resulted', admittedAt: `${sessionsBefore(endpointSession, slotSessions(slot) + 1)}T21:10:00.000Z`,
     contract: { slot, names, thesis: { text: thesis, author: 'agent' }, comparison, origin: { kind: 'market_scan', initiatedBy: 'agent' }, schedule: {}, ...(desk ? { desk } : {}) },
-    entry: { sessionDate: sessionsBefore(endpointSession, slotSessions(slot)) },
+    entry: { sessionDate: sessionsBefore(endpointSession, slotSessions(slot)), filledAt: `${sessionsBefore(endpointSession, slotSessions(slot))}T15:02:00.000Z` },
     // Its lines, as the entry froze them (a resulted idea keeps them): a fill price and a level 10% below it, per name.
     lines: names.map((sym, i) => ({ symbol: sym, side: 'below', level: 90 + i * 10, distancePct: 0.1, fillPrice: 100 + i * 11.11, adjustments: [] })),
     ledger: { cash: 0, holdings: {}, saleReceipts: names.map((s) => ({ kind: 'settlement', symbol: s, sessionDate: completed })) },
@@ -200,7 +201,8 @@ function assemble({ session, ideas, finished = [], closeAgent = null, drafting =
     prev: prevDaily ? { date: prevDate, markedEquity: value('prev'), treasuryCash: treasury, reservedCash: prevReserved, fullQuality: true, observed: true } : null,
   };
   const rows = new Map(ideas.filter((x) => x.idea.entry).map((x) => [x.idea.ideaId, x.rows]));
-  const firstIdea = firstEntrySession ? null : [...open, ...finished.map((f) => f.idea)].filter((i) => i.entry?.sessionDate).sort((a, b) => (a.entry.sessionDate < b.entry.sessionDate ? -1 : 1))[0];
+  // The book's first FILL, as the reader finds it (B3-A03): the earliest stored `entry.filledAt`.
+  const firstIdea = firstEntrySession ? null : [...open, ...finished.map((f) => f.idea)].filter((i) => i.entry?.filledAt).sort((a, b) => (a.entry.filledAt < b.entry.filledAt ? -1 : 1))[0];
   const firstSession = firstEntrySession ?? firstIdea?.entry?.sessionDate ?? null;
   // The first entered idea's inception row (entry.js): its fills' receipts, SPY's leg among them, quoted at the first window.
   const inception = firstSession ? {
@@ -284,6 +286,9 @@ export const SCENES = Object.freeze({
   reviewDate: () => sample({ energy: { status: 'settled', endpointKind: 'due_session', day: 10 } }),
   // 7. Waiting on data: BAC has no closing price for the session.
   waiting: () => sample({ bankNames: [N('JPM', 27, 301.20, 304.85, 303.90, 271.08), N('BAC', 159, 52.40, 52.30, 52.30, 47.16, { quality: 'carried_forward' }), N('GS', 10, 812.50, 826.00, 820.40, 731.25)], assemble: { dailyFull: false } }),
+  // Review B3-A01: the banks idea held by its ledger (an action waits for a ruling) — every mark the vendor's own, the row
+  // below full quality: every name of the idea waits; the book's row below full quality holds the book line (B3-11).
+  ledgerHold: () => sample({ banks: { rowFullQuality: false }, assemble: { dailyFull: false } }),
   // 8. A failed check: the archetype desk's call did not complete; nothing changed.
   failed: () => sample({
     closeAgent: {

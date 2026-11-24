@@ -18,7 +18,7 @@ import useIdeaBook from './useIdeaBook';
 import IdeaBookScreen from './IdeaBookScreen';
 import { IB, HAIR, mono, signColor, RESET, IB_CSS } from './ideaBookStyle';
 import { Eyebrow, Icon, DeskMark } from './IdeaBookParts';
-import { entryTodayOf } from './ideaBookCopy';
+import { entryTodayOf, entryHeadlineOf } from './ideaBookCopy';
 
 /** The switch, for the hub's one ternary (a literal Rollup folds through this re-export): the hub's ONE import takes both. */
 // eslint-disable-next-line react-refresh/only-export-components
@@ -26,17 +26,20 @@ export { PRACTICE_FIELD_SCREEN_ENABLED as IDEA_BOOK_SCREEN_ON };
 
 export function IdeaBookCard({ view, onOpen, buttonRef = null }) {
   const today = entryTodayOf(view.line);
+  const headline = entryHeadlineOf(view.line);
   return (
     <button
       ref={buttonRef} type="button" className="ib-tap" onClick={onOpen} data-ib="entry-card"
-      aria-label={`Idea book, ${view.line.value}${today ? `, ${today.text}` : ''}. Open`}
+      aria-label={`Idea book, ${headline}${today ? `, ${today.text}` : ''}. Open`}
       style={{ ...RESET, display: 'flex', alignItems: 'center', gap: 12, width: '100%', minHeight: 72, padding: '12px 10px 12px 12px', borderRadius: 16, background: IB.surface, border: HAIR }}
     >
       <span style={{ display: 'flex', gap: 4 }}><DeskMark desk="shadow" size={36} /><DeskMark desk="archetype" size={36} /></span>
       <span style={{ flex: 1, minWidth: 0 }}>
         <Eyebrow>Idea book</Eyebrow>
-        <span style={{ display: 'block', ...mono(18, IB.ink, 700), letterSpacing: '-0.02em', marginTop: 4 }}>{view.line.value}</span>
-        {today ? <span style={{ display: 'block', ...mono(11.5, signColor(today.dir), 600), marginTop: 2 }}>{today.text}</span> : null}
+        {view.line.waiting
+          ? <span style={{ display: 'block', fontSize: 16, fontWeight: 700, color: IB.ink2, letterSpacing: '-0.01em', marginTop: 4 }}>{headline}</span>
+          : <span style={{ display: 'block', ...mono(18, IB.ink, 700), letterSpacing: '-0.02em', marginTop: 4 }}>{headline}</span>}
+        {today ? <span style={{ display: 'block', ...(view.line.waiting ? { fontSize: 11.5, color: IB.ink3, lineHeight: 1.35 } : mono(11.5, signColor(today.dir), 600)), marginTop: 2 }}>{today.text}</span> : null}
       </span>
       <span style={{ color: IB.ink3 }}><Icon name="chevR" size={15} /></span>
     </button>
@@ -61,16 +64,41 @@ function IdeaBookLayer({ read, onClose }) {
   );
 }
 
+/** What can take focus in the hub beside the card (the next control a keyboard user would reach). */
+const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/**
+ * Focus after the page closes with no card to return to (review B3-A09: the gate closed while the page was open): the first
+ * control of the hub's block that held the card — the Recent activity section beside it — else nothing keeps focus.
+ */
+function focusBesideCard(host) {
+  const target = host && host.isConnected ? host.querySelector(FOCUSABLE) : null;
+  if (target) target.focus();
+  else if (typeof document !== 'undefined' && document.activeElement && document.activeElement !== document.body) document.activeElement.blur?.();
+}
+
 /** The hub's one render site. Reads only while the switch is on. */
 export default function IdeaBookEntry() {
   const { read, refresh } = useIdeaBook({ enabled: PRACTICE_FIELD_SCREEN_ENABLED });
   const [open, setOpen] = useState(false);
   const cardRef = useRef(null);
-  const onOpen = useCallback(() => { setOpen(true); refresh(); }, [refresh]);
+  // The hub's block the card sits in, remembered at open: where focus goes if the card is gone when the page closes.
+  const hostRef = useRef(null);
+  const onOpen = useCallback(() => {
+    hostRef.current = cardRef.current?.closest('[data-ib="entry"]')?.parentElement ?? null;
+    setOpen(true);
+    refresh();
+  }, [refresh]);
   const onClose = useCallback(() => { setOpen(false); }, []);
+  // Review B3-A09: a refresh that answers 404 while the page is open (the mode, the switch or its gate now says "not for
+  // you") closes the page: the layer unmounts, which lifts `inert` from the app, and focus goes beside the card.
+  useEffect(() => { if (open && read.status === 'off') setOpen(false); }, [open, read.status]);
   const wasOpen = useRef(false);
   useEffect(() => {
-    if (wasOpen.current && !open) cardRef.current?.focus();
+    if (wasOpen.current && !open) {
+      if (cardRef.current) cardRef.current.focus();
+      else focusBesideCard(hostRef.current);
+    }
     wasOpen.current = open;
   }, [open]);
   const view = read.status === 'ready' ? read.book : null;

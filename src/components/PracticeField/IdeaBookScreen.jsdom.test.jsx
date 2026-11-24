@@ -13,7 +13,7 @@ import IdeaBookScreen from './IdeaBookScreen';
 import { IDEA_BOOK_COPY, layoutOfWidth, DESK_FROM_PX, PHONE_MAX_PX } from './ideaBookCopy';
 import { buildBookView } from '../../../api/_utils/practiceField/bookView.js';
 import { sceneInput } from '../../../api/_utils/practiceField/__testsupport__/bookViewScenes.js';
-import { FAILED_CHECK, BUYS_NEXT_WINDOW, PAPER_MONEY, PAUSED_LINE } from '../../../api/_utils/practiceField/bookViewCopy.js';
+import { FAILED_CHECK, BUYS_NEXT_WINDOW, PAPER_MONEY, PAUSED_LINE, BOOK_WAITING, BOOK_WAITING_REASON, ROW_REASON_HELD } from '../../../api/_utils/practiceField/bookViewCopy.js';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -249,6 +249,60 @@ describe('the review\'s fixes on the screen, each pinned', () => {
     const sold = nameRow(screen('lineHit'), 'XOM').querySelector('span span span');
     expect(sold.style.color).toBe('var(--ft-ink-3)');
     expect(header(screen('waiting'), 'medium').textContent).toContain('Waiting on data');
+  });
+});
+
+describe("the fix round for Astra's review (docs/audits/20261124_ASTRA_REVIEW_B3.md), on the screen", () => {
+  it('B3-11 (B3-A02): the last close below full quality — the headline reads "Waiting on data" with its reason; no figure for today, since open or SPY; cash shows', () => {
+    const v = viewOf('waiting');
+    const m = screen('waiting');
+    const line = m.host.querySelector('[data-ib="book-line"]');
+    const value = line.querySelector('[data-ib="value"]');
+    expect(value.textContent).toBe(`${BOOK_WAITING}${BOOK_WAITING_REASON}`);
+    expect(value.textContent).not.toMatch(/\$/);
+    expect(line.querySelector('[data-ib="today"]')).toBeNull();
+    expect(line.textContent).toContain('Since 20 Nov—');
+    expect(line.textContent).toContain('SPY—');
+    expect(line.textContent).toContain(`Cash${v.line.cash}`);
+    // The only dollar figure on the line is cash.
+    expect((line.textContent.match(/\$[0-9]/g) || []).length).toBe(1);
+  });
+  it('B3-A01: an idea held by its ledger — every name reads "Waiting on data", with a dash for its mark and no P/L', () => {
+    const m = screen('ledgerHold');
+    for (const sym of ['JPM', 'BAC', 'GS']) {
+      const row = nameRow(m, sym);
+      expect(row.textContent, sym).toContain('Waiting on data');
+      expect(row.textContent, sym).not.toMatch(/\$/);
+    }
+    // The other idea is not held: its names keep their figures.
+    expect(nameRow(m, 'XOM').textContent).toMatch(/\$/);
+    click(nameRow(m, 'BAC'));
+    expect(m.host.querySelector('[role="region"][aria-label="BAC detail"]').textContent).toContain(ROW_REASON_HELD);
+  });
+  it('B3-12 (B3-A06): the thesis of the founder is signed "The founder" in Positions, its idea managed by the Shadow desk', () => {
+    const m = screen('sample');
+    expect(header(m, 'medium').getAttribute('aria-label')).toContain('Shadow desk');
+    click(nameRow(m, 'JPM'));
+    const caps = [...m.host.querySelectorAll('[role="region"][aria-label="JPM detail"] figcaption')].map((c) => c.textContent);
+    expect(caps).toContain('The founder · 19 Nov');
+    expect(caps.some((c) => c.startsWith('Shadow desk · after the close'))).toBe(true); // the desk's own call keeps its desk
+  });
+  it('B3-12 (B3-A06): History — a founder-authored finished idea is signed "The founder"; an unknown author shows no byline, never "null"', () => {
+    const founder = (input) => { input.finished[1].idea.contract.thesis.author = 'founder_fixture'; };
+    const m = mount(<IdeaBookScreen read={{ status: 'ready', book: viewOf('history', founder) }} onClose={() => {}} width={390} initial={{ tab: 'history', sheet: 1 }} />);
+    const caps = [...m.host.querySelectorAll('[role="dialog"] figcaption')].map((c) => c.textContent);
+    expect(caps[0]).toMatch(/^The founder · /);
+    expect(m.host.querySelector('[role="dialog"]').textContent).toContain('KO · PEP · PG');
+    const unknown = (input) => { input.finished[1].idea.contract.thesis.author = 'player'; };
+    const n = mount(<IdeaBookScreen read={{ status: 'ready', book: viewOf('history', unknown) }} onClose={() => {}} width={390} initial={{ tab: 'history', sheet: 1 }} />);
+    const cap = n.host.querySelector('[role="dialog"] figcaption').textContent;
+    expect(cap).not.toMatch(/null|undefined|desk/i);
+    expect(cap).toMatch(/^\d{1,2} [A-Z][a-z]{2}$/);
+  });
+  it('B3-A08: the entry close reads "Entered today · N sessions" in place of "Day 0 of N"', () => {
+    const m = screen('newToday');
+    expect(text(m)).toContain('Entered today · 10 sessions');
+    expect(text(m)).not.toContain('Day 0 of');
   });
 });
 
