@@ -105,6 +105,11 @@ describe('B2-A01: an earlier session\'s last trade is no candidate — one selec
     expect(names).toContain('AMZN'); // control: a quote at this session's close
     expect(candidatesOf(snap, new Set(), { session: DAYS.d2 })).toEqual([]); // a snapshot of another session
     expect(candidatesOf(snap, new Set())).toEqual([]); // no session: nothing is certified
+    // The snapshot's own session label decides too (battery survivor F01b): a document labelled for another session lists
+    // nothing for this one, even when its prints carry this session's close times.
+    const mislabelled = { ...closeSnapshot(D1, quotesOn()), sessionDate: DAYS.d2 };
+    expect(candidatesOf({ ...mislabelled, sessionDate: D1 }, new Set(), { session: D1 }).length).toBeGreaterThan(5); // control
+    expect(candidatesOf(mislabelled, new Set(), { session: D1 })).toEqual([]);
   });
 });
 
