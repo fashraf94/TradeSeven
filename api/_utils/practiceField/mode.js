@@ -9,8 +9,8 @@
 // An unknown value reads as 'off' (fail closed). Never throws.
 //
 // IMPORT-LIGHT ON PURPOSE: the Film Room's card routes load this module through the seam
-// (api/_utils/filmRoom/practiceFieldSeam.js → bookStore.js → here), so it imports the flag and the allowlist
-// reader and nothing else.
+// (api/_utils/filmRoom/practiceFieldSeam.js → bookStore.js → here), so it imports the flags (two zero-import modules:
+// practiceFieldFlags.js and, since build B3, practiceFieldScreenFlags.js) and the allowlist reader, and nothing else.
 //
 // TESTS: the shipped value is 'allowlist' (since the B0 flip), and the accounting is exercised end to end by synthetic
 // fixtures. A test sets
@@ -22,12 +22,16 @@ import {
   PRACTICE_FIELD_MODE, PRACTICE_FIELD_MODES, PRACTICE_FIELD_AGENT_ENABLED, PRACTICE_FIELD_AGENT_THESES_ENABLED,
 } from '../../../src/config/practiceFieldFlags.js';
 import { readCockpitAllowlist } from '../callRecords/allowlist.js';
+// Build B3 (ruling B3-8): the screen's switch, in a zero-import module of its own the client reads too.
+import { PRACTICE_FIELD_SCREEN_ENABLED } from '../../../src/config/practiceFieldScreenFlags.js';
 
 const OFF = 'off';
 let testOverride = null;
 // Build B2: the agent's two sub-switches, overridable in tests only (null: the flag's own value).
 let agentOverride = null;
 let thesesOverride = null;
+// Build B3: the screen's switch, overridable in tests only (null: the flag's own value).
+let screenOverride = null;
 
 /** The mode as the server reads it NOW: one of the walked states, else 'off'. Never throws. */
 export function practiceFieldMode() {
@@ -77,6 +81,19 @@ export function practiceFieldAgentThesesOn() {
   }
 }
 
+/**
+ * Build B3 (ruling B3-8): is the idea book SCREEN on — its endpoint answers, and the client asks? Only while the mode is
+ * not 'off' AND its own switch is on. The caller must still pass practiceFieldAdmits. Read at call time; never throws.
+ */
+export function practiceFieldScreenOn() {
+  try {
+    if (!practiceFieldLive()) return false;
+    return (screenOverride !== null ? screenOverride : PRACTICE_FIELD_SCREEN_ENABLED) === true;
+  } catch {
+    return false;
+  }
+}
+
 /** Is this process a test run (the vitest runner sets VITEST; production never does)? */
 const isTestRun = () => typeof process !== 'undefined' && Boolean(process.env?.VITEST) && process.env?.NODE_ENV !== 'production';
 
@@ -101,4 +118,12 @@ export function setPracticeFieldAgentForTests({ agent, theses } = {}) {
   if (agent !== undefined) agentOverride = agent;
   if (theses !== undefined) thesesOverride = theses;
   return () => { agentOverride = previous.agent; thesesOverride = previous.theses; };
+}
+
+/** TESTS ONLY — set the screen's switch (a boolean, or `null` to return to the flag). Returns the restore. */
+export function setPracticeFieldScreenForTests(on) {
+  if (!isTestRun()) throw new Error('setPracticeFieldScreenForTests is for tests only');
+  const previous = screenOverride;
+  screenOverride = on;
+  return () => { screenOverride = previous; };
 }
