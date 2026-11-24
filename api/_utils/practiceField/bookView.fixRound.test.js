@@ -209,6 +209,9 @@ describe('the battery’s survivors of the fix round, pinned', () => {
     const noHolds = { ledger: {}, comparisonLedger: {}, spyLedger: {} };
     expect(ledgerHeld({ fullQuality: false, observed: true, standingQualityReasons: [{ kind: 'sold_shares_differ' }], marks }, noHolds)).toBe(true);
     expect(ledgerHeld({ fullQuality: false, observed: true, marks }, noHolds)).toBe(false);
+    // Every mark fresh and still below full quality: the close recorded a hold — held, even when the idea's hold was ruled
+    // since (the page shows what the last close recorded, B3-10's principle).
+    expect(ledgerHeld({ fullQuality: false, observed: true, marks: { A: { quality: 'vendor_time' } } }, noHolds)).toBe(true);
     expect(ledgerHeld({ fullQuality: false, observed: true, marks })).toBe(true);
     expect(ledgerHeld({ fullQuality: false, observed: false, marks })).toBe(false);
     expect(ledgerHeld({ fullQuality: true, observed: true, marks: { A: { quality: 'vendor_time' } } })).toBe(false);
