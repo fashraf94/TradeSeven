@@ -32,7 +32,7 @@ const THESIS = thesisViewOf({
 /** The request a desk sends on the fixtures, the whole universe priced. */
 function requestOn(desk, { theses = null, ceilingBytes } = {}) {
   const prices = Object.fromEntries(CANDIDATE_UNIVERSE.map((s, i) => [s, 50 + i]));
-  const candidates = candidatesOf(closeSnapshot('2026-11-16', { ...prices, ...quotesOn() }), new Set(['JPM', 'BAC', 'GS']));
+  const candidates = candidatesOf(closeSnapshot('2026-11-16', { ...prices, ...quotesOn() }), new Set(['JPM', 'BAC', 'GS']), { session: '2026-11-16' });
   return assembleAgentRequest({
     desk, identity: desk === 'shadow' ? shadowIdentity() : archetypeIdentityOf(EPOCH), session: '2026-11-16', snapshotKey: '2026-11-16_close', book: BOOK,
     deskIdeas: desk === 'shadow' ? [MEDIUM] : [], otherIdeas: desk === 'shadow' ? [] : [MEDIUM], emptySlots: desk === 'shadow' ? ['long'] : ['short'],
@@ -43,8 +43,8 @@ function requestOn(desk, { theses = null, ceilingBytes } = {}) {
 describe('the candidates (§2)', () => {
   it('refuter, on B-1: a snapshot built WITHOUT the house universe lists no candidate — not even a priced name the book just freed', () => {
     const snap = closeSnapshot('2026-11-16', { ...quotesOn(), XOM: 101.2 });
-    expect(candidatesOf(snap, new Set()).map((c) => c.symbol)).toContain('XOM'); // control: the same document, the universe kept
-    expect(candidatesOf({ ...snap, candidateUniverseOmitted: true }, new Set())).toEqual([]);
+    expect(candidatesOf(snap, new Set(), { session: '2026-11-16' }).map((c) => c.symbol)).toContain('XOM'); // control: the same document, the universe kept
+    expect(candidatesOf({ ...snap, candidateUniverseOmitted: true }, new Set(), { session: '2026-11-16' })).toEqual([]);
   });
 });
 

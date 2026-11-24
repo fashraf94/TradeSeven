@@ -292,7 +292,7 @@ describe('review A-1, A-2, A-7: what a later fire may never do', () => {
     const fake = fakeTransport(() => toolResponse({ bookNote: 'n'.repeat(601), actions: [], drafts: [] }));
     const realTx = ctx.db.runTransaction.bind(ctx.db);
     let failed = 0;
-    ctx.db.runTransaction = async (fn, o) => { if (failed === 0 && /partPatch\(desk, part\)/.test(String(fn))) { failed += 1; throw new Error('the function was stopped'); } return realTx(fn, o); };
+    ctx.db.runTransaction = async (fn, o) => { if (failed === 0 && /partPatch\(desk, part, snap\.data\(\)\)/.test(String(fn))) { failed += 1; throw new Error('the function was stopped'); } return realTx(fn, o); };
     await expect(runDeskCheck(ctx.db, ctx.bookRef, { session: D1, desk: 'shadow', transport: fake.transport, clock: () => agentNowOf(D1) })).rejects.toThrow(/stopped/);
     ctx.db.runTransaction = realTx;
     const res = await runDeskCheck(ctx.db, ctx.bookRef, { session: D1, desk: 'shadow', transport: fake.transport, clock: () => agentNowOf(D1) });
@@ -377,7 +377,7 @@ describe('a crash after the answer was stored: the replay acts on the stored ans
     await windowsAndClose(ctx, D1);
     const fake = fakeTransport(({ request }) => toolResponse(holdAll(request, { drafts: [draft({ slot: 'long', names: ['MSFT'] })] })));
     const realTx = ctx.db.runTransaction.bind(ctx.db);
-    const isFinalWrite = (fn) => /writePart|partPatch\(desk, part\)/.test(String(fn));
+    const isFinalWrite = (fn) => /writePart|partPatch\(desk, part, snap\.data\(\)\)/.test(String(fn));
     let failed = 0;
     // The reservation (1), the settlement with the answer (2), the admission's probe and admission, then the part's write.
     ctx.db.runTransaction = async (fn, o) => { if (failed === 0 && isFinalWrite(fn)) { failed += 1; throw new Error('the function was stopped'); } return realTx(fn, o); };

@@ -368,3 +368,137 @@ All of it on the session's close row, `mandates/{bookId}/windows/{session}_close
 The idea itself: `contract.desk`, `contract.origin`, `contract.sources`; after an exit, `managerExit` and `result.managerExit` (`session`, `desk`, `reason`, `decidedAt`), `result.endpointKind: 'manager_exit'`, `endpoint.kind`. "Settled early by the manager" is `endpointKind === 'manager_exit'`.
 
 A result reader must check the packet's parts (`resultPacketPartProblems`) as well as its hash (`verifyPacket`). The end-to-end row does both on the exited idea's packet; no production result reader exists yet.
+
+## 9. Fix round, Astra's review
+
+**Date:** 23 Nov 2026 · **Branch:** `claude/practice-field-b2-fixes` · **Base:** `main` `190b5e63` (PR #1108 merged; fetched first) · **Code head:** `bb224b40` · **Review:** `docs/audits/20261123_ASTRA_REVIEW_B2.md`, committed byte-identical first (`da4c3a61`, SHA-256 `b73d2249…07690`, with its `docs/README.md` row).
+
+| Item | Verdict |
+|---|---|
+| B2-A01: a name quoted only at an earlier session is offered and admitted | **Fixed** as Astra said |
+| B2-A02: an explicit `null` on an optional field is read as omitted | **Ruled (R-18), made explicit** in the validator |
+| B2-A03: after a paid call and an admission the row still reads `modelCalled: false`, `no_model_action` | **Fixed** as Astra said |
+| B2-A04 (hardening): unreadable usage priced at $0 | **Fixed**: charged the whole reservation |
+| B2-A06 (hardening): a `price_list` draft's thesis label reaches the considered list | **Fixed**, and widened by the refuter's F1 |
+| Both sub-switches off; no fenced file, rules or index change; offline | **Held** |
+| Switches off: every fire byte-identical to `main` | **Held**: the 92-fire trace and the end-to-end dump pass unchanged |
+| Battery | **47 distinct mutants, every one killed** (59 runs: 43 at `c673b1d8`, whose one survivor a new row killed; 16 re-run or new at `bb224b40`) |
+| Refuter | **No blocker.** Two minor findings, both CONFIRMED and fixed (`bb224b40`) |
+
+### 9.1 In plain terms
+
+- **A01.** The agent can now only pick a stock that was priced at **today's** close. Before, a stock whose last price was from Friday could still be offered on Monday and bought with $34,979.04 of your cash. The book already had a check that knows the difference (it is what marks your holdings); the agent's list and its drafting check now both use it, through one shared selector.
+- **A02.** Your ruling R-18 is now written into the code that checks the agent's answer. A model that writes `null` for a field it means to leave out is fine; a field of the **wrong kind** throws out the whole answer, so nothing moves on a bad answer. A draft that is then incomplete (a sector-fund comparison with no fund) is refused on its own, and the rest of the answer still stands.
+- **A03.** The close row's headline now says what happened: whether the agent was called, and whether something it proposed was executed (`model_action`), it paid for a call that fell back to code (`model_fallback`), or it was called and nothing changed (`model_no_change`). It is worked out from both desks' records every time either desk writes, so the second desk can't erase the first desk's work, and a replay writes the same thing.
+- **A04.** If a reply ever comes back without readable token counts, it is charged its full reservation ($0.1625), never $0.
+- **A06.** A thesis label on a price-list draft is dropped before anything is stored, and none of the result words ("validated", "proven", "supported") can reach the row through any text the agent wrote.
+
+### 9.2 Ruling R-18, verbatim
+
+> **The founder's ruling, R-18: `null` on an optional field means "omitted"**
+>
+> - Models often write `null` for a field they mean to leave out. Refusing the whole answer for that would turn ordinary days into fallback days.
+> - **So an explicit `null` on an optional field is read as omitted, by rule.** State it in the tool's validator and in the report.
+> - **Every other wrong type is refused whole,** as R-4 says: a string where an array belongs, a number where a string belongs, an array of the wrong element type.
+> - **After reading `null` as omitted, the draft must still be valid on its own.**
+>   - A `same_stock_held` comparison needs no symbols.
+>   - A `sector_fund` comparison with `symbols: null` is refused **as that draft**, and listed as considered.
+
+It is stated in the validator's header (`agentTool.js:23`).
+
+**What R-18 changed in behaviour: nothing, on its own.** The B2 validator already read `null` as omitted on both optional fields and refused other wrong types (the nine A02 rows pass on the base too — VERIFIED by running them there). Astra's A02 finding is therefore closed by the ruling; the code change makes the rule one named function (`optionalOf`) that every optional property goes through, and the battery proves the rows guard it (F02a, F02b below).
+
+### 9.3 Each fix, by `file:line` (at `bb224b40`; all VERIFIED)
+
+**B2-A01 — one selector, this session's close only.**
+- `api/_utils/practiceField/agentSources.js:67` `candidatesOf(snapshot, taken, { session })`: `:69` a snapshot of another session (or no session) lists nothing; `:79` a name is listed only when `marks.js closeMarkQuality(entry, session)` reads `vendor_time`. So a carried-forward print (Astra's case), a pre-open print and a quote with no vendor time (which cannot show its session) are not candidates.
+- `api/_utils/practiceField/agentRun.js:534` `closeCandidatesOf` — THE one selector. The prompt's list (`:344`, via `closeSnapshotKeyOf` `:528`) and drafting's `name_not_a_candidate` check (`draftFromAnswer`, both its main and its `drafts_retried` calls) read it over the same snapshot key. Before, the prompt read `row.closeSnapshotKey` and drafting read `${session}_close`.
+- Reading (stands unless you object): the bar is `vendor_time`, the only full-quality close mark, not merely "not `carried_forward`". A pre-open print or a receipt-time quote cannot prove it is this session's close.
+- Astra cited `admission.js:446` beside the selector: that is admission's general mark set, which runs with the switches off. It is **not** changed; the candidate gate before it now holds the line.
+
+**B2-A02 — R-18.**
+- `api/_utils/practiceField/agentTool.js:202` `optionalOf(obj, key, check, at)`: absent or `null` → omitted; any other value must pass its declared type, or the whole answer is refused. Used for `comparison.symbols` (`:229`) and `source.thesisRef` (`:242`) — the tool's only two optional properties.
+- Per-draft refusals after R-18 come from the contract's own codes at drafting: `sector_fund` with no fund → `comparison_fund_unknown`; `saved_thesis` with no label → `thesis_source_unknown`.
+
+**B2-A03 — the window-level summary.**
+- `api/_utils/practiceField/agentRun.js:121` `agentWindowSummaryOf(row, desks)`, derived (never incremented) from the row's code block and **both** desks' parts:
+  - `modelCalled`: some desk recorded an attempt (`:132`; after the refuter's F2 it reads the attempts, the same source as the counts);
+  - `outcome`: `model_action` (an exit settled or a draft admitted from a model answer) › `model_fallback` (a paid call fell back to code) › `code_action` (code acted at the close) › `model_no_change` (called, nothing executed) › `no_model_action`;
+  - `agent.summary`: `calls` per desk, `callsTotal`, `exits`, `admissions`, `paidFallbacks`, `codeActed` — what the one word cannot say.
+- `agentRun.js:150` `partPatch(desk, part, rowData)` writes it with the desk's part. All five close-row writes go through it, each with the row its own transaction read: the part's write, the crash settlement, the lost-attempt record, the reservation and the settlement. No new write site.
+- `api/_utils/practiceField/windowLedger.js:320` `closeCodeActed(code)`: the one "code acted at the close" test, now read by both the close row's own outcome (`:347`, byte-identical result) and the summary. `WINDOW_OUTCOME` gains the three model words (`:64`), documented at `:56`.
+- Nothing else writes a close row after it is created (`close.js:1460` and `windowLedger.js` create it once; the refuter re-checked `reconcileServedRow`, which leaves a close row alone).
+
+**B2-A04.** `agentRun.js:217` `readableUsage(u)`: input and output counts whole numbers (input above zero), any cache count present a whole number. Otherwise the attempt is `unpriced` (charged its reservation) and records `usageUnreadable: true` (`:462`); the answer is still acted on (`:442`). `modelPriceTable.js` is shared and is not touched.
+
+**B2-A06.**
+- `agentTool.js:245`: `thesisRef` is kept only on a `saved_thesis` draft; on any other source it is checked for its type (R-18) and then dropped, so it reaches neither the stored answer nor the considered list.
+- `agentTool.js:220`, `:228`, `:247`–`:250`: the result-word check on every text of a draft the row stores — the slot and the comparison's type (refuter F1), each name, each comparison symbol, each line symbol, a kept label. A hit refuses the whole answer, as the note and the reasons already did.
+- `agentTool.js:158` (refuter F1): an unknown field's name is repeated in a refusal reason only when it is a plain identifier with no result word, else `?`.
+
+### 9.4 The rows
+
+New file `api/_utils/practiceField/agentFixRound.test.js` (27 rows), on the in-memory harness with the fake transport. **Run against the unfixed base, 17 of them fail** (A01 2 of 3 — its positive control passes, A03 6/6, A04 7/7, A06 2/2) and the 9 A02 rows pass (§9.2).
+
+| Fix | Rows |
+|---|---|
+| A01 | Astra's failing test as written: MSFT at Friday 13 Nov 16:00 ET, the other standard quotes, Monday's close — absent from the prompt's candidates, a long draft refused `name_not_a_candidate`, the treasury, the long slot and the open ideas unchanged. Positive control: MSFT at this session's close is offered and admitted. Pure: a carried, a pre-open and a receipt-time print are not candidates; a snapshot of another session, a mislabelled one and no session list nothing. |
+| A02 | The exit plus a `same_stock_held` draft with `symbols: null`: **accepted**, the exit settles (`manager_exit`), the draft admitted, the stored comparison without symbols. Refused **whole** — one call charged $0.03, `code_fallback`, no manager endpoint, the portfolio byte-identical: `symbols: "MSFT"`, `symbols: [1]`, `thesisRef: 7`, `thesisRef: ["T1"]` on a price-list draft. `sector_fund` with `symbols: null`: refused as that draft (`comparison_fund_unknown`), listed as considered, the exit stands. `saved_thesis` with `thesisRef: null`: `thesis_source_unknown`, the exit stands. `price_list` with `thesisRef: null`: admitted. A pure table over both fields. |
+| A03 | Astra's test: hold plus admit — the row reads `modelCalled: true`, `model_action`, Shadow 1 call, 1 admission; the archetype desk then finishes with no work and the row keeps it all (archetype 0 calls); a replay of the whole pass makes no call and leaves the row byte-identical. Both desks answering: 2 calls, the admission kept, a replay byte-identical. A paid fallback: `model_fallback`. A held answer: `model_no_change`. Paused control: zero calls, `no_model_action`. A pure table of all 162 combinations of code acting × each desk's state (incl. the refuter's stale-flag case). |
+| A04 | `usage: {}`, no usage, string counts, a negative count, zero input, a fractional cache count: each `unpriced`, charged $0.1625, `usageUnreadable`, the answer acted on. Pure: the fixture's real usage, output 0 and null cache counts read. |
+| A06 | A `price_list` draft with `thesisRef: "proven"`: admitted, its label `null` in the answer and the considered list, and **the whole close row** holds no `/proven/i`. Pure: a result word in a kept label, a name, a comparison symbol, a line symbol, the slot, the comparison type, or an unknown key's name refuses (or is masked); plain controls pass. |
+
+Changed existing rows: `agentPrompt.test.js` (three calls pass the session to `candidatesOf`); `agentRun.test.js` (two crash rows find the final write by its source text, now `partPatch(desk, part, snap.data())`); `agentEndToEnd.test.js` (the re-pin below). No assertion was loosened.
+
+**The 13-session run, re-pinned (A03).** The dump moved from `d43681cb…` (828,454 bytes) to **`c1fca0d6…` (830,894 bytes)**. The base commit reproduced the old pin exactly; a recursive leaf comparison of the two dumps found **26 changed leaves and 91 added, none removed**: on each of the 13 close rows, `modelCalled` false → true and `outcome` no_model_action → `model_action` (3), `model_no_change` (9) or `model_fallback` (1, the session whose calls failed), plus the seven `agent.summary` leaves. Nothing else moved. (The refuter's F2 change reads the attempts instead of the flag; the run's desks agree on both, and the pin passes unchanged at `bb224b40`.)
+
+**Isolation, switches off.** `api/cron/practiceFieldNoBook.trace.test.js` (92 fires against `main`'s pins) and `api/_utils/practiceField/endToEnd.test.js` (the 443,533-byte dump) pass **unchanged**. The one shared change on that path, `closeCodeActed` in `buildCloseWindowRow`, returns the same boolean for every row the close builds (its arrays are always arrays and `bookClosed` always a boolean — the refuter re-checked it).
+
+### 9.5 The battery
+
+`scripts/practice-field/battery/run-battery.mjs`, tiered, 4 trees × 4 workers, LF `git archive` trees; the row set is the idea book's folder, `api/practice-field`, the two cron isolation and trace files, the protected-store scan, the founder CLI's tests and the Shared Research census — **1,732 rows in 52 files, baseline green** each time. `--prior` was the build's battery (`0a4609c9`).
+
+| Run | Mutants | Result |
+|---|---|---|
+| `c673b1d8` | 34 of the build's: the 33 whose anchors are in a changed file (`agentRun.js`, `agentTool.js`, `agentSources.js`, `windowLedger.js`) plus `B2-unpriced-name`; 9 new: F01a (any close quality is a candidate), F01b (another session's snapshot lists), F02a (a wrong type read as omitted), F02b (null refused whole), F03a (the row-level fields not written), F03b (the summary from this desk only), F04 (unreadable usage priced), F06a (a price-list draft keeps its label), F06b (names unchecked) | **43 defined, 43 ran, 0 broken, 42 killed, 1 survived** (4.7 min) |
+| `46a0534b` (`--only`) | F01b, after a new row (a snapshot labelled for another session, carrying this session's prints, lists nothing) | **killed** (1.3 min) |
+| `bb224b40` | the 12 whose code the refuter fix touched (T1–T6, F02a/b, F03a/b, F06a/b) plus 4 new: R1a (slot unchecked), R1b (comparison type unchecked), R1c (an unknown key repeated), R2 (`modelCalled` from the flag) | **16 defined, 16 ran, 0 broken, 16 killed** (3.5 min) |
+
+The survivor F01b was not equivalent: the mark check also rejects the other session's prints in the first row's cases, so only a snapshot labelled for one session that carries another's close prints tells the guard apart. The new row does.
+
+### 9.6 The refuter
+
+One adversarial refuter on its own `git archive` tree of `c673b1d8`, read-only on the repo, told to refute with a run repro. **No blocker; the hard constraints hold.**
+
+| ID | Finding | Verdict | Disposition |
+|---|---|---|---|
+| F1 | A06 was incomplete: a draft's `slot` (any string ≤ 20) and `comparison.type` (any string) reach the row — `slot: 'proven'` and `type: 'validated'` were accepted and stored; an unknown key's name (`proven: 1`) is written into the fallback reason | minor, **CONFIRMED** (probe) | **Fixed `bb224b40`**: both pass the result-word check; a key's name is repeated only as a plain identifier with no result word. Rows and mutants R1a–R1c |
+| F2 | A03 could write `modelCalled: false` beside a paid call: a later fire's `identity_unavailable` or prompt-ceiling fallback passes `calledModel: false` over an earlier paid attempt | minor, **CONFIRMED** (traced; the pure output run) | **Fixed `bb224b40`**: the row reads the attempts. The desk-level flag on that rare path is older than this round and is left as it was (it is not what the row reads now) |
+| — | Five other candidates (a write skipping the summary; another path undoing it; a replay mislabelling; another route for a carried name; R-18 ordering; A04 misreading real SDK usage; a switches-off difference) | **REFUTED** with the lines read | — |
+
+It also mutated four places in its own tree (drafting's selector loosened, the summary from one desk, the old usage handling, the label kept); each was killed by the rows it targets.
+
+### 9.7 Checks, with their result lines
+
+All on the code head `bb224b40` (this report is the next commit; it changes no code). Linux runs are in WSL, on a private worktree of `~/pd-ci` at the exact commit, `TZ=UTC`, under `flock /tmp/pd-suite.lock`.
+
+| Check | Result line |
+|---|---|
+| Full suite, Linux, `--maxWorkers=8` | `Test Files  1648 passed \| 14 skipped (1662)` · `Tests  38041 passed \| 197 skipped (38238)` · exit 0 (316.8 s). The same totals at `46a0534b`, before the refuter fix. |
+| `npm run lint:gate` (Linux) | exit 0, no output. Also exit 0 on Windows at `c673b1d8`. |
+| `npm run test:rules` (Linux, Firestore emulator, Temurin 21) | `Test Files  48 passed (48)` · `Tests  889 passed (889)` · exit 0. No rules or index file changed. |
+| `npm run build` (Linux) | `✓ built in 16.61s`, exit 0. Its three `css-syntax-error` warnings come from CSS this round does not touch (the diff has no `src/` or CSS file). |
+| Practice Field rows, Windows | 49 files, 1,643 rows green at `c673b1d8` (the idea book's folder, the 92-fire trace, the founder CLI, the flags). At `bb224b40` the same folder is green but for one row, `agentIsolation.imports.test.js` "every deployed-agent entry point…", which timed out at 5 s twice while the folder ran beside the Linux suite and passes alone in 0.54 s (twice); the Linux suite above ran it green. |
+| Byte identity, switches off | `practiceFieldNoBook.trace.test.js` and `endToEnd.test.js` pass unchanged (their pins are `main`'s). |
+| Re-pin, the 13-session run | `PF_AGENT_E2E_EVIDENCE {"sha256":"c1fca0d65138eee123fe85cdb91372b9e48c31e715e273d3d5c17de820f0a9f5","bytes":830894}` (§9.4). |
+
+**Scope.** 10 files, +661 / −48 against `main` `190b5e63` (this report aside): four source files (`agentSources.js`, `agentRun.js`, `agentTool.js`, `windowLedger.js`), one new test file, three existing test files, Astra's review and its README row. **No fenced file was edited** and no fenced function is called (BUILD_RULES §1). **No rules or index change.** `src/config/practiceFieldFlags.js` is untouched: both sub-switches still ship `false`. Offline throughout: a fake transport and the in-memory harness; `git fetch` and `git push` the only network calls.
+
+### 9.8 Recorded for later, not built
+
+- **B2-A05** (sweep call count): a fallback after a refused retry reports zero calls for the fire despite one transport call. Home: the agent's telemetry.
+- **B2-A07** (replay audit): a replay after an interruption between the admission and the final write writes empty `work` lists while the stored answer still holds the exit and the draft. Home: the screen (B3).
+- **B2-A08** (import-guard coverage): the checked-in walk stops outside `api/`, skips aliases and stops at the model seam. Home: a future import change.
+- **B2-A09** (saved-card integrity): an empty `source` object satisfies the reader's finding check. Home: the theses switch's turn-on.
+
+The earlier cases keep their homes (B-4, B-5, A-6, Q-6; §3.3 and §5). The offline calls still do not show how the live model answers or how many tokens it uses.
