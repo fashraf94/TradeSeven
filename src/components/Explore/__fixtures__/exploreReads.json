@@ -88,7 +88,9 @@
         "last": {
           "sessionId": "5e5e5e5e-0000-4000-8000-000000000003",
           "ended": "saved",
-          "at": "2026-11-21T15:43:00.000Z"
+          "at": "2026-11-21T15:43:00.000Z",
+          "question": null,
+          "statement": null
         }
       }
     ]
@@ -113,7 +115,9 @@
         "last": {
           "sessionId": "5e5e5e5e-0000-4000-8000-000000000004",
           "ended": "concluded",
-          "at": "2026-11-21T15:25:00.000Z"
+          "at": "2026-11-21T15:25:00.000Z",
+          "question": null,
+          "statement": null
         }
       }
     ]
@@ -146,7 +150,9 @@
         "last": {
           "sessionId": "5e5e5e5e-0000-4000-8000-000000000005",
           "ended": "concluded",
-          "at": "2026-11-21T15:05:00.000Z"
+          "at": "2026-11-21T15:05:00.000Z",
+          "question": null,
+          "statement": null
         }
       }
     ]
