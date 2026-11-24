@@ -14,15 +14,17 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { setPracticeFieldModeForTests } from './mode.js';
 import { readBookView } from './bookViewRead.js';
-import { buildBookView, finishedView, allotCents, moneyText, ledgerHeld } from './bookView.js';
+import { buildBookView, finishedView, allotCents, moneyText, ledgerHeld, deriveSinceOpen } from './bookView.js';
 import { ROW_REASON_HELD, BOOK_WAITING, BOOK_WAITING_REASON } from './bookViewCopy.js';
 import { admitIdea, ideaIdFor } from './admission.js';
+import { closeIdeaBook } from './close.js';
 import { parseDividendsPayload } from '../mandateCorporateActions.js';
 import { roundUsd } from '../mandateRounding.js';
 import { toCents } from './money.js';
 import { nextSessionDate } from './windows.js';
 import {
   seedBook, admitAndEnter, contractOf, getIdea, getRow, closeOn, windowAt, catchUpAt, founderRules, takeSeededDbs, ADMIT_ISO,
+  closeNowOf, omitParseReport, storeCloseSnapshot,
 } from './__testsupport__/fixtures.js';
 import { runBookHistory } from './__testsupport__/bookViewFixtures.js';
 
@@ -148,12 +150,71 @@ describe('B3-A01: a name\'s figures follow its row — a ledger hold holds every
     await closeOn(c.db, c.bookId, S[1], quotes({ price: 101, at: null })); // AAPL's close has no vendor time
     const row = getRow(c.db, c.bookId, c.ideaId, S[1]);
     expect(row).toMatchObject({ fullQuality: false, marks: { AAPL: { quality: 'receipt_time_fallback' }, MSFT: { quality: 'vendor_time' } } });
-    expect(ledgerHeld(row, [getIdea(c.db, c.bookId, c.ideaId).ledger])).toBe(false);
+    expect(ledgerHeld(row, getIdea(c.db, c.bookId, c.ideaId))).toBe(false);
     const g = group(await view(c), 'short');
     expect(name(g, 'AAPL').state).toBe('waiting');
     expect(name(g, 'AAPL').positionValue ?? null).toBeNull();
     expect(name(g, 'AAPL').waitingReason).toMatch(/no time from the vendor/);
     expect(name(g, 'MSFT')).toMatchObject({ state: 'held', positionValue: expect.any(String), plOpen: expect.any(Object), plDay: expect.any(Object) });
+  });
+});
+
+describe('B3-A01, the refuter of the fix round: the holds close.js names that the first fix missed', () => {
+  const q = (p = 100, a = [], msft = 200) => ({ AAPL: { price: p, marketCap: 3e12, corporateActions: a }, MSFT: { price: msft, marketCap: 3e12 }, SPY: { price: 500 }, XLK: { price: 200 } });
+  const div = (i, v) => parseDividendsPayload('AAPL', [{ date: S[i], unadjustedValue: v }]).actions[0];
+
+  it("R1: a founder's correction not yet posted (founderRulings), beside a carried mark — every name waits", async () => {
+    const c = await seedBook();
+    const a = await admitAndEnter(c.db, c.bookId, { contract: contractOf({ names: ['AAPL', 'MSFT'], capitalUsd: 20000, comparison: { type: 'sector_fund', symbols: ['XLK'] } }), quotes: q(), date: S[0] });
+    c.ideaId = a.ideaId;
+    await closeOn(c.db, c.bookId, S[0], q());
+    await closeOn(c.db, c.bookId, S[1], q(100, [div(1, 1)]));
+    await closeOn(c.db, c.bookId, S[2], q(100, [div(1, 2)])); // the $2 revision
+    await founderRules(c.db, c.bookId, c.ideaId, { kind: 'conflict', recordId: `cash_dividend_AAPL_${S[1]}`, decision: 'payload', payload: { amount: 2 } }, { requestKey: 'fix-div' });
+    await storeCloseSnapshot(c.db, S[3], q(101));
+    omitParseReport(c.db, S[3], ['AAPL']); // AAPL's data not covered: its mark is carried, and the correction waits
+    const out = await closeIdeaBook(c.db, c.bookRef, { date: S[3], now: closeNowOf(S[3]) });
+    expect(out.alerts.some((x) => x.startsWith('PRACTICE_FIELD_CORRECTION_WAITING'))).toBe(true);
+    const row = getRow(c.db, c.bookId, c.ideaId, S[3]);
+    expect(row).toMatchObject({ fullQuality: false, marks: { AAPL: { quality: 'ca_coverage_missing' }, MSFT: { quality: 'vendor_time' } } });
+    const g = group(await view(c), 'short');
+    for (const sym of ['AAPL', 'MSFT']) expectWaiting(name(g, sym), ROW_REASON_HELD, sym);
+    expect(g.gap).toEqual({ waiting: ROW_REASON_HELD });
+  });
+
+  it("R2: a row the page showed as held (a carried mark beside an open conflict) is never the next day's base", async () => {
+    const Q = (aapl, msft, over = {}) => ({ AAPL: { price: aapl, marketCap: 3e12, ...over }, MSFT: { price: msft, marketCap: 3e12 }, SPY: 500, XLK: 233.59 });
+    const dv = { type: 'cash_dividend', ticker: 'AAPL', effectiveDate: S[1], amount: 1, source: 'eodhd_dividends' };
+    const c = await seedBook();
+    const r = await admitAndEnter(c.db, c.bookId, { contract: contractOf({ names: ['AAPL', 'MSFT'], comparison: { type: 'sector_fund', symbols: ['XLK'] } }), quotes: Q(100, 200), date: S[0] });
+    c.ideaId = r.ideaId;
+    await closeOn(c.db, c.bookId, S[0], Q(100, 200));
+    await closeOn(c.db, c.bookId, S[1], Q(99, 202, { corporateActions: [dv, { ...dv, amount: 1.5, source: 'founder' }] }));
+    expect(name(group(await view(c), 'short'), 'MSFT').state).toBe('waiting');
+    await founderRules(c.db, c.bookId, c.ideaId, { kind: 'conflict', recordId: `cash_dividend_AAPL_${S[1]}`, decision: 'none' });
+    await closeOn(c.db, c.bookId, S[2], Q(99, 205));
+    expect(getRow(c.db, c.bookId, c.ideaId, S[2]).fullQuality).toBe(true);
+    const msft = name(group(await view(c), 'short'), 'MSFT');
+    expect(msft).toMatchObject({ state: 'held', positionValue: expect.any(String) });
+    expect(msft.plDay).toBeNull();
+    // The row alone cannot rule a hold out beside a carried mark: it counts as held; with the idea that wrote it, it answers.
+    const s1 = getRow(c.db, c.bookId, c.ideaId, S[1]);
+    expect([ledgerHeld(s1), ledgerHeld(s1, { ledger: {}, comparisonLedger: {}, spyLedger: {} })]).toEqual([true, false]);
+  });
+});
+
+describe('the battery’s survivors of the fix round, pinned', () => {
+  it('ledgerHeld: a standing reason holds the row even beside a carried mark; the row before, beside a carried mark, cannot rule a hold out', () => {
+    const marks = { A: { quality: 'carried_forward' }, B: { quality: 'vendor_time' } };
+    const noHolds = { ledger: {}, comparisonLedger: {}, spyLedger: {} };
+    expect(ledgerHeld({ fullQuality: false, observed: true, standingQualityReasons: [{ kind: 'sold_shares_differ' }], marks }, noHolds)).toBe(true);
+    expect(ledgerHeld({ fullQuality: false, observed: true, marks }, noHolds)).toBe(false);
+    expect(ledgerHeld({ fullQuality: false, observed: true, marks })).toBe(true);
+    expect(ledgerHeld({ fullQuality: false, observed: false, marks })).toBe(false);
+    expect(ledgerHeld({ fullQuality: true, observed: true, marks: { A: { quality: 'vendor_time' } } })).toBe(false);
+  });
+  it('deriveSinceOpen alone: a row below full quality gives a dash', () => {
+    expect(deriveSinceOpen({ markedEquity: 101_000, fullQuality: false }, 100_000)).toEqual({ pct: '—', dir: 0 });
   });
 });
 
@@ -295,9 +356,30 @@ describe('B3-A04: a close landing during the read', () => {
     // (This reader re-reads once and answers 18 Nov, the book's own row and the row before it.)
     expect(v.day).toBe('Wed 18 Nov');
     expect(v.line.today.text).toBe(moneyText(toCents(bookRow(c, S[2]).markedEquity) - toCents(bookRow(c, S[1]).markedEquity), { signed: true }));
-    // B3-A10: within the restated bound with the re-read — 51 + 4·I + 20·P documents, 4 queries (I = 1, P = 0).
+    // B3-A10: within the restated bound with the re-read — 53 + 4·I + 20·P documents, 4 queries (I = 1, P = 0).
     expect(count.queries).toBe(4);
-    expect(count.docs).toBeLessThanOrEqual(51 + 4 * 1);
+    expect(count.docs).toBeLessThanOrEqual(53 + 4 * 1);
+  });
+
+  it('two closes landing during one read (the re-read disagrees too): the book’s own row and the row strictly before it', async () => {
+    const c = await seedBook();
+    const r = await admitAndEnter(c.db, c.bookId, { contract: contractOf({ names: ['AAPL'] }), quotes: Q(100), date: S[0] });
+    c.ideaId = r.ideaId;
+    await closeOn(c.db, c.bookId, S[0], Q(100));
+    await closeOn(c.db, c.bookId, S[1], Q(101));
+    // A close commits before EACH of the reader's two daily-rows queries: 18 Nov before the first, 19 Nov before the second.
+    const closes = [() => closeOn(c.db, c.bookId, S[2], Q(103)), () => closeOn(c.db, c.bookId, S[3], Q(104))];
+    const wrapQuery = (q, isDaily) => ({
+      where: (...x) => wrapQuery(q.where(...x), isDaily), orderBy: (...x) => wrapQuery(q.orderBy(...x), isDaily), limit: (n) => wrapQuery(q.limit(n), isDaily),
+      get: async () => { if (isDaily && closes.length > 0) await closes.shift()(); return q.get(); },
+    });
+    const wrapDoc = (d) => ({ id: d.id, get: () => d.get(), collection: (n) => wrapCol(d.collection(n), n === 'dailyRows') });
+    const wrapCol = (col, isDaily = false) => ({ ...wrapQuery(col, isDaily), doc: (id) => wrapDoc(col.doc(id)) });
+    const { book: v } = await readBookView({ collection: (n) => wrapCol(c.db.collection(n)) }, { uid: UID, agentOn: false });
+    // The second read's book names 18 Nov; its rows are 19 and 18 Nov. The answer is 18 Nov's, against 17 Nov.
+    expect(v.day).toBe('Wed 18 Nov');
+    expect(v.line.value).toBe(moneyText(toCents(bookRow(c, S[2]).markedEquity)));
+    expect(v.line.today.text).toBe(moneyText(toCents(bookRow(c, S[2]).markedEquity) - toCents(bookRow(c, S[1]).markedEquity), { signed: true }));
   });
 
   it('the view itself never takes a row of the session as its "previous" (the reader\'s pick, held in the pure view too)', async () => {

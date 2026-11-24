@@ -207,6 +207,13 @@ function qualityReason(sym, quality, date) {
 const MARK_FIELDS = Object.freeze(['marks', 'comparisonMarks', 'spyMarks']);
 /** A ledger's open holds, by the engine's own tests (close.js names the same three when it holds a row). */
 const ledgerHasHold = (l) => isPlain(l) && ((l.closedHeldRows || []).length > 0 || openAmbiguities(l).length > 0 || openProposals(l).length > 0);
+/**
+ * The idea's open holds: any of its three ledgers', or a founder's correction not yet posted on every ledger it names
+ * (close.js holds the row for it too: `founderRulings`, a `conflict` ruling that `corrects`, with no `appliedOn` — the
+ * refuter's R1).
+ */
+const ideaHasHold = (idea) => [idea?.ledger, idea?.comparisonLedger, idea?.spyLedger].some(ledgerHasHold)
+  || (idea?.founderRulings || []).some((r) => r && r.appliedOn == null && r.kind === 'conflict' && r.corrects === true);
 
 /**
  * IS AN IDEA'S ROW BELOW FULL QUALITY FOR A LEDGER REASON (review B3-A01)? THE ONE TEST, for the last close's row and for
@@ -214,28 +221,30 @@ const ledgerHasHold = (l) => isPlain(l) && ((l.closedHeldRows || []).length > 0 
  *   fullQuality = observed
  *                 && every mark of the idea's three ledgers is the vendor's own timed close (valueLedger: any other
  *                    quality, a held-back symbol's carried mark included, makes its valuation not full quality)
- *                 && no open hold on any of the three ledgers (an unsettled conflict or re-date, a ruled id revised since:
+ *                 && no open hold (on any of the three ledgers: an unsettled conflict or re-date, a ruled id revised since:
  *                    ledger.js openAmbiguities; a late row waiting on a doubt: `closedHeldRows`; a late proposal waiting
- *                    for the founder: adjustments.js openProposals)
+ *                    for the founder: adjustments.js openProposals — and on the idea: a founder's correction not yet
+ *                    posted, `founderRulings`)
  *                 && no standing reason (`standingQualityReasons`, which the row also names one by one).
  * The row names its standing reasons but not its open holds. Read backwards: an observed row below full quality is held
  * by its ledger when it names a standing reason, or when every one of its marks is the vendor's own — nothing but a hold
  * can then have kept it below. When one of its marks is ALSO not the vendor's own, the row alone cannot say whether a hold
- * stands beside it: for the last close's row, the idea's own three ledgers (`ledgers`, written by that same close and read
- * with it) answer, by the same tests close.js runs. The row before has no ledgers of its own time to ask, so it answers from
- * the row alone. An unobserved row is not a ledger hold: every mark on it is `unobserved`, so each name waits on its own.
+ * stands beside it: for the last close's row, the idea itself (`idea`, written by that same close and read with it)
+ * answers, by the same tests close.js runs. The row before has no idea record of its own time to ask, so there the answer
+ * is the careful one: it cannot rule a hold out, so it counts as held (the refuter's R2 — a row the page may have shown as
+ * held is never the next day's base). An unobserved row is not a ledger hold: every mark on it is `unobserved`, so each
+ * name waits on its own (and an unobserved row is never a day's base either).
  * @param {object|null} row
- * @param {object[]|null} ledgers  the idea's ledger, comparisonLedger and spyLedger — the last close's row only
+ * @param {object|null} idea  the idea as the last close left it — for the last close's row only
  * @returns {boolean}
  */
-export function ledgerHeld(row, ledgers = null) {
+export function ledgerHeld(row, idea = null) {
   if (!isPlain(row) || row.fullQuality === true || row.observed === false) return false;
   if ((row.standingQualityReasons || []).length > 0) return true;
   const everyMarkVendor = MARK_FIELDS.every((f) => Object.values(row[f] || {}).every((m) => m?.quality === MARK_QUALITY.VENDOR_TIME));
   if (everyMarkVendor) return true;
-  return (ledgers || []).some(ledgerHasHold);
+  return idea === null ? true : ideaHasHold(idea);
 }
-const ledgersOf = (idea) => [idea?.ledger, idea?.comparisonLedger, idea?.spyLedger];
 /** The sentence for a ledger hold: a standing reason, else the held action. */
 const holdReason = (row) => ((row?.standingQualityReasons || []).length > 0 ? ROW_REASON_STANDING : ROW_REASON_HELD);
 
@@ -444,9 +453,9 @@ function groupOf(slot, idea, ctx) {
   const boughtAfterClose = entered !== null && (session === null || entered > session);
   const lastAllot = allotCents(last);
   const prevAllot = allotCents(prev);
-  // B3-A01: the one ledger test, on both rows — the last with the idea's own ledgers (written by that close), the one
-  // before from its row alone (ledgerHeld says why).
-  const lastHeld = ledgerHeld(last, ledgersOf(idea));
+  // B3-A01: the one ledger test, on both rows — the last with the idea itself (written by that close), the one before
+  // from its row alone, carefully (ledgerHeld says why).
+  const lastHeld = ledgerHeld(last, idea);
   const prevHeld = ledgerHeld(prev);
   const names = symbolsOf(idea).map((sym) => nameView(idea, sym, { last, prev, lastAllot, prevAllot, session, boughtThisSession, boughtAfterClose, lastHeld, prevHeld }));
   const due = idea.contract?.schedule?.dueSession ?? null;

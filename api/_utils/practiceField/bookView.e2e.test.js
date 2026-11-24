@@ -114,10 +114,10 @@ describe('the view after every close of the B2 history agrees with the stored ro
           .find((m) => m && m.quality === 'vendor_time')?.mark;
         expect(v.line.spy.value, `${date} SPY`).toBe(pctText(((nowMark - startQuote) * 100) / startQuote));
 
-        // The reads: bounded by the reader's own formula (bookViewRead.js header: one pass, 47 + 3·I + 20·P — review B3-A10),
+        // The reads: bounded by the reader's own formula (bookViewRead.js header: one pass, 48 + 3·I + 20·P — review B3-A10),
         // no receipt parts here and no close during the read. I counts the UNIQUE ideas the open set and the slots name.
         const ideasRead = new Set([...(book.openIdeaIds || []), ...Object.values(book.slots || {}).filter(Boolean)]).size;
-        expect(count.docs, date).toBeLessThanOrEqual(47 + 3 * ideasRead);
+        expect(count.docs, date).toBeLessThanOrEqual(48 + 3 * ideasRead);
         expect(count.queries, date).toBe(3);
 
         // No id of the owner, the book or an idea reaches the view.

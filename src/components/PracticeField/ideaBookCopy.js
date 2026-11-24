@@ -52,8 +52,9 @@ export const entryHeadlineOf = (line) => (line.waiting ? line.waiting.text : lin
 
 /** The entry card's second line: today's change, or why there is none. Composed from the view's strings; no arithmetic. */
 export function entryTodayOf(line) {
+  // B3-11: a waiting line says why, paused or not (a paused book still closes and marks every day: the refuter's R3).
+  if (line.waiting) return { text: line.paused ? `Paused · ${line.waiting.reason}` : line.waiting.reason, dir: 0 };
   if (line.paused) return { text: 'Paused', dir: 0 };
-  if (line.waiting) return { text: line.waiting.reason, dir: 0 };
   if (line.first?.kind === 'opens') return { text: `${line.first.label} ${line.first.value}`, dir: 0 };
   const t = line.today;
   if (!t) return null;

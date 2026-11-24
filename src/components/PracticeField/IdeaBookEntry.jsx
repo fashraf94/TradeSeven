@@ -91,8 +91,10 @@ export default function IdeaBookEntry() {
   }, [refresh]);
   const onClose = useCallback(() => { setOpen(false); }, []);
   // Review B3-A09: a refresh that answers 404 while the page is open (the mode, the switch or its gate now says "not for
-  // you") closes the page: the layer unmounts, which lifts `inert` from the app, and focus goes beside the card.
-  useEffect(() => { if (open && read.status === 'off') setOpen(false); }, [open, read.status]);
+  // you") closes the page: the layer unmounts, which lifts `inert` from the app, and focus goes beside the card. So does an
+  // answer of no book (it closed — its wind-down completed — or its claim went stale: the refuter's R4): the card is gone too.
+  const gone = read.status === 'off' || (read.status === 'ready' && !read.book);
+  useEffect(() => { if (open && gone) setOpen(false); }, [open, gone]);
   const wasOpen = useRef(false);
   useEffect(() => {
     if (wasOpen.current && !open) {

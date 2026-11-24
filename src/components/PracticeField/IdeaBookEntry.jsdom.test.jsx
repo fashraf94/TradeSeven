@@ -256,6 +256,28 @@ describe('the switch on: the card, its read and the page', () => {
     expect(card.getAttribute('aria-label')).toBe(`Idea book, Waiting on data, ${v.line.waiting.reason}. Open`);
   });
 
+  it('B3-11, refuter R3: a paused book whose last close waits still says why on the card', () => {
+    const v = viewOf('waiting');
+    expect(entryTodayOf({ ...v.line, paused: true })).toEqual({ text: `Paused · ${v.line.waiting.reason}`, dir: 0 });
+    expect(entryTodayOf(v.line)).toEqual({ text: v.line.waiting.reason, dir: 0 });
+  });
+
+  it('B3-A09, refuter R4: an answer of no book while the page is open closes it the same way', async () => {
+    let now = 8_000_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const m = await mount(<div><IdeaBookEntry /><button type="button" data-next="">Recent activity</button></div>);
+    click(m.host.querySelector('[data-ib="entry-card"]'));
+    await flush();
+    expect(document.querySelector('[data-ib="layer"]')).not.toBeNull();
+    state.answer = { status: 200, body: { book: null } };
+    now += 60_000;
+    act(() => { window.dispatchEvent(new Event('focus')); });
+    await flush();
+    expect(document.querySelector('[data-ib="layer"]')).toBeNull();
+    expect(appRoot.hasAttribute('inert')).toBe(false);
+    expect(document.activeElement).toBe(m.host.querySelector('[data-next]'));
+  });
+
   it('B3-A09: a refresh that answers 404 while the page is open closes the page, lifts inert, and puts focus beside the card', async () => {
     let now = 7_000_000;
     vi.spyOn(Date, 'now').mockImplementation(() => now);

@@ -8,19 +8,20 @@
 // `practiceFieldBooks/{uid}` names a book; the answer is that book only when it exists, is an idea book, is THIS uid's
 // (`userId`) and is still open (`active` or `draining`). A stale, foreign or closed claim answers `{ book: null }`.
 //
-// THE READS, every one bounded. One pass reads at most 2 + I + 2 + 2·I + 1 + 20·(1 + 1 + P) + 1 + 1 documents, that is
-// 47 + 3·I + 20·P (review B3-A10: the sum was once stated one short); with the one re-read below (steps 1 to 3 again, at
-// most 2 + I + 2 more), at most 51 + 4·I + 20·P in all. I counts the UNIQUE ideas the book's open set and slots name (at
+// THE READS, every one bounded. One pass reads at most 2 + I + 3 + 2·I + 1 + 20·(1 + 1 + P) + 1 + 1 documents, that is
+// 48 + 3·I + 20·P (review B3-A10: the sum was once stated one short; the fix round reads one more daily row, step 3); with
+// the one re-read below (steps 1 to 3 again, at most 2 + I + 3 more), at most 53 + 4·I + 20·P in all. I counts the UNIQUE ideas the book's open set and slots name (at
 // most six; an idea in both is read once), P a packet's receipt parts (at most RESULT_PARTS_READ_MAX; the engine's own
 // bound makes three). Queries: 3, or 4 with the re-read. Reads that depend on nothing else run in parallel:
 //   1. the claim, then the book;
 //   2. the ideas its slots and open set name, each once;
-//   3. the book's two latest rows (`dailyRows`, ordered by `date`, two). A CLOSE LANDING DURING THE READ (review B3-A04):
+//   3. the book's three latest rows (`dailyRows`, ordered by `date`, three). A CLOSE LANDING DURING THE READ (review B3-A04):
 //      the close writes the book's `execState.lastCloseKey` and its `dailyRows/{session}` in ONE transaction (close.js),
 //      so a book read before a close and its rows read after it disagree — the book names one session, the latest row
 //      another. Then steps 1 to 3 are read ONCE more and the view is built from that second read only. Whatever it reads,
 //      the row "before" is the latest row of a session strictly before the book's (here and in the view), never the
-//      session's own;
+//      session's own. Three rows, not two, so that even when the second read disagrees too (a catch-up closes several
+//      sessions in one call), the book's own row and the one strictly before it are both among them;
 //   4. each filled idea's row at the last close and at the close before it (two documents by id);
 //   5. the last close's window row (`windows/{session}_close`: the agent's notes, calls and drafts);
 //   6. History: the book's finished ideas, newest first, at most 20 — ONE single field, `liquidation.completedSession`,
@@ -72,7 +73,7 @@ async function packetOf(ideaRef) {
   return { packet, parts: Object.fromEntries(ids.map((id, i) => [id, dataOf(docs[i])])) };
 }
 
-/** Steps 1 to 3: the book, the ideas it names, and its two latest rows. Null when the caller has no open idea book. */
+/** Steps 1 to 3: the book, the ideas it names, and its three latest rows. Null when the caller has no open idea book. */
 async function readBookAndRows(db, uid) {
   const own = await ownOpenBook(db, uid);
   if (!own) return null;
@@ -82,7 +83,7 @@ async function readBookAndRows(db, uid) {
   const ids = [...new Set([...(book.openIdeaIds || []), ...Object.values(book.slots || {})].filter((v) => typeof v === 'string' && v.length > 0))];
   const [ideaSnaps, dailySnap] = await Promise.all([
     Promise.all(ids.map((id) => ideasRef.doc(id).get())),
-    bookRef.collection('dailyRows').orderBy('date', 'desc').limit(2).get(),
+    bookRef.collection('dailyRows').orderBy('date', 'desc').limit(3).get(),
   ]);
   const ideas = ids.map((id, i) => {
     const data = dataOf(ideaSnaps[i]);
