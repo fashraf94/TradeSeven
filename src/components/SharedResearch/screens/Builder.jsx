@@ -394,7 +394,7 @@ function AllEvidence({ sr, onBack }) {
   );
 }
 
-export default function Builder({ sr, agentName, agentId, phone, viewingEarlier = false, onBackToCurrent, onOpenEarlier, onDiscard, onNewInvestigation, onClose }) {
+export default function Builder({ sr, agentName, agentId, equippedListLabel = null, phone, viewingEarlier = false, onBackToCurrent, onOpenEarlier, onDiscard, onNewInvestigation, onClose }) {
   const { session, record, thesis } = sr.inv;
   const state = stateOf(session, record);
   const open = state === 'open' && !viewingEarlier;
@@ -420,7 +420,7 @@ export default function Builder({ sr, agentName, agentId, phone, viewingEarlier 
   }
   if (sub === 'evidence') return kept(<AllEvidence sr={sr} onBack={() => setSub(null)} />);
   if (saveHere === 'saved' || saveHere === 'recovered' || (state === 'saved' && !viewingEarlier)) {
-    return kept(<ThesisSaved sr={sr} agentName={agentName} agentId={agentId} onClose={onClose} />);
+    return kept(<ThesisSaved sr={sr} agentName={agentName} agentId={agentId} equippedListLabel={equippedListLabel} onClose={onClose} />);
   }
   if (open && thesis.ready && !keepResearching) {
     return kept(<ThesisReady sr={sr} agentName={agentName} phone={phone} edit={edit} setEdit={setEdit} onKeepResearching={() => setKeepResearching(true)} onAllEvidence={() => setSub('evidence')} />);

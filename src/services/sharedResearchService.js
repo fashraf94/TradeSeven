@@ -66,8 +66,9 @@ const post = (body) => call(SHARED_RESEARCH_ROUTE, { method: 'POST', body: JSON.
 /** GET ?list=open — "Continue your research" (≤ 3 rows) and today's quota. */
 export const listOpenInvestigations = () => call(`${SHARED_RESEARCH_ROUTE}?list=open`, { method: 'GET' });
 /**
- * GET ?list=explore — Explore's one read (B6a X-1): `{ quota, items }`, per Explore story investigated its open and
- * last-ended investigation. Its one importer outside the sheet is src/components/Explore/useExploreResearch.js
+ * GET ?list=explore — Explore's one read (B6a X-1): `{ quota, items, agent }`, per Explore story investigated its open
+ * and last-ended investigation (B6c X-8: the last one's `question` and saved `statement`), and the player's ranked
+ * agent with its equipped BaggerBomb list (B6c X-9; null when none). Its one importer outside the sheet is src/components/Explore/useExploreResearch.js
  * (sharedResearch.boundary.test.js); the sheet itself never calls it.
  */
 export const readExploreInvestigations = () => call(`${SHARED_RESEARCH_ROUTE}?list=explore`, { method: 'GET' });

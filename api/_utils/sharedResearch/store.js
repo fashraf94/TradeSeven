@@ -15,6 +15,8 @@
 //   adoptIdea                  `adopt`: shared mechanics + one origin adapter
 //   readInvestigation, listOpen, readQuota, and the stored-fact reads
 //   readExploreStory, readExploreInvestigations   an Explore story at `open`; Explore's read (B6a X-2, X-1)
+//   readExploreAgent / exploreAgentOf             the read's `agent` (B6c X-9)
+//   equippedListOf / readEquippedList             the list equip replaces (B6c X-9, Q-3; Q-4's saved-session read)
 //
 // The quota: `sharedResearchQuota/{uid}` (the player's day) and
 // `sharedResearchQuota/_global` (the app's day), both reset when the ET date
@@ -32,7 +34,8 @@ import {
 } from '../hypothesisRecords/model.js';
 import { capTickersArray, splitRetiredTickers } from '../watchlistValidation.js';
 import { ARCHETYPE_IDENTITY_VERSION } from '../archetypeVersionConstants.js';
-import { baggerbombLoadoutOf } from '../../../src/constants/perGameLoadout.js';
+import { baggerbombLoadoutOf, leagueLoadoutOf, bookIdOf } from '../../../src/constants/perGameLoadout.js';
+import { PER_GAME_LOADOUT_ENABLED } from '../../../src/config/perGameLoadoutFlags.js';
 import {
   PER_DAY, FRAMINGS_PER_DAY, GLOBAL_STEPS_PER_DAY_DEFAULT, GLOBAL_FRAMINGS_PER_DAY_DEFAULT, ADOPTABLE_HORIZONS,
   STEP_CALLS_PER_DAY, GLOBAL_STEP_CALLS_FACTOR,
@@ -200,8 +203,9 @@ export async function readExploreStory(db, storyId) {
  *   - the newest research records: the deployed (userId, createdAt desc) index listOpen reads, at most
  *     EXPLORE_RECORDS_READ. The session of each open or completed Explore investigation there that the two queries did
  *     not return is read by id — so the newest investigations are always held (review HB-2, RF-2, RF-3).
- * Then the record of each open investigation the window does not hold. A session held twice counts once, ended if any
- * read saw it ended (RF-4). At most EXPLORE_DOCS_MAX documents with the quota.
+ * Then the record of each open investigation the window does not hold, and (B6c X-8) of each last-ended one — its
+ * `question` — read by id the same way. A session held twice counts once, ended if any read saw it ended (RF-4). At most
+ * EXPLORE_DOCS_MAX documents with the quota (the agent, X-9, is readExploreAgent's).
  */
 export async function readExploreInvestigations(db, { uid }) {
   const mine = db.collection(SESSIONS_COLLECTION).where('userId', '==', uid).where('entry.itemRef.recordKind', '==', EXPLORE_RECORD_KIND);
@@ -217,13 +221,61 @@ export async function readExploreInvestigations(db, { uid }) {
   const sessions = [...sessionsByIdOf([[...queried.values()], found.filter((s) => isOwnedSession(s, uid))]).values()];
   const live = livePerStoryOf(sessions);
   const last = lastPerStoryOf(sessions);
-  const records = await Promise.all([...live.values()].map(async (s) => {
+  // the open investigations' records and the last-ended ones' (B6c X-8): an open and an ended session are never one
+  const records = await Promise.all([...live.values(), ...last.values()].map(async (s) => {
     if (!s.researchWorkId) return [s.sessionId, null];
     if (newest.has(s.researchWorkId)) return [s.sessionId, newest.get(s.researchWorkId)];
     const r = dataOf(await researchWorkRefOf(db, s.researchWorkId).get());
     return [s.sessionId, isOwnedRecord(r, uid) ? r : null];
   }));
   return exploreItemsOf({ live, last, records: new Map(records) });
+}
+
+/**
+ * B6c X-9 with the founder's Q-3 — the list "Use it in my next game" replaces, as `{ id, name }`, or null when none is
+ * equipped (the book has no list id). PER_GAME_LOADOUT_ENABLED is read at call time, as the equip writer reads it
+ * (api/agent/equip-watchlist.js): ON, the BaggerBomb loadout's book (the stored slot, or the default from the League
+ * fields while the slot is absent — baggerbombLoadoutOf); OFF, the League book (the ranked record's own fields —
+ * leagueLoadoutOf), since that is what the equip step then replaces and what a deploy then carries. `name` is the
+ * name stored on the book when the list was equipped (founder Q-5: kept so), trimmed, or null. Pure.
+ */
+export function equippedListOf(agent) {
+  let book = null;
+  try { book = (PER_GAME_LOADOUT_ENABLED ? baggerbombLoadoutOf(agent) : leagueLoadoutOf(agent))?.book ?? null; } catch { book = null; }
+  const listId = bookIdOf(book);
+  const listName = typeof book?.name === 'string' && book.name.trim() ? book.name.trim() : null;
+  return listId ? { id: listId, name: listName } : null;
+}
+
+/**
+ * B6c X-9 — the player's agent as Explore's read tells it, shaped from the agent `readRankedAgent` returns (the rule
+ * `open` uses: the first agent that is neither a training nor a casual clone, owned by the caller — attributionIn's
+ * owner check), or null when the player has none. Pure.
+ *   id             the agent document's id, the one equip targets
+ *   name           partnerNameOf(agent): null when blank (the sheet then says "your agent")
+ *   equippedList   equippedListOf(agent)
+ */
+export function exploreAgentOf(agent, uid) {
+  if (!agent || agent.ownerId !== uid) return null;
+  return { id: agent.id, name: partnerNameOf(agent), equippedList: equippedListOf(agent) };
+}
+
+/**
+ * B6c X-9 — the read's `agent`: one agents query (readRankedAgent's), nothing else read for it. It refuses nothing:
+ * no ranked agent is `null`. A failing query (an I/O error) still fails the whole read, as any of its reads would
+ * (review H-6).
+ */
+export async function readExploreAgent(db, { uid }) {
+  return exploreAgentOf(await readRankedAgent(db, uid), uid);
+}
+
+/**
+ * B6c, the founder's Q-4 — the list a saved thesis's "Use it in my next game" would replace, for GET ?sessionId= on a
+ * saved thesis-builder session only: the caller's ranked agent's equippedListOf, or null (no ranked agent, or no list
+ * equipped). One agents query. A failing query fails the read, as above.
+ */
+export async function readEquippedList(db, { uid }) {
+  return exploreAgentOf(await readRankedAgent(db, uid), uid)?.equippedList ?? null;
 }
 
 /** The caller's OWN drop, or null — another owner's drop is not found (spec §6.3). */

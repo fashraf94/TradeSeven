@@ -6,7 +6,12 @@
 // (`session.adoption.statement` from B6a X-7, so a reopened sheet shows it too),
 // the names and the time frame, REVIEW_HONEST_LINE with the agent's name, and the
 // plain line that the idea book does not read saved theses yet. Done, and "Use it
-// in my next game" (optional; B2's two existing calls, only with an agentId).
+// in my next game" (optional; B2's two existing calls, only with an agentId), with
+// the line above it that says what equipping does (B6c X-10, Q-4): from the
+// server's `equippedList` first — this thesis already equipped ("Equipped for
+// your next game", no offer), another list ("Replaces {list} as your equipped
+// list."), none ("This becomes your equipped list for your next game.") — and
+// from the caller's `equippedListLabel` only when the answer carries no such key.
 // The idea-book ending (T6b) and the watching screen (P1) are not built (§B8).
 //
 // The count of findings the save carried is not shown: no answer carries it (the
@@ -22,7 +27,7 @@ import { Notice, Running } from '../parts';
 
 const B = COPY.builder;
 
-export default function ThesisSaved({ sr, agentName, agentId, onClose }) {
+export default function ThesisSaved({ sr, agentName, agentId, equippedListLabel = null, onClose }) {
   const { session, thesis } = sr.inv;
   const mine = sr.save.sessionId === session.sessionId && ['saved', 'recovered'].includes(sr.save.status);
   const outcome = mine ? sr.save.outcome ?? {} : { watchlistId: session.adoption?.watchlistId ?? null, idempotent: true };
@@ -40,6 +45,21 @@ export default function ThesisSaved({ sr, agentName, agentId, onClose }) {
   const canEquip = typeof agentId === 'string' && agentId.length > 0 && typeof watchlistId === 'string' && watchlistId.length > 0;
   // the read after the save is in flight (K-16): equip waits for it (refuter 2)
   const busy = sr.pending !== null;
+  // B6c X-10 and the founder's Q-4: equipping replaces the agent's equipped list, so the offer says so. The server's
+  // `equippedList` (GET on a saved thesis) comes first:
+  //   - it is this thesis's own list → already equipped: "Equipped for your next game", no offer;
+  //   - another list → "Replaces {name} as your equipped list." ("Replaces your equipped list." with no name);
+  //   - null (none equipped) → "This becomes your equipped list for your next game."
+  // Only when the answer has no `equippedList` key does the caller's equippedListLabel decide: the list by name, else
+  // the plain line (true whether one is equipped or not; never "you have none").
+  const fromServer = Object.prototype.hasOwnProperty.call(sr.inv, 'equippedList');
+  const serverList = fromServer ? sr.inv.equippedList ?? null : null;
+  const alreadyEquipped = fromServer && serverList !== null && serverList.id === watchlistId;
+  const named = (v) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+  const label = named(equippedListLabel);
+  let offerLine;
+  if (fromServer) offerLine = serverList === null ? COPY.becomesList : named(serverList.name) ? COPY.replaces(named(serverList.name)) : COPY.replacesUnnamed;
+  else offerLine = label ? COPY.replaces(label) : COPY.becomesList;
   return (
     <section data-screen-label={`Thesis saved · equip ${canEquip ? eq.status : 'not offered'}`} style={{ ...S.col, gap: 18 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -61,7 +81,9 @@ export default function ThesisSaved({ sr, agentName, agentId, onClose }) {
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <FreeButton label={B.done} trail="" strong onClick={onClose} attrs={{ 'data-sr-done': '' }} />
-        {canEquip && eq.status === 'none' && <FreeButton label={COPY.useNext} trail={B.optional} disabled={busy} onClick={() => sr.equipNow({ agentId, watchlistId })} attrs={{ 'data-sr-equip': '' }} />}
+        {canEquip && eq.status === 'none' && alreadyEquipped && <p style={{ ...S.body, ...WRAP }} data-sr-equipped="" data-sr-equipped-already="">{COPY.equipped}</p>}
+        {canEquip && eq.status === 'none' && !alreadyEquipped && <p style={{ ...S.meta, ...WRAP }} data-sr-equip-line="">{offerLine}</p>}
+        {canEquip && eq.status === 'none' && !alreadyEquipped && <FreeButton label={COPY.useNext} trail={B.optional} disabled={busy} onClick={() => sr.equipNow({ agentId, watchlistId })} attrs={{ 'data-sr-equip': '' }} />}
         {canEquip && eq.status === 'running' && <Running>{COPY.equipping}</Running>}
         {canEquip && eq.status === 'done' && <p style={{ ...S.body, ...WRAP }} data-sr-equipped="">{COPY.equipped}</p>}
         {canEquip && eq.status === 'failed' && (

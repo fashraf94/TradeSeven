@@ -25,7 +25,8 @@
 //   stories            the hub's selection, up to five, same shape as `item`
 //   agentName          string|null — "your agent" when absent (R6)
 //   agentId            string|null — the ranked agent equip targets (ruling P-4); null → no "Use it in my next game"
-//   equippedListLabel  string|null — the "Replaces {list}" line
+//   equippedListLabel  string|null — the "Replaces {list}" line (the idea screen; and, B6c X-10, the thesis saved
+//                      screen, which without it says the thesis becomes the equipped list)
 //   gated              boolean — the hub's gate verdict; a server 404 disabled gates too (K-3)
 //   phone              boolean — the phone's single column
 //   onClose            () => void — "Continue later", "Return to Command Center"
@@ -217,7 +218,7 @@ export default function SharedResearchSheetBody({
       ? <ExistingContinue sr={sr} phone={phone} onClose={onClose} />
       : isBuilderSession(sr.inv.session)
         ? (
-          <Builder key={sr.inv.session.sessionId} sr={sr} agentName={name} agentId={agentId} phone={phone} viewingEarlier={earlier !== null} onBackToCurrent={backToCurrent} onOpenEarlier={openEarlier}
+          <Builder key={sr.inv.session.sessionId} sr={sr} agentName={name} agentId={agentId} equippedListLabel={equippedListLabel} phone={phone} viewingEarlier={earlier !== null} onBackToCurrent={backToCurrent} onOpenEarlier={openEarlier}
             onDiscard={() => setView('discard')} onNewInvestigation={newInvestigation} onClose={onClose} />
         )
         : (

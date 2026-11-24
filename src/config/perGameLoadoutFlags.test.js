@@ -119,6 +119,11 @@ const SERVER_READS = {
   'api/tournament/lobby-quickplay-training.js': [
     'const shape = PER_GAME_LOADOUT_ENABLED ? { valid: true, value: null } : validateLoadoutSpecShape(body?.loadoutSpec);',
   ],
+  // Shared Research B6c (the founder's Q-3): the list "Use it in my next game" replaces — the BaggerBomb book on, the
+  // League book off, as the equip writer above chooses which one to write.
+  'api/_utils/sharedResearch/store.js': [
+    'try { book = (PER_GAME_LOADOUT_ENABLED ? baggerbombLoadoutOf(agent) : leagueLoadoutOf(agent))?.book ?? null; } catch { book = null; }',
+  ],
   'api/_utils/filmRoom/cardStore.js': [
     'return { data, archetype, shelf: PER_GAME_LOADOUT_ENABLED ? loadoutArchetypesOf(data) : archetype };',
     "if (PER_GAME_LOADOUT_ENABLED ? payload.archetypeCodeId !== battleArchetype : payload.archetypeCodeId !== agent.archetype) throw fail(409, 'archetype_changed', { archetypeCodeId: payload.archetypeCodeId, current: PER_GAME_LOADOUT_ENABLED ? battleArchetype : agent.archetype });",
