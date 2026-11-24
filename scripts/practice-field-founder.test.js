@@ -25,7 +25,7 @@ import {
   runCli, parseArgs, parseRequestText, bodyWithoutKey, requestKeyFor, openRecordsOf, sessionsLeft, readOnlyView,
   RESOLVE_FIELDS, DECISIONS_OF, COMMANDS, EXIT, isDirectRun,
 } from './practice-field-founder.mjs';
-import { setPracticeFieldModeForTests } from '../api/_utils/practiceField/mode.js';
+import { setPracticeFieldModeForTests, setPracticeFieldAgentForTests } from '../api/_utils/practiceField/mode.js';
 import { COCKPIT_ALLOWLIST_ENV } from '../api/_utils/callRecords/allowlist.js';
 import { normalizeIdeaContract } from '../api/_utils/practiceField/contract.js';
 import { planHoldRuling, HOLD_KINDS } from '../api/_utils/practiceField/holdRulings.js';
@@ -82,6 +82,10 @@ const untouchable = () => ({
   collection: () => { throw new Error('a read was made'); },
   runTransaction: () => { throw new Error('a transaction was opened'); },
 });
+
+// The agent-on PR: this suite was written with the agent's switch off; it is pinned off here for the whole file (the B2
+// status row turns it on itself and restores to this). The agent's own suites cover it on.
+setPracticeFieldAgentForTests({ agent: false });
 
 let restoreMode;
 beforeEach(() => {

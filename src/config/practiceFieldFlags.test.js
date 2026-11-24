@@ -62,9 +62,10 @@ describe('PRACTICE_FIELD_MODE — the pin (BUILD_RULES §2)', () => {
 });
 
 describe('the agent sub-switches (build B2, ruling PF-4) — the pins (BUILD_RULES §2)', () => {
-  it('PRACTICE_FIELD_AGENT_ENABLED is false: merging spends nothing', () => {
-    // THE ROW THAT MOVES WITH THE FOUNDER'S FLIP, in that PR's own commit, with the DARK_BY_DESIGN entry dropped.
-    expect(PRACTICE_FIELD_AGENT_ENABLED).toBe(false);
+  it('PRACTICE_FIELD_AGENT_ENABLED is true: the agent is on for the books the mode admits (the agent-on PR)', () => {
+    // THE ROW THAT MOVED WITH THE FOUNDER'S FLIP, in that PR's own commit, with the DARK_BY_DESIGN entry dropped; a
+    // rollback moves it back.
+    expect(PRACTICE_FIELD_AGENT_ENABLED).toBe(true);
   });
   it('PRACTICE_FIELD_AGENT_THESES_ENABLED is false: saved theses are not a source until their own flip', () => {
     expect(PRACTICE_FIELD_AGENT_THESES_ENABLED).toBe(false);
@@ -76,9 +77,9 @@ describe('the agent sub-switches (build B2, ruling PF-4) — the pins (BUILD_RUL
       expect(SRC.slice(0, idx).split('\n').slice(-2).join('\n')).toMatch(/Pinned by: practiceFieldFlags\.test\.js/);
     }
   });
-  it('the module is registered with the guard, and both switches are registered dark by design', () => {
+  it('the module is registered with the guard; the agent switch is no longer dark by design (the flip removed its entry), the theses switch still is', () => {
     expect(GUARD).toMatch(/'src\/config\/practiceFieldFlags\.js'/);
-    expect(GUARD).toMatch(/^ {2}PRACTICE_FIELD_AGENT_ENABLED:$/m);
+    expect(GUARD).not.toMatch(/^ {2}PRACTICE_FIELD_AGENT_ENABLED:$/m);
     expect(GUARD).toMatch(/^ {2}PRACTICE_FIELD_AGENT_THESES_ENABLED:$/m);
   });
 });

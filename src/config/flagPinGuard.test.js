@@ -116,9 +116,12 @@ const DARK_BY_DESIGN = {
   // false mocks and did not move with the flip.
   WIRE_NEWSLINE_ENABLED:
     'Wire runway step 7 (LAST) — requires WIRE_WRITES_ENABLED; flips last at founder discretion',
-  // Practice Field build B2 (founder ruling PF-4): the agent ships off, so merging spends nothing.
-  PRACTICE_FIELD_AGENT_ENABLED:
-    'Practice Field B2 (ruling PF-4) — the agent\'s one check per desk per session at the close (claude-sonnet-5-5, reserved against the book\'s $3 month). Off on merge; the founder flips it in his own one-line PR after the build report\'s §7 steps, moving the pin in practiceFieldFlags.test.js to true AND removing this entry in the same commit',
+  // PRACTICE_FIELD_AGENT_ENABLED intentionally ABSENT: the agent (Practice Field B2, ruling PF-4) flipped true in the
+  // agent-on PR (Nov 24, 2026, after Astra's B2 confirmation READY) — the deliberate flip drops it here in the same
+  // commit, per the guard's own "if DELIBERATE" instruction. PRACTICE_FIELD_MODE ('allowlist') still decides whose book
+  // it runs for. Its pin in practiceFieldFlags.test.js asserts the live true value AND, turned around, that this entry is
+  // gone; a rollback moves the flag and its pin, and the entry stays out (a kill switch now). Re-adding it while it
+  // ships true fails the DARK_BY_DESIGN integrity test below.
   PRACTICE_FIELD_AGENT_THESES_ENABLED:
     'Practice Field B2 (ruling PF-5) — the owner\'s saved theses as a drafting source for the Shadow desk; its own sub-switch, off on merge, flipped by its own founder PR (pin in practiceFieldFlags.test.js, this entry removed in the same commit). Does nothing while PRACTICE_FIELD_AGENT_ENABLED is false',
   // PRACTICE_FIELD_SCREEN_ENABLED intentionally ABSENT: the idea book screen (Practice Field B3) flipped true in the

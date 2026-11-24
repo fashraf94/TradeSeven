@@ -44,15 +44,17 @@ export const PRACTICE_FIELD_MODES = Object.freeze(['off', 'allowlist', 'on']);
  * ideas, and drafts into its empty slots; code admits, sizes and sells. The close snapshot of a session where a book
  * will draft also carries the shared candidate universe.
  *
- * DARK ON MERGE, so merging spends nothing: with it false no agent code path reads, writes, fetches or calls — every
- * fire is the engine's and the idea book's as before (the isolation rows prove it byte for byte). It is read only
- * through api/_utils/practiceField/mode.js, at call time, and only while PRACTICE_FIELD_MODE is not 'off'.
- * Runway: false ships with B2; the founder's own one-line PR flips it (the steps are in the build report §7), moving
- * this literal, its pin row in practiceFieldFlags.test.js and its DARK_BY_DESIGN entry in flagPinGuard.test.js in
- * one commit (BUILD_RULES §2). Rollback: the same line back.
+ * ON (the founder's agent-on PR, Nov 24, 2026, after Astra's B2 confirmation READY), and a kill switch: with it false
+ * no agent code path reads, writes, fetches or calls — every fire is the engine's and the idea book's as before (the
+ * isolation rows prove it byte for byte). It is read only through api/_utils/practiceField/mode.js, at call time, and
+ * only while PRACTICE_FIELD_MODE is not 'off'; at 'allowlist' it runs only for a book whose owner the allowlist holds.
+ * Runway: false shipped with B2; the agent-on PR flipped it (the build report §7 step 3), moving this literal, its pin
+ * row in practiceFieldFlags.test.js and its DARK_BY_DESIGN entry in flagPinGuard.test.js in one commit (BUILD_RULES §2).
+ * Rollback: the literal and its pin row back to false; the DARK_BY_DESIGN entry stays out (a kill switch now). Ideas
+ * the agent admitted keep running under code.
  */
 // Pinned by: practiceFieldFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const PRACTICE_FIELD_AGENT_ENABLED = false;
+export const PRACTICE_FIELD_AGENT_ENABLED = true;
 
 /**
  * PRACTICE_FIELD_AGENT_THESES_ENABLED — build B2 (ruling PF-5): the owner's saved theses (`thesisCard` on a saved

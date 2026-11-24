@@ -53,7 +53,7 @@ import { simulateFullRollover } from '../_utils/mandateAcceleratedClock.js';
 import { CANDIDATE_UNIVERSE } from '../_utils/mandateCandidateUniverse.js';
 import { assembleBuildSet, ensureUniverseSnapshot, isSymbolActionable, isCoverageOnly } from '../_utils/mandateUniverseSnapshot.js';
 import { splitActiveBooks } from '../_utils/mandateBookKind.js';
-import { setPracticeFieldModeForTests } from '../_utils/practiceField/mode.js';
+import { setPracticeFieldModeForTests, setPracticeFieldAgentForTests } from '../_utils/practiceField/mode.js';
 import { admitIdea } from '../_utils/practiceField/admission.js';
 import { nextSessionDate } from '../_utils/practiceField/windows.js';
 import { PRACTICE_FIELD_FUNDS } from '../../src/data/practiceFieldFunds.js';
@@ -114,6 +114,10 @@ const snapshotOfStore = (db, prefix) => JSON.stringify([...db._store.entries()].
 const closeTickOf = (date) => ({ date, closeKey: `${date}_close` });
 const closeNow = (date) => new Date(etMs(date, 16, 30));
 const evalNow = (date, slot) => new Date(etMs(date, slot === 'open30' ? 10 : slot === 'midday' ? 12 : 15, slot === 'midday' ? 46 : slot === 'preClose' ? 31 : 2));
+
+// The agent-on PR: this suite was written for the engine's sweeps without the agent's pass; the agent's switch is pinned
+// off here for the whole file (the agent's own suites cover it on).
+setPracticeFieldAgentForTests({ agent: false });
 
 let restoreMode;
 let errors;
