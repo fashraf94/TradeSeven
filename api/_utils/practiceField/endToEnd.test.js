@@ -94,7 +94,11 @@ import {
 // T1a-2b-3, step 4 (Amendment F-7, F-8): re-pinned from 37333fe9…. NO MONEY LEAF CHANGED. 4 leaves ADDED: the XOM split's
 // receipt keeps `sharesBefore` / `sharesAfter` (the count a late dividend would read), on idea B and in its receipt part;
 // 3 leaves CHANGED: that part's `contentHash` (twice: the part and the packet's manifest) and the packet's.
-const EXPECTED_DUMP = { sha256: 'abcf842026a3d5c4ce4f2c3a858dbd5fcabad2a3388df6c73b3f944ce7c24ed9', bytes: 443533 };
+// Build B2 (ruling B2-4: PRACTICE_FIELD_SLOTS_VERSION 1 → 2): re-pinned from abcf8420…. The ONLY change is the slots version
+// frozen into the three ideas' contracts and their admission packets (one character each, so the byte count is unchanged):
+// with the constant set back to 1 on the build's tree, this run reproduces abcf8420… exactly — the shared endpoint step and
+// evidence reads (close.js settleIdeaAtEndpoint, readIdeaEvidenceRows) changed nothing, and the agent's switches are off.
+const EXPECTED_DUMP = { sha256: 'f5ed5c964c84d28bf0dd47524e0760a7dcff22012c8bed7e760600889e235c08', bytes: 443533 };
 
 // Twenty-nine sessions from Monday 16 November 2026 (Thanksgiving and Christmas are not sessions).
 const SESSIONS = ['2026-11-16'];

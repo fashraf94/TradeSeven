@@ -17,6 +17,10 @@
 //   capitalUsd  positive, whole cents
 //   origin      { kind, initiatedBy }
 //   sources     [{ kind, ref }]             may be empty only for origin 'founder_fixture'
+//   desk?       'shadow' | 'archetype'      build B2 (ruling B2-7): the desk that drafted it, frozen with the contract,
+//                                           and it must be the desk of the slot. Absent on a founder's idea, which then
+//                                           belongs to the desk of its slot (agentConfig.js deskOfIdea) — so a contract
+//                                           without it normalises exactly as before.
 //
 // Pure.
 
@@ -29,6 +33,7 @@ import {
 } from './constants.js';
 import { normSymbol, isUniverseStock, isFundSymbol, fundOf, mandateSectorOf } from './symbols.js';
 import { slotSessions } from './windows.js';
+import { DESK_IDS, deskOfSlot } from './agentConfig.js';
 import {
   toCents, weightPpm, WEIGHT_PPM_TOTAL, equalSplitCents, weightedCents,
 } from './money.js';
@@ -124,6 +129,14 @@ export function normalizeIdeaContract(raw) {
   if (slot === null) refuse('slot_invalid');
   const sessions = slot ? slotSessions(slot) : null;
   if (slot !== null && sessions === null) refuse('slot_invalid', { reason: 'no_window' });
+
+  // Build B2 (ruling B2-7): the drafting desk, when the draft names one — a desk drafts only for its own slots.
+  let desk;
+  if (input.desk !== undefined) {
+    if (!DESK_IDS.includes(input.desk)) refuse('desk_invalid');
+    else if (slot !== null && deskOfSlot(slot) !== input.desk) refuse('desk_slot_mismatch', { desk: input.desk, slot });
+    else desk = input.desk;
+  }
 
   // 3. Names
   const { min: minNames, max: maxNames } = PRACTICE_FIELD_SLOTS.B3_NAMES_PER_IDEA;
@@ -253,6 +266,7 @@ export function normalizeIdeaContract(raw) {
       capitalUsd,
       origin,
       sources,
+      ...(desk !== undefined ? { desk } : {}),
     },
     refusals,
   };

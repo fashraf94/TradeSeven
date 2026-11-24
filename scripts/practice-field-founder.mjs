@@ -18,7 +18,11 @@
 //   status       Reads only. The mode, whether the uid is a founder (and on the cockpit list the mode admits by), the
 //                book (state, cash, its three slots: each idea's names, status, lines and sessions left), the open
 //                records the founder can rule on (each with its idea, kind and record id — what `resolve` needs), and the
-//                latest parse-report alerts for the book's own symbols. It prints no other user's ids and no credential.
+//                latest parse-report alerts for the book's own symbols. Build B2: whether the agent's switches are on in
+//                this checkout, the LATEST CLOSE ROW's agent block — each desk's note under its name, where the note came
+//                from, each idea's action and reason and what came of it, the drafts considered (admitted, refused with
+//                their codes, or not chosen) — and this month's spend against the $3 bound. It prints no other user's
+//                ids and no credential.
 //   create-book  The door's create_book: an idea book for the uid and its one ranked agent (or the one --agent names).
 //   admit        The door's admit_fixture: the contract in the file, on the uid's open book. The door sets the origin
 //                to a founder fixture whatever the file says. With --dry-run it sends nothing: it runs the door's own
@@ -71,7 +75,9 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PRACTICE_FIELD_MODE as SHIPPED_MODE } from '../src/config/practiceFieldFlags.js';
-import { practiceFieldMode, practiceFieldAdmits } from '../api/_utils/practiceField/mode.js';
+import { practiceFieldMode, practiceFieldAdmits, practiceFieldAgentOn, practiceFieldAgentThesesOn } from '../api/_utils/practiceField/mode.js';
+import { spendMonthOf, MONTHLY_SPEND_BOUND_USD } from '../api/_utils/practiceField/spend.js';
+import { DESKS, DESK_IDS } from '../api/_utils/practiceField/agentConfig.js';
 import {
   runFounderAction, isPracticeFieldFounder, founderAllowlist, founderRequestFingerprint, FOUNDER_FIXTURE_ORIGIN,
 } from '../api/_utils/practiceField/founderControls.js';
@@ -383,6 +389,49 @@ async function parseAlertsOf(db, book, ideas) {
   return { session, stored: report !== null, alerts };
 }
 
+/**
+ * Build B2 — THE AGENT'S LATEST CHECK, from the latest close row of the book's window ledger
+ * (`mandates/{bookId}/windows/{lastClose}_close`, field `agent`): per desk, its note and where it came from, each idea's
+ * action and reason and what came of it, and the drafts considered. The book's own records only.
+ */
+async function agentCheckOf(db, bookId, book) {
+  const session = typeof book.execState?.lastCloseKey === 'string' ? book.execState.lastCloseKey : null;
+  const out = { enabled: practiceFieldAgentOn(), thesesEnabled: practiceFieldAgentThesesOn(), session, desks: null };
+  // With the agent off in this checkout nothing of it is read (review C-4): the flag's own promise.
+  if (session === null || !out.enabled) return out;
+  const row = dataOf(await db.collection('mandates').doc(bookId).collection('windows').doc(`${session}_close`).get());
+  const desks = row?.agent?.desks ?? null;
+  if (!desks) return out;
+  out.desks = {};
+  for (const id of DESK_IDS) {
+    const p = desks[id];
+    if (!p) { out.desks[id] = null; continue; }
+    out.desks[id] = {
+      name: p.deskName ?? DESKS[id].name, status: p.status ?? null, source: p.source ?? null, note: p.note ?? null, fallbackReason: p.fallbackReason ?? null,
+      actions: (p.actions || []).map((a) => ({ ideaId: a.ideaId, action: a.action, reason: a.reason, outcome: a.outcome ?? null })),
+      considered: (p.considered || []).map((c) => ({
+        index: c.index, slot: c.slot, names: c.names || [], outcome: c.outcome, ideaId: c.ideaId ?? null, capitalUsd: c.capitalUsd ?? null,
+        refusals: (c.refusals || []).map((r) => r.code), thesis: c.thesis ?? null, source: c.source?.kind ?? null,
+      })),
+      calls: (p.attempts || []).length,
+      chargedUsd: (p.attempts || []).reduce((n, a) => n + (Number(a.chargedUsd) || 0), 0),
+    };
+  }
+  return out;
+}
+
+/** This month's spend against the bound (the book's `spend` totals; a stored month older than now's is last month's). */
+function spendOfBook(book, nowIso) {
+  const month = spendMonthOf(nowIso);
+  const s = book.spend ?? null;
+  const current = s && s.month === month;
+  return {
+    month, boundUsd: MONTHLY_SPEND_BOUND_USD,
+    committedUsd: current ? (s.reservedUsd ?? 0) : 0, settledUsd: current ? (s.settledUsd ?? 0) : 0,
+    calls: current ? (s.calls ?? 0) : 0, exhausted: current ? s.exhausted === true : false,
+  };
+}
+
 /** The gates that need no read: the mode and the founder list. */
 export function readGates(uid) {
   const mode = practiceFieldMode();
@@ -421,10 +470,13 @@ export async function runStatus(db, { uid, nowIso }) {
   const otherOpen = ideas.filter((i) => !inSlots.has(i.ideaId)).map((i) => ideaView(i, i.contract?.slot ?? null, today));
   const records = ideas.flatMap((i) => openRecordsOf(i));
   const parse = await parseAlertsOf(db, book, ideas);
+  const agent = await agentCheckOf(db, bookId, book);
   return {
     exitCode: EXIT.DONE,
     result: {
       ...result,
+      agent,
+      spend: spendOfBook(book, nowIso),
       book: {
         bookId, status: book.status ?? null, drafting: book.drafting ?? null, windDownRequestedAt: book.windDown?.requestedAt ?? null,
         archetype: book.archetypeCodeId ?? null, agentId: book.attributionAgentId ?? null,
@@ -619,6 +671,25 @@ export function renderText(result) {
     const p = result.parseReport;
     out.push('', `parse report    ${p.session === null ? 'no close yet' : `${p.session}${p.stored ? '' : ' (none stored)'}: ${p.alerts.length === 0 ? 'clean for the book\'s symbols' : `${p.alerts.length} alert(s)`}`}`);
     for (const a of p.alerts) out.push(`  ${a.symbol}  ${a.reason}`);
+    // Build B2: the agent's latest check, desk by desk, and the month's spend.
+    const ag = result.agent;
+    if (ag) {
+      out.push('', `agent           ${ag.enabled ? 'on' : 'off'} in this checkout (saved theses ${ag.thesesEnabled ? 'on' : 'off'})   latest check: ${ag.session ?? 'no close yet'}${ag.desks ? '' : ' — no check recorded'}`);
+      for (const id of DESK_IDS) {
+        const d = ag.desks?.[id];
+        if (!ag.desks) break;
+        if (!d) { out.push(`  ${DESKS[id].name}: nothing recorded`); continue; }
+        out.push(`  ${d.name}   ${d.source ?? d.status}${d.fallbackReason ? ` (${d.fallbackReason})` : ''}   ${d.calls} call(s), ${usd(d.chargedUsd)}`);
+        out.push(`    note        ${d.note === null ? '—' : JSON.stringify(d.note)}`);
+        for (const a of d.actions) out.push(`    action      ${a.ideaId}  ${a.action} → ${a.outcome ?? '—'}   ${JSON.stringify(a.reason)}`);
+        for (const c of d.considered) {
+          const what = c.outcome === 'admitted' ? `ADMITTED ${c.ideaId} at ${usd(c.capitalUsd)}` : (c.outcome === 'refused' ? `refused: ${c.refusals.join(', ')}` : c.outcome);
+          out.push(`    draft ${c.index}     ${c.slot}  ${c.names.join(', ')}  (${c.source ?? '—'})  ${what}`);
+        }
+      }
+    }
+    const sp = result.spend;
+    if (sp) out.push('', `spend           ${sp.month}: ${usd(sp.settledUsd)} charged, ${usd(sp.committedUsd)} committed of ${usd(sp.boundUsd)}   ${sp.calls} call(s)${sp.exhausted ? '   EXHAUSTED — no call until next month' : ''}`);
     return out;
   }
   if (result.dryRun) {

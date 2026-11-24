@@ -200,7 +200,7 @@ describe('admitIdea — reserving capital and coverage', () => {
     });
     expect(idea.contract).toMatchObject({
       origin: { kind: 'founder_fixture', initiatedBy: 'agent' }, riskAssumption: 'exit_at_line_next_eligible_fill',
-      band: { shareOfReserved: 0.0025, usd: 50 }, benchmarkSymbol: 'SPY', epochId: 'epoch-0001', contractVersion: 2, slotsVersion: 1, fundsVersion: 1,
+      band: { shareOfReserved: 0.0025, usd: 50 }, benchmarkSymbol: 'SPY', epochId: 'epoch-0001', contractVersion: 2, slotsVersion: 2, fundsVersion: 1,
       schedule: { startSession: DAYS.d1, dueSession: '2026-12-01', sessions: 10 },
     });
     const ref = `${bookId}/${res.ideaId}`;

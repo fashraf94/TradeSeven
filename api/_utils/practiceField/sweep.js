@@ -60,7 +60,7 @@ import { makeParseReportingFetcher } from './caParseReport.js';
 import { etDateOfMs } from './windows.js';
 import { nextSessionDate } from './windows.js';
 import { recordWindowAttempt } from './windowLedger.js';
-import { practiceFieldLive } from './mode.js';
+import { practiceFieldLive, practiceFieldAgentOn } from './mode.js';
 import { PRACTICE_FIELD_BOOK_REGISTRY_ID } from './constants.js';
 
 const LOG_PREFIX = '[PracticeFieldSweep]';
@@ -120,7 +120,44 @@ async function ideaBooksOfStatus(db, status) {
 }
 
 /**
+ * Build B2 (§2): may this idea book DRAFT at its next close — active, drafting not paused, no wind-down, a slot empty?
+ * Pure. (Whether the slot's desk still has its refill attempt this session is the agent's own question; at the close
+ * snapshot's build no desk has run yet.)
+ */
+export function ideaBookMayDraft(book) {
+  return isIdeaBook(book) && book.status === 'active' && book.drafting !== 'paused' && !book.windDown
+    && ['short', 'medium', 'long'].some((s) => (book.slots?.[s] ?? null) === null);
+}
+
+/** The statuses of an idea whose slot may FREE at the close (review B-1): a timed-out entry; a line-exited or settled idea resolving. */
+export const SLOT_MAY_FREE_AT_CLOSE = Object.freeze(['accepted', 'line_hit_exit_pending', 'settled']);
+
+/**
+ * Review B-1: may this idea book draft at THIS close? The close snapshot is built BEFORE the book's close runs, and a slot
+ * can free at the close itself — an entry timing out, or an idea whose holdings were all sold resolving. So: a book that may
+ * draft (ideaBookMayDraft), or one active and drafting whose slot holds an idea in such a status (one read per held slot;
+ * an idea that cannot be read counts as one that may free). Only reached with the agent on.
+ */
+export async function ideaBookMayDraftAtClose(db, book) {
+  if (!(isIdeaBook(book) && book.status === 'active' && book.drafting !== 'paused' && !book.windDown)) return false;
+  if (ideaBookMayDraft(book)) return true;
+  for (const s of ['short', 'medium', 'long']) {
+    const id = book.slots?.[s] ?? null;
+    const snap = await db.collection('mandates').doc(book.bookId).collection('ideas').doc(id).get();
+    if (!snap.exists || SLOT_MAY_FREE_AT_CLOSE.includes(snap.data()?.status)) return true;
+  }
+  return false;
+}
+
+/**
  * The snapshot builders' inputs when at least one idea book is active.
+ *
+ * Build B2 (§2) — THE CANDIDATE UNIVERSE ON A DRAFTING CLOSE. On the CLOSE fire (`closeTick`), when the agent is on and an
+ * active idea book may draft at this close (`ideaBooks`, ideaBookMayDraftAtClose: a slot empty, or holding an idea that may
+ * free at the close — review B-1), the close snapshot's build carries the shared candidate
+ * universe — its QUOTES only: the daily build is unchanged (no top-up of the day's slow layer), and the candidate floor
+ * stays 0 (a small universe never reads as degraded). The desks' candidate list is read from that stored snapshot. With the
+ * agent off, on any slot tick, or with no book to draft for, the inputs are exactly as before.
  *
  * T1a-2b-4 adds two things to the DAILY build's inputs only (never the slot snapshots'):
  *   • THE PARSE REPORT (Astra T2D-12; caParseReport.js): the daily build fetches the corporate actions of the symbols an
@@ -137,7 +174,7 @@ async function ideaBooksOfStatus(db, status) {
  *   active idea books hold, and which books they are
  * @returns {Promise<{ daily: object, tick: object, coverageCount: number }>}
  */
-export async function practiceFieldBuildInputs(db, { ideaHeldTickers = [], quarterlyActive, coverageData, ideaBookIds = [], now = new Date() }) {
+export async function practiceFieldBuildInputs(db, { ideaHeldTickers = [], quarterlyActive, coverageData, ideaBookIds = [], now = new Date(), closeTick = false, ideaBooks = [] }) {
   // `coverageData` is the coverage document the draining-query fallback ALREADY read this fire (coverageFromStandIn):
   // handed on, so that path needs no second read — a second one failing would throw into the fire the fallback is
   // there to protect (third refuter pass, 9a). On every other path it is undefined and the document is read here.
@@ -163,9 +200,20 @@ export async function practiceFieldBuildInputs(db, { ideaHeldTickers = [], quart
   // T2D-12: the parse-reporting wrapper, only when an idea book's coverage requires a symbol of this build.
   const parseReporting = practiceFieldLive() && dailyCoverage.length > 0
     ? { fetchCorporateActions: makeParseReportingFetcher(db, { symbols: dailyCoverage }) } : {};
+  // Build B2: the close snapshot of a drafting fire keeps the default candidate universe (see the header). Fenced: a failed
+  // read keeps the universe (one more quote call), never drops it.
+  let draftingClose = false;
+  if (closeTick === true && !quarterlyActive && practiceFieldAgentOn()) {
+    try {
+      for (const b of ideaBooks) if (await ideaBookMayDraftAtClose(db, b)) { draftingClose = true; break; }
+    } catch (err) {
+      console.error(`${LOG_PREFIX} PRACTICE_FIELD_AGENT_GATE_READ_FAILED — the close snapshot keeps the candidate universe: ${err?.message ?? err}`);
+      draftingClose = true;
+    }
+  }
   return {
     daily: { ...withoutDefault, coverageTickers: dailyCoverage, staticClassifications: fundStaticClassifications(), ...parseReporting },
-    tick: { ...withoutDefault, coverageTickers, ...(quarterlyActive ? {} : { minCandidateCapacity: 0 }) },
+    tick: { ...(draftingClose ? {} : withoutDefault), coverageTickers, ...(quarterlyActive ? {} : { minCandidateCapacity: 0 }) },
     coverageCount: reserved.length,
   };
 }

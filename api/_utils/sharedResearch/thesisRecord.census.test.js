@@ -63,11 +63,21 @@ describe('PF-1 — thesisCard has one writer, the save transaction', () => {
     expect(left.length).toBeGreaterThan(0);
     for (const r of left) expect(read('scripts/composition/assemble.mjs')).toContain('cells_${label}.js');
   });
-  it('the field\'s name is written in code in exactly one module: the constant in thesis.js', { timeout: 60_000 }, () => {
+  it('the field\'s name is written in code in exactly two modules: the constant in thesis.js, and the Practice Field\'s one reader', { timeout: 60_000 }, () => {
     expect(THESIS_CARD_FIELD).toBe('thesisCard');
     const naming = TREE.filter((r) => /\bthesisCard\b/.test(codeOf(r)));
-    expect(naming).toEqual(['api/_utils/sharedResearch/thesis.js']);
+    // Practice Field build B2 (ruling PF-5): the idea book's drafting READS the saved card — W-9 named the Practice Field as
+    // a reader of this name and shape. Its one module names the field once, in a constant, and writes nothing (next row).
+    expect(naming).toEqual(['api/_utils/practiceField/agentSources.js', 'api/_utils/sharedResearch/thesis.js']);
     expect(codeOf('api/_utils/sharedResearch/thesis.js').match(/'thesisCard'/g)).toHaveLength(1);
+    expect(codeOf('api/_utils/practiceField/agentSources.js').match(/\bthesisCard\b/g)).toHaveLength(1);
+  });
+  it('the Practice Field\'s reader WRITES NOTHING: no set, update, create, delete or transaction anywhere in its module', () => {
+    const calls = callNamesOf(read('api/_utils/practiceField/agentSources.js'), 'api/_utils/practiceField/agentSources.js').map((c) => c.name);
+    expect(calls.length).toBeGreaterThan(5); // the walk read the module (a census that reads nothing passes nothing)
+    expect(calls).toContain('get');
+    // (Not `add`: the module's Set.add calls share the name; it makes no collection write of any kind.)
+    expect(calls.filter((n) => /^(?:set|update|create|delete|recursiveDelete|arrayRemove|runTransaction|batch|commit)$/.test(n))).toEqual([]);
   });
   it('the constant reaches one module, and that module names it once: in adoptThesis, inside the save', { timeout: 60_000 }, () => {
     const users = TREE.filter((r) => r !== 'api/_utils/sharedResearch/thesis.js' && /\bTHESIS_CARD_FIELD\b/.test(codeOf(r)));

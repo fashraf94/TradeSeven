@@ -35,3 +35,30 @@ export const PRACTICE_FIELD_MODE = 'allowlist';
 
 /** The walked states, in runway order. */
 export const PRACTICE_FIELD_MODES = Object.freeze(['off', 'allowlist', 'on']);
+
+/**
+ * PRACTICE_FIELD_AGENT_ENABLED — build B2 (T1b + T1d, launch scope; founder ruling PF-4): the AGENT's one check per
+ * desk per session, at the close. With it true, after an open idea book's close has committed, each desk with work
+ * (the Shadow desk: medium and long; the archetype desk: short) makes ONE model call (claude-sonnet-5-5, reserved and
+ * settled against the book's $3 month), writes its note on the session's close row, holds or exits each of its open
+ * ideas, and drafts into its empty slots; code admits, sizes and sells. The close snapshot of a session where a book
+ * will draft also carries the shared candidate universe.
+ *
+ * DARK ON MERGE, so merging spends nothing: with it false no agent code path reads, writes, fetches or calls — every
+ * fire is the engine's and the idea book's as before (the isolation rows prove it byte for byte). It is read only
+ * through api/_utils/practiceField/mode.js, at call time, and only while PRACTICE_FIELD_MODE is not 'off'.
+ * Runway: false ships with B2; the founder's own one-line PR flips it (the steps are in the build report §7), moving
+ * this literal, its pin row in practiceFieldFlags.test.js and its DARK_BY_DESIGN entry in flagPinGuard.test.js in
+ * one commit (BUILD_RULES §2). Rollback: the same line back.
+ */
+// Pinned by: practiceFieldFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const PRACTICE_FIELD_AGENT_ENABLED = false;
+
+/**
+ * PRACTICE_FIELD_AGENT_THESES_ENABLED — build B2 (ruling PF-5): the owner's saved theses (`thesisCard` on a saved
+ * list) as a drafting source for the Shadow desk only, read-only, quoted to the model as untrusted player text. Its
+ * own sub-switch under PRACTICE_FIELD_AGENT_ENABLED (with the agent off it does nothing). Dark on merge; flipped by
+ * its own founder PR the same way.
+ */
+// Pinned by: practiceFieldFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const PRACTICE_FIELD_AGENT_THESES_ENABLED = false;

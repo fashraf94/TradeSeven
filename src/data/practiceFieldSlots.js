@@ -9,7 +9,9 @@
 // the idea record's own window table (src/constants/hypothesisRecords.js HORIZON_WINDOW_SESSIONS) by
 // api/_utils/practiceField/windows.js. practiceFieldSlots.test.js binds the two.
 
-export const PRACTICE_FIELD_SLOTS_VERSION = 1;
+// Version 2 (build B2, founder ruling B2-4): the origin kind `market_scan` joined the vocabulary — an idea the agent
+// drafted from the shared price list, its source reference the close snapshot it read. No slot value changed.
+export const PRACTICE_FIELD_SLOTS_VERSION = 2;
 
 /** The three slots, in horizon order. One idea each. */
 export const PRACTICE_FIELD_SLOT_NAMES = Object.freeze(['short', 'medium', 'long']);
@@ -48,9 +50,13 @@ export const PRACTICE_FIELD_SLOTS = Object.freeze({
   B9_MONTHLY_SPEND_BOUND_USD: 3,
 });
 
-/** Direction note ruling 6: where an idea came from. Frozen with the contract; each source carries one too. */
+/**
+ * Direction note ruling 6: where an idea came from. Frozen with the contract; each source carries one too.
+ * `market_scan` (build B2, ruling B2-4): drafted by the agent from the shared price list; its source reference is
+ * the close snapshot the agent read. An idea drafted from a saved thesis is `research`, its reference the saved list.
+ */
 export const PRACTICE_FIELD_ORIGIN_KINDS = Object.freeze([
-  'signaldrop', 'conversation', 'game_moment', 'film_room_card', 'research', 'agent_prior_ideas', 'founder_fixture',
+  'signaldrop', 'conversation', 'game_moment', 'film_room_card', 'research', 'agent_prior_ideas', 'founder_fixture', 'market_scan',
 ]);
 
 /** `player` when the idea answers a nomination, otherwise `agent`. */

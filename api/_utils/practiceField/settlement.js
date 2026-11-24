@@ -51,7 +51,12 @@ import { toCents, fromCents } from './money.js';
 /** The corporate actions that pay cash into a ledger. */
 const CASH_ACTION_TYPES = new Set(['delisting', 'cash_dividend']);
 
-export const ENDPOINT_KIND = Object.freeze({ DUE_SESSION: 'due_session', EARLY_RESOLUTION: 'early_resolution', LATE: 'late' });
+/**
+ * Build B2 (ruling B2-1): `manager_exit` — the agent asked at a close to settle the idea early; the endpoint is that close's,
+ * and the settlement sale fills at the next session's first window (managerExit.js). Its result reads as settled early by
+ * the manager.
+ */
+export const ENDPOINT_KIND = Object.freeze({ DUE_SESSION: 'due_session', EARLY_RESOLUTION: 'early_resolution', LATE: 'late', MANAGER_EXIT: 'manager_exit' });
 
 /** What a holding of an idea is waiting for, if anything. */
 export const pendingSaleOf = (holding) => holding?.settlementPending ?? holding?.exitPending ?? null;

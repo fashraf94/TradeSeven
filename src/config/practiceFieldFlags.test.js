@@ -13,7 +13,9 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
-import { PRACTICE_FIELD_MODE, PRACTICE_FIELD_MODES } from './practiceFieldFlags.js';
+import {
+  PRACTICE_FIELD_MODE, PRACTICE_FIELD_MODES, PRACTICE_FIELD_AGENT_ENABLED, PRACTICE_FIELD_AGENT_THESES_ENABLED,
+} from './practiceFieldFlags.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SRC_ROOT = path.resolve(HERE, '..');
@@ -55,6 +57,34 @@ describe('PRACTICE_FIELD_MODE — the pin (BUILD_RULES §2)', () => {
   });
 
   it('the module has no imports', () => {
+    expect(SRC).not.toMatch(/^import /m);
+  });
+});
+
+describe('the agent sub-switches (build B2, ruling PF-4) — the pins (BUILD_RULES §2)', () => {
+  it('PRACTICE_FIELD_AGENT_ENABLED is false: merging spends nothing', () => {
+    // THE ROW THAT MOVES WITH THE FOUNDER'S FLIP, in that PR's own commit, with the DARK_BY_DESIGN entry dropped.
+    expect(PRACTICE_FIELD_AGENT_ENABLED).toBe(false);
+  });
+  it('PRACTICE_FIELD_AGENT_THESES_ENABLED is false: saved theses are not a source until their own flip', () => {
+    expect(PRACTICE_FIELD_AGENT_THESES_ENABLED).toBe(false);
+  });
+  it('each is a plain boolean export the flag-pin guard can scan, with a Pinned-by pointer naming this file', () => {
+    for (const name of ['PRACTICE_FIELD_AGENT_ENABLED', 'PRACTICE_FIELD_AGENT_THESES_ENABLED']) {
+      expect(SRC).toMatch(new RegExp(`^export const ${name} = (true|false);$`, 'm'));
+      const idx = SRC.indexOf(`export const ${name} = `);
+      expect(SRC.slice(0, idx).split('\n').slice(-2).join('\n')).toMatch(/Pinned by: practiceFieldFlags\.test\.js/);
+    }
+  });
+  it('the module is registered with the guard, and both switches are registered dark by design', () => {
+    expect(GUARD).toMatch(/'src\/config\/practiceFieldFlags\.js'/);
+    expect(GUARD).toMatch(/^ {2}PRACTICE_FIELD_AGENT_ENABLED:$/m);
+    expect(GUARD).toMatch(/^ {2}PRACTICE_FIELD_AGENT_THESES_ENABLED:$/m);
+  });
+});
+
+describe('PRACTICE_FIELD_MODE — the module', () => {
+  it('the module has no imports (still)', () => {
     expect(SRC).not.toMatch(/^import /m);
     expect(SRC).not.toMatch(/\bimport\s*\(/);
   });

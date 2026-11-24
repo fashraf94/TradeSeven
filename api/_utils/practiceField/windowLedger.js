@@ -120,12 +120,66 @@ const receiptCount = (receipts, kind) => receipts.filter((r) => r?.kind === kind
 const codeActed = (code) => code.caughtUpSessions.length > 0 || code.sales.filled > 0 || code.entries.filled > 0
   || code.entries.cancelled > 0 || code.ideasResulted > 0;
 
+// ── T2C-02 (Astra, T1a-2b-2 review; carried to build B2) ─────────────────────────────────────────────────────────
+// Two weaknesses of the fold, both conditional:
+//   • A SERVED ROW IGNORED NEW RECEIPTS. A window served, its stamp lost, the slot's next fire acts again (a waiting sale
+//     fills) and writes its receipt on the row — and the row, already served, was never written again: it said zero fills
+//     and `no_model_action` over a receipt of a sale. Now a served row RECONCILES its receipts: each count becomes the
+//     larger of what the row says and what its receipts record, and the outcome follows — nothing else changes (no attempt
+//     is added, `served` and `servedAt` stand). A row whose counts already cover its receipts is returned unchanged, and
+//     nothing is written: every row of the normal path stays byte for byte as it was.
+//   • A DELAYED ATTEMPT COUNTED TWICE. Folding attempt B (whose receipts include a delayed attempt A's) and then A added A's
+//     fills on top of a total that already held them (B's fold had taken the receipts' count). Now each count is the larger
+//     of the SUM OF THE ATTEMPTS' OWN COUNTS (from the row's attempt log, this attempt included) and the receipts' count —
+//     attempt-derived and receipt-derived totals kept apart, never added together. On the normal path the two agree with the
+//     old running total exactly. (The log keeps the last WINDOW_ATTEMPTS_KEPT attempts; past that the receipts, one per
+//     fill, are the complete record and the larger of the two still holds.)
+
+/** The kinds a window's counts are kept for, and where each sits on an attempt. */
+const COUNTED = Object.freeze([
+  ['salesFilled', WINDOW_ACTION_KIND.SALE], ['entriesFilled', WINDOW_ACTION_KIND.ENTRY],
+  ['entriesCancelled', WINDOW_ACTION_KIND.ENTRY_TIMEOUT], ['ideasResulted', WINDOW_ACTION_KIND.RESULTED],
+]);
+
+/** The sum of the attempts' own counts, by field. */
+const attemptSums = (log) => Object.fromEntries(COUNTED.map(([f]) => [f, (log || []).reduce((n, a) => n + (Number(a?.[f]) || 0), 0)]));
+
 /**
- * Fold one attempt into a window's row (absent before the first). Pure. A row already served is returned unchanged:
- * the caller writes nothing for it.
+ * T2C-02: a SERVED row with its receipts reconciled — each count at least its receipts' count, the caught-up sessions
+ * joined, the outcome following. The SAME object when nothing changes (the caller then writes nothing). Pure.
+ */
+export function reconcileServedRow(prior) {
+  if (prior?.served !== true || prior.kind !== 'intraday' || !prior.code) return prior;
+  const receipts = Object.values(prior.actions || {});
+  const code = prior.code;
+  const caughtUp = [...(code.caughtUpSessions || [])];
+  for (const r of receipts) {
+    if (r?.kind === WINDOW_ACTION_KIND.CAUGHT_UP && !caughtUp.some((x) => x.date === r.session)) caughtUp.push({ date: r.session, observed: r.observed === true });
+  }
+  const next = {
+    caughtUpSessions: caughtUp.sort((a, b) => (a.date < b.date ? -1 : (a.date > b.date ? 1 : 0))),
+    sales: { ...code.sales, filled: Math.max(code.sales?.filled || 0, receiptCount(receipts, WINDOW_ACTION_KIND.SALE)) },
+    entries: {
+      ...code.entries,
+      filled: Math.max(code.entries?.filled || 0, receiptCount(receipts, WINDOW_ACTION_KIND.ENTRY)),
+      cancelled: Math.max(code.entries?.cancelled || 0, receiptCount(receipts, WINDOW_ACTION_KIND.ENTRY_TIMEOUT)),
+    },
+    ideasResulted: Math.max(code.ideasResulted || 0, receiptCount(receipts, WINDOW_ACTION_KIND.RESULTED)),
+  };
+  const same = next.caughtUpSessions.length === (code.caughtUpSessions || []).length && next.sales.filled === (code.sales?.filled || 0)
+    && next.entries.filled === (code.entries?.filled || 0) && next.entries.cancelled === (code.entries?.cancelled || 0)
+    && next.ideasResulted === (code.ideasResulted || 0);
+  if (same) return prior;
+  return { ...prior, code: { ...code, ...next }, outcome: codeActed(next) ? WINDOW_OUTCOME.CODE_ACTION : WINDOW_OUTCOME.NO_MODEL_ACTION, receiptsReconciled: true };
+}
+
+/**
+ * Fold one attempt into a window's row (absent before the first). Pure. A row already served is not folded again: its
+ * receipts are reconciled (T2C-02; reconcileServedRow), and when that changes nothing the SAME row is returned — the
+ * caller writes nothing for it.
  */
 export function foldWindowAttempt(prior, attempt, { bookId, tick }) {
-  if (prior?.served === true) return prior;
+  if (prior?.served === true) return reconcileServedRow(prior);
   const before = prior?.code || null;
   // The window's own receipts (T2B-05): what its actions committed, whether or not their attempt was recorded.
   const receipts = Object.values(prior?.actions || {});
@@ -136,18 +190,22 @@ export function foldWindowAttempt(prior, attempt, { bookId, tick }) {
   }
   caughtUp.sort((a, b) => (a.date < b.date ? -1 : (a.date > b.date ? 1 : 0)));
   const atLeast = (attempts, kind) => Math.max(attempts, receiptCount(receipts, kind));
+  // T2C-02: the attempts' own counts are SUMMED from the row's log (this attempt included) and kept apart from the
+  // receipts' count — the larger stands, so a delayed attempt is never added on top of receipts that already hold it.
+  const log = [...(prior?.attemptLog || []), attempt];
+  const sums = attemptSums(log);
   const code = {
     caughtUpSessions: caughtUp,
     // Fills, timeouts and results are made once, so each attempt's are new and they add up — and never fewer than the
     // window's receipts record (T2B-05: an attempt whose row write failed is not lost). What waits is the last
     // attempt's: the window's state as it left it.
-    sales: { filled: atLeast((before?.sales?.filled || 0) + attempt.salesFilled, WINDOW_ACTION_KIND.SALE), waiting: attempt.salesWaiting },
+    sales: { filled: atLeast(sums.salesFilled, WINDOW_ACTION_KIND.SALE), waiting: attempt.salesWaiting },
     entries: {
-      filled: atLeast((before?.entries?.filled || 0) + attempt.entriesFilled, WINDOW_ACTION_KIND.ENTRY),
+      filled: atLeast(sums.entriesFilled, WINDOW_ACTION_KIND.ENTRY),
       waiting: attempt.entriesWaiting,
-      cancelled: atLeast((before?.entries?.cancelled || 0) + attempt.entriesCancelled, WINDOW_ACTION_KIND.ENTRY_TIMEOUT),
+      cancelled: atLeast(sums.entriesCancelled, WINDOW_ACTION_KIND.ENTRY_TIMEOUT),
     },
-    ideasResulted: atLeast((before?.ideasResulted || 0) + attempt.ideasResulted, WINDOW_ACTION_KIND.RESULTED),
+    ideasResulted: atLeast(sums.ideasResulted, WINDOW_ACTION_KIND.RESULTED),
   };
   const served = attempt.complete && attempt.errors === 0;
   return {
@@ -164,7 +222,7 @@ export function foldWindowAttempt(prior, attempt, { bookId, tick }) {
     firstAttemptAt: [prior?.firstAttemptAt, ...receipts.map((r) => r?.at), attempt.at].filter((x) => typeof x === 'string').sort()[0],
     attempts: (prior?.attempts || 0) + 1,
     errors: (prior?.errors || 0) + attempt.errors,
-    attemptLog: [...(prior?.attemptLog || []), attempt].slice(-WINDOW_ATTEMPTS_KEPT),
+    attemptLog: log.slice(-WINDOW_ATTEMPTS_KEPT),
     code,
     modelCalled: false,
     triggers: [],
@@ -176,9 +234,10 @@ export function foldWindowAttempt(prior, attempt, { bookId, tick }) {
 
 /**
  * Record one attempt of the idea-book pass at a window, in one transaction: create the row, or fold the attempt into
- * it — unless it is already served, when nothing is written.
+ * it — unless it is already served, when only its receipts are reconciled (T2C-02), and nothing is written when they
+ * change nothing.
  *
- * @returns {Promise<{ wrote: boolean, served: boolean }>}
+ * @returns {Promise<{ wrote: boolean, served: boolean, reconciled?: boolean }>}
  */
 export async function recordWindowAttempt(db, { bookRef, tick, win, now }) {
   const rowRef = windowsRefOf(bookRef).doc(windowRowId(tick.date, tick.slot));
@@ -186,7 +245,12 @@ export async function recordWindowAttempt(db, { bookRef, tick, win, now }) {
   return db.runTransaction(async (tx) => {
     const snap = await tx.get(rowRef);
     const prior = snap.exists ? snap.data() : null;
-    if (prior?.served === true) return { wrote: false, served: true };
+    if (prior?.served === true) {
+      const reconciled = reconcileServedRow(prior);
+      if (reconciled === prior) return { wrote: false, served: true };
+      tx.set(rowRef, reconciled);
+      return { wrote: true, served: true, reconciled: true };
+    }
     const row = foldWindowAttempt(prior, attempt, { bookId: bookRef.id, tick });
     tx.set(rowRef, row);
     return { wrote: true, served: row.served };
