@@ -13,6 +13,10 @@ import { HUB_COPY as COPY } from '../hub/hubCopy';
 import { formatHubTime } from '../hub/hubDate';
 import { C, HAIR, tint } from '../hub/hubStyle';
 import { HubLink, Icon, LoadingLine, Mono, Row, Section } from '../HubParts';
+// Practice Field build B3 (B3 §4): the idea book's entry card — the hub's ONE import of it and, below, its ONE render site, in
+// the section both compositions draw (the phone Overview and the wide side column). The switch is a literal (off on merge),
+// so the ternary folds to the section as it was.
+import IdeaBookEntry, { IDEA_BOOK_SCREEN_ON } from '../../PracticeField/IdeaBookEntry';
 
 const KIND_ICON = { completed: 'sword', deployed: 'bolt', loadout: 'pencil', idea: 'search', research: 'search' };
 
@@ -71,7 +75,7 @@ export default function ActivitySection({ activity, limit = null, onOpen, onAll 
   const failed = activity?.status === 'error';
   const rows = readyRows(activity);
   const items = limit ? rows.slice(0, limit) : rows;
-  return (
+  const section = (
     <Section label={COPY.activity.label} data-hub-section="activity">
       {!ready && !failed && <LoadingLine>{COPY.activity.loading}</LoadingLine>}
       {failed && <div data-hub-activity-note="error" style={{ fontSize: 13, color: C.ink2 }}>{COPY.activity.unavailable}</div>}
@@ -83,4 +87,5 @@ export default function ActivitySection({ activity, limit = null, onOpen, onAll 
       )}
     </Section>
   );
+  return IDEA_BOOK_SCREEN_ON ? <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}><IdeaBookEntry />{section}</div> : section;
 }

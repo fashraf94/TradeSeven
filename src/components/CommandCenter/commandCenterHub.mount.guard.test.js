@@ -663,6 +663,11 @@ const PERMITTED_TERMINALS = Object.freeze({
   'src/hooks/useHubStories.js': 'the stories reader: fetchFeed() once per owner and epoch, for an admitted player only, Retry, no poll (Amendment E §1; R-D2)',
   'src/hooks/useHubSharedResearch.js': 'the research reader: the owner\'s newest 20 researchWork records, kept to shared_research, once per owner and epoch, Retry, no poll (Amendment E §1)',
   'src/selectors/storySelection.js': 'selectStories — the story selector, pure: five eligible types, the required fields, newest first, five at most, the beat\'s question (Amendment E §2.2)',
+  // Practice Field build B3 (B3 §4): the idea book's entry card — the hub's ONE import of it, rendered at ONE site
+  // (sections/ActivitySection.jsx) behind its switch's literal (PRACTICE_FIELD_SCREEN_ENABLED, off on merge, so the site folds
+  // away). The card owns its one read (GET /api/practice-field/book, keyed by uid and auth epoch; on mount, on open and on
+  // window focus — no poll) and the page it opens as a layer over the app; its own suites pin that.
+  'src/components/PracticeField/IdeaBookEntry.jsx': 'the idea book entry card and its read-only page: one read per owner and epoch, on mount, open and focus, no poll (Practice Field B3 §4)',
 });
 /** framer-motion: motion.div and useReducedMotion (the house precedent for OS reduced motion); react-dom: createPortal for the sheet. */
 const PERMITTED_PACKAGES = Object.freeze(['framer-motion', 'react', 'react-dom']);
