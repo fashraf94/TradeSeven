@@ -244,7 +244,8 @@ export function IdeaPanel({ g, rail = false }) {
           {Number.isInteger(g.day) ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <div style={{ flex: 1, height: 3, borderRadius: 2, background: IB.hair2, overflow: 'hidden' }}><div style={{ width: `${Math.min(1, g.progress) * 100}%`, height: '100%', background: IB.ink2 }} /></div>
-              <span style={{ ...mono(11.5, IB.ink2), whiteSpace: 'nowrap' }}>{g.line} · {g.sessionsLeftText}</span>
+              {/* (B3-A08: "Entered today · 60 sessions · 60 sessions left" is wider than 320 allows: it may wrap, at its dots.) */}
+              <span style={{ ...mono(11.5, IB.ink2), flex: '0 1 auto', minWidth: 0, textAlign: 'right', textWrap: 'balance' }}>{g.line} · {g.sessionsLeftText}</span>
             </div>
           ) : <div style={mono(11.5, IB.ink2)}>{g.line}</div>}
           <Ledger names={g.names}>
