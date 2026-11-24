@@ -17,8 +17,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { makeSrFirestore } from '../_utils/sharedResearch/__fixtures__/srFirestore.js';
 
 const state = vi.hoisted(() => ({
-  mode: 'on', builder: 'on', user: { uid: 'u1' }, db: null, turns: [], turnQueue: [], retrievals: [], retrievalQueue: [], logs: [],
+  mode: 'on', builder: 'on', perGame: true, user: { uid: 'u1' }, db: null, turns: [], turnQueue: [], retrievals: [], retrievalQueue: [], logs: [],
 }));
+// The per-game loadout switch, read at call time (the founder's Q-3): a getter, so a row can turn it off.
+vi.mock('../../src/config/perGameLoadoutFlags.js', () => ({ get PER_GAME_LOADOUT_ENABLED() { return state.perGame; } }));
 vi.mock('../../src/config/sharedResearchFlags.js', () => ({
   SHARED_RESEARCH_MODES: Object.freeze(['off', 'allowlist', 'on']),
   get SHARED_RESEARCH_MODE() { return state.mode; },
@@ -60,7 +62,7 @@ vi.mock('../_utils/sharedResearch/retrieval.js', async (importOriginal) => {
 const { default: handler } = await import('./shared-research.js');
 const { resetUidRateLimits } = await import('../_utils/sharedResearch/gate.js');
 const { EXPLORE_ENDED_READ, EXPLORE_DOCS_MAX, exploreLastOf } = await import('../_utils/sharedResearch/explore.js');
-const { exploreAgentOf, rankedAgentOfDocs, partnerNameOf } = await import('../_utils/sharedResearch/store.js');
+const { exploreAgentOf, rankedAgentOfDocs, partnerNameOf, equippedListOf } = await import('../_utils/sharedResearch/store.js');
 const { openSessionOf } = await import('../_utils/sharedResearch/session.js');
 const { emptyCard } = await import('../_utils/sharedResearch/thesis.js');
 const { baggerbombLoadoutOf, bookIdOf } = await import('../../src/constants/perGameLoadout.js');
@@ -103,7 +105,7 @@ const sessionDoc = (id) => env.doc(`sharedResearchSessions/${id}`);
 
 beforeEach(() => {
   env = seed();
-  Object.assign(state, { mode: 'on', builder: 'on', user: { uid: UID }, db: env.db, turns: [], turnQueue: [], retrievals: [], retrievalQueue: [], logs: [] });
+  Object.assign(state, { mode: 'on', builder: 'on', perGame: true, user: { uid: UID }, db: env.db, turns: [], turnQueue: [], retrievals: [], retrievalQueue: [], logs: [] });
 });
 
 const exploreRead = async () => {
@@ -360,8 +362,10 @@ describe('X-8: last gains question and statement', () => {
     expect(counts.byCollection.agents).toBe(1);
     const lasts = b.items.filter((i) => i.last).map((i) => i.last);
     expect(lasts).toHaveLength(30 + 50);
-    expect(lasts.every((l) => /^Question \d+$/.test(l.question))).toBe(true);
-    expect(lasts.filter((l) => l.statement !== null).every((l) => l.statement === `S${l.question.split(' ')[1]}`)).toBe(true);
+    // every last's question is its OWN record's (review H-3 iii): the planted session `uuid(500 + n)` asks `Question n`
+    const nOf = (sessionId) => Number(sessionId.slice(-12)) - 500;
+    expect(lasts.every((l) => l.question === `Question ${nOf(l.sessionId)}`)).toBe(true);
+    expect(lasts.filter((l) => l.statement !== null).every((l) => l.statement === `S${nOf(l.sessionId)}`)).toBe(true);
     expect(lasts.filter((l) => l.statement !== null)).toHaveLength(30);
     expect(env.writes.length).toBe(writes);
   });
@@ -439,6 +443,13 @@ describe('X-9: the read gains agent', () => {
     const docs = (await env.db.collection('agents').where('ownerId', '==', UID).get()).docs;
     expect((await exploreRead()).agent.id).toBe(rankedAgentOfDocs(docs).id);
   });
+  it('it is the agent `open` stamps (review H-3 i): an investigation opened through the route carries the read\'s agent id', async () => {
+    reseed({ 'agents/a-train': { ...AGENT, isTrainingClone: true }, 'agents/a-casual': { ...AGENT, isCasualClone: true }, 'agents/agent-1': AGENT, 'agents/agent-3': { ...AGENT, name: 'Second ranked' } });
+    const o = await openExplore();
+    const read = await exploreRead();
+    expect(sessionDoc(o.session.sessionId).attribution.agentId).toBe(read.agent.id);
+    expect(read.agent.id).toBe('agent-1');
+  });
   it('one agents query per read, and nothing else read for the agent (no by-id agent read, no list read)', async () => {
     const counts = countReads();
     await exploreRead();
@@ -452,4 +463,114 @@ describe('X-9: the read gains agent', () => {
     expect([r.statusCode, r.body]).toEqual([404, { error: 'disabled' }]);
     expect(env.reads).toEqual([]);
   });
+});
+
+// ── Q-3: the list follows the per-game loadout switch ──────────────────────────
+
+describe('Q-3: equippedList follows PER_GAME_LOADOUT_ENABLED, read at call time', () => {
+  it('on: the BaggerBomb slot\'s book; off: the League book (the ranked record\'s own fields) — the list equip then replaces; flipped between two reads', async () => {
+    // AGENT: a stored slot holding "Grid builders", League fields naming "League picks"
+    expect((await exploreRead()).agent.equippedList).toEqual({ id: 'wl-bb', name: 'Grid builders' });
+    state.perGame = false;
+    expect((await exploreRead()).agent.equippedList).toEqual({ id: 'wl-league', name: 'League picks' });
+    state.perGame = true;
+    expect((await exploreRead()).agent.equippedList).toEqual({ id: 'wl-bb', name: 'Grid builders' });
+  });
+  it('off with no League list: null, though a stale slot holds one', async () => {
+    env = seed({}, { agents: { 'agents/agent-1': { ...AGENT, equippedWatchlistId: null, equippedWatchlistName: null } } });
+    state.db = env.db;
+    state.perGame = false;
+    expect((await exploreRead()).agent).toEqual({ id: 'agent-1', name: 'Atlas', equippedList: null });
+  });
+  it('pure: equippedListOf reads the switch each call', () => {
+    state.perGame = true;
+    expect(equippedListOf(AGENT)).toEqual({ id: 'wl-bb', name: 'Grid builders' });
+    state.perGame = false;
+    expect(equippedListOf(AGENT)).toEqual({ id: 'wl-league', name: 'League picks' });
+    expect(equippedListOf(null)).toBeNull();
+  });
+});
+
+// ── Q-4: GET ?sessionId= on a saved thesis carries equippedList ─────────────────
+
+describe('Q-4: GET ?sessionId= on a SAVED thesis-builder session gains equippedList; every other answer is unchanged', () => {
+  const BUILDER_KEYS = ['session', 'record', 'companies', 'thesis', 'storedRows', 'previous', 'quota'];
+  const LEDGER_KEYS = ['session', 'record', 'companies', 'adoptPreview', 'storedRows', 'previous', 'quota'];
+  async function savedThesis() {
+    const { id, rev } = await exploreToReady();
+    const r = await post({ action: 'adopt', sessionId: id, rev, statement: EDIT });
+    expect(r.statusCode, JSON.stringify(r.body)).toBe(200);
+    return { id, watchlistId: r.body.watchlistId };
+  }
+  const read = async (sessionId) => {
+    const r = await get({ sessionId });
+    expect(r.statusCode, JSON.stringify(r.body)).toBe(200);
+    return r.body;
+  };
+  const setAgent = (data) => env.store.set('agents/agent-1', data);
+
+  it('another list equipped: { id, name } of that list, after every key the answer had; one agents query', async () => {
+    const { id } = await savedThesis();
+    const counts = countReads();
+    const b = await read(id);
+    expect(Object.keys(b)).toEqual([...BUILDER_KEYS, 'equippedList']);
+    expect(b.equippedList).toEqual({ id: 'wl-bb', name: 'Grid builders' });
+    expect(counts.queries.agents).toBe(1);
+    expect(counts.gets.agents ?? 0).toBe(0);
+  }, 20_000);
+  it('this thesis\'s own list equipped: its id, equal to the saved watchlistId (the screen then says it is equipped)', async () => {
+    const { id, watchlistId } = await savedThesis();
+    setAgent({ ...AGENT, loadouts: { baggerbomb: { archetype: 'momentum_chaser', book: { ref: { watchlistId }, name: '', pin: null } } } });
+    expect((await read(id)).equippedList).toEqual({ id: watchlistId, name: null });
+  }, 20_000);
+  it('another list with no name: { id, name: null }', async () => {
+    const { id } = await savedThesis();
+    setAgent({ ...AGENT, loadouts: { baggerbomb: { archetype: 'momentum_chaser', book: { ref: { watchlistId: 'wl-other' }, name: '  ', pin: null } } } });
+    expect((await read(id)).equippedList).toEqual({ id: 'wl-other', name: null });
+  }, 20_000);
+  it('no list equipped, or no ranked agent: null (the key still there)', async () => {
+    const { id } = await savedThesis();
+    setAgent({ ...AGENT, loadouts: { baggerbomb: { archetype: 'momentum_chaser', book: null } } });
+    expect((await read(id)).equippedList).toBeNull();
+    env.store.delete('agents/agent-1');
+    const b = await read(id);
+    expect(Object.keys(b)).toContain('equippedList');
+    expect(b.equippedList).toBeNull();
+  }, 20_000);
+  it('Q-3 holds here too: with the switch off, the League book', async () => {
+    const { id } = await savedThesis();
+    state.perGame = false;
+    expect((await read(id)).equippedList).toEqual({ id: 'wl-league', name: 'League picks' });
+  }, 20_000);
+  it('never a clone\'s list: the ranked agent\'s, with a clone seeded first', async () => {
+    const { id } = await savedThesis();
+    // the double answers in write order: re-write the ranked agent after the clone, so the clone comes first
+    const ranked = env.doc('agents/agent-1');
+    env.store.delete('agents/agent-1');
+    env.store.set('agents/a-train', { ...AGENT, isTrainingClone: true, loadouts: { baggerbomb: { archetype: 'x', book: { ref: { watchlistId: 'wl-clone' }, name: 'Clone list', pin: null } } } });
+    env.store.set('agents/agent-1', ranked);
+    expect((await read(id)).equippedList).toEqual({ id: 'wl-bb', name: 'Grid builders' });
+  }, 20_000);
+  it('every other answer is unchanged, with no agents query: an open builder, a concluded builder, an open ledger, a saved ledger idea', async () => {
+    const o = await openExplore();
+    let counts = countReads();
+    expect(Object.keys(await read(o.session.sessionId))).toEqual(BUILDER_KEYS);
+    expect(counts.queries.agents ?? 0).toBe(0);
+    state.db = env.db;
+    expect((await post({ action: 'close', sessionId: o.session.sessionId, reason: 'concluded' })).statusCode).toBe(200);
+    counts = countReads();
+    expect(Object.keys(await read(o.session.sessionId))).toEqual(BUILDER_KEYS);
+    expect(counts.queries.agents ?? 0).toBe(0);
+    state.db = env.db;
+    state.builder = 'off';
+    const l = await openExplore({ requestId: 'req-ledger' });
+    counts = countReads();
+    expect(Object.keys(await read(l.session.sessionId))).toEqual(LEDGER_KEYS);
+    expect(counts.queries.agents ?? 0).toBe(0);
+    state.db = env.db;
+    await ledgerSave(l.session.sessionId);
+    counts = countReads();
+    expect(Object.keys(await read(l.session.sessionId))).toEqual(LEDGER_KEYS);
+    expect(counts.queries.agents ?? 0).toBe(0);
+  }, 20_000);
 });

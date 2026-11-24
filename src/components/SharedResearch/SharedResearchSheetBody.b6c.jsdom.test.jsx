@@ -8,10 +8,18 @@
 //     a list is equipped or not, so it never claims there is none;
 //   - no agentId: no button and no line, as before.
 // Rendered from the server's own answers (__fixtures__/thesisAnswers.json; the ledger's
-// from answers.json). The label reaches the screen from the hub's props (its own
-// equippedListLabelOf) and from Explore's (Q-2: `agent.equippedList?.name ?? null`,
-// the read's agent shaped by the server's own exploreAgentOf). The older idea screen
-// (Adopt.jsx SavedIdea) is unchanged: it keeps "You have no equipped list…".
+// from answers.json). The props come in the two doors' shapes: the hub's (its own
+// equippedListLabelOf), and Explore's as Q-2 rules them (`agent.id`, `agent.name`,
+// `agent.equippedList?.name ?? null`), built here from the server's own exploreAgentOf
+// by a local helper — Explore does not pass them yet (ExploreSheetHost.jsx passes null;
+// review H-3 iv). The older idea screen (Adopt.jsx SavedIdea) is unchanged: it keeps
+// "You have no equipped list…".
+//
+// The founder's Q-4: GET on a saved thesis carries `equippedList` (the server's
+// equippedListOf), and the screen uses it FIRST — this thesis's own list → "Equipped
+// for your next game", no offer; another list → "Replaces {name}…" (no name: "Replaces
+// your equipped list."); null → the plain line. The label prop decides only when the
+// answer has no such key.
 
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -28,7 +36,7 @@ const { SR_COPY: COPY } = await import('./sharedResearchCopy');
 const kit = await import('./__fixtures__/srKit');
 const { default: TA } = await import('./__fixtures__/thesisAnswers.json');
 const { equippedListLabelOf } = await import('../CommandCenter/hub/researchDoorView');
-const { exploreAgentOf } = await import('../../../api/_utils/sharedResearch/store.js');
+const { exploreAgentOf, equippedListOf } = await import('../../../api/_utils/sharedResearch/store.js');
 const { fakeServer, mount, flush, click, $, textOf } = kit;
 const { A, IDS } = kit;
 const B = COPY.builder;
@@ -198,5 +206,91 @@ describe('the older idea screen is unchanged (Adopt.jsx SavedIdea)', () => {
     expect(screen.textContent).toContain(COPY.noList);
     expect(screen.textContent).not.toContain(COPY.becomesList);
     expect(line()).toBeNull();
+  });
+});
+
+// ── Q-4: the server's equippedList first, from both doors ────────────────────────
+
+describe('Q-4: the saved screen uses the server\'s equippedList first, from both doors', () => {
+  const OWN = SAVED.body.session.adoption.watchlistId;
+  /** An agent document whose equipped BaggerBomb book is `book`; its equippedList is the server's own equippedListOf. */
+  const agentWith = (book) => ({ id: 'agent-x', ownerId: 'u1', name: 'Atlas', archetype: 'contrarian', loadouts: { baggerbomb: { archetype: 'momentum_chaser', book } } });
+  const bookOf = (watchlistId, name) => ({ ref: { watchlistId }, name, pin: null });
+  /** The saved answer as GET on a saved thesis now gives it: the same body, plus the server's equippedList. */
+  const savedWith = (doc) => ({ ...SAVED, body: { ...SAVED.body, equippedList: equippedListOf(doc) } });
+  /** The two doors' props for the same agent: the hub passes its own label (here a different one, so a row can tell
+   *  which decides); Explore passes Q-2's three from the read's agent. */
+  const HUB_SCOPE = { agent: { id: 'agent-x', archetype: 'degen', loadouts: { baggerbomb: { archetype: 'degen', book: bookOf('wl-1', 'Stored name') } } }, lock: null, lockFailed: false, activeBattles: [] };
+  const doors = (doc) => [
+    ['hub', { agentName: 'Atlas', agentId: 'agent-x', equippedListLabel: equippedListLabelOf(HUB_SCOPE, { committed: [{ watchlistId: 'wl-1', name: 'Hub label', tickers: [] }] }, null) }],
+    ['Explore', (({ id, name, equippedList }) => ({ agentId: id, agentName: name, equippedListLabel: equippedList?.name ?? null }))(exploreAgentOf(doc, 'u1'))],
+  ];
+  async function eachDoor(doc, check) {
+    for (const [door, props] of doors(doc)) {
+      server = fakeServer({ list: TA.listEmpty });
+      fetchWithAuth.mockImplementation(server.fetch);
+      await openSaved(props, savedWith(doc));
+      await check(door, props);
+      for (const m of mounted) m.unmount();
+      mounted = [];
+    }
+  }
+
+  it('this thesis\'s own list is the equipped one: "Equipped for your next game" — no button, no line', async () => {
+    const doc = agentWith(bookOf(OWN, ''));
+    expect(equippedListOf(doc)).toEqual({ id: OWN, name: null });
+    await eachDoor(doc, async (door) => {
+      expect($('[data-sr-equipped-already]')?.textContent, door).toBe(COPY.equipped);
+      expect(equip(), door).toBeNull();
+      expect(line(), door).toBeNull();
+      expect(textOf(), door).not.toContain('Replaces');
+    });
+  });
+  it('another list, named: "Replaces {its name} as your equipped list." — the server\'s name, not the hub\'s label', async () => {
+    const doc = agentWith(bookOf('wl-mom', 'Momentum names'));
+    await eachDoor(doc, async (door) => {
+      expect(line()?.textContent, door).toBe(COPY.replaces('Momentum names'));
+      expect(textOf(), door).not.toContain('Hub label');
+      expect($('[data-sr-equipped-already]'), door).toBeNull();
+      expectLineAboveButton();
+    });
+  });
+  it('another list with no name: "Replaces your equipped list."', async () => {
+    const doc = agentWith(bookOf('wl-other', '  '));
+    await eachDoor(doc, async (door) => {
+      expect(line()?.textContent, door).toBe(COPY.replacesUnnamed);
+      expect(line()?.textContent, door).toBe('Replaces your equipped list.');
+      expectLineAboveButton();
+    });
+  });
+  it('none equipped (null): "This becomes your equipped list for your next game." — even with the hub\'s label passed', async () => {
+    const doc = agentWith(null);
+    expect(equippedListOf(doc)).toBeNull();
+    await eachDoor(doc, async (door) => {
+      expect(line()?.textContent, door).toBe(COPY.becomesList);
+      expect(textOf(), door).not.toContain('Hub label');
+      expectLineAboveButton();
+    });
+  });
+  it('no equippedList key in the answer: the label prop decides (the hub\'s label is named)', async () => {
+    await openSaved({ agentName: 'Atlas', agentId: 'agent-x', equippedListLabel: 'Hub label' });
+    expect(Object.prototype.hasOwnProperty.call(SAVED.body, 'equippedList')).toBe(false);
+    expect(line().textContent).toBe(COPY.replaces('Hub label'));
+  });
+  it('no agentId: nothing — not even "Equipped" — whatever the server says', async () => {
+    await openSaved({ agentName: 'Atlas', agentId: null, equippedListLabel: 'Hub label' }, savedWith(agentWith(bookOf(OWN, ''))));
+    expect($('[data-sr-equipped-already]')).toBeNull();
+    expect(equip()).toBeNull();
+    expect(line()).toBeNull();
+  });
+  it('right after a save on this page: the read after the save carries equippedList, and it decides', async () => {
+    server.set('adopt', TA.walkSaved);
+    await openSaved({ agentName: 'Atlas', agentId: 'agent-x', equippedListLabel: 'Hub label' }, TA.walkGetReady);
+    server.set('get', savedWith(agentWith(bookOf('wl-mom', 'Momentum names'))));
+    click($('[data-sr-save-thesis]'));
+    await flush();
+    expect(server.sent('adopt')).toHaveLength(1);
+    expect(server.sent('get').length).toBeGreaterThanOrEqual(2);
+    expect(line().textContent).toBe(COPY.replaces('Momentum names'));
   });
 });
