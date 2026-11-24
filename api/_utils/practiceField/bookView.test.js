@@ -17,6 +17,7 @@ import {
 import { toCents } from './money.js';
 import { sceneInput, SCENE_NAMES, SCENE_BOOK_ID, SCENE_UID, SCENE_AGENT_ID } from './__testsupport__/bookViewScenes.js';
 import { BANNED_RESULT_WORDS } from './__testsupport__/fixtures.js';
+import { sealAdjustment } from './evidence.js';
 
 const view = (name) => buildBookView(sceneInput(name));
 const group = (v, slot) => v.groups.find((g) => g.slot === slot);
@@ -475,6 +476,34 @@ describe('the review\'s fixes, each pinned', () => {
     expect(g.call).toBeNull();
     expect(g.lastCall).toMatchObject({ kind: 'Exit', date: '25 Nov' });
     expect(g.names[0]).toMatchObject({ entry: expect.any(String), line: expect.any(String) });
+  });
+});
+
+describe('the battery\'s survivors, pinned', () => {
+  it('allotCents takes a cent back when a stored total is below the floors (the defensive branch)', () => {
+    const row = { markedHoldingsValue: 1.99, quantities: { A: 1, B: 1 }, marks: { A: { mark: 1.009 }, B: { mark: 1.009 } } };
+    const parts = allotCents(row);
+    expect([...parts.values()].reduce((a, b) => a + b, 0)).toBe(199);
+  });
+  it('near a line is under 1% exactly: 1.5% away is not near', () => {
+    const input = sceneInput('sample');
+    input.rows.get('i_energy').last.marks.XOM.mark = 114.10; // line 112.39: (114.10 − 112.39) / 114.10 = 1.5%
+    const xom = name(group(buildBookView(input), 'short'), 'XOM');
+    expect(xom.distance).toMatchObject({ text: '1.5% away', near: false });
+  });
+  it('a draft that waits is not "passed on"', () => {
+    const input = sceneInput('sample');
+    input.closeRow.agent.desks.shadow.considered = [{ index: 0, slot: 'long', names: ['MSFT'], thesis: 't', outcome: 'waiting', refusals: [{ code: 'close_owed' }] }];
+    expect(buildBookView(input).strip.find((s) => s.desk === 'shadow').text).toBe('held 3');
+  });
+  it('a packet\'s receipt parts are checked: a recorded part missing or altered fails the packet; a whole set passes', () => {
+    const part = sealAdjustment({ packetVersion: 1, packetId: 'result_actions_001', bookId: 'b1', ideaId: 'i1', part: 1, of: 1, receipts: [{ ledger: 'idea', actionId: 'a1' }] });
+    const packet = sealAdjustment({ packetVersion: 1, packetId: 'result', bookId: 'b1', ideaId: 'i1', result: { endpointKind: 'due_session' }, corporateActions: { receipts: 1, byLedger: {}, parts: [{ id: 'result_actions_001', receipts: 1, contentHash: part.contentHash }] } });
+    const ids = { bookId: 'b1', ideaId: 'i1' };
+    expect(packetCheck(packet, { result_actions_001: part }, ids)).toEqual({ ok: true, problems: [] });
+    expect(packetCheck(packet, {}, ids).problems).toContain('part:result_actions_001:missing');
+    expect(packetCheck(packet, { result_actions_001: { ...part, receipts: [] } }, ids).ok).toBe(false);
+    expect(packetCheck(packet, { result_actions_001: { ...part, ideaId: 'other' } }, ids).ok).toBe(false);
   });
 });
 
