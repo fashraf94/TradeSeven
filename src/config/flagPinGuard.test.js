@@ -121,9 +121,12 @@ const DARK_BY_DESIGN = {
     'Practice Field B2 (ruling PF-4) — the agent\'s one check per desk per session at the close (claude-sonnet-5-5, reserved against the book\'s $3 month). Off on merge; the founder flips it in his own one-line PR after the build report\'s §7 steps, moving the pin in practiceFieldFlags.test.js to true AND removing this entry in the same commit',
   PRACTICE_FIELD_AGENT_THESES_ENABLED:
     'Practice Field B2 (ruling PF-5) — the owner\'s saved theses as a drafting source for the Shadow desk; its own sub-switch, off on merge, flipped by its own founder PR (pin in practiceFieldFlags.test.js, this entry removed in the same commit). Does nothing while PRACTICE_FIELD_AGENT_ENABLED is false',
-  // Practice Field build B3 (founder ruling B3-8): the idea book screen ships off.
-  PRACTICE_FIELD_SCREEN_ENABLED:
-    'Practice Field B3 (ruling B3-8) — the idea book screen: the read-only positions page, GET /api/practice-field/book and the Command Center entry card. Off on merge (no request, no card, the endpoint 404); the founder flips it in his own one-line PR, moving the pin in practiceFieldScreenFlags.test.js to true AND removing this entry in the same commit',
+  // PRACTICE_FIELD_SCREEN_ENABLED intentionally ABSENT: the idea book screen (Practice Field B3) flipped true in the
+  // screen-on PR (founder ruling B3-13, Nov 24, 2026) — the deliberate flip drops it here in the same commit, per the
+  // guard's own "if DELIBERATE" instruction. PRACTICE_FIELD_MODE ('allowlist') still decides who sees it. Its pin in
+  // practiceFieldScreenFlags.test.js asserts the live true value AND, turned around, that this entry is gone; a rollback
+  // moves the flag and its pin, and the entry stays out (a kill switch now). Re-adding it while it ships true fails the
+  // DARK_BY_DESIGN integrity test below.
   EDITORIAL_REVIEW_ENABLED:
     'Wire runway step 5 — flips after WIRE_WRITES_ENABLED (first Sunday after writes)',
   // COMPOSITION_EPOCH_FENCE_ENABLED intentionally ABSENT: it flipped true at
