@@ -419,6 +419,9 @@ export const SR_COPY = Object.freeze({
   savedLine: (names, horizon, n) => `${names} · ${horizon} · ${n === 0 ? 'no conditions' : `${n} ${plural(n, 'condition', 'conditions')}`}`,
   replaces: (list) => `Replaces ${list} as your equipped list.`,
   noList: 'You have no equipped list; this would become it for your next game.',
+  // B6c X-10: the thesis saved screen's line when no list label is known. True whether a list is equipped or not, so it
+  // never claims there is none (the older idea screen keeps noList).
+  becomesList: 'This becomes your equipped list for your next game.',
   useNext: 'Use it in my next game',
   notNow: 'Not now',
   declined: 'Saved, not equipped. You can equip it later from the Forge.',

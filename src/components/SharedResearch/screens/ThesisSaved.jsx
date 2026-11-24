@@ -6,7 +6,10 @@
 // (`session.adoption.statement` from B6a X-7, so a reopened sheet shows it too),
 // the names and the time frame, REVIEW_HONEST_LINE with the agent's name, and the
 // plain line that the idea book does not read saved theses yet. Done, and "Use it
-// in my next game" (optional; B2's two existing calls, only with an agentId).
+// in my next game" (optional; B2's two existing calls, only with an agentId), with
+// the line above it that says what equipping does (B6c X-10): "Replaces {list} as
+// your equipped list." with the caller's `equippedListLabel`, else "This becomes
+// your equipped list for your next game."
 // The idea-book ending (T6b) and the watching screen (P1) are not built (§B8).
 //
 // The count of findings the save carried is not shown: no answer carries it (the
@@ -22,7 +25,7 @@ import { Notice, Running } from '../parts';
 
 const B = COPY.builder;
 
-export default function ThesisSaved({ sr, agentName, agentId, onClose }) {
+export default function ThesisSaved({ sr, agentName, agentId, equippedListLabel = null, onClose }) {
   const { session, thesis } = sr.inv;
   const mine = sr.save.sessionId === session.sessionId && ['saved', 'recovered'].includes(sr.save.status);
   const outcome = mine ? sr.save.outcome ?? {} : { watchlistId: session.adoption?.watchlistId ?? null, idempotent: true };
@@ -40,6 +43,9 @@ export default function ThesisSaved({ sr, agentName, agentId, onClose }) {
   const canEquip = typeof agentId === 'string' && agentId.length > 0 && typeof watchlistId === 'string' && watchlistId.length > 0;
   // the read after the save is in flight (K-16): equip waits for it (refuter 2)
   const busy = sr.pending !== null;
+  // B6c X-10: equipping replaces the agent's equipped BaggerBomb list, so the offer says so — the list by name when the
+  // caller knows it, else that this becomes the equipped list (true whether one is equipped or not; never "you have none")
+  const label = typeof equippedListLabel === 'string' && equippedListLabel.trim() ? equippedListLabel.trim() : null;
   return (
     <section data-screen-label={`Thesis saved · equip ${canEquip ? eq.status : 'not offered'}`} style={{ ...S.col, gap: 18 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -61,6 +67,7 @@ export default function ThesisSaved({ sr, agentName, agentId, onClose }) {
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <FreeButton label={B.done} trail="" strong onClick={onClose} attrs={{ 'data-sr-done': '' }} />
+        {canEquip && eq.status === 'none' && <p style={{ ...S.meta, ...WRAP }} data-sr-equip-line="">{label ? COPY.replaces(label) : COPY.becomesList}</p>}
         {canEquip && eq.status === 'none' && <FreeButton label={COPY.useNext} trail={B.optional} disabled={busy} onClick={() => sr.equipNow({ agentId, watchlistId })} attrs={{ 'data-sr-equip': '' }} />}
         {canEquip && eq.status === 'running' && <Running>{COPY.equipping}</Running>}
         {canEquip && eq.status === 'done' && <p style={{ ...S.body, ...WRAP }} data-sr-equipped="">{COPY.equipped}</p>}
