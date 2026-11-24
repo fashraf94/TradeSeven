@@ -2,7 +2,7 @@
 
 **Date:** 23–24 Nov 2026 · **Branch:** `claude/practice-field-b3-screen` · **Base:** `main` `2a136040` (the #1109 merge; `origin` fetched first, the worktree cut from it, tree clean) · **Code head:** `472bc4b2` · **Final checks at:** `df1fe8fb` · **PR:** the draft PR opened from this branch (this report is its last commit)
 
-**State:** built, reviewed (three lenses and a refuter; every finding fixed or recorded), battery run (56 of 57 and 19 of 19 killed). Final checks all exit 0: the Linux suite, 38,182 passed, 0 failed; the lint gate; the build, byte-identical to `main`; the rules suite, 889 of 889. **The screen's switch ships off.** Not merged; CI not watched.
+**State:** built, reviewed (three lenses and a refuter; every finding fixed or recorded), battery run (56 of 57 and 19 of 19 killed). Final checks all exit 0: the Linux suite, 38,182 passed, 0 failed; the lint gate; the build, byte-identical to `main`; the rules suite, 889 of 889. **The screen's switch ships off.** Not merged; CI not watched. **Time:** about 2¾ hours, from the first commit (23 Nov, 19:55 CST) to this report (about 22:40 CST). The 8-hour checkpoint was not reached.
 
 | Rule | Held |
 |---|---|
@@ -16,7 +16,7 @@
 | Its own switch, off on merge, pinned (B3-8) | Yes: `PRACTICE_FIELD_SCREEN_ENABLED = false`. |
 | No fenced file; no rules or index change; no change to `PRACTICE_FIELD_MODE` or the agent's switches; no write to any store | Yes. |
 | No real Firestore, model or EODHD call; no `.env` read | Yes: the in-memory harness and fixtures throughout. |
-| With the switch off the app is unchanged: no request, no card, no hub layout change | Yes. The production build with the switch off is **byte-identical to `main`** (0 differing files, hashes included; maps excluded). |
+| With the switch off the app is unchanged: no request, no card, no hub layout change | Yes. With the switch off, every shipped file of the production build is **byte-identical to `main`**, hashed names included; only a source map differs (§4.2). |
 | The endpoint returns the caller's own book and nothing else; the uid from the token; no other user's data reachable; a test proves it | Yes (§4, §6). |
 | One draft PR; no merge; no CI watching | Yes. |
 
@@ -142,7 +142,7 @@ Two existing guard files gained one entry each, with no row changed: `flagPinGua
 |---|---|---|---|
 | The full Linux suite | `TZ=UTC flock /tmp/pd-suite.lock npx vitest run --maxWorkers=8` (WSL, a clean LF worktree at `df1fe8fb`) | **0** | Test Files **1656 passed** \| 14 skipped (1670) · Tests **38182 passed** \| 197 skipped (38379) · 0 failed · 333 s |
 | The lint gate | `npm run lint:gate` | **0** | No output (no error, no warning) |
-| The build | `npx vite build` (WSL), `main` `2a136040` and `df1fe8fb` built side by side | **0** and **0** | **125 files each; 0 differing files.** Every JS, CSS and HTML file is byte-identical, hashed names included. The only differing file is one source map, `CommandCenterHub-*.js.map`, which embeds the hub section's source text (the ternary's dead arm). With the switch off, the app players load is `main`'s, byte for byte. |
+| The build | `npx vite build` (WSL), `main` `2a136040` and `df1fe8fb` built side by side | **0** and **0** | **125 files each.** Every shipped file (JS, CSS and HTML) is byte-identical, hashed names included. One source map differs, `CommandCenterHub-*.js.map`, which embeds the hub section's source text (the ternary's dead arm); maps are not loaded by players. With the switch off, the app players load is `main`'s, byte for byte. The same holds for the pushed head (this report's commit), built again before the push. |
 | The rules suite | `npm run test:rules` (Firestore emulator on Windows; WSL has no Java), from an LF snapshot of `df1fe8fb` (`git -c core.autocrlf=false archive`; `firestore.rules` checked against `git show` with `cmp`) | **0** | Test Files **48 passed** (48) · Tests **889 passed** (889). `firestore.rules`, `firestore.indexes.json` and `test/rules/` are unchanged from `main`. |
 
 **One note on the rules suite.** Run from this Windows worktree, which stores files with CRLF line endings, it exits 1 on a single row (888 of 889 pass). The row is `agentEvalRunsDenials.rules.mjs`, "ONE block for the collection, saying exactly `allow read, write: if false;`". Its comment-stripper, `/\/\/.*$/` with no `m` flag, cannot strip a comment from a line that ends in `\r`, so it reads `allow read, write: if false;  // Admin SDK only`. Both that test and `firestore.rules` are byte-identical to `main`, and the assertion is pure text, so `main` fails it the same way on a CRLF checkout. On LF, as CI checks out, it passes. It is not this build's; a one-line fix (`/\/\/.*$/m`, or trimming `\r` first) is a separate change.
@@ -269,7 +269,7 @@ The same harness measured every frame for horizontal overflow: **0 of 55 frames 
 
 ## 8. Your steps to turn the screen on
 
-Nothing here is done by this PR. Merging it changes nothing: the switch ships `false`, and the production build is byte-identical to `main`.
+Nothing here is done by this PR. Merging it changes nothing: the switch ships `false`, and every shipped file of the production build is byte-identical to `main`'s.
 
 1. **Merge this PR** and let it deploy.
 2. **Open the flip PR** (one commit, BUILD_RULES §2):
