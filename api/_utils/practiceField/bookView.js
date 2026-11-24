@@ -222,7 +222,7 @@ function symbolsOf(idea) {
 }
 
 /** One name of a live idea at the last close (its row `last`, the row before `prev`). */
-function nameView(idea, sym, { last, prev, lastAllot, prevAllot, session, boughtThisSession }) {
+function nameView(idea, sym, { last, lastAllot, prevAllot, session, boughtThisSession }) {
   const line = (idea.lines || []).find((l) => upper(l.symbol) === sym) || null;
   const holding = idea.ledger?.holdings?.[sym] ?? null;
   const base = { symbol: sym, isNew: boughtThisSession };
@@ -332,7 +332,7 @@ function groupOf(slot, idea, ctx) {
   const boughtThisSession = entered !== null && entered === session;
   const lastAllot = allotCents(last);
   const prevAllot = allotCents(prev);
-  const names = symbolsOf(idea).map((sym) => nameView(idea, sym, { last, prev, lastAllot, prevAllot, session, boughtThisSession }));
+  const names = symbolsOf(idea).map((sym) => nameView(idea, sym, { last, lastAllot, prevAllot, session, boughtThisSession }));
   const due = idea.contract?.schedule?.dueSession ?? null;
   // Bought at a window after the last close: held, with no close mark yet.
   if (!last || (entered !== null && (session === null || entered > session))) {
