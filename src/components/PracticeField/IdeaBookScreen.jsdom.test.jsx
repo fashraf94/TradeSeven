@@ -289,6 +289,10 @@ describe('loading, empty and error: quiet, in the page\'s own voice', () => {
     const m = mount(<IdeaBookScreen read={{ status: 'error', book: null }} onClose={() => {}} width={390} />);
     expect(m.host.querySelector('[role="status"]').textContent).toBe(`${IDEA_BOOK_COPY.error}${IDEA_BOOK_COPY.errorSub}`);
   });
+  it('the heading takes focus when the page opens', () => {
+    const m = mount(<IdeaBookScreen read={{ status: 'ready', book: viewOf('sample') }} onClose={() => {}} width={390} />);
+    expect(document.activeElement).toBe(m.host.querySelector('h1'));
+  });
   it('Back closes the page', () => {
     let closed = 0;
     const m = mount(<IdeaBookScreen read={{ status: 'ready', book: viewOf('sample') }} onClose={() => { closed += 1; }} width={390} />);

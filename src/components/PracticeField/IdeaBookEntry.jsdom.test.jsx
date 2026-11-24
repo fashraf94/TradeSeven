@@ -25,7 +25,7 @@ vi.mock('../../utils/fetchWithAuth', () => ({
 import IdeaBookEntry, { IDEA_BOOK_SCREEN_ON } from './IdeaBookEntry';
 import { entryTodayOf } from './ideaBookCopy';
 import ActivitySection from '../CommandCenter/sections/ActivitySection';
-import { REFOCUS_QUIET_MS } from './useIdeaBook';
+import useIdeaBook, { REFOCUS_QUIET_MS } from './useIdeaBook';
 import { buildBookView } from '../../../api/_utils/practiceField/bookView.js';
 import { sceneInput } from '../../../api/_utils/practiceField/__testsupport__/bookViewScenes.js';
 
@@ -180,6 +180,44 @@ describe('the switch on: the card, its read and the page', () => {
     await flush();
     expect(state.calls.map((c) => c.uid)).toEqual(['owner-1', 'owner-2', 'owner-2', 'owner-3']);
     expect(m.host.querySelector('[data-ib="entry-card"]')).toBeNull();
+  });
+
+  it('the read is keyed: no render ever hands one owner the other\x27s answer (the hook\x27s return filter)', async () => {
+    const seen = [];
+    function Probe() { const { read } = useIdeaBook({ enabled: true }); seen.push({ uid: state.identity.uid, key: read.key, book: read.book !== null }); return null; }
+    const root = createRoot(appRoot);
+    act(() => root.render(<Probe />));
+    mounted.push({ root });
+    await flush();
+    expect(seen.at(-1)).toMatchObject({ uid: 'owner-1', book: true });
+    let release;
+    state.answer = () => new Promise((r) => { release = () => r({ status: 200, body: { book: null } }); });
+    state.identity = { resolved: true, uid: 'owner-2', authEpoch: 2 };
+    act(() => root.render(<Probe />));
+    release();
+    await flush();
+    for (const r of seen) if (r.book) expect(r.key.startsWith(`${r.uid}:`), JSON.stringify(r)).toBe(true);
+  });
+
+  it('an older answer for the same owner never replaces a newer one (the stale-answer drop)', async () => {
+    const resolvers = [];
+    state.answer = () => new Promise((r) => { resolvers.push(r); });
+    let api;
+    function Probe() { api = useIdeaBook({ enabled: true }); return api.read.book ? <span data-value={api.read.book.line.value} /> : null; }
+    const root = createRoot(appRoot);
+    act(() => root.render(<Probe />));
+    mounted.push({ root });
+    await flush();
+    act(() => { api.refresh(); });
+    await flush();
+    expect(resolvers).toHaveLength(2);
+    const older = viewOf('full');
+    const newer = viewOf('sample');
+    resolvers[1]({ status: 200, body: { book: newer } });
+    await flush();
+    resolvers[0]({ status: 200, body: { book: older } });
+    await flush();
+    expect(appRoot.querySelector('[data-value]').getAttribute('data-value')).toBe(newer.line.value);
   });
 
   it('never reads on a timer: hours pass with no read', async () => {
