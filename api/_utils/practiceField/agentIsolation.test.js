@@ -29,10 +29,10 @@ function countingDb(db) {
 }
 
 describe('the switches', () => {
-  it('shipped OFF: the agent and the saved theses are off whatever the mode', () => {
+  it('as shipped (the agent-on PR turned this row around): the agent is on wherever the mode is not off; the saved theses stay off', () => {
     for (const mode of ['off', 'allowlist', 'on']) {
       set(mode, { agent: null, theses: null });
-      expect([mode, practiceFieldAgentOn(), practiceFieldAgentThesesOn()]).toEqual([mode, false, false]);
+      expect([mode, practiceFieldAgentOn(), practiceFieldAgentThesesOn()]).toEqual([mode, mode !== 'off', false]);
     }
   });
   it('the theses need the agent; the agent needs the mode', () => {
@@ -124,7 +124,7 @@ describe('the close snapshot\'s inputs (§2: a sweep.js build-input change, gate
 
 describe('the founder\'s live book, as it stands, is untouched by merging this build', () => {
   it('an existing book with the agent off: a pass over it changes not one byte', async () => {
-    set('on', { agent: null, theses: null }); // the agent's switches as shipped (off); 'on' so the fixture can create the book
+    set('on', { agent: false, theses: null }); // the agent off (it shipped off; since the agent-on PR this row pins it); 'on' so the fixture can create the book
     const ctx = await seedBook();
     const before = JSON.stringify([...ctx.db._store.entries()]);
     await runIdeaBookAgentPass(ctx.db, { date: '2026-11-16', ownerToken: 't', transport: async () => { throw new Error('no call'); } });

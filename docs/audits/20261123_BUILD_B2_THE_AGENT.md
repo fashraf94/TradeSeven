@@ -502,3 +502,57 @@ All on the code head `bb224b40` (this report is the next commit; it changes no c
 - **B2-A09** (saved-card integrity): an empty `source` object satisfies the reader's finding check. Home: the theses switch's turn-on.
 
 The earlier cases keep their homes (B-4, B-5, A-6, Q-6; §3.3 and §5). The offline calls still do not show how the live model answers or how many tokens it uses.
+
+## 10. The agent on
+
+**Date:** 24 Nov 2026 · **Base:** `origin/main` `fc8a66d0` (fetched first; the merge of PR #1112) · **Branch:** `claude/practice-field-agent-on` · **Astra's confirmation:** `docs/audits/20261124_ASTRA_CONFIRMATION_B2.md`, committed byte-identical first (`274fbd7d`, SHA-256 `00ca8fa1f4790e81e4ff01fcaeb6d9a4d23e6861b1bc94bb55c5dfa90d71e7b2`) · **The flip:** `862b4d7f`. `PRACTICE_FIELD_MODE` stays `'allowlist'`, so the agent runs only for a book whose owner is on the allowlist: today, the founder's book alone. **The saved-theses switch stays off.** Not merged; CI not watched.
+
+The committed confirmation is the file the brief names, `Documents\20261124_ASTRA_CONFIRMATION_B2.md`, whose bytes match the hash above. The copy attached in the chat (`Downloads\# Practice Field B2 · Founder’s paper-book agent.md`, SHA-256 `b4dd4d7f…561d`) is the same text exported with Markdown escapes (`\#`, `\_`, `\|`), so its bytes differ; it was not committed.
+
+### 10.1 Astra's confirmation
+
+- **Verdict: the founder's own paper-book agent switch READY**, at `597b64ca` (code `bb224b40`, base `190b5e63`).
+- **A01 to A04 and A06 hold** (A05 was outside the round): A01 by four refused price routes and a positive control; A02 for `null` and every wrong JSON type; A03 the close row's summary through replay; A04 unreadable usage charged in full; A06 result words refused or dropped.
+- **Both switches off, base to fix:** the 92-fire trace 92/92 byte-identical (10,572,094 bytes, SHA-256 `8fad4359…aaccf`); the end-to-end dump 443,533 bytes identical (SHA-256 `f5ed5c96…35c08`).
+- **The agent's files are unchanged from the fix to `main` `fc8a66d0`** (only `mode.js` gained B3's screen switch; both agent-switch readers keep their fix bodies).
+
+### 10.2 What the flip changed
+
+- `src/config/practiceFieldFlags.js`: `PRACTICE_FIELD_AGENT_ENABLED = true` (its docstring now says on, and a kill switch; rollback is the literal and its pin back).
+- `src/config/practiceFieldFlags.test.js`: the pin to `true`; its guard row turned around (the agent's `DARK_BY_DESIGN` entry is gone, the theses entry stays).
+- `src/config/flagPinGuard.test.js`: the `PRACTICE_FIELD_AGENT_ENABLED` entry removed from `DARK_BY_DESIGN`, an "intentionally ABSENT" note in its place.
+- **Two suites went red with the flip,** each pinned off for the whole file with one line of the tests-only setter in `mode.js`, `setPracticeFieldAgentForTests({ agent: false })` (plus the setter's name in the existing import and a comment); no assertion moved:
+  - `api/cron/practiceFieldIsolation.test.js`: its close sweeps run in mode `'on'`, so the agent's pass now ran after each idea book's close and called the model seat (whose fake throws) twice in two rows ("an ACTIVE idea book through the engine's own sweeps…" and "a DRAINING idea book…"). A third, IS-3, also failed in that Windows run; all three pass with the pin.
+  - `scripts/practice-field-founder.test.js`: its B2 status row turns the agent on itself, then restores the switch to show "agent off" (Review C-4); restoring to the shipped value now meant on. With the file's pin it restores to off.
+- **One row could not be pinned and was turned around:** `api/_utils/practiceField/agentIsolation.test.js`, "shipped OFF". It reads the shipped literal on purpose (it sets both overrides to `null`), so a suite pin cannot reach it, and `mode.js` says the flag module is never mocked (BUILD_RULES §4). It is a pin of the pre-flip value, which BUILD_RULES §2 has the flip commit reconcile. It now asserts the agent on wherever the mode is not `'off'`, and the theses off. In the same file, "an existing book with the agent off" passed `null` for the agent ("as shipped (off)"); its input is now `false`, so it still runs with the agent off. Its assertions are unchanged.
+  **A question for you:** the brief said "no assertion moved". This one row is the exception, because it pins the shipped value itself. If you would rather it stay as it was under a mock of the flag module, say so.
+
+Nothing else changed: no change to `PRACTICE_FIELD_MODE`, `PRACTICE_FIELD_AGENT_THESES_ENABLED`, the screen's switch, any fenced file, rules or indexes.
+
+### 10.3 Recorded for later, not built
+
+- **B2-C01** (Astra's confirmation, nonblocking): a paid archetype attempt times out, its retry is deferred, and the next fire lacks the frozen archetype identity. The desk part then reads `calledModel: false` while the window keeps `modelCalled: true`, one call and `model_fallback`. Likelihood is low: the identity must become unavailable between a paid failure and its deferred retry. Home: the agent's telemetry, with B2-A05.
+- It joins **B2-A05** (sweep call count), **B2-A07** (replay audit), **B2-A08** (import-guard coverage) and **B2-A09** (saved-card integrity), §9.8.
+
+### 10.4 The checks, once, at the flip (`862b4d7f`)
+
+All three ran in WSL Ubuntu in a clean worktree at the commit, `TZ=UTC`, Node 20.20.2.
+
+| Check | Command | Exit | Result |
+|---|---|---|---|
+| The full Linux suite | `npx vitest run --maxWorkers=8` (under `flock /tmp/pd-suite.lock`) | **0** | Test Files **1659 passed** \| 14 skipped (1673) · Tests **38265 passed** \| 197 skipped (38462) · 0 failed · 360.7 s |
+| The lint gate | `npm run lint:gate` | **0** | No output |
+| The build | `npx vite build` | **0** | `✓ built in 30.83s` (its four `css-syntax-error` warnings come from CSS this PR does not touch) |
+
+The rules suite is not among this PR's checks and is unaffected: `firestore.rules` and `firestore.indexes.json` are unchanged. The pushed head differs from `862b4d7f` by this section only. No real Firestore, model or EODHD call was made, and no `.env` file, environment variable or credential was read.
+
+### 10.5 Your steps after merging
+
+1. **Let it deploy.** The first agent check is the **first close after the deploy**, at about 16:15 to 18:00 Eastern.
+2. **After that close, pull `main`** (so the script reads the switch as on) and run
+   ```
+   node scripts/practice-field-founder.mjs status --uid <your uid>
+   ```
+   Send the `agent` and `spend` blocks to the Practice Field chat.
+3. **Read first:** each desk's source (`model`, or `code_fallback` with its reason), its calls and charge, and the month's spend against $3. The first live call is unprobed (§7 step 4 says what to read on the attempts if a desk falls back).
+4. **To stop it, revert the flip commit** (`862b4d7f`). Ideas the agent admitted keep running under code.
