@@ -500,7 +500,8 @@ export function isDirectRun(moduleUrl, argv1) {
 
 if (isDirectRun(import.meta.url, process.argv[1])) {
   const argv = process.argv.slice(2);
-  const writing = WRITES.has(argv[0]) && argv.includes('--go');
+  // The server clock is loaded only for a real write: never for --help, which touches nothing (review S5b).
+  const writing = WRITES.has(argv[0]) && argv.includes('--go') && !argv.includes('--help') && !argv.includes('-h');
   (writing ? productionServerTime() : Promise.resolve(undefined))
     .then((serverTime) => runCli(argv, { getDb: productionDb, loadEnv: loadProductionEnv, ...(serverTime ? { serverTime } : {}) }))
     .then((code) => { process.exitCode = code; });

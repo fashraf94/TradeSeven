@@ -13,8 +13,13 @@ import { checkStories, currencyOf, LEVELS } from './storyCheck.js';
 import { authorRecordOf, contentHashOf, wordsIn } from './storyRecord.js';
 import { quoteIn, underRule } from './matchRule.js';
 import { matchStories, dateCheckOf } from './matchStory.js';
-import { documentDateOf, pdfDateOf, extractText } from './extractText.js';
+import { extractText, htmlTextOf, HTML_LIMITS } from './extractText.js';
+import { documentDateOf, pdfDateOf } from './documentDate.js';
+import { pdfTextOf, pdfTextInWorker, PDF_LIMITS } from './pdfText.js';
+import { httpsTransport, fetchDocument, isPublicAddress } from './fetchSource.js';
 import { fixtureFetcher, pageOf, TEST_CONTACT } from './__fixtures__/fixtureFetch.js';
+import { PassThrough } from 'node:stream';
+import { EventEmitter } from 'node:events';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const OV = 'ai-buildout';
@@ -268,6 +273,98 @@ describe('A16, A20, A22, A23 — the notes the lens asked for', () => {
     expect(m.sources[0]).toMatchObject({ dated: 'Oct 2026', documentDate: '2026-10-29T20:05:00.000Z' });
     expect(m.findings).toEqual([]);
   });
+});
+
+describe('S2 — an answer that is not read is destroyed, and nothing is in flight once a fetch returns', () => {
+  /** A stand-in for https.request: answers with `res` (a stream with a status), records how it was handled. */
+  function standIn(status, headers = {}) {
+    const res = new PassThrough();
+    res.statusCode = status;
+    res.headers = headers;
+    const seen = { destroyed: false, resumed: false };
+    const destroy = res.destroy.bind(res);
+    res.destroy = (...a) => { seen.destroyed = true; return destroy(...a); };
+    const resume = res.resume.bind(res);
+    res.resume = (...a) => { seen.resumed = true; return resume(...a); };
+    const request = (url, opts, onResponse) => {
+      const req = new EventEmitter();
+      req.end = () => setImmediate(() => onResponse(res));
+      return req;
+    };
+    return { res, seen, request };
+  }
+  it.each([[302, { location: '/next' }], [404, {}], [500, {}]])('a %s answer\'s body is destroyed, never drained', async (status, headers) => {
+    const s = standIn(status, headers);
+    const answer = await httpsTransport('https://ir.example.com/x', { headers: {}, lookup: null, signal: undefined, maxBytes: 1024 }, { request: s.request });
+    expect(answer).toMatchObject({ status, body: null });
+    expect(s.seen).toEqual({ destroyed: true, resumed: false });
+  });
+  it('a 2xx body is read, and one over the size limit is refused and destroyed', async () => {
+    const ok = standIn(200, { 'content-type': 'text/html' });
+    const p = httpsTransport('https://ir.example.com/x', { headers: {}, lookup: null, signal: undefined, maxBytes: 1024 }, { request: ok.request });
+    setImmediate(() => { ok.res.end(Buffer.from('<p>hello</p>')); });
+    expect((await p).body.toString()).toBe('<p>hello</p>');
+    const big = standIn(200, {});
+    const q = httpsTransport('https://ir.example.com/x', { headers: {}, lookup: null, signal: undefined, maxBytes: 16 }, { request: big.request });
+    setImmediate(() => { big.res.write(Buffer.alloc(64, 65)); });
+    await expect(q).rejects.toMatchObject({ code: 'EXPLORE_TOO_LARGE' });
+    expect(big.seen.destroyed).toBe(true);
+  });
+  it('the request\'s signal is aborted when fetchDocument returns, whatever the answer', async () => {
+    for (const answer of [{ status: 200, headers: { 'content-type': 'text/html' }, body: Buffer.from('<p>x</p>') }, { status: 404, headers: {}, body: null }]) {
+      let signal = null;
+      const transport = async (url, opts) => { signal = opts.signal; return answer; };
+      await fetchDocument('https://ir.example.com/x', { contact: TEST_CONTACT, transport, resolve: async () => [{ address: '93.184.216.34', family: 4 }] });
+      expect(signal.aborted).toBe(true);
+    }
+  });
+});
+
+describe('S3 — reading a document is bounded in time and work, and never crashes the run', () => {
+  const tablePdf = readFileSync(path.join(HERE, '__fixtures__', 'docs', 'table.pdf'));
+  it('a PDF is read in a worker thread, to the same text as in this thread', async () => {
+    const inWorker = await pdfTextInWorker(tablePdf);
+    const here = await pdfTextOf(tablePdf);
+    expect(inWorker).toEqual(here);
+    expect(inWorker.text).toBe('Revenue $ 3,661 $ 1,365\nNet loss (110)');
+  });
+  it.each([
+    ['the time limit', { timeoutMs: 1 }, /reading the PDF took longer than 0.001 seconds/],
+    ['the page limit', { pagesMax: 0 }, /the PDF has 1 pages; at most 0 are read/],
+    ['the text limit', { textCharsMax: 5 }, /the PDF's text runs past 5 characters/],
+  ])('%s refuses the PDF, and the run goes on', async (_, opts, reason) => {
+    await expect(pdfTextInWorker(tablePdf, opts)).rejects.toThrow(reason);
+    const out = await extractText({ bytes: tablePdf, contentType: 'application/pdf' }, { pdf: (b) => pdfTextInWorker(b, opts) });
+    expect(out).toMatchObject({ type: 'pdf', text: null });
+    expect(out.reason).toMatch(reason);
+  });
+  it('the heap limit is the worker\'s own: set on the thread that reads, never on the run', () => {
+    expect(PDF_LIMITS).toEqual({ PAGES_MAX: 2000, TEXT_CHARS_MAX: 20_000_000, TIMEOUT_MS: 60_000, HEAP_MB: 1024 });
+    const src = readFileSync(path.join(HERE, 'pdfText.js'), 'utf8');
+    expect(src).toMatch(/resourceLimits: \{ maxOldGenerationSizeMb: heapMb \}/);
+  });
+  it('a page of 20,000 sibling elements is read in linear time (it took 28 s at 16,000 before)', { timeout: 60_000 }, () => {
+    const page = `<body><div>${'<span>a</span>'.repeat(20_000)}<p>Cloud revenue increased 48%</p></div></body>`;
+    const t0 = Date.now();
+    const out = htmlTextOf(Buffer.from(page), 'text/html');
+    expect(Date.now() - t0).toBeLessThan(15_000);
+    expect(out.text.endsWith(' Cloud revenue increased 48%  ')).toBe(true);
+  });
+  // (jsdom's own parser stops near tens of thousands of levels; extractText catches that as a reason. The walk itself
+  // has no recursion: a depth jsdom parses is read whole.)
+  it('a page nested 5,000 deep is read by the walk without recursion; a page past the element limit is refused by name', () => {
+    const deep = `<body>${'<span>'.repeat(5_000)}deep text${'</span>'.repeat(5_000)}</body>`;
+    expect(htmlTextOf(Buffer.from(deep), 'text/html').text).toBe('deep text');
+    expect(() => htmlTextOf(Buffer.from('<body><p>a</p><p>b</p><p>c</p></body>'), 'text/html', { maxElements: 2 })).toThrow('the page has more than 2 elements');
+    expect(HTML_LIMITS.ELEMENTS_MAX).toBe(1_000_000);
+  });
+});
+
+describe('S5a — special address ranges are not public', () => {
+  it.each([
+    ['3fff::1', false], ['3fff:0fff::1', false], ['3fff:1000::1', true], ['2001:2::1', false], ['2001:2:1::1', true],
+    ['2001:20::1', false], ['2001:2f::1', false], ['2001:30::1', true], ['192.88.99.1', false], ['192.88.98.1', true],
+  ])('%s → public %s', (ip, expected) => { expect(isPublicAddress(ip)).toBe(expected); });
 });
 
 describe('the content hash still ignores every match result, wherever it sits', () => {

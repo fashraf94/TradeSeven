@@ -66,6 +66,7 @@ function isPublicIPv4(ip) {
   if (a === 172 && b >= 16 && b <= 31) return false; // private
   if (a === 192 && b === 168) return false; // private
   if (a === 192 && b === 0 && (c === 0 || c === 2)) return false; // protocol assignments, documentation
+  if (a === 192 && b === 88 && c === 99) return false; // the old 6to4 relay anycast (review S5a)
   if (a === 198 && (b === 18 || b === 19)) return false; // benchmarking
   if (a === 198 && b === 51 && c === 100) return false; // documentation
   if (a === 203 && b === 0 && c === 113) return false; // documentation
@@ -101,6 +102,10 @@ function isPublicIPv6(ip) {
   if ((g[0] & 0xe000) !== 0x2000) return false; // not global unicast: ::, ::1, fc00::/7, fe80::/10, ff00::/8 …
   if (g[0] === 0x2001 && (g[1] === 0x0db8 || g[1] === 0)) return false; // documentation, Teredo
   if (g[0] === 0x2002) return false; // 6to4 (it carries an IPv4 address of any kind)
+  // review S5a: documentation (3fff::/20), benchmarking (2001:2::/48), ORCHIDv2 (2001:20::/28)
+  if (g[0] === 0x3fff && (g[1] & 0xf000) === 0) return false;
+  if (g[0] === 0x2001 && g[1] === 0x0002 && g[2] === 0) return false;
+  if (g[0] === 0x2001 && (g[1] & 0xfff0) === 0x0020) return false;
   return true;
 }
 
@@ -136,12 +141,17 @@ export function vettedLookup(resolve = (host) => dns.promises.lookup(host, { all
 
 // ── the request ──────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** The production transport: one GET over https with the checked lookup. Resolves `{ status, headers, body }`. */
-export function httpsTransport(url, { headers, lookup, signal, maxBytes }) {
+/**
+ * The production transport: one GET over https with the checked lookup. Resolves `{ status, headers, body }`. The body
+ * of an answer that is not read (a redirect, any status other than 2xx) is DESTROYED, never drained: draining would
+ * keep downloading after the fetch returned, outside both limits, and keep the run from exiting (review S2).
+ * `request` is https.request; the tests hand in a stand-in.
+ */
+export function httpsTransport(url, { headers, lookup, signal, maxBytes }, { request = https.request } = {}) {
   return new Promise((resolve, reject) => {
-    const req = https.request(url, { method: 'GET', headers, lookup, signal, agent: false }, (res) => {
+    const req = request(url, { method: 'GET', headers, lookup, signal, agent: false }, (res) => {
       const status = res.statusCode ?? 0;
-      if (status < 200 || status >= 300) { res.resume(); resolve({ status, headers: res.headers, body: null }); return; }
+      if (status < 200 || status >= 300) { res.destroy(); resolve({ status, headers: res.headers, body: null }); return; }
       const declared = Number(res.headers['content-length']);
       if (Number.isFinite(declared) && declared > maxBytes) { res.destroy(); reject(Object.assign(new Error('the document is larger than the size limit'), { code: 'EXPLORE_TOO_LARGE' })); return; }
       const enc = String(res.headers['content-encoding'] ?? '').trim().toLowerCase();
@@ -237,5 +247,7 @@ export async function fetchDocument(url, {
     return fail(`the request failed (${code ?? err?.name ?? 'error'}: ${err?.message ?? String(err)})`, current);
   } finally {
     clearTimeout(timer);
+    // Whatever the answer, nothing of this document is still in flight once the fetch returns (review S2).
+    controller.abort();
   }
 }
