@@ -1,6 +1,6 @@
 # Build B5 — the book's view for the hub, and one consistent read
 
-**Date:** 26 Nov 2026 · **Branch:** `claude/practice-field-b5-view-for-hub` · **Base:** `origin/main` `22b01810` (fetched first, unchanged at the end) · **Code head:** `793091cc` · **Rulings:** B5-1 to B5-5 (the build prompt) · **Note of record:** `docs/design/20261126_NOTE_TO_PRACTICE_FIELD_BOOK_VIEW_FOR_THE_HUB.md` (committed byte-identical first, `5602d953`, SHA-256 `c1d16a8df5eeab7b392a3361f380235cc7cf5e33b4064836905a508c18b33fe8`) · **Not merged; CI not watched.**
+**Date:** 26 Nov 2026 · **Branch:** `claude/practice-field-b5-view-for-hub` · **Base:** `origin/main` `22b01810` (fetched first, unchanged at the end) · **Code head:** `793091cc` (tests `11d5b662`) · **Rulings:** B5-1 to B5-5 (the build prompt) · **Note of record:** `docs/design/20261126_NOTE_TO_PRACTICE_FIELD_BOOK_VIEW_FOR_THE_HUB.md` (committed byte-identical first, `5602d953`, SHA-256 `c1d16a8df5eeab7b392a3361f380235cc7cf5e33b4064836905a508c18b33fe8`) · **Not merged; CI not watched.**
 
 | Question | Answer |
 |---|---|
@@ -229,7 +229,21 @@ The B2 run's thirteen closes were read at `main` (`22b01810`) and at this build,
 
 ### 5.5 The checks
 
-(filled after the final run at the pushed head)
+All ran in WSL Ubuntu (Node 20.20.2, the CI version), `TZ=UTC`, in a clean LF worktree of `~/pd-ci` with `npm ci` from this commit's lockfile. `origin/main` was fetched again at the end and is still `22b01810`, which this branch contains, so the tested tree is the merged tree.
+
+| Check | Command | At | Exit | Result |
+|---|---|---|---|---|
+| The full Linux suite | `TZ=UTC flock /tmp/pd-suite.lock npx vitest run --maxWorkers=8` | `76301710` | **0** | Test Files **1667 passed** \| 14 skipped (1681) · Tests **38698 passed** \| 197 skipped (38895) · 0 failed · 673 s (JSON reporter: `success: true`) |
+| The B3 view file after the last test-only commit | `npx vitest run api/_utils/practiceField/bookView.test.js` | `11d5b662` | **0** | 64 passed (64). That commit gives one row (3.9 s under the suite's load) the 30 s timeout the all-scene rows carry, and changes no code. |
+| The lint gate | `npm run lint:gate` | `11d5b662` | **0** | No output |
+| The build | `npx vite build` | `11d5b662`, and again at the pushed head | **0** | `✓ 4258 modules transformed.` `✓ built in 33.92s`. The build prints 4 CSS syntax warnings. This build changes no CSS file, so they don't come from it. |
+| The rules suite | `npm run test:rules` (Temurin 21, the Firestore emulator) | `11d5b662` | **0** | Test Files **48 passed** (48) · Tests **889 passed** (889). `firestore.rules`, `firestore.indexes.json` and `test/rules/` are unchanged from `main`. |
+| The money-rounding scan, alone, on Linux | `npx vitest run api/_utils/mandateMoneyRounding.scan.test.js` | `59d7ae5b` | **0** | 3 passed. The new code makes no raw rounding call. The percents round through `Intl` (`roundingMode: 'trunc'`); the share dollars use `money.js weightedCents`. |
+| An earlier full suite, at the build | as above | `59d7ae5b` | **0** | 1667 files, 38693 tests passed, 0 failed, 381 s |
+
+This session made no real Firestore, model or EODHD call and read no `.env` file. The picture harness started vite with placeholder Firebase values on its command line.
+
+**Time:** about two and a quarter hours. The session started at about 09:55 CST, the first commit landed at 10:07, and the checks finished at about 12:05. The 4-hour checkpoint was not reached.
 
 ## 6. The review (BUILD_RULES §2)
 
