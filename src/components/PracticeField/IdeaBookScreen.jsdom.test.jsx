@@ -325,6 +325,16 @@ describe('what the screen never does', () => {
     expect(text(m)).toContain('<img src=x');
     expect(window.__ib_pwned).toBeUndefined();
   });
+  it('B5-3: the agent\'s given name with markup in it is drawn as text — in the strip, the headers\' labels and the Desks tab', () => {
+    const agentName = '<b>A</b><img src=x>';
+    const pos = screen('sample', { patch: (input) => { input.agentName = agentName; } });
+    expect(pos.host.querySelector('b, img')).toBeNull();
+    expect(text(pos)).toContain('<b>A</b><img src=x>’s desk');
+    expect(header(pos, 'medium').getAttribute('aria-label')).toContain('<b>A</b><img src=x>’s desk');
+    const desks = screen('sample', { initial: { tab: 'desks', desk: 'shadow' }, patch: (input) => { input.agentName = agentName; } });
+    expect(desks.host.querySelector('b, img')).toBeNull();
+    expect(text(desks)).toContain('Open. <b>A</b><img src=x>’s desk looks for an idea at tonight’s close.');
+  });
   it('up and down are never colour alone: every signed figure carries its sign', () => {
     const v = viewOf('full');
     for (const g of v.groups) for (const n of g.names) for (const a of [n.plOpen, n.plDay].filter(Boolean)) if (a.dir !== 0) expect(a.text).toMatch(/^[+−]/);

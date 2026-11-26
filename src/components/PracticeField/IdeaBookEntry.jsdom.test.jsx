@@ -321,6 +321,44 @@ describe('the switch on: the card, its read and the page', () => {
     expect(state.calls).toEqual([]);
   });
 
+  it('B5-5: the view\'s version 3 is drawn; a version-2 answer is refused as an error, never drawn', async () => {
+    expect(viewOf('sample').version).toBe(3);
+    state.identity = { resolved: true, uid: 'owner-b5-version', authEpoch: 1 }; // (its own key: no last good answer cached)
+    const v2 = { ...viewOf('sample'), version: 2 };
+    state.answer = { status: 200, body: { book: v2 } };
+    let api = null;
+    function Probe() { api = useIdeaBook({ enabled: true }); return null; }
+    await mount(<Probe />);
+    expect(api.read).toMatchObject({ status: 'error', book: null, error: 'view_version' });
+    state.answer = { status: 200, body: { book: viewOf('sample') } };
+    act(() => { api.refresh(); });
+    await flush();
+    expect(api.read).toMatchObject({ status: 'ready', error: null });
+    expect(api.read.book.version).toBe(3);
+  });
+
+  it('B5-4: the server\'s "try again" (503) is the existing error state — no card; a page already drawn keeps its last answer', async () => {
+    state.identity = { resolved: true, uid: 'owner-b5-try-again', authEpoch: 1 }; // (its own key: no last good answer cached)
+    state.answer = { status: 503, body: { error: 'try_again' } };
+    let api = null;
+    function Probe() { api = useIdeaBook({ enabled: true }); return null; }
+    await mount(<Probe />);
+    expect(api.read).toMatchObject({ status: 'error', book: null, error: 'try_again' });
+    act(() => mounted.pop().root.unmount());
+    const card = await mount(<IdeaBookEntry />);
+    expect(card.host.querySelector('[data-ib="entry-card"]')).toBeNull();
+    // A good answer, then a "try again" on the next read: the last good answer stays (the hook's existing rule).
+    act(() => mounted.pop().root.unmount());
+    state.answer = { status: 200, body: { book: viewOf('sample') } };
+    await mount(<Probe />);
+    expect(api.read.status).toBe('ready');
+    state.answer = { status: 503, body: { error: 'try_again' } };
+    act(() => { api.refresh(); });
+    await flush();
+    expect(api.read).toMatchObject({ status: 'ready', error: 'try_again' });
+    expect(api.read.book.version).toBe(3);
+  });
+
   it('the hub\'s site with the switch on: the card above the activity section', async () => {
     const m = await mount(<ActivitySection activity={ACTIVITY} limit={3} />);
     const card = m.host.querySelector('[data-ib="entry-card"]');
