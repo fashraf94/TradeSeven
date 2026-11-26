@@ -1,6 +1,6 @@
 # Build B5 — the book's view for the hub, and one consistent read
 
-**Date:** 26 Nov 2026 · **Branch:** `claude/practice-field-b5-view-for-hub` · **Base:** `origin/main` `22b01810` (fetched first, unchanged at the end) · **Code head:** `793091cc` (tests `11d5b662`) · **Rulings:** B5-1 to B5-5 (the build prompt) · **Note of record:** `docs/design/20261126_NOTE_TO_PRACTICE_FIELD_BOOK_VIEW_FOR_THE_HUB.md` (committed byte-identical first, `5602d953`, SHA-256 `c1d16a8df5eeab7b392a3361f380235cc7cf5e33b4064836905a508c18b33fe8`) · **Not merged; CI not watched.**
+**Date:** 26 Nov 2026 · **Branch:** `claude/practice-field-b5-view-for-hub` · **Base:** `origin/main` `22b01810` (fetched first, unchanged at the end) · **Code head:** `d71d7ea5` · **Rulings:** B5-1 to B5-5 (the build prompt) · **Note of record:** `docs/design/20261126_NOTE_TO_PRACTICE_FIELD_BOOK_VIEW_FOR_THE_HUB.md` (committed byte-identical first, `5602d953`, SHA-256 `c1d16a8df5eeab7b392a3361f380235cc7cf5e33b4064836905a508c18b33fe8`) · **Not merged; CI not watched.**
 
 | Question | Answer |
 |---|---|
@@ -9,7 +9,7 @@
 | Is the page one consistent book? | **Yes.** Astra's B3-C01 and R5 both fail against the B3 reader and pass here, on the real engine with a close committed mid-read. Two passes that both disagree answer "try again" (503). |
 | Does "Shadow" reach a player in this module's words? | **No.** A test scans every fixed word (the server's and the client's) and every scene's view. The agent's *own* notes can still say it, because its prompt does (Q-1). |
 | Anything for you to rule? | **Four questions (§4.2).** The prompt still says "Shadow" (Q-1). An all-caps or very wide 20-character name overflows the Desks heading at 320 (Q-2). The two others concern readings. |
-| Blockers | **None.** Two review lenses, one refuter and a 49-mutant battery (§6). |
+| Blockers | **None.** Two review lenses, one refuter and a 50-mutant battery (§6). |
 
 ## 1. In plain terms
 
@@ -114,9 +114,9 @@ On the 13-session run's last close (27 Nov), the agent's desk read $70,872.37 of
 | | `OPEN_SLOT` by name, with no "the". | `:132` |
 | `api/_utils/practiceField/bookViewRead.js` | The header: how a close commits, the book's change marks, the close row's bracket (review A1), the writes that move no mark, and the restated bound. | `:11`, `:31` |
 | | `BOOK_READ_PASSES = 2`; `FINISHED_SINCE_CLOSE_MAX`; `isDocId`. | `:73`, `:75`, `:80` |
-| | `bookChangeMarks`, `closeRowMark` and `archetypeOf` (the epoch's; unknown → null name, never throws). | `:97`, `:106`, `:124` |
-| | `readPass`: the close row read first; the epoch and agent reads; the agent's name only when `ownerId` is the caller; the row of each idea finished since the close; the book and the close row read again last. | `:136`, `:147`, `:165`, `:193`, `:213`, `:215` |
-| | `readBookView`: two passes, then `{ tryAgain: true }`. | `:228`, `:235` |
+| | `bookChangeMarks`, `closeRowMark` (the close row with every map's keys sorted, so key order never makes two reads disagree) and `canonical`, `archetypeOf` (the epoch's; unknown → null name, never throws). | `:97`, `:108`, `:112`, `:133` |
+| | `readPass`: the close row read first; the epoch and agent reads; the agent's name only when `ownerId` is the caller; the row of each idea finished since the close; the book and the close row read again last. | `:145`, `:156`, `:174`, `:202`, `:222`, `:224` |
+| | `readBookView`: two passes, then `{ tryAgain: true }`. | `:237`, `:244` |
 | `api/practice-field/book.js` | 503 `{ error: 'try_again' }` (`TRY_AGAIN_BODY`). | `:17`, `:34`, `:50` |
 
 ### 3.2 Client: every line touched under `src/components/PracticeField/`
@@ -132,7 +132,7 @@ No component changed. No field the view already had was renamed. The rest are te
 
 - `api/_utils/practiceField/__testsupport__/bookViewScenesHub.js` (new). The B3 scenes, which stay unchanged, with the engine's own epoch (`buildIdeaBookEpochDoc`) and the caller's agent "Atlas" (whose battle archetype is `degen`).
 - `bookView.hub.test.js` (new): B5-1, B5-2, B5-3, the scan, privacy.
-- `bookViewRead.consistent.test.js` (new): B3-C01, R5, a fill mid-read, an idea finished since the close, the agent's pass mid-read, the two-pass stop, and every scene through the reader.
+- `bookViewRead.consistent.test.js` (new): B3-C01, R5, a fill mid-read, an idea finished since the close, the agent's pass mid-read, the close row's mark under reversed key order, the two-pass stop, and every scene through the reader.
 - Moved with the change: `bookView.test.js` (named scenes and the new pins), `bookView.fixRound.test.js` (the names; the A04 count; the two-closes row turned around to the two-pass stop), `bookView.e2e.test.js` (the split, archetype and names at every close; the new bound), `bookViewCopy.test.js` (the failed-check row turned around: the stored note's sentence with its desk as subject) and `api/practice-field/book.test.js` (two new rows; the 15 existing rows untouched).
 
 No fenced file, rule, index, store write, mode or switch changed. None of B4's files changed (`mode.js`, `founderControls.js`, `ideaBook.js`, `bookStore.js`, `admission.js`, `agentRun.js`, `src/data/practiceFieldSlots.js`, `scripts/`). No fenced function is called by the new code.
@@ -154,7 +154,7 @@ No fenced file, rule, index, store write, mode or switch changed. None of B4's f
 | R-9 | **The Desks tab's lane under the archetype's desk still reads "Trend Follower · Short".** | B3 built it so. It now sits under "Trend Follower’s desk", so the name shows twice. |
 | R-10 | **Each desk part of the split also carries `desk`, the engine's desk id.** | The hub can then match a part to its groups and strip lines. The id is a key and is never shown. |
 | R-11 | **"Try again" is HTTP 503 `{ error: 'try_again' }`, never `{ book: null }` and never 404.** | `{ book: null }` would close an open page (A09/R4), and 404 is the client's settled "off". The hook's existing rule applies: no card on a first read, and an open page keeps its last answer with the error flagged. |
-| R-12 | **The marks are the book's `revision`, `execState.lastCloseKey` and `currentEpochId`, plus the last close's window row as stored** (review A1). | Every close moves the first two, in one patch (`close.js:1475`, `:1478`). So does every money move between closes (admission, a fill, a sale). The third moves at epoch 2. The agent's pass after a close moves none of them: no money moves. It writes its calls on the close row, after any manager's exit on an idea. That row is read first and last, so an exit is never paired with a call from before it. |
+| R-12 | **The marks are the book's `revision`, `execState.lastCloseKey` and `currentEpochId`, plus the last close's window row as stored, its keys sorted** (review A1; the order a read returns fields in never counts as a change). | Every close moves the first two, in one patch (`close.js:1475`, `:1478`). So does every money move between closes (admission, a fill, a sale). The third moves at epoch 2. The agent's pass after a close moves none of them: no money moves. It writes its calls on the close row, after any manager's exit on an idea. That row is read first and last, so an exit is never paired with a call from before it. |
 
 ### 4.2 Questions for you
 
@@ -169,12 +169,12 @@ No fenced file, rule, index, store write, mode or switch changed. None of B4's f
 
 ### 5.1 The rows
 
-The book's rows are now **205 in 10 files**; B3 left 171 in 9. 37 rows are new, all passing.
+The same test files hold **168 rows in 8 files at `main`** (`22b01810`, counted with the JSON reporter) and **206 in 10 files here**, all passing: 38 rows are new.
 
 | File | Rows | What B5 added or moved |
 |---|---|---|
 | `api/_utils/practiceField/bookView.hub.test.js` (new) | 22 | **B5-1:** each of the six archetypes, built and read back, with a test agent whose own archetype is a different one (`degen`); an unknown code (code id kept, null name, no throw); no epoch. **B5-2:** the sample day against the stored rows (the shares sum to 1 in millionths; use, of, pct and bar; the use equals the desk's shown position values, §9); a full book; a different epoch's caps; seven epoch shapes that give no split; a new book and a book with no close; entering, bought today, bought after the close; a desk above its share; three waiting lines; an idea finished since the close. **B5-3:** a named agent everywhere; five unnamed forms; the 20-code-point limit (also with emoji); markup as text; nine characters that aren't plain text; names that draw nothing; through the reader (own agent, another user's agent, no agent, too long); the scan for "Shadow" and "archetype desk" over every fixed word (server and client) and every scene, named, fallback and agent-off; every scene unchanged but for the names and the new fields. **Privacy:** every scene read back carries no uid, book, agent, idea or epoch id. |
-| `api/_utils/practiceField/bookViewRead.consistent.test.js` (new) | 10 | Astra's B3-C01, with its control; the book's change marks; R5 on the B2 run; a fill mid-read (only the revision moves); an idea finished since the close through the reader (its use, and its strip line, review A2); the agent's pass mid-read at two moments (review A1); the two-pass stop and a one-pass recovery; every scene through the reader equals the view built directly. |
+| `api/_utils/practiceField/bookViewRead.consistent.test.js` (new) | 11 | Astra's B3-C01, with its control; the book's change marks; the close row's mark under reversed key order (one pass, never a false "try again"); R5 on the B2 run; a fill mid-read (only the revision moves); an idea finished since the close through the reader (its use, and its strip line, review A2); the agent's pass mid-read at two moments (review A1); the two-pass stop and a one-pass recovery; every scene through the reader equals the view built directly. |
 | `api/_utils/practiceField/bookView.e2e.test.js` | 1 | At each of the 13 closes it now also checks the archetype, the split against the stored epoch and rows (computed in the test), the use against the shown position values, the names, the "Shadow" scan beside the agent's own words, the new bound (55 + 3·I) and no agent id. |
 | `api/_utils/practiceField/bookView.fixRound.test.js` | 20 | The names (fallbacks: this run has no agent document) and the A04 count (6 queries, ≤ 110 + 6·I). **Turned around:** "two closes during one read" is now the two-pass stop. |
 | `api/_utils/practiceField/bookView.test.js` | 64 | On the named scenes: the new names in the states' pins, the failed-check line by its desk (review B1), and a 30 s timeout on the four rows that build every scene. |
@@ -277,7 +277,7 @@ This session made no real Firestore, model or EODHD call and read no `.env` file
 
 | # | Finding | Refuter | Disposition |
 |---|---|---|---|
-| A1 | The agent's pass after a close (a manager's exit + its call on the close row) can land inside one pass without moving the book's marks: an "Exit" call beside an idea still holding, a page equal to neither the state before nor after. | **CONFIRMED**, minor (state words only, no figure; a milliseconds window once a day). | **Fixed** (`bookViewRead.js:147`, `:213`, `:215`). The close row is read first and again last; the pass settles only when it is unchanged. Two rows race the agent's pass through the real engine; the one that races during the idea read fails without the fix. |
+| A1 | The agent's pass after a close (a manager's exit + its call on the close row) can land inside one pass without moving the book's marks: an "Exit" call beside an idea still holding, a page equal to neither the state before nor after. | **CONFIRMED**, minor (state words only, no figure; a milliseconds window once a day). | **Fixed** (`bookViewRead.js:156`, `:222`, `:224`). The close row is read first and again last; the pass settles only when it is unchanged. Its mark ignores key order (`:108`): a row returning the second read's keys reversed settles in one pass, and fails with a plain JSON string (found at the close-out check, F10). Two rows race the agent's pass through the real engine; the one that races during the idea read fails without the fix. |
 | A2 | After an idea finishes at a window following the close, the strip for that close is rebuilt from its later (empty) holdings, so "called Exit on XOM" disappears; and (refuter's extension) "held N" undercounts. | **CONFIRMED**, minor; the logic is older than B5. | **Fixed** (`bookView.js:931`, `:946`). The strip reads that idea's row of the close, as the split does. The row fails without the fix. |
 | A3 | The share numbers sum to 0.9999999999999999 as decimals. | (note) | **Recorded** (§7). They sum to exactly 1 in millionths. |
 | A4 | The whole percent can disagree with the bar: "100%" with a bar of 0.99998. | (note) | **Fixed** (`bookView.js:162`). The percent is cut: "100%" only with a full bar. A mutant (F03) is killed. |
@@ -301,10 +301,11 @@ This session made no real Firestore, model or EODHD call and read no `.env` file
 |---|---|---|---|---|---|
 | The build (prior: B3's fix-round results) | `36e0702b` | 40 server | 39 | 1 (R03) | 15.3 min, 2 trees |
 | After the review's fixes (prior: the first run) | `262c85e9` | 49 server (40 re-anchored, plus F01–F09, one or more per fix) | 48 | 1 (R03) | 12.6 min, 3 trees |
-| **Final, at the code head** (prior: the second run) | **`793091cc`** | **49 server** | **48** | **1 (R03)** | **8.8 min, 4 trees** |
-| Client (`--rows src/components/PracticeField`) | `793091cc` | 1 (K01: the client still asks for version 2) | 1 | 0 | 0.8 min |
+| After the per-view allotment (prior: the second run) | `793091cc` | 49 server | 48 | 1 (R03) | 8.8 min, 4 trees |
+| **Final, at the code head** (prior: the third run) | **`d71d7ea5`** | **50 server** (plus F10: the close row's mark by key order) | **49** | **1 (R03)** | **5.6 min, 4 trees** |
+| Client (`--rows src/components/PracticeField`) | `793091cc` (no client line changed since) | 1 (K01: the client still asks for version 2) | 1 | 0 | 0.8 min |
 
-- **The baselines were green:** 1,783 rows in 58 files at the code head. No mutant broke and none timed out, and every target file in every tree was the commit's bytes.
+- **The baselines were green:** 1,784 rows in 58 files at the code head. No mutant broke and none timed out, and every target file in every tree was the commit's bytes.
 - **R03** (the close key dropped from the book's marks) **is equivalent.**
   - One writer sets `execState.lastCloseKey`: `close.js:1478`. It does so in the same patch that moves `revision` (`:1475`).
   - Creation sets both to their starting values in one document (`ideaBook.js`, `buildExecStateBlock`).
@@ -312,7 +313,7 @@ This session made no real Firestore, model or EODHD call and read no `.env` file
   - It is reached on every read (`bookChangeMarks` runs twice a pass). It is kept as a mark so the reader states what a close changes, not what it happens to change today.
 - **Each review fix was proved by its own mutant:**
   - F01 is killed only by the row that races the agent's pass during the idea read. The History-timing row passes without the bracket, because reading the close row first already pairs it with the ideas.
-  - F02 to F09 are each killed by their rows.
+  - F02 to F10 are each killed by their rows.
 
 ## 7. Recorded for later, not built
 
