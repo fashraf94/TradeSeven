@@ -341,6 +341,26 @@ describe('what the screen never does', () => {
   });
 });
 
+describe('B5-A01 (Astra): the Desks tab\'s heading wraps a wide name', () => {
+  // The 18 px heading beside the 56 px mark is the one place a desk's name had no wrap rule: twenty "W"s ran 154 px past
+  // 320 and 84 px past 390. jsdom lays nothing out, so this row pins the style; the browser measure is in the B5 report.
+  it('every desk\'s name heading carries overflowWrap: anywhere, at 320 and at 390, with a twenty-W agent name', () => {
+    const agentName = 'W'.repeat(20);
+    for (const width of [320, 390]) {
+      const m = screen('sample', { width, initial: { tab: 'desks', desk: 'shadow' }, patch: (input) => { input.agentName = agentName; } });
+      const sections = [...m.host.querySelectorAll('section[data-ib-desk]')];
+      expect(sections.map((s) => s.getAttribute('aria-label')), `${width}`).toEqual([`${agentName}’s desk`, 'Trend Follower’s desk']);
+      for (const s of sections) {
+        const name = s.getAttribute('aria-label');
+        const heads = [...s.querySelectorAll('div')].filter((d) => d.children.length === 0 && d.textContent === name);
+        expect(heads, `${width} · ${name}`).toHaveLength(1);
+        expect(heads[0].style.fontSize, `${width} · ${name}`).toBe('18px');
+        expect(heads[0].style.overflowWrap, `${width} · ${name}`).toBe('anywhere');
+      }
+    }
+  });
+});
+
 describe('loading, empty and error: quiet, in the page\'s own voice', () => {
   it('loading', () => {
     const m = mount(<IdeaBookScreen read={{ status: 'loading', book: null }} onClose={() => {}} width={390} />);

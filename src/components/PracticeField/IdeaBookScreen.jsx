@@ -382,7 +382,7 @@ function DeskSection({ d, first }) {
     <section aria-label={d.deskName} data-ib-desk={d.desk} style={{ display: 'flex', flexDirection: 'column', gap: 14, paddingTop: first ? 0 : 20, borderTop: first ? 'none' : HAIR }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <DeskMark desk={d.desk} deskName={d.deskName} size={56} />
-        <div><div style={{ fontSize: 18, fontWeight: 800, letterSpacing: '-0.01em', lineHeight: 1.2, color: IB.ink }}>{d.deskName}</div><div style={{ fontSize: 12, color: IB.ink3, marginTop: 3 }}>{d.lane}</div></div>
+        <div><div style={{ fontSize: 18, fontWeight: 800, letterSpacing: '-0.01em', lineHeight: 1.2, color: IB.ink, overflowWrap: 'anywhere' }}>{d.deskName}</div><div style={{ fontSize: 12, color: IB.ink3, marginTop: 3 }}>{d.lane}</div></div>
       </div>
       {notes ? (notes.failed ? <div style={{ ...BOOK_TEXT, fontSize: 13.5 }}>{notes.text}</div> : <Quote cap={IDEA_BOOK_COPY.writtenAfter(notes.date)}>{notes.text}</Quote>) : null}
       <div>
