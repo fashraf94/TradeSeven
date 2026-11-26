@@ -148,6 +148,24 @@ describe('--owner through the door: --uid acts, --owner is the book', () => {
     expect(getBook(db, own).status).toBe('active');
   });
 
+  it('the request key is the PLAYER\'s book\'s (battery SC10): once their book closes and a new one opens, the same command is a new request for the new book — never a replay of the old one', async () => {
+    const { db, own, b1 } = await threeBooks();
+    const nowIso = etIso(DAYS.d1, 8, 0);
+    const dry = await json(db, ['pause', '--owner', P1, '--uid', FOUNDER], { nowIso });
+    expect(dry.body).toMatchObject({ sent: false, bookId: b1 });
+    expect(dry.body.bookId).not.toBe(own);
+    expect((await json(db, ['pause', '--owner', P1, '--uid', FOUNDER, '--go'], { nowIso })).body.answer).toMatchObject({ outcome: 'paused', bookId: b1 });
+    // P1's book winds down and closes (nothing open); the founder opens P1 a new one.
+    expect((await json(db, ['wind-down', '--owner', P1, '--uid', FOUNDER, '--go'], { nowIso })).body.answer).toMatchObject({ outcome: 'draining' });
+    expect(await closeOn(db, b1, DAYS.d1, quotesOn())).toMatchObject({ closed: true, bookClosed: true });
+    const next = await json(db, ['create-book-for', '--owner', P1, '--again', 'second', '--uid', FOUNDER, '--go'], { nowIso });
+    const b1b = next.body.answer.bookId;
+    expect(b1b).not.toBe(b1);
+    const again = await json(db, ['pause', '--owner', P1, '--uid', FOUNDER, '--go'], { nowIso: etIso(DAYS.d2, 8, 0) });
+    expect(again.body).toMatchObject({ replay: false, answer: { outcome: 'paused', bookId: b1b } });
+    expect(getBook(db, b1b).drafting).toBe('paused');
+  });
+
   it('resolve --owner rules on the PLAYER\'s idea, by the founder', async () => {
     const restore = setPracticeFieldModeForTests('on');
     const db = makeMandateFakeDb(seed(FOUNDER, P1));
