@@ -2,6 +2,14 @@
 
 **Date of the run:** Wed Nov 25, 2026 · **Base:** `origin/main` at `1cb1c627` (PR #1113's merge), after `git fetch origin main` at the start of the session · **Branch:** `claude/explore-publish` · **Builder:** Claude Code (Opus), worktree `explore-publish-command-4fc383` · **Attachments (K-0):** `docs/design/explore/20261125_EXPLORE_EDITORIAL_STANDARD_V1_4.md`, `docs/design/explore/20261125_NOTE_STORY_RECORD_V1_4.md`, committed byte for byte (SHA-256 `7b764294…` and `b10dc955…`, equal to the files received).
 
+> **The founder's rulings, Nov 26, 2026** (§14), built in `7f4f398a`:
+> - **SQ-6:** keep rule 1's number edge, as built. A quote that begins or ends inside a number in the document is not found.
+> - **SQ-7:** accept decimal zeros. A value matches a number token that differs from it only by trailing zeros after the decimal point: 46 in "$46.0", 0.8 in "0.80". Nothing else loosens.
+> - **SQ-5:** a question with no id, or with an id another question of the story already uses, is **refused**, not noted. Every other noted finding stays a note.
+> - **SQ-8:** stays as built. An empty `leadsToStory` (null or "") is refused.
+>
+> Each ruling has a row and a mutant (§10). Every check was run again on the new head (§8–§10).
+
 ## 1. Verdict
 
 | | |
@@ -10,9 +18,9 @@
 | **The quote test (K-6)** | The step fetches every cited document itself, reads its text, and looks for each quote word for word under one written rule, `rule: 1`. A figure is recorded as **sourced** only if this run found its quote in text this run read. Nothing an author wrote, and nothing stored earlier, survives as a match. No model is called, anywhere. |
 | **Live evidence on the pilots (K-14)** | The run on the final code confirmed **10 of the 12 sources by machine**, and **3 of the 4 carried figures** arrive as sourced. Two sources were missed. **Amazon's site** reset the connection; it is intermittent, and answered once in three runs, with the quote found. **The NextEra PDF** writes "fixed" with a ligature it does not spell out. Both are honest misses (§7, §13). |
 | **The pilot records** | Both pass `check` as written. The only notes are the two stored-measure keys: the research server's list does not exist yet. |
-| **Checks** | Run on the merged tree `892ae2c3`. **Full suite:** 1,665 files passed, 14 skipped; 38,643 rows passed; **0 failed**. **`lint:gate`:** clean. **Rules suite:** 48 files, 889 rows. **Client bundle:** byte-identical to `main`. **Baselines:** unchanged. **Mutation battery: 78 of 78 killed.** |
+| **Checks** | Run again after the founder's rulings, on the merged tree `7f4f398a`. **Full suite:** 1,665 files passed, 14 skipped; 38,661 rows passed; **0 failed**. **`lint:gate`:** clean. **Rules suite:** 48 files, 889 rows. **Client bundle:** byte-identical to `main`. **Baselines:** unchanged. **Mutation battery: 82 of 82 killed.** The run before the rulings, on `892ae2c3`, was green too: 38,643 rows, and 78 of 78 mutants. |
 | **Review (K-15)** | Three lenses and one refuter. 43 findings were raised; 21 were confirmed and fixed, including **two blockers**. (1) An author's `match` value could survive in places the step does not write. (2) The version rule could be bypassed through unpublish and then draft. One finding was refuted. The rest were readings of the rules, each listed in §11. |
-| **For you to decide** | **SQ-6:** a quote may not cut a number in the document. This is built stricter than the letter. **SQ-7:** decimal zeros, e.g. 46 against "$46.0", are refused, as the letter says. **SQ-8:** an empty door is refused, as the letter says. SQ-1 to SQ-5 are applied as defaults (§14). The page draws no company leads for V1.4 records; this is reported for the page's build (§15). |
+| **The founder's rulings (Nov 26)** | **SQ-6:** the number edge is kept. **SQ-7:** decimal zeros are accepted, and nothing else loosens. **SQ-5:** a question with no id, or a repeated id, is refused. **SQ-8:** stays as built. All are built and checked (§14). SQ-1 to SQ-4 are applied as their defaults. The page draws no company leads for V1.4 records; this is reported for the page's build (§15). |
 | **What this session did not do** | It made no write to any real database, sent no `--go`, read no credential and called no model. Only the three live read-only `match` runs reached the network. |
 
 ## 2. What was built, in plain terms
@@ -71,7 +79,7 @@ Every write needs the founder's uid on `MANDATE_FOUNDER_UIDS` and `--go`. No mod
    - Digits after a decimal point are a fraction (".5%" holds no 5).
    - Digits before a fraction slash belong to the fraction ("5½" holds no 51).
    - A negative value must be written as negative: a minus or hyphen that does not follow a letter or digit, or accounting parentheses. A currency sign may sit between ("-$5", "($110)"). So "12-18 months" is a range.
-   - Decimals must be as given: `46` is not found in "$46.0" (SQ-7).
+   - The decimals are as given, except for trailing zeros after the decimal point (the founder's ruling SQ-7): `46` is found in "$46.0" and in "$46.00", and `0.8` in "0.80". Nothing else loosens: `46` is not found in "460" or "46.01".
 
 8. **"The same currency" in the two formulas.** A unit names its currency first: a code ("USD millions"), a sign ("$ millions") or a word ("US dollars, millions"). A unit with none cannot be in the same currency as anything, so a `ratio` of two `GW` figures is refused.
 
@@ -101,8 +109,7 @@ Every write needs the founder's uid on `MANDATE_FOUNDER_UIDS` and `--go`. No mod
     - The body of a redirect or of any non-2xx answer is destroyed, and the request is aborted once the fetch returns (review S2).
     - The user agent is `FantasyTrades-ExplorePublish/1 (+<contact>)`, with the contact read from `EXPLORE_PUBLISH_CONTACT`.
 
-13. **Findings beyond K-4's letter are noted, never refused,** per the founder's "build the letter" ruling. Examples:
-    - a question without an id or with a repeated one;
+13. **Findings beyond K-4's letter are noted, never refused,** per the founder's "build the letter" ruling. The one exception is the founder's ruling SQ-5: a question with no id, or with an id another question already uses, is refused. Examples of notes:
     - a source that nothing cites;
     - a missing `wrongIfSeed` or `watch`;
     - connection and question counts outside §2's ranges;
@@ -114,7 +121,7 @@ Every write needs the founder's uid on `MANDATE_FOUNDER_UIDS` and `--go`. No mod
     - a stored measure carrying its own label;
     - the date check.
 
-    The review turned five of these into refusals, where the letter or the integrity of a match needed it: two sources sharing an id, a company or stored key named twice, a measure of neither kind, a result on a computed cell, and a specific question's group outside the list. SQ-5 asks about the rest.
+    The review turned five of these into refusals, where the letter or the integrity of a match needed it: two sources sharing an id, a company or stored key named twice, a measure of neither kind, a result on a computed cell, and a specific question's group outside the list. The founder's SQ-5 added the sixth, the question id. Every other note stays a note.
 
 14. **The fixture PDFs are marked `binary`** in `.gitattributes`, one narrow line. They are built byte by byte, and their cross-reference table holds byte offsets, which a line-ending conversion on checkout would break.
 
@@ -281,7 +288,7 @@ Each row starts from a pilot record, breaks exactly one thing, and asserts the e
 | (k) | one input for `growth_from_year_ago` | K-4(k) `…cells[3].inputs` |
 | (l) | a blank `storedKey` | K-4(l) `questions[0].measures[1].storedKey` |
 
-Beside these 53 rows: the limits exactly (150 and 300 words, ten tickers, three companies, five measures) pass; a lead with `symbol: null` passes; a deep story checked alone reads its parent from the collection, and a publish counts only a published parent ("publish them together"); two files naming one id are refused; K-7's 20 token rows; the two formulas' ten rows (addition 2); the stored-measure list's two rows (addition 3).
+The founder's SQ-5 (Nov 26) adds two refusals, under rule `SQ-5`: a question with no id (missing, blank, or not a string), and an id another question of the story already uses. Five rows are in `review.test.js`. Beside these 53 rows: the limits exactly (150 and 300 words, ten tickers, three companies, five measures) pass; a lead with `symbol: null` passes; a deep story checked alone reads its parent from the collection, and a publish counts only a published parent ("publish them together"); two files naming one id are refused; K-7's 20 token rows; the two formulas' ten rows (addition 2); the stored-measure list's two rows (addition 3).
 
 ## 7. The live match on the two pilot records (K-14)
 
@@ -323,6 +330,8 @@ None wrote anything. **The database was never opened**: both stories were given 
 | CRWV growth from 3,661 and 1,365 (s7, both inputs) | both found → **sourced** |
 
 The deep story carries no figures, because its questions are specific. Its one unmatched source means `publish` refuses it without `--accept-unmatched`, and the overview too, whenever Amazon resets. **The date check** passes for every document that carries its own date. The other seven sources are noted "no date was found in the document itself: check `dated` by hand".
+
+The founder's rulings of Nov 26 (SQ-5, SQ-7) change the check, not the matcher. `matchRule.js`, `matchStory.js`, `fetchSource.js` and the extraction are byte-identical between `892ae2c3` and `7f4f398a`, so run 3 stands as the evidence of record. Both pilots still pass `check`.
 
 The full text report of run 3, as the command prints it:
 
@@ -386,23 +395,23 @@ STORY dominion-data-centers   deep   version 1   0 refused, 1 unmatched, 3 noted
 
 ## 8. Tests, suite and baselines
 
-All final checks ran on the final code head `892ae2c3`. That head is the merged tree: `origin/main` was fetched again before the runs and is still `1cb1c627`, which the branch contains.
+All final checks ran on the final code head `7f4f398a`, which carries the founder's rulings of Nov 26. They had also all passed on `892ae2c3`, before the rulings: 38,643 rows, 78 of 78 mutants, and the bundle identical. That head is the merged tree: `origin/main` was fetched again before the runs and is still `1cb1c627`, which the branch contains.
 
-**How they ran:** in WSL, in a private worktree of `~/pd-ci` (`~/pd-expub`), with Node 20.20.2, `TZ=UTC` and 8 workers, the full suite under `flock /tmp/pd-suite.lock`, and a fresh `npm ci` for this branch's lockfile.
+**How they ran:** in WSL, in a private worktree of `~/pd-ci` (`~/pd-expub`), with Node 20.20.2, `TZ=UTC` and 8 workers, the full suite under `flock /tmp/pd-suite.lock`, and a fresh `npm ci` for this branch's lockfile. The worktree was made afresh for the re-run.
 
 | Check | Result |
 |---|---|
-| Full suite (`npx vitest run --maxWorkers=8`) | **Test Files 1,665 passed, 14 skipped (1,679). Tests 38,643 passed, 197 skipped (38,840). 0 failed.** Exit 0. |
+| Full suite (`npx vitest run --maxWorkers=8`) | **Test Files 1,665 passed, 14 skipped (1,679). Tests 38,661 passed, 197 skipped (38,858). 0 failed.** Exit 0. |
 | `npm run lint:gate` | Exit 0 |
 | `npm run test:rules` (Firestore emulator, JDK 21) | **48 files, 889 tests passed.** Exit 0 |
 | `vite build`, minified, of `main` and of this head | Both exit 0. See §9. |
 
-**The new test files (378 rows).**
+**The new test files (396 rows).**
 
 | File | Rows |
 |---|---|
 | `api/_utils/explore/storyCheck.test.js` | 113 |
-| `review.test.js` | 102 |
+| `review.test.js` | 120 |
 | `fetchSource.test.js` | 58 |
 | `matchStory.test.js` | 29 |
 | `matchRule.test.js` | 22 |
@@ -450,11 +459,11 @@ The report commit is checked again on the pushed head (§17).
 
 ## 10. The mutation table
 
-**78 of 78 mutants killed; none survived, none broken, none crashed, none skipped** (the runner's defined ids against the ids it ran: 0 missing).
+**82 of 82 mutants killed; none survived, none broken, none crashed, none skipped** (the runner's defined ids against the ids it ran: 0 missing).
 
-The battery ran at `892ae2c3` in the WSL tree. Each mutant is one exact-string replacement in one file, and its anchor must occur exactly once (otherwise BROKEN, and the mutant is not run). It runs only the test files named. It is KILLED only on a non-zero exit with failed rows. The file is then restored from its saved bytes and checked by SHA-256. The tree was clean before and after (`git status`).
+The battery ran at `7f4f398a` in the WSL tree. Each mutant is one exact-string replacement in one file, and its anchor must occur exactly once (otherwise BROKEN, and the mutant is not run). It runs only the test files named. It is KILLED only on a non-zero exit with failed rows. The file is then restored from its saved bytes and checked by SHA-256. The tree was clean before and after (`git status`).
 
-M01–M18 are the build prompt's eighteen. A1–A4 cover the three additions and the invariant. X01–X18 are further guards. R-* cover the review round's fixes.
+M01–M18 are the build prompt's eighteen. A1–A4 cover the three additions and the invariant. X01–X18 are further guards. R-* cover the review round's fixes. R-SQ7a/b and R-SQ5a/b cover the founder's rulings of Nov 26; SQ-6 is guarded by R-H2a/b, and SQ-8 by R-A12.
 
 | Id | Mutant | Files run | Result | First failing row |
 |---|---|---|---|---|
@@ -475,7 +484,7 @@ M01–M18 are the build prompt's eighteen. A1–A4 cover the three additions and
 | M12 | a ticker outside ALL_TICKERS is accepted | storyCheck.test.js | KILLED (5 failed) | K-4(f): a ticker outside ALL_TICKERS |
 | M13 | a deep story publishes with no parent link | storyCheck.test.js | KILLED (1 failed) | K-4(e): a deep story without a parent |
 | M14 | a broad question with one stored measure is accepted | storyCheck.test.js | KILLED (1 failed) | K-4(j): one stored measure |
-| M15 | a cell's figure outside its quote is accepted | storyCheck.test.js | KILLED (16 failed) | K-4(k): a stated cell whose figure is not inside its excerpt |
+| M15 | a cell's figure outside its quote is accepted | storyCheck.test.js | KILLED (13 failed) | K-4(k): a stated cell whose figure is not inside its excerpt |
 | M16 | the same version with different content overwrites | explore-publish.test.js | KILLED (1 failed) | the same version with different content is refused ("raise the version"), and nothing in the set is written |
 | M17 | publishedAt moves on a later version | explore-publish.test.js | KILLED (2 failed) | a higher version is written: publishedAt kept from the first publish, revisedAt set now |
 | M18 | the command writes to another collection | explore-publish.test.js | KILLED (12 failed) | check on the deep story alone reads its parent from the collection; with no parent there, it is refused |
@@ -506,7 +515,7 @@ M01–M18 are the build prompt's eighteen. A1–A4 cover the three additions and
 | X12 | hidden elements count as visible text | matchStory.test.js, review.test.js | KILLED (2 failed) | a hidden paragraph is not visible text → https://ir.example.com/release |
 | X13 | no space at block and cell edges | matchStory.test.js | KILLED (1 failed) | a table row in a page → https://ir.example.com/release |
 | X14 | documentDate copied from the author's dated | matchStory.test.js | KILLED (7 failed) | a refusal: by 'read', nothing recorded as read, the reason in the report |
-| X15 | K-7 drops the decimals (48 found in 48.5) | storyCheck.test.js | KILLED (5 failed) | 51.4 in "were $51.4 billion for the three months" → true |
+| X15 | K-7 drops the decimals (48 found in 48.5) | storyCheck.test.js | KILLED (6 failed) | 51.4 in "were $51.4 billion for the three months" → true |
 | X16 | an http source passes the check | storyCheck.test.js | KILLED (1 failed) | K-4(h): a source whose url is not https |
 | X17 | eleven tickers pass | storyCheck.test.js | KILLED (1 failed) | K-4(f): eleven tickers |
 | X18 | the word limit is one word looser | storyCheck.test.js | KILLED (2 failed) | K-4(d): an overview's body at 151 words |
@@ -536,6 +545,10 @@ M01–M18 are the build prompt's eighteen. A1–A4 cover the three additions and
 | R-F1m | refuter 1: a quote may start after a decimal point | review.test.js, matchRule.test.js | KILLED (1 failed) | the match: "5% on the year" in "up .5% on the year" → false |
 | R-F2 | refuter 2: the top of a fraction read as a number | review.test.js | KILLED (2 failed) | 51 in "rose 5½% on the year" → false |
 | R-F3 | refuter 3: a currency sign hides the minus or the parentheses | review.test.js | KILLED (4 failed) | -110 in "Net loss ($110)" → true |
+| R-SQ7a | SQ-7: decimal zeros no longer accepted (back to the letter) | review.test.js, storyCheck.test.js | KILLED (10 failed) | 46 in "to $46.0 billion." → true |
+| R-SQ7b | SQ-7 loosened past the ruling: zeros stripped from a whole number too ("460" read as 46) | review.test.js, storyCheck.test.js | KILLED (6 failed) | 46 in "about 460 sites" → false |
+| R-SQ5a | SQ-5: a question without an id passes | review.test.js | KILLED (3 failed) | no id |
+| R-SQ5b | SQ-5: two questions with one id pass | review.test.js | KILLED (2 failed) | an id the first question already uses |
 
 ## 11. The review (K-15)
 
@@ -565,7 +578,7 @@ Each fix has a row in `api/_utils/explore/review.test.js`, or in the command's t
 | Id | Finding | Refuter | Done |
 |---|---|---|---|
 | **H1 / A1** | An author's `match`/`matched` survived anywhere outside the four places the step writes: top level, connections, questions, stored measures, a stated cell's `match`. A STOP condition. | **CONFIRMED (blocker)** | Every `match`/`matched` key is removed at any depth and named in a K-11 note (`storyRecord.js` `authorRecordOf`). |
-| H2 | A quote whose edge cuts a number was "found": "48%" inside "148%", "Sales were 3" inside "3,661". | RULING: K-6's letter is a plain substring. | **Built stricter, put to the founder as SQ-6.** Rule 1 holds the Work an idea chat's own condition, "the figure sits inside its own matched excerpt", where the excerpt sits in the document. A quote that begins or ends on a digit must not continue a number. |
+| H2 | A quote whose edge cuts a number was "found": "48%" inside "148%", "Sales were 3" inside "3,661". | RULING: K-6's letter is a plain substring. | **Built stricter. The founder kept it (SQ-6, Nov 26).** Rule 1 holds the Work an idea chat's own condition, "the figure sits inside its own matched excerpt", where the excerpt sits in the document. A quote that begins or ends on a digit must not continue a number. |
 | **H3** | K-7 read the excerpt without the rule, so "−48%" written with a figure dash passed as +48, and "48­5%" passed as 48. | **CONFIRMED (severe)** | K-7 reads `underRule(excerpt)`, the string the matcher looks for. |
 | H4 | A same-version no-op printed "will arrive as not checked" while the store kept the earlier machine match. | CONFIRMED (low) | A no-op says `KEPT AS STORED`, and only written stories get acceptance lines. |
 | **H5 / A7** | Two sources under one id: a cell could be matched beside a same-id source with nothing read. | **CONFIRMED (severe)** | Refused under K-4(h). |
@@ -579,10 +592,10 @@ Each fix has a row in `api/_utils/explore/review.test.js`, or in the command's t
 | A5 | Ids were trimmed for lookup but stored untrimmed. | CONFIRMED (low) | Ids and stored keys are used exactly as written. Spaces at the ends are noted. |
 | A6 | A computed cell could carry its result under another name. | CONFIRMED (low) | A computed cell carries `symbol`, `formula` and `inputs` only. |
 | A8 | A body written as one string escaped the word limit. | CONFIRMED (low) | Counted. |
-| A9 | "46" in "$46.0 billion" was refused. | RULING: the letter backs the refusal. | A fix accepting decimal zeros was built, then **reverted to the letter**. Put to the founder as **SQ-7**. |
+| A9 | "46" in "$46.0 billion" was refused. | RULING: the letter backs the refusal. | A fix accepting decimal zeros was built, then reverted to the letter, then put to the founder. **He ruled to accept decimal zeros (SQ-7, Nov 26)**: trailing zeros after the decimal point only. Built. |
 | A10 | The currency had to be an ISO code. | RULING: stricter than "same currency". | Signs and words are recognised too: "$", "US dollars", "euros". |
 | A11 | Units and periods were compared untrimmed. | CONFIRMED (minor) | Compared trimmed. |
-| A12 | `leadsToStory: null` or `""` was refused. | RULING: K-4(e) applies to null. | A fix reading these as "no door" was built, then **reverted to the letter**. Put to the founder as **SQ-8**. |
+| A12 | `leadsToStory: null` or `""` was refused. | RULING: K-4(e) applies to null. | A fix reading these as "no door" was built, then reverted to the letter. **The founder kept the letter (SQ-8, Nov 26).** |
 | A13 | A draft is refused over a published story, even at a higher version. | RULING: the letter backs it. | Kept. |
 | A14 | Under `publish`, "existing" means published or in the same set. | RULING | Kept. Stated in §4 item 5. |
 | A15 | "Exactly one featured" was counted on the raw record. | RULING: the letter counts the record. | **Counted on the page's own view** (K-2): a featured question with no text gives no card. Stricter. |
@@ -632,7 +645,7 @@ Nothing an author wrote survives, and nothing stored by an earlier run survives:
   - a quote that begins with a digit must not continue a number before it (a digit, a decimal point, a thousands comma after a digit, or a minus sign);
   - a quote that ends with a digit must not run on into one (a digit, or a decimal point, comma or fraction slash followed by a digit).
 
-  So "48% this quarter" is not found in "grew 148% this quarter". This edge is stricter than K-6's plain substring. It is built because the substring letter would record a different figure as sourced, which your condition forbids: "the figure sits inside its own matched excerpt, written as the table will show it". The founder's question is SQ-6.
+  So "48% this quarter" is not found in "grew 148% this quarter". This edge is stricter than K-6's plain substring. It is built because the substring letter would record a different figure as sourced, which your condition forbids: "the figure sits inside its own matched excerpt, written as the table will show it". **The founder kept it (SQ-6, Nov 26).**
 
 **On each stated cell and each input of a computed cell: `matched`**
 
@@ -640,6 +653,7 @@ Nothing an author wrote survives, and nothing stored by an earlier run survives:
 - So `matched: true` appears only on a source whose `readAt` and `textHash` are both set. This is the invariant, pinned by the INVARIANT row in `matchStory.test.js` and by mutant A4.
 - A cell can be `matched: true` on a source whose own excerpt is `'read'`, because the cell's quote is in the document and the source's is not; the reverse can also happen. Each stands on its own excerpt.
 - A source id names exactly one source: two sources sharing an id are refused.
+- **A question id names exactly one question** (the founder's SQ-5). A question with no id, or with an id another question already uses (compared trimmed, as the page compares them), is refused. So the question id an investigation sends always names one question of the story.
 
 Two kinds of cell carry no `matched`:
 - **A computed cell carries no `matched` of its own** (it has no excerpt); each of its inputs carries one. It never carries a result, under any name: the check refuses one (addition 2), and this step computes nothing. **Please confirm this reading** (review A17). K-6 says "on each cell … otherwise `false`" and exempts only `notReported`. Read literally, every computed cell would be unmatched for ever, and K-8 would refuse each story that carries one.
@@ -651,7 +665,7 @@ Two kinds of cell carry no `matched`:
 - a `notReported` cell is the story's own claim.
 
 **What else the investigation can rely on**
-- K-7 (SQ-1) refuses any stated cell or input whose `value` is not written in its own excerpt as a whole number token. The excerpt is read under the same rule, so a matched excerpt always holds its figure as written, with its sign.
+- K-7 (SQ-1) refuses any stated cell or input whose `value` is not written in its own excerpt as a whole number token. The one tolerance is the founder's SQ-7: trailing zeros after the decimal point. A value of 46 is carried from "$46.0"; the excerpt still holds that figure, and the table shows 46. The excerpt is read under the same rule, so a matched excerpt always holds its figure as written, with its sign.
 - A story published with an unmatched figure needed `--accept-unmatched` on that command line, which is never stored.
 - A same-version republish changes nothing and keeps the earlier run's match. A fresh match needs a higher version, as the standard's §10 refresh does.
 
@@ -686,10 +700,11 @@ In each case the source is `read`, its figures arrive as not checked, and the re
 - **Quote exactly as the document writes it,** including its punctuation and case. Curly quotes, dashes and non-breaking spaces are evened out by the rule; nothing else is. Text the page hides does not count.
 - **Do not cut a number with a quote:** a quote must not start or end in the middle of one. "48% this quarter" quoted from "148% this quarter" is not found.
 - **A figure's value is written as the excerpt writes it:**
-  - decimals as given: 46 is refused in "$46.0" (SQ-7);
+  - decimals as given, except trailing zeros after the decimal point (the founder's SQ-7): 46 is carried from "$46.0", but not from "460" or "46.01";
   - with its sign: a decline written in words ("decreased 5%") carries +5, while −5 needs "−5%" or "(5)";
   - never a fraction ("5½") or a footnote mark;
   - a space used as a thousands separator ("3 661") is not read as one number.
+- **Every question has its own id.** A question with no id, or with the id of another question of the same story, is refused (the founder's SQ-5).
 - **The date check:** each source's `dated` should name the month and year of the document's own date, where the document gives one. Where it gives none, the report says to check it by hand.
 
 ## 14. Founder questions
@@ -700,10 +715,10 @@ In each case the source is `read`, its figures arrive as not checked, and the re
 | **SQ-2** | The contact address in the user agent. | Read from `EXPLORE_PUBLISH_CONTACT`. Without it, `match`, `draft` and `publish` refuse and fetch nothing. Built. |
 | **SQ-3** | A link that is not `https`. | Refused by the check (K-4(h)) and by the fetcher, on every redirect too. Built. |
 | **SQ-4** | A write over a story that was published, then unpublished: same version with different content, or a lower version. | Refused ("raise the version"), as over a published story, because theses keep the story version. Built. |
-| **SQ-5** | The remaining noted findings (§4 item 13): should any be refused? The strongest candidate is a question without an id or with a repeated one. | Noted only. |
-| **SQ-6** | Rule 1's number edge: a quote that begins or ends inside a number in the document is not found. K-6's letter is a plain substring. | **Built (stricter).** Without it, "48%" is found inside "148%" and a different figure is recorded as sourced. Reverting it is one line in `matchRule.js`. |
-| **SQ-7** | Should K-7 accept decimal zeros: 46 found in "$46.0", 0.8 in "0.80"? A JSON value cannot keep them, and SQ-1 allows no override, so such figures cannot be carried today. | **The letter: refused.** A looser reading was built during the review and reverted. |
-| **SQ-8** | `leadsToStory: null` or `""`: a broken door (K-4(e)), or "not written yet" like an absent key? | **The letter: refused.** The author omits the key for "not written yet". |
+| **SQ-5** | The remaining noted findings (§4 item 13): should any be refused? | **Ruled Nov 26:** a question with no id, or with an id another question of the story already uses, is **refused**. Every other noted finding stays a note. Built (`storyCheck.js`, rule `SQ-5`); rows and mutants R-SQ5a/b. |
+| **SQ-6** | Rule 1's number edge: a quote that begins or ends inside a number in the document is not found. K-6's letter is a plain substring. | **Ruled Nov 26: kept as built.** Without it, "48%" is found inside "148%" and a different figure is recorded as sourced. Rows and mutants R-H2a/b. |
+| **SQ-7** | Should K-7 accept decimal zeros: 46 found in "$46.0", 0.8 in "0.80"? A JSON value cannot keep them, and SQ-1 allows no override, so such figures cannot be carried today. | **Ruled Nov 26: accepted.** A value matches a token that differs from it only by trailing zeros after the decimal point. Nothing else loosens: "460", "46.01" and "4.05" are other numbers. Built (`storyRecord.js` `figureInExcerpt`); rows and mutants R-SQ7a/b. |
+| **SQ-8** | `leadsToStory: null` or `""`: a broken door (K-4(e)), or "not written yet" like an absent key? | **Ruled Nov 26: stays as built.** Refused; the author omits the key for "not written yet". Rows and mutant R-A12. |
 
 ## 15. Out of scope, reported for separate tasking
 
@@ -775,7 +790,7 @@ Every write needs the uid on `MANDATE_FOUNDER_UIDS` and `--go`. It writes `explo
 - `runCli` (`:449`).
 - `STORED_MEASURE_KEYS` (`:73`) is `null` until `src/constants/compareMeasures.js` lands.
 
-**Tests:** 378 rows in `api/_utils/explore/{storyCheck,review,fetchSource,matchStory,matchRule}.test.js` and `scripts/explore-publish.test.js`. None makes a network call: the fetcher is injected and answers from committed documents.
+**Tests:** 396 rows in `api/_utils/explore/{storyCheck,review,fetchSource,matchStory,matchRule}.test.js` and `scripts/explore-publish.test.js`. None makes a network call: the fetcher is injected and answers from committed documents.
 
 **Fixtures** (`api/_utils/explore/__fixtures__/`):
 - the two pilot records, word for word from the note's Appendix;
@@ -793,15 +808,19 @@ Every write needs the uid on `MANDATE_FOUNDER_UIDS` and `--go`. It writes `explo
 **No fenced file is edited. No fenced function is called.** The command reuses `founderAllowlist` from `api/_utils/practiceField/founderControls.js` (not fenced) and `canonicalContentHash` from `api/_utils/canonicalHash.js` (not fenced).
 
 ### Checks
-All checks ran on `892ae2c3`, the final code, which is the merged tree, in WSL with `TZ=UTC` and 8 workers.
-- **Full suite:** 1,665 files passed, 14 skipped; 38,643 rows passed, 197 skipped; 0 failed.
+All checks ran on `7f4f398a`, the final code with the founder's rulings, which is the merged tree, in WSL with `TZ=UTC` and 8 workers.
+- **Full suite:** 1,665 files passed, 14 skipped; 38,661 rows passed, 197 skipped; 0 failed.
 - `lint:gate`: exit 0.
 - `test:rules`: 48 files, 889 rows.
 - **Client bundle:** identical to `main` (125 files).
 - **Baselines:** unchanged.
-- **Mutation battery:** 78 of 78 killed.
+- **Mutation battery:** 82 of 82 killed.
 - **Review:** 3 lenses and 1 refuter (K-15). The two blockers, H1 and A4, and every confirmed finding are fixed.
 - **Live K-14 match on the pilots:** 10 of 12 sources confirmed by machine, 3 of 4 carried figures sourced. Amazon's site is intermittent, and the NextEra PDF's ligature is never found.
 
-### Questions for the founder
-SQ-6, SQ-7 and SQ-8 are in report §14. SQ-6 (the number edge) is built stricter than the letter. SQ-7 (decimal zeros) and SQ-8 (an empty door) are built to the letter.
+### The founder's rulings
+The founder's rulings of Nov 26 are built (report §14):
+- **SQ-6:** the number edge is kept.
+- **SQ-7:** decimal zeros are accepted, and nothing else loosens.
+- **SQ-5:** a question with no id, or a repeated id, is refused.
+- **SQ-8:** stays as built.
