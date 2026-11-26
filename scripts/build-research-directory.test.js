@@ -4,7 +4,8 @@
 // network call: every fetch is a fake, and importing the script is proven to make none.
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, rmSync, symlinkSync, unlinkSync, rmdirSync, existsSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -29,13 +30,16 @@ const NEW_SCRIPT = readFileSync(path.join(HERE, 'build-research-directory.mjs'),
 
 afterEach(() => { vi.unstubAllGlobals(); });
 
-// ── A fake screener that applies the filters the script sends, sorted largest first ──────────────────────────
-function fakeScreener(dataset, { maxOffset = MAX_OFFSET, ignoreUpper = false } = {}) {
+// -- A fake screener that applies the filters the script sends, sorted largest first --------------------------
+// Its pages resolve as microtasks, so a paging loop that never ends would starve vitest's own timer: the fake
+// refuses past `maxRequests` instead, and a runaway fails the row at once.
+function fakeScreener(dataset, { maxOffset = MAX_OFFSET, ignoreUpper = false, maxRequests = 500 } = {}) {
   const requests = [];
   const ops = { '>=': (a, b) => a >= b, '<=': (a, b) => a <= b, '>': (a, b) => a > b, '<': (a, b) => a < b, '=': (a, b) => a === b };
   const sorted = [...dataset].sort((a, b) => b.market_capitalization - a.market_capitalization || (a.code < b.code ? -1 : 1));
   const fetchPage = async ({ upper, offset, limit, floor = FLOOR_USD }) => {
     requests.push({ upper, offset, limit });
+    if (requests.length > maxRequests) throw new Error(`fake screener: runaway paging (${requests.length} requests)`);
     if (offset > maxOffset) throw new Error(`fake screener: offset ${offset} above ${maxOffset}`);
     const filters = screenerFilters({ floor, upper: ignoreUpper ? null : upper });
     const rows = sorted.filter((r) => filters.every(([field, op, value]) => (field === 'exchange' ? value === 'us' : ops[op](r[field], value))));
@@ -102,22 +106,26 @@ describe('the filter (build prompt section 3.1)', () => {
     listing('HEI-A'), listing('AMX1', 'AMEX'), listing('MKT1', 'NYSE MKT'),
     listing('CBOE', 'BATS'), listing('NSRGY', 'PINK'), listing('QXQX', 'OTCQX'), listing('ARC1', 'NYSE ARCA'), listing('USUS', 'US'),
     listing('PDI', 'NYSE', 'FUND'), listing('ETF1', 'NYSE', 'ETF'), listing('PFD-P-A', 'NYSE', 'Preferred Stock'),
-    listing('NOSEC'), listing('OTHER'), listing('NONAME', 'NYSE', 'Common Stock', ''), listing('ESLNAME', 'NYSE', 'Common Stock', 'Name From List'),
+    listing('NSEC'), listing('OTHR'), listing('NONM', 'NYSE', 'Common Stock', ''), listing('ESLN', 'NYSE', 'Common Stock', 'Name From List'),
     listing('XLK', 'NYSE'), listing('SMH', 'NASDAQ'), listing('RSP', 'NYSE'), listing('IWM', 'NYSE'), listing('VIX', 'NYSE'),
-    listing('AAPL', 'NASDAQ'), listing('V'), listing('BRK-A'), listing('INVIS'), listing('NOIND'), listing('LOW1'),
+    listing('AAPL', 'NASDAQ'), listing('V'), listing('BRK-A'), listing('INVS'), listing('NIND'), listing('LOW1'),
+    listing('FJIKY', 'NYSE', 'Common Stock', 'Fujikura Ltd'), listing('AMXQY', 'AMEX'), listing('MKTQF', 'NYSE MKT'), listing('ABCDE-A'),
+    listing('RYAAY', 'NASDAQ', 'Common Stock', 'Ryanair Holdings PLC ADR'), listing('FWONK', 'NASDAQ'),
   ];
   const SCREENER = [
     row('GLW', 3e10), row('TSM', 1e12), row('ARCC', 1.5e10, { sector: 'Financial Services' }), row('HEI.A', 2e10, { sector: 'Industrials' }),
     row('AMX1', 2e9), row('MKT1', 2e9),
     row('CBOE', 2.5e10, { sector: 'Financial Services' }), row('NSRGY', 2.5e11, { sector: 'Consumer Defensive' }), row('QXQX', 5e9), row('ARC1', 5e9), row('USUS', 5e9),
     row('PDI', 5e9), row('ETF1', 5e9), row('PFD-P-A', 5e9),
-    row('NOSEC', 5e9, { sector: '' }), row('OTHER', 5e9, { sector: 'Other' }),
-    row('NONAME', 5e9, { name: '' }), row('ESLNAME', 5e9, { name: '   ' }),
+    row('NSEC', 5e9, { sector: '' }), row('OTHR', 5e9, { sector: 'Other' }),
+    row('NONM', 5e9, { name: '' }), row('ESLN', 5e9, { name: '   ' }),
     row('XLK', 5e9), row('SMH', 5e9), row('RSP', 5e9), row('IWM', 5e9), row('VIX', 5e9),
     row('AAPL', 4e12), row('V', 6e11),
     row('BRK.A', 9e11, { sector: 'Financial Services' }), row('BRK-A', 9e11, { sector: 'Financial Services' }),
-    row('INVIS', 5e9, { name: 'Invis​‮ Corp  Inc' }), row('NOIND', 5e9, { industry: '' }),
+    row('INVS', 5e9, { name: 'Invis\u200B\u202E Corp\u00A0 Inc' }), row('NIND', 5e9, { industry: '' }),
     row('LOW1', 999_999_999), row('^GSPC', 5e12), row(null, 5e9), row('GONE', 5e9),
+    row('FJIKY', 2.2e10, { sector: 'Industrials' }), row('AMXQY', 5e9), row('MKTQF', 5e9), row('ABCDE-A', 5e9),
+    row('RYAAY', 3e10, { sector: 'Industrials' }), row('FWONK', 2.7e10, { sector: 'Communication Services' }),
   ];
   const out = buildDirectory({ screenerRows: SCREENER, exchangeList: ESL });
   const reason = (code) => out.dropped.find((d) => d.code === code)?.reason;
@@ -128,15 +136,22 @@ describe('the filter (build prompt section 3.1)', () => {
     for (const d of out.dropped) expect(typeof d.reason).toBe('string');
   });
   it('keeps NYSE, NASDAQ and NYSE American (AMEX and NYSE MKT) common stock, ADRs included', () => {
-    expect(Object.keys(kept).sort()).toEqual(['AMX1', 'ARCC', 'BRK-A', 'ESLNAME', 'GLW', 'HEI-A', 'INVIS', 'MKT1', 'NOIND', 'TSM']);
+    expect(Object.keys(kept).sort()).toEqual(['AMX1', 'ARCC', 'BRK-A', 'ESLN', 'FWONK', 'GLW', 'HEI-A', 'INVS', 'MKT1', 'NIND', 'RYAAY', 'TSM']);
     expect(KEPT_EXCHANGES).toEqual(['NYSE', 'NASDAQ', 'AMEX', 'NYSE MKT']);
+  });
+  it.each([['FJIKY'], ['AMXQY'], ['MKTQF'], ['ABCDE-A']])('drops %s: a root over 4 letters is an OTC line, whatever venue the list gives it (NYSE and NYSE American roots are 1 to 4 letters)', (code) => {
+    expect(reason(code)).toBe('otc_shaped_code');
+  });
+  it('keeps a 5-letter NASDAQ code (an ADR, a share class)', () => {
+    expect(kept.RYAAY).toBeDefined();
+    expect(kept.FWONK).toBeDefined();
   });
   it.each([['CBOE'], ['NSRGY'], ['QXQX'], ['ARC1'], ['USUS']])('drops %s by its listing exchange', (code) => { expect(reason(code)).toBe('exchange'); });
   it.each([['PDI'], ['ETF1'], ['PFD-P-A']])('drops %s by its type', (code) => { expect(reason(code)).toBe('type'); });
-  it.each([['NOSEC'], ['OTHER']])('drops %s: its sector maps to no house sector (RU-3)', (code) => { expect(reason(code)).toBe('sector_unmapped'); });
+  it.each([['NSEC'], ['OTHR']])('drops %s: its sector maps to no house sector (RU-3)', (code) => { expect(reason(code)).toBe('sector_unmapped'); });
   it('drops a row with no name in either source, and takes the list\'s name when the screener has none', () => {
-    expect(reason('NONAME')).toBe('no_name');
-    expect(kept.ESLNAME.name).toBe('Name From List');
+    expect(reason('NONM')).toBe('no_name');
+    expect(kept.ESLN.name).toBe('Name From List');
     expect(out.nameFromExchangeList).toBe(1);
   });
   it.each([['XLK'], ['SMH'], ['RSP'], ['IWM'], ['VIX']])('drops %s: a sector fund, industry fund, index symbol or Practice Field fund', (code) => {
@@ -160,9 +175,9 @@ describe('the filter (build prompt section 3.1)', () => {
     expect(reason('GONE')).toBe('not_in_exchange_list');
   });
   it('cleans names (invisible characters out, whitespace collapsed) and writes an empty industry as null', () => {
-    expect(kept.INVIS.name).toBe('Invis Corp Inc');
-    expect(kept.NOIND.industry).toBeNull();
-    expect(cleanText('\u0007 A⁦B⁩ ')).toBe('AB');
+    expect(kept.INVS.name).toBe('Invis Corp Inc');
+    expect(kept.NIND.industry).toBeNull();
+    expect(cleanText('\u0007 A\u2066B\u2069 ')).toBe('AB');
   });
   it('sorts entries by symbol, by code point', () => {
     const syms = out.entries.map((e) => e.symbol);
@@ -221,9 +236,34 @@ describe('paging below the offset limit', () => {
     expect(Math.max(...requests.map((r) => r.offset))).toBe(900);
     expect(out.passes.length).toBe(3);
   });
-  it('stops when a pass adds no new row (a screener that ignores the bound)', async () => {
+  it('stops on a screener that ignores the bound (its second pass serves the first pass\'s rows again)', async () => {
     const { fetchPage } = fakeScreener(dataset(300), { maxOffset: 99, ignoreUpper: true });
+    await expect(fetchAllScreenerRows({ fetchPage, limit: 10, maxOffset: 99 })).rejects.toThrow(/came back inside pass 2/);
+  });
+  it('stops when a whole pass adds no new row (more rows tied at the bound than a pass can read)', async () => {
+    const data = dataset(150, 0, 120); // rows 0 to 119 share one market value; a pass reads 100
+    const { fetchPage } = fakeScreener(data, { maxOffset: 99 });
     await expect(fetchAllScreenerRows({ fetchPage, limit: 10, maxOffset: 99 })).rejects.toThrow(/no progress/);
+  });
+  it('stops when a row comes back inside a pass at any value but the pass\'s bound (two tied rows swapped across a page edge: one would be lost)', async () => {
+    // Rows 9 and 10 tie astride the page edge (limit 10). The fake serves them in one order for the first page and
+    // the other for the second, so S0009 is served twice and S0010 never: a silent loss without the stop.
+    const data = dataset(40, 9, 2);
+    let call = 0;
+    const fetchPage = async ({ offset, limit }) => {
+      call += 1;
+      const sorted = [...data].sort((a, b) => b.market_capitalization - a.market_capitalization || (a.code < b.code ? -1 : 1));
+      if (call >= 2) [sorted[9], sorted[10]] = [sorted[10], sorted[9]];
+      return sorted.slice(offset, offset + limit);
+    };
+    await expect(fetchAllScreenerRows({ fetchPage, limit: 10, maxOffset: 99 })).rejects.toThrow(/came back inside pass 1/);
+  });
+  it('allows a repeat at the pass\'s bound, however many rows tie there', async () => {
+    const data = dataset(260, 95, 9);
+    const { fetchPage } = fakeScreener(data, { maxOffset: 99 });
+    const out = await fetchAllScreenerRows({ fetchPage, limit: 10, maxOffset: 99 });
+    expect(out.rows.length).toBe(260);
+    expect(out.passes[1].repeats).toBe(5);
   });
   it('stops on a page that is not a list', async () => {
     await expect(fetchAllScreenerRows({ fetchPage: async () => ({ error: 'x' }) })).rejects.toThrow(/not a list/);
@@ -257,6 +297,8 @@ describe('the call ceiling', () => {
       calls.push(u.pathname);
       if (u.pathname.endsWith('/user')) return { apiRequests: 100, dailyRateLimit: 100000 };
       if (u.pathname.includes('/exchange-symbol-list/')) return [listing('GLW')];
+      // Endless, but not unbounded: past 400 screener pages (the ceiling allows 299) it refuses, so an uncounted run fails fast.
+      if (calls.filter((p) => p.endsWith('/screener')).length > 400) throw new Error('fake screener: runaway, the ceiling never stopped the run');
       const offset = Number(u.searchParams.get('offset'));
       return { data: Array.from({ length: 100 }, (_, i) => row(`Z${calls.length}X${offset + i}`, 9e12 - calls.length * 1e6 - i)) };
     };
@@ -298,6 +340,36 @@ describe('the count stop', () => {
     })).rejects.toThrow(/outside 1000 to 5000/);
     expect(writes.map((p) => path.basename(p))).toEqual(['raw.json', 'run-report.json']);
   });
+  it('warns, and records it, when EODHD counted more calls on the key than the run counted itself (another user of the key, or a changed price)', async () => {
+    let userCalls = 0;
+    const fetchJson = async (url) => {
+      const u = new URL(url);
+      if (u.pathname.endsWith('/user')) { userCalls += 1; return { apiRequests: userCalls === 1 ? 100 : 500 }; }
+      if (u.pathname.includes('/exchange-symbol-list/')) return [listing('GLW')];
+      return { data: Number(u.searchParams.get('offset')) === 0 ? [row('GLW', 3e10)] : [] };
+    };
+    const written = {};
+    const lines = [];
+    await expect(runMain({
+      env: { EODHD_API_KEY: 'k' }, fetchJson, writeFile: (p, t) => { written[path.basename(p)] = t; }, makeDir: () => {}, outPath: '/out/x.js', defaultRunDir: '/run', log: (l) => lines.push(l),
+    })).rejects.toThrow(/nothing written/);
+    const spend = JSON.parse(written['raw.json']).spend;
+    expect(spend).toMatchObject({ counted: 6, measured: 400, measuredAboveCounted: true });
+    expect(lines.some((l) => /WARNING: EODHD counted 400 calls on this key during the run, 6 by this run's own count/.test(l))).toBe(true);
+  });
+  it('records no warning when the two agree', async () => {
+    const fetchJson = async (url) => {
+      const u = new URL(url);
+      if (u.pathname.endsWith('/user')) return { apiRequests: 100 };
+      if (u.pathname.includes('/exchange-symbol-list/')) return [listing('GLW')];
+      return { data: [] };
+    };
+    const written = {};
+    await expect(runMain({
+      env: { EODHD_API_KEY: 'k' }, fetchJson, writeFile: (p, t) => { written[path.basename(p)] = t; }, makeDir: () => {}, outPath: '/out/x.js', defaultRunDir: '/run', log: () => {},
+    })).rejects.toThrow(/nothing written/);
+    expect(JSON.parse(written['raw.json']).spend.measuredAboveCounted).toBe(false);
+  });
 });
 
 describe('the generated module', () => {
@@ -312,6 +384,12 @@ describe('the generated module', () => {
     expect(text).toContain('// Generated: 2026-11-26');
     expect(text).toContain('// Count: 3');
     expect(text).toContain('// Floor: market value at or above $1,000,000,000');
+    // The screener's values are its latest close, not the run day's (a run on a market holiday reads the day before).
+    expect(text).toContain("the screener's latest market values when generated");
+    expect(text).not.toContain('on the day generated');
+    expect(text).toContain('(on NYSE and NYSE American a root of at most 4 letters; a longer');
+    // Sectors, like industries, are the screener's words mapped to a house id, not GICS.
+    expect(text).toContain("// Sector: the screener's own sector words (Morningstar-style) mapped to a house sector id; they can differ from GICS.");
     expect(text).toContain('generated by scripts/build-research-directory.mjs; do not edit by hand');
     expect(text).not.toMatch(/\r/);
     expect(text).not.toMatch(/^import /m);
@@ -350,6 +428,22 @@ describe('the CLI', () => {
     await import('./build-research-directory.mjs');
     expect(spy).not.toHaveBeenCalled();
   });
+  it('runs when invoked through a linked path (a junction or symlink to scripts/), never exiting silently', () => {
+    // Node runs the real file, so import.meta.url is the real path while argv[1] keeps the linked one. An unknown
+    // flag stops the run before any key, network or write is touched, and proves main() ran.
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'rd-link-'));
+    const link = path.join(dir, 'scripts-link');
+    symlinkSync(HERE, link, 'junction');
+    try {
+      const r = spawnSync(process.execPath, [path.join(link, 'build-research-directory.mjs'), '--no-such-flag'], { encoding: 'utf8', timeout: 25000 });
+      expect(r.stderr).toMatch(/FATAL: unknown argument --no-such-flag/);
+      expect(r.status).toBe(1);
+    } finally {
+      // Remove the link itself, never recursively through it; the folder only once the link is gone.
+      try { unlinkSync(link); } catch { rmdirSync(link); }
+      if (!existsSync(link)) rmSync(dir, { recursive: true, force: true });
+    }
+  }, 30000);
   it('cuts the key out of an error line', () => {
     expect(redactedLine(new Error('bad sk-123 thing'), 'sk-123')).toBe('FATAL: bad <key> thing');
   });

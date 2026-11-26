@@ -5,10 +5,13 @@
 // scheduled job or client bundle can reach them. When a later build connects one surface, it adds that file here
 // on purpose, in its own commit.
 //
-// The scan is a plain, case-insensitive NAME scan of every code file's path and text under api/ and src/, with no
-// comment stripping: a mention anywhere fails, which fails closed. Case-insensitive because Windows resolves
-// './ResearchUniverse.js' to researchUniverse.js. Out of scope by design: a path assembled at run time from pieces
-// (no honest import does that).
+// The scan is a plain, case-insensitive NAME scan of the path and text of every code file in the repo (api/ and src/,
+// which the build prompt names, and also scripts/, the other code folders and the root config files such as
+// vite.config.js, which could put the directory into the client bundle), with no comment stripping: a mention
+// anywhere fails, which fails closed. Case-insensitive because Windows resolves './ResearchUniverse.js' to
+// researchUniverse.js. The names include the generator's (build-research-directory), so nothing imports its fetch
+// and writer either. Skipped: dot-folders (other sessions' worktrees live under .claude/), node_modules, build
+// output and docs/. Out of scope by design: a path assembled at run time from pieces (no honest import does that).
 
 import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
@@ -17,12 +20,11 @@ import { fileURLToPath } from 'node:url';
 import * as rankingConfig from './rankingConfig.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const SCAN_DIRS = ['api', 'src'];
 const CODE_FILE = /\.(?:[cm]?js|jsx|ts|tsx)$/;
-const SKIP = new Set(['node_modules', 'dist', '.git']);
-const NAMES = /researchuniverse|researchdirectory/i;
+const SKIP = new Set(['node_modules', 'dist', 'coverage', 'docs']);
+const NAMES = /research[-_]?(?:universe|directory)/i;
 
-/** The two modules and their tests: the only files that may name them. */
+/** The two modules and their tests, and the generator that writes the directory and its test: the only files that may name them. */
 const ALLOWED = new Set([
   'api/_utils/researchUniverse.js',
   'api/_utils/researchDirectory.js',
@@ -30,12 +32,14 @@ const ALLOWED = new Set([
   'api/_utils/researchDirectory.test.js',
   'api/_utils/researchUniverse.boundary.test.js',
   'api/_utils/researchUniverse.precedence.test.js',
+  'scripts/build-research-directory.mjs',
+  'scripts/build-research-directory.test.js',
 ]);
 
 function walk(rel, out) {
   for (const ent of readdirSync(path.join(ROOT, rel), { withFileTypes: true })) {
-    if (SKIP.has(ent.name)) continue;
-    const child = `${rel}/${ent.name}`;
+    if (ent.name.startsWith('.') || SKIP.has(ent.name)) continue;
+    const child = rel ? `${rel}/${ent.name}` : ent.name;
     if (ent.isDirectory()) walk(child, out);
     else if (CODE_FILE.test(ent.name)) out.push(child);
   }
@@ -58,6 +62,10 @@ describe('the scanner catches every way of reaching the modules (planted)', () =
     ['a mention in a comment (fails closed)', 'api/g.mjs', '// later: wire researchUniverse here'],
     ['a file named for it (a copy is not an import, but it is not the off switch either)', 'src/data/researchDirectoryCopy.js', 'export const X = 1;'],
     ['an allowed file name at another path', 'src/researchUniverse.js', 'export const X = 1;'],
+    ['a root config file putting the directory in the client bundle', 'vite.config.js', "import { RESEARCH_DIRECTORY } from './api/_utils/researchDirectory.js';"],
+    ['a hand-run script', 'scripts/zz-readout.mjs', "import { researchUniverse } from '../api/_utils/researchUniverse.js';"],
+    ['an importer of the generator (its graph holds the EODHD fetch and the writer)', 'api/cron/zz.js', "import { houseSpelling } from '../../scripts/build-research-directory.mjs';"],
+    ['a hyphenated or underscored file name', 'src/data/research_directory.js', 'export const X = 1;'],
   ])('%s', (_title, p, text) => {
     expect(offendersIn([{ path: p, text }])).toEqual([p]);
   });
@@ -69,12 +77,14 @@ describe('the scanner catches every way of reaching the modules (planted)', () =
 });
 
 describe('nothing outside the two modules and their tests names them', () => {
-  const files = SCAN_DIRS.flatMap((d) => walk(d, []));
-  it('scans the whole of api/ and src/', () => {
-    expect(files.length).toBeGreaterThan(2000);
-    expect(files).toContain('api/_utils/rankingConfig.js');
-    expect(files).toContain('src/App.jsx');
-    expect(files).toContain('api/_utils/wireGenerationSurface.js');
+  const files = walk('', []);
+  it('scans every code file in the repo: api/, src/, scripts/, the other code folders and the root config files', () => {
+    expect(files.length).toBeGreaterThan(4000);
+    for (const p of ['api/_utils/rankingConfig.js', 'src/App.jsx', 'api/_utils/wireGenerationSurface.js', 'api/cron/compute-rankings.js',
+      'scripts/fetch-ticker-industries.js', 'scripts/build-research-directory.mjs', 'vite.config.js', 'tailwind.config.js', 'vitest.config.js']) {
+      expect(files).toContain(p);
+    }
+    expect(files.some((p) => p.startsWith('.') || p.includes('/.') || p.includes('node_modules/'))).toBe(false);
   });
   it('every allowed file exists (no stale allowance)', () => {
     for (const p of ALLOWED) expect(existsSync(path.join(ROOT, p))).toBe(true);

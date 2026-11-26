@@ -35,7 +35,7 @@
 
 /* global process -- Node script; eslint.config.js provides only browser globals */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -79,6 +79,16 @@ export const COUNT_MAX = 5000;
 export const KEPT_EXCHANGES = Object.freeze(['NYSE', 'NASDAQ', 'AMEX', 'NYSE MKT']);
 /** EODHD types an ADR on those exchanges "Common Stock" (TSM, NVO, SHEL, ASML were checked by the probe). */
 export const KEPT_TYPE = 'Common Stock';
+
+/**
+ * NYSE and NYSE American symbols have a root of 1 to 4 letters (a share class follows a hyphen). EODHD's exchange
+ * list labels some OTC lines "NYSE" (unsponsored ADRs and foreign ordinaries such as FJIKY, GALDY, RSHGY in the Nov 26
+ * run), so a longer root on those venues is an OTC line and is dropped ("not OTC, not pink sheets"). NASDAQ roots run
+ * to 5 letters (RYAAY, FWONK) and are not affected.
+ */
+export const NYSE_FAMILY = Object.freeze(['NYSE', 'AMEX', 'NYSE MKT']);
+export const NYSE_ROOT_MAX = 4;
+export const otcShapedOnNyseFamily = (symbol, exchange) => NYSE_FAMILY.includes(exchange) && symbol.split('-')[0].length > NYSE_ROOT_MAX;
 
 export const HOUSE_SECTOR_IDS = Object.freeze(Object.keys(STOCK_UNIVERSE));
 
@@ -190,7 +200,8 @@ export function screenerFilters({ floor = FLOOR_USD, upper = null } = {}) {
  * pages. A pass that fills every page is followed by one bounded at or below the smallest market value it saw
  * (at or below, not strictly below, so rows tied at the boundary are never lost); rows already held are counted
  * as repeats, never kept twice. Ends when a page returns fewer rows than it asked for. A pass that adds no new
- * row stops the run (no progress), as does a malformed page.
+ * row stops the run (no progress), as does a malformed page, and so does a repeat at any value but the pass's bound:
+ * it means the screener's order moved between two page calls, and another row may never have been served.
  *
  * fetchPage({ upper, offset, limit }) returns the page's rows (an array).
  */
@@ -212,6 +223,11 @@ export async function fetchAllScreenerRows({ fetchPage, floor = FLOOR_USD, limit
         if (Number.isFinite(mv) && mv < smallest) smallest = mv;
         const key = typeof row?.code === 'string' ? row.code : `#malformed-${held.size}`;
         if (held.has(key)) {
+          // The only expected repeat is a row tied at the pass's bound (the edge of the pass before). Any other
+          // means the screener's order moved between two page calls, and some other row may never have been served.
+          if (upper === null || mv !== upper) {
+            throw new Error(`screener pass ${pass} offset ${offset}: ${key} came back inside pass ${pass} at ${mv}, not at the pass's bound; the order moved between pages and a row may have been skipped (re-run)`);
+          }
           record.repeats += 1;
           continue;
         }
@@ -294,6 +310,7 @@ export function buildDirectory({
     if (kept.has(symbol)) { drop('repeat_symbol'); continue; }
     if (!listing) { drop('not_in_exchange_list'); continue; }
     if (!KEPT_EXCHANGES.includes(listing.Exchange)) { drop('exchange'); continue; }
+    if (otcShapedOnNyseFamily(symbol, listing.Exchange)) { drop('otc_shaped_code'); continue; }
     if (listing.Type !== KEPT_TYPE) { drop('type'); continue; }
     const sector = houseSectorOf(sectorString);
     if (!sector) { drop('sector_unmapped'); continue; }
@@ -345,10 +362,11 @@ export function renderDirectoryModule({ entries, generatedOn, floor = FLOOR_USD 
     '//',
     `// Generated: ${generatedOn}`,
     `// Count: ${fmtInt(sorted.length)}`,
-    `// Floor: market value at or above $${fmtInt(floor)} (EODHD screener, on the day generated; no market values are stored)`,
-    '// Kept: listed on NYSE, NASDAQ or NYSE American; EODHD type Common Stock (ADRs included); a screener sector that',
-    '// maps to one of the 11 house sector ids; a name; not a sector fund, industry fund, index symbol or Practice',
-    '// Field fund.',
+    `// Floor: market value at or above $${fmtInt(floor)} (the screener's latest market values when generated; no market values are stored)`,
+    '// Kept: listed on NYSE, NASDAQ or NYSE American (on NYSE and NYSE American a root of at most 4 letters; a longer',
+    '// code there is an OTC line); EODHD type Common Stock (ADRs included); a screener sector that maps to one of the',
+    '// 11 house sector ids; a name; not a sector fund, industry fund, index symbol or Practice Field fund.',
+    '// Sector: the screener\'s own sector words (Morningstar-style) mapped to a house sector id; they can differ from GICS.',
     '// Industry: the screener\'s own industry string, not the GICS industry rankingConfig.js STOCK_INDUSTRIES holds.',
     `// Per sector: ${HOUSE_SECTOR_IDS.map((id) => `${id} ${perSector[id]}`).join(', ')}`,
     '//',
@@ -524,14 +542,20 @@ export async function runMain({
     } finally {
       log(`[spend] counted ${budget.spent} calls in ${budget.requests} requests ${JSON.stringify(budget.byKind)}`);
     }
+    const measured = fetched.after.apiRequests !== null && fetched.before.apiRequests !== null ? fetched.after.apiRequests - fetched.before.apiRequests : null;
     spend = {
       counted: budget.spent,
       requests: budget.requests,
       byKind: budget.byKind,
-      measured: fetched.after.apiRequests !== null && fetched.before.apiRequests !== null ? fetched.after.apiRequests - fetched.before.apiRequests : null,
+      measured,
+      // A warning, not a stop: the key may be shared with jobs that spend calls during the run.
+      measuredAboveCounted: measured !== null && measured > budget.spent,
       before: fetched.before,
       after: fetched.after,
     };
+    if (spend.measuredAboveCounted) {
+      log(`[spend] WARNING: EODHD counted ${measured} calls on this key during the run, ${budget.spent} by this run's own count: another user of the key, or a changed price (check the screener's cost before trusting the ceiling)`);
+    }
     raw = {
       fetchedOn: etDate(nowMs),
       fetchedAt: new Date(nowMs).toISOString(),
@@ -571,5 +595,10 @@ async function main() {
   }
 }
 
-const invokedDirectly = process.argv[1] && SCRIPT_PATH === path.resolve(process.argv[1]);
+// Compared as real paths: run through a junction or symlink, Node runs the real file (import.meta.url) while argv[1]
+// keeps the linked path, and a plain comparison would exit silently without running.
+const realOrResolved = (p) => {
+  try { return realpathSync(p); } catch { return path.resolve(p); }
+};
+const invokedDirectly = Boolean(process.argv[1]) && realOrResolved(SCRIPT_PATH) === realOrResolved(process.argv[1]);
 if (invokedDirectly) main();

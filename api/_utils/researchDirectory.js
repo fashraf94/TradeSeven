@@ -7,19 +7,20 @@
 // not here; api/_utils/researchUniverse.js adds them. Rebuilt monthly by re-running the script (RU-4).
 //
 // Generated: 2026-11-26
-// Count: 2,273
-// Floor: market value at or above $1,000,000,000 (EODHD screener, on the day generated; no market values are stored)
-// Kept: listed on NYSE, NASDAQ or NYSE American; EODHD type Common Stock (ADRs included); a screener sector that
-// maps to one of the 11 house sector ids; a name; not a sector fund, industry fund, index symbol or Practice
-// Field fund.
+// Count: 2,259
+// Floor: market value at or above $1,000,000,000 (the screener's latest market values when generated; no market values are stored)
+// Kept: listed on NYSE, NASDAQ or NYSE American (on NYSE and NYSE American a root of at most 4 letters; a longer
+// code there is an OTC line); EODHD type Common Stock (ADRs included); a screener sector that maps to one of the
+// 11 house sector ids; a name; not a sector fund, industry fund, index symbol or Practice Field fund.
+// Sector: the screener's own sector words (Morningstar-style) mapped to a house sector id; they can differ from GICS.
 // Industry: the screener's own industry string, not the GICS industry rankingConfig.js STOCK_INDUSTRIES holds.
-// Per sector: XLK 346, XLV 343, XLF 392, XLE 138, XLY 245, XLP 94, XLI 322, XLB 124, XLU 62, XLRE 113, XLC 94
+// Per sector: XLK 344, XLV 342, XLF 391, XLE 137, XLY 243, XLP 93, XLI 319, XLB 123, XLU 61, XLRE 112, XLC 94
 //
 // Each entry: symbol, then name, house sector id, industry (null when the screener gave none).
 
 export const RESEARCH_DIRECTORY_META = Object.freeze({
   generatedOn: "2026-11-26",
-  count: 2273,
+  count: 2259,
   floorUsd: 1000000000,
 });
 
@@ -239,7 +240,6 @@ export const RESEARCH_DIRECTORY = Object.freeze({
   "AWR": ["American States Water Company", "XLU", "Utilities - Regulated Water"],
   "AX": ["Axos Financial Inc", "XLF", "Banks - Regional"],
   "AXGN": ["Axogen Inc", "XLV", "Medical Devices"],
-  "AXICY": ["AXIA Energia SA", "XLU", "Utilities - Renewable"],
   "AXON": ["Axon Enterprise Inc.", "XLI", "Aerospace & Defense"],
   "AXS": ["AXIS Capital Holdings Ltd", "XLF", "Insurance - Specialty"],
   "AXSM": ["Axsome Therapeutics Inc", "XLV", "Biotechnology"],
@@ -558,7 +558,6 @@ export const RESEARCH_DIRECTORY = Object.freeze({
   "CRUS": ["Cirrus Logic Inc", "XLK", "Semiconductors"],
   "CRVL": ["CorVel Corp", "XLF", "Insurance Brokers"],
   "CSAN": ["Cosan SA ADR", "XLE", "Oil & Gas Refining & Marketing"],
-  "CSANY": ["Cosan S.A.", "XLE", "Oil & Gas Refining & Marketing"],
   "CSGP": ["CoStar Group Inc", "XLRE", "Real Estate Services"],
   "CSL": ["Carlisle Companies Incorporated", "XLI", "Building Products & Equipment"],
   "CSQR": ["Csquare, Inc.", "XLK", "Information Technology Services"],
@@ -802,7 +801,6 @@ export const RESEARCH_DIRECTORY = Object.freeze({
   "FIVN": ["Five9 Inc", "XLK", "Software - Infrastructure"],
   "FIX": ["Comfort Systems USA Inc", "XLI", "Engineering & Construction"],
   "FIZZ": ["National Beverage Corp", "XLP", "Beverages - Non-Alcoholic"],
-  "FJIKY": ["Fujikura Ltd", "XLI", "Conglomerates"],
   "FLEX": ["Flex Ltd", "XLK", "Electronic Components"],
   "FLG": ["Flagstar Bank, National Association", "XLF", "Banks - Regional"],
   "FLNG": ["FLEX LNG Ltd", "XLE", "Oil & Gas Midstream"],
@@ -862,7 +860,6 @@ export const RESEARCH_DIRECTORY = Object.freeze({
   "FWONK": ["Liberty Media Corporation Series C Liberty Formula One Common Stock", "XLC", "Entertainment"],
   "G": ["Genpact Limited", "XLK", "Information Technology Services"],
   "GABC": ["German American Bancorp Inc", "XLF", "Banks - Regional"],
-  "GALDY": ["GALDERMA GROUP AG", "XLV", "Drug Manufacturers - Specialty & Generic"],
   "GAM": ["General American Investors Closed Fund", "XLF", "Asset Management"],
   "GAP": ["The Gap, Inc.", "XLY", "Apparel Retail"],
   "GATX": ["GATX Corporation", "XLI", "Rental & Leasing Services"],
@@ -932,7 +929,6 @@ export const RESEARCH_DIRECTORY = Object.freeze({
   "GRFS": ["Grifols SA ADR", "XLV", "Drug Manufacturers - General"],
   "GRMN": ["Garmin Ltd", "XLK", "Scientific & Technical Instruments"],
   "GRND": ["Grindr Inc", "XLK", "Software - Application"],
-  "GRTUF": ["Granite Real Estate Investment Trust", "XLRE", "REIT - Industrial"],
   "GSAT": ["Globalstar, Inc. Common Stock", "XLC", "Telecom Services"],
   "GSHD": ["Goosehead Insurance Inc", "XLF", "Insurance Brokers"],
   "GSK": ["GSK plc", "XLV", "Drug Manufacturers - General"],
@@ -991,7 +987,6 @@ export const RESEARCH_DIRECTORY = Object.freeze({
   "HLNE": ["Hamilton Lane Inc", "XLF", "Asset Management"],
   "HLT": ["Hilton Worldwide Holdings Inc. Common Stock", "XLY", "Lodging"],
   "HMC": ["Honda Motor Co Ltd ADR", "XLY", "Auto Manufacturers"],
-  "HMKIY": ["Huhtamaki Oyj", "XLY", "Packaging & Containers"],
   "HMN": ["Horace Mann Educators Corporation", "XLF", "Insurance - Property & Casualty"],
   "HMY": ["Harmony Gold Mining Company Limited", "XLB", "Gold"],
   "HNGE": ["Hinge Health, Inc.", "XLV", "Health Information Services"],
@@ -1247,7 +1242,6 @@ export const RESEARCH_DIRECTORY = Object.freeze({
   "LOB": ["Live Oak Bancshares, Inc.", "XLF", "Banks - Regional"],
   "LOGI": ["Logitech International SA", "XLK", "Computer Hardware"],
   "LOPE": ["Grand Canyon Education Inc", "XLP", "Education & Training Services"],
-  "LOTMY": ["Lottomatica Group SpA", "XLY", "Gambling"],
   "LPG": ["Dorian LPG Ltd", "XLE", "Oil & Gas Midstream"],
   "LPL": ["LG Display Co Ltd", "XLK", "Consumer Electronics"],
   "LPLA": ["LPL Financial Holdings Inc", "XLF", "Capital Markets"],
@@ -1345,7 +1339,6 @@ export const RESEARCH_DIRECTORY = Object.freeze({
   "MMSI": ["Merit Medical Systems Inc", "XLV", "Medical Instruments & Supplies"],
   "MMYT": ["MakeMyTrip Limited", "XLY", "Travel Services"],
   "MNDY": ["Monday.Com Ltd", "XLK", "Software - Application"],
-  "MNFYY": ["Money Forward Inc", "XLK", "Software - Application"],
   "MNKD": ["MannKind Corp", "XLV", "Biotechnology"],
   "MNR": ["Mach Natural Resources LP", "XLE", "Oil & Gas E&P"],
   "MNSO": ["Miniso Group Holding Ltd", "XLY", "Specialty Retail"],
@@ -1450,10 +1443,8 @@ export const RESEARCH_DIRECTORY = Object.freeze({
   "NP": ["Neptune Insurance Holdings Inc.", "XLF", "Insurance Brokers"],
   "NPK": ["National Presto Industries Inc", "XLI", "Aerospace & Defense"],
   "NPO": ["Enpro Industries", "XLI", "Specialty Industrial Machinery"],
-  "NPXYY": ["Nippon Sanso Holdings Corp.", "XLB", "Specialty Chemicals"],
   "NRG": ["NRG Energy Inc.", "XLU", "Utilities - Independent Power Producers"],
   "NRIX": ["Nurix Therapeutics Inc", "XLV", "Biotechnology"],
-  "NRKBY": ["Nkt A/S", "XLI", "Electrical Equipment & Parts"],
   "NRP": ["Natural Resource Partners LP", "XLE", "Thermal Coal"],
   "NSIT": ["Insight Enterprises Inc", "XLK", "Electronics & Computer Distribution"],
   "NSP": ["Insperity Inc", "XLI", "Staffing & Employment Services"],
@@ -1669,7 +1660,6 @@ export const RESEARCH_DIRECTORY = Object.freeze({
   "PTGX": ["Protagonist Therapeutics Inc", "XLV", "Biotechnology"],
   "PTON": ["Peloton Interactive Inc", "XLY", "Leisure"],
   "PTRN": ["Pattern Group Inc. Series A Common Stock", "XLY", "Internet Retail"],
-  "PUGBY": ["Puig Brands SA", "XLP", "Household & Personal Products"],
   "PUK": ["Prudential PLC ADR", "XLF", "Insurance - Life"],
   "PURR": ["Hyperliquid Strategies Inc Common Stock", "XLF", "Capital Markets"],
   "PVH": ["PVH Corp", "XLY", "Apparel Manufacturing"],
@@ -1765,7 +1755,6 @@ export const RESEARCH_DIRECTORY = Object.freeze({
   "RRX": ["Regal Beloit Corporation", "XLI", "Specialty Industrial Machinery"],
   "RS": ["Reliance Steel & Aluminum Co", "XLB", "Steel"],
   "RSG": ["Republic Services Inc", "XLI", "Waste Management"],
-  "RSHGY": ["Resona Holdings Inc", "XLF", "Banks - Regional"],
   "RSI": ["Rush Street Interactive Inc", "XLY", "Gambling"],
   "RSKD": ["Riskified Ltd", "XLK", "Software - Application"],
   "RTO": ["Rentokil Initial PLC", "XLI", "Specialty Business Services"],
@@ -1835,7 +1824,6 @@ export const RESEARCH_DIRECTORY = Object.freeze({
   "SHEL": ["Shell PLC ADR", "XLE", "Oil & Gas Integrated"],
   "SHG": ["Shinhan Financial Group Co Ltd", "XLF", "Banks - Regional"],
   "SHLS": ["Shoals Technologies Group Inc", "XLK", "Solar"],
-  "SHMXY": ["Shimadzu Corp", "XLK", "Scientific & Technical Instruments"],
   "SHO": ["Sunstone Hotel Investors Inc", "XLRE", "REIT - Hotel & Motel"],
   "SHOO": ["Steven Madden Ltd", "XLY", "Footwear & Accessories"],
   "SIBN": ["Si-Bone Inc", "XLV", "Medical Devices"],
@@ -2080,7 +2068,6 @@ export const RESEARCH_DIRECTORY = Object.freeze({
   "TXRH": ["Texas Roadhouse Inc", "XLY", "Restaurants"],
   "TXT": ["Textron Inc", "XLI", "Aerospace & Defense"],
   "TY": ["Tri Continental Closed Fund", "XLF", "Asset Management"],
-  "TYHOY": ["Toyota Tsusho Corp", "XLI", "Conglomerates"],
   "TYL": ["Tyler Technologies Inc", "XLK", "Software - Application"],
   "TYRA": ["Tyra Biosciences Inc", "XLV", "Biotechnology"],
   "U": ["Unity Software Inc", "XLK", "Software - Application"],
