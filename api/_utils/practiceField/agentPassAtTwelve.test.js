@@ -36,7 +36,7 @@ import { PRACTICE_FIELD_FUNDS } from '../../../src/data/practiceFieldFunds.js';
 import { PRACTICE_FIELD_SLOTS } from '../../../src/data/practiceFieldSlots.js';
 import { PRACTICE_FIELD_PLAYER_ENV, PRACTICE_FIELD_FOUNDER_ENV } from './playerList.js';
 import { runBooks } from '../../../scripts/practice-field-founder.mjs';
-import { makeMandateFakeDb, etIso, DAYS, storeTickSnapshot, tickOf, slotNowOf, closeOn, closeNowOf, contractOf } from './__testsupport__/fixtures.js';
+import { makeMandateFakeDb, etIso, DAYS, storeTickSnapshot, tickOf, slotNowOf, closeOn, contractOf } from './__testsupport__/fixtures.js';
 import { quotesOn, fakeTransport, toolResponse, holdAll, transportError, deskPartsOf } from './__testsupport__/agentFixtures.js';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');

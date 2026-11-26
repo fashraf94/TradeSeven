@@ -454,7 +454,7 @@ describe('the Film Room\'s seam (B4-5): no nomination opens for players', () => 
   });
 
   it('a reading of B4-5: a founder must be on the player list too (the seam narrows the mode\'s own gate; it never widens it)', async () => {
-    const { db } = await twoBooks();
+    await twoBooks();
     setList([P(1)]);
     expect(await ask(untouchable, FOUNDER)).toBeNull();
   });

@@ -105,7 +105,7 @@ export const namesOwner = (body) => body?.ownerUid !== undefined && body?.ownerU
  */
 export function validOwnerUid(v) {
   return typeof v === 'string' && v.length > 0 && v.length <= 128
-    && !/[/\s\u0000-\u001f\u007f]/.test(v)
+    && !/[/\s]/.test(v) && ![...v].some((ch) => ch.charCodeAt(0) < 0x20 || ch.charCodeAt(0) === 0x7f)
     && v !== '.' && v !== '..' && !v.startsWith('_');
 }
 
