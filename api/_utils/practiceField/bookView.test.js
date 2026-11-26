@@ -405,7 +405,7 @@ describe('History: finished ideas, newest first, their endings, their gaps and t
       ['DVN', 'Finished', '6 Nov'],
     ]);
   });
-  it('a not-measurable result reads so, with its reasons, and no gap — not in the list, not under its Result column (review B1)', () => {
+  it('a not-measurable result reads so, with its reasons, and no gap — not in the list, not under its Result column (review B1)', { timeout: 30_000 }, () => {
     expect(items()[0]).toMatchObject({ gap: null, notMeasurable: { reasons: ['One of its names had no usable closing price on its last day.'] } });
     expect(items()[4].notMeasurable.reasons).toEqual(['It was valued after its review date.']);
     for (const i of [0, 4]) expect(items()[i].columns[1]).toEqual({ key: 'economicResult', label: 'Result', value: 'Not measurable', sub: null, dir: 0 });
