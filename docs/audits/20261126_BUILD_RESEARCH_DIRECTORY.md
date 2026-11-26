@@ -24,7 +24,7 @@
 | The 11 retired stocks | **All 11 absent by symbol.** But the companies behind MMC and EQR are in the directory under new symbols (MRSH, VMRK), and PARA is now a different company (§5). |
 | The knowledge base's seven companies | All present: GLW, HPE, ANET, MRVL, COHR, CIEN in **XLK**; VRT in **XLI** (§5). |
 | Stopped on a ruling | Nine questions, none blocking (§6): closed-end funds, EODHD data errors (shells, debentures, wrong sectors), venues, share classes, what "research stock" means, names for the 228, symbols the game uses otherwise, the retired stocks. |
-| Review | Two lenses, each with a refuter: **18 findings, 17 confirmed, 1 confirmed in part**. 9 fixed in code with a test that failed first; the rest recorded (§8). Mutation battery **55 of 55** killed. |
+| Review | Two lenses, each with a refuter: **18 findings, 17 confirmed, 1 confirmed in part**. 8 fixed in code with a test that failed first, 1 corrected in this report, 9 recorded (§8). Mutation battery **55 of 55** killed. |
 | Tests | 5 new test files, **231 rows**. Full suite: §9. |
 
 ---
@@ -257,7 +257,7 @@ BUILD_RULES §2 applied: the generated file alone passes 1,500 lines. There were
 
 **Found by the coordinator, outside both lenses:** the generator's test file held literal zero-width and right-to-left-override characters where escape sequences (a backslash, the letter u and a code point) had been written (the editing tool turned the escapes into the characters). The file is ASCII again and every new file was scanned for such bytes.
 
-**Split:** 18 findings; 17 CONFIRMED, 1 CONFIRMED in part (L1-3, whose TGT claim was REFUTED). Nine fixed in code, each with a row that failed before the fix; one corrected in this report; the rest are the questions in §6.
+**Split:** 18 findings; 17 CONFIRMED, 1 CONFIRMED in part (L1-3, whose TGT claim was REFUTED). Eight fixed in code, each with a row that failed before the fix (L1-1, L1-2, L1-4, L2-1, L2-10, L2-11, L2-12, L2-14); one corrected in this report (L2-6); nine recorded as the questions in §6 (L1-3, L2-2, L2-3, L2-4, L2-5, L2-7, L2-8, L2-9, L2-13).
 
 ---
 
