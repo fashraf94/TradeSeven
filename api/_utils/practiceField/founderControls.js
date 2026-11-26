@@ -23,15 +23,30 @@
 //                  records the request; the idea book's next observed close applies it once (holdRulings.js). Refused:
 //                  a record that does not exist, one already resolved, one on a closed book. A stuck sale with no quote
 //                  is not in scope (T5).
+//   create_book_for  (build B4, ruling B4-2) an idea book for a LISTED PLAYER: `{ ownerUid, agentId?, archetypeCodeId? }`.
+//                  Refused unless the owner is on the idea book's own player list (playerList.js PRACTICE_FIELD_PLAYER_UIDS,
+//                  read now — at every mode). The book is the owner's, for the owner's OWN ranked agent (the create_book
+//                  rule, on the owner's agents: exactly one, or the one named — never the caller's agent, never a clone).
+//                  The archetype is that agent's own, unless the founder names another, checked against the registry
+//                  (B4-3; direction note IP-3). createIdeaBook still enforces the rest: one open book per owner, the cap,
+//                  the reconciliation. Only a founder reaches this action; a player can never create a book.
+//
+// THE FOUNDER'S REACH (build B4, ruling B4-4). pause, resume, wind_down and resolve_hold take an optional `ownerUid`.
+// Absent, they act on the caller's own book, exactly as before. Present, they act on THAT OWNER's open idea book, found
+// through the owner's claim and checked as ownBookOf checks it (an idea book, the owner's own) — the owner need not still be
+// on the player list, so the founder can rule on, or wind down, the book of a player he has removed. Who acted is still the
+// caller (`windDown.requestedBy`, a ruling's `by`, the request record). admit_fixture and create_book take no owner: a body
+// naming one is refused `owner_not_accepted` (admit_fixture stays for the founder's own book; a book for another owner is
+// create_book_for's). An `ownerUid` that is not a safe document id is refused `owner_uid_invalid` before any read.
 //
 // AUTHORIZATION (as api/mandate/create.js): the uid is the verified token's, never the body's. BOTH are required:
 //   1. PRACTICE_FIELD_MODE is not 'off' (mode.js, read at call time);
 //   2. the uid is in the founder allowlist, READ AT CALL TIME from MANDATE_FOUNDER_UIDS — the SAME environment
 //      variable the Mandate's founder endpoint reads (api/mandate/create.js founderAllowlist), reused so the founder
-//      is one list. Unset or empty: nobody (fail closed).
+//      is one list (its one parser: playerList.js). Unset or empty: nobody (fail closed).
 // The caller is never told which condition failed. At 'allowlist' mode, createIdeaBook and admitIdea also require the
-// owner on the cockpit's server-side allowlist (mode.js practiceFieldAdmits — COCKPIT allowlist, a second
-// environment list); at 'on' they admit any owner.
+// owner on the idea book's own player list (mode.js practiceFieldAdmits — PRACTICE_FIELD_PLAYER_UIDS since build B4; the
+// cockpit's list decides nothing here); at 'on' they admit any owner.
 //
 // IDEMPOTENT ON A CLIENT `requestKey`, PER OWNER (review C1, C3, C4). Every action records its request at
 // `practiceFieldBooks/{uid}/founderOps/{requestKey}` — server-only (no rule matches it) — with the action, a fingerprint
@@ -45,25 +60,62 @@
 // idempotent call (createIdeaBook / admitIdea, with the request key as their operation id), then store the response;
 // a request interrupted between the two re-runs against its RECORDED target. A request refused before anything was
 // recorded (no ranked agent, no open book, a missing contract) changes nothing and records nothing.
+// BUILD B4. The request record is always THE CALLER's (`practiceFieldBooks/{caller}/founderOps/{requestKey}`). A request
+// that names an owner records that owner in its target (`{ ownerUid, bookId }`; create_book_for's `{ ownerUid,
+// attributionAgentId, archetypeCodeId }`) and its fingerprint covers the owner, so one key can never act for two owners
+// and a replay never moves to another book. A request that names no owner keeps EXACTLY the fingerprint it had before B4,
+// so a record stored before B4 still replays. create_book_for runs createIdeaBook under an operation id of its own
+// namespace (createForOpIdOf: `for#…`, a character no request key may hold), so it can never be mistaken for a create_book.
 
-import { createIdeaBook } from './ideaBook.js';
+import { createHash } from 'node:crypto';
+import { createIdeaBook, isKnownArchetypeId } from './ideaBook.js';
 import { admitIdea } from './admission.js';
 import { practiceFieldMode } from './mode.js';
+import { readPracticeFieldPlayerList, readPracticeFieldFounderList } from './playerList.js';
 import { isIdeaBook } from '../mandateBookKind.js';
 import { isCloneAgentId } from '../../../src/constants/leagueTournament.js';
 import { canonicalContentHash } from '../canonicalHash.js';
 import { planHoldRuling } from './holdRulings.js';
 
-/** The actions, in the build prompt's order. */
-export const FOUNDER_ACTIONS = Object.freeze(['create_book', 'admit_fixture', 'pause', 'resume', 'wind_down', 'resolve_hold']);
+/** The actions, in the build prompt's order (build B4 added create_book_for). */
+export const FOUNDER_ACTIONS = Object.freeze(['create_book', 'admit_fixture', 'pause', 'resume', 'wind_down', 'resolve_hold', 'create_book_for']);
+/** Build B4 (B4-2, B4-4): the actions that take an `ownerUid` (create_book_for requires one). */
+export const OWNER_ACTIONS = Object.freeze(['create_book_for', 'pause', 'resume', 'wind_down', 'resolve_hold']);
 /** A fixture's origin, forced on every admitted contract (Amendment C §6: `founder_fixture` needs no source). */
 export const FOUNDER_FIXTURE_ORIGIN = Object.freeze({ kind: 'founder_fixture', initiatedBy: 'agent' });
 /** A request key: also a document id (under the owner's claim), so a safe, bounded token. */
 const REQUEST_KEY = /^[A-Za-z0-9][A-Za-z0-9_\-:.]{0,199}$/;
 
-/** The founder allowlist, read NOW from MANDATE_FOUNDER_UIDS (comma-separated). Unset or empty: nobody. */
+/**
+ * The founder allowlist, read NOW from MANDATE_FOUNDER_UIDS (comma-separated). Unset or empty: nobody. Build B4: the one
+ * parser is playerList.js's (the Film Room's import-light seam reads the same list through it).
+ */
 export function founderAllowlist() {
-  return (process.env.MANDATE_FOUNDER_UIDS || '').split(',').map((s) => s.trim()).filter(Boolean);
+  return [...readPracticeFieldFounderList()];
+}
+
+/** Was an owner named? `ownerUid` absent, undefined or null is "no owner": the caller's own book, as before B4. */
+export const namesOwner = (body) => body?.ownerUid !== undefined && body?.ownerUid !== null;
+
+/**
+ * Build B4: is an `ownerUid` a safe owner document id under `practiceFieldBooks/` — a string of 1 to 128 characters (a
+ * Firebase uid's bound), no `/`, no control or space character, not `.` or `..`, and NOT starting with `_`: the idea book's
+ * own documents there that are not an owner's claim (the founder cap's registry) start with one, as do Firestore's reserved
+ * `__…__` ids. Pure.
+ */
+export function validOwnerUid(v) {
+  return typeof v === 'string' && v.length > 0 && v.length <= 128
+    && !/[/\s\u0000-\u001f\u007f]/.test(v)
+    && v !== '.' && v !== '..' && !v.startsWith('_');
+}
+
+/**
+ * Build B4: create_book_for's operation id for createIdeaBook — `for#` and a digest of (the caller, the request key). `#`
+ * is a character no request key may hold (REQUEST_KEY), so the operation can never be a create_book's, and the book id
+ * derived from it (ideaBook.js ideaBookIdFor) can never be a book the owner's own create_book would make.
+ */
+export function createForOpIdOf(callerUid, requestKey) {
+  return `for#${createHash('sha256').update(`${callerUid}\u0000${requestKey}`, 'utf8').digest('hex').slice(0, 40)}`;
 }
 
 /** Both conditions (see the header): the mode is not 'off', and the uid is on the founder allowlist. Never throws. */
@@ -113,6 +165,10 @@ export function founderRequestFingerprint(action, body) {
     contract: action === 'admit_fixture' ? (body?.contract ?? null) : null,
     // resolve_hold (F-5): what it rules on and how — only for that action, so every other action's fingerprint is as it was.
     ...(action === 'resolve_hold' ? { resolve: resolveFieldsOf(body) } : {}),
+    // Build B4: the owner a request names, and create_book_for's own choices — ONLY when present, so a request that names
+    // no owner keeps the fingerprint it had before B4 (a record stored then still replays).
+    ...(namesOwner(body) ? { ownerUid: body.ownerUid } : {}),
+    ...(action === 'create_book_for' ? { createFor: { agentId: body?.agentId ?? null, archetypeCodeId: body?.archetypeCodeId ?? null } } : {}),
   });
 }
 
@@ -126,11 +182,13 @@ function resolveFieldsOf(body) {
 
 /**
  * resolve_hold (Amendment F-5): the request recorded, and the ruling written on the idea, in ONE transaction — every
- * read before any write. Refusals write nothing.
+ * read before any write. Refusals write nothing. Build B4 (B4-4): with `ownerUid`, on THAT owner's open book — the claim
+ * and the book's owner are the owner's; the ruling's `by` and the request record stay the caller's.
  */
-async function applyResolveHold(db, { uid, requestKey, body, nowIso, fingerprint }) {
+async function applyResolveHold(db, { uid, requestKey, body, nowIso, fingerprint, ownerUid = null }) {
+  const target = ownerUid ?? uid;
   const opRef = founderOpRefOf(db, uid, requestKey);
-  const claimRef = db.collection('practiceFieldBooks').doc(uid);
+  const claimRef = db.collection('practiceFieldBooks').doc(target);
   const fields = resolveFieldsOf(body);
   if (typeof fields.ideaId !== 'string' || fields.ideaId.length === 0 || fields.ideaId.length > 200 || fields.ideaId.includes('/')) return reply(400, { ok: false, error: 'idea_id_invalid' });
   return db.runTransaction(async (tx) => {
@@ -143,7 +201,7 @@ async function applyResolveHold(db, { uid, requestKey, body, nowIso, fingerprint
     const bookRef = db.collection('mandates').doc(bookId);
     const bookSnap = await tx.get(bookRef);
     const book = bookSnap.exists ? bookSnap.data() : null;
-    if (!book || !isIdeaBook(book) || book.userId !== uid) return reply(404, { error: 'no_open_book' });
+    if (!book || !isIdeaBook(book) || book.userId !== target) return reply(404, { error: 'no_open_book' });
     if (book.status === 'closed') return reply(409, { ok: false, error: 'book_closed', status: 'closed' });
     const ideaRef = bookRef.collection('ideas').doc(fields.ideaId);
     const ideaSnap = await tx.get(ideaRef);
@@ -161,11 +219,11 @@ async function applyResolveHold(db, { uid, requestKey, body, nowIso, fingerprint
     const plan = planHoldRuling(idea, fields, { uid, requestKey, nowIso, backfill });
     if (plan.error) return reply(plan.status, { ok: false, error: plan.error });
     const response = reply(200, {
-      ok: true, action: 'resolve_hold', bookId, ideaId: fields.ideaId, kind: plan.ruling.kind, recordId: plan.ruling.recordId,
+      ok: true, action: 'resolve_hold', ...(ownerUid !== null ? { ownerUid } : {}), bookId, ideaId: fields.ideaId, kind: plan.ruling.kind, recordId: plan.ruling.recordId,
       decision: plan.ruling.decision, appliesAt: 'next_observed_close', idempotentReplay: false,
     });
     tx.create(opRef, {
-      action: 'resolve_hold', requestKey, uid, fingerprint, state: 'done', target: { bookId, ideaId: fields.ideaId }, createdAt: nowIso, completedAt: nowIso,
+      action: 'resolve_hold', requestKey, uid, fingerprint, state: 'done', target: { ...(ownerUid !== null ? { ownerUid } : {}), bookId, ideaId: fields.ideaId }, createdAt: nowIso, completedAt: nowIso,
       outcome: 'ruling_recorded', ruling: plan.ruling, response,
     });
     tx.update(ideaRef, { founderRulings: [...(idea.founderRulings || []), plan.ruling] });
@@ -233,6 +291,34 @@ async function createBook(db, { uid, requestKey, body, nowIso, fingerprint }) {
   });
 }
 
+/**
+ * Build B4 (B4-2, B4-3) — create_book_for: an idea book for a LISTED player, for the player's own ranked agent, with that
+ * agent's archetype or the one named. Recorded under the CALLER's request key, with the owner in its target; the engine's
+ * operation is createForOpIdOf's. A named archetype the registry does not list, and an owner not on the player list, are
+ * refused before anything is recorded (a later request under the same key, once the list holds the owner, runs anew).
+ */
+async function createBookFor(db, { uid, requestKey, body, nowIso, fingerprint }) {
+  const ownerUid = body.ownerUid;
+  const named = body?.archetypeCodeId ?? null;
+  if (named !== null && !isKnownArchetypeId(named)) return reply(400, { ok: false, error: 'unknown_archetype', ownerUid });
+  return recordedRequest(db, {
+    uid, action: 'create_book_for', requestKey, fingerprint, nowIso,
+    resolveTarget: async () => {
+      if (!readPracticeFieldPlayerList().includes(ownerUid)) return { error: reply(403, { ok: false, error: 'owner_not_on_player_list', ownerUid }) };
+      const found = await rankedAgentFor(db, ownerUid, body?.agentId);
+      if (found.error) return { error: reply(found.error.status, { ...found.error.body, ownerUid }) };
+      const own = typeof found.agent.data.archetype === 'string' ? found.agent.data.archetype : null;
+      return { target: { ownerUid, attributionAgentId: found.agent.id, archetypeCodeId: named ?? own, archetypeNamed: named !== null } };
+    },
+    run: async ({ ownerUid: owner, attributionAgentId, archetypeCodeId }) => {
+      const res = await createIdeaBook(db, { uid: owner, attributionAgentId, archetypeCodeId, opId: createForOpIdOf(uid, requestKey), nowIso });
+      if (res.ok) return reply(res.idempotentReplay ? 200 : 201, { ok: true, action: 'create_book_for', ownerUid: owner, bookId: res.bookId, epochId: res.epochId, attributionAgentId, archetypeCodeId, idempotentReplay: res.idempotentReplay });
+      const status = { open_book_exists: 409, founder_cap_reached: 409, op_id_conflict: 409, mode_not_admitted: 403 }[res.code] ?? 400;
+      return reply(status, { ok: false, error: res.code, ownerUid: owner, ...(res.bookId ? { bookId: res.bookId } : {}) });
+    },
+  });
+}
+
 async function admitFixture(db, { uid, requestKey, body, nowIso, fingerprint }) {
   if (!isPlain(body?.contract)) return reply(400, { ok: false, error: 'contract_required' });
   return recordedRequest(db, {
@@ -274,10 +360,15 @@ export function planControl(action, book, { requestKey, uid, nowIso }) {
   return { patch: { status: 'draining', windDown: { requestedAt: nowIso, requestKey, requestedBy: uid } }, outcome: 'draining' };
 }
 
-/** pause, resume and wind_down: the request recorded in the transaction that applies it, every read before any write. */
-async function applyControl(db, { uid, action, requestKey, nowIso, fingerprint }) {
+/**
+ * pause, resume and wind_down: the request recorded in the transaction that applies it, every read before any write.
+ * Build B4 (B4-4): with `ownerUid`, on THAT owner's open book (the owner's claim; the book the owner's); who asked
+ * (`windDown.requestedBy`, the request record) stays the caller.
+ */
+async function applyControl(db, { uid, action, requestKey, nowIso, fingerprint, ownerUid = null }) {
+  const target = ownerUid ?? uid;
   const opRef = founderOpRefOf(db, uid, requestKey);
-  const claimRef = db.collection('practiceFieldBooks').doc(uid);
+  const claimRef = db.collection('practiceFieldBooks').doc(target);
   return db.runTransaction(async (tx) => {
     const opSnap = await tx.get(opRef);
     if (opSnap.exists) return answerRecorded(opSnap.data(), { action, fingerprint }) ?? reply(409, { ok: false, error: 'request_key_conflict', action: opSnap.data().action });
@@ -288,14 +379,14 @@ async function applyControl(db, { uid, action, requestKey, nowIso, fingerprint }
     const bookRef = db.collection('mandates').doc(bookId);
     const bookSnap = await tx.get(bookRef);
     const book = bookSnap.exists ? bookSnap.data() : null;
-    if (!book || !isIdeaBook(book) || book.userId !== uid) return reply(404, { error: 'no_open_book' });
+    if (!book || !isIdeaBook(book) || book.userId !== target) return reply(404, { error: 'no_open_book' });
     const plan = planControl(action, book, { requestKey, uid, nowIso });
     if (plan.error) return reply(409, { ok: false, error: plan.error, status: book.status ?? null });
     const after = { status: plan.patch?.status ?? book.status, drafting: plan.patch?.drafting ?? book.drafting ?? null };
-    const response = reply(200, { ok: true, action, bookId, outcome: plan.outcome, status: after.status, drafting: after.drafting, idempotentReplay: false });
+    const response = reply(200, { ok: true, action, ...(ownerUid !== null ? { ownerUid } : {}), bookId, outcome: plan.outcome, status: after.status, drafting: after.drafting, idempotentReplay: false });
     // The request, recorded once, with the book it acted on — a replay answers it and changes nothing.
     tx.create(opRef, {
-      action, requestKey, uid, fingerprint, state: 'done', target: { bookId }, createdAt: nowIso, completedAt: nowIso,
+      action, requestKey, uid, fingerprint, state: 'done', target: { ...(ownerUid !== null ? { ownerUid } : {}), bookId }, createdAt: nowIso, completedAt: nowIso,
       outcome: plan.outcome, before: { status: book.status ?? null, drafting: book.drafting ?? null }, after, response,
     });
     if (plan.patch) tx.update(bookRef, plan.patch);
@@ -310,7 +401,8 @@ async function applyControl(db, { uid, action, requestKey, nowIso, fingerprint }
 /**
  * Run one founder action for an AUTHORIZED caller (the endpoint checks isPracticeFieldFounder first; this checks it
  * again, so no path reaches a write without it). `uid` is the verified token's; `body` is the request body, from
- * which only `action`, `requestKey`, `agentId`, `contract` and resolve_hold's fields (resolveFieldsOf) are read.
+ * which only `action`, `requestKey`, `agentId`, `contract`, resolve_hold's fields (resolveFieldsOf) and — build B4 —
+ * `ownerUid` and `archetypeCodeId` are read.
  *
  * @returns {Promise<{ status: number, body: object }>}
  */
@@ -320,9 +412,15 @@ export async function runFounderAction(db, { uid, body = {}, nowIso }) {
   if (!FOUNDER_ACTIONS.includes(action)) return reply(400, { error: 'unknown_action', actions: FOUNDER_ACTIONS });
   const requestKey = body?.requestKey;
   if (typeof requestKey !== 'string' || !REQUEST_KEY.test(requestKey)) return reply(400, { error: 'request_key_invalid' });
+  // Build B4: the owner, checked before any read. Only the owner actions take one; create_book_for needs one.
+  const ownerUid = namesOwner(body) ? body.ownerUid : null;
+  if (ownerUid !== null && !OWNER_ACTIONS.includes(action)) return reply(400, { ok: false, error: 'owner_not_accepted', action });
+  if (ownerUid === null && action === 'create_book_for') return reply(400, { ok: false, error: 'owner_uid_required' });
+  if (ownerUid !== null && !validOwnerUid(ownerUid)) return reply(400, { ok: false, error: 'owner_uid_invalid' });
   const fingerprint = founderRequestFingerprint(action, body);
   if (action === 'create_book') return createBook(db, { uid, requestKey, body, nowIso, fingerprint });
+  if (action === 'create_book_for') return createBookFor(db, { uid, requestKey, body, nowIso, fingerprint });
   if (action === 'admit_fixture') return admitFixture(db, { uid, requestKey, body, nowIso, fingerprint });
-  if (action === 'resolve_hold') return applyResolveHold(db, { uid, requestKey, body, nowIso, fingerprint });
-  return applyControl(db, { uid, action, requestKey, nowIso, fingerprint });
+  if (action === 'resolve_hold') return applyResolveHold(db, { uid, requestKey, body, nowIso, fingerprint, ownerUid });
+  return applyControl(db, { uid, action, requestKey, nowIso, fingerprint, ownerUid });
 }

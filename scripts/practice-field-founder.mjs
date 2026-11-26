@@ -6,24 +6,38 @@
 //
 // USAGE (from the repo root of the founder's checkout on `main`, where .env.local lives):
 //
-//   node scripts/practice-field-founder.mjs status                                     --uid <uid>
-//   node scripts/practice-field-founder.mjs create-book [--agent <agentId>]            --uid <uid> [--go]
-//   node scripts/practice-field-founder.mjs admit --file <contract.json> [--dry-run]   --uid <uid> [--go]
-//   node scripts/practice-field-founder.mjs resolve --file <ruling.json>               --uid <uid> [--go]
-//   node scripts/practice-field-founder.mjs pause | resume | wind-down                 --uid <uid> [--go]
+//   node scripts/practice-field-founder.mjs status [--owner <uid>]                                 --uid <uid>
+//   node scripts/practice-field-founder.mjs books                                                  --uid <uid>
+//   node scripts/practice-field-founder.mjs create-book [--agent <agentId>]                        --uid <uid> [--go]
+//   node scripts/practice-field-founder.mjs create-book-for --owner <uid> [--agent <agentId>] [--archetype <id>]
+//                                                                                                  --uid <uid> [--go]
+//   node scripts/practice-field-founder.mjs admit --file <contract.json> [--dry-run]               --uid <uid> [--go]
+//   node scripts/practice-field-founder.mjs resolve --file <ruling.json> [--owner <uid>]           --uid <uid> [--go]
+//   node scripts/practice-field-founder.mjs pause | resume | wind-down [--owner <uid>]             --uid <uid> [--go]
 //
+//   --uid is always THE ACTING FOUNDER. --owner (build B4) names the player whose book a command reads or acts on.
 //   Add --json to any command for the answer as JSON instead of plain text. --help prints this and touches nothing.
 //
 // WHAT EACH COMMAND DOES
-//   status       Reads only. The mode, whether the uid is a founder (and on the cockpit list the mode admits by), the
-//                book (state, cash, its three slots: each idea's names, status, lines and sessions left), the open
+//   status       Reads only. The mode, whether the uid is a founder, whether the book's owner (--owner, else the uid) is on
+//                the idea book's player list ON THIS MACHINE (build B4; the deployed app reads its own copy), the
+//                book (state, cash, its three slots: each idea's names, status, lines and sessions left after the last
+//                close — the agent's and the screen's own count), the open
 //                records the founder can rule on (each with its idea, kind and record id — what `resolve` needs), and the
-//                latest parse-report alerts for the book's own symbols. Build B2: whether the agent's switches are on in
+//                latest parse-report alerts for the book's own symbols — only those its ideas held or had reserved when
+//                that session's report was written (build B4). Build B2: whether the agent's switches are on in
 //                this checkout, the LATEST CLOSE ROW's agent block — each desk's note under its name, where the note came
 //                from, each idea's action and reason and what came of it, the drafts considered (admitted, refused with
-//                their codes, or not chosen) — and this month's spend against the $3 bound. It prints no other user's
-//                ids and no credential.
+//                their codes, or not chosen) — and this month's spend against the $3 bound. It prints no ids but the
+//                book's own and its owner's, and no credential.
+//   books        (build B4) Reads only. One line per open idea book (the founder cap's registry): the owner's uid, the
+//                book's state, its value, its last close, each desk's latest source ("not checked" when that close row
+//                has no part for it), the month's spend, and the count of open records waiting on the founder. Books with
+//                open records first.
 //   create-book  The door's create_book: an idea book for the uid and its one ranked agent (or the one --agent names).
+//   create-book-for  (build B4) The door's create_book_for: an idea book for the player --owner names, who must be on the
+//                player list (the DEPLOYED app's copy decides), for the player's own ranked agent (or the one --agent
+//                names) and its archetype (or the one --archetype names).
 //   admit        The door's admit_fixture: the contract in the file, on the uid's open book. The door sets the origin
 //                to a founder fixture whatever the file says. With --dry-run it sends nothing: it runs the door's own
 //                admission (admission.js admitIdea, normalizeIdeaContract inside it) on a READ-ONLY view of the
@@ -31,6 +45,7 @@
 //                and why, the permitted maximum, and whether each name is on the latest price list.
 //   resolve      The door's resolve_hold: the ruling in the file (late_adjustment, conflict, suspicion or coverage_gap).
 //   pause, resume, wind-down   The door's pause, resume and wind_down on the uid's open book.
+//   With --owner (build B4), resolve, pause, resume and wind-down act on THAT player's open book — listed or removed.
 //
 // THE GATES — every one is required before anything is sent. The door's own dispatcher (runFounderAction) checks the first
 // two again, but in THIS process, against the same checkout and environment: a second check, not an independent one.
@@ -42,8 +57,10 @@
 // Without --go a write command prints exactly the body it would send, and stops (exit 2: nothing sent). With gate 1 or 2
 // failing, nothing is read and nothing is sent (exit 2). `status` and `admit --dry-run` need gates 1 and 2 too: the
 // script reads nothing for a uid that is not a founder.
-// At 'allowlist', creating a book and admitting an idea ALSO need the uid on COCKPIT_ALLOWLIST_UIDS (mode.js
-// practiceFieldAdmits) — the door refuses `mode_not_admitted` otherwise. `status` says whether it is.
+// At 'allowlist', creating a book and admitting an idea ALSO need the book's owner on the idea book's own player list,
+// PRACTICE_FIELD_PLAYER_UIDS (build B4; mode.js practiceFieldAdmits) — the door refuses `mode_not_admitted` otherwise, and
+// create_book_for `owner_not_on_player_list`. `status` says whether the owner is on THIS machine's copy; the deployed
+// app reads its own, and a change there needs a production redeploy.
 //
 // HOW IT SENDS. It calls runFounderAction — the function the HTTP door calls — with the body the door would receive
 // (`{ action, requestKey, … }`) and the uid given. It never writes Firestore itself. The uid is the command line's: the
@@ -91,11 +108,14 @@ import {
 import { openProposals } from '../api/_utils/practiceField/adjustments.js';
 import { coverageGapIdOf, closedDoubtIdOf, parseEntryVerdict, parseReportEntry } from '../api/_utils/practiceField/dailyCoverage.js';
 import { PRACTICE_FIELD_BENCHMARK_SYMBOL } from '../src/data/practiceFieldFunds.js';
-import { etDateOfMs, nextSessionDate } from '../api/_utils/practiceField/windows.js';
 import { getSessionForDate } from '../api/_utils/marketSchedule.js';
 import { isIdeaBook } from '../api/_utils/mandateBookKind.js';
 import { canonicalContentHash } from '../api/_utils/canonicalHash.js';
-import { COCKPIT_ALLOWLIST_ENV, readCockpitAllowlist } from '../api/_utils/callRecords/allowlist.js';
+// Build B4: the idea book's own player list (read here from THIS machine's environment), the founder cap's registry (the
+// list of open books `books` reads — never written here), and the screen's own sessions-left count (Q-7: one count).
+import { PRACTICE_FIELD_PLAYER_ENV, readPracticeFieldPlayerList } from '../api/_utils/practiceField/playerList.js';
+import { PRACTICE_FIELD_BOOK_REGISTRY_ID } from '../api/_utils/practiceField/constants.js';
+import { sessionsLeftOf } from '../api/_utils/practiceField/bookView.js';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 export const PROJECT_ROOT = path.resolve(SCRIPT_DIR, '..');
@@ -103,24 +123,28 @@ export const PROJECT_ROOT = path.resolve(SCRIPT_DIR, '..');
 /** The command line's commands → the door's actions (null: read-only). */
 export const COMMANDS = Object.freeze({
   status: null,
+  books: null,
   'create-book': 'create_book',
+  'create-book-for': 'create_book_for',
   admit: 'admit_fixture',
   resolve: 'resolve_hold',
   pause: 'pause',
   resume: 'resume',
   'wind-down': 'wind_down',
 });
-/** The flags each command takes (every command also takes --uid and --json). */
+/** The flags each command takes (every command also takes --uid and --json). Build B4: --owner, --archetype. */
 const FLAGS_OF = Object.freeze({
-  status: [],
+  status: ['--owner'],
+  books: [],
   'create-book': ['--agent', '--go', '--again'],
+  'create-book-for': ['--owner', '--agent', '--archetype', '--go', '--again'],
   admit: ['--file', '--dry-run', '--go', '--again'],
-  resolve: ['--file', '--go', '--again'],
-  pause: ['--go', '--again'],
-  resume: ['--go', '--again'],
-  'wind-down': ['--go', '--again'],
+  resolve: ['--file', '--owner', '--go', '--again'],
+  pause: ['--owner', '--go', '--again'],
+  resume: ['--owner', '--go', '--again'],
+  'wind-down': ['--owner', '--go', '--again'],
 });
-const VALUE_FLAGS = new Set(['--uid', '--agent', '--file', '--again']);
+const VALUE_FLAGS = new Set(['--uid', '--agent', '--file', '--again', '--owner', '--archetype']);
 /** An --again word: it goes into the request key. */
 const AGAIN_WORD = /^[A-Za-z0-9_-]{1,40}$/;
 const BOOLEAN_FLAGS = new Set(['--go', '--dry-run', '--json', '--help']);
@@ -142,12 +166,17 @@ const exitOfStatus = (status) => (status >= 200 && status < 300 ? EXIT.DONE : st
 export const USAGE = [
   'Practice Field — the founder\'s command-line door.',
   '',
-  '  node scripts/practice-field-founder.mjs status                                     --uid <uid>',
-  '  node scripts/practice-field-founder.mjs create-book [--agent <agentId>]            --uid <uid> [--go]',
-  '  node scripts/practice-field-founder.mjs admit --file <contract.json> [--dry-run]   --uid <uid> [--go]',
-  '  node scripts/practice-field-founder.mjs resolve --file <ruling.json>               --uid <uid> [--go]',
-  '  node scripts/practice-field-founder.mjs pause | resume | wind-down                 --uid <uid> [--go]',
+  '  node scripts/practice-field-founder.mjs status [--owner <uid>]                                 --uid <uid>',
+  '  node scripts/practice-field-founder.mjs books                                                  --uid <uid>',
+  '  node scripts/practice-field-founder.mjs create-book [--agent <agentId>]                        --uid <uid> [--go]',
+  '  node scripts/practice-field-founder.mjs create-book-for --owner <uid> [--agent <agentId>] [--archetype <id>]',
+  '                                                                                                 --uid <uid> [--go]',
+  '  node scripts/practice-field-founder.mjs admit --file <contract.json> [--dry-run]               --uid <uid> [--go]',
+  '  node scripts/practice-field-founder.mjs resolve --file <ruling.json> [--owner <uid>]           --uid <uid> [--go]',
+  '  node scripts/practice-field-founder.mjs pause | resume | wind-down [--owner <uid>]             --uid <uid> [--go]',
   '',
+  '  --uid       the acting founder (always).',
+  '  --owner <u> the player whose book the command reads or acts on (create-book-for needs it).',
   '  --go        send it. Without it a write command prints what it would send, and sends nothing.',
   '  --again <w> (any write command) send it as a NEW request: a re-run otherwise replays the stored answer, a refusal too.',
   '  --dry-run   (admit) run the door\'s admission on a read-only view: what would be refused, and why.',
@@ -181,7 +210,7 @@ export function parseArgs(argv) {
   const command = args.shift();
   if (!Object.hasOwn(COMMANDS, command)) throw new ScriptError(`unknown command "${command}" — one of: ${Object.keys(COMMANDS).join(', ')}`);
   const allowed = new Set(['--uid', '--json', ...FLAGS_OF[command]]);
-  const out = { command, uid: null, agentId: null, file: null, again: null, go: false, dryRun: false, json: false };
+  const out = { command, uid: null, owner: null, agentId: null, archetype: null, file: null, again: null, go: false, dryRun: false, json: false };
   const seen = [];
   while (args.length > 0) {
     const token = args.shift();
@@ -201,6 +230,8 @@ export function parseArgs(argv) {
     const value = eq > 0 ? token.slice(eq + 1) : args.shift();
     if (typeof value !== 'string' || value.length === 0 || (eq < 0 && value.startsWith('--'))) throw new ScriptError(`"${flag}" needs a value`);
     if (flag === '--uid') out.uid = value;
+    if (flag === '--owner') out.owner = value;
+    if (flag === '--archetype') out.archetype = value;
     if (flag === '--agent') out.agentId = value;
     if (flag === '--file') out.file = value;
     if (flag === '--again') {
@@ -209,6 +240,7 @@ export function parseArgs(argv) {
     }
   }
   if (out.uid === null) throw new ScriptError('--uid <uid> is required');
+  if (command === 'create-book-for' && out.owner === null) throw new ScriptError('create-book-for needs --owner <uid> (the player); --uid is the acting founder');
   if ((command === 'admit' || command === 'resolve') && out.file === null) throw new ScriptError(`${command} needs --file <file.json>`);
   if (out.dryRun && out.go) throw new ScriptError('--dry-run and --go together: choose one (a dry run sends nothing)');
   return out;
@@ -236,16 +268,20 @@ export function readRequestFile(file, { readFile = (p) => readFileSync(p, 'utf8'
  * The body the door would receive, WITHOUT its request key. Built from a whitelist: a file can add no field the door
  * would read as something else (an `action` in a ruling file is not sent).
  */
-export function bodyWithoutKey(command, { agentId = null, fileValue = null } = {}) {
+export function bodyWithoutKey(command, { agentId = null, fileValue = null, owner = null, archetype = null } = {}) {
   const action = COMMANDS[command];
+  // Build B4: the owner a command names, from --owner only (never from a file). Absent, the body is exactly as before B4,
+  // so its request key is too.
+  const ownerPart = owner !== null ? { ownerUid: owner } : {};
   if (action === 'create_book') return { action, ...(agentId !== null ? { agentId } : {}) };
+  if (action === 'create_book_for') return { action, ownerUid: owner, ...(agentId !== null ? { agentId } : {}), ...(archetype !== null ? { archetypeCodeId: archetype } : {}) };
   if (action === 'admit_fixture') return { action, contract: fileValue };
   if (action === 'resolve_hold') {
     const body = { action };
     for (const f of RESOLVE_FIELDS) if (fileValue[f] !== undefined) body[f] = fileValue[f];
-    return body;
+    return { ...body, ...ownerPart };
   }
-  return { action };
+  return { action, ...ownerPart };
 }
 
 /**
@@ -328,24 +364,17 @@ export function openRecordsOf(idea) {
 
 // ── STATUS ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** Trading sessions from `today` through `due`, both counted when they are sessions; 0 once `due` has passed. */
-export function sessionsLeft(today, due) {
-  if (typeof due !== 'string' || typeof today !== 'string') return null;
-  if (today > due) return 0;
-  let n = getSessionForDate(today)?.isTradingDay ? 1 : 0;
-  let cursor = today;
-  for (let i = 0; i < 400; i += 1) {
-    const next = nextSessionDate(cursor);
-    if (next === null) return null; // off the maintained calendar: not guessed
-    if (next > due) return n;
-    n += 1;
-    cursor = next;
-  }
-  return null;
+/**
+ * Sessions left AFTER THE BOOK'S LAST CLOSE (build B4, Q-7): the agent's own count (agentRun.js) as the screen shows it —
+ * bookView.js sessionsLeftOf, imported, so the script, the desks' notes and the screen say one number: the sessions after
+ * `lastClose` up to and including `due` (0 on the due session's close and after). Null with no close yet.
+ */
+export function sessionsLeft(lastClose, due) {
+  return sessionsLeftOf(lastClose, due);
 }
 
-/** What one idea looks like in status. Pure. */
-function ideaView(idea, slot, today) {
+/** What one idea looks like in status. Pure. `lastClose` is the book's last closed session. */
+function ideaView(idea, slot, lastClose) {
   const contract = idea.contract || {};
   const entered = Array.isArray(idea.lines) && idea.lines.length > 0;
   const lines = entered
@@ -356,7 +385,7 @@ function ideaView(idea, slot, today) {
     slot, ideaId: idea.ideaId, status: idea.status ?? null, names: contract.names || [],
     comparison: contract.comparison ? { type: contract.comparison.type, symbols: contract.comparison.symbols || [] } : null,
     capitalUsd: contract.capitalUsd ?? null, cashUsd: idea.ledger?.cash ?? null, lines,
-    startSession: contract.schedule?.startSession ?? null, dueSession: due, sessionsLeft: sessionsLeft(today, due),
+    startSession: contract.schedule?.startSession ?? null, dueSession: due, sessionsLeft: sessionsLeft(lastClose, due),
   };
 }
 
@@ -373,20 +402,45 @@ function bookSymbolsOf(ideas) {
   return out.sort();
 }
 
+/** An instant as epoch ms — an ISO string, a Date or a Firestore Timestamp; NaN for anything else. */
+function msOf(v) {
+  if (typeof v === 'string') return Date.parse(v);
+  if (v instanceof Date) return v.getTime();
+  if (v && typeof v.toDate === 'function') { try { return v.toDate().getTime(); } catch { return NaN; } }
+  if (v && Number.isFinite(v._seconds)) return v._seconds * 1000 + Math.floor((Number(v._nanoseconds) || 0) / 1e6);
+  return NaN;
+}
+
 /**
  * The latest parse-report alerts: the parse report of the book's last closed session (`practiceFieldCaParseReports`),
  * for the book's OWN symbols only, each entry that is not clean (dailyCoverage.js parseEntryVerdict) — or missing.
+ *
+ * Build B4: ONLY the symbols the book held or had reserved WHEN THAT REPORT WAS WRITTEN. The session's daily build writes
+ * the report (caParseReport.js, inside mandateUniverseSnapshot.js ensureDailySnapshot — built once a session), for the
+ * symbols the books held or had reserved then; a name admitted after it is not in it, and is no alert (its first report is
+ * the next session's). The cut-off is the daily layer's `builtAt` (`mandateUniverseDaily/{session}`); with none stored,
+ * the session's close. An idea counts when its `admittedAt` is at or before the cut-off — or unreadable (fail closed).
+ * On 25 Nov the status listed 15 alerts for the 15 symbols of two ideas admitted at that close: those are not alerts.
  */
 async function parseAlertsOf(db, book, ideas) {
   const session = typeof book.execState?.lastCloseKey === 'string' ? book.execState.lastCloseKey : null;
-  if (session === null) return { session: null, stored: false, alerts: [] };
+  if (session === null) return { session: null, stored: false, alerts: [], cutoff: null, admittedAfter: [] };
   const report = dataOf(await db.collection('practiceFieldCaParseReports').doc(session).get());
+  const daily = dataOf(await db.collection('mandateUniverseDaily').doc(session).get());
+  const builtMs = msOf(daily?.builtAt);
+  const closeMs = getSessionForDate(session)?.closeMs;
+  const cutoff = Number.isFinite(builtMs)
+    ? { at: new Date(builtMs).toISOString(), source: 'daily_build' }
+    : (Number.isFinite(closeMs) ? { at: new Date(closeMs).toISOString(), source: 'session_close' } : { at: null, source: 'none' });
+  const cutoffMs = cutoff.at === null ? Infinity : Date.parse(cutoff.at);
+  const after = ideas.filter((i) => msOf(i.admittedAt) > cutoffMs);
+  const covered = ideas.filter((i) => !(msOf(i.admittedAt) > cutoffMs));
   const alerts = [];
-  for (const sym of bookSymbolsOf(ideas)) {
+  for (const sym of bookSymbolsOf(covered)) {
     const verdict = parseEntryVerdict(parseReportEntry(report, session, sym));
     if (!verdict.clean) alerts.push({ session, symbol: sym, reason: verdict.reason });
   }
-  return { session, stored: report !== null, alerts };
+  return { session, stored: report !== null, alerts, cutoff, admittedAfter: after.map((i) => i.ideaId) };
 }
 
 /**
@@ -432,13 +486,18 @@ function spendOfBook(book, nowIso) {
   };
 }
 
-/** The gates that need no read: the mode and the founder list. */
-export function readGates(uid) {
+/**
+ * The gates that need no read: the mode and the founder list (for the acting uid), and — build B4 — whether the book's
+ * owner (`owner`, else the uid) is on the idea book's player list ON THIS MACHINE, and so admitted by the mode here.
+ */
+export function readGates(uid, owner = null) {
   const mode = practiceFieldMode();
+  const subject = owner ?? uid;
   return {
     mode, modeSource: 'src/config/practiceFieldFlags.js', shippedMode: SHIPPED_MODE,
     founder: isPracticeFieldFounder(uid), onFounderList: founderAllowlist().includes(uid),
-    onCockpitList: readCockpitAllowlist().includes(uid), modeAdmitsUid: practiceFieldAdmits(uid),
+    owner: subject, ownerIsUid: subject === uid,
+    onPlayerList: readPracticeFieldPlayerList().includes(subject), modeAdmitsOwner: practiceFieldAdmits(subject),
   };
 }
 
@@ -450,24 +509,25 @@ function gateRefusals(gates) {
   return out;
 }
 
-export async function runStatus(db, { uid, nowIso }) {
-  const gates = readGates(uid);
+export async function runStatus(db, { uid, owner = null, nowIso }) {
+  const gates = readGates(uid, owner);
   const result = { command: 'status', ...gates, book: null };
   const refused = gateRefusals(gates);
   if (refused.length > 0) return { exitCode: EXIT.REFUSED, result: { ...result, refused } };
-  const own = await ownBookOf(db, uid);
+  // Build B4: --owner reads THAT player's book (the founder's reach); without it, the uid's own, as before.
+  const own = await ownBookOf(db, owner ?? uid);
   if (!own) return { exitCode: EXIT.DONE, result: { ...result, book: null } };
   const { bookId, book } = own;
   const ideas = await ideasOf(db, bookId, book);
   const byId = new Map(ideas.map((i) => [i.ideaId, i]));
-  const today = etDateOfMs(Date.parse(nowIso));
+  const lastClose = typeof book.execState?.lastCloseKey === 'string' ? book.execState.lastCloseKey : null;
   const slots = {};
   for (const slot of ['short', 'medium', 'long']) {
     const id = book.slots?.[slot] ?? null;
-    slots[slot] = id === null ? null : (byId.has(id) ? ideaView(byId.get(id), slot, today) : { slot, ideaId: id, status: 'unreadable' });
+    slots[slot] = id === null ? null : (byId.has(id) ? ideaView(byId.get(id), slot, lastClose) : { slot, ideaId: id, status: 'unreadable' });
   }
   const inSlots = new Set(Object.values(book.slots || {}));
-  const otherOpen = ideas.filter((i) => !inSlots.has(i.ideaId)).map((i) => ideaView(i, i.contract?.slot ?? null, today));
+  const otherOpen = ideas.filter((i) => !inSlots.has(i.ideaId)).map((i) => ideaView(i, i.contract?.slot ?? null, lastClose));
   const records = ideas.flatMap((i) => openRecordsOf(i));
   const parse = await parseAlertsOf(db, book, ideas);
   const agent = await agentCheckOf(db, bookId, book);
@@ -488,6 +548,58 @@ export async function runStatus(db, { uid, nowIso }) {
       parseReport: parse,
     },
   };
+}
+
+// ── BOOKS (build B4): one line per open idea book ───────────────────────────────────────────────────────────────────────
+
+/**
+ * A desk's latest source on a close row, for `books`: its part's `source` (model, code_fallback, no_work); `not_finished`
+ * for a part still in progress (its call deferred to a later fire); `not_checked` when the row holds NO part for the desk —
+ * a desk the close window's time never reached writes none (agentRun.js: a deferral reserves and writes nothing). Pure.
+ */
+export function deskSourceOf(part) {
+  if (!isPlain(part)) return { source: 'not_checked', fallbackReason: null };
+  if (part.status !== 'done') return { source: 'not_finished', fallbackReason: null };
+  return { source: part.source ?? 'unknown', fallbackReason: part.fallbackReason ?? null };
+}
+
+/**
+ * THE FOUNDER'S OVERVIEW: every open idea book (the founder cap's registry, `practiceFieldBooks/{registry}` — READ ONLY:
+ * the list createIdeaBook writes and the close that completes a wind-down trims), one line each — the owner's uid, the
+ * book's state, its value, its last close, each desk's latest source on that close's row, the month's spend, and the count
+ * of open records waiting on the founder (openRecordsOf, not yet ruled). Books with open records first, then by owner.
+ * Gates 1 and 2 first: nothing is read for a uid that is not a founder.
+ */
+export async function runBooks(db, { uid, nowIso }) {
+  const gates = readGates(uid);
+  const base = { command: 'books', ...gates, books: [] };
+  const refused = gateRefusals(gates);
+  if (refused.length > 0) return { exitCode: EXIT.REFUSED, result: { ...base, refused } };
+  const registry = dataOf(await db.collection('practiceFieldBooks').doc(PRACTICE_FIELD_BOOK_REGISTRY_ID).get());
+  const open = isPlain(registry?.openBooks) ? registry.openBooks : {};
+  const agentOn = practiceFieldAgentOn();
+  const lines = [];
+  for (const [bookId, listedOwner] of Object.entries(open)) {
+    const book = dataOf(await db.collection('mandates').doc(bookId).get());
+    if (!book || !isIdeaBook(book)) { lines.push({ bookId, ownerUid: typeof listedOwner === 'string' ? listedOwner : null, unreadable: true, openRecords: 0 }); continue; }
+    const ideas = await ideasOf(db, bookId, book);
+    const records = ideas.flatMap((i) => openRecordsOf(i));
+    const lastClose = typeof book.execState?.lastCloseKey === 'string' ? book.execState.lastCloseKey : null;
+    let desks = null;
+    // With the agent off in this checkout nothing of it is read (review C-4), as in status.
+    if (agentOn && lastClose !== null) {
+      const row = dataOf(await db.collection('mandates').doc(bookId).collection('windows').doc(`${lastClose}_close`).get());
+      desks = Object.fromEntries(DESK_IDS.map((id) => [id, deskSourceOf(row?.agent?.desks?.[id])]));
+    }
+    lines.push({
+      bookId, ownerUid: book.userId ?? null, ...(book.userId !== listedOwner ? { registryOwner: listedOwner ?? null } : {}),
+      status: book.status ?? null, drafting: book.drafting ?? null, windDownRequestedAt: book.windDown?.requestedAt ?? null,
+      valueUsd: book.portfolio?.totalValue ?? null, lastClose, agentOn, desks, spend: spendOfBook(book, nowIso),
+      openRecords: records.filter((r) => !r.ruled).length, ruledAwaitingClose: records.filter((r) => r.ruled).length,
+    });
+  }
+  lines.sort((a, b) => ((b.openRecords > 0) - (a.openRecords > 0)) || (b.openRecords - a.openRecords) || String(a.ownerUid).localeCompare(String(b.ownerUid)) || String(a.bookId).localeCompare(String(b.bookId)));
+  return { exitCode: EXIT.DONE, result: { ...base, books: lines } };
 }
 
 // ── ADMIT --dry-run: the door's own admission on a read-only view ───────────────────────────────────────────────────────
@@ -585,18 +697,21 @@ export async function runAdmitDryRun(db, { uid, contractRaw, requestKey, nowIso,
  */
 export async function runCommand(db, parsed, { nowIso, fileValue = null }) {
   const { command, uid } = parsed;
-  if (command === 'status') return runStatus(db, { uid, nowIso });
+  const owner = parsed.owner ?? null;
+  if (command === 'status') return runStatus(db, { uid, owner, nowIso });
+  if (command === 'books') return runBooks(db, { uid, nowIso });
 
   const action = COMMANDS[command];
   if ((command === 'admit' || command === 'resolve') && !isPlain(fileValue)) throw new ScriptError(`${command} needs a file holding one JSON object`);
-  const body = bodyWithoutKey(command, { agentId: parsed.agentId, fileValue });
-  const gates = readGates(uid);
+  const body = bodyWithoutKey(command, { agentId: parsed.agentId, fileValue, owner, archetype: parsed.archetype ?? null });
+  const gates = readGates(uid, owner);
   const refused = gateRefusals(gates);
   const base = { command, action, ...gates };
   if (refused.length > 0) return { exitCode: EXIT.REFUSED, result: { ...base, sent: false, refused, body } };
 
-  // The book a book-scoped request acts on, for its key (create_book has none yet).
-  const own = action === 'create_book' ? null : await ownBookOf(db, uid);
+  // The book a book-scoped request acts on, for its key (create_book and create_book_for have none yet). Build B4: with
+  // --owner, that player's book.
+  const own = action === 'create_book' || action === 'create_book_for' ? null : await ownBookOf(db, owner ?? uid);
   const requestKey = requestKeyFor(body, own?.bookId ?? null, parsed.again ?? null);
   const fullBody = { action, requestKey, ...Object.fromEntries(Object.entries(body).filter(([k]) => k !== 'action')) };
 
@@ -611,7 +726,7 @@ export async function runCommand(db, parsed, { nowIso, fileValue = null }) {
   const replay = answer.body?.idempotentReplay === true;
   let bookNow = null;
   if (replay && (action === 'pause' || action === 'resume' || action === 'wind_down')) {
-    const now = await ownBookOf(db, uid);
+    const now = await ownBookOf(db, owner ?? uid);
     bookNow = now ? { bookId: now.bookId, status: now.book.status ?? null, drafting: now.book.drafting ?? null } : null;
   }
   return {
@@ -622,14 +737,34 @@ export async function runCommand(db, parsed, { nowIso, fileValue = null }) {
 
 // ── PLAIN-TEXT RENDERING ────────────────────────────────────────────────────────────────────────────────────────────────
 
+/** The sentence status adds under the player-list line (build B4). */
+export const PLAYER_LIST_REDEPLOY_SENTENCE = 'The deployed app reads its own copy of the list: a change there needs a production redeploy.';
+
 function gateLines(r) {
+  const whose = r.ownerIsUid === false ? ` for owner ${r.owner}` : '';
   return [
     `mode            ${r.mode}   (this checkout: ${r.modeSource} ships '${r.shippedMode}')`,
     `founder list    ${r.onFounderList ? 'yes' : 'no'}   (MANDATE_FOUNDER_UIDS, this machine)`,
-    `cockpit list    ${r.onCockpitList ? 'yes' : 'no'}   (${COCKPIT_ALLOWLIST_ENV}, this machine — at 'allowlist' creating a book and admitting an idea need it)`,
+    `player list     ${r.onPlayerList ? 'yes' : 'no'}${whose}   (${PRACTICE_FIELD_PLAYER_ENV}, this machine — at 'allowlist' creating a book, admitting an idea and the screen need it)`,
+    `                ${PLAYER_LIST_REDEPLOY_SENTENCE}`,
     `founder         ${r.founder ? 'yes' : 'no'}   (the door's gate: the mode is not 'off' AND on the founder list)`,
-    `mode admits uid ${r.modeAdmitsUid ? 'yes' : 'no'}   (the mode's own gate for creating a book and admitting an idea)`,
+    `mode admits     ${r.modeAdmitsOwner ? 'yes' : 'no'}${whose}   (the mode's own gate for creating a book, admitting an idea and the screen)`,
   ];
+}
+
+/** A desk's source in a `books` line. */
+const deskWord = (d) => (d ? `${d.source}${d.fallbackReason ? ` (${d.fallbackReason})` : ''}` : '—');
+
+/** One `books` line. */
+function bookLine(b) {
+  if (b.unreadable) return `${b.ownerUid ?? '—'}   book ${b.bookId}: listed open, but it could not be read as an idea book`;
+  const state = `${b.status}${b.drafting ? `/${b.drafting}` : ''}${b.windDownRequestedAt ? ' (winding down)' : ''}`;
+  const desks = !b.agentOn ? 'agent off in this checkout' : (b.desks ? DESK_IDS.map((id) => `${id} ${deskWord(b.desks[id])}`).join(' · ') : 'no close yet');
+  const sp = b.spend;
+  return [
+    `${b.ownerUid}   ${state}   value ${usd(b.valueUsd)}   last close ${b.lastClose ?? 'none yet'}`,
+    `    desks ${desks}   spend ${sp.month} ${usd(sp.settledUsd)} of ${usd(sp.boundUsd)}${sp.exhausted ? ' EXHAUSTED' : ''}   open records ${b.openRecords}${b.ruledAwaitingClose ? ` (+${b.ruledAwaitingClose} ruled, waiting for the next close)` : ''}${b.registryOwner !== undefined ? `   (the registry lists ${b.registryOwner})` : ''}`,
+  ].join('\n');
 }
 
 function refusalLines(refused) {
@@ -645,19 +780,28 @@ function ideaLines(v) {
     `    names       ${v.names.join(', ')}${v.comparison ? `   vs ${v.comparison.type}${v.comparison.symbols.length ? ` ${v.comparison.symbols.join(', ')}` : ''}` : ''}`,
     `    capital     ${usd(v.capitalUsd)}   cash ${usd(v.cashUsd)}`,
     `    lines       ${lines.join('; ') || '—'}`,
-    `    sessions    ${v.startSession ?? '—'} → due ${v.dueSession ?? '—'}   (${v.sessionsLeft === null ? 'unknown' : v.sessionsLeft} left, today included)`,
+    `    sessions    ${v.startSession ?? '—'} → due ${v.dueSession ?? '—'}   (${v.sessionsLeft === null ? 'unknown' : v.sessionsLeft} left after the last close)`,
   ];
 }
 
 export function renderText(result) {
   const out = [];
+  if (result.command === 'books') {
+    out.push(...gateLines(result).filter((l) => !/^(player list|mode admits) /.test(l) && l.trim() !== PLAYER_LIST_REDEPLOY_SENTENCE));
+    out.push(...refusalLines(result.refused));
+    if (result.refused?.length) return out;
+    out.push('', `open books      ${result.books.length}${result.books.length ? '   (books with open records first)' : ''}`);
+    for (const b of result.books) out.push(bookLine(b));
+    return out;
+  }
   if (result.command === 'status') {
     out.push(...gateLines(result));
     out.push(...refusalLines(result.refused));
     if (result.refused?.length) return out;
-    if (!result.book) { out.push('', 'book            none open for this uid (create-book makes one)'); return out; }
+    if (!result.book) { out.push('', `book            none open for ${result.ownerIsUid === false ? `owner ${result.owner} (create-book-for makes one)` : 'this uid (create-book makes one)'}`); return out; }
     const b = result.book;
     out.push('', `book            ${b.bookId}   ${b.status}${b.drafting ? `, drafting ${b.drafting}` : ''}${b.windDownRequestedAt ? `, wind-down requested ${b.windDownRequestedAt}` : ''}`);
+    if (result.ownerIsUid === false) out.push(`owner           ${result.owner}`);
     out.push(`agent           ${b.agentId ?? '—'} (${b.archetype ?? '—'})`);
     out.push(`cash            ${usd(b.unreservedCashUsd)} unreserved   ${usd(b.cashUsd)} in all   value ${usd(b.totalValueUsd)}`);
     out.push(`last close      ${b.lastClosedSession ?? 'none yet'}`);
@@ -671,6 +815,8 @@ export function renderText(result) {
     const p = result.parseReport;
     out.push('', `parse report    ${p.session === null ? 'no close yet' : `${p.session}${p.stored ? '' : ' (none stored)'}: ${p.alerts.length === 0 ? 'clean for the book\'s symbols' : `${p.alerts.length} alert(s)`}`}`);
     for (const a of p.alerts) out.push(`  ${a.symbol}  ${a.reason}`);
+    // Build B4: ideas admitted after the report was written are not in it; their first report is the next session's.
+    if (p.admittedAfter?.length) out.push(`  ${p.admittedAfter.length} idea(s) admitted after this report was written (${p.cutoff?.source === 'daily_build' ? 'the daily build' : 'the close'}, ${p.cutoff?.at}): their names are checked from the next session's report`);
     // Build B2: the agent's latest check, desk by desk, and the month's spend.
     const ag = result.agent;
     if (ag) {

@@ -13,7 +13,7 @@ const split = (i, ratio) => ({ date: S[i], split: ratio });
 const parse = (symbol, opts) => fetchCorporateActionsEODHD(symbol, { ...opts, apiKey: 'fixture' });
 let restoreMode;
 beforeEach(() => {
-  vi.stubEnv('COCKPIT_ALLOWLIST_UIDS', 'owner-1');
+  vi.stubEnv('PRACTICE_FIELD_PLAYER_UIDS', 'owner-1'); // build B4 (B4-1): the idea book's own player list
   restoreMode = setPracticeFieldModeForTests('allowlist');
 });
 afterEach(() => { restoreMode(); vi.unstubAllEnvs(); });

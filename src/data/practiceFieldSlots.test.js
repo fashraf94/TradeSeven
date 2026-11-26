@@ -31,8 +31,8 @@ import { mandateSectorOf, frictionForSymbol, fundStaticClassifications } from '.
 const MANDATE_SECTORS = [...new Set(Object.values(CANDIDATE_SECTOR_SEED))].sort();
 
 describe('the founder slots B1–B9 (shared contract V2 §13)', () => {
-  it('are the contract\'s values exactly, at version 2 (B2-4: the origin vocabulary gained market_scan; no slot value moved)', () => {
-    expect(PRACTICE_FIELD_SLOTS_VERSION).toBe(2);
+  it('are the contract\'s values exactly, at version 3 (B2-4: the origin vocabulary gained market_scan; B4-6: the founder cap B8 went from 4 to 12)', () => {
+    expect(PRACTICE_FIELD_SLOTS_VERSION).toBe(3);
     expect(PRACTICE_FIELD_SLOTS).toEqual({
       B1_SLOT_CAP_SHARE: { short: 0.20, medium: 0.30, long: 0.40 },
       B2_CASH_FLOOR_SHARE: 0.10,
@@ -43,7 +43,7 @@ describe('the founder slots B1–B9 (shared contract V2 §13)', () => {
       B6_REFILL_ATTEMPTS_PER_SLOT_PER_SESSION: 1,
       B6_NOMINATION_EXPIRY_SESSIONS: 10,
       B7_RISK_BUDGET_SHARE: 0.08,
-      B8_FOUNDER_BOOK_CAP: 4,
+      B8_FOUNDER_BOOK_CAP: 12,
       B9_MONTHLY_SPEND_BOUND_USD: 3,
     });
     expect(Object.isFrozen(PRACTICE_FIELD_SLOTS)).toBe(true);

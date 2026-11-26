@@ -6,6 +6,9 @@
 // session and its close row is on the window ledger, on time), for every ACTIVE idea book, only while
 // PRACTICE_FIELD_AGENT_ENABLED is on. Early-close sessions too: the close sweep runs after every session's close. A draining
 // or paused book drafts nothing and is not checked (account-level pause stops new drafting and spend).
+// THE ORDER (build B4, ruling B4-8): the books are visited in an order of the session's own (agentPassOrder) — the same on
+// every fire of that session, different from one session to the next — so a fire that runs out of time does not leave the
+// same books unchecked every day. Nothing else about a desk's check depends on it.
 //
 // WHO. Two desks (B2-7), one after the other under the book's one lease — the second sizes its drafts from the treasury the
 // first left: the Shadow desk (medium, long), then the archetype desk (short). A desk with NO WORK — no open idea of its
@@ -49,6 +52,7 @@
 // NOTHING HERE READS THE DEPLOYED TRADING AGENT (its prompts, memory, consolidation) and nothing here reaches it: the desk's
 // identity is the fixed Shadow brief or the epoch's frozen archetype identity (agentIsolation.imports.test.js).
 
+import { createHash } from 'node:crypto';
 import { callMandateModelDirect } from '../mandateModelCall.js';
 import { acquireLease, releaseLease } from '../mandateLease.js';
 import { MANDATE_SWEEP_PAGE_SIZE } from '../mandateConfig.js';
@@ -552,6 +556,18 @@ async function draftFromAnswer(db, bookRef, { book, ideas, session, desk, answer
 const noIdeaBook = (presence) => presence?.known === true && presence.ideaBooks === false;
 
 /**
+ * Build B4 (ruling B4-8) — THE PASS'S ORDER: the books sorted by the SHA-256 of (the session, the book's id), ties (none in
+ * practice) by the id. Deterministic for a session — a replay, or the next fire in the window, visits them the same way and
+ * picks up where the last left off — and different from one session to the next, so a fire that runs out of time does not
+ * leave the same books unchecked every day. Every book given is visited once. No clock, no randomness. Pure.
+ */
+export function agentPassOrder(docs, session) {
+  const keyed = (docs || []).map((d) => ({ d, k: createHash('sha256').update(`${session}\u0000${d.id}`, 'utf8').digest('hex') }));
+  keyed.sort((a, b) => (a.k < b.k ? -1 : a.k > b.k ? 1 : (a.d.id < b.d.id ? -1 : a.d.id > b.d.id ? 1 : 0)));
+  return keyed.map((x) => x.d);
+}
+
+/**
  * THE AGENT PASS of one close fire: for every ACTIVE idea book whose close for `date` has committed, each desk's check, under
  * the book's lease. Nothing is read unless the agent is on. Fenced: one book's failure is counted, never thrown.
  *
@@ -564,7 +580,8 @@ export async function runIdeaBookAgentPass(db, {
   if (!practiceFieldAgentOn()) return out; // off: not even the query
   if (noIdeaBook(presence)) return out;
   const page = await db.collection('mandates').where('status', '==', 'active').where('kind', '==', IDEA_BOOK_KIND).limit(MANDATE_SWEEP_PAGE_SIZE).get();
-  for (const docSnap of page.docs) {
+  // Build B4 (B4-8): the page (25, above the founder cap of 12: every active book) in this session's own order.
+  for (const docSnap of agentPassOrder(page.docs, date)) {
     if (docSnap.data().execState?.lastCloseKey !== date) continue; // its close for the date has not committed
     out.books += 1;
     const bookRef = docSnap.ref;

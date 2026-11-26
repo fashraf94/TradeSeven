@@ -15,6 +15,7 @@ import { runIdeaBookEvalPass, readIdeaBookPresence, ideaCloseLeftUnclosed, runDr
 import { assertReconciled } from './reconcile.js';
 import { roundUsd } from '../mandateRounding.js';
 import { COCKPIT_ALLOWLIST_ENV } from '../callRecords/allowlist.js';
+import { PRACTICE_FIELD_PLAYER_ENV } from './playerList.js';
 import {
   makeMandateFakeDb, seedBook, contractOf, closeOn, storeTickSnapshot, storeCloseSnapshot, tickOf, slotNowOf, etIso, ADMIT_ISO, getBook, getIdea, dumpStore, closeNowOf,
   coverHeldNames,
@@ -35,16 +36,19 @@ const act = (db, action, requestKey, extra = {}, { uid = UID, nowIso = ADMIT_ISO
 let restoreMode;
 let prevEnv;
 let prevCockpit;
+let prevPlayers;
 beforeEach(() => {
   restoreMode = setPracticeFieldModeForTests('on');
   prevEnv = process.env.MANDATE_FOUNDER_UIDS;
   prevCockpit = process.env[COCKPIT_ALLOWLIST_ENV];
+  prevPlayers = process.env[PRACTICE_FIELD_PLAYER_ENV];
   process.env.MANDATE_FOUNDER_UIDS = ` other-founder , ${UID} `;
 });
 afterEach(() => {
   restoreMode();
   if (prevEnv === undefined) delete process.env.MANDATE_FOUNDER_UIDS; else process.env.MANDATE_FOUNDER_UIDS = prevEnv;
   if (prevCockpit === undefined) delete process.env[COCKPIT_ALLOWLIST_ENV]; else process.env[COCKPIT_ALLOWLIST_ENV] = prevCockpit;
+  if (prevPlayers === undefined) delete process.env[PRACTICE_FIELD_PLAYER_ENV]; else process.env[PRACTICE_FIELD_PLAYER_ENV] = prevPlayers;
 });
 
 describe('authorization — the mode AND the founder allowlist, both, read at call time', () => {
@@ -133,11 +137,12 @@ describe('create_book — for the caller and their RANKED agent', () => {
     expect(await act(makeMandateFakeDb({ 'agents/casual-agent-x': { ownerId: UID, isCasualClone: true } }), 'create_book', 'c-1')).toEqual({ status: 404, body: { error: 'ranked_agent_not_found' } });
   });
 
-  it('at \'allowlist\', a founder off the cockpit list still pauses, resumes and winds down their book (the mode gates creation and admission only — mode.js; review A6)', async () => {
+  it('at \'allowlist\', a founder off the player list still pauses, resumes and winds down their book (the mode gates creation and admission only — mode.js; review A6; B4-1)', async () => {
     const db = makeMandateFakeDb(agents());
     const { body: { bookId } } = await act(db, 'create_book', 'create-1');
     setPracticeFieldModeForTests('allowlist');
-    process.env[COCKPIT_ALLOWLIST_ENV] = 'someone-else';
+    process.env[PRACTICE_FIELD_PLAYER_ENV] = 'someone-else';
+    process.env[COCKPIT_ALLOWLIST_ENV] = UID; // the cockpit's list decides nothing here
     const { origin: _o, ...contract } = contractOf();
     expect((await act(db, 'admit_fixture', 'a-1', { contract })).body.refusals.map((r) => r.code)).toContain('mode_not_admitted');
     for (const [action, outcome] of [['pause', 'paused'], ['resume', 'resumed'], ['wind_down', 'draining']]) {
@@ -146,12 +151,13 @@ describe('create_book — for the caller and their RANKED agent', () => {
     expect(getBook(db, bookId)).toMatchObject({ status: 'draining', drafting: 'on', openIdeaIds: [] });
   });
 
-  it('at \'allowlist\' the owner must ALSO be on the cockpit\'s server-side allowlist (createIdeaBook\'s own gate — a second list)', async () => {
+  it('at \'allowlist\' the owner must ALSO be on the idea book\'s player list (createIdeaBook\'s own gate — a second list; B4-1: the cockpit\'s list alone admits nobody)', async () => {
     const db = makeMandateFakeDb(agents());
     setPracticeFieldModeForTests('allowlist');
-    process.env[COCKPIT_ALLOWLIST_ENV] = 'someone-else';
-    expect(await act(db, 'create_book', 'c-1')).toEqual({ status: 403, body: { ok: false, error: 'mode_not_admitted' } });
+    process.env[PRACTICE_FIELD_PLAYER_ENV] = 'someone-else';
     process.env[COCKPIT_ALLOWLIST_ENV] = UID;
+    expect(await act(db, 'create_book', 'c-1')).toEqual({ status: 403, body: { ok: false, error: 'mode_not_admitted' } });
+    process.env[PRACTICE_FIELD_PLAYER_ENV] = UID;
     // The refused request answers the same on a replay (its key is recorded); a new request succeeds.
     expect(await act(db, 'create_book', 'c-1')).toEqual({ status: 403, body: { ok: false, error: 'mode_not_admitted', idempotentReplay: true } });
     expect((await act(db, 'create_book', 'c-2')).status).toBe(201);
