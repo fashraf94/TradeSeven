@@ -35,9 +35,13 @@
 //                has no part for it), the month's spend, and the count of open records waiting on the founder. Books with
 //                open records first.
 //   create-book  The door's create_book: an idea book for the uid and its one ranked agent (or the one --agent names).
-//   create-book-for  (build B4) The door's create_book_for: an idea book for the player --owner names, who must be on the
-//                player list (the DEPLOYED app's copy decides), for the player's own ranked agent (or the one --agent
-//                names) and its archetype (or the one --archetype names).
+//   create-book-for  (build B4) The door's create_book_for: an idea book for the player --owner names, for the player's
+//                own ranked agent (or the one --agent names) and its archetype (or the one --archetype names). The player
+//                must be on the player list — and HERE, on THIS machine's copy (the shell's, else .env.local's): the script
+//                runs the door in its own process, so this copy decides the creation, while the DEPLOYED app's copy
+//                (Vercel's) decides the player's screen and their agent's admissions. Make the two agree, and redeploy,
+//                BEFORE create-book-for (review A1/C1): a book made for a player the deployed app does not admit holds a
+//                cap place, and its desks are checked and charged while every draft is refused.
 //   admit        The door's admit_fixture: the contract in the file, on the uid's open book. The door sets the origin
 //                to a founder fixture whatever the file says. With --dry-run it sends nothing: it runs the door's own
 //                admission (admission.js admitIdea, normalizeIdeaContract inside it) on a READ-ONLY view of the
@@ -59,8 +63,9 @@
 // script reads nothing for a uid that is not a founder.
 // At 'allowlist', creating a book and admitting an idea ALSO need the book's owner on the idea book's own player list,
 // PRACTICE_FIELD_PLAYER_UIDS (build B4; mode.js practiceFieldAdmits) — the door refuses `mode_not_admitted` otherwise, and
-// create_book_for `owner_not_on_player_list`. `status` says whether the owner is on THIS machine's copy; the deployed
-// app reads its own, and a change there needs a production redeploy.
+// create_book_for `owner_not_on_player_list`. Run from this script, THIS machine's copy is the one read (the door runs in
+// this process); `status` says whether the owner is on it. The deployed app reads its own copy, and a change there needs a
+// production redeploy.
 //
 // HOW IT SENDS. It calls runFounderAction — the function the HTTP door calls — with the body the door would receive
 // (`{ action, requestKey, … }`) and the uid given. It never writes Firestore itself. The uid is the command line's: the
@@ -96,7 +101,7 @@ import { practiceFieldMode, practiceFieldAdmits, practiceFieldAgentOn, practiceF
 import { spendMonthOf, MONTHLY_SPEND_BOUND_USD } from '../api/_utils/practiceField/spend.js';
 import { DESKS, DESK_IDS } from '../api/_utils/practiceField/agentConfig.js';
 import {
-  runFounderAction, isPracticeFieldFounder, founderAllowlist, founderRequestFingerprint, FOUNDER_FIXTURE_ORIGIN,
+  runFounderAction, isPracticeFieldFounder, founderAllowlist, founderRequestFingerprint, FOUNDER_FIXTURE_ORIGIN, validOwnerUid,
 } from '../api/_utils/practiceField/founderControls.js';
 import { admitIdea, ideaIdFor } from '../api/_utils/practiceField/admission.js';
 import { normalizeIdeaContract } from '../api/_utils/practiceField/contract.js';
@@ -230,7 +235,11 @@ export function parseArgs(argv) {
     const value = eq > 0 ? token.slice(eq + 1) : args.shift();
     if (typeof value !== 'string' || value.length === 0 || (eq < 0 && value.startsWith('--'))) throw new ScriptError(`"${flag}" needs a value`);
     if (flag === '--uid') out.uid = value;
-    if (flag === '--owner') out.owner = value;
+    if (flag === '--owner') {
+      // Build B4 (review A5): the door's own rule, before anything is read for it.
+      if (!validOwnerUid(value)) throw new ScriptError('--owner takes a player\'s uid: 1 to 128 printable characters, no "/", not starting with "_"');
+      out.owner = value;
+    }
     if (flag === '--archetype') out.archetype = value;
     if (flag === '--agent') out.agentId = value;
     if (flag === '--file') out.file = value;
@@ -421,6 +430,8 @@ function msOf(v) {
  * the next session's). The cut-off is the daily layer's `builtAt` (`mandateUniverseDaily/{session}`); with none stored,
  * the session's close. An idea counts when its `admittedAt` is at or before the cut-off — or unreadable (fail closed).
  * On 25 Nov the status listed 15 alerts for the 15 symbols of two ideas admitted at that close: those are not alerts.
+ * Review C6: only a MISSING entry is excused for a symbol of an idea admitted after the cut-off. An entry the report DOES
+ * hold for it that is not clean (two daily builds racing can merge one in after the kept `builtAt`) still alerts.
  */
 async function parseAlertsOf(db, book, ideas) {
   const session = typeof book.execState?.lastCloseKey === 'string' ? book.execState.lastCloseKey : null;
@@ -436,9 +447,11 @@ async function parseAlertsOf(db, book, ideas) {
   const after = ideas.filter((i) => msOf(i.admittedAt) > cutoffMs);
   const covered = ideas.filter((i) => !(msOf(i.admittedAt) > cutoffMs));
   const alerts = [];
-  for (const sym of bookSymbolsOf(covered)) {
+  const held = new Set(bookSymbolsOf(covered));
+  for (const sym of bookSymbolsOf(ideas)) {
     const verdict = parseEntryVerdict(parseReportEntry(report, session, sym));
-    if (!verdict.clean) alerts.push({ session, symbol: sym, reason: verdict.reason });
+    if (verdict.clean) continue;
+    if (held.has(sym) || verdict.reason !== 'parse_report_missing') alerts.push({ session, symbol: sym, reason: verdict.reason });
   }
   return { session, stored: report !== null, alerts, cutoff, admittedAfter: after.map((i) => i.ideaId) };
 }
@@ -555,7 +568,9 @@ export async function runStatus(db, { uid, owner = null, nowIso }) {
 /**
  * A desk's latest source on a close row, for `books`: its part's `source` (model, code_fallback, no_work); `not_finished`
  * for a part still in progress (its call deferred to a later fire); `not_checked` when the row holds NO part for the desk —
- * a desk the close window's time never reached writes none (agentRun.js: a deferral reserves and writes nothing). Pure.
+ * a desk the close window's time never reached writes none (agentRun.js: a deferral reserves and writes nothing), and
+ * neither does a close the pass skips (a caught-up close, one not on time) or a book it never visits (a draining one, or
+ * any book while the agent is off on the server). Pure.
  */
 export function deskSourceOf(part) {
   if (!isPlain(part)) return { source: 'not_checked', fallbackReason: null };
@@ -872,6 +887,8 @@ export function renderText(result) {
   // A write command.
   out.push(...refusalLines(result.refused));
   out.push(`${result.sent ? 'SENT' : 'WOULD SEND'}       ${JSON.stringify(result.body)}`);
+  // Build B4 (review A1/C1): which copy of the player list decides a creation run from here.
+  if (result.action === 'create_book_for') out.push(`player list     ${result.onPlayerList ? 'yes' : 'no'} for owner ${result.owner} on THIS machine's copy, which decides here; the deployed app reads its own. ${PLAYER_LIST_REDEPLOY_SENTENCE}`);
   if (!result.sent) return out;
   const a = result.answer || {};
   if (result.replay) {

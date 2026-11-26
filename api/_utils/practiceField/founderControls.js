@@ -68,7 +68,7 @@
 // namespace (createForOpIdOf: `for#…`, a character no request key may hold), so it can never be mistaken for a create_book.
 
 import { createHash } from 'node:crypto';
-import { createIdeaBook, isKnownArchetypeId } from './ideaBook.js';
+import { createIdeaBook, isKnownArchetypeId, ideaBookIdFor } from './ideaBook.js';
 import { admitIdea } from './admission.js';
 import { practiceFieldMode } from './mode.js';
 import { readPracticeFieldPlayerList, readPracticeFieldFounderList } from './playerList.js';
@@ -98,14 +98,13 @@ export function founderAllowlist() {
 export const namesOwner = (body) => body?.ownerUid !== undefined && body?.ownerUid !== null;
 
 /**
- * Build B4: is an `ownerUid` a safe owner document id under `practiceFieldBooks/` — a string of 1 to 128 characters (a
- * Firebase uid's bound), no `/`, no control or space character, not `.` or `..`, and NOT starting with `_`: the idea book's
- * own documents there that are not an owner's claim (the founder cap's registry) start with one, as do Firestore's reserved
- * `__…__` ids. Pure.
+ * Build B4: is an `ownerUid` a safe owner document id under `practiceFieldBooks/` — 1 to 128 characters (a Firebase uid's
+ * bound) of printable ASCII (`!` to `~`: no space, no control, no other script, no zero-width character — review A5),
+ * no `/`, not `.` or `..`, and NOT starting with `_`: the idea book's own documents there that are not an owner's claim
+ * (the founder cap's registry) start with one, as do Firestore's reserved `__…__` ids. Pure.
  */
 export function validOwnerUid(v) {
-  return typeof v === 'string' && v.length > 0 && v.length <= 128
-    && !/[/\s]/.test(v) && ![...v].some((ch) => ch.charCodeAt(0) < 0x20 || ch.charCodeAt(0) === 0x7f)
+  return typeof v === 'string' && /^[!-~]{1,128}$/.test(v) && !v.includes('/')
     && v !== '.' && v !== '..' && !v.startsWith('_');
 }
 
@@ -295,15 +294,18 @@ async function createBook(db, { uid, requestKey, body, nowIso, fingerprint }) {
  * Build B4 (B4-2, B4-3) — create_book_for: an idea book for a LISTED player, for the player's own ranked agent, with that
  * agent's archetype or the one named. Recorded under the CALLER's request key, with the owner in its target; the engine's
  * operation is createForOpIdOf's. A named archetype the registry does not list, and an owner not on the player list, are
- * refused before anything is recorded (a later request under the same key, once the list holds the owner, runs anew).
+ * refused before anything is recorded (a later request under the same key, once the list holds the owner, runs anew) —
+ * both checked only for a NEW request, so a replay answers its stored response whatever the registry says later (review
+ * A6). A PENDING request (one interrupted before its book was made) checks the list again when it re-runs (review A3): an
+ * owner removed meanwhile is refused, unless the interrupted run had already made the book, which is then answered.
  */
 async function createBookFor(db, { uid, requestKey, body, nowIso, fingerprint }) {
   const ownerUid = body.ownerUid;
   const named = body?.archetypeCodeId ?? null;
-  if (named !== null && !isKnownArchetypeId(named)) return reply(400, { ok: false, error: 'unknown_archetype', ownerUid });
   return recordedRequest(db, {
     uid, action: 'create_book_for', requestKey, fingerprint, nowIso,
     resolveTarget: async () => {
+      if (named !== null && !isKnownArchetypeId(named)) return { error: reply(400, { ok: false, error: 'unknown_archetype', ownerUid }) };
       if (!readPracticeFieldPlayerList().includes(ownerUid)) return { error: reply(403, { ok: false, error: 'owner_not_on_player_list', ownerUid }) };
       const found = await rankedAgentFor(db, ownerUid, body?.agentId);
       if (found.error) return { error: reply(found.error.status, { ...found.error.body, ownerUid }) };
@@ -311,7 +313,12 @@ async function createBookFor(db, { uid, requestKey, body, nowIso, fingerprint })
       return { target: { ownerUid, attributionAgentId: found.agent.id, archetypeCodeId: named ?? own, archetypeNamed: named !== null } };
     },
     run: async ({ ownerUid: owner, attributionAgentId, archetypeCodeId }) => {
-      const res = await createIdeaBook(db, { uid: owner, attributionAgentId, archetypeCodeId, opId: createForOpIdOf(uid, requestKey), nowIso });
+      const opId = createForOpIdOf(uid, requestKey);
+      if (!readPracticeFieldPlayerList().includes(owner)) {
+        const made = await db.collection('mandates').doc(ideaBookIdFor(owner, opId)).get();
+        if (!made.exists) return reply(403, { ok: false, error: 'owner_not_on_player_list', ownerUid: owner });
+      }
+      const res = await createIdeaBook(db, { uid: owner, attributionAgentId, archetypeCodeId, opId, nowIso });
       if (res.ok) return reply(res.idempotentReplay ? 200 : 201, { ok: true, action: 'create_book_for', ownerUid: owner, bookId: res.bookId, epochId: res.epochId, attributionAgentId, archetypeCodeId, idempotentReplay: res.idempotentReplay });
       const status = { open_book_exists: 409, founder_cap_reached: 409, op_id_conflict: 409, mode_not_admitted: 403 }[res.code] ?? 400;
       return reply(status, { ok: false, error: res.code, ownerUid: owner, ...(res.bookId ? { bookId: res.bookId } : {}) });

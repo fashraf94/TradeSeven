@@ -213,6 +213,39 @@ describe('create_book_for (B4-2, B4-3): a book for a listed player, by the found
     expect(ideaBookIdFor(P(1), 'k-1')).not.toBe(made.body.bookId);
   });
 
+  it('review A3: a PENDING request (interrupted before its book was made) checks the list again when it re-runs — at every mode', async () => {
+    setPracticeFieldModeForTests('on'); // where createIdeaBook alone would admit anyone
+    const db = makeMandateFakeDb(seed(FOUNDER, P(3)));
+    const body = { action: 'create_book_for', requestKey: 'k-p', ownerUid: P(3) };
+    const pending = (key) => ({
+      action: 'create_book_for', requestKey: key, uid: FOUNDER, fingerprint: founderRequestFingerprint('create_book_for', { ...body, requestKey: key }), state: 'pending',
+      target: { ownerUid: P(3), attributionAgentId: `agent-${P(3)}`, archetypeCodeId: 'momentum_chaser', archetypeNamed: false }, createdAt: ADMIT_ISO,
+    });
+    // Recorded while P(3) was listed; P(3) removed before the re-run.
+    db._store.set(`practiceFieldBooks/${FOUNDER}/founderOps/k-p`, { data: pending('k-p'), version: 1 });
+    expect(await act(db, body)).toEqual({ status: 403, body: { ok: false, error: 'owner_not_on_player_list', ownerUid: P(3) } });
+    expect(db._get(`practiceFieldBooks/${P(3)}`)).toBeUndefined();
+    // …unless the interrupted run had already made the book: then that book is the answer.
+    const made = await createIdeaBook(db, { uid: P(3), attributionAgentId: `agent-${P(3)}`, archetypeCodeId: 'momentum_chaser', opId: createForOpIdOf(FOUNDER, 'k-q'), nowIso: ADMIT_ISO });
+    db._store.set(`practiceFieldBooks/${FOUNDER}/founderOps/k-q`, { data: pending('k-q'), version: 1 });
+    expect(await act(db, { ...body, requestKey: 'k-q' })).toMatchObject({ status: 200, body: { ok: true, bookId: made.bookId, ownerUid: P(3), idempotentReplay: true } });
+  });
+
+  it('review A6: a completed request replays its stored answer, whatever the registry says of its named archetype now', async () => {
+    const db = makeMandateFakeDb(seed(FOUNDER, P(1)));
+    const body = { action: 'create_book_for', requestKey: 'k-r', ownerUid: P(1), archetypeCodeId: 'retired_archetype' };
+    const stored = { status: 201, body: { ok: true, action: 'create_book_for', ownerUid: P(1), bookId: 'pf_x', epochId: 'epoch-0001', attributionAgentId: `agent-${P(1)}`, archetypeCodeId: 'retired_archetype', idempotentReplay: false } };
+    db._store.set(`practiceFieldBooks/${FOUNDER}/founderOps/k-r`, {
+      data: { action: 'create_book_for', requestKey: 'k-r', uid: FOUNDER, fingerprint: founderRequestFingerprint('create_book_for', body), state: 'done', target: { ownerUid: P(1) }, createdAt: ADMIT_ISO, completedAt: ADMIT_ISO, response: stored },
+      version: 1,
+    });
+    expect(await act(db, body)).toEqual({ status: 200, body: { ...stored.body, idempotentReplay: true } });
+    // A NEW request naming it is refused, recording nothing.
+    const before = dumpStore(db);
+    expect(await act(db, { ...body, requestKey: 'k-s' })).toEqual({ status: 400, body: { ok: false, error: 'unknown_archetype', ownerUid: P(1) } });
+    expect(dumpStore(db)).toBe(before);
+  });
+
   it('createIdeaBook\'s own rules still hold: one open book per owner', async () => {
     const db = makeMandateFakeDb(seed(FOUNDER, P(1)));
     const first = await createFor(db, P(1), 'k-1');
@@ -223,7 +256,9 @@ describe('create_book_for (B4-2, B4-3): a book for a listed player, by the found
     expect(await act(untouchable, { action: 'create_book_for', requestKey: 'k-1' })).toEqual({ status: 400, body: { ok: false, error: 'owner_uid_required' } });
     expect(await act(untouchable, { action: 'create_book', requestKey: 'k-1', ownerUid: P(1) })).toEqual({ status: 400, body: { ok: false, error: 'owner_not_accepted', action: 'create_book' } });
     expect(await act(untouchable, { action: 'admit_fixture', requestKey: 'k-1', ownerUid: P(1), contract: contractOf() })).toEqual({ status: 400, body: { ok: false, error: 'owner_not_accepted', action: 'admit_fixture' } });
-    for (const bad of ['', 'a/b', '_registry', '__name__', '.', '..', ' p1', 'p 1', 'p\n1', 'x'.repeat(129), 42, {}, ['p1']]) {
+    // Review A5: printable ASCII only — no C1 control, no zero-width or other format character, no other script.
+    const odd = [0x85, 0x200b, 0x2028, 0xe9, 0x7f, 0x00].map((c) => String.fromCharCode(0x70, c, 0x31));
+    for (const bad of ['', 'a/b', '_registry', '__name__', '.', '..', ' p1', 'p 1', 'p\n1', 'x'.repeat(129), 42, {}, ['p1'], ...odd]) {
       expect(validOwnerUid(bad), JSON.stringify(bad)).toBe(false);
       expect(await createFor(untouchable, bad, 'k-1'), JSON.stringify(bad)).toEqual({ status: 400, body: { ok: false, error: 'owner_uid_invalid' } });
       for (const action of ['pause', 'resume', 'wind_down']) {

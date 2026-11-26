@@ -169,12 +169,34 @@ describe('measurements at twelve books (B4-8): figures, not limits', () => {
       const run = await runFires(db, books, { fires: shifted, offsetFirstMs: offsetFirstS * 1000, offsetLaterMs: offsetLaterS * 1000, callMs: 30_000, answer: ({ request }) => toolResponse(holdAll(request)) });
       const lastFire = Math.max(...Object.values(run.doneAt));
       figures.push({ offsetFirstS, offsetLaterS, desksChecked: Object.keys(run.doneAt).length, firesNeeded: lastFire, calls: run.calls, perFire: run.perFire.map((p) => p.calls) });
+      // (Every desk done inside the window's fires: runFires stops at the window's last fire, so 24 done is the check.)
       expect(Object.keys(run.doneAt), `offset ${offsetFirstS}`).toHaveLength(24);
-      expect(lastFire, `offset ${offsetFirstS}`).toBeLessThanOrEqual(shifted.length);
       expect(run.calls).toBe(24); // one call per desk, no more
       for (const bookId of books) for (const desk of DESK_ORDER) expect(deskPartsOf(db, bookId, DATE)[desk], `${bookId}/${desk}`).toMatchObject({ status: 'done', source: 'model' });
     }
     console.log(`PF_B4_MEASURE thirty_second_calls ${JSON.stringify(figures)}`);
+  });
+
+  it('1b (review C3) — the break-even: the longest all-in time per desk at which all 24 desks are still checked in the window', { timeout: 600_000 }, async () => {
+    // What the model leaves out, so these are ceilings: reads and writes take no time; the fake answers draft nothing (no
+    // admission work); every fire reaches the pass (a failed close snapshot loses a fire). A real desk's time is its call
+    // plus its reads and writes.
+    const { fires } = closeFiresOn('2026-12-04');
+    const shifted = fires.map((f) => new Date(Date.parse(`${DATE}T${f.toISOString().slice(11)}`)));
+    const figures = [];
+    for (const [offsetFirstS, offsetLaterS] of [[60, 5], [120, 10]]) {
+      const served = {};
+      for (const perDeskS of [40, 45, 50, 55, 60]) {
+        const { db, books } = await twelveClosedBooks();
+        const run = await runFires(db, books, { fires: shifted, offsetFirstMs: offsetFirstS * 1000, offsetLaterMs: offsetLaterS * 1000, callMs: perDeskS * 1000, answer: ({ request }) => toolResponse(holdAll(request)) });
+        served[perDeskS] = Object.keys(run.doneAt).length;
+      }
+      const allUpTo = Math.max(30, ...Object.entries(served).filter(([, n]) => n === 24).map(([s]) => Number(s)));
+      figures.push({ offsetFirstS, offsetLaterS, desksServedByPerDeskSeconds: served, all24UpToSeconds: allUpTo });
+      expect(served[40], `offsets ${offsetFirstS}/${offsetLaterS}`).toBe(24); // the 30-second figure has room to spare
+      expect(served[60], `offsets ${offsetFirstS}/${offsetLaterS}`).toBeLessThan(24); // and a limit, inside the sweep
+    }
+    console.log(`PF_B4_MEASURE break_even ${JSON.stringify(figures)}`);
   });
 
   it('2 — every call times out at 110 s: the desks the window never reaches, what the close row and `books` say about them', { timeout: 300_000 }, async () => {

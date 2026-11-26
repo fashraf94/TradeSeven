@@ -20,7 +20,7 @@ import { admitIdea } from '../api/_utils/practiceField/admission.js';
 import { sessionsLeftOf } from '../api/_utils/practiceField/bookView.js';
 import {
   makeMandateFakeDb, contractOf, etIso, ADMIT_ISO, DAYS, getBook, getIdea, dumpStore, closeOn, closeNowOf, omitParseReport,
-  admitAndEnter,
+  admitAndEnter, storeParseReport, CLEAN_PARSE_ENTRY,
 } from '../api/_utils/practiceField/__testsupport__/fixtures.js';
 import {
   quotesOn, foundersMediumIdea, fakeTransport, toolResponse, holdAll, runSession, agentNowOf,
@@ -90,6 +90,14 @@ describe('the command line (B4): --owner and --archetype, where they belong', ()
     expect(() => parseArgs(['status', '--archetype', 'degen', '--uid', FOUNDER])).toThrow(/not an option of status/);
   });
 
+  it('review A5: an --owner the door would refuse is refused on the command line, before anything is read', async () => {
+    for (const bad of ['_registry', 'a/b', '..', 'x'.repeat(129), String.fromCharCode(0x70, 0x200b, 0x31)]) {
+      expect(() => parseArgs(['status', '--owner', bad, '--uid', FOUNDER]), JSON.stringify(bad)).toThrow(/--owner takes a player's uid/);
+      const r = await cli(untouchable(), ['pause', '--owner', bad, '--uid', FOUNDER, '--go']);
+      expect(r.code, JSON.stringify(bad)).toBe(EXIT.FAILED);
+    }
+  });
+
   it('a body without --owner — and so its request key — is exactly as before B4; with it, the owner joins the body and the key', () => {
     expect(bodyWithoutKey('pause', {})).toEqual({ action: 'pause' });
     expect(bodyWithoutKey('wind-down', { owner: null })).toEqual({ action: 'wind_down' });
@@ -115,6 +123,9 @@ describe('--owner through the door: --uid acts, --owner is the book', () => {
     expect(go.code).toBe(EXIT.DONE);
     expect(go.body.answer).toMatchObject({ ok: true, action: 'create_book_for', ownerUid: P1, attributionAgentId: `agent-${P1}` });
     expect(getBook(db, go.body.answer.bookId).userId).toBe(P1);
+    // Review A1/C1: the text says which copy of the list decided — this machine's — and that the deployed app reads its own.
+    const text = await cli(db, ['create-book-for', '--owner', P1, '--uid', FOUNDER, '--go']);
+    expect(text.out).toContain(`player list     yes for owner ${P1} on THIS machine's copy, which decides here; the deployed app reads its own.`);
     // An unlisted owner: the door's refusal, passed through.
     vi.stubEnv(PRACTICE_FIELD_PLAYER_ENV, FOUNDER);
     const refused = await json(db, ['create-book-for', '--owner', P2, '--uid', FOUNDER, '--go']);
@@ -309,6 +320,30 @@ describe('fix 2: the parse-report alerts list only what the book held or had res
     const text = await cli(db, ['status', '--uid', FOUNDER], { nowIso: evening() });
     expect(text.out).toContain('clean for the book\'s symbols');
     expect(text.out).toContain('2 idea(s) admitted after this report was written');
+  });
+
+  it('review C6: a name of an idea admitted after the cut-off is excused only when MISSING — an entry the report holds that is not clean still alerts', async () => {
+    const { db } = await theTwentyFifthShape();
+    storeParseReport(db, DAYS.d1, 'JPM', { ...structuredClone(CLEAN_PARSE_ENTRY), rowsRejected: 1, rejects: [{ leg: 'splits', reason: 'bad', row: { date: DAYS.d1 } }] });
+    const st = await json(db, ['status', '--uid', FOUNDER], { nowIso: evening() });
+    expect(st.body.parseReport.alerts).toEqual([{ session: DAYS.d1, symbol: 'JPM', reason: 'parse_rejected' }]);
+  });
+
+  it('review C6: a Firestore Timestamp builtAt is read as the cut-off; an idea with no admittedAt is counted (fail closed)', async () => {
+    const { db, bookId, later } = await theTwentyFifthShape();
+    const path = `mandateUniverseDaily/${DAYS.d1}`;
+    const built = db._store.get(path);
+    const ms = Date.parse(etIso(DAYS.d1, 9, 0));
+    const stamp = { _seconds: Math.floor(ms / 1000), _nanoseconds: 0, toDate: () => new Date(ms) }; // the Admin SDK's shape
+    db._store.set(path, { data: { ...built.data, builtAt: stamp }, version: built.version + 1 });
+    const st = await json(db, ['status', '--uid', FOUNDER], { nowIso: evening() });
+    expect(st.body.parseReport).toMatchObject({ alerts: [], cutoff: { source: 'daily_build', at: etIso(DAYS.d1, 9, 0) } });
+    const ideaPath = `mandates/${bookId}/ideas/${later[0]}`;
+    const idea = db._store.get(ideaPath);
+    const { admittedAt: _gone, ...rest } = idea.data;
+    db._store.set(ideaPath, { data: rest, version: idea.version + 1 });
+    const again = await json(db, ['status', '--uid', FOUNDER], { nowIso: evening() });
+    expect(again.body.parseReport.alerts.map((a) => a.symbol).sort()).toEqual(['BAC', 'JPM']);
   });
 
   it('the positive control: a name the book held when the report was written, missing from it, IS still an alert', async () => {

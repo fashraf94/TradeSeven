@@ -54,14 +54,16 @@ export function scriptedDesks(date) {
 
 /**
  * The whole run: the founder's book through thirteen sessions with the agent on. `onRestore` is handed the agent switches' restore
- * BEFORE anything runs (the caller's afterEach restores them even when the run throws).
+ * BEFORE anything runs (the caller's afterEach restores them even when the run throws). `afterSeed(ctx)` (build B4) runs once
+ * the book and the founder's medium idea are made, before the first session; by default it does nothing.
  */
-export async function runFoundersBook({ theses, onRestore = () => {} } = {}) {
+export async function runFoundersBook({ theses, onRestore = () => {}, afterSeed = () => {} } = {}) {
   onRestore(setPracticeFieldAgentForTests({ agent: true, theses }));
   const ctx = await seedBook({ nowIso: etIso(DAYS.admit, 9, 0) });
   const listId = seedSavedThesis(ctx.db, ctx.uid);
   const admitted = await admitIdea(ctx.db, { bookId: ctx.bookId, contract: foundersMediumIdea(), opId: 'founder-medium', nowIso: etIso(DAYS.admit, 11, 0) });
   if (!admitted.ok) throw new Error(`runFoundersBook: the founder's medium idea was refused: ${JSON.stringify(admitted.refusals)}`);
+  afterSeed(ctx); // build B4: the founder's-live-book proof moves to this build's constants here (a merge after the book was made)
   let current = null;
   const fake = fakeTransport(scriptedDesks(() => current));
   const days = sessions();
