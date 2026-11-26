@@ -44,20 +44,22 @@ export function underRule(value) {
 }
 
 const DIGIT = /\d/;
+/** The slash and the fraction slash (built from its code point: this file holds no look-alike byte). */
+const FRACTION_SLASHES = `/${String.fromCodePoint(0x2044)}`;
 const LETTER_OR_DIGIT = /[\p{L}\p{N}]/u;
 /** Does the text, just before index `i`, hold a number the quote's first digit would continue? */
 function numberRunsInto(text, i) {
   const c1 = text[i - 1] ?? '';
   const c2 = text[i - 2] ?? '';
-  if (DIGIT.test(c1)) return true;
-  if ((c1 === '.' || c1 === ',') && DIGIT.test(c2)) return true;
+  if (DIGIT.test(c1) || c1 === '.') return true; // a digit, or a decimal point (".5%" holds no 5)
+  if (c1 === ',' && DIGIT.test(c2)) return true;
   return c1 === '-' && !LETTER_OR_DIGIT.test(c2); // a minus sign, not the hyphen of "12-18" or "Q3-2026"
 }
-/** Does the text, from index `j`, carry on the number the quote's last digit ends? */
+/** Does the text, from index `j`, carry on the number the quote's last digit ends (a fraction's slash included)? */
 function numberRunsOn(text, j) {
   const c1 = text[j] ?? '';
   const c2 = text[j + 1] ?? '';
-  return DIGIT.test(c1) || ((c1 === '.' || c1 === ',') && DIGIT.test(c2));
+  return DIGIT.test(c1) || ((c1 === '.' || c1 === ',' || (c1 !== '' && FRACTION_SLASHES.includes(c1))) && DIGIT.test(c2));
 }
 
 /**

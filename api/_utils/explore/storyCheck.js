@@ -398,8 +398,9 @@ function checkLinks({ id, record, kind, connById }, ctx, refuse, note) {
   }
   if (kind === 'overview' && record.parent !== undefined) note('standard §9', 'parent', record.parent, 'an overview has no parent; only a deep story does');
   for (const [cid, c] of connById) {
-    // No door yet: the connection reads "not written yet" (the note §4; review A12) — absent, null or empty alike.
-    if (c.leadsToStory === undefined || c.leadsToStory === null || c.leadsToStory === '') continue;
+    // No door yet: the key is absent (the note §4). A null or empty door is a door that names no story, refused as
+    // K-4(e) reads (review A12 put the looser reading to the founder: SQ-8).
+    if (c.leadsToStory === undefined) continue;
     const at = `connections[${cid}].leadsToStory`;
     if (kind !== 'overview') { note('standard §7', at, c.leadsToStory, 'only an overview\'s connection leads to a deep story'); continue; }
     const target = typeof c.leadsToStory === 'string' && c.leadsToStory ? found(c.leadsToStory) : null;

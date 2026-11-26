@@ -109,42 +109,50 @@ export function wordsIn(body) {
   return paragraphs.reduce((n, p) => n + p.split(/\s+/u).filter((t) => /[\p{L}\p{N}]/u.test(t)).length, 0);
 }
 
+/** Signs written before a figure, built from their code points (this file holds no invisible byte). */
+const MINUS_SIGNS = `-${String.fromCodePoint(0x2212, 0x2013)}`;
+const CURRENCY_SIGNS = `$${String.fromCodePoint(0x20ac, 0xa3, 0xa5)}`;
+const FRACTION_SLASHES = `/${String.fromCodePoint(0x2044)}`;
+
 /**
  * The number tokens of a text, each as written with its thousands separators removed: "3,661" → "3661",
  * "51.4" → "51.4", "48%" → "48". A token is a maximal number: never part of a longer one ("148", "48.5", "4,848"),
  * a comma counts as a thousands separator only between groups of three digits, and digits glued to a letter before
- * them are a label, not a number ("Q1", "FY2027"). `negative` is true when the token is written as negative: a
- * hyphen, minus sign or en dash directly before it that does not follow a letter or digit (so "12-18" is a range),
- * or accounting parentheses around it.
+ * them are a label, not a number ("Q1", "FY2027"). Digits right after a decimal point are a fraction, never a number
+ * of their own (".5%" holds no 5), and digits before a fraction slash belong to a fraction ("51/2" — and "5½", which
+ * the rule's NFKC writes with a fraction slash — hold no 51): the refuter's own findings 1 and 2. `negative` is true
+ * when the token is written as negative: a hyphen, minus sign or en dash directly before it, or before its currency
+ * sign, that does not follow a letter or digit (so "12-18" is a range), or accounting parentheses around it, a
+ * currency sign inside them included ("($110)"): the refuter's finding 3.
  */
 export function numberTokensOf(text) {
   const s = typeof text === 'string' ? text.normalize('NFKC') : '';
   const out = [];
-  const re = /(?<![\p{L}\d]|\d[.,])(\d{1,3}(?:,\d{3})+|\d+)(\.\d+)?(?!\d|[.,]\d)/gu;
+  const re = /(?<![\p{L}\d.]|\d,)(\d{1,3}(?:,\d{3})+|\d+)(\.\d+)?(?!\d|[.,]\d)/gu;
   for (const m of s.matchAll(re)) {
-    const prev = s[m.index - 1] ?? '';
-    const prev2 = s[m.index - 2] ?? '';
-    const next = s[m.index + m[0].length] ?? '';
-    const negative = (/[-\u2212\u2013]/.test(prev) && !/[\p{L}\p{N}]/u.test(prev2)) || (prev === '(' && next === ')');
+    const end = m.index + m[0].length;
+    if (s[end] && FRACTION_SLASHES.includes(s[end]) && /\d/.test(s[end + 1] ?? '')) continue; // the top of a fraction
+    let p = m.index - 1;
+    if (s[p] && CURRENCY_SIGNS.includes(s[p])) p -= 1; // a currency sign between the sign and the digits
+    const before = s[p] ?? '';
+    const before2 = s[p - 1] ?? '';
+    const negative = (before !== '' && MINUS_SIGNS.includes(before) && !/[\p{L}\p{N}]/u.test(before2)) || (before === '(' && s[end] === ')');
     out.push({ digits: `${m[1].replace(/,/g, '')}${m[2] ?? ''}`, negative });
   }
   return out;
 }
 
-/** A token's digits without decimal zeros at the end: "46.0" → "46", "0.80" → "0.8"; "51.4" and "3661" unchanged. */
-const withoutTrailingZeros = (digits) => (digits.includes('.') ? digits.replace(/0+$/, '').replace(/\.$/, '') : digits);
-
 /**
  * K-7: is `value` written inside `excerpt` as a whole number token — as written, with thousands separators, or with
  * the decimals given (48 in "48%", 3661 in "3,661", 51.4 in "51.4 billion") — and not as part of a longer number?
- * A negative value must be written as negative. A figure the report writes with decimal zeros ("$46.0 billion",
- * "0.80") is the same number: a JSON value cannot keep them (review A9). Checked on the author's text alone, read
- * under the word-for-word rule — the very string the matcher looks for (review H3: a dash or a soft hyphen the rule
- * changes cannot make the check and the match read two figures).
+ * A negative value must be written as negative. The decimals are as given: 46 is not found in "$46.0 billion" (the
+ * letter; review A9 asks the founder whether decimal zeros should count: SQ-7). Checked on the author's text alone,
+ * read under the word-for-word rule — the very string the matcher looks for (review H3: a dash or a soft hyphen the
+ * rule changes cannot make the check and the match read two figures).
  */
 export function figureInExcerpt(value, excerpt) {
   if (typeof value !== 'number' || !Number.isFinite(value)) return false;
   const digits = String(Math.abs(value));
   if (!/^\d+(\.\d+)?$/.test(digits)) return false; // an exponent form ("5e-7") is never written in a report
-  return numberTokensOf(underRule(excerpt)).some((t) => withoutTrailingZeros(t.digits) === digits && t.negative === (value < 0));
+  return numberTokensOf(underRule(excerpt)).some((t) => t.digits === digits && t.negative === (value < 0));
 }

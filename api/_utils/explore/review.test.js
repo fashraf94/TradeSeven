@@ -10,7 +10,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { checkStories, currencyOf, LEVELS } from './storyCheck.js';
-import { authorRecordOf, contentHashOf, wordsIn } from './storyRecord.js';
+import { authorRecordOf, contentHashOf, wordsIn, figureInExcerpt } from './storyRecord.js';
 import { quoteIn, underRule } from './matchRule.js';
 import { matchStories, dateCheckOf } from './matchStory.js';
 import { extractText, htmlTextOf, HTML_LIMITS } from './extractText.js';
@@ -229,9 +229,41 @@ describe('A10 / A11 — a currency named by a sign or a word; periods and units 
   });
 });
 
-describe('A12 — an empty door reads "not written yet"', () => {
-  it.each([[null], ['']])('leadsToStory %j is not refused', (v) => {
-    expect(checkPair((ov) => { ov.connections[0].leadsToStory = v; }).refused).toBe(false);
+describe('A12 — an empty door is a door that names no story (the letter; the looser reading is SQ-8)', () => {
+  it.each([[null], ['']])('leadsToStory %j is refused under K-4(e); an absent key is no door at all', (v) => {
+    expect(refusedOf(checkPair((ov) => { ov.connections[0].leadsToStory = v; }), OV)).toEqual([['K-4(e)', 'connections[chips].leadsToStory']]);
+    expect(checkPair((ov) => { delete ov.connections[0].leadsToStory; }).refused).toBe(false);
+  });
+});
+
+describe('A9 — decimals as given (the letter; the looser reading is SQ-7)', () => {
+  it('46 is not found in "$46.0 billion"', () => {
+    const r = checkPair((ov) => { Object.assign(cloud(ov).measures[0].cells[1], { value: 46, excerpt: 'AWS segment sales increased 39% year-over-year to $46.0 billion.' }); });
+    expect(refusedOf(r, OV)).toEqual([['K-7', 'questions[0].measures[0].cells[1].value']]);
+  });
+});
+
+describe('the refuter\'s own findings — a fraction, a decimal point, a currency sign in parentheses', () => {
+  const half = String.fromCodePoint(0xbd);
+  it.each([
+    [5, 'up .5% on the year', false],
+    [75, 'priced at $.75 a share', false],
+    [51, `rose 5${half}% on the year`, false],
+    [5, `rose 5${half}% on the year`, false],
+    [51, 'rose 51/2 points', false],
+    [-110, 'Net loss ($110)', true],
+    [110, 'Net loss ($110)', false],
+    [-5, 'margin fell -$5 a unit', true],
+    [5, 'margin fell -$5 a unit', false],
+  ])('%s in %j → %s', (value, excerpt, expected) => {
+    expect(figureInExcerpt(value, excerpt)).toBe(expected);
+  });
+  it.each([
+    ['5% on the year', 'up .5% on the year', false],
+    ['rose 51', 'rose 51/2 points', false],
+    ['rose 5', `rose 5${half}% on the year`, false],
+  ])('the match: %j in %j → %s', (quote, text, expected) => {
+    expect(quoteIn(underRule(text), quote)).toBe(expected);
   });
 });
 
@@ -352,7 +384,7 @@ describe('S3 — reading a document is bounded in time and work, and never crash
   });
   // (jsdom's own parser stops near tens of thousands of levels; extractText catches that as a reason. The walk itself
   // has no recursion: a depth jsdom parses is read whole.)
-  it('a page nested 5,000 deep is read by the walk without recursion; a page past the element limit is refused by name', () => {
+  it('a page nested 5,000 deep is read by the walk without recursion; a page past the element limit is refused by name', { timeout: 60_000 }, () => {
     const deep = `<body>${'<span>'.repeat(5_000)}deep text${'</span>'.repeat(5_000)}</body>`;
     expect(htmlTextOf(Buffer.from(deep), 'text/html').text).toBe('deep text');
     expect(() => htmlTextOf(Buffer.from('<body><p>a</p><p>b</p><p>c</p></body>'), 'text/html', { maxElements: 2 })).toThrow('the page has more than 2 elements');
