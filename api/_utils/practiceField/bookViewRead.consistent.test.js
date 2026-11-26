@@ -15,7 +15,13 @@ import { setPracticeFieldModeForTests } from './mode.js';
 import { readBookView, BOOK_READ_PASSES, bookChangeMarks } from './bookViewRead.js';
 import { buildBookView } from './bookView.js';
 import { nextSessionDate } from './windows.js';
-import { seedBook, admitAndEnter, contractOf, closeOn, founderRules, takeSeededDbs, makeMandateFakeDb } from './__testsupport__/fixtures.js';
+import { admitIdea } from './admission.js';
+import { deskOfIdea } from './agentConfig.js';
+import { toCents } from './money.js';
+import {
+  seedBook, admitAndEnter, contractOf, closeOn, founderRules, takeSeededDbs, makeMandateFakeDb, storeTickSnapshot, catchUpAt, enterAt,
+  windowAt, ADMIT_ISO, DAYS,
+} from './__testsupport__/fixtures.js';
 import { runBookHistory, scriptedDesks, EXIT_SESSION } from './__testsupport__/bookViewFixtures.js';
 import { quotesOn, fakeTransport, runSession } from './__testsupport__/agentFixtures.js';
 import { SCENE_NAMES, SCENE_UID } from './__testsupport__/bookViewScenes.js';
@@ -200,6 +206,66 @@ describe('the two-pass stop (B5-4)', () => {
     const answer = await readBookView(db, { uid: UID });
     expect(JSON.stringify(answer)).toBe(JSON.stringify(await readBookView(c.db, { uid: UID })));
     expect(answer.book.day).toBe('Tue 17 Nov');
+  });
+});
+
+describe('a money move between closes moves the book\'s revision: the read sees it too (B5-4, "any other change to it")', () => {
+  it('a fill landing while the idea document is read, on a book with no close yet — never the pre-fill cash beside the bought idea', async () => {
+    const Q = (p) => ({ AAPL: { price: p, marketCap: 3e12 }, SPY: 500 });
+    const c = await seedBook();
+    const a = await admitIdea(c.db, { bookId: c.bookId, contract: contractOf({ names: ['AAPL'] }), opId: 'idea-1', nowIso: ADMIT_ISO });
+    expect(a.ok).toBe(true);
+    await storeTickSnapshot(c.db, DAYS.d1, 'open30', Q(100));
+    await catchUpAt(c.db, c.bookId, { date: DAYS.d1, slot: 'open30' });
+    const base = `mandates/${c.bookId}`;
+    const before = (await readBookView(c.db, { uid: UID })).book;
+    expect(group(before, 'short').state).toBe('entering');
+    const revision = c.db._get(base).revision;
+    let raced = false;
+    const db = racing(c.db, {
+      onDoc: async (path) => {
+        if (!raced && path === `${base}/ideas/${a.ideaId}`) { raced = true; await enterAt(c.db, c.bookId, a.ideaId, { date: DAYS.d1, slot: 'open30' }); }
+      },
+    });
+    const answer = (await readBookView(db, { uid: UID })).book;
+    expect(raced).toBe(true);
+    // The fill moved the book's revision and nothing else of its marks (no close).
+    expect(c.db._get(base).revision).toBe(revision + 1);
+    expect(c.db._get(base).execState.lastCloseKey ?? null).toBeNull();
+    const after = (await readBookView(c.db, { uid: UID })).book;
+    expect(group(after, 'short').state).toBe('holding');
+    expect(after.line.cash).not.toBe(before.line.cash);
+    expect(JSON.stringify(answer)).toBe(JSON.stringify(after));
+  });
+});
+
+describe('B5-2 through the reader: an idea finished since the last close is counted by its row of that close', () => {
+  it('on the B2 run: XOM sold at the 23 Nov first window (finished, in History) — the archetype desk\'s use is still its 20 Nov row', { timeout: 60_000 }, async () => {
+    let checked = false;
+    await runBookHistory({
+      n: 5,
+      onSession: async (date, i, c) => {
+        if (date !== EXIT_SESSION) return;
+        const base = `mandates/${c.bookId}`;
+        const next = nextSessionDate(EXIT_SESSION);
+        await windowAt(c.db, c.bookId, { date: next, slot: 'open30', quotes: quotesOn({ drift: 5 * 0.002 }) });
+        const v = (await readBookView(c.db, { uid: c.uid, agentOn: true })).book;
+        expect(v.day).toBe('Fri 20 Nov');
+        expect(group(v, 'short').state).toBe('open');
+        expect(v.history.items[0]).toMatchObject({ namesText: 'XOM', endedOn: '23 Nov' });
+        // The stored rows of the 20 Nov close, by desk.
+        const used = { shadow: 0, archetype: 0 };
+        for (const p of [...c.db._store.keys()].filter((k) => new RegExp(`^${base}/ideas/[^/]+$`).test(k))) {
+          const row = c.db._get(`${p}/rows/${EXIT_SESSION}`);
+          if (row) used[deskOfIdea(c.db._get(p))] += toCents(row.markedHoldingsValue);
+        }
+        expect(used.archetype).toBeGreaterThan(0);
+        const amount = (key) => { const t = v.split.parts.find((x) => x.key === key).use.amount.text; return Math.round(Number(t.replace(/[^0-9.]/g, '')) * 100); };
+        expect([amount('archetype'), amount('agent')]).toEqual([used.archetype, used.shadow]);
+        checked = true;
+      },
+    });
+    expect(checked).toBe(true);
   });
 });
 
