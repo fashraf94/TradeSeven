@@ -1,0 +1,103 @@
+// api/_utils/researchUniverse.boundary.test.js
+//
+// Research universe Build 1: THE OFF SWITCH (build prompt sections 3.3 and 4). Nothing outside the two new modules
+// and their tests imports researchUniverse.js or researchDirectory.js, so no game read, rank, pin, Wire hash,
+// scheduled job or client bundle can reach them. When a later build connects one surface, it adds that file here
+// on purpose, in its own commit.
+//
+// The scan is a plain, case-insensitive NAME scan of every code file's path and text under api/ and src/, with no
+// comment stripping: a mention anywhere fails, which fails closed. Case-insensitive because Windows resolves
+// './ResearchUniverse.js' to researchUniverse.js. Out of scope by design: a path assembled at run time from pieces
+// (no honest import does that).
+
+import { describe, it, expect } from 'vitest';
+import { readdirSync, readFileSync, existsSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import * as rankingConfig from './rankingConfig.js';
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+const SCAN_DIRS = ['api', 'src'];
+const CODE_FILE = /\.(?:[cm]?js|jsx|ts|tsx)$/;
+const SKIP = new Set(['node_modules', 'dist', '.git']);
+const NAMES = /researchuniverse|researchdirectory/i;
+
+/** The two modules and their tests: the only files that may name them. */
+const ALLOWED = new Set([
+  'api/_utils/researchUniverse.js',
+  'api/_utils/researchDirectory.js',
+  'api/_utils/researchUniverse.test.js',
+  'api/_utils/researchDirectory.test.js',
+  'api/_utils/researchUniverse.boundary.test.js',
+  'api/_utils/researchUniverse.precedence.test.js',
+]);
+
+function walk(rel, out) {
+  for (const ent of readdirSync(path.join(ROOT, rel), { withFileTypes: true })) {
+    if (SKIP.has(ent.name)) continue;
+    const child = `${rel}/${ent.name}`;
+    if (ent.isDirectory()) walk(child, out);
+    else if (CODE_FILE.test(ent.name)) out.push(child);
+  }
+  return out;
+}
+
+/** Files (repo-relative path, text) that name either module and are not allowed to. */
+function offendersIn(files, allowed = ALLOWED) {
+  return files.filter((f) => (NAMES.test(f.path) || NAMES.test(f.text)) && !allowed.has(f.path)).map((f) => f.path);
+}
+
+describe('the scanner catches every way of reaching the modules (planted)', () => {
+  it.each([
+    ['a static import', 'src/a.js', "import { researchUniverse } from '../api/_utils/researchUniverse.js';"],
+    ['a dynamic import', 'api/b.js', "const m = await import('./_utils/researchDirectory.js');"],
+    ['a re-export', 'api/_utils/c.js', "export * from './researchUniverse.js';"],
+    ['a require', 'api/d.cjs', "const d = require('./_utils/researchDirectory');"],
+    ['a path without its extension', 'src/e.jsx', "import { isResearchStock } from '../api/_utils/researchUniverse';"],
+    ['a case variant (Windows resolves it)', 'src/f.ts', "import x from '../api/_utils/ResearchDirectory.js';"],
+    ['a mention in a comment (fails closed)', 'api/g.mjs', '// later: wire researchUniverse here'],
+    ['a file named for it (a copy is not an import, but it is not the off switch either)', 'src/data/researchDirectoryCopy.js', 'export const X = 1;'],
+    ['an allowed file name at another path', 'src/researchUniverse.js', 'export const X = 1;'],
+  ])('%s', (_title, p, text) => {
+    expect(offendersIn([{ path: p, text }])).toEqual([p]);
+  });
+  it('passes a clean file and the allowed files', () => {
+    const files = [{ path: 'src/clean.js', text: "import { ALL_TICKERS } from '../api/_utils/rankingConfig.js';" },
+      ...[...ALLOWED].map((p) => ({ path: p, text: "import './researchUniverse.js'; import './researchDirectory.js';" }))];
+    expect(offendersIn(files)).toEqual([]);
+  });
+});
+
+describe('nothing outside the two modules and their tests names them', () => {
+  const files = SCAN_DIRS.flatMap((d) => walk(d, []));
+  it('scans the whole of api/ and src/', () => {
+    expect(files.length).toBeGreaterThan(2000);
+    expect(files).toContain('api/_utils/rankingConfig.js');
+    expect(files).toContain('src/App.jsx');
+    expect(files).toContain('api/_utils/wireGenerationSurface.js');
+  });
+  it('every allowed file exists (no stale allowance)', () => {
+    for (const p of ALLOWED) expect(existsSync(path.join(ROOT, p))).toBe(true);
+  });
+  // Read at collection time, outside any row's timeout (about 2 seconds for ~3,000 files on a quiet machine).
+  const scanned = files.map((p) => ({ path: p, text: readFileSync(path.join(ROOT, p), 'utf8') }));
+  it('finds no other file naming researchUniverse or researchDirectory', () => {
+    expect(offendersIn(scanned)).toEqual([]);
+  });
+});
+
+describe('loading the accessor leaves the game list as it was', () => {
+  const snapshot = () => JSON.stringify(
+    Object.keys(rankingConfig).sort().map((k) => [k, typeof rankingConfig[k] === 'function' ? String(rankingConfig[k]) : rankingConfig[k]]),
+    (_k, v) => (v instanceof Set ? [...v] : v),
+  );
+  it('every rankingConfig export is unchanged after researchUniverse.js loads, and the 228 are still 228', async () => {
+    const before = snapshot();
+    const mod = await import('./researchUniverse.js');
+    expect(mod.researchUniverse.has('GLW')).toBe(true);
+    expect(snapshot()).toBe(before);
+    expect(rankingConfig.ALL_TICKERS.length).toBe(228);
+    expect(rankingConfig.ALL_TICKERS).not.toContain('GLW');
+    expect(Object.hasOwn(rankingConfig.TICKER_TO_SECTOR, 'GLW')).toBe(false);
+  });
+});
