@@ -584,7 +584,9 @@ export async function runIdeaBookAgentPass(db, {
   for (const docSnap of agentPassOrder(page.docs, date)) {
     if (docSnap.data().execState?.lastCloseKey !== date) continue; // its close for the date has not committed
     out.books += 1;
-    const bookRef = docSnap.ref;
+    // (The book's reference by its literal collection — the same document as docSnap.ref — so the protected-store scan
+    // still resolves the lease's writes to `mandates` through the reordered page.)
+    const bookRef = db.collection('mandates').doc(docSnap.id);
     let lease = null;
     try {
       lease = await acquireLease(db, bookRef, ownerToken, { now });
