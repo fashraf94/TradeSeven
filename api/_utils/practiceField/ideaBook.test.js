@@ -24,6 +24,7 @@ import { isSectorCapCorrected } from '../mandateSectorCap.js';
 import { buildNewMandateDoc } from '../mandateSchema.js';
 import { listArchetypeIds } from '../archetypeRegistry.js';
 import { COCKPIT_ALLOWLIST_ENV } from '../callRecords/allowlist.js';
+import { PRACTICE_FIELD_PLAYER_ENV } from './playerList.js';
 import { isIdeaBook, bookKindOf, splitActiveBooks } from '../mandateBookKind.js';
 import { makeMandateFakeDb, etIso, DAYS } from './__testsupport__/fixtures.js';
 
@@ -33,10 +34,12 @@ const args = (over = {}) => ({ uid: 'owner-1', attributionAgentId: 'agent-ranked
 
 let restoreMode;
 let savedEnv;
-beforeEach(() => { savedEnv = process.env[COCKPIT_ALLOWLIST_ENV]; restoreMode = setPracticeFieldModeForTests('on'); });
+let savedPlayers;
+beforeEach(() => { savedEnv = process.env[COCKPIT_ALLOWLIST_ENV]; savedPlayers = process.env[PRACTICE_FIELD_PLAYER_ENV]; restoreMode = setPracticeFieldModeForTests('on'); });
 afterEach(() => {
   restoreMode();
   if (savedEnv === undefined) delete process.env[COCKPIT_ALLOWLIST_ENV]; else process.env[COCKPIT_ALLOWLIST_ENV] = savedEnv;
+  if (savedPlayers === undefined) delete process.env[PRACTICE_FIELD_PLAYER_ENV]; else process.env[PRACTICE_FIELD_PLAYER_ENV] = savedPlayers;
 });
 
 describe('the mode gate (rule 5)', () => {
@@ -47,15 +50,16 @@ describe('the mode gate (rule 5)', () => {
     expect(practiceFieldAdmits('owner-1')).toBe(false);
   });
 
-  it("'allowlist' admits only a uid the cockpit's server-side allowlist holds, read at call time", () => {
+  it("'allowlist' admits only a uid the idea book's own player list holds (build B4, B4-1), read at call time — the cockpit's list alone admits nobody", () => {
     setPracticeFieldModeForTests('allowlist');
-    delete process.env[COCKPIT_ALLOWLIST_ENV];
+    delete process.env[PRACTICE_FIELD_PLAYER_ENV];
+    process.env[COCKPIT_ALLOWLIST_ENV] = 'owner-1';
     expect(practiceFieldLive()).toBe(true);
-    expect(practiceFieldAdmits('owner-1')).toBe(false);
-    process.env[COCKPIT_ALLOWLIST_ENV] = ' owner-2 , owner-1 ';
+    expect(practiceFieldAdmits('owner-1')).toBe(false); // on the cockpit's list alone: not admitted
+    process.env[PRACTICE_FIELD_PLAYER_ENV] = ' owner-2 , owner-1 ';
     expect(practiceFieldAdmits('owner-1')).toBe(true);
     expect(practiceFieldAdmits('owner-3')).toBe(false);
-    process.env[COCKPIT_ALLOWLIST_ENV] = 'owner-2';
+    process.env[PRACTICE_FIELD_PLAYER_ENV] = 'owner-2';
     expect(practiceFieldAdmits('owner-1')).toBe(false); // nothing was cached
   });
 
@@ -145,7 +149,7 @@ describe('the idea book document and its epoch', () => {
     const b = book();
     expect(b).toMatchObject({
       kind: 'idea_book', userId: 'owner-1', status: 'active', revision: 0, attributionAgentId: 'agent-ranked-1',
-      archetypeCodeId: 'diversifier', contractVersion: 2, slotsVersion: 2, fundsVersion: 1, sectorBridgeVersion: 1,
+      archetypeCodeId: 'diversifier', contractVersion: 2, slotsVersion: 3, fundsVersion: 1, sectorBridgeVersion: 1,
       currentEpochId: 'epoch-0001', drafting: 'on', windDown: null,
       treasury: { unreservedCash: 100000 }, slots: { short: null, medium: null, long: null }, openIdeaIds: [],
     });
@@ -175,7 +179,7 @@ describe('the idea book document and its epoch', () => {
     });
     expect(isSectorCapCorrected(e.gateConfig)).toBe(true);
     expect(e.rails).toEqual({
-      slotsVersion: 2, slotCapShare: { short: 0.2, medium: 0.3, long: 0.4 }, namesPerIdea: { min: 1, max: 4 },
+      slotsVersion: 3, slotCapShare: { short: 0.2, medium: 0.3, long: 0.4 }, namesPerIdea: { min: 1, max: 4 },
       lineDistance: { short: { min: 0.03, max: 0.08 }, medium: { min: 0.06, max: 0.15 }, long: { min: 0.1, max: 0.25 } },
     });
     expect(e).toMatchObject({ frictionModelVersion: 'p3_cap_tier_v1', fundsVersion: 1, contractVersion: 2, configVersion: 1, openedAt: NOW });
@@ -210,7 +214,7 @@ describe('createIdeaBook', () => {
       bookId: res.bookId, epochId: 'epoch-0001', attributionAgentId: 'agent-ranked-1', archetypeCodeId: 'momentum_chaser',
       status: 'active', createOpId: 'create-1', createdAt: NOW, updatedAt: NOW,
     });
-    expect(db._get('practiceFieldBooks/_registry')).toEqual({ openBooks: { [res.bookId]: 'owner-1' }, cap: 4, updatedAt: NOW });
+    expect(db._get('practiceFieldBooks/_registry')).toEqual({ openBooks: { [res.bookId]: 'owner-1' }, cap: 12, updatedAt: NOW });
     expect(db._get(`mandates/${res.bookId}`).createdAt).toEqual(new Date(NOW));
     expect(db._txAttempts()).toBe(1);
   });
@@ -260,23 +264,25 @@ describe('createIdeaBook', () => {
     expect([...db._store.keys()].filter((p) => p.startsWith('mandates/') && !p.includes('/epochs/')).length).toBe(1);
   });
 
-  it('the founder cap (B8): the fifth concurrent book is refused; two creators racing for the fourth place have one winner', async () => {
+  it('the founder cap (B8, 12 since build B4): the thirteenth concurrent book is refused; two creators racing for the twelfth place have one winner', async () => {
     const db = makeMandateFakeDb();
-    for (const n of [1, 2, 3]) expect((await createIdeaBook(db, args({ uid: `owner-${n}`, opId: `c-${n}` }))).ok).toBe(true);
-    // Owner 4 reads the registry at three books; owner 5 commits the fourth place before owner 4 does.
-    db.setBarrier(async () => { expect((await createIdeaBook(db, args({ uid: 'owner-5', opId: 'c-5' }))).ok).toBe(true); });
-    expect(await createIdeaBook(db, args({ uid: 'owner-4', opId: 'c-4' }))).toEqual({ ok: false, code: 'founder_cap_reached', openBooks: 4, cap: 4 });
-    expect(Object.values(db._get('practiceFieldBooks/_registry').openBooks).sort()).toEqual(['owner-1', 'owner-2', 'owner-3', 'owner-5']);
-    expect(db._get('practiceFieldBooks/owner-4')).toBeUndefined();
+    for (let n = 1; n <= 11; n += 1) expect((await createIdeaBook(db, args({ uid: `owner-${n}`, opId: `c-${n}` }))).ok).toBe(true);
+    // Owner 12 reads the registry at eleven books; owner 13 commits the twelfth place before owner 12 does.
+    db.setBarrier(async () => { expect((await createIdeaBook(db, args({ uid: 'owner-13', opId: 'c-13' }))).ok).toBe(true); });
+    expect(await createIdeaBook(db, args({ uid: 'owner-12', opId: 'c-12' }))).toEqual({ ok: false, code: 'founder_cap_reached', openBooks: 12, cap: 12 });
+    expect(Object.values(db._get('practiceFieldBooks/_registry').openBooks).sort()).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13].map((n) => `owner-${n}`).sort());
+    expect(db._get('practiceFieldBooks/owner-12')).toBeUndefined();
   });
 
-  it("mode: 'off' refuses before any read; 'allowlist' refuses a uid that is not listed", async () => {
+  it("mode: 'off' refuses before any read; 'allowlist' refuses a uid that is not on the player list (B4-1) — the cockpit's list alone admits nobody", async () => {
     setPracticeFieldModeForTests('off');
     expect(await createIdeaBook(untouchable, args())).toEqual({ ok: false, code: 'mode_not_admitted' });
     setPracticeFieldModeForTests('allowlist');
-    process.env[COCKPIT_ALLOWLIST_ENV] = 'someone-else';
-    expect(await createIdeaBook(untouchable, args())).toEqual({ ok: false, code: 'mode_not_admitted' });
+    process.env[PRACTICE_FIELD_PLAYER_ENV] = 'someone-else';
     process.env[COCKPIT_ALLOWLIST_ENV] = 'owner-1';
+    expect(await createIdeaBook(untouchable, args())).toEqual({ ok: false, code: 'mode_not_admitted' });
+    process.env[PRACTICE_FIELD_PLAYER_ENV] = 'owner-1';
+    delete process.env[COCKPIT_ALLOWLIST_ENV];
     expect((await createIdeaBook(makeMandateFakeDb(), args())).ok).toBe(true);
   });
 
@@ -299,7 +305,7 @@ describe('the Film Room\'s two helpers (Amendment B item 1) and the seam they ar
     expect(await bookForOwner(untouchable, { uid: 'owner-1', attributionAgentId: 'agent-ranked-1' })).toBeNull();
     expect(await seamBookForOwner(untouchable, { uid: 'owner-1', attributionAgentId: 'agent-ranked-1' })).toBeNull();
     setPracticeFieldModeForTests('allowlist');
-    delete process.env[COCKPIT_ALLOWLIST_ENV];
+    delete process.env[PRACTICE_FIELD_PLAYER_ENV];
     expect(await bookForOwner(untouchable, { uid: 'owner-1', attributionAgentId: 'agent-ranked-1' })).toBeNull();
   });
 

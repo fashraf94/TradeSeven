@@ -9,6 +9,7 @@ import { admitIdea, releaseIdea, ideaIdFor, admissionFingerprint, evaluateAdmiss
 import { normalizeIdeaContract, planLegCents, CONTRACT_FREE_TEXT_FIELDS } from './contract.js';
 import { setPracticeFieldModeForTests } from './mode.js';
 import { COCKPIT_ALLOWLIST_ENV } from '../callRecords/allowlist.js';
+import { PRACTICE_FIELD_PLAYER_ENV } from './playerList.js';
 import { CANDIDATE_UNIVERSE } from '../mandateCandidateUniverse.js';
 import { MANDATE_UNIVERSE_MAX_SYMBOLS } from '../mandateConfig.js';
 import { assertReconciled } from './reconcile.js';
@@ -25,10 +26,12 @@ const openIdeas = (db, bookId) => getBook(db, bookId).openIdeaIds.map((id) => ge
 
 let restoreMode;
 let savedEnv;
-beforeEach(() => { savedEnv = process.env[COCKPIT_ALLOWLIST_ENV]; restoreMode = setPracticeFieldModeForTests('on'); });
+let savedPlayers;
+beforeEach(() => { savedEnv = process.env[COCKPIT_ALLOWLIST_ENV]; savedPlayers = process.env[PRACTICE_FIELD_PLAYER_ENV]; restoreMode = setPracticeFieldModeForTests('on'); });
 afterEach(() => {
   restoreMode();
   if (savedEnv === undefined) delete process.env[COCKPIT_ALLOWLIST_ENV]; else process.env[COCKPIT_ALLOWLIST_ENV] = savedEnv;
+  if (savedPlayers === undefined) delete process.env[PRACTICE_FIELD_PLAYER_ENV]; else process.env[PRACTICE_FIELD_PLAYER_ENV] = savedPlayers;
 });
 
 describe('the contract\'s shape (checks 0, 0b, 3–5)', () => {
@@ -200,7 +203,7 @@ describe('admitIdea — reserving capital and coverage', () => {
     });
     expect(idea.contract).toMatchObject({
       origin: { kind: 'founder_fixture', initiatedBy: 'agent' }, riskAssumption: 'exit_at_line_next_eligible_fill',
-      band: { shareOfReserved: 0.0025, usd: 50 }, benchmarkSymbol: 'SPY', epochId: 'epoch-0001', contractVersion: 2, slotsVersion: 2, fundsVersion: 1,
+      band: { shareOfReserved: 0.0025, usd: 50 }, benchmarkSymbol: 'SPY', epochId: 'epoch-0001', contractVersion: 2, slotsVersion: 3, fundsVersion: 1,
       schedule: { startSession: DAYS.d1, dueSession: '2026-12-01', sessions: 10 },
     });
     const ref = `${bookId}/${res.ideaId}`;
@@ -227,7 +230,7 @@ describe('admitIdea — reserving capital and coverage', () => {
     expect(getBook(db, bookId).treasury.unreservedCash).toBe(80000);
   });
 
-  it("mode: 'off' refuses with NO read (and still names the shape's failures); 'allowlist' refuses an owner who is not listed", async () => {
+  it("mode: 'off' refuses with NO read (and still names the shape's failures); 'allowlist' refuses an owner who is not on the player list (B4-1) — the cockpit's list alone admits nobody", async () => {
     setPracticeFieldModeForTests('off');
     expect(await admitIdea(untouchable, { bookId: 'any', contract: contractOf({ capitalUsd: -1 }), opId: 'x', nowIso: ADMIT_ISO }))
       .toEqual({ ok: false, refusals: [{ code: 'capital_invalid' }, { code: 'mode_not_admitted' }], permittedMaxUsd: null, binding: [] });
@@ -235,9 +238,11 @@ describe('admitIdea — reserving capital and coverage', () => {
     setPracticeFieldModeForTests('on');
     const { db, bookId } = await seedBook();
     setPracticeFieldModeForTests('allowlist');
-    process.env[COCKPIT_ALLOWLIST_ENV] = 'someone-else';
-    expect(codes(await admit(db, bookId, contractOf()))).toEqual(['mode_not_admitted']);
+    process.env[PRACTICE_FIELD_PLAYER_ENV] = 'someone-else';
     process.env[COCKPIT_ALLOWLIST_ENV] = 'owner-1';
+    expect(codes(await admit(db, bookId, contractOf()))).toEqual(['mode_not_admitted']);
+    process.env[PRACTICE_FIELD_PLAYER_ENV] = 'owner-1';
+    delete process.env[COCKPIT_ALLOWLIST_ENV];
     expect((await admit(db, bookId, contractOf())).ok).toBe(true);
   });
 

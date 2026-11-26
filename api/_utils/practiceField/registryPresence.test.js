@@ -82,9 +82,14 @@ describe('the registry is a complete list of idea books (T2A-02) — pinned from
 
   it('2. the registry is written at TWO sites: createIdeaBook keeps every entry; the close removes only the book it sets closed, in that transaction', () => {
     const named = sources.filter((f) => /PRACTICE_FIELD_BOOK_REGISTRY_ID|['"`]_registry['"`]/.test(f.text)).map((f) => f.path).sort();
-    expect(named).toEqual(['api/_utils/practiceField/caParseReport.js', 'api/_utils/practiceField/close.js', 'api/_utils/practiceField/constants.js', 'api/_utils/practiceField/ideaBook.js', 'api/_utils/practiceField/sweep.js']);
+    expect(named).toEqual(['api/_utils/practiceField/caParseReport.js', 'api/_utils/practiceField/close.js', 'api/_utils/practiceField/constants.js', 'api/_utils/practiceField/ideaBook.js', 'api/_utils/practiceField/sweep.js', 'scripts/practice-field-founder.mjs']);
     const sweep = sources.find((f) => f.path === 'api/_utils/practiceField/sweep.js').text;
     expect(sweep).not.toMatch(/registry[^\n]*\.(set|update|create|delete)\(/i); // sweep.js only reads it
+    // Build B4: the founder script's `books` READS the registry (the list of open books) and never writes it — the script
+    // writes nothing itself (its one write path is runFounderAction).
+    const script = sources.find((f) => f.path === 'scripts/practice-field-founder.mjs').text;
+    expect(script).not.toMatch(/registry[^\n]*\.(set|update|create|delete)\(/i);
+    expect(script).toMatch(/\.doc\(PRACTICE_FIELD_BOOK_REGISTRY_ID\)\.get\(\)/);
     // T1a-2b-4 closeout (C-1): the parse report's writer READS the registry, in its own transaction, only to name the books
     // a late report change alerts — it never writes it.
     const report = sources.find((f) => f.path === 'api/_utils/practiceField/caParseReport.js').text;
@@ -157,7 +162,7 @@ describe('the registry is a complete list of idea books (T2A-02) — pinned from
     expect(book).toMatchObject({ status: 'closed', closedOn: DAYS.d1, openIdeaIds: [], windDown: { completedSession: DAYS.d1 } });
     expect(book.treasury.unreservedCash).toBe(100000); // the reservation came back; no cash was reset or lost
     expect(Object.keys(db._get(REGISTRY).openBooks)).toEqual([b.bookId]);
-    expect(db._get(REGISTRY).cap).toBe(4);
+    expect(db._get(REGISTRY).cap).toBe(12); // B8, 12 since build B4 (B4-6)
     expect(db._get('practiceFieldBooks/owner-1')).toMatchObject({ bookId: null, status: 'closed', closedBookId: a.bookId });
     expect(db._get('practiceFieldBooks/owner-2')).toMatchObject({ bookId: b.bookId, status: 'active' });
     // The owner may open another book now; the closed one stays readable and never reopens.

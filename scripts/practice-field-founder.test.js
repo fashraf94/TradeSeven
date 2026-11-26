@@ -27,6 +27,7 @@ import {
 } from './practice-field-founder.mjs';
 import { setPracticeFieldModeForTests, setPracticeFieldAgentForTests } from '../api/_utils/practiceField/mode.js';
 import { COCKPIT_ALLOWLIST_ENV } from '../api/_utils/callRecords/allowlist.js';
+import { PRACTICE_FIELD_PLAYER_ENV } from '../api/_utils/practiceField/playerList.js';
 import { normalizeIdeaContract } from '../api/_utils/practiceField/contract.js';
 import { planHoldRuling, HOLD_KINDS } from '../api/_utils/practiceField/holdRulings.js';
 import { createIdeaBook } from '../api/_utils/practiceField/ideaBook.js';
@@ -92,6 +93,7 @@ beforeEach(() => {
   restoreMode = setPracticeFieldModeForTests('on');
   vi.stubEnv('MANDATE_FOUNDER_UIDS', ` someone-else , ${UID} `);
   vi.stubEnv(COCKPIT_ALLOWLIST_ENV, UID);
+  vi.stubEnv(PRACTICE_FIELD_PLAYER_ENV, UID); // build B4 (B4-1): the idea book's own player list
 });
 afterEach(() => {
   restoreMode();
@@ -116,7 +118,7 @@ async function founderBook({ contract = null, db = makeMandateFakeDb(agents()) }
 
 describe('the command line', () => {
   it('every command is the door\'s action (status reads only)', () => {
-    expect(COMMANDS).toEqual({ status: null, 'create-book': 'create_book', admit: 'admit_fixture', resolve: 'resolve_hold', pause: 'pause', resume: 'resume', 'wind-down': 'wind_down' });
+    expect(COMMANDS).toEqual({ status: null, books: null, 'create-book': 'create_book', 'create-book-for': 'create_book_for', admit: 'admit_fixture', resolve: 'resolve_hold', pause: 'pause', resume: 'resume', 'wind-down': 'wind_down' });
   });
 
   it.each([
@@ -366,9 +368,9 @@ describe('a stored refusal is the door\'s replay — the dry run says so, and --
   it('create-book refused mode_not_admitted at \'allowlist\' stays refused once the list holds the uid — until --again', async () => {
     const db = makeMandateFakeDb(agents());
     setPracticeFieldModeForTests('allowlist');
-    vi.stubEnv(COCKPIT_ALLOWLIST_ENV, 'someone-else');
+    vi.stubEnv(PRACTICE_FIELD_PLAYER_ENV, 'someone-else');
     expect((await json(db, ['create-book', '--uid', UID, '--go'])).body.answer).toMatchObject({ error: 'mode_not_admitted' });
-    vi.stubEnv(COCKPIT_ALLOWLIST_ENV, UID);
+    vi.stubEnv(PRACTICE_FIELD_PLAYER_ENV, UID);
     expect((await json(db, ['create-book', '--uid', UID, '--go'])).body).toMatchObject({ replay: true, answer: { error: 'mode_not_admitted' } });
     expect((await json(db, ['create-book', '--uid', UID, '--again', 'listed', '--go'])).body).toMatchObject({ httpStatus: 201, answer: { ok: true } });
   });
@@ -442,10 +444,10 @@ describe('admit --dry-run — the door\'s admission on a read-only view: its ans
     ['capital over the slot cap', { contract: contractOf({ slot: 'medium', names: ['MSFT'], capitalUsd: 35000 }) }],
     ['a malformed contract (no names, a bad slot)', { contract: { ...contractOf(), names: [], slot: 'forever' } }],
     ['a name already held by another idea', { setup: 'idea', contract: contractOf({ slot: 'long', names: ['AAPL'] }) }],
-    ['\'allowlist\' with the uid off the cockpit list', { mode: 'allowlist', cockpit: 'someone-else', contract: contractOf() }],
+    ['\'allowlist\' with the uid off the player list (B4-1)', { mode: 'allowlist', players: 'someone-else', contract: contractOf() }],
     ['a close owed (Friday unclosed, Monday 11:00)', { contract: contractOf(), nowIso: etIso(S[0], 11, 0) }],
     ['a held name with no mark in the set (Tuesday 09:45)', { setup: 'held', contract: contractOf({ slot: 'medium', names: ['NVDA'], capitalUsd: 1000 }), nowIso: etIso(S[1], 9, 45) }],
-  ])('%s: the dry run\'s refusals are exactly the door\'s (exit 2 both)', async (_label, { setup, contract, mode, cockpit, nowIso = ADMIT_ISO }) => {
+  ])('%s: the dry run\'s refusals are exactly the door\'s (exit 2 both)', async (_label, { setup, contract, mode, players, nowIso = ADMIT_ISO }) => {
     const { db, bookId } = await founderBook({ contract: setup ? contractOf({ names: setup === 'held' ? ['AAPL', 'MSFT'] : ['AAPL'] }) : null });
     if (setup === 'held') {
       await storeTickSnapshot(db, S[0], 'open30', QUOTES);
@@ -453,7 +455,7 @@ describe('admit --dry-run — the door\'s admission on a read-only view: its ans
       await closeOn(db, bookId, S[0], QUOTES);
     }
     if (mode) setPracticeFieldModeForTests(mode);
-    if (cockpit) vi.stubEnv(COCKPIT_ALLOWLIST_ENV, cockpit);
+    if (players) vi.stubEnv(PRACTICE_FIELD_PLAYER_ENV, players);
     const { dry, dryCode, go, goCode } = await differential(db, contract, nowIso);
     expect(dryCode).toBe(EXIT.REFUSED);
     expect(goCode).toBe(EXIT.REFUSED);
@@ -594,13 +596,14 @@ describe('status — read-only', () => {
     } finally { restoreAgent(); }
   });
 
-  it('sessionsLeft: trading sessions from today through the due session, both counted; 0 once it has passed', () => {
-    expect(sessionsLeft('2026-11-16', '2026-11-16')).toBe(1);
-    expect(sessionsLeft('2026-11-16', '2026-11-20')).toBe(5);
-    expect(sessionsLeft('2026-11-14', '2026-11-17')).toBe(2); // a Saturday: Monday and Tuesday
-    expect(sessionsLeft('2026-11-25', '2026-11-30')).toBe(3); // Thanksgiving Thursday is no session: 25, 27, 30
+  it('sessionsLeft (build B4, Q-7): the sessions AFTER the last close up to and including the due one — the agent\'s and the screen\'s count; 0 on and after the due close', () => {
+    expect(sessionsLeft('2026-11-16', '2026-11-16')).toBe(0);
+    expect(sessionsLeft('2026-11-16', '2026-11-20')).toBe(4);
+    expect(sessionsLeft('2026-11-13', '2026-11-17')).toBe(2); // after Friday\'s close: Monday and Tuesday
+    expect(sessionsLeft('2026-11-25', '2026-11-30')).toBe(2); // Thanksgiving Thursday is no session: 27 and 30
     expect(sessionsLeft('2026-11-21', '2026-11-20')).toBe(0);
     expect(sessionsLeft('2026-11-21', null)).toBeNull();
+    expect(sessionsLeft(null, '2026-11-20')).toBeNull(); // no close yet: not guessed
   });
 });
 

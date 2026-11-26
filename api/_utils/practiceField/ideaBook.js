@@ -62,6 +62,14 @@ export function ideaBookIdFor(uid, opId) {
 }
 
 /**
+ * Build B4 (ruling B4-3): is `id` an archetype the registry lists — the check createIdeaBook makes (`unknown_archetype`),
+ * for the founder's create_book_for to refuse a named archetype before anything is recorded. Pure.
+ */
+export function isKnownArchetypeId(id) {
+  return typeof id === 'string' && listArchetypeIds().includes(id);
+}
+
+/**
  * The gate limits an idea book's epoch freezes (build prompt §2): the archetype's sector cap through the SAME
  * corrected translation T0a added (stamped), the cash floor replaced by B2, the engine's single-position cap and
  * position cap kept. Archetype physics are read through the registry — never from a fenced table directly.

@@ -15,9 +15,10 @@
  * A STRING TRI-STATE, after FILM_ROOM_CARDS_MODE and RESEARCH_MODAL_BOMB_MODE:
  *   'off'        nobody. No Practice Field code path runs in any cron; no book can be created; no idea can be
  *                admitted; the Film Room's seam answers "no book" without a read.
- *   'allowlist'  creation, admission and the Film Room's seam admit only a uid the cockpit's SERVER-SIDE
- *                allowlist holds (api/_utils/callRecords/allowlist.js, COCKPIT_ALLOWLIST_UIDS, read at call time).
- *                The crons serve every existing idea book. THE SHIPPED VALUE.
+ *   'allowlist'  creation, admission and the screen admit only a uid on the idea book's OWN server-side player
+ *                list (build B4: api/_utils/practiceField/playerList.js, PRACTICE_FIELD_PLAYER_UIDS, read at call
+ *                time); the Film Room's seam only such a uid that is also a founder (MANDATE_FOUNDER_UIDS). The
+ *                cockpit's list decides nothing here. The crons serve every existing idea book. THE SHIPPED VALUE.
  *   'on'         every verified uid.
  * An unknown value reads as 'off' (fail closed).
  *
