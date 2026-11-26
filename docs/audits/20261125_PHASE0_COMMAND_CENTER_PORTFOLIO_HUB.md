@@ -24,7 +24,7 @@
 - **Most of what the design puts on the Overview already exists.** The book line, the desk rows, the positions table grouped by slot, the entering rows, the sold rows and the "Marks as of the close" stamp are all on `main`, drawn by the Idea book screen from one read-only route. That screen's parts are exported, use the same colour tokens as the hub, and could be mounted inside the hub. The one exception is the result sheet, which needs a new host.
 - **Three things on the first screen need new fields from the server.**
   - **The split bar.** The view carries no shares and no use. Every money figure arrives as finished text, and the client may not do money arithmetic (ruling B3-1).
-  - **The archetype's figure.** The view names the archetype only inside a sentence ("Diversifier · Short") and carries no id to dress the armor.
+  - **The archetype's figure.** The view names the archetype only inside a sentence ("{archetype} · Short") and carries no id to dress the armor.
   - **Partnership's record counts.** History stops at 20 ideas.
 
   These are additions to the book route the Practice Field chat built. They ship with the client's version bump in one change.
@@ -101,6 +101,13 @@ None of these slices touches a fenced file (BUILD_RULES §1). The fence lists on
 | 4 | **Ideas and Partnership.** | a result sheet hosted by `HubSheet` | `hub/useHubSheets.js` (`HUB_SHEETS`, [S] `:40-54`), `panels/ResearchPanel.jsx`, `panels/PartnershipPanel.jsx`, `hubCopy.js` | `record` (slice 0b), if FQ-6's Partnership counts ship | overlay-stack rows for the new sheet; copy rows |
 | 5 | **Setups, as FQ-7 decides.** | `CommandCenter/panels/SetupsPanel.jsx` | `hubCopy.js`; a new terminal for the check names (`src/components/Research/ChartRead/chartReadCopy.js`) | none for the minimal version | copy rows; the mount guard terminal row |
 | — | Later, not first build: the pulse (needs a write and a guard allowance); the modal door (modal chat, PC-1 to PC-3); setups and plans (Practice Field S1/S2); presets and the archetype change (epoch 2) | | | | |
+
+**Guards that go red only in the full Linux suite, so each slice plans a full run:**
+- **Slices 1, 3 and 5:** a new hub terminal or export reds the mount guard only in the full suite (`commandCenterHub.mount.guard.test.js`).
+- **Slice 2:** a new `src/` importer of `src/data/archetypeDisplay.js`, for the armor's name or mark, needs its line in `api/_utils/archetypeImportBoundaryBaseline.json` in the same commit (BUILD_RULES §1, the §2.3 ratchet). The baseline already lists `hub/archetypeLines.js` (`:45`).
+- **Slice 0:**
+  - A raw `Math.round`, `floor`, `ceil` or `.toFixed(` under `api/_utils/practiceField/`, for example in "use %", reds `api/_utils/mandateMoneyRounding.scan.test.js`. On Windows that scan fails on `main` anyway, so only a Linux run shows the new red.
+  - New always-on view fields also move the existing `bookView` end-to-end rows.
 
 **Sizing note.** Slices 1 to 3 together touch about 14 files plus tests. That crosses the review threshold (10 files, BUILD_RULES §2), so either keep each slice its own PR or plan the multi-lens review into the build.
 
@@ -291,7 +298,7 @@ All of them draw with the same `--ft-*` tokens as the hub (`ideaBookStyle.js:12-
   - the close row `windows/{session}_close` → `agent.desks.{shadow|archetype}` with `startedAt`, `completedAt`, `source`, `note`, `actions[{ideaId, action, outcome}]`, `considered[]` (`agentRun.js:153`, `:287-304`, `:484-507`);
   - on each idea: `admittedAt`, `statusHistory[{status, at}]`, `entry.filledAt`, `ledger.saleReceipts[{kind, sessionDate, at}]` (`line_exit` is code's sale at the line), `managerExit.decidedAt`, `liquidation.completedAt`.
 - **The view carries day labels only, no instants.** The strip covers the last close's session alone (`bookView.js:516-561`).
-- **A "last opened" record for the hub or the book: none exists.** I searched non-test `src/`, `api/` and the rules for some fourteen names, including lastSeen, lastOpened, lastViewed, seenAt, readAt and markSeen. The hits were unrelated: draft-room presence, sign-in time, the ledger's price "lastSeen" [S]. The route writes nothing (`book.js:16-17`). The hub's only stored keys are the sessionStorage Later keys ([S] `useHubLater.js:7`).
+- **A "last opened" record for the hub or the book: none exists** [S]. A subagent searched non-test `src/`, `api/` and the rules for some fourteen names, including lastSeen, lastOpened, lastViewed, seenAt, readAt and markSeen. The hits were unrelated: draft-room presence, sign-in time, the ledger's price "lastSeen". The route writes nothing (`book.js:16-17`). The hub's only stored keys are the sessionStorage Later keys ([S] `useHubLater.js:7`).
 - **The smallest way to know,** and it needs a write:
   - The client stores, per uid, the last `asOf.session` label it showed. A desk "acted since you looked" when that label differs and the strip names the desk.
   - Browser storage is the smallest version. It works on one device only, and it needs a mount-guard allowance, because storage is banned in the hub directory except for the Later keys (`:708`; [S] `:1544`).
@@ -308,7 +315,7 @@ All of them draw with the same `--ft-*` tokens as the hub (`ideaBookStyle.js:12-
 
 ### E1. Every player-facing string in the design
 
-These come from the rendered frames, with drawn text and accessible labels kept apart. Numbers are folded to `#` and tickers to `{SYM}`, and each string is listed once, at the first surface that draws it. The canvas's own replay button and fold line are left out. There are 417 strings after folding (612 raw).
+These come from the rendered frames, with drawn text and accessible labels kept apart. Numbers are folded to `#` and tickers to `{SYM}`, and each string is listed once, at the first surface that draws it. The canvas's own replay button and fold line are left out. There are 417 strings after folding (612 raw). Strings that exist only in earlier rounds' modules and are drawn on no final frame are not listed here. E2 scans them.
 
 **Overview: header, band, split bar, tabs, book line, Needs you, desk rows, table, docked strip.**
 - **Drawn:** “WED # NOV · MARKET OPEN” · “Command Center” · “Atlas” · “your research partner” · “# idea running · # entering” · “Trend” · “Follower” · “# names entering” · “Atlas #” · “# in use” · “Cash #” · “Trend Follower #” · “Overview” · “Ideas” · “Setups” · “Partnership” · “# today” · “Since # Nov” · “SPY” · “Cash” · “Paper money. Your agents run this book; you watch.” · “Trend Follower’s desk · admitted {SYMS}” · “Atlas’s desk · admitted {SYMS} · held #” · “Symbol” · “Mark” · “P/L Open” · “P/L Day” · “Short” · “Entering” · “Buys at the next session’s first window” · “Medium” · “Day # of #” · “vs XLF” · “Long” · “Marks as of the close, # Nov.” · “Battles as Fundamental Investor” · ““AI, through GPUs and accelerators, built on NVDA.”” · “· High-Beta Ten” · “Hold to deploy” · “Press and hold for # seconds to deploy. Release early to cancel.” · “Compete” · “News” · “League” · “Forge” · “Search” · “# ideas running · # being worked” · “# setups running” · “all in use” · “A result is in · NVDA · AVGO” · “Read it” · “# more” · “Trend Follower’s desk · entered {SYMS} · held #” · “Atlas’s desk · held #” · “# setups” · “Pullback and Resume” · “Day #” · “Trend Breakout” · “vs XLP” · “Live · # # left” · “BaggerBomb vs CPU — Capital Preserver” · “Open game” · “Deploy unavailable · capacity # of # in use” · “# setups running · # waiting” · “Trend Follower’s desk · held # · waiting for a valid setup” · “# setups · # waiting” · “Waiting for a valid setup” · “No Recognized Setup” · “FRI # NOV · AFTER HOURS” · “# setups running · # sold at its stop” · “Trend Follower’s desk · {SYM} sold at its stop by code · held #” · “Sold at its stop · # Nov” · “runs your short slot” · and the band's fit-test names (Speculator, Fundamental Investor, Capital Preserver, each split over two lines) · “Failed Breakdown Recovery”.
