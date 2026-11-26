@@ -356,15 +356,16 @@ describe('B3-A04: a close landing during the read', () => {
     const answer18 = v.day === 'Wed 18 Nov' && aapl.mark === '103.00' && cents(aapl.plDay.text) === dayOf(S[2], S[1]);
     expect(answer17 || answer18, JSON.stringify({ day: v.day, mark: aapl.mark, plDay: aapl.plDay })).toBe(true);
     expect(aapl.plDay.text).not.toBe('$0.00');
-    // (This reader re-reads once and answers 18 Nov, the book's own row and the row before it.)
+    // (B5-4: the first pass saw the book's change marks move, so the whole pass is read again — and answers 18 Nov, the book's
+    // own row and the row before it.)
     expect(v.day).toBe('Wed 18 Nov');
     expect(v.line.today.text).toBe(moneyText(toCents(bookRow(c, S[2]).markedEquity) - toCents(bookRow(c, S[1]).markedEquity), { signed: true }));
-    // B3-A10: within the restated bound with the re-read — 53 + 4·I + 20·P documents, 4 queries (I = 1, P = 0).
-    expect(count.queries).toBe(4);
-    expect(count.docs).toBeLessThanOrEqual(53 + 4 * 1);
+    // B3-A10, restated by B5-4: two passes at most — 108 + 6·I + 40·P documents, 6 queries (I = 1, P = 0).
+    expect(count.queries).toBe(6);
+    expect(count.docs).toBeLessThanOrEqual(108 + 6 * 1);
   });
 
-  it('two closes landing during one read (the re-read disagrees too): the book’s own row and the row strictly before it', async () => {
+  it('B5-4 (turned around): a close landing during EACH of the two passes — "try again", never a half-settled book', async () => {
     const c = await seedBook();
     const r = await admitAndEnter(c.db, c.bookId, { contract: contractOf({ names: ['AAPL'] }), quotes: Q(100), date: S[0] });
     c.ideaId = r.ideaId;
@@ -378,11 +379,13 @@ describe('B3-A04: a close landing during the read', () => {
     });
     const wrapDoc = (d) => ({ id: d.id, get: () => d.get(), collection: (n) => wrapCol(d.collection(n), n === 'dailyRows') });
     const wrapCol = (col, isDaily = false) => ({ ...wrapQuery(col, isDaily), doc: (id) => wrapDoc(col.doc(id)) });
-    const { book: v } = await readBookView({ collection: (n) => wrapCol(c.db.collection(n)) }, { uid: UID, agentOn: false });
-    // The second read's book names 18 Nov; its rows are 19 and 18 Nov. The answer is 18 Nov's, against 17 Nov.
-    expect(v.day).toBe('Wed 18 Nov');
-    expect(v.line.value).toBe(moneyText(toCents(bookRow(c, S[2]).markedEquity)));
-    expect(v.line.today.text).toBe(moneyText(toCents(bookRow(c, S[2]).markedEquity) - toCents(bookRow(c, S[1]).markedEquity), { signed: true }));
+    // (B3's reader answered 18 Nov from its second read, whose rows were 19 and 18 Nov. B5-4 asks for one consistent book:
+    // both passes saw the book's change marks move, so the answer is "try again" — and the next read is whole.)
+    expect(await readBookView({ collection: (n) => wrapCol(c.db.collection(n)) }, { uid: UID, agentOn: false })).toEqual({ tryAgain: true });
+    const v = (await readBookView(c.db, { uid: UID, agentOn: false })).book;
+    expect(v.day).toBe('Thu 19 Nov');
+    expect(v.line.value).toBe(moneyText(toCents(bookRow(c, S[3]).markedEquity)));
+    expect(v.line.today.text).toBe(moneyText(toCents(bookRow(c, S[3]).markedEquity) - toCents(bookRow(c, S[2]).markedEquity), { signed: true }));
   });
 
   it('the view itself never takes a row of the session as its "previous" (the reader\'s pick, held in the pure view too)', async () => {
@@ -412,8 +415,9 @@ describe('B3-A06 (B3-12): a thesis is signed by who wrote it; the managing desk 
     });
     const medium = group(seen, 'medium');
     expect(medium.thesis).toMatchObject({ byline: 'The founder' });
-    expect(medium).toMatchObject({ desk: 'shadow', deskName: 'Shadow desk', source: 'Entered by the founder' });
-    expect(medium.call).toMatchObject({ deskName: 'Shadow desk' });
+    // (B5-3: the run's store holds no agent document, so the agent's desk reads its fallback name.)
+    expect(medium).toMatchObject({ desk: 'shadow', deskName: 'Your agent’s desk', source: 'Entered by the founder' });
+    expect(medium.call).toMatchObject({ deskName: 'Your agent’s desk' });
     // B3-A08 on the same close: the session the idea entered.
     expect(medium).toMatchObject({ line: 'Entered today · 30 sessions', day: 0, of: 30 });
   });
@@ -425,9 +429,10 @@ describe('B3-A06 (B3-12): a thesis is signed by who wrote it; the managing desk 
       liquidation: { completedSession: S[3] },
     });
     const founder = finishedView({ idea: idea('founder_fixture'), packet: null, parts: {} });
-    expect(founder).toMatchObject({ desk: 'shadow', deskName: 'Shadow desk', thesis: { byline: 'The founder', text: 'Banks re-rate.' } });
-    expect(finishedView({ idea: idea('agent', 'shadow'), packet: null, parts: {} }).thesis.byline).toBe('Shadow desk');
-    expect(finishedView({ idea: { ...idea('agent', 'archetype'), contract: { ...idea('agent', 'archetype').contract, slot: 'short' } }, packet: null, parts: {} }).thesis.byline).toBe('Archetype desk');
+    // (B5-3: no names handed in, so each desk reads its fallback name.)
+    expect(founder).toMatchObject({ desk: 'shadow', deskName: 'Your agent’s desk', thesis: { byline: 'The founder', text: 'Banks re-rate.' } });
+    expect(finishedView({ idea: idea('agent', 'shadow'), packet: null, parts: {} }).thesis.byline).toBe('Your agent’s desk');
+    expect(finishedView({ idea: { ...idea('agent', 'archetype'), contract: { ...idea('agent', 'archetype').contract, slot: 'short' } }, packet: null, parts: {} }).thesis.byline).toBe('Your archetype’s desk');
     for (const other of ['player', '', undefined, null]) expect(finishedView({ idea: idea(other), packet: null, parts: {} }).thesis.byline, String(other)).toBeNull();
   });
 });

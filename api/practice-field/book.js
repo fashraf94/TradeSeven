@@ -14,7 +14,9 @@
 //   5. the mode's own gate for that uid (mode.js practiceFieldAdmits) → the same 404 when it does not admit them;
 //   6. GET only → 405.
 // THE ANSWER: `{ book: <view> }`, or `{ book: null }` when the caller has no open idea book. Reads only, all of them the
-// caller's own documents; nothing is written.
+// caller's own documents; nothing is written. B5-4: when two passes of the read each saw the book change under them (a close
+// landing during the read), 503 `{ error: 'try_again' }` — never a mixed book, never "no book"; the client shows its error
+// state and its next read (a focus, the page's open) asks again.
 
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
@@ -28,6 +30,8 @@ export const config = { maxDuration: 15 };
 export const BOOK_RATE_LIMIT = Object.freeze({ limit: 30, windowMs: 60_000 });
 /** The body every refusal of the switch, the mode or the mode's gate answers (the caller is not told which). */
 export const DISABLED_BODY = Object.freeze({ error: 'disabled' });
+/** B5-4: the answer when no pass of the read saw one consistent book. */
+export const TRY_AGAIN_BODY = Object.freeze({ error: 'try_again' });
 
 export default async function handler(req, res) {
   if (applySecurityMiddleware(req, res, { rateLimit: BOOK_RATE_LIMIT })) return;
@@ -43,7 +47,8 @@ export default async function handler(req, res) {
 
   try {
     const out = await readBookView(getFirebaseAdmin(), { uid, agentOn: practiceFieldAgentOn() });
-    return res.status(200).json(out);
+    if (out.tryAgain === true) return res.status(503).json({ ...TRY_AGAIN_BODY });
+    return res.status(200).json({ book: out.book });
   } catch (err) {
     console.error('[practice-field/book] internal error', err?.message ?? err);
     return res.status(500).json({ error: 'internal_error' });

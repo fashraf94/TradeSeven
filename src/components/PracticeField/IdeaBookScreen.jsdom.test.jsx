@@ -12,7 +12,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import IdeaBookScreen from './IdeaBookScreen';
 import { IDEA_BOOK_COPY, layoutOfWidth, DESK_FROM_PX, PHONE_MAX_PX } from './ideaBookCopy';
 import { buildBookView } from '../../../api/_utils/practiceField/bookView.js';
-import { sceneInput } from '../../../api/_utils/practiceField/__testsupport__/bookViewScenes.js';
+// B5: the scenes as the B5 reader gives them — the epoch, the archetype and the caller's agent, Atlas (B5-3's names).
+import { hubSceneInput as sceneInput } from '../../../api/_utils/practiceField/__testsupport__/bookViewScenesHub.js';
 import { FAILED_CHECK, BUYS_NEXT_WINDOW, PAPER_MONEY, PAUSED_LINE, BOOK_WAITING, BOOK_WAITING_REASON, ROW_REASON_HELD } from '../../../api/_utils/practiceField/bookViewCopy.js';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -50,7 +51,7 @@ describe('the states draw their fixed copy (the design of record\'s ten, and the
   it('the sample day: the book line, the strip, the table\'s columns, the open slot, cash and the timestamp', () => {
     const v = viewOf('sample');
     const m = screen('sample');
-    for (const s of [v.line.value, v.line.cash, PAPER_MONEY, 'Positions', 'Desks', 'History', 'Symbol', 'Mark', 'P/L Open', 'P/L Day', 'Long · open · the Shadow desk looks tonight.', 'Marks as of the close, 27 Nov.', 'Archetype desk', 'held 2', 'held 3 · passed on 3 drafts']) {
+    for (const s of [v.line.value, v.line.cash, PAPER_MONEY, 'Positions', 'Desks', 'History', 'Symbol', 'Mark', 'P/L Open', 'P/L Day', 'Long · open · Atlas’s desk looks tonight.', 'Marks as of the close, 27 Nov.', 'Trend Follower’s desk', 'held 2', 'held 3 · passed on 3 drafts']) {
       expect(text(m), s).toContain(s);
     }
     expect(m.host.querySelector('[data-ib="cash"]').textContent).toContain(v.cash);
@@ -171,14 +172,14 @@ describe('the tabs, the strip and History', () => {
   });
   it('a strip line opens Desks with that desk first', () => {
     const m = screen('sample');
-    const shadowLine = [...m.host.querySelectorAll('[data-ib="strip"] button')].find((b) => b.textContent.includes('Shadow desk'));
+    const shadowLine = [...m.host.querySelectorAll('[data-ib="strip"] button')].find((b) => b.textContent.includes('Atlas’s desk'));
     click(shadowLine);
     expect(m.host.querySelector('#ib-tab-desks').getAttribute('aria-selected')).toBe('true');
     expect(m.host.querySelector('[data-ib-desk]').getAttribute('data-ib-desk')).toBe('shadow');
   });
   it('Desks: the note quoted and dated, the calls, the drafts with their outcome and reason', () => {
     const m = screen('desksAdmit', { initial: { tab: 'desks', desk: 'archetype' } });
-    for (const s of ['Archetype desk', 'Trend Follower · Short', 'written after the close, 24 Nov', '3 drafts · 1 admitted · 1 not chosen · 1 refused', 'Not chosen', 'Refused: the name is not on the price list']) {
+    for (const s of ['Trend Follower’s desk', 'Trend Follower · Short', 'written after the close, 24 Nov', '3 drafts · 1 admitted · 1 not chosen · 1 refused', 'Not chosen', 'Refused: the name is not on the price list']) {
       expect(text(m), s).toContain(s);
     }
   });
@@ -281,11 +282,11 @@ describe("the fix round for Astra's review (docs/audits/20261124_ASTRA_REVIEW_B3
   });
   it('B3-12 (B3-A06): the thesis of the founder is signed "The founder" in Positions, its idea managed by the Shadow desk', () => {
     const m = screen('sample');
-    expect(header(m, 'medium').getAttribute('aria-label')).toContain('Shadow desk');
+    expect(header(m, 'medium').getAttribute('aria-label')).toContain('Atlas’s desk');
     click(nameRow(m, 'JPM'));
     const caps = [...m.host.querySelectorAll('[role="region"][aria-label="JPM detail"] figcaption')].map((c) => c.textContent);
     expect(caps).toContain('The founder · 19 Nov');
-    expect(caps.some((c) => c.startsWith('Shadow desk · after the close'))).toBe(true); // the desk's own call keeps its desk
+    expect(caps.some((c) => c.startsWith('Atlas’s desk · after the close'))).toBe(true); // the desk's own call keeps its desk
   });
   it('B3-12 (B3-A06): History — a founder-authored finished idea is signed "The founder"; an unknown author shows no byline, never "null"', () => {
     const founder = (input) => { input.finished[1].idea.contract.thesis.author = 'founder_fixture'; };

@@ -17,8 +17,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuthIdentity } from '../../services/authIdentity';
 import { fetchWithAuth } from '../../utils/fetchWithAuth';
 
-/** The view version this screen draws (api/_utils/practiceField/bookView.js BOOK_VIEW_VERSION; 2: B3-11's waiting line, B3-12's byline). */
-export const IDEA_BOOK_VIEW_VERSION = 2;
+/** The view version this screen draws (api/_utils/practiceField/bookView.js BOOK_VIEW_VERSION; 3: B5's archetype, split and desk names). */
+export const IDEA_BOOK_VIEW_VERSION = 3;
 export const IDEA_BOOK_PATH = '/api/practice-field/book';
 
 /** A focus and a visibility change arrive together on a return: one read for both. */
