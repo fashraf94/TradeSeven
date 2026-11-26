@@ -360,9 +360,9 @@ describe('B3-A04: a close landing during the read', () => {
     // own row and the row before it.)
     expect(v.day).toBe('Wed 18 Nov');
     expect(v.line.today.text).toBe(moneyText(toCents(bookRow(c, S[2]).markedEquity) - toCents(bookRow(c, S[1]).markedEquity), { signed: true }));
-    // B3-A10, restated by B5-4: two passes at most — 108 + 6·I + 40·P documents, 6 queries (I = 1, P = 0).
+    // B3-A10, restated by B5-4: two passes at most — 110 + 6·I + 40·P documents, 6 queries (I = 1, P = 0).
     expect(count.queries).toBe(6);
-    expect(count.docs).toBeLessThanOrEqual(108 + 6 * 1);
+    expect(count.docs).toBeLessThanOrEqual(110 + 6 * 1);
   });
 
   it('B5-4 (turned around): a close landing during EACH of the two passes — "try again", never a half-settled book', async () => {

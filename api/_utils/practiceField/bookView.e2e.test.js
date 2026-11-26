@@ -170,11 +170,12 @@ describe('the view after every close of the B2 history agrees with the stored ro
         for (const s of playerStrings(v).filter((x) => !agentWords.has(x))) expect(s, `${date}: ${s}`).not.toMatch(/shadow|archetype desk/i);
         for (const s of v.strip) expect(s.deskName, date).toBe(s.desk === 'shadow' ? 'Atlas’s desk' : 'Trend Follower’s desk');
 
-        // The reads: bounded by the reader's own formula (bookViewRead.js header: one pass, 54 + 3·I + 20·P — B5-4 restated
-        // B3-A10's 48 with the epoch, the agent, the rows of ideas finished since the close and the book's second read), no
-        // receipt parts here and no close during the read. I counts the UNIQUE ideas the open set and the slots name.
+        // The reads: bounded by the reader's own formula (bookViewRead.js header: one pass, 55 + 3·I + 20·P — B5-4 restated
+        // B3-A10's 48 with the epoch, the agent, the rows of ideas finished since the close and the second reads of the book
+        // and the close row), no receipt parts here and no close during the read. I counts the UNIQUE ideas the open set and
+        // the slots name.
         const ideasRead = new Set([...(book.openIdeaIds || []), ...Object.values(book.slots || {}).filter(Boolean)]).size;
-        expect(count.docs, date).toBeLessThanOrEqual(54 + 3 * ideasRead);
+        expect(count.docs, date).toBeLessThanOrEqual(55 + 3 * ideasRead);
         expect(count.queries, date).toBe(3);
 
         // No id of the owner, the book, its agent or an idea reaches the view.

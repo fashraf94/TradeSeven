@@ -11,7 +11,7 @@
 // And the reader on every scene with its epoch and agent gives exactly the view built from the same records.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { setPracticeFieldModeForTests } from './mode.js';
+import { setPracticeFieldModeForTests, setPracticeFieldAgentForTests } from './mode.js';
 import { readBookView, BOOK_READ_PASSES, bookChangeMarks } from './bookViewRead.js';
 import { buildBookView } from './bookView.js';
 import { nextSessionDate } from './windows.js';
@@ -20,10 +20,12 @@ import { deskOfIdea } from './agentConfig.js';
 import { toCents } from './money.js';
 import {
   seedBook, admitAndEnter, contractOf, closeOn, founderRules, takeSeededDbs, makeMandateFakeDb, storeTickSnapshot, catchUpAt, enterAt,
-  windowAt, ADMIT_ISO, DAYS,
+  windowAt, ADMIT_ISO, DAYS, etIso, tickOf, slotNowOf,
 } from './__testsupport__/fixtures.js';
-import { runBookHistory, scriptedDesks, EXIT_SESSION } from './__testsupport__/bookViewFixtures.js';
-import { quotesOn, fakeTransport, runSession } from './__testsupport__/agentFixtures.js';
+import { runIdeaBookEvalPass } from './sweep.js';
+import { runBookHistory, scriptedDesks, historySessions, EXIT_SESSION } from './__testsupport__/bookViewFixtures.js';
+import { quotesOn, fakeTransport, runSession, foundersMediumIdea, agentNowOf } from './__testsupport__/agentFixtures.js';
+import { runIdeaBookAgentPass } from './agentRun.js';
 import { SCENE_NAMES, SCENE_UID } from './__testsupport__/bookViewScenes.js';
 import { hubSceneInput, hubSceneDocs } from './__testsupport__/bookViewScenesHub.js';
 
@@ -178,6 +180,60 @@ describe('R5: a close landing after the first reads and before the History read'
   });
 });
 
+describe('review A1: the agent\'s pass after a close (its calls on the close row, its manager exit) landing inside a pass', () => {
+  // The B2 run to 19 Nov; then 20 Nov's windows and close, and the agent's pass at that close raced against the reader.
+  async function before20NovAgentPass() {
+    const c = await seedBook({ nowIso: etIso(DAYS.admit, 9, 0) });
+    const admitted = await admitIdea(c.db, { bookId: c.bookId, contract: foundersMediumIdea(), opId: 'founder-medium', nowIso: etIso(DAYS.admit, 11, 0) });
+    expect(admitted.ok).toBe(true);
+    let current = null;
+    const fake = fakeTransport(scriptedDesks(() => current));
+    for (const [i, date] of historySessions(5).entries()) {
+      current = date;
+      const quotes = quotesOn({ drift: i * 0.002, moves: date >= '2026-11-19' && date <= EXIT_SESSION ? { XOM: -0.02 } : {} });
+      if (date !== EXIT_SESSION) { await runSession(c.db, c.bookId, date, { quotes, transport: fake.transport }); continue; }
+      // 20 Nov: the windows and the close only (agentFixtures.js runSession without its agent pass).
+      for (const slot of ['open30', 'midday', 'preClose']) {
+        await storeTickSnapshot(c.db, date, slot, quotes);
+        await runIdeaBookEvalPass(c.db, { tick: tickOf(date, slot), now: slotNowOf(date, slot), ownerToken: `fixture-${date}-${slot}` });
+      }
+      await closeOn(c.db, c.bookId, date, quotes);
+    }
+    return { c, fake };
+  }
+
+  for (const [when, trigger] of [['between the ideas\' read and the History read', 'history'], ['while the idea document is read', 'idea']]) {
+    it(`lands ${when}: the answer is the page before the agent's pass or after it, never a mix`, { timeout: 60_000 }, async () => {
+      const restoreAgent = setPracticeFieldAgentForTests({ agent: true, theses: false });
+      try {
+        const { c, fake } = await before20NovAgentPass();
+        const base = `mandates/${c.bookId}`;
+        const settledBefore = (await readBookView(c.db, { uid: c.uid, agentOn: true })).book;
+        const shortId = c.db._get(base).slots.short;
+        const marks = bookChangeMarks(c.db._get(base));
+        let raced = false;
+        const run = async () => { raced = true; const now = agentNowOf(EXIT_SESSION); await runIdeaBookAgentPass(c.db, { date: EXIT_SESSION, now, ownerToken: `fixture-${EXIT_SESSION}-race`, transport: fake.transport, clock: () => now }); };
+        const db = racing(c.db, {
+          onQuery: async (path) => { if (trigger === 'history' && !raced && path === `${base}/ideas`) await run(); },
+          onDoc: async (path) => { if (trigger === 'idea' && !raced && path === `${base}/ideas/${shortId}`) await run(); },
+        });
+        const answer = (await readBookView(db, { uid: c.uid, agentOn: true })).book;
+        expect(raced).toBe(true);
+        const settledAfter = (await readBookView(c.db, { uid: c.uid, agentOn: true })).book;
+        // The agent's pass did its work, and moved none of the book's marks.
+        expect(bookChangeMarks(c.db._get(base))).toBe(marks);
+        expect(group(settledAfter, 'short')).toMatchObject({ state: 'selling', call: { kind: 'Exit' } });
+        expect(group(settledBefore, 'short')).toMatchObject({ state: 'holding', call: null });
+        expect([JSON.stringify(settledBefore), JSON.stringify(settledAfter)]).toContain(JSON.stringify(answer));
+        // Never the mixed page: an Exit called beside an idea still holding.
+        expect(group(answer, 'short').state === 'holding' && group(answer, 'short').call?.kind === 'Exit').toBe(false);
+      } finally {
+        restoreAgent();
+      }
+    });
+  }
+});
+
 describe('the two-pass stop (B5-4)', () => {
   it('a close in each pass: { tryAgain: true } after exactly two passes; a quiet read then answers whole', async () => {
     const Q = (p) => ({ AAPL: { price: p, marketCap: 3e12 }, SPY: 500 });
@@ -262,6 +318,9 @@ describe('B5-2 through the reader: an idea finished since the last close is coun
         expect(used.archetype).toBeGreaterThan(0);
         const amount = (key) => { const t = v.split.parts.find((x) => x.key === key).use.amount.text; return Math.round(Number(t.replace(/[^0-9.]/g, '')) * 100); };
         expect([amount('archetype'), amount('agent')]).toEqual([used.archetype, used.shadow]);
+        // Review A2: the 20 Nov close's strip still says what that close's desk did — from the idea's row of that close, not
+        // from its holdings as the 23 Nov window left them (empty).
+        expect(v.strip.find((s) => s.desk === 'archetype')).toMatchObject({ failed: false, text: 'called Exit on XOM' });
         checked = true;
       },
     });

@@ -11,8 +11,17 @@
 
 import { CODE_FALLBACK_NOTE } from './agentConfig.js';
 
-/** The failed-check sentence: the agent's own code-built note (agentConfig.js), the mock-up's fixed string. */
-export const FAILED_CHECK = CODE_FALLBACK_NOTE;
+/**
+ * The failed-check line: the agent's own code-built note (agentConfig.js CODE_FALLBACK_NOTE, the mock-up's fixed string,
+ * stored on the close row) — B5-3 (review B1): with ITS DESK as the subject, "Trend Follower’s desk could not complete
+ * today's check; nothing changed.", where the line stands alone (the idea's call, the Desks tab's note); in the strip, after
+ * the desk's name, its verb alone. The stored note itself is unchanged.
+ */
+const FAILED_CHECK_VERB = CODE_FALLBACK_NOTE.replace(/^The agent /, '');
+export const FAILED_CHECK = Object.freeze({
+  sentence: (deskName) => `${deskName} ${FAILED_CHECK_VERB}`,
+  strip: FAILED_CHECK_VERB,
+});
 
 /** An entering name, in place of its mark (the mock-up's B2_BUYS). */
 export const BUYS_NEXT_WINDOW = 'Buys at the next session’s first window';

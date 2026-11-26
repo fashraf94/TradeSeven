@@ -17,31 +17,35 @@
 // sales — the sale that finishes an idea and puts it in History among them). So the book's own CHANGE MARKS —
 // `revision`, `execState.lastCloseKey` and `currentEpochId` — differ before and after any close or money move. A PASS reads
 // the book first (with its claim), then everything else, and the book AGAIN last; when the two reads' marks agree, no close
-// and no money move landed in between, and every read in between saw one book. When they differ, the whole pass is read
-// again, once. A second pass that disagrees too answers `{ tryAgain: true }`: the endpoint says "try again" (503), and the
-// client shows its error state. (The writes that do NOT move `revision` — the agent's notes and calls on the close row and
-// a manager's exit (agentRun.js, managerExit.js: no money moves), a founder's ruling recorded on an idea (founderControls.js:
-// posted only by the next close, which does move it), a window's tick key (sweep.js) — change no figure: build report §5.)
-// A read-only transaction would give the same at one snapshot; the in-memory harness's transactions take references, not
-// queries (build report §5).
+// and no money move landed in between, and every read in between saw one book. THE AGENT'S PASS after a close (agentRun.js)
+// moves none of the book's marks — no money moves — but writes the desks' calls on the close's window row, after any
+// manager's exit it makes on an idea (managerExit.js); so that row is read FIRST too, before the ideas, and again last, and
+// the pass settles only when it is unchanged (review A1: an exit read beside a call from before it, or the reverse, would
+// show neither state). When either differs, the whole pass is read again, once. A second pass that disagrees too answers
+// `{ tryAgain: true }`: the endpoint says "try again" (503), and the client shows its error state. (The other writes that
+// do NOT move `revision` — a founder's ruling recorded on an idea (founderControls.js: posted only by the next close, which
+// does move it; until then it can only add a hold), the pause and wind-down controls (no figure), an entry attempt's note
+// (entry.js), a window's tick key (sweep.js) — change no figure the read pairs: build report §5.) A read-only transaction
+// would give the same at one snapshot; the in-memory harness's transactions take references, not queries (build report §5).
 //
 // THE READS, every one bounded. One pass reads at most
-//     2 + I + 3 + 1 + 1 + 2·I + 1 + 20·(1 + 1 + P) + 3 + 1 + 1 + 1  =  54 + 3·I + 20·P
-// documents, by step: the claim and the book (2), the ideas (I), the daily rows (3), the epoch (1), the agent (1), the ideas'
-// rows (2·I), the close row (1), History (20 ideas, 20 packets, 20·P parts), the rows of ideas finished since the close (3),
-// the first fill and its inception (1 + 1), the book again (1). I counts the UNIQUE ideas the book's open set and slots name
-// (at most six; an idea in both is read once), P a packet's receipt parts (at most RESULT_PARTS_READ_MAX; the engine's own
-// bound makes three). Queries: 3. Two passes at most: 108 + 6·I + 40·P documents, 6 queries. (B3's one pass was 48 + 3·I +
-// 20·P; B5 adds the epoch, the agent, the three rows and the book's second read.) Reads that depend on nothing else run in
-// parallel:
-//   1. the claim, then the book (its change marks, first);
+//     2 + 1 + I + 3 + 1 + 1 + 2·I + 20·(1 + 1 + P) + 3 + 1 + 1 + 1 + 1  =  55 + 3·I + 20·P
+// documents, by step: the claim and the book (2), the close row (1), the ideas (I), the daily rows (3), the epoch (1), the
+// agent (1), the ideas' rows (2·I), History (20 ideas, 20 packets, 20·P parts), the rows of ideas finished since the close
+// (3), the first fill and its inception (1 + 1), the book and the close row again (1 + 1). I counts the UNIQUE ideas the
+// book's open set and slots name (at most six; an idea in both is read once), P a packet's receipt parts (at most
+// RESULT_PARTS_READ_MAX; the engine's own bound makes three). Queries: 3. Two passes at most: 110 + 6·I + 40·P documents,
+// 6 queries. (B3's one pass was 48 + 3·I + 20·P; B5 adds the epoch, the agent, the three rows and the second reads of the book
+// and the close row.) Reads that depend on nothing else run in parallel:
+//   1. the claim, then the book (its change marks, first), then the last close's window row (`windows/{session}_close`: the
+//      agent's notes, calls and drafts — first too);
 //   2. the ideas its slots and open set name, each once; and (B5) the epoch it runs under (`epochs/{currentEpochId}`: the
 //      archetype and the shares, B5-1 and B5-2) and its attribution agent (`agents/{attributionAgentId}`: the given name,
 //      B5-3 — used only when the agent's `ownerId` is the caller's uid);
 //   3. the book's three latest rows (`dailyRows`, ordered by `date`, three): the book's own row and the latest row strictly
 //      before it (here and in the view), never the session's own as its "previous" (review B3-A04);
 //   4. each filled idea's row at the last close and at the close before it (two documents by id);
-//   5. the last close's window row (`windows/{session}_close`: the agent's notes, calls and drafts);
+//   5. (the close row was read at step 1);
 //   6. History: the book's finished ideas, newest first, at most 20 — ONE single field, `liquidation.completedSession`,
 //      a range (`> ''`) and an order on it alone (every resulted idea carries it; an idea without it — open, cancelled — is
 //      not in the range), served by the automatic single-field index, so no index is added — and each one's result packet,
@@ -53,7 +57,7 @@
 //      (`rows/inception`): SPY's quote at the book's first fill, for "SPY since open" (B3-6); that idea's entry session
 //      names the label. `filledAt` is one writer's `Date#toISOString()` (entry.js), a fixed-width UTC string, so its
 //      order is the order of the instants;
-//   8. the book again (its change marks, last).
+//   8. the book and the close row again (their marks, last).
 
 import { isIdeaBook } from '../mandateBookKind.js';
 import { getArchetypeDefinition } from '../archetypeRegistry.js';
@@ -95,6 +99,15 @@ export function bookChangeMarks(book) {
 }
 
 /**
+ * Review A1: the close row's mark — the whole row as stored. The agent's pass after a close writes its desks' parts here
+ * (agentRun.js), after any manager exit it makes on an idea (managerExit.js), neither moving the book's marks; a row read
+ * before the ideas and again last that is unchanged saw no part written between, so no exit was paired with the wrong call.
+ */
+export function closeRowMark(row) {
+  return JSON.stringify(row ?? null);
+}
+
+/**
  * A finished idea's result packet and its receipt parts (by the ids the packet records) — the parts only when the packet's
  * own hash holds and it records no more than RESULT_PARTS_READ_MAX (otherwise none are read, and the view's check fails).
  */
@@ -127,6 +140,11 @@ async function readPass(db, uid) {
   const { bookId, book } = own;
   const bookRef = db.collection('mandates').doc(bookId);
   const ideasRef = bookRef.collection('ideas');
+  // 1b. The last close's window row, first too (review A1): the agent's pass after a close writes its calls here and its
+  // exits on the ideas without moving the book's marks, so this row is read before the ideas and again last.
+  const closeKey = isDate(book.execState?.lastCloseKey) ? book.execState.lastCloseKey : null;
+  const closeRef = closeKey !== null ? bookRef.collection('windows').doc(`${closeKey}_close`) : null;
+  const closeFirst = closeRef !== null ? dataOf(await closeRef.get()) : null;
 
   // 2. The ideas, the epoch and the agent; 3. the three latest daily rows.
   const ids = [...new Set([...(book.openIdeaIds || []), ...Object.values(book.slots || {})].filter((v) => typeof v === 'string' && v.length > 0))];
@@ -146,7 +164,7 @@ async function readPass(db, uid) {
   const agent = dataOf(agentSnap);
   const agentName = isPlain(agent) && agent.ownerId === uid ? (agent.name ?? null) : null;
 
-  const session = isDate(book.execState?.lastCloseKey) ? book.execState.lastCloseKey : (daily[0]?.date ?? null);
+  const session = closeKey ?? (daily[0]?.date ?? null);
   // The book's row at its session, and the latest row strictly before it (never the session's own: B3-A04).
   const dailyRows = {
     last: daily.find((r) => r.date === session) ?? null,
@@ -154,7 +172,7 @@ async function readPass(db, uid) {
   };
   const prevSession = dailyRows.prev?.date ?? null;
 
-  // 4. Each filled idea's rows; 5. the close row; 6. History; 7. the first entered idea — all at once.
+  // 4. Each filled idea's rows; 6. History; 7. the first entered idea — all at once (the close row: step 1).
   const rows = new Map();
   const rowsRead = Promise.all(ideas.filter((idea) => idea.entry?.sessionDate && session !== null).map(async (idea) => {
     const rowsRef = ideasRef.doc(idea.ideaId).collection('rows');
@@ -164,7 +182,10 @@ async function readPass(db, uid) {
     ]);
     rows.set(idea.ideaId, { last: dataOf(lastSnap), prev: dataOf(prevSnap) });
   }));
-  const closeRead = session !== null ? bookRef.collection('windows').doc(`${session}_close`).get().then(dataOf) : Promise.resolve(null);
+  // (A book with no close key but a daily row — never written by the engine, which sets both in one transaction — reads its
+  // close row here, as B3 did.)
+  const closeRead = closeRef !== null ? Promise.resolve(closeFirst)
+    : session !== null ? bookRef.collection('windows').doc(`${session}_close`).get().then(dataOf) : Promise.resolve(null);
   const historyRead = ideasRef.where('liquidation.completedSession', '>', '').orderBy('liquidation.completedSession', 'desc').limit(HISTORY_LIMIT).get()
     .then((snap) => {
       const done = snap.docs.map((d) => ({ ...d.data(), ideaId: d.id })).filter((idea) => idea.status === 'resulted' && isDate(idea.liquidation?.completedSession));
@@ -187,9 +208,11 @@ async function readPass(db, uid) {
     });
   const [, closeRow, finished, firstEntry] = await Promise.all([rowsRead, closeRead, historyRead, firstRead]);
 
-  // 8. The book again: its change marks, last. Any close or money move since step 1 moved them.
-  const again = dataOf(await bookRef.get());
-  if (bookChangeMarks(again) !== bookChangeMarks(book)) return { settled: false };
+  // 8. The book again, and the close row again: their marks, last. Any close or money move since step 1 moved the book's; the
+  // agent's pass at that close (its calls, its manager exits) moves the close row.
+  const [againSnap, closeAgainSnap] = await Promise.all([bookRef.get(), closeRef !== null ? closeRef.get() : null]);
+  if (bookChangeMarks(dataOf(againSnap)) !== bookChangeMarks(book)) return { settled: false };
+  if (closeRef !== null && closeRowMark(dataOf(closeAgainSnap)) !== closeRowMark(closeFirst)) return { settled: false };
 
   return {
     settled: true,

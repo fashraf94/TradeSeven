@@ -13,6 +13,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { buildBookView, epochSharesOf, plainGivenName, deskNamesOf, AGENT_GIVEN_NAME_MAX, BOOK_VIEW_VERSION } from './bookView.js';
 import * as COPY from './bookViewCopy.js';
+import * as CLIENT_COPY from '../../../src/components/PracticeField/ideaBookCopy.js';
 import { readBookView } from './bookViewRead.js';
 import { setPracticeFieldModeForTests } from './mode.js';
 import { toCents } from './money.js';
@@ -116,7 +117,7 @@ describe('B5-2: the split — shares from the epoch, each desk\'s use at the las
       expect(cents(part(v, key).use.amount.text), key).toBe(use);
       expect(cents(part(v, key).use.of.text), key).toBe(of);
       expect(part(v, key).use.bar, key).toBe(Math.min(1, use / of)); // (the sample's energy idea has gained past its 20%)
-      expect(part(v, key).use.pct, key).toBe(`${new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format((use * 100) / of)}%`);
+      expect(part(v, key).use.pct, key).toBe(`${new Intl.NumberFormat('en-US', { maximumFractionDigits: 0, roundingMode: 'trunc' }).format((use * 100) / of)}%`);
       // …and it is the sum of the position values the desk's groups show (BUILD_RULES §9).
       const shown = v.groups.filter((g) => g.desk === desk).flatMap((g) => g.names).filter((n) => n.positionValue).reduce((s, n) => s + cents(n.positionValue), 0);
       expect(shown, key).toBe(use);
@@ -276,6 +277,21 @@ describe('B5-3: the desks by their names, finished by the server', () => {
     });
   });
 
+  it('review B2: a name that draws nothing falls back — joiners, fillers, the braille blank, marks alone; Persian keeps its non-joiner', () => {
+    const invisible = [cp(0x200d), cp(0x200d, 0x200d, 0x200d), cp(0x200c), cp(0x3164), cp(0x115f), cp(0xffa0), cp(0x2800), cp(0x0301), cp(0xfe0f), cp(0x034f), `${cp(0x3164)} ${cp(0x2800)}`];
+    for (const bad of invisible) {
+      expect(plainGivenName(bad), JSON.stringify(bad)).toBeNull();
+      expect(group(view('sample', { agentName: bad }), 'long').text).toBe('Long · open · your agent’s desk looks tonight.');
+    }
+    // A name that draws something stays, however it is spelled: Persian with its zero-width non-joiner, an emoji sequence.
+    const persian = `${cp(0x0646, 0x06cc, 0x06a9)}${cp(0x200c)}${cp(0x0646, 0x0627, 0x0645)}`;
+    expect(plainGivenName(persian)).toBe(persian);
+    expect(plainGivenName(`Ada ${cp(0x1f469, 0x200d, 0x1f4bb)}`)).toBe(`Ada ${cp(0x1f469, 0x200d, 0x1f4bb)}`);
+    // (Recorded, not refused: a letter under 19 stacked marks is 20 code points and draws; a flag's tag sequence is refused.)
+    expect(plainGivenName(`a${cp(0x0301).repeat(19)}`)).not.toBeNull();
+    expect(plainGivenName(`Lion ${cp(0x1f3f4, 0xe0067, 0xe0062, 0xe0065, 0xe006e, 0xe0067, 0xe007f)}`)).toBeNull();
+  });
+
   it('through the reader: the caller\'s own agent names its desk; an agent that is not the caller\'s, or none, falls back', async () => {
     expect(group(await read(hubSceneDocs('sample')), 'medium').deskName).toBe(`${HUB_AGENT_NAME}’s desk`);
     const foreign = await read(hubSceneDocs('sample', { agent: { ownerId: 'someone-else', name: 'Mallory' } }));
@@ -299,6 +315,8 @@ describe('B5-3: the desks by their names, finished by the server', () => {
       } else if (v && typeof v === 'object') Object.values(v).forEach(add);
     };
     Object.values(COPY).forEach(add);
+    // (Review B4: the client's own words too — the screen draws them beside the view's.)
+    Object.values(CLIENT_COPY).forEach(add);
     expect(fixed.length).toBeGreaterThan(150);
     for (const s of fixed) expect(s).not.toMatch(/shadow|archetype desk/i);
     for (const n of SCENE_NAMES) {

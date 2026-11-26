@@ -114,20 +114,30 @@ const upper = (s) => String(s || '').trim().toUpperCase();
 export const AGENT_GIVEN_NAME_MAX = 20;
 /** A control, a lone surrogate, a line or paragraph separator. */
 const NOT_PLAIN_TEXT = /[\p{Cc}\p{Cs}\p{Zl}\p{Zp}]/u;
-/** A format character — the bidi overrides and isolates, zero-width spaces — save the joiner inside an emoji sequence. */
+/**
+ * A format character — the bidi overrides and isolates, zero-width spaces, soft hyphens, tag characters — save the two
+ * joiners a script or an emoji sequence spells with (U+200D, which joins an emoji sequence; U+200C, which Persian writes).
+ */
 const FORMAT_CHARACTER = /\p{Cf}/u;
-const ZERO_WIDTH_JOINER = String.fromCodePoint(0x200d);
+const JOINERS = Object.freeze([String.fromCodePoint(0x200d), String.fromCodePoint(0x200c)]);
+/** What draws nothing on its own (review B2): default-ignorable code points (joiners, fillers, variation selectors),
+ * combining marks, white space — and the braille blank, a symbol that draws nothing. */
+const DRAWS_NOTHING = /[\p{Default_Ignorable_Code_Point}\p{M}\p{White_Space}]/gu;
+const BRAILLE_BLANK = String.fromCodePoint(0x2800);
+const withoutJoiners = (t) => JOINERS.reduce((s, j) => s.split(j).join(''), t);
 
 /**
  * The agent's given name as this module may show it, or null: player text, PLAIN TEXT ONLY — trimmed, one to
- * AGENT_GIVEN_NAME_MAX code points, no control, separator, lone surrogate or format character (a joiner inside an emoji
- * sequence aside). Markup is not stripped: it is text, and the client draws it as text. Anything else falls back (null).
+ * AGENT_GIVEN_NAME_MAX code points, no control, separator, lone surrogate or format character (the two joiners aside), and
+ * at least one character that draws something. Markup is not stripped: it is text, and the client draws it as text.
+ * Anything else falls back (null).
  */
 export function plainGivenName(v) {
   if (typeof v !== 'string') return null;
   const t = v.trim();
   if (t.length === 0 || [...t].length > AGENT_GIVEN_NAME_MAX) return null;
-  if (NOT_PLAIN_TEXT.test(t) || FORMAT_CHARACTER.test(t.split(ZERO_WIDTH_JOINER).join(''))) return null;
+  if (NOT_PLAIN_TEXT.test(t) || FORMAT_CHARACTER.test(withoutJoiners(t))) return null;
+  if (t.replace(DRAWS_NOTHING, '').split(BRAILLE_BLANK).join('').length === 0) return null;
   return t;
 }
 
@@ -145,8 +155,11 @@ const USD_WHOLE = new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, max
 const PRICE = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const PCT2 = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const PCT1 = new Intl.NumberFormat('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-/** B5-2: a desk's use in whole percent ("83%"), and a share as the epoch states it ("70%", "12.5%"). Display only. */
-const PCT_WHOLE = new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+/**
+ * B5-2: a desk's use in whole percent ("83%"), cut, never rounded up (review A4): "100%" exactly when the bar is full, never
+ * for 99.6%; and a share as the epoch states it ("70%", "12.5%"). Display only.
+ */
+const PCT_WHOLE = new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0, roundingMode: 'trunc' });
 const PCT_SHARE = new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 4 });
 const SHARES = new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 6 });
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -476,7 +489,7 @@ const deskPartOf = (closeRow, desk) => (isPlain(closeRow?.agent?.desks?.[desk]) 
 /** Today's call on an idea: the desk's action and reason on the close row, the failed check, or none. */
 function callOf(part, ideaId, desk, session, names) {
   if (!part) return null;
-  if (part.source === AGENT_NOTE_SOURCE.CODE_FALLBACK) return { failed: true, text: FAILED_CHECK };
+  if (part.source === AGENT_NOTE_SOURCE.CODE_FALLBACK) return { failed: true, text: FAILED_CHECK.sentence(deskLabel(names, desk)), deskName: deskLabel(names, desk) };
   const a = (part.actions || []).find((x) => x?.ideaId === ideaId);
   if (!a || !str(a.reason)) return null;
   const call = { kind: a.action === 'exit' ? 'Exit' : 'Hold', text: a.reason, deskName: deskLabel(names, desk), date: dayLabel(session) };
@@ -616,7 +629,7 @@ export function deriveStrip({ session, deskParts, ideas, finishedIdeas, rows = n
       const passed = (part.considered || []).filter((c) => c?.outcome === 'refused' || c?.outcome === 'not_chosen').length;
       if (passed > 0) words.push(STRIP.passedOn(passed));
     }
-    if (failed) out.push({ desk, deskName: deskLabel(names, desk), failed: true, text: [FAILED_CHECK, ...words].join(STRIP.sep) });
+    if (failed) out.push({ desk, deskName: deskLabel(names, desk), failed: true, text: [FAILED_CHECK.strip, ...words].join(STRIP.sep) });
     else if (words.length > 0) out.push({ desk, deskName: deskLabel(names, desk), failed: false, text: words.join(STRIP.sep) });
   }
   return out;
@@ -651,7 +664,7 @@ function desksOf({ session, deskParts, groups, archetypeName, looks, names }) {
     const part = deskParts[desk];
     const lane = desk === 'archetype' && str(archetypeName) ? `${archetypeName} · ${DESK_LANES[desk]}` : DESK_LANES[desk];
     let note = null;
-    if (part?.source === AGENT_NOTE_SOURCE.CODE_FALLBACK) note = { failed: true, text: FAILED_CHECK, date: dayLabel(session) };
+    if (part?.source === AGENT_NOTE_SOURCE.CODE_FALLBACK) note = { failed: true, text: FAILED_CHECK.sentence(deskLabel(names, desk)), date: dayLabel(session) };
     else if (part?.source === AGENT_NOTE_SOURCE.MODEL && str(part.note)) note = { failed: false, text: part.note, date: dayLabel(session) };
     const calls = groups.filter((g) => g.desk === desk).map((g) => {
       const row = { slot: g.slot, slotName: g.slotName, namesText: g.namesText ?? null };
@@ -907,6 +920,12 @@ export function buildBookView({ book, ideas = [], rows = new Map(), dailyRows = 
     smallPrint: PAPER_MONEY,
   };
 
+  // The strip says what each desk did AT the last close, so it reads what each idea held there: an idea finished since that
+  // close (its sale filled at a later window) by its row of that close, as the split does (review A2) — never by its holdings
+  // as the later window left them.
+  const stripRows = new Map(rows);
+  for (const f of finished) if (isPlain(f?.atClose) && typeof f.idea?.ideaId === 'string' && !stripRows.has(f.idea.ideaId)) stripRows.set(f.idea.ideaId, { last: f.atClose, prev: null });
+
   const held = groups.some((g) => g.state === 'holding' || g.state === 'selling');
   const asOf = last && held
     ? { session: dayLabel(session), text: last.observed === false ? MARKS_AS_OF_UNOBSERVED(dayLabel(session)) : MARKS_AS_OF(dayLabel(session)) }
@@ -919,7 +938,7 @@ export function buildBookView({ book, ideas = [], rows = new Map(), dailyRows = 
     asOf,
     line,
     split: deriveSplit({ epoch, ideas, rows, finished, session, valueCents, lineWaits, names }),
-    strip: deriveStrip({ session, deskParts, ideas, finishedIdeas: finished.map((f) => f.idea).filter(Boolean), rows, names }),
+    strip: deriveStrip({ session, deskParts, ideas, finishedIdeas: finished.map((f) => f.idea).filter(Boolean), rows: stripRows, names }),
     groups,
     cash: moneyText(cashCents),
     desks: desksOf({ session, deskParts, groups, archetypeName, looks, names }),

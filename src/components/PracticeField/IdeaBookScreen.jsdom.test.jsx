@@ -94,7 +94,7 @@ describe('the states draw their fixed copy (the design of record\'s ten, and the
   });
   it('8 · a failed check: the strip reads the failed-check sentence', () => {
     const m = screen('failed');
-    expect(m.host.querySelector('[data-ib="strip"]').textContent).toContain(FAILED_CHECK);
+    expect(m.host.querySelector('[data-ib="strip"]').textContent).toContain(`Trend Follower’s desk · ${FAILED_CHECK.strip}`);
   });
   it('9 · paused: the book line says Paused and code still sells; the strip is gone', () => {
     const m = screen('paused');

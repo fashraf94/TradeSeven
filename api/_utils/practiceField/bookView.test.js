@@ -237,10 +237,12 @@ describe('the states (the design of record\'s ten, and the ones it does not draw
 
   it('8 · a failed check: the strip and the call carry the failed-check sentence; the positions are unchanged', () => {
     const v = view('failed');
-    expect(v.strip[0]).toEqual({ desk: 'archetype', deskName: 'Trend Follower’s desk', failed: true, text: FAILED_CHECK });
-    expect(group(v, 'short').call).toEqual({ failed: true, text: FAILED_CHECK });
+    // (B5-3, review B1: the failed-check line by its desk's name — in the strip, after the name, its verb alone.)
+    expect(v.strip[0]).toEqual({ desk: 'archetype', deskName: 'Trend Follower’s desk', failed: true, text: FAILED_CHECK.strip });
+    expect(v.strip[0].text).toBe("could not complete today's check; nothing changed.");
+    expect(group(v, 'short').call).toEqual({ failed: true, text: "Trend Follower’s desk could not complete today's check; nothing changed.", deskName: 'Trend Follower’s desk' });
     expect(group(v, 'short').names.map((n) => n.state)).toEqual(['held', 'held']);
-    expect(v.desks.find((d) => d.desk === 'archetype').note).toEqual({ failed: true, text: FAILED_CHECK, date: '27 Nov' });
+    expect(v.desks.find((d) => d.desk === 'archetype').note).toEqual({ failed: true, text: FAILED_CHECK.sentence('Trend Follower’s desk'), date: '27 Nov' });
   });
 
   it('9 · paused: the line says so, the strip is empty, no call, and an open slot does not say a desk looks', () => {
