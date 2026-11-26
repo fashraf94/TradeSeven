@@ -15,3 +15,6 @@ src/screens/__golden__/filmRoomV2.*.html text eol=lf
 # KB-0: the committed KB method packages, pinned by the SHA-256 of their checked-out bytes
 # (api/_utils/kb/packages.test.js) and re-hashed by the loader on every read — LF on every platform.
 api/_utils/kb/packages/*.json text eol=lf
+# Explore publish step: the test PDFs are built byte by byte (their cross-reference table holds byte offsets), so
+# they are never converted on checkout.
+api/_utils/explore/__fixtures__/docs/*.pdf binary
