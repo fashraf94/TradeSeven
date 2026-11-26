@@ -233,17 +233,15 @@ All ran in WSL Ubuntu (Node 20.20.2, the CI version), `TZ=UTC`, in a clean LF wo
 
 | Check | Command | At | Exit | Result |
 |---|---|---|---|---|
-| The full Linux suite | `TZ=UTC flock /tmp/pd-suite.lock npx vitest run --maxWorkers=8` | `76301710` | **0** | Test Files **1667 passed** \| 14 skipped (1681) · Tests **38698 passed** \| 197 skipped (38895) · 0 failed · 673 s (JSON reporter: `success: true`) |
-| The B3 view file after the last test-only commit | `npx vitest run api/_utils/practiceField/bookView.test.js` | `11d5b662` | **0** | 64 passed (64). That commit gives one row (3.9 s under the suite's load) the 30 s timeout the all-scene rows carry, and changes no code. |
-| The lint gate | `npm run lint:gate` | `11d5b662` | **0** | No output |
-| The build | `npx vite build` | `11d5b662`, and again at the pushed head | **0** | `✓ 4258 modules transformed.` `✓ built in 33.92s`. The build prints 4 CSS syntax warnings. This build changes no CSS file, so they don't come from it. |
-| The rules suite | `npm run test:rules` (Temurin 21, the Firestore emulator) | `11d5b662` | **0** | Test Files **48 passed** (48) · Tests **889 passed** (889). `firestore.rules`, `firestore.indexes.json` and `test/rules/` are unchanged from `main`. |
-| The money-rounding scan, alone, on Linux | `npx vitest run api/_utils/mandateMoneyRounding.scan.test.js` | `59d7ae5b` | **0** | 3 passed. The new code makes no raw rounding call. The percents round through `Intl` (`roundingMode: 'trunc'`); the share dollars use `money.js weightedCents`. |
-| An earlier full suite, at the build | as above | `59d7ae5b` | **0** | 1667 files, 38693 tests passed, 0 failed, 381 s |
+| The full Linux suite | `TZ=UTC flock /tmp/pd-suite.lock npx vitest run --maxWorkers=8` | `92ec4fb7` (code `d71d7ea5`) | **0** | Test Files **1667 passed** \| 14 skipped (1681) · Tests **38699 passed** \| 197 skipped (38896) · 0 failed · 334 s. The money-rounding scan is in it and passes on Linux: the new code makes no raw rounding call. The percents round through `Intl` (`roundingMode: 'trunc'`); the share dollars use `money.js weightedCents`. |
+| The lint gate | `npm run lint:gate` | `92ec4fb7` | **0** | No output |
+| The build | `npx vite build` | `92ec4fb7`, and again at the pushed head | **0** | `✓ 4258 modules transformed.` `✓ built in 15.87s`. The build prints 4 CSS syntax warnings. This build changes no CSS file, so they don't come from it. |
+| The rules suite | `npm run test:rules` (Temurin 21, the Firestore emulator) | `92ec4fb7` | **0** | Test Files **48 passed** (48) · Tests **889 passed** (889). `firestore.rules`, `firestore.indexes.json` and `test/rules/` are unchanged from `main`. |
+| Earlier full suites | as above | `59d7ae5b` (the build), `76301710` (after the review's fixes) | **0**, **0** | 38693 and 38698 tests passed, 0 failed. In the second, two all-scene rows ran 3.9–6.4 s under load and now carry a 30 s timeout. |
 
 This session made no real Firestore, model or EODHD call and read no `.env` file. The picture harness started vite with placeholder Firebase values on its command line.
 
-**Time:** about two and a quarter hours. The session started at about 09:55 CST, the first commit landed at 10:07, and the checks finished at about 12:05. The 4-hour checkpoint was not reached.
+**Time:** about two and a half hours. The session started at about 09:55 CST, the first commit landed at 10:07, and the closing checks finished at about 12:25. The 4-hour checkpoint was not reached.
 
 ## 6. The review (BUILD_RULES §2)
 
