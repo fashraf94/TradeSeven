@@ -116,7 +116,7 @@ export function numberTokensOf(text) {
     const prev = s[m.index - 1] ?? '';
     const prev2 = s[m.index - 2] ?? '';
     const next = s[m.index + m[0].length] ?? '';
-    const negative = (/[-−–]/.test(prev) && !/[\p{L}\p{N}]/u.test(prev2)) || (prev === '(' && next === ')');
+    const negative = (/[-\u2212\u2013]/.test(prev) && !/[\p{L}\p{N}]/u.test(prev2)) || (prev === '(' && next === ')');
     out.push({ digits: `${m[1].replace(/,/g, '')}${m[2] ?? ''}`, negative });
   }
   return out;

@@ -18,10 +18,10 @@ import { createHash } from 'node:crypto';
 /** The version of the rule above, written on every match this step records (the Work an idea chat, Nov 25). */
 export const RULE_VERSION = 1;
 
-const SINGLE_QUOTES = /[‘’‚‛]/g;
-const DOUBLE_QUOTES = /[“”„‟]/g;
-const DASHES = /[\p{Pd}−]/gu;
-const SOFT_HYPHEN = /­/g;
+const SINGLE_QUOTES = /[\u2018\u2019\u201A\u201B]/g;
+const DOUBLE_QUOTES = /[\u201C\u201D\u201E\u201F]/g;
+const DASHES = /[\p{Pd}\u2212]/gu;
+const SOFT_HYPHEN = /\u00AD/g;
 const WHITESPACE = /\s+/gu;
 
 /** A string under the rule (a non-string is the empty string). */

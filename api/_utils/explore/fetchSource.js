@@ -232,7 +232,7 @@ export async function fetchDocument(url, {
     }
   } catch (err) {
     const code = err?.code;
-    if (code === 'EXPLORE_TIMEOUT' || err?.name === 'AbortError') return fail(`no answer within ${Math.round(timeoutMs / 1000)} seconds`, current);
+    if (code === 'EXPLORE_TIMEOUT' || err?.name === 'AbortError') return fail(`no answer within ${timeoutMs / 1000} seconds`, current);
     if (code === 'EXPLORE_NOT_PUBLIC' || code === 'EXPLORE_NO_ADDRESS' || code === 'EXPLORE_TOO_LARGE') return fail(err.message, current);
     return fail(`the request failed (${code ?? err?.name ?? 'error'}: ${err?.message ?? String(err)})`, current);
   } finally {

@@ -315,7 +315,7 @@ export async function runCommand(parsed, deps) {
   }
   // What the collection is read for: the stories linked to from outside the set; for a write, the set's own too.
   const toRead = [...linkedIdsOf(entries), ...(WRITES.has(command) ? entries.map((e) => e.id) : [])].filter((id) => !stored.has(id));
-  if (toRead.length) for (const [id, data] of await readStories(await db(), toRead)) stored.set(id, data);
+  if (toRead.length) stored = new Map([...stored, ...(await readStories(await db(), toRead))]);
   const read = [...new Set([...parsed.ids, ...toRead])];
 
   const checked = checkStories(entries, { others: stored, linkMode: publishing ? 'published' : 'any', storedKeys, now });

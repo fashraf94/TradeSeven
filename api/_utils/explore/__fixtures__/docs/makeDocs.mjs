@@ -28,7 +28,7 @@ const RELEASE = `<!doctype html>
 </head>
 <body>
 <h1>Example Corp reports third quarter results</h1>
-<p>Cloud revenue increased 48% &ndash; driven by “data center” demand, to $46.0&nbsp;billion.</p>
+<p>Cloud revenue increased 48% &ndash; driven by \u201Cdata center\u201D demand, to $46.0&nbsp;billion.</p>
 <p>Capital expenditures, which primarily reflected investments in technical
 infrastructure, were $51.4 billion for the three months.</p>
 <p hidden>Hidden revenue figure of 99%.</p>
