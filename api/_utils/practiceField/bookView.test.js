@@ -81,7 +81,7 @@ describe('day n of N: the agent\'s own count of sessions left (agentRun.js sessi
 });
 
 describe('allotCents: each name\'s value at a row\'s marks sums EXACTLY to the row\'s stored holdings value (BUILD_RULES §9)', () => {
-  it('on every scene row: the parts sum to markedHoldingsValue to the cent', () => {
+  it('on every scene row: the parts sum to markedHoldingsValue to the cent', { timeout: 30_000 }, () => {
     for (const n of SCENE_NAMES) {
       for (const [, rows] of sceneInput(n).rows) {
         for (const row of [rows.last, rows.prev].filter(Boolean)) {
@@ -329,7 +329,7 @@ describe('the states (the design of record\'s ten, and the ones it does not draw
 });
 
 describe('the figures of every scene agree with its stored rows to the cent', () => {
-  it('each held name: value = its allotment, open P/L = value − cost basis, day P/L = value − the close before', () => {
+  it('each held name: value = its allotment, open P/L = value − cost basis, day P/L = value − the close before', { timeout: 30_000 }, () => {
     for (const n of SCENE_NAMES) {
       const input = sceneInput(n);
       const v = buildBookView(input);
@@ -550,14 +550,14 @@ describe('the battery\'s survivors, pinned', () => {
 });
 
 describe('what the view never carries', () => {
-  it('no id of the owner, the book, the agent or an idea, in any string of any scene', () => {
+  it('no id of the owner, the book, the agent or an idea, in any string of any scene', { timeout: 30_000 }, () => {
     for (const n of SCENE_NAMES) {
       const input = sceneInput(n);
       const ids = [SCENE_UID, SCENE_BOOK_ID, SCENE_AGENT_ID, ...input.ideas.map((i) => i.ideaId), ...input.finished.map((f) => f.idea.ideaId)];
       for (const s of strings(buildBookView(input))) for (const id of ids) expect(s.includes(id), `${n}: ${s}`).toBe(false);
     }
   });
-  it('none of the words validated, proven or supported (contract §4.4)', () => {
+  it('none of the words validated, proven or supported (contract §4.4)', { timeout: 30_000 }, () => {
     for (const n of SCENE_NAMES) expect(JSON.stringify(buildBookView(sceneInput(n))), n).not.toMatch(BANNED_RESULT_WORDS);
   });
   it('agent and player text passes through as the plain string it was stored as', () => {

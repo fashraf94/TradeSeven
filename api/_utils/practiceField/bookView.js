@@ -526,8 +526,8 @@ function groupOf(slot, idea, ctx) {
   const entered = idea.entry?.sessionDate ?? null;
   const boughtThisSession = entered !== null && entered === session;
   const boughtAfterClose = entered !== null && (session === null || entered > session);
-  const lastAllot = allotCents(last);
-  const prevAllot = allotCents(prev);
+  const lastAllot = ctx.allot(last);
+  const prevAllot = ctx.allot(prev);
   // B3-A01: the one ledger test, on both rows — the last with the idea itself (written by that close), the one before
   // from its row alone, carefully (ledgerHeld says why).
   const lastHeld = ledgerHeld(last, idea);
@@ -804,8 +804,9 @@ const shareOf = (ppm) => ({ text: `${PCT_SHARE.format((ppm * 100) / WEIGHT_PPM_T
  * @param {number} p.valueCents            the book's marked value — the headline's own cents
  * @param {boolean} p.lineWaits            the book line waits (B3-11)
  * @param {object} p.names                 the desks' names (deskNamesOf)
+ * @param {(row: object) => Map} [p.allot]  the view's own allotment of a row (allotCents, computed once per row)
  */
-export function deriveSplit({ epoch, ideas = [], rows = new Map(), finished = [], session = null, valueCents, lineWaits = false, names = deskNamesOf() }) {
+export function deriveSplit({ epoch, ideas = [], rows = new Map(), finished = [], session = null, valueCents, lineWaits = false, names = deskNamesOf(), allot = allotCents }) {
   const shares = epochSharesOf(epoch);
   if (!shares) return null;
   // Each desk's positions at the last close: every idea row of that session, by the allotment the names' values use.
@@ -815,7 +816,7 @@ export function deriveSplit({ epoch, ideas = [], rows = new Map(), finished = []
     const desk = deskOfIdea(idea);
     if (desk === null || seen.has(idea?.ideaId) || !isPlain(row) || row.date !== session) return;
     seen.add(idea.ideaId);
-    for (const c of allotCents(row).values()) used[desk] += c;
+    for (const c of allot(row).values()) used[desk] += c;
   };
   for (const idea of ideas) count(idea, rows.get(idea.ideaId)?.last);
   for (const f of finished) count(f?.idea, f?.atClose);
@@ -870,7 +871,11 @@ export function buildBookView({ book, ideas = [], rows = new Map(), dailyRows = 
   const finishedViews = finished.map((f) => ({ ...f, view: finishedView(f, { bookId: book?.bookId ?? null, names }) }));
 
   // The groups, one per slot in order.
-  const ctx = { session, rows, deskParts, looks, names };
+  // One allotment per row for this view: the names' position values and the split's use read the same one (and it is
+  // computed once).
+  const allotted = new Map();
+  const allot = (row) => { if (!allotted.has(row)) allotted.set(row, allotCents(row)); return allotted.get(row); };
+  const ctx = { session, rows, deskParts, looks, names, allot };
   const groups = PRACTICE_FIELD_SLOT_NAMES.map((slot) => {
     const id = book?.slots?.[slot] ?? null;
     const idea = typeof id === 'string' ? byId.get(id) ?? null : null;
@@ -937,7 +942,7 @@ export function buildBookView({ book, ideas = [], rows = new Map(), dailyRows = 
     day: weekdayLabel(session),
     asOf,
     line,
-    split: deriveSplit({ epoch, ideas, rows, finished, session, valueCents, lineWaits, names }),
+    split: deriveSplit({ epoch, ideas, rows, finished, session, valueCents, lineWaits, names, allot }),
     strip: deriveStrip({ session, deskParts, ideas, finishedIdeas: finished.map((f) => f.idea).filter(Boolean), rows: stripRows, names }),
     groups,
     cash: moneyText(cashCents),
