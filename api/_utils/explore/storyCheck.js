@@ -241,9 +241,12 @@ function checkOne({ id, record, discarded }, ctx) {
     if (!connById.has(q.fromConnection)) refuse('K-4(i)', `${at}.fromConnection`, q.fromConnection, 'names no connection of this story');
     if (!SHAPES.includes(q.shape)) refuse('K-4(i)', `${at}.shape`, q.shape, `\`shape\` is one of ${SHAPES.join(', ')}`);
     else shapesUsed.push(q.shape);
+    // The founder's ruling SQ-5 (Nov 26): refused, not noted. An investigation starts from a question by its id, and
+    // the page invents an id for a question without one and renames the second of two that share one (it compares
+    // them trimmed, so this check does too).
     const qid = textOf(q.id);
-    if (!qid) note('page', `${at}.id`, q.id, 'without an id the page invents one ("q" and its place), which an investigation started from this question would have to repeat');
-    else if (seenQ.has(qid)) note('page', `${at}.id`, q.id, 'two questions share this id; the page renames the second');
+    if (!qid) refuse('SQ-5', `${at}.id`, q.id, 'every question has an id: without one the page invents one, which an investigation started from this question could not name');
+    else if (seenQ.has(qid)) refuse('SQ-5', `${at}.id`, q.id, `the id "${qid}" is already used by another question of this story; the page would rename this one`);
     seenQ.add(qid);
     if (!textOf(q.text)) note('page', `${at}.text`, q.text, 'the page does not draw a question without text');
     else if (q.text.trim().length > 120) note('standard §6 rule 7', `${at}.text`, q.text.trim().length, 'a question reads in one sentence, under 120 characters where possible');

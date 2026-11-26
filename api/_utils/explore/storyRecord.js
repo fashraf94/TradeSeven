@@ -143,10 +143,17 @@ export function numberTokensOf(text) {
 }
 
 /**
+ * SQ-7: a token's digits without the zeros that END its decimal part, and without a decimal point left bare: "46.0"
+ * and "46.00" → "46", "0.80" → "0.8"; a token with no decimal point is unchanged ("460" stays "460").
+ */
+const withoutDecimalZeros = (digits) => (digits.includes('.') ? digits.replace(/0+$/, '').replace(/\.$/, '') : digits);
+
+/**
  * K-7: is `value` written inside `excerpt` as a whole number token — as written, with thousands separators, or with
  * the decimals given (48 in "48%", 3661 in "3,661", 51.4 in "51.4 billion") — and not as part of a longer number?
- * A negative value must be written as negative. The decimals are as given: 46 is not found in "$46.0 billion" (the
- * letter; review A9 asks the founder whether decimal zeros should count: SQ-7). Checked on the author's text alone,
+ * A negative value must be written as negative. The founder's ruling SQ-7 (Nov 26): a token that differs from the
+ * value ONLY by trailing zeros after its decimal point is the same figure (46 in "$46.0", 0.8 in "0.80", 51.4 in
+ * "51.40"); nothing else loosens ("460", "46.01" and "4.05" are other numbers). Checked on the author's text alone,
  * read under the word-for-word rule — the very string the matcher looks for (review H3: a dash or a soft hyphen the
  * rule changes cannot make the check and the match read two figures).
  */
@@ -154,5 +161,5 @@ export function figureInExcerpt(value, excerpt) {
   if (typeof value !== 'number' || !Number.isFinite(value)) return false;
   const digits = String(Math.abs(value));
   if (!/^\d+(\.\d+)?$/.test(digits)) return false; // an exponent form ("5e-7") is never written in a report
-  return numberTokensOf(underRule(excerpt)).some((t) => t.digits === digits && t.negative === (value < 0));
+  return numberTokensOf(underRule(excerpt)).some((t) => withoutDecimalZeros(t.digits) === digits && t.negative === (value < 0));
 }

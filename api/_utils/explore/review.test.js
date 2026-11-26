@@ -236,10 +236,44 @@ describe('A12 — an empty door is a door that names no story (the letter; the l
   });
 });
 
-describe('A9 — decimals as given (the letter; the looser reading is SQ-7)', () => {
-  it('46 is not found in "$46.0 billion"', () => {
+describe('SQ-7 (the founder\'s ruling, Nov 26) — a figure written with trailing zeros after its decimal point is the same figure; nothing else loosens', () => {
+  it.each([
+    [46, 'to $46.0 billion.', true],
+    [46, 'to $46.00 billion.', true],
+    [0.8, 'a ratio of 0.80', true],
+    [51.4, 'were $51.40 billion', true],
+    [-46, 'fell -46.0%', true],
+    [0, 'flat at 0.0%', true],
+    [46, 'about 460 sites', false],
+    [46, 'up 46.01%', false],
+    [4, 'up 4.05%', false],
+    [46.0, 'up 460%', false],
+    [4.6, 'up 46.0%', false],
+    [46, 'fell -46.0%', false],
+  ])('%s in %j → %s', (value, excerpt, expected) => {
+    expect(figureInExcerpt(value, excerpt)).toBe(expected);
+  });
+  it('in the check: Amazon\'s 46 against "$46.0 billion" is carried', () => {
     const r = checkPair((ov) => { Object.assign(cloud(ov).measures[0].cells[1], { value: 46, excerpt: 'AWS segment sales increased 39% year-over-year to $46.0 billion.' }); });
-    expect(refusedOf(r, OV)).toEqual([['K-7', 'questions[0].measures[0].cells[1].value']]);
+    expect(r.refused).toBe(false);
+  });
+});
+
+describe('SQ-5 (the founder\'s ruling, Nov 26) — a question with no id, or an id another question already uses, is refused', () => {
+  it.each([
+    ['no id', (dp) => { delete dp.questions[1].id; }, [['SQ-5', 'questions[1].id']]],
+    ['a blank id', (dp) => { dp.questions[2].id = '  '; }, [['SQ-5', 'questions[2].id']]],
+    ['an id that is not a string', (dp) => { dp.questions[1].id = 7; }, [['SQ-5', 'questions[1].id']]],
+    ['an id the first question already uses', (dp) => { dp.questions[2].id = dp.questions[0].id; }, [['SQ-5', 'questions[2].id']]],
+    ['the same id with spaces at its ends (the page compares them trimmed)', (dp) => { dp.questions[1].id = ` ${dp.questions[0].id} `; }, [['SQ-5', 'questions[1].id']]],
+  ])('%s', (_, mutate, expected) => {
+    expect(refusedOf(checkPair((ov, dp) => mutate(dp)), DP)).toEqual(expected);
+  });
+  it('distinct ids pass, a space inside an id included, and no other note became a refusal', () => {
+    expect(checkPair().refused).toBe(false);
+    const r = checkPair((ov, dp) => { dp.questions[1].id = 'min payments'; delete dp.questions[1].wrongIfSeed; });
+    expect(r.refused).toBe(false);
+    expect(notedOf(r, DP)).toEqual([['standard §6 rule 9', 'questions[1].wrongIfSeed']]);
   });
 });
 
