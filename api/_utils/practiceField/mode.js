@@ -2,15 +2,23 @@
 //
 // Practice Field T1a-1 — THE SERVER GATE (build prompt rule 5). PRACTICE_FIELD_MODE resolves here, at call time:
 //   'off'        nobody. No Practice Field code path runs in any cron; no reads.
-//   'allowlist'  creation, admission and the Film Room's seam admit only a uid the cockpit's SERVER-SIDE allowlist
-//                holds (api/_utils/callRecords/allowlist.js — the environment, read NOW, never cached, never at
-//                module scope). The crons serve every existing idea book.
+//   'allowlist'  see the two gates below. The crons serve every existing idea book, listed or not.
 //   'on'         every non-empty uid.
 // An unknown value reads as 'off' (fail closed). Never throws.
 //
+// THE TWO GATES (build B4, rulings B4-1 and B4-5), each read from the environment NOW (playerList.js — never cached, never
+// at module scope):
+//   practiceFieldAdmits(uid)       creating a book, admitting an idea, the screen. At 'allowlist': a uid on the idea book's
+//                                  OWN player list, PRACTICE_FIELD_PLAYER_UIDS — that list alone. The cockpit's list
+//                                  (COCKPIT_ALLOWLIST_UIDS) decides nothing in the idea book since B4.
+//   practiceFieldSeamAdmits(uid)   the Film Room's seam (bookStore.js bookForOwner: the nomination route). No nomination opens
+//                                  for players: at 'allowlist' it admits only a uid the first gate admits AND on the founder
+//                                  list (MANDATE_FOUNDER_UIDS). At 'on' and 'off' it is the first gate, unchanged.
+//
 // IMPORT-LIGHT ON PURPOSE: the Film Room's card routes load this module through the seam
 // (api/_utils/filmRoom/practiceFieldSeam.js → bookStore.js → here), so it imports the flags (two zero-import modules:
-// practiceFieldFlags.js and, since build B3, practiceFieldScreenFlags.js) and the allowlist reader, and nothing else.
+// practiceFieldFlags.js and, since build B3, practiceFieldScreenFlags.js) and the list reader (playerList.js, zero imports
+// since build B4), and nothing else.
 //
 // TESTS: the shipped value is 'allowlist' (since the B0 flip), and the accounting is exercised end to end by synthetic
 // fixtures. A test sets
@@ -21,7 +29,8 @@
 import {
   PRACTICE_FIELD_MODE, PRACTICE_FIELD_MODES, PRACTICE_FIELD_AGENT_ENABLED, PRACTICE_FIELD_AGENT_THESES_ENABLED,
 } from '../../../src/config/practiceFieldFlags.js';
-import { readCockpitAllowlist } from '../callRecords/allowlist.js';
+// Build B4 (B4-1, B4-5): the idea book's own player list and the founder list, read at call time.
+import { readPracticeFieldPlayerList, readPracticeFieldFounderList } from './playerList.js';
 // Build B3 (ruling B3-8): the screen's switch, in a zero-import module of its own the client reads too.
 import { PRACTICE_FIELD_SCREEN_ENABLED } from '../../../src/config/practiceFieldScreenFlags.js';
 
@@ -48,13 +57,27 @@ export function practiceFieldLive() {
   return practiceFieldMode() !== OFF;
 }
 
-/** Does the mode admit this owner (creation, admission, the Film Room's seam)? Never throws. */
+/**
+ * Does the mode admit this owner (creating a book, admitting an idea, the screen)? At 'allowlist', only a uid on the idea
+ * book's own player list (build B4, ruling B4-1). Never throws.
+ */
 export function practiceFieldAdmits(uid) {
   if (typeof uid !== 'string' || uid.length === 0) return false;
   const mode = practiceFieldMode();
   if (mode === 'on') return true;
-  if (mode === 'allowlist') return readCockpitAllowlist().includes(uid);
+  if (mode === 'allowlist') return readPracticeFieldPlayerList().includes(uid);
   return false;
+}
+
+/**
+ * Build B4 (ruling B4-5) — THE FILM ROOM SEAM'S NARROWER GATE: does the seam answer for this owner? No nomination opens for
+ * players: at 'allowlist', only a uid practiceFieldAdmits admits AND on the founder list (MANDATE_FOUNDER_UIDS). At 'on'
+ * and 'off', exactly practiceFieldAdmits. Read at call time; never throws.
+ */
+export function practiceFieldSeamAdmits(uid) {
+  if (!practiceFieldAdmits(uid)) return false;
+  if (practiceFieldMode() === 'allowlist') return readPracticeFieldFounderList().includes(uid);
+  return true;
 }
 
 /**

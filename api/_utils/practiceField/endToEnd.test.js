@@ -98,7 +98,12 @@ import {
 // frozen into the three ideas' contracts and their admission packets (one character each, so the byte count is unchanged):
 // with the constant set back to 1 on the build's tree, this run reproduces abcf8420… exactly — the shared endpoint step and
 // evidence reads (close.js settleIdeaAtEndpoint, readIdeaEvidenceRows) changed nothing, and the agent's switches are off.
-const EXPECTED_DUMP = { sha256: 'f5ed5c964c84d28bf0dd47524e0760a7dcff22012c8bed7e760600889e235c08', bytes: 443533 };
+// Build B4 (ruling B4-6: PRACTICE_FIELD_SLOTS_VERSION 2 → 3, B8_FOUNDER_BOOK_CAP 4 → 12): re-pinned from f5ed5c96…, 443,533
+// bytes. With the two constants set back to 2 and 4 on the build's tree (every other B4 change in place), this run reproduces
+// f5ed5c96… exactly. Leaf-compared at 3 and 12: the same 13,153 leaves, and the ONLY changed ones are the slots version (the
+// book, its epoch's rails, each of the three ideas' contracts and admission packets: 8 leaves), the three admission packets'
+// derived `contentHash`, and the registry's `cap` (4 → 12, the one extra byte). No money, ledger or result leaf moved.
+const EXPECTED_DUMP = { sha256: '61b9432787d2a6d1de9df0dc410a16d83bc799d772f391db13556071b8d88c89', bytes: 443534 };
 
 // Twenty-nine sessions from Monday 16 November 2026 (Thanksgiving and Christmas are not sessions).
 const SESSIONS = ['2026-11-16'];
