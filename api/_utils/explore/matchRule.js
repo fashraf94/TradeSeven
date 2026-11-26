@@ -10,8 +10,14 @@
 //   5. every run of whitespace, non-breaking included, to one space; the ends trimmed;
 //   6. case kept.
 //
-// A quote matches when, under this rule, it is a substring of the text. No fuzzy matching, no stemming, no partial
-// credit. RULE_VERSION is recorded on every match block (`match.rule`): a change of any step above is a new version.
+// A quote matches when, under this rule, it is a substring of the text — at a place where it does not cut a number:
+// a quote that begins with a digit must not continue a number in the text before it (a digit, a decimal point or
+// thousands comma after a digit, or a minus sign), and a quote that ends with a digit must not run on into one (a
+// digit, or a decimal point or comma followed by a digit). So "48% this quarter" is not found in "grew 148% this
+// quarter", nor in "-48% this quarter", and "Sales were 3" is not found in "Sales were 3,661". This is the Work an
+// idea chat's own condition, "the figure sits inside its own matched excerpt, written as the table will show it",
+// held where the excerpt sits in the document (review H2). No fuzzy matching, no stemming, no partial credit.
+// RULE_VERSION is recorded on every match block (`match.rule`): a change of any step above is a new version.
 
 import { createHash } from 'node:crypto';
 
@@ -37,13 +43,39 @@ export function underRule(value) {
     .trim();
 }
 
+const DIGIT = /\d/;
+const LETTER_OR_DIGIT = /[\p{L}\p{N}]/u;
+/** Does the text, just before index `i`, hold a number the quote's first digit would continue? */
+function numberRunsInto(text, i) {
+  const c1 = text[i - 1] ?? '';
+  const c2 = text[i - 2] ?? '';
+  if (DIGIT.test(c1)) return true;
+  if ((c1 === '.' || c1 === ',') && DIGIT.test(c2)) return true;
+  return c1 === '-' && !LETTER_OR_DIGIT.test(c2); // a minus sign, not the hyphen of "12-18" or "Q3-2026"
+}
+/** Does the text, from index `j`, carry on the number the quote's last digit ends? */
+function numberRunsOn(text, j) {
+  const c1 = text[j] ?? '';
+  const c2 = text[j + 1] ?? '';
+  return DIGIT.test(c1) || ((c1 === '.' || c1 === ',') && DIGIT.test(c2));
+}
+
 /**
  * Is `quote` in `ruledText`? `ruledText` must already be under the rule (the text is put under it once per document);
- * the quote is put under it here. An empty quote is never found.
+ * the quote is put under it here. Found when SOME occurrence does not cut a number at either edge (see the header).
+ * An empty quote is never found.
  */
 export function quoteIn(ruledText, quote) {
   const q = underRule(quote);
-  return q.length > 0 && typeof ruledText === 'string' && ruledText.includes(q);
+  if (q.length === 0 || typeof ruledText !== 'string') return false;
+  const startsWithDigit = DIGIT.test(q[0]);
+  const endsWithDigit = DIGIT.test(q[q.length - 1]);
+  for (let i = ruledText.indexOf(q); i >= 0; i = ruledText.indexOf(q, i + 1)) {
+    if (startsWithDigit && numberRunsInto(ruledText, i)) continue;
+    if (endsWithDigit && numberRunsOn(ruledText, i + q.length)) continue;
+    return true;
+  }
+  return false;
 }
 
 /** The SHA-256 (hex) of a text already under the rule — `match.textHash`. */

@@ -14,6 +14,7 @@
 //   wordsIn             the body's word count (K-4(d)).
 
 import { canonicalContentHash } from '../canonicalHash.js';
+import { underRule } from './matchRule.js';
 
 export const KINDS = Object.freeze(['overview', 'deep']);
 /** Body words at most, by kind (standard V1.4 §2; the note §3 replaces the kickoff's "about 200"). */
@@ -67,9 +68,14 @@ export function cellKindOf(cell) {
   return 'stated';
 }
 
+/** The keys of a match result, wherever they sit: only this step writes them (K-11, the STOP list). */
+export const MATCH_KEYS = Object.freeze(['match', 'matched']);
+
 /**
  * The author's record, with the step's own fields removed (K-11): returns `{ record, discarded }`, `discarded` naming
- * each field that arrived with a value. The input is never changed.
+ * each field that arrived with a value. `status`, `publishedAt` and `revisedAt` are the story's own; a `match` or
+ * `matched` key is removed WHEREVER it sits, at any depth (review H1/A1: a result in a place this step never writes
+ * is still a result the author wrote). The input is never changed.
  */
 export function authorRecordOf(raw) {
   const record = clone(raw);
@@ -78,25 +84,28 @@ export function authorRecordOf(raw) {
   for (const f of STEP_STORY_FIELDS) {
     if (Object.hasOwn(record, f)) { discarded.push(f); delete record[f]; }
   }
-  (Array.isArray(record.sources) ? record.sources : []).forEach((s, i) => {
-    if (isPlain(s) && Object.hasOwn(s, 'match')) { discarded.push(`sources[${i}].match`); delete s.match; }
-  });
-  for (const { cell, field } of measureCellsOf(record)) {
-    if (!isPlain(cell)) continue;
-    if (Object.hasOwn(cell, 'matched')) { discarded.push(`${field}.matched`); delete cell.matched; }
-    (Array.isArray(cell.inputs) ? cell.inputs : []).forEach((input, k) => {
-      if (isPlain(input) && Object.hasOwn(input, 'matched')) { discarded.push(`${field}.inputs[${k}].matched`); delete input.matched; }
-    });
-  }
+  const walk = (node, at) => {
+    if (Array.isArray(node)) { node.forEach((v, i) => walk(v, `${at}[${i}]`)); return; }
+    if (!isPlain(node)) return;
+    for (const key of Object.keys(node)) {
+      const field = at ? `${at}.${key}` : key;
+      if (MATCH_KEYS.includes(key)) { discarded.push(field); delete node[key]; continue; }
+      walk(node[key], field);
+    }
+  };
+  walk(record, '');
   return { record, discarded };
 }
 
 /** The hash of the author's content: the record with every step field removed (the version rule, K-11). */
 export const contentHashOf = (raw) => canonicalContentHash(authorRecordOf(raw).record);
 
-/** Words in the body: every whitespace-separated token holding a letter or a digit, over all paragraphs. */
+/**
+ * Words in the body: every whitespace-separated token holding a letter or a digit, over all paragraphs. A body
+ * written as one string is counted too (review A8): its words would otherwise escape the limit.
+ */
 export function wordsIn(body) {
-  const paragraphs = Array.isArray(body) ? body.filter((p) => typeof p === 'string') : [];
+  const paragraphs = typeof body === 'string' ? [body] : Array.isArray(body) ? body.filter((p) => typeof p === 'string') : [];
   return paragraphs.reduce((n, p) => n + p.split(/\s+/u).filter((t) => /[\p{L}\p{N}]/u.test(t)).length, 0);
 }
 
@@ -122,14 +131,20 @@ export function numberTokensOf(text) {
   return out;
 }
 
+/** A token's digits without decimal zeros at the end: "46.0" → "46", "0.80" → "0.8"; "51.4" and "3661" unchanged. */
+const withoutTrailingZeros = (digits) => (digits.includes('.') ? digits.replace(/0+$/, '').replace(/\.$/, '') : digits);
+
 /**
  * K-7: is `value` written inside `excerpt` as a whole number token — as written, with thousands separators, or with
  * the decimals given (48 in "48%", 3661 in "3,661", 51.4 in "51.4 billion") — and not as part of a longer number?
- * A negative value must be written as negative. Checked on the author's text alone.
+ * A negative value must be written as negative. A figure the report writes with decimal zeros ("$46.0 billion",
+ * "0.80") is the same number: a JSON value cannot keep them (review A9). Checked on the author's text alone, read
+ * under the word-for-word rule — the very string the matcher looks for (review H3: a dash or a soft hyphen the rule
+ * changes cannot make the check and the match read two figures).
  */
 export function figureInExcerpt(value, excerpt) {
   if (typeof value !== 'number' || !Number.isFinite(value)) return false;
   const digits = String(Math.abs(value));
   if (!/^\d+(\.\d+)?$/.test(digits)) return false; // an exponent form ("5e-7") is never written in a report
-  return numberTokensOf(excerpt).some((t) => t.digits === digits && t.negative === (value < 0));
+  return numberTokensOf(underRule(excerpt)).some((t) => withoutTrailingZeros(t.digits) === digits && t.negative === (value < 0));
 }

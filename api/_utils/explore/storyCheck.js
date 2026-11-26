@@ -78,8 +78,30 @@ export const asPublished = (record, now) => ({ ...(isPlain(record) ? record : {}
 const symbolOf = (entry) => (isPlain(entry) ? entry.symbol : entry);
 const listedTicker = (s) => typeof s === 'string' && TICKERS.has(s) && !isRetiredStock(s);
 
-/** The ISO-shaped currency a unit names first ("USD millions" → "USD"), or null. */
-export const currencyOf = (unit) => (typeof unit === 'string' ? (unit.trim().match(/^([A-Z]{3})(?![A-Za-z])/)?.[1] ?? null) : null);
+/** Currency signs and words a unit may begin with, and the code each names. */
+const CURRENCY_WORDS = Object.freeze([
+  [/^(?:\$|us\s*\$|us dollars?\b|u\.s\. dollars?\b|dollars?\b)/i, 'USD'],
+  [/^(?:€|euros?\b)/i, 'EUR'],
+  [/^(?:£|pounds? sterling\b|pounds?\b)/i, 'GBP'],
+  [/^(?:¥|yen\b)/i, 'JPY'],
+]);
+/**
+ * The currency a unit names first, as a code, or null: an ISO-shaped code ("USD millions" → "USD"), or a sign or a
+ * word ("$ millions", "US dollars, millions" → "USD"; review A10). A unit naming no currency (percent, GW) has none.
+ */
+export function currencyOf(unit) {
+  if (typeof unit !== 'string') return null;
+  const u = unit.trim();
+  const code = u.match(/^([A-Z]{3})(?![A-Za-z])/)?.[1];
+  if (code) return code;
+  return CURRENCY_WORDS.find(([re]) => re.test(u))?.[1] ?? null;
+}
+
+/** The words a story never uses of its evidence (standard §4). */
+const BANNED_WORDS = /\b(?:supported|verified|confirmed)\b/i;
+
+/** The keys a computed cell may carry (addition 2: never a result). */
+const COMPUTED_CELL_KEYS = Object.freeze(['symbol', 'formula', 'inputs']);
 
 /** Every story id the records link to (parents and doors) that is not among them: what the caller reads. */
 export function linkedIdsOf(entries) {
@@ -101,9 +123,9 @@ function checkOne({ id, record, discarded }, ctx) {
   const note = (rule, field, value, message) => out.push(finding(LEVELS.NOTED, rule, field, value, message));
 
   // (`status`, `publishedAt` and `revisedAt` are replaced on every write and need no note: an author's draft carries a
-  // placeholder date. A match the author wrote is worth saying: this step never keeps one.)
-  const matchFields = discarded.filter((f) => /\.match(ed)?$/.test(f));
-  if (matchFields.length) note('K-11', matchFields.join(', '), null, 'the file carried match results; this step never keeps one: they were discarded before anything else read the file, and only this run\'s are recorded');
+  // placeholder date. A match result is worth saying, wherever it sat: this step never keeps one.)
+  const matchFields = discarded.filter((f) => /(^|\.)match(ed)?$/.test(f));
+  if (matchFields.length) note('K-11', matchFields.join(', '), null, 'the record arrived with match results (written in the file, or stored by an earlier run); this step never keeps one: they were removed before anything else read the record, and only this run\'s are recorded');
 
   // (a) the page's own judgment, on the story as it would be once published (K-2)
   for (const r of pageDropReasonsOf(id, asPublished(record, ctx.now))) {
@@ -137,16 +159,20 @@ function checkOne({ id, record, discarded }, ctx) {
   connections.forEach((c, i) => {
     const at = `connections[${i}]`;
     if (!isPlain(c)) { refuse('K-4(g)', at, c, 'a connection is an object'); return; }
-    const cid = textOf(c.id);
+    // The id is the address (standard §8): looked up exactly as written, never trimmed (review A5).
+    const cid = textOf(c.id) ? c.id : null;
     if (!cid) refuse('K-4(g)', `${at}.id`, c.id, 'every connection has an `id`');
     else if (connById.has(cid)) refuse('K-4(g)', `${at}.id`, c.id, `the connection id "${cid}" is used twice`);
     else connById.set(cid, c);
+    if (cid && cid !== cid.trim()) note('record', `${at}.id`, c.id, 'the id has spaces at its ends: every reference to it must repeat them exactly');
     if (!BASES.includes(c.basis)) refuse('K-4(g)', `${at}.basis`, c.basis, `\`basis\` is one of ${BASES.join(', ')}`);
     if (!textOf(c.unknown)) refuse('K-4(g)', `${at}.unknown`, c.unknown, 'every connection states its one unknown (the gap, standard §5)');
     if (!textOf(c.whereToLook)) refuse('K-4(g)', `${at}.whereToLook`, c.whereToLook, 'every connection says where to look (the gap, standard §5)');
     if (c.basis === 'source_cited' && listOf(c.sourceIds).length === 0) refuse('K-4(g)', `${at}.sourceIds`, c.sourceIds, 'a connection labelled "Source cited" names at least one source');
     if (!textOf(c.who)) note('page', `${at}.who`, c.who, 'the page does not draw a connection without `who`');
     if (c.basis !== 'source_cited' && textOf(c.known)) note('standard §5', `${at}.known`, c.known, '"Known" holds what a cited source establishes; it is blank when nothing is cited');
+    if (c.basis === 'source_cited' && !textOf(c.known)) note('standard §5', `${at}.known`, c.known, 'a "Source cited" connection states what its source establishes in "Known"');
+    if (c.basis !== 'source_cited' && BASES.includes(c.basis) && listOf(c.sourceIds).length > 0) note('standard §4', `${at}.sourceIds`, c.sourceIds, `labelled "${c.basis}" but cites a source: it counts as unsourced by its label`);
   });
   if (!connections.some((c) => isPlain(c) && BASES.includes(c.basis) && c.basis !== 'source_cited')) {
     refuse('K-4(g)', 'connections', null, 'at least one connection is not sourced ("Reporter\'s reading" or "No source yet")');
@@ -176,7 +202,9 @@ function checkOne({ id, record, discarded }, ctx) {
     else if (!https) refuse('K-4(h)', `${at}.url`, s.url, 'a source\'s link is https');
     if (!textOf(s.name)) note('page', `${at}.name`, s.name, 'the page does not draw a source without a name');
     if (!textOf(s.excerpt)) note('standard §4', `${at}.excerpt`, s.excerpt, 'a source with no excerpt can never be matched by machine');
-    if (typeof s.id === 'string' && seenSource.has(s.id)) note('record', `${at}.id`, s.id, 'two sources share this id; a citation of it is ambiguous');
+    // Two sources under one id: a citation of it names no ONE source, and a figure's match could rest on the other
+    // (review H5/A7). Refused under K-4(h).
+    if (typeof s.id === 'string' && seenSource.has(s.id)) refuse('K-4(h)', `${at}.id`, s.id, 'two sources share this id: a citation of it names no one source');
     seenSource.add(s.id);
     if (typeof s.id === 'string' && !cites.some(([, sid]) => sid === s.id)) note('record', `${at}.id`, s.id, 'no connection and no figure cites this source');
   });
@@ -200,9 +228,11 @@ function checkOne({ id, record, discarded }, ctx) {
   }
   if (kind === 'overview' && record.about !== undefined) note('standard §9', 'about', record.about, 'only a deep story names its own company');
 
-  // (i) questions
-  const featured = questions.filter((q) => isPlain(q) && q.featured === true).length;
-  if (featured !== 1) refuse('K-4(i)', 'questions', featured, `exactly one question is featured; ${featured} are`);
+  // (i) questions. "Exactly one featured" is counted on what the page draws — the page's own view of the story as it
+  // would be once published (K-2; review A15): a featured question with no text is not drawn, so it is not a card.
+  const view = storyOf(id, asPublished(record, ctx.now));
+  const featured = view ? view.questions.filter((q) => q.featured).length : questions.filter((q) => isPlain(q) && q.featured === true).length;
+  if (featured !== 1) refuse('K-4(i)', 'questions', featured, `exactly one question the page draws is featured; ${featured} ${featured === 1 ? 'is' : 'are'}`);
   const seenQ = new Set();
   const shapesUsed = [];
   questions.forEach((q, i) => {
@@ -212,16 +242,22 @@ function checkOne({ id, record, discarded }, ctx) {
     if (!SHAPES.includes(q.shape)) refuse('K-4(i)', `${at}.shape`, q.shape, `\`shape\` is one of ${SHAPES.join(', ')}`);
     else shapesUsed.push(q.shape);
     const qid = textOf(q.id);
-    if (!qid || !STORY_ID.test(qid)) note('page', `${at}.id`, q.id, 'without an id of letters, digits, "-" and "_" the page invents one, and an investigation cannot name this question');
+    if (!qid) note('page', `${at}.id`, q.id, 'without an id the page invents one ("q" and its place), which an investigation started from this question would have to repeat');
     else if (seenQ.has(qid)) note('page', `${at}.id`, q.id, 'two questions share this id; the page renames the second');
     seenQ.add(qid);
     if (!textOf(q.text)) note('page', `${at}.text`, q.text, 'the page does not draw a question without text');
+    else if (q.text.trim().length > 120) note('standard §6 rule 7', `${at}.text`, q.text.trim().length, 'a question reads in one sentence, under 120 characters where possible');
     if (!textOf(q.wrongIfSeed)) note('standard §6 rule 9', `${at}.wrongIfSeed`, q.wrongIfSeed, 'a question says what would weaken a thesis built from it');
     if (!isPlain(q.watch) || !textOf(q.watch.document) || !textOf(q.watch.updates)) note('standard §6 rule 10', `${at}.watch`, q.watch, 'a question names its watch document and how often it comes out');
     if (kind === 'overview' && q.shape !== BROAD_SHAPE && SHAPES.includes(q.shape)) note('standard §2', `${at}.shape`, q.shape, 'an overview\'s questions are broad (who_leads)');
     if (kind === 'deep' && q.shape === BROAD_SHAPE) note('standard §2', `${at}.shape`, q.shape, 'a deep story\'s questions are specific');
     if (q.shape === BROAD_SHAPE) checkBroad(q, at, connById, ctx, refuse, note);
-    else if (q.group !== undefined || q.measures !== undefined) note('standard §6', at, null, 'a specific question\'s `group` and `measures` are not read');
+    else {
+      // K-4(f) checks "a question's group", whatever its shape (review A3). A specific question's group and measures
+      // are written, checked and matched like a broad one's; no compare-and-narrow investigation starts from it.
+      listOf(q.group).forEach((g, k) => { if (!listedTicker(symbolOf(g))) refuse('K-4(f)', `${at}.group[${k}].symbol`, symbolOf(g), 'not in the game\'s 228-stock list (ALL_TICKERS), or retired'); });
+      if (q.group !== undefined || q.measures !== undefined) note('standard §6', at, null, 'a specific question carries a group or measures: they are checked and matched, but only a broad question\'s start a comparison');
+    }
   });
   if (questions.length < 1 || questions.length > 3) note('standard §2', 'questions', questions.length, 'a story has one to three questions');
   if (kind === 'deep' && new Set(shapesUsed).size !== shapesUsed.length) note('standard §6', 'questions', shapesUsed, 'a deep story\'s questions use different shapes');
@@ -229,6 +265,18 @@ function checkOne({ id, record, discarded }, ctx) {
   if (feat) {
     const group = listOf(feat.group).map(symbolOf);
     if (group.some((s, k) => tickers[k] !== s)) note('standard §9', 'tickers', tickers, 'the story\'s tickers hold the featured question\'s group first');
+  }
+
+  // The story's own words never say "Supported", "Verified" or "Confirmed" (standard §4). Quotes are the documents'.
+  const own = [
+    ['title', record.title], ['deck', record.deck], ['openQuestion', record.openQuestion],
+    ...listOf(record.body).map((p, i) => [`body[${i}]`, p]),
+    ...connections.flatMap((c, i) => (isPlain(c) ? ['who', 'what', 'basisLine', 'known', 'unknown', 'whereToLook'].map((k) => [`connections[${i}].${k}`, c[k]]) : [])),
+    ...questions.flatMap((q, i) => (isPlain(q) ? ['text', 'angleLabel', 'unknown', 'wrongIfSeed'].map((k) => [`questions[${i}].${k}`, q[k]]) : [])),
+  ];
+  for (const [f, v] of own) {
+    const word = typeof v === 'string' ? v.match(BANNED_WORDS)?.[0] : null;
+    if (word) note('standard §4', f, word, 'the words "Supported", "Verified" and "Confirmed" are never used');
   }
 
   // (k) cells, and K-7: the figure inside its own quote
@@ -243,26 +291,32 @@ function checkBroad(q, at, connById, ctx, refuse, note) {
   const conn = connById.get(q.fromConnection);
   const leadSymbols = new Set(listOf(conn?.leads).map(symbolOf).filter((s) => typeof s === 'string'));
   const group = listOf(q.group);
-  if (group.length < LIMITS.GROUP_MIN || group.length > LIMITS.GROUP_MAX) refuse('K-4(j)', `${at}.group`, group.length, `a broad question compares ${LIMITS.GROUP_MIN} to ${LIMITS.GROUP_MAX} companies`);
+  // Counted as companies, not entries (review A2): a company named twice is refused, and the limits count each once.
   const groupSymbols = group.map(symbolOf);
+  const companies = new Set(groupSymbols).size;
+  if (companies < LIMITS.GROUP_MIN || companies > LIMITS.GROUP_MAX) refuse('K-4(j)', `${at}.group`, companies, `a broad question compares ${LIMITS.GROUP_MIN} to ${LIMITS.GROUP_MAX} companies`);
   group.forEach((g, k) => {
     const s = symbolOf(g);
     if (!listedTicker(s)) refuse('K-4(f)', `${at}.group[${k}].symbol`, s, 'not in the game\'s 228-stock list (ALL_TICKERS), or retired');
     if (conn && !leadSymbols.has(s)) refuse('K-4(j)', `${at}.group[${k}].symbol`, s, `is not a lead of the question's connection "${q.fromConnection}"`);
+    if (groupSymbols.indexOf(s) !== k) refuse('K-4(j)', `${at}.group[${k}].symbol`, s, 'names a company already in the group');
   });
-  if (new Set(groupSymbols).size !== groupSymbols.length) note('record', `${at}.group`, groupSymbols, 'a company is named twice in the group');
   const measures = listOf(q.measures);
   if (measures.length < LIMITS.MEASURES_MIN || measures.length > LIMITS.MEASURES_MAX) refuse('K-4(j)', `${at}.measures`, measures.length, `a broad question names ${LIMITS.MEASURES_MIN} to ${LIMITS.MEASURES_MAX} measures`);
-  const stored = measures.filter((m) => isPlain(m) && m.kind === 'stored').length;
+  const storedMeasures = measures.filter((m) => isPlain(m) && m.kind === 'stored');
+  const stored = new Set(storedMeasures.map((m) => m.storedKey)).size;
   if (stored < LIMITS.STORED_MIN) refuse('K-4(j)', `${at}.measures`, stored, `at least ${LIMITS.STORED_MIN} measures are stored; ${stored} ${stored === 1 ? 'is' : 'are'}`);
   measures.forEach((m, k) => {
     const mat = `${at}.measures[${k}]`;
-    if (!isPlain(m) || !MEASURE_KINDS.includes(m.kind)) { note('standard §6', `${mat}.kind`, m?.kind, 'a measure is stored or reported; this one is neither and is not read'); return; }
+    if (!isPlain(m) || !MEASURE_KINDS.includes(m.kind)) { refuse('K-4(j)', `${mat}.kind`, m?.kind, 'a measure is stored or reported (standard §6); this one is neither'); return; }
     if (m.kind === 'stored') {
-      const key = textOf(m.storedKey);
+      // The key is used exactly as written (review A5); a blank one is refused.
+      const key = textOf(m.storedKey) ? m.storedKey : null;
       if (!key) refuse('K-4(l)', `${mat}.storedKey`, m.storedKey, 'a stored measure names its key');
       else if (ctx.storedKeys) { if (!ctx.storedKeys.has(key)) refuse('K-4(l)', `${mat}.storedKey`, key, 'is not on the research server\'s list of stored measures'); }
       else note('K-4(l)', `${mat}.storedKey`, key, 'not checked: the list is not built yet (src/constants/compareMeasures.js)');
+      if (key && storedMeasures.findIndex((x) => x.storedKey === m.storedKey) !== storedMeasures.indexOf(m)) refuse('K-4(j)', `${mat}.storedKey`, key, 'names a stored measure already in this question');
+      if (m.name !== undefined || m.plain !== undefined) note('standard §6', mat, null, 'a stored measure writes no label of its own: the research server\'s list holds it');
       return;
     }
     if (!textOf(m.name) || !textOf(m.plain)) note('standard §6', mat, null, 'a reported measure has its label in plain words (`name`, `plain`)');
@@ -298,7 +352,9 @@ function checkCell(cell, field, refuse, note) {
   // computed: a named formula, its inputs, never its result
   const spec = Object.hasOwn(FORMULAS, cell.formula) ? FORMULAS[cell.formula] : null;
   if (!spec) { refuse('K-4(k)', `${field}.formula`, cell.formula, `a computed cell's formula is one of ${Object.keys(FORMULAS).join(', ')}`); return; }
-  if (Object.hasOwn(cell, 'value')) refuse('K-4(k)', `${field}.value`, cell.value, 'a computed cell carries its inputs, never its result: the research server does the arithmetic');
+  // Its company, its formula and its inputs, and nothing else: a result under any name is refused (addition 2;
+  // review A6). The research server does the arithmetic.
+  for (const k of Object.keys(cell).filter((x) => !COMPUTED_CELL_KEYS.includes(x))) refuse('K-4(k)', `${field}.${k}`, cell[k], 'a computed cell carries its company, its formula and its inputs, never a result: the research server does the arithmetic');
   const inputs = listOf(cell.inputs);
   if (!Array.isArray(cell.inputs) || inputs.length !== spec.inputs.length) {
     refuse('K-4(k)', `${field}.inputs`, inputs.length, `${cell.formula} takes ${spec.inputs.length} inputs [${spec.inputs.join(', ')}]`);
@@ -311,13 +367,13 @@ function checkCell(cell, field, refuse, note) {
   if (!inputs.every(isPlain)) return;
   const [a, b] = inputs;
   if (cell.formula === 'growth_from_year_ago') {
-    if (!textOf(a.unit) || a.unit !== b.unit) refuse('K-4(k)', `${field}.inputs`, [a.unit, b.unit], 'growth_from_year_ago: the current figure and the year-ago figure are in the same unit');
+    if (!textOf(a.unit) || textOf(a.unit) !== textOf(b.unit)) refuse('K-4(k)', `${field}.inputs`, [a.unit, b.unit], 'growth_from_year_ago: the current figure and the year-ago figure are in the same unit');
     if (!textOf(a.period) || !textOf(b.period) || a.period.trim() === b.period.trim()) refuse('K-4(k)', `${field}.inputs`, [a.period, b.period], 'growth_from_year_ago: the two figures are of two different periods');
     if (b.value === 0) refuse('K-4(k)', `${field}.inputs[1].value`, b.value, 'growth_from_year_ago: the year-ago figure is not zero');
   } else {
-    if (!textOf(a.period) || a.period !== b.period) refuse('K-4(k)', `${field}.inputs`, [a.period, b.period], 'ratio: the numerator and the denominator are of the same period');
+    if (!textOf(a.period) || textOf(a.period) !== textOf(b.period)) refuse('K-4(k)', `${field}.inputs`, [a.period, b.period], 'ratio: the numerator and the denominator are of the same period');
     const ca = currencyOf(a.unit);
-    if (!ca || ca !== currencyOf(b.unit)) refuse('K-4(k)', `${field}.inputs`, [a.unit, b.unit], 'ratio: the two units are in the same currency (a unit starts with its currency code, as "USD millions")');
+    if (!ca || ca !== currencyOf(b.unit)) refuse('K-4(k)', `${field}.inputs`, [a.unit, b.unit], 'ratio: the two units are in the same currency (a unit names its currency first: a code as "USD millions", a sign as "$ millions", or a word as "US dollars")');
     if (b.value === 0) refuse('K-4(k)', `${field}.inputs[1].value`, b.value, 'ratio: the denominator is not zero');
   }
 }
@@ -342,7 +398,8 @@ function checkLinks({ id, record, kind, connById }, ctx, refuse, note) {
   }
   if (kind === 'overview' && record.parent !== undefined) note('standard §9', 'parent', record.parent, 'an overview has no parent; only a deep story does');
   for (const [cid, c] of connById) {
-    if (c.leadsToStory === undefined) continue;
+    // No door yet: the connection reads "not written yet" (the note §4; review A12) — absent, null or empty alike.
+    if (c.leadsToStory === undefined || c.leadsToStory === null || c.leadsToStory === '') continue;
     const at = `connections[${cid}].leadsToStory`;
     if (kind !== 'overview') { note('standard §7', at, c.leadsToStory, 'only an overview\'s connection leads to a deep story'); continue; }
     const target = typeof c.leadsToStory === 'string' && c.leadsToStory ? found(c.leadsToStory) : null;

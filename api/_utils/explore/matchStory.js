@@ -75,6 +75,21 @@ export function matchBlockOf(source, link) {
 /** Whether one excerpt was found in its source's text fetched in this run (only a source with readAt and textHash). */
 export const excerptMatched = (excerpt, link) => Boolean(link?.ruled) && Boolean(link.readAt) && Boolean(link.textHash) && quoteIn(link.ruled, excerpt);
 
+const MONTH = new Intl.DateTimeFormat('en-US', { month: 'short', timeZone: 'UTC' });
+/**
+ * The date check (standard §4), in words, or null when it passes: the source's `dated` should name the month and the
+ * year of the document's own date. No document date found: the check is left to a person, and said so.
+ */
+export function dateCheckOf(dated, documentDate) {
+  if (typeof documentDate !== 'string' || !documentDate) return 'no date was found in the document itself: check `dated` by hand';
+  const d = new Date(documentDate.length === 10 ? `${documentDate}T00:00:00Z` : documentDate);
+  if (!Number.isFinite(d.getTime())) return null;
+  const year = String(d.getUTCFullYear());
+  const month = MONTH.format(d);
+  const text = typeof dated === 'string' ? dated.toLowerCase() : '';
+  return text.includes(year) && text.includes(month.toLowerCase()) ? null : `the document's own date is ${documentDate.slice(0, 10)}; \`dated\` says ${JSON.stringify(dated ?? null)}`;
+}
+
 /** Why a source is `by: 'read'`, in plain words. */
 function readReasonOf(source, link) {
   if (!link) return 'the source has no link to fetch';
@@ -114,9 +129,12 @@ export async function matchStories(stories, { contact, fetchDocument = defaultFe
       const reason = s.match.by === 'machine' ? null : readReasonOf(s, link);
       sourceRows.push({
         index: i, id: s.id ?? null, url: s.url ?? null, finalUrl: link?.fetch?.finalUrl ?? null, redirects: link?.fetch?.redirects ?? [],
-        httpStatus: link?.fetch?.status ?? null, type: link?.type ?? null, ...s.match, reason,
+        httpStatus: link?.fetch?.status ?? null, type: link?.type ?? null, dated: s.dated ?? null, ...s.match, reason,
       });
       if (reason) findings.push({ level: LEVELS.UNMATCHED, rule: 'K-8', field: `sources[${i}]`, value: s.url ?? null, message: `by 'read': ${reason}` });
+      // The date check (standard §4): the document's own date beside the source's `dated`. Noted, never blocking.
+      const dateNote = dateCheckOf(s.dated, s.match.documentDate);
+      if (dateNote) findings.push({ level: LEVELS.NOTED, rule: 'standard §4', field: `sources[${i}].dated`, value: s.dated ?? null, message: dateNote });
     }
 
     for (const { cell, field, question, measure } of measureCellsOf(record)) {
@@ -128,7 +146,7 @@ export async function matchStories(stories, { contact, fetchDocument = defaultFe
         const ref = byId.get(cell.sourceId);
         cell.matched = excerptMatched(cell.excerpt, ref?.link);
         figures.push({ ...where, kind, value: cell.value ?? null, sourceId: cell.sourceId ?? null, matched: cell.matched, sourced: cell.matched });
-        if (!cell.matched) findings.push({ level: LEVELS.UNMATCHED, rule: 'K-8', field: `${field}.matched`, value: cell.excerpt ?? null, message: `not found in source ${JSON.stringify(cell.sourceId)}${ref?.link?.ruled ? '' : ` (${ref?.link?.reason ?? 'no text was read'})`}: it will arrive in an investigation as not checked` });
+        if (!cell.matched) findings.push({ level: LEVELS.UNMATCHED, rule: 'K-8', field: `${field}.matched`, value: cell.excerpt ?? null, message: `not found in source ${JSON.stringify(cell.sourceId)} (${ref?.source?.url ?? 'no link'})${ref?.link?.ruled ? '' : `: ${ref?.link?.reason ?? 'no text was read'}`}; it will arrive in an investigation as not checked` });
         continue;
       }
       // computed: each input carries its own `matched`; the cell itself has no excerpt and gets none
@@ -137,7 +155,7 @@ export async function matchStories(stories, { contact, fetchDocument = defaultFe
         if (!isPlain(inp)) return { index: k, matched: false };
         const ref = byId.get(inp.sourceId);
         inp.matched = excerptMatched(inp.excerpt, ref?.link);
-        if (!inp.matched) findings.push({ level: LEVELS.UNMATCHED, rule: 'K-8', field: `${field}.inputs[${k}].matched`, value: inp.excerpt ?? null, message: `not found in source ${JSON.stringify(inp.sourceId)}${ref?.link?.ruled ? '' : ` (${ref?.link?.reason ?? 'no text was read'})`}: the figure computed from it will arrive as not checked` });
+        if (!inp.matched) findings.push({ level: LEVELS.UNMATCHED, rule: 'K-8', field: `${field}.inputs[${k}].matched`, value: inp.excerpt ?? null, message: `not found in source ${JSON.stringify(inp.sourceId)} (${ref?.source?.url ?? 'no link'})${ref?.link?.ruled ? '' : `: ${ref?.link?.reason ?? 'no text was read'}`}; the figure computed from it will arrive as not checked` });
         return { index: k, value: inp.value ?? null, sourceId: inp.sourceId ?? null, matched: inp.matched };
       });
       const sourced = inputs.length > 0 && inputs.every((i) => i.matched === true);

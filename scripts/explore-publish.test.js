@@ -339,6 +339,35 @@ describe('the version rule, the batch, and the dates', () => {
     expect(r.text).toMatch(/the stored version is 5; a new one is higher, not 4/);
   });
 
+  it('review A4: unpublish, then a draft of OTHER content at the same version, is refused — the rule cannot be walked round', async () => {
+    const db = await published();
+    await cli(['unpublish', '--id', DP, '--uid', UID, '--go'], { db });
+    const before = versions(db);
+    const other = { [OV]: pilot(OV), [DP]: { ...pilot(DP), deck: 'Another deck.' } };
+    const draft = await cli(['draft', ...fileArgs(DP), '--uid', UID, '--go'], { db, files: other, now: T2 });
+    expect(draft.code).toBe(EXIT.REFUSED);
+    expect(draft.text).toMatch(/version 1 was published with other content: raise the version/);
+    expect(versions(db)).toEqual(before);
+    const same = await cli(['draft', ...fileArgs(DP), '--uid', UID, '--go'], { db, files: both, now: T2 });
+    expect(same.code).toBe(EXIT.DONE); // the same content at the same version may be drafted again
+    const raised = await cli(['draft', ...fileArgs(DP), '--uid', UID, '--go'], { db, files: { [DP]: { ...other[DP], version: 2 } }, now: T2 });
+    expect(raised.code).toBe(EXIT.DONE);
+    expect(stored(db, DP)).toMatchObject({ status: 'draft', version: 2, deck: 'Another deck.', publishedAt: T1 });
+  });
+
+  it('review H4: a no-op keeps the stored story and its match, and says so — no "will arrive as not checked" for it', async () => {
+    const db = await published(); // every quote found, stored by machine
+    const before = versions(db);
+    const r = await cli(['publish', ...fileArgs(OV, DP), '--uid', UID, '--go', '--accept-unmatched', '--json'], { db, files: both, routes: REFUSED, now: T2 });
+    expect(r.code).toBe(EXIT.DONE);
+    expect(r.json.written).toEqual([]);
+    expect(r.json.acceptance).toEqual([]);
+    expect(r.json.kept.map((k) => k.id)).toEqual([OV, DP]);
+    expect(r.json.kept[0].message).toMatch(/this run's match above is shown for information and is NOT recorded/);
+    expect(versions(db)).toEqual(before);
+    expect(stored(db, OV).sources.every((s) => s.match.by === 'machine')).toBe(true);
+  });
+
   it('unpublish: the one-step way back; publishedAt kept; published again later at the same version, revisedAt set', async () => {
     const db = await published();
     const dry = await cli(['unpublish', '--id', DP, '--uid', UID], { db });
@@ -398,7 +427,8 @@ describe('the code itself', () => {
     }
   });
 
-  it('nothing under src/ imports this code or the PDF library (the client bundle never holds them)', () => {
+  // A synchronous walk of all of src/: under a loaded machine it took up to 10 s (reviews H/A26), so its own limit.
+  it('nothing under src/ imports this code or the PDF library (the client bundle never holds them)', { timeout: 60_000 }, () => {
     const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((d) => (d.isDirectory() ? walk(path.join(dir, d.name)) : [path.join(dir, d.name)]));
     // An import specifier naming the PDF library, this build's server code or the script (static, re-export, dynamic).
     const SPECIFIER = /(?:\bfrom\s*|\bimport\s*\(?\s*)['"`][^'"`]*(?:unpdf|_utils\/explore\/|explore-publish\.mjs)/;

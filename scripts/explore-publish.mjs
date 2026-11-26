@@ -338,9 +338,16 @@ export async function runCommand(parsed, deps) {
       result: { ...base, read, fetched: matched.links, written: [], refused: [{ gate: 'unmatched', message: `${unmatchedIds.join(', ')}: a quote was not confirmed by machine. Nothing was written. To publish anyway, add --accept-unmatched: each figure below then arrives in an investigation as not checked.` }], stories },
     };
   }
-  const acceptance = publishing && parsed.acceptUnmatched && unmatchedIds.length > 0
-    ? matched.stories.flatMap((s) => s.figures.filter((f) => f.kind !== 'notReported' && !f.sourced).map((f) => ({ id: s.id, question: f.question, measure: f.measure, symbol: f.symbol, message: 'published unmatched (--accept-unmatched): this figure will arrive in an investigation as not checked' })))
-    : [];
+  // What the report says of each plan (review H4): an unmatched figure "will arrive as not checked" only for a story
+  // this run writes (or would write); a story left as stored (a no-op) keeps the stored record and ITS match results.
+  const acceptanceFor = (plans) => (publishing && parsed.acceptUnmatched && unmatchedIds.length > 0
+    ? matched.stories.filter((s) => plans.some((p) => p.id === s.id && p.action !== ACTIONS.NOOP && p.action !== ACTIONS.REFUSED))
+      .flatMap((s) => s.figures.filter((f) => f.kind !== 'notReported' && !f.sourced).map((f) => ({ id: s.id, question: f.question, measure: f.measure, symbol: f.symbol, message: 'published unmatched (--accept-unmatched): this figure will arrive in an investigation as not checked' })))
+    : []);
+  const keptFor = (plans) => plans.filter((p) => p.action === ACTIONS.NOOP).map((p) => ({
+    id: p.id,
+    message: 'the stored story stays as it is, with the match results recorded when it was written; this run\'s match above is shown for information and is NOT recorded. To record a fresh match, raise the version (standard §10).',
+  }));
 
   const status = publishing ? 'published' : 'draft';
   const items = matched.stories.map((s) => ({ id: s.id, record: s.record }));
@@ -350,7 +357,7 @@ export async function runCommand(parsed, deps) {
     const plan = planSet(items, ownStored, { status, stamp });
     return {
       exitCode: EXIT.REFUSED,
-      result: { ...base, read, fetched: matched.links, written: [], refused: [{ gate: 'go', message: 'not written: add --go to write it' }], plans: plan.plans.map((p) => planReport(p, stamp)), acceptance, stories },
+      result: { ...base, read, fetched: matched.links, written: [], refused: [{ gate: 'go', message: 'not written: add --go to write it' }], plans: plan.plans.map((p) => planReport(p, stamp)), acceptance: acceptanceFor(plan.plans), kept: keptFor(plan.plans), stories },
     };
   }
   const database = await db();
@@ -360,7 +367,7 @@ export async function runCommand(parsed, deps) {
   const dates = done.written.map((id) => ({ id, status: after.get(id)?.status ?? null, publishedAt: isoOf(after.get(id)?.publishedAt), revisedAt: isoOf(after.get(id)?.revisedAt) }));
   return {
     exitCode: done.refused ? EXIT.REFUSED : EXIT.DONE,
-    result: { ...base, read, fetched: matched.links, written: done.written, dates, plans: done.plans.map((p) => planReport(p)), acceptance, stories },
+    result: { ...base, read, fetched: matched.links, written: done.written, dates, plans: done.plans.map((p) => planReport(p)), acceptance: done.refused ? [] : acceptanceFor(done.plans), kept: done.refused ? [] : keptFor(done.plans), stories },
   };
 }
 
@@ -379,7 +386,7 @@ function findingLines(s) {
 function sourceLines(s) {
   return (s.sources || []).map((r) => {
     const what = r.by === 'machine' ? 'machine' : 'read   ';
-    const detail = [r.type ? r.type : null, r.readAt ? `read ${r.readAt}` : 'nothing received', r.documentDate ? `document dated ${r.documentDate}` : 'no document date', r.redirects?.length ? `${r.redirects.length} redirect(s)` : null].filter(Boolean).join(', ');
+    const detail = [r.type ? r.type : null, r.readAt ? `read ${r.readAt}` : 'nothing received', r.documentDate ? `document dated ${r.documentDate}` : 'no document date', r.dated ? `source says ${r.dated}` : null, r.redirects?.length ? `${r.redirects.length} redirect(s)` : null].filter(Boolean).join(', ');
     return `    ${String(r.id).padEnd(4)} ${what}  ${detail}${r.reason ? `\n         why: ${r.reason}` : ''}\n         ${r.url}`;
   });
 }
@@ -423,6 +430,7 @@ export function renderText(result) {
     }
   }
   for (const a of result.acceptance || []) out.push(`ACCEPTED UNMATCHED  ${a.id} ${a.question}/${a.measure} ${a.symbol}: ${a.message}`);
+  for (const k of result.kept || []) out.push(`KEPT AS STORED  ${k.id}: ${k.message}`);
   for (const n of result.noted || []) out.push(`NOTED     ${n.message}`);
   for (const p of result.plans || []) {
     out.push('', `${result.written?.includes(p.id) ? 'WRITTEN' : (p.action === ACTIONS.REFUSED ? 'REFUSED' : (p.action === ACTIONS.NOOP ? 'NO CHANGE' : 'WOULD WRITE'))}  ${p.id}   ${p.action}: ${p.reason}`);

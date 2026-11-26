@@ -81,7 +81,7 @@ describe('matching, word for word', () => {
     expect(m.sources.map((r) => [r.type, r.by, r.readAt, r.documentDate])).toEqual([
       ['html', 'machine', FETCHED_AT, '2026-10-29T20:05:00.000Z'],
       ['pdf', 'machine', FETCHED_AT, '2026-09-29T12:30:12.000Z'],
-      ['html', 'read', FETCHED_AT, '2026-11-04T00:00:00.000Z'],
+      ['html', 'read', FETCHED_AT, '2026-11-04'],
       ['pdf', 'machine', FETCHED_AT, '2026-11-06T12:00:00.000Z'],
     ]);
     expect(m.record.sources[0].match.textHash).toMatch(/^[0-9a-f]{64}$/);
@@ -105,7 +105,8 @@ describe('matching, word for word', () => {
     expect(m.record.sources[0].match).toEqual({ by: 'read', readAt: null, documentDate: null, textHash: null, rule: 1 });
     expect(m.sources[0].reason).toBe(reason);
     expect(m.record.questions[0].measures[0].cells[0].matched).toBe(false);
-    expect(m.findings.map((f) => [f.level, f.field])).toEqual([['unmatched', 'sources[0]'], ['unmatched', 'questions[0].measures[0].cells[0].matched']]);
+    expect(m.findings.filter((f) => f.level === 'unmatched').map((f) => [f.level, f.field])).toEqual([['unmatched', 'sources[0]'], ['unmatched', 'questions[0].measures[0].cells[0].matched']]);
+    expect(m.findings.find((f) => f.field === 'questions[0].measures[0].cells[0].matched').message).toContain(`(${url})`);
   });
 });
 
@@ -222,7 +223,7 @@ describe('one run', () => {
     const records = [pilot('ai-buildout'), pilot('dominion-data-centers')];
     const checked = checkStories([{ id: 'ai-buildout', raw: records[0] }, { id: 'dominion-data-centers', raw: records[1] }], { now: NOW });
     const out = await matchStories(checked.stories, { contact: TEST_CONTACT, fetchDocument: fixtureFetcher(allFoundRoutes(records)) });
-    expect(out.stories.map((s) => s.findings)).toEqual([[], []]);
+    expect(out.stories.map((s) => s.findings.filter((f) => f.level !== 'noted'))).toEqual([[], []]);
     expect(out.stories[0].summary).toEqual({ carried: 4, sourced: 4, notChecked: 0, notReported: 0 });
     expect(out.links).toHaveLength(new Set(records.flatMap((r) => r.sources.map((s) => s.url))).size);
     expect(docBytes('table.pdf').subarray(0, 5).toString()).toBe('%PDF-');

@@ -34,6 +34,19 @@ const refOf = (db, id) => db.collection(COLLECTION).doc(id);
 /** Has this stored story ever been published? */
 const wasPublished = (doc) => doc.status === 'published' || (doc.publishedAt !== null && doc.publishedAt !== undefined);
 
+/**
+ * The version rule for a draft written over a story that was published (pure): a lower version, or the same version
+ * with other content, is refused; null when the write may go ahead (a higher version, or the same content).
+ */
+function versionRefusalOf(record, stored) {
+  const v = record.version;
+  const sv = stored.version;
+  if (!Number.isSafeInteger(v) || !Number.isSafeInteger(sv)) return 'the version rule needs whole-number versions on both sides';
+  if (v < sv) return `it was published at version ${sv}; a new one is higher, not ${v}`;
+  if (v === sv && contentHashOf(stored) !== contentHashOf(record)) return `version ${v} was published with other content: raise the version`;
+  return null;
+}
+
 /** The stored documents of these ids, as a Map id → data (a missing one is absent). Reads only. */
 export async function readStories(db, ids) {
   const out = new Map();
@@ -68,6 +81,12 @@ export function planWrite(id, stored, record, { status, stamp }) {
   }
   if (status === 'draft') {
     if (stored.status === 'published') return refuse(`it is published at version ${stored.version}: publish a higher version, or unpublish it first`);
+    // A draft over a story that WAS published keeps the version rule too (review A4): otherwise unpublish, draft and
+    // publish would put other content under a version a saved thesis already names.
+    if (wasPublished(stored)) {
+      const refusal = versionRefusalOf(record, stored);
+      if (refusal) return refuse(refusal);
+    }
     const document = { ...record, status, publishedAt: stored.publishedAt ?? null, ...(stored.revisedAt !== undefined ? { revisedAt: stored.revisedAt } : {}) };
     return { ...base, action: ACTIONS.REPLACE, reason: 'the stored draft is replaced', document };
   }
