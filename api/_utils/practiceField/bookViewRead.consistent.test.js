@@ -12,7 +12,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { setPracticeFieldModeForTests, setPracticeFieldAgentForTests } from './mode.js';
-import { readBookView, BOOK_READ_PASSES, bookChangeMarks } from './bookViewRead.js';
+import { readBookView, BOOK_READ_PASSES, bookChangeMarks, closeRowMark } from './bookViewRead.js';
 import { buildBookView } from './bookView.js';
 import { nextSessionDate } from './windows.js';
 import { admitIdea } from './admission.js';
@@ -232,6 +232,41 @@ describe('review A1: the agent\'s pass after a close (its calls on the close row
       }
     });
   }
+});
+
+describe('review A1: the close row\'s mark does not depend on the order a read returns its fields in', () => {
+  it('two reads of an unchanged close row, the second with every map\'s keys reversed, settle in ONE pass — never a false "try again"', async () => {
+    const Q = (p) => ({ AAPL: { price: p, marketCap: 3e12 }, SPY: 500 });
+    const c = await seedBook();
+    await admitAndEnter(c.db, c.bookId, { contract: contractOf({ names: ['AAPL'] }), quotes: Q(100), date: S[0] });
+    await closeOn(c.db, c.bookId, S[0], Q(100));
+    const base = `mandates/${c.bookId}`;
+    const closePath = `${base}/windows/${S[0]}_close`;
+    const stored = c.db._get(closePath);
+    expect(Object.keys(stored).length).toBeGreaterThan(1);
+    const reversed = (v) => (Array.isArray(v) ? v.map(reversed)
+      : v && typeof v === 'object' && Object.getPrototypeOf(v) === Object.prototype ? Object.fromEntries(Object.keys(v).reverse().map((k) => [k, reversed(v[k])])) : v);
+    expect(JSON.stringify(reversed(stored))).not.toBe(JSON.stringify(stored));
+    let closeReads = 0;
+    let bookReads = 0;
+    const wrapQuery = (q) => ({ where: (...a) => wrapQuery(q.where(...a)), orderBy: (...a) => wrapQuery(q.orderBy(...a)), limit: (n) => wrapQuery(q.limit(n)), get: () => q.get() });
+    const wrapDoc = (path, d) => ({
+      id: d.id,
+      get: async () => {
+        const snap = await d.get();
+        if (path === base) bookReads += 1;
+        if (path !== closePath) return snap;
+        closeReads += 1;
+        return closeReads % 2 === 0 ? { ...snap, data: () => reversed(snap.data()) } : snap;
+      },
+      collection: (n) => wrapCol(`${path}/${n}`, d.collection(n)),
+    });
+    const wrapCol = (path, col) => ({ ...wrapQuery(col), doc: (id) => wrapDoc(`${path}/${id}`, col.doc(id)) });
+    const answer = await readBookView({ collection: (n) => wrapCol(n, c.db.collection(n)) }, { uid: UID });
+    expect([bookReads, closeReads]).toEqual([2, 2]); // one pass: the book and the close row, each read first and last
+    expect(JSON.stringify(answer)).toBe(JSON.stringify(await readBookView(c.db, { uid: UID })));
+    expect(closeRowMark(reversed(stored))).toBe(closeRowMark(stored));
+  });
 });
 
 describe('the two-pass stop (B5-4)', () => {

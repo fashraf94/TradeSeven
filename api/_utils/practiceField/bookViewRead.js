@@ -99,12 +99,21 @@ export function bookChangeMarks(book) {
 }
 
 /**
- * Review A1: the close row's mark — the whole row as stored. The agent's pass after a close writes its desks' parts here
+ * Review A1: the close row's mark — the whole row as stored, written with every map's keys in sorted order, so two reads of
+ * an unchanged row give the same mark whatever order a read returns its fields in (a plain JSON string would differ on
+ * key order alone, and every pass would then disagree). The agent's pass after a close writes its desks' parts here
  * (agentRun.js), after any manager exit it makes on an idea (managerExit.js), neither moving the book's marks; a row read
  * before the ideas and again last that is unchanged saw no part written between, so no exit was paired with the wrong call.
  */
 export function closeRowMark(row) {
-  return JSON.stringify(row ?? null);
+  return JSON.stringify(canonical(row ?? null));
+}
+/** A value with every plain map's keys sorted (a value with its own `toJSON`, such as a stored timestamp, by that). */
+function canonical(v) {
+  if (v === null || typeof v !== 'object') return v;
+  if (typeof v.toJSON === 'function') return canonical(v.toJSON());
+  if (Array.isArray(v)) return v.map(canonical);
+  return Object.fromEntries(Object.keys(v).sort().map((k) => [k, canonical(v[k])]));
 }
 
 /**
