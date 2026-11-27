@@ -13,7 +13,7 @@
 
 ## 1. In plain terms
 
-This slice adds the portfolio hub's switch and nothing a player can see. The switch, `COMMAND_CENTER_PORTFOLIO_HUB_ENABLED`, ships off. With it off, the app players load is `main`'s, byte for byte.
+This slice adds the portfolio hub's switch and nothing a player can see. The switch, `COMMAND_CENTER_PORTFOLIO_HUB_ENABLED`, ships off. With it off, every file players load is identical to `main`'s; only the hub chunk's source map differs, because it carries the edited source text.
 
 With it on, the Command Center reads the player's idea book once, at its connected shell, and decides the layout from that one read. A player whose read came back with a book gets the book layout; every other case gets today's hub. The hub then hands the same read to the Idea book's entry card. The card no longer reads for itself, so the card and the layout can never disagree.
 
@@ -79,14 +79,14 @@ All at the frozen code head `a4bb8673` unless noted. The full suites ran in WSL 
 
 | Check | Exit | Counts |
 |---|---|---|
-| Full Linux suite (`vitest run`), at the pushed head | FINAL-PENDING | FINAL-PENDING |
+| Full Linux suite (`vitest run`), at `17308eb7` (the report's first commit; the commit after it changes only this report's text) | **0** | **1,683 files, 39,109 passed, 0 failed** (197 skipped), 353 s, nothing else running |
 | Full Linux suite, at the frozen code head `a4bb8673` | 1 | **39,108 passed, 1 failed** (1,697 files). The red is a load timeout outside this slice: `leagueRawIds.guard.test.jsx`, "every League seat surface", 5,521 ms against its 5 s limit. That run took 777 s against the usual ~360 s, because the battery was running on Windows beside it. The same row passed in the whole-flip run on the same code, and alone (11 of 11, 958 ms). |
 | `npm run lint:gate` (WSL) | **0** | at the frozen head `a4bb8673` (and at `aae049b1`) |
 | `npm run test:rules` (WSL, Temurin 21, Firestore emulator) | **0** | **48 files, 889 of 889**, at `aae049b1`. The fix round touched no file the rules suite reads. |
 | `vite build`, the switch off, against `main` (§4.3) | **0 / 0** | **125 files each; all 64 non-map files byte-identical, hashed names included**; one map differs |
 | The flip dry run, whole suite (§4.4) | **0** | the flip's four edits: **39,109 passed, 0 failed** |
 | The flip's control, whole suite (§4.4) | 1 | the literal alone: **exactly 3 rows red**, the pin's value row and the flag pin guard's two rows |
-| The new and changed rows (Windows, targeted) | **0** | hub, card, config and theme directories: 4,298 passed. One Windows-only CRLF red, `shadowCpuQuoteIntegrityFlags.test.js` (it reads the guard without normalising `\r\n`). It passes 10 of 10 in an LF tree, as CI checks out. |
+| The new and changed rows (Windows, targeted) | 1 | hub, card, config and theme directories: **4,298 passed, 1 failed**. The one red is Windows-only CRLF: `shadowCpuQuoteIntegrityFlags.test.js` (it reads the guard without normalising `\r\n`). It passes 10 of 10 in an LF tree, as CI checks out. |
 
 ### 4.1 The test rows, red first
 
@@ -104,7 +104,7 @@ The first full Linux suite, at `608803ce`, ran **2 failed of 39,286**: the motio
 - **All 64 non-map files are byte-identical.** `CommandCenterHub-3x1Zx0cH.js` is `f0240306…` in both; `index.html` is `25e8dbbc…` in both.
 - **One file differs: `assets/CommandCenterHub-3x1Zx0cH.js.map`** (main `7351dff3…`, branch `2113f060…`). It embeds the source text of the three edited files, `IdeaBookEntry.jsx`, `ActivitySection.jsx` and `CommandCenterHub.jsx`. Its 87 sources are the same list; no new module enters the hub chunk. Under ruling B3-9 a source map is not the shipped app.
 - **Positive control: the same tree with the switch flipped on.** The hub chunk changes (`CommandCenterHub-CL_kY6EY.js`) and carries `data-hub-layout`; `main`'s carries none. The hash then cascades through the chunks that import the entry. So the comparison can see the new path, and with the switch off it is folded away.
-- The pushed head (this report's commit) was built again before the push (§8).
+- **Built again at the report's commits**, in the same tree, before the push. At `17308eb7` and at the final head: 125 files with the same names, all 64 non-map files identical to `main`'s, and the hub chunk's map the one difference.
 
 `portfolioHub.flagOffBundle.test.js` now keeps this in CI, module by module (§3.3).
 
@@ -195,6 +195,12 @@ The lens P1T ran its own 35 mutants on `8ec52d6d`. Its survivors were the unkeye
 - **R5 — with the switch on, the read follows the shell, not the card.** It reads on the shell's mount and each site change, on the card's open, and on the window's focus or visibility. On the phone, the Overview coming back no longer re-reads, as the card did on each remount. A window focus reads even while the Overview is not shown. The app reads less often; the marks are still as of the last close. Pinned in both switch states.
 - **R6 — a hub with no App object has no connected shell.** That is the S1 frames and fixtures. There the card reads for itself, as today.
 - **R7 — tightenings.** A ready read whose book is `undefined`, and any switch value but `true`, are `'today'`.
+- **R8 — the guard rows beyond the bare terminal.** The prompt said the mount guard should get "the row or rows the shell's new read needs … Add nothing else". Its one strictly required row is the switch module's `PERMITTED_TERMINALS` entry. Three more rows went in, and each only tightens:
+  - the `NAMED` export rows for the card's module and the switch's, which spec §6 asks for;
+  - the one-read row, from review P1W-1, which pins the read the prompt promises;
+  - the s3 suite's switch pin, needed for the flip to stay clean (P1G-2).
+
+  The token and motion guard registrations are hazard 34's own rule for any new hub file.
 
 ### 6.2 Questions for you
 
@@ -204,7 +210,7 @@ The lens P1T ran its own 35 mutants on `8ec52d6d`. Its survivors were the unkeye
 
 ## 7. Found outside the task (for separate tasking; nothing fixed)
 
-1. **The motion guard's baseline generator rewrites the whole file's escapes.** `GENERATE_MOTION_GUARD_BASELINE=1` re-serialises `motionGuardBaseline.json` with `JSON.stringify`, which writes every `—` as a literal dash: a 288-line diff for three new entries. I restored the file and added the three entries by hand. The token baseline's generator did not do this.
+1. **The motion guard's baseline generator rewrites the whole file's escapes.** `GENERATE_MOTION_GUARD_BASELINE=1` re-serialises `motionGuardBaseline.json` with `JSON.stringify`, which writes every escaped em dash the file stores (the six-character backslash-u-2014 escape) as a literal dash: a 288-line diff for three new entries. I restored the file and added the three entries by hand. The token baseline's generator did not do this.
 2. **`shadowCpuQuoteIntegrityFlags.test.js:65` fails on a Windows (CRLF) checkout.** It matches `flagPinGuard.test.js` raw, with `\n` in its regex. It passes on LF, as CI checks out. The same class as the CRLF rows already recorded.
 3. **`s4Modules.purity.guard.test.js`'s non-vacuity helper sees only function declarations.** An `export const` (such as `HUB_LAYOUTS`) is invisible to it.
 
