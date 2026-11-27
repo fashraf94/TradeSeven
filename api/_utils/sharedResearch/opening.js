@@ -198,16 +198,25 @@ export function openingFindingsOf({ entryKind, story = null, drop = null, player
   return out;
 }
 
-/** The rankings and peer rows for the names in scope — a live projection, never written (F14). */
-export function storedRowsOf(names, { peers = {}, rankings = {} } = {}) {
+/**
+ * The peer rows for the names in scope — a live projection, never written (F14). Build 3b PR A (RU-21): from what the
+ * rankings job writes (store.js readRankingRows): `peer` the sector name, the stored measures and the date they were
+ * computed; `ranking` the rank among sector peers exactly as stored — `compositeRank` of `totalPeers` in that sector,
+ * never rounded or re-derived (BUILD_RULES §9) — or null when the document holds no whole rank within its peers or no
+ * sector name (the card then leaves the rank line out; nothing is invented).
+ */
+export function storedRowsOf(names, { peers = {} } = {}) {
   return names.map((symbol) => {
     const p = peers[symbol] ?? null;
-    const r = rankings[symbol] ?? null;
+    const sector = typeof p?.sectorName === 'string' && p.sectorName ? p.sectorName : null;
+    const asOf = p?.computedAt ?? null;
+    const ranked = p !== null && sector !== null && Number.isSafeInteger(p.compositeRank) && Number.isSafeInteger(p.totalPeers)
+      && p.compositeRank >= 1 && p.compositeRank <= p.totalPeers;
     return {
       symbol,
       name: typeof p?.name === 'string' && p.name ? p.name : symbol,
-      peer: p ? { sector: p.sector ?? null, metrics: p.metrics ?? null, asOf: p.updatedAt ?? p.computedAt ?? null } : null,
-      ranking: r ? { score: r.compositeScore ?? r.score ?? null, percentile: r.percentile ?? null, tier: r.tier ?? null, asOf: r.updatedAt ?? r.computedAt ?? null } : null,
+      peer: p ? { sector, metrics: p.metrics ?? null, asOf } : null,
+      ranking: ranked ? { rank: p.compositeRank, of: p.totalPeers, sector, asOf } : null,
     };
   });
 }

@@ -10,6 +10,13 @@
 // The one difference allowed is the ruled one: a record minted now carries schema
 // version 2 (the founder's ruling of Nov 21, 2026); main's carries 1. Nothing else.
 // This file imports nothing B6a added, so it runs unchanged on main.
+//
+// Build 3b PR A (RU-21, the founder's ruling of Nov 27, 2026) is the second ruled
+// difference: the opening's stored rows now read what the rankings job writes
+// (peerRankings' sectorName, compositeRank, totalPeers, computedAt), no longer the
+// `sector` field and the top-level stockRankings collection nothing writes. The rows
+// (`storedRows`, `opening.storedRows`) are compared apart: everything else equals
+// main's exactly, and the rows equal RU21_ROWS below.
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -59,6 +66,29 @@ const seed = () => makeSrFirestore({
   'ingestedClaims/c1': { ticker: 'ETN', sourceDate: '2026-11-10' },
   'ingestedClaims/c2': { ticker: 'ETN', sourceDate: '2026-11-04' },
 });
+// RU-21: the rows this seed gives now. The seed's peerRankings documents carry `sector` and `updatedAt` (fields the
+// rankings job never writes) and no sectorName, rank or computedAt, so each row keeps its name and nothing else.
+const RU21_ROWS = [
+  { symbol: 'ETN', name: 'Eaton Corporation plc', peer: { sector: null, metrics: null, asOf: null }, ranking: null },
+  { symbol: 'GEV', name: 'GE Vernova Inc.', peer: { sector: null, metrics: null, asOf: null }, ranking: null },
+];
+/** An answer with its stored rows set apart (RU-21): [the answer without them, the rows or null]. */
+const apart = (answer) => {
+  if (!answer?.body || typeof answer.body !== 'object') return [answer, null];
+  const body = { ...answer.body };
+  let rows = null;
+  if (Object.hasOwn(body, 'storedRows')) { rows = body.storedRows; body.storedRows = 'RU-21'; }
+  if (body.opening && Object.hasOwn(body.opening, 'storedRows')) { rows = body.opening.storedRows; body.opening = { ...body.opening, storedRows: 'RU-21' }; }
+  return [{ ...answer, body }, rows];
+};
+/** One answer against main's: equal apart from its rows, and its rows RU-21's for the same symbols (main's were the old read's). */
+const sameAsMain = (a, b, label) => {
+  const [aRest, aRows] = apart(a);
+  const [bRest, bRows] = apart(b);
+  expect(aRest, label).toEqual(bRest);
+  expect(aRows === null, `${label}: rows present`).toBe(bRows === null);
+  if (aRows !== null) expect(aRows, `${label}: rows`).toEqual(bRows.map((r) => RU21_ROWS.find((x) => x.symbol === r.symbol)));
+};
 const res = () => { const r = { statusCode: null, body: null }; r.status = (c) => { r.statusCode = c; return r; }; r.json = (b) => { r.body = b; return r; }; r.setHeader = () => r; return r; };
 const call = async (req) => { resetUidRateLimits(); const r = res(); await handler({ headers: {}, query: {}, ...req }, r); return { status: r.statusCode, body: r.body }; };
 
@@ -139,7 +169,8 @@ describe('a FantasyTimes story opens exactly as on main (X-2)', () => {
       const a = now[shape];
       const b = main[shape];
       expect(a.open.status, shape).toBe(200);
-      for (const k of ['open', 'read', 'again', 'list', 'session', 'quota', 'writes']) expect(a[k], `${shape}.${k}`).toEqual(b[k]);
+      for (const k of ['open', 'read', 'again', 'list']) sameAsMain(a[k], b[k], `${shape}.${k}`);
+      for (const k of ['session', 'quota', 'writes']) expect(a[k], `${shape}.${k}`).toEqual(b[k]);
       expect([b.record.schemaVersion, a.record.schemaVersion], `${shape}.record.schemaVersion`).toEqual([1, 2]);
       expect({ ...a.record, schemaVersion: 'x' }, `${shape}.record`).toEqual({ ...b.record, schemaVersion: 'x' });
       // the golden is a real open: its answers are whole
@@ -155,7 +186,8 @@ describe('a FantasyTimes story opens exactly as on main (X-2)', () => {
     expect([b.step.status, b.read.status, b.adopt.status, b.after.status]).toEqual([200, 200, 200, 200]);
     expect(b.adopt.body).toMatchObject({ version: 1, idempotent: false });
     expect(b.session.adoption).toEqual({ watchlistId: b.adopt.body.watchlistId, version: 1, at: NOW });
-    for (const k of ['open', 'step', 'read', 'adopt', 'after', 'session', 'list', 'version', 'quota', 'writes']) expect(a[k], `ledgerSave.${k}`).toEqual(b[k]);
+    for (const k of ['open', 'step', 'read', 'adopt', 'after']) sameAsMain(a[k], b[k], `ledgerSave.${k}`);
+    for (const k of ['session', 'list', 'version', 'quota', 'writes']) expect(a[k], `ledgerSave.${k}`).toEqual(b[k]);
     expect([b.record.schemaVersion, a.record.schemaVersion]).toEqual([1, 2]);
     expect({ ...a.record, schemaVersion: 'x' }).toEqual({ ...b.record, schemaVersion: 'x' });
   });

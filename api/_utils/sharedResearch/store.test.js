@@ -14,7 +14,7 @@ import { makeSrFirestore } from './__fixtures__/srFirestore.js';
 import { makeInMemoryDb } from '../__fixtures__/inMemoryFirestore.js';
 import {
   beginFraming, recordFrame, noteFrameFailure, openFromItem, openFromFraming, beginStep, recordStep, failStep, closeInvestigation, adoptIdea,
-  normalizeAdoption, rankedAgentOfDocs, attributionOf, globalStepCeiling, GLOBAL_STEPS_ENV, SHARED_RESEARCH_ADAPTER, listOpen, readPrevious,
+  normalizeAdoption, rankedAgentOfDocs, attributionOf, globalStepCeiling, GLOBAL_STEPS_ENV, SHARED_RESEARCH_ADAPTER, listOpen, readPrevious, readRankingRows,
 } from './store.js';
 import { exchangeOf, openSessionOf, framingSessionOf, etDateOf, latestLinesOf } from './session.js';
 import { companiesOf } from './companies.js';
@@ -441,5 +441,35 @@ describe('Continue your research (GET ?list=open)', () => {
     const rows = await listOpen(env.db, { uid: OWNER });
     expect(rows.map((r) => r.sessionId)).toEqual(['ls3', 'ls2', 'ls1']);
     expect(rows[0]).toEqual({ sessionId: 'ls3', question: 'Q3?', state: 'open', lastTurnAt: null, findingsCount: 0 });
+  });
+});
+
+// Build 3b PR A (RU-21): the opening's rows come from what the rankings job writes, and from peerRankings alone.
+describe('readRankingRows: peerRankings/{sym} as the rankings job writes it', () => {
+  const AT = new Date('2026-11-26T11:00:51.000Z');
+  // compute-rankings.js persistResults' fields (name, sectorId, sectorName, compositeScore, compositeRank, totalPeers,
+  // tier, metrics, computedAt) — no `sector`, and nothing under a top-level stockRankings collection
+  const DOC = { ticker: 'ETN', name: 'Eaton Corporation plc', sectorId: 'XLI', sectorName: 'Industrials', compositeScore: 71.2, compositeRank: 4, totalPeers: 22, tier: 'Strong', metrics: { grossMargin: 0.38 }, computedAt: AT }; // a Date here (the double clones values); the Admin SDK hands a Timestamp, which isoOf reads the same way
+  it('a row with a sector and a rank: the sector name, the rank, the peer count and the time it was computed', async () => {
+    env = makeSrFirestore({ 'peerRankings/ETN': DOC });
+    expect(await readRankingRows(env.db, ['ETN'])).toEqual({
+      peers: { ETN: { name: 'Eaton Corporation plc', sectorName: 'Industrials', compositeRank: 4, totalPeers: 22, metrics: { grossMargin: 0.38 }, computedAt: AT.toISOString() } },
+    });
+  });
+  it('a row with a sector and no rank: the rank is null, never a score or a tier in its place', async () => {
+    env = makeSrFirestore({ 'peerRankings/ETN': { ...DOC, compositeRank: null, totalPeers: undefined } });
+    const { peers } = await readRankingRows(env.db, ['ETN']);
+    expect(peers.ETN).toMatchObject({ sectorName: 'Industrials', compositeRank: null, totalPeers: null });
+  });
+  it('a symbol with no document has no row data', async () => {
+    env = makeSrFirestore({});
+    expect(await readRankingRows(env.db, ['ZZZ'])).toEqual({ peers: {} });
+  });
+  it('the old reads are gone: one peerRankings get per symbol, and no stockRankings read at all', async () => {
+    env = makeSrFirestore({ 'peerRankings/ETN': DOC, 'stockRankings/ETN': { compositeScore: 99, percentile: 99, tier: 'A' } });
+    const out = await readRankingRows(env.db, ['ETN', 'GEV']);
+    expect(env.reads).toEqual([['get', 'peerRankings/ETN'], ['get', 'peerRankings/GEV']]);
+    expect(JSON.stringify(out)).not.toContain('99');
+    expect(out).not.toHaveProperty('rankings');
   });
 });

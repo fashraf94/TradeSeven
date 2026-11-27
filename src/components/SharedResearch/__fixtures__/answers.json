@@ -142,13 +142,13 @@
             "peer": {
               "sector": "Industrials",
               "metrics": null,
-              "asOf": "2026-11-11T06:00:00.000Z"
+              "asOf": "2026-11-11T11:00:51.000Z"
             },
             "ranking": {
-              "score": 71,
-              "percentile": null,
-              "tier": null,
-              "asOf": "2026-11-11T06:00:00.000Z"
+              "rank": 4,
+              "of": 22,
+              "sector": "Industrials",
+              "asOf": "2026-11-11T11:00:51.000Z"
             }
           }
         ]
@@ -307,13 +307,13 @@
             "peer": {
               "sector": "Industrials",
               "metrics": null,
-              "asOf": "2026-11-11T06:00:00.000Z"
+              "asOf": "2026-11-11T11:00:51.000Z"
             },
             "ranking": {
-              "score": 71,
-              "percentile": null,
-              "tier": null,
-              "asOf": "2026-11-11T06:00:00.000Z"
+              "rank": 4,
+              "of": 22,
+              "sector": "Industrials",
+              "asOf": "2026-11-11T11:00:51.000Z"
             }
           }
         ]
@@ -476,13 +476,13 @@
           "peer": {
             "sector": "Industrials",
             "metrics": null,
-            "asOf": "2026-11-11T06:00:00.000Z"
+            "asOf": "2026-11-11T11:00:51.000Z"
           },
           "ranking": {
-            "score": 71,
-            "percentile": null,
-            "tier": null,
-            "asOf": "2026-11-11T06:00:00.000Z"
+            "rank": 4,
+            "of": 22,
+            "sector": "Industrials",
+            "asOf": "2026-11-11T11:00:51.000Z"
           }
         }
       ],
@@ -823,13 +823,13 @@
             "peer": {
               "sector": "Industrials",
               "metrics": null,
-              "asOf": "2026-11-11T06:00:00.000Z"
+              "asOf": "2026-11-11T11:00:51.000Z"
             },
             "ranking": {
-              "score": 71,
-              "percentile": null,
-              "tier": null,
-              "asOf": "2026-11-11T06:00:00.000Z"
+              "rank": 4,
+              "of": 22,
+              "sector": "Industrials",
+              "asOf": "2026-11-11T11:00:51.000Z"
             }
           }
         ]
@@ -1011,13 +1011,13 @@
             "peer": {
               "sector": "Industrials",
               "metrics": null,
-              "asOf": "2026-11-11T06:00:00.000Z"
+              "asOf": "2026-11-11T11:00:51.000Z"
             },
             "ranking": {
-              "score": 71,
-              "percentile": null,
-              "tier": null,
-              "asOf": "2026-11-11T06:00:00.000Z"
+              "rank": 4,
+              "of": 22,
+              "sector": "Industrials",
+              "asOf": "2026-11-11T11:00:51.000Z"
             }
           }
         ]
