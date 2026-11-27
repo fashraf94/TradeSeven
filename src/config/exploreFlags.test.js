@@ -131,5 +131,5 @@ describe('EXPLORE_COMPARE_ROUTE — the pin (BUILD_RULES §2; Amendment B §6, K
     }
     expect(wrong).toEqual([]);
     expect(readers.sort()).toEqual(['components/Explore/ExploreHome.jsx', 'components/Explore/ExplorePanel.jsx']);
-  });
+  }, 30000); // a whole-src walk: 0.2 s alone, 7 s under a wide Windows run (the repo's census idiom)
 });

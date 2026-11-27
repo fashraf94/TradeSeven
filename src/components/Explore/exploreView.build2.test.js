@@ -93,9 +93,9 @@ describe('K-3: the pilot deep story, field by field', () => {
     expect(v.sources.map((s) => s.id)).toEqual(['s1', 's2', 's3', 's4', 's5']);
     expect(v.connections.find((c) => c.id === 'regulator').leads).toEqual([]);
   });
-  it('about keeps the record\'s order (never sorted: review H-5)', () => {
-    const v2 = storyOf('d', { ...DP, about: [{ symbol: 'NEE', name: 'NextEra Energy' }, { symbol: 'D', name: 'Dominion Energy' }] });
-    expect(v2.about.map((c) => c.symbol)).toEqual(['NEE', 'D']);
+  it('about keeps the record\'s order (never sorted: review H-5) — an order that is no sort of symbol or name, either way', () => {
+    const v2 = storyOf('d', { ...DP, about: [{ symbol: 'NEE', name: 'NextEra Energy' }, { symbol: 'AEP', name: 'American Electric Power' }, { symbol: 'D', name: 'Dominion Energy' }] });
+    expect(v2.about.map((c) => c.symbol)).toEqual(['NEE', 'AEP', 'D']);
   });
   it('a parent and about are a deep story\'s only: an overview carrying them reads none', () => {
     const v2 = storyOf('ai-buildout', { ...OV, parent: { storyId: 'x', connectionId: 'y' }, about: [{ symbol: 'D', name: 'Dominion Energy' }] });

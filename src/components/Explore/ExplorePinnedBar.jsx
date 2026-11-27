@@ -56,21 +56,29 @@ export default function ExplorePinnedBar({ targetRef, targetKey, label, line = n
   }, [targetRef, targetKey, navBelow]);
 
   // While the bar is shown, the page keeps its band clear for focus: a control reached by Tab is scrolled above the bar,
-  // never left under it (scroll-padding-bottom; review C-2). Put back exactly as it was when the bar goes.
+  // never left under it (scroll-padding-bottom; review C-2). Put back exactly as it was when the bar goes — but only
+  // while the value there is still the bar's own: on a phone the tab reserves the nav's band under it (Build 2 review
+  // P-2), and when Explore goes with the bar shown the tab gives its value back first (the refuter's leak).
   const shown = offScreen && Boolean(label);
   useLayoutEffect(() => {
     if (!shown) return undefined;
     const root = document.documentElement;
     const before = root.style.scrollPaddingBottom;
+    let mine = null;
     // the bar's laid-out top (offsetTop ignores the entrance animation's transform, which a box measure would catch
     // mid-slide), and a little room above it
     const reserve = () => {
       const top = barRef.current?.offsetTop;
-      if (Number.isFinite(top)) root.style.scrollPaddingBottom = `${Math.max(0, Math.ceil(window.innerHeight - top) + 8)}px`;
+      if (!Number.isFinite(top)) return;
+      mine = `${Math.max(0, Math.ceil(window.innerHeight - top) + 8)}px`;
+      root.style.scrollPaddingBottom = mine;
     };
     reserve();
     window.addEventListener('resize', reserve);
-    return () => { window.removeEventListener('resize', reserve); root.style.scrollPaddingBottom = before; };
+    return () => {
+      window.removeEventListener('resize', reserve);
+      if (mine !== null && root.style.scrollPaddingBottom === mine) root.style.scrollPaddingBottom = before;
+    };
   }, [shown, line, navBelow]);
 
   if (!shown) return null;

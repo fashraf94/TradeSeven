@@ -792,6 +792,25 @@ describe('the review\'s fixes (lens c: P-2, P-3, P-5, P-6)', () => {
     await openPage({ props: { isMobile: false, isDesktop: true } });
     expect(document.documentElement.style.scrollPaddingBottom).toBe('');
   });
+  it('P-2: the bar and the nav band share the padding — the bar\'s while it shows, the band\'s when it goes, nothing left once Explore goes with the bar shown', async () => {
+    document.documentElement.style.scrollPaddingBottom = '';
+    const m = await openPage();
+    await openOverview();
+    const primary = storyEl().querySelector('[data-explore-primary]');
+    const bar = (onScreen) => act(() => observerOn(primary).cb([{ target: primary, isIntersecting: onScreen, intersectionRatio: onScreen ? 1 : 0 }]));
+    bar(false);
+    expect($('[data-explore-pinned-bar]')).not.toBeNull();
+    const barBand = document.documentElement.style.scrollPaddingBottom;
+    expect(barBand).toMatch(/^\d+px$/);
+    expect(barBand).not.toBe('73px');
+    bar(true);
+    expect(document.documentElement.style.scrollPaddingBottom).toBe('73px');
+    bar(false);
+    expect(document.documentElement.style.scrollPaddingBottom).toBe(barBand);
+    m.unmount(); // leaving Explore while the bar shows (the refuter's leak: 73px stayed)
+    mounted = mounted.filter((x) => x !== m);
+    expect(document.documentElement.style.scrollPaddingBottom).toBe('');
+  });
 });
 
 describe('the review\'s fixes and gaps (lens a: H-1 to H-7)', () => {
@@ -838,14 +857,19 @@ describe('the review\'s fixes and gaps (lens a: H-1 to H-7)', () => {
     await waitStory(DEEP);
     expect(storyEl().querySelectorAll('[data-explore-where-door]')).toHaveLength(0);
   });
-  it('H-5: nothing is ordered by a value — the cards, the tiles and Latest keep the read\'s own order', async () => {
-    const tap2 = { ...S_TAP, id: 'sample-tap-2', productName: 'Contactless', connections: S_TAP.connections.map((c) => ({ ...c, basis: 'no_source_yet' })) };
-    const deep = (id) => ({ ...PILOT_DEEP, id, title: `Deep ${id}` });
-    sources = fixtureSources({ stories: [deep('deep-c'), PILOT_OVERVIEW, deep('deep-a'), S_UTIL, tap2, S_AI, S_TAP, deep('deep-b')] });
+  it('H-5: nothing is ordered by a value — the cards, the tiles, Latest and a deep story\'s About keep the read\'s own order', async () => {
+    // the tiles' sourced counts run 1, 0, 3 and About runs NEE · AEP · D: neither is any sort, either way (the refuter's gaps)
+    const tapWith = (id, productName, basis) => ({ ...S_TAP, id, productName, connections: S_TAP.connections.map((c) => ({ ...c, basis })) });
+    const deep = (id, extra = {}) => ({ ...PILOT_DEEP, id, title: `Deep ${id}`, ...extra });
+    const about = [{ symbol: 'NEE', name: 'NextEra Energy' }, { symbol: 'AEP', name: 'American Electric Power' }, { symbol: 'D', name: 'Dominion Energy' }];
+    sources = fixtureSources({ stories: [deep('deep-c'), PILOT_OVERVIEW, deep('deep-a', { about }), S_UTIL, S_TAP, tapWith('sample-tap-0', 'Contactless', 'no_source_yet'), S_AI, tapWith('sample-tap-3', 'Wallets', 'source_cited'), deep('deep-b')] });
     await openPage();
     expect($$('[data-explore-card]').map((c) => c.dataset.exploreCard)).toEqual([S_UTIL.id, S_AI.id]);
-    expect($$('[data-explore-tile]').map((t) => t.dataset.exploreTile)).toEqual(['sample-tap-2', S_TAP.id]);
+    expect($$('[data-explore-tile]').map((t) => t.dataset.exploreTile)).toEqual([S_TAP.id, 'sample-tap-0', 'sample-tap-3']);
     expect($$('[data-explore-latest]').map((r) => r.dataset.exploreLatest)).toEqual(['deep-c', 'deep-a', 'deep-b']);
+    click($('[data-explore-latest="deep-a"]'));
+    await until(() => storyEl() && $('[data-explore-story-title]')?.textContent === 'Deep deep-a', 'the story deep-a');
+    expect([...storyEl().querySelectorAll('[data-explore-about] [data-explore-lead]')].map((b) => b.dataset.exploreLead)).toEqual(['NEE', 'AEP', 'D']);
   });
   it.each([
     ['no name, no list', { id: 'agent-9', name: null, equippedList: null }, { agentId: 'agent-9', agentName: null, equippedListLabel: null }],
