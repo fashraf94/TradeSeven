@@ -193,7 +193,7 @@ describe('A3 — a specific question\'s group is ticker-checked too', () => {
 describe('A5 — an id is the address, exactly as written', () => {
   it('a connection id with spaces at its ends is not the id a question names without them', () => {
     const r = checkPair((ov) => { ov.connections[1].id = ' cloud '; });
-    expect(refusedOf(r, OV)).toEqual([['K-4(i)', 'questions[0].fromConnection']]);
+    expect(refusedOf(r, OV)).toEqual([['F-2', 'connections[1].id'], ['K-4(i)', 'questions[0].fromConnection']]);
   });
 });
 
@@ -274,6 +274,48 @@ describe('SQ-5 (the founder\'s ruling, Nov 26) — a question with no id, or an 
     const r = checkPair((ov, dp) => { dp.questions[1].id = 'min payments'; delete dp.questions[1].wrongIfSeed; });
     expect(r.refused).toBe(false);
     expect(notedOf(r, DP)).toEqual([['standard §6 rule 9', 'questions[1].wrongIfSeed']]);
+  });
+});
+
+describe('F-2 (the Explore chat\'s fix prompt, Nov 27; review N-5) — a padded id, or a padded reference to one, is refused', () => {
+  // Each row pads one field — and its target the same way, so the reference still resolves and the padding is the
+  // only defect — and asks for the refusal AT THAT FIELD (another field's refusal never satisfies the row).
+  const pad = (v) => ` ${v} `;
+  const cell = (ov, k) => cloud(ov).measures[0].cells[k];
+  const hasPadMessage = (r, id, field) => r.stories.find((s) => s.id === id).findings.some((f) => f.level === LEVELS.REFUSED && f.rule === 'F-2' && f.field === field && f.message.startsWith(`${field} is `) && f.message.includes('the page reads ids trimmed, so a padded id would not be found'));
+  it.each([
+    ['a question\'s id', DP, 'questions[1].id', (ov, dp) => { dp.questions[1].id = pad(dp.questions[1].id); }],
+    ['a connection\'s id', OV, 'connections[1].id', (ov) => { ov.connections[1].id = pad('cloud'); cloud(ov).fromConnection = pad('cloud'); }],
+    ['a question\'s fromConnection', OV, 'questions[0].fromConnection', (ov) => { ov.connections[1].id = pad('cloud'); cloud(ov).fromConnection = pad('cloud'); }],
+    ['a source\'s id', OV, 'sources[1].id', (ov) => { ov.sources[1].id = pad('s2'); ov.connections[1].sourceIds[0] = pad('s2'); }],
+    ['a connection\'s sourceIds entry', OV, 'connections[1].sourceIds[0]', (ov) => { ov.sources[1].id = pad('s2'); ov.connections[1].sourceIds[0] = pad('s2'); }],
+    ['a stated cell\'s sourceId', OV, 'questions[0].measures[0].cells[0].sourceId', (ov) => { ov.sources[3].id = pad('s4'); cell(ov, 0).sourceId = pad('s4'); }],
+    ['a computed cell\'s input\'s sourceId', OV, 'questions[0].measures[0].cells[3].inputs[1].sourceId', (ov) => { ov.sources[6].id = pad('s7'); for (const i of cell(ov, 3).inputs) i.sourceId = pad('s7'); }],
+    ['a deep story\'s parent.connectionId', DP, 'parent.connectionId', (ov, dp) => { ov.connections[4].id = pad('power'); dp.parent.connectionId = pad('power'); }],
+  ])('%s: refused under F-2, the message naming the field and why', (_, id, field, mutate) => {
+    const r = checkPair(mutate);
+    expect(r.refused).toBe(true);
+    expect(refusedOf(r, id)).toContainEqual(['F-2', field]);
+    expect(hasPadMessage(r, id, field)).toBe(true);
+  });
+  it.each([
+    ['a connection\'s leadsToStory', OV, 'connections[power].leadsToStory', (ov) => { ov.connections[4].leadsToStory = pad(DP); }],
+    ['a deep story\'s parent.storyId', DP, 'parent.storyId', (ov, dp) => { dp.parent.storyId = pad(OV); }],
+  ])('%s: already refused before F-2 (a story id never holds a space, so a padded one names no story) — unchanged', (_, id, field, mutate) => {
+    expect(refusedOf(checkPair(mutate), id)).toContainEqual(['K-4(e)', field]);
+  });
+  it('a space INSIDE an id is not padding: it passes, as before', () => {
+    expect(checkPair((ov, dp) => { dp.questions[1].id = 'min payments'; }).refused).toBe(false);
+  });
+  it('both pilot records, unchanged, still pass the check together and each alone', () => {
+    const r = checkPair();
+    expect(r.refused).toBe(false);
+    expect(r.stories.flatMap((x) => x.findings.filter((f) => f.rule === 'F-2'))).toEqual([]);
+    for (const id of [OV, DP]) {
+      const other = id === OV ? DP : OV;
+      const alone = checkStories([{ id, raw: pilot(id) }], { now: NOW, others: new Map([[other, pilot(other)]]) });
+      expect(alone.stories[0].findings.filter((f) => f.level === LEVELS.REFUSED)).toEqual([]);
+    }
   });
 });
 
