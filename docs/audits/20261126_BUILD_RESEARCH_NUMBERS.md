@@ -37,7 +37,7 @@ Both PRs have `main` as their base.
 | Calls | **80** (10 + 70); the daily counter reads **3 of 200** fetches (30 calls) for 2026-11-27 UTC. |
 | Corning, as stored | Revenue growth 18.40% · earnings growth 56.00% · profit margin **null** (§11) · gross margin 36.48% · FCF yield 6.86% · FCF margin 33.43% · debt/equity 0.87 · current ratio 1.59 · interest coverage 6.78 · net debt/EBITDA 2.40. |
 | Review | Two lenses, each with a refuter. **15 findings: 11 confirmed, 3 confirmed in part, 1 refuted** (details in §8). Every confirmed finding is fixed with a row that failed first, or recorded. Mutation battery **63 of 64** killed (the survivor is equivalent). |
-| Stopped on a ruling | Nothing blocks a merge. 13 questions in §12. The most important: a verbatim move breaks one text row of a named pin (§4.5); foreign filers' FCF measures mix currencies (TSM, §7); three faults in the response the rankings job reads (§11). |
+| Stopped on a ruling | Nothing blocks a merge. 13 questions in §12. The most important: a verbatim move breaks one text row of a named pin (§4.5); foreign filers' cash-flow measures are unreliable (TSM: mixed currencies, and a cash-flow sum that looks inflated; §7); three faults in the response the rankings job reads (§11). |
 | Full suite (Linux) | **exit 0** · `Test Files 1684 passed | 14 skipped (1698)` · 39,264 rows passed, 0 failed · 488 s (§9) |
 
 
@@ -59,7 +59,7 @@ Both PRs have `main` as their base.
 - **Nothing in the app calls it yet.** A hand-run script is the only way in.
 - **Three things to know:**
   - The game's own stored numbers have three blind spots that came to light here. The profit margin and short interest are always empty, and the company name is always the ticker. They are not fixed here; fixing them would move the 228's rankings.
-  - For a foreign company that reports in its own currency (TSM, in Taiwan dollars), the free-cash-flow yield comes out wrong, because the vendor gives its market value in US dollars.
+  - For a foreign company that reports in its own currency (TSM, in Taiwan dollars), the free-cash-flow numbers come out wrong. The yield divides Taiwan dollars by a US-dollar market value, and the vendor's quarterly cash flow itself looks too large.
   - One existing test had to be pointed at the file the math moved to.
 
 ---
@@ -506,7 +506,13 @@ The record also holds:
 - `Financials.*.currency_symbol` is **TWD**;
 - `General::CurrencyCode` is USD, and `Highlights.MarketCapitalization` (1,775,537,094,656) is in dollars.
 
-So `fcfYield` divides Taiwan-dollar cash flow by a dollar market value. The math is the rankings job's own and is not changed here (§12, Q-12).
+That explains two of the three bad numbers:
+- **`fcfYield`** divides Taiwan-dollar cash flow by a dollar market value.
+- **EODHD's own P/S** is a dollar market value over Taiwan-dollar revenue: 1.7755T / 4.9448T = 0.359.
+
+It does **not** explain the **97.5% FCF margin**, because cash flow and revenue are both in Taiwan dollars. The implied four-quarter free cash flow (about 4.82T TWD) is close to the whole year's revenue (about 4.94T TWD), so the four-quarter cash-flow sum itself looks inflated, about 4.8×. One possible cause is cumulative (year-to-date) or semiannual quarterly statements for a Taiwanese filer. This is **ASSUMED, not checked**; no more calls were spent on it. A currency conversion alone would not fix TSM.
+
+The math is the rankings job's own and is not changed here (§12, Q-12).
 
 ### 7.3 `status` on each, then `fetch GLW --go` again
 
@@ -630,7 +636,10 @@ Reported for separate tasking; none was fixed (BUILD_RULES §3).
 3. **Every `peerRankings` name is the ticker.** The filter's `General::Name` comes back as a top-level `"General::Name"` key, but `fetchSingleFundamental` reads `data.General?.Name`. The research record reads the right key (§5.2).
 4. **`peerRankings` holds 240 documents, not 228.** The extra 12 were not examined.
 5. **The moved math throws on a null entry** in `Earnings.History`, the first `Earnings.Trend` row, or a cash-flow quarter (refuter of lens 2, 26 shapes tried on the real GLW response). The rankings job runs `extractMetrics` per ticker with no `try` (`compute-rankings.js`, Phase B1), so one such response would stop the nightly job. EODHD is not known to send one. The research path now catches it (R2-1).
-6. **Foreign filers' cash-flow measures mix currencies** (TSM, §7.2). EODHD's own `PriceSalesTTM` (0.3591) looks affected too. None of the 228 was checked for this.
+6. **Foreign filers' cash-flow measures are unreliable** (TSM, §7.2).
+   - `fcfYield` mixes currencies, and so does EODHD's own `PriceSalesTTM` (0.3591).
+   - Separately, the four-quarter cash-flow sum looks inflated about 4.8×, so `fcfMargin` reads 97.5% inside one currency (cause ASSUMED: cumulative or semiannual quarterly statements).
+   - None of the 228 was checked for either.
 7. **Windows-only:** `wireGenerationSurface.test.js` reds on a CRLF checkout (the known class; passes on LF).
 
 ---
@@ -652,7 +661,7 @@ Built to the letter where one exists. Each looser or stricter reading is a quest
 | Q-9 | **`compare`** costs 10 calls outside the 200-fetch ceiling, and claims no slot (it writes nothing). | As built |
 | Q-10 | **Exports beyond "keeps exporting `computeEarningsConsistency`"**: `fetchSingleFundamental` is exported and `extractMetrics` re-exported, for the golden. | As built |
 | Q-11 | **The research path logs `[RankingsCron] [RANK] …` lines** (the moved logger; L1-6). For a research stock with fewer than 4 usable quarters, one line names an undefined sector. | As built |
-| Q-12 | **Foreign filers (ADRs).** The directory keeps ADRs (Build 1), and a filer reporting in its own currency gets a cross-currency FCF yield (TSM 271.56%). Leave as the math gives it, hold back `fcfYield` (and `fcfMargin`?) when the statement currency is not USD, or keep such filers out of comparisons? | As the math gives it |
+| Q-12 | **Foreign filers (ADRs).** The directory keeps ADRs (Build 1). A filer reporting in its own currency gets a cross-currency FCF yield (TSM 271.56%), and TSM's four-quarter cash flow also looks inflated about 4.8× (FCF margin 97.5%; cause unchecked), so converting currencies would not fix it. Leave as the math gives it; hold back the cash-flow measures when the statement currency is not USD; or keep such filers out of comparisons? | As the math gives it |
 | Q-13 | **The three response faults (§11.1–3).** Fixing them is a rankings change: `netMargin` and `shortInterest` would start ranking the 228. A separate build? | Not touched |
 
 ---
