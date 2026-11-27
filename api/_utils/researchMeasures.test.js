@@ -13,7 +13,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { makeMandateFakeDb } from './__testsupport__/mandateFakeFirestore.js';
 import { SECTOR_BEAT_RATES, TICKER_TO_SECTOR, RETIRED_STOCKS } from './rankingConfig.js';
-import { researchSectorOf } from './researchUniverse.js';
+import { researchNameOf, researchSectorOf } from './researchUniverse.js';
 import { extractMetrics, shapeFundamentals } from './stockMeasures.js';
 import { estimatesFactOf } from './sharedResearch/opening.js';
 import { GOLDEN_CASES } from './__fixtures__/stockMeasuresGoldenInputs.js';
@@ -110,6 +110,49 @@ describe('only a research stock: the rest are refused with no read, no write and
 });
 
 // -- The stored record -----------------------------------------------------------------------------------------------
+
+// Company names, Build 3a: the record's name for GLW, ANET and TSM (the three stored by Build 2's live check), pinned
+// BEFORE the name moved into the shared response shaping, so that move cannot change a stored research record. Each
+// response shape a name can arrive in: as given, with spaces around it, absent, empty, blank, not a string, under
+// General.Name, and under both keys.
+describe('the record name for GLW, ANET and TSM (pinned before the name got one home)', () => {
+  const { 'General::Name': _drop, ...noName } = RESPONSE;
+  const named = (v) => ({ ...noName, 'General::Name': v });
+  const nameOf = (sym, data) => quiet(() => buildRecord(sym, structuredClone(data), T0.toISOString())).name;
+  it.each([
+    ['GLW', 'Corning Incorporated'], ['ANET', 'Arista Networks'], ['TSM', 'Taiwan Semiconductor Manufacturing'],
+  ])('%s: the response name, trimmed; else the directory name (%s)', (sym, directoryName) => {
+    expect(researchNameOf(sym)).toBe(directoryName);
+    expect(nameOf(sym, named(`${directoryName} Inc`))).toBe(`${directoryName} Inc`);
+    expect(nameOf(sym, named(`  ${directoryName} Ltd `))).toBe(`${directoryName} Ltd`);
+    expect(nameOf(sym, noName)).toBe(directoryName);
+    for (const odd of ['', '   ', null, 42, { Name: 'x' }]) expect(nameOf(sym, named(odd))).toBe(directoryName);
+    expect(nameOf(sym, { ...noName, General: { Name: 'Under General' } })).toBe('Under General');
+    expect(nameOf(sym, { ...named('Under The Key'), General: { Name: 'Under General' } })).toBe('Under The Key');
+  });
+});
+
+// Company names, Build 3a (build prompt section 3 point 3): the name has one home. The record takes the name the
+// shared response shaping returns, and the directory's when the shaping returns the ticker (the response carries no
+// name, or carries the ticker itself as the name). This module reads no name from the response on its own.
+describe("the record name has one home: the shaping's", () => {
+  const { 'General::Name': _drop, ...noName } = RESPONSE;
+  const named = (v) => ({ ...noName, 'General::Name': v });
+  const nameOf = (sym, data) => quiet(() => buildRecord(sym, structuredClone(data), T0.toISOString())).name;
+  it('the record name is the name the shaping returns', () => {
+    const data = named('Corning Inc, as the response spells it');
+    expect(shapeFundamentals(structuredClone(data), 'GLW').name).toBe('Corning Inc, as the response spells it');
+    expect(nameOf('GLW', data)).toBe('Corning Inc, as the response spells it');
+  });
+  it('the directory name when the shaping returns the ticker: no name in the response, or the ticker as the name', () => {
+    expect(shapeFundamentals(structuredClone(noName), 'GLW').name).toBe('GLW');
+    expect(nameOf('GLW', noName)).toBe('Corning Incorporated');
+    expect(nameOf('GLW', named('GLW'))).toBe('Corning Incorporated');
+  });
+  it('researchMeasures.js reads no name from the response itself', () => {
+    expect(MODULE_SRC).not.toMatch(/General/);
+  });
+});
 
 describe('the stored record', () => {
   const record = quiet(() => buildRecord('GLW', structuredClone(RESPONSE), T0.toISOString()));

@@ -77,3 +77,36 @@ describe('pure: the same input gives the same output and is left as it was', () 
     }
   });
 });
+
+// Company names, Build 3a (build prompt section 3 point 1): the rankings filter's General::Name comes back as a
+// top-level "General::Name" key, which the shaper never read, so every stored name was the ticker. The name now comes
+// from that key, then from General.Name, then the ticker; a name is a non-blank string, trimmed.
+describe('the name, from three places in order', () => {
+  const nameOf = (data) => measures.shapeFundamentals(data, 'NVDA').name;
+  it('first the top-level "General::Name" key, where the rankings filter returns it (it wins over General.Name)', () => {
+    expect(nameOf({ 'General::Name': 'NVIDIA Corporation' })).toBe('NVIDIA Corporation');
+    expect(nameOf({ 'General::Name': 'NVIDIA Corporation', General: { Name: 'Under General' } })).toBe('NVIDIA Corporation');
+  });
+  it('then General.Name, when the top-level key is absent or holds no name', () => {
+    expect(nameOf({ General: { Name: 'Under General' } })).toBe('Under General');
+    for (const none of [undefined, null, '', '   ', 42, { Name: 'x' }]) {
+      expect(nameOf({ 'General::Name': none, General: { Name: 'Under General' } })).toBe('Under General');
+    }
+  });
+  it('then the ticker, when neither place holds a name', () => {
+    expect(nameOf({})).toBe('NVDA');
+    expect(nameOf({ General: {} })).toBe('NVDA');
+    for (const none of [null, '', '   ', 42, { Name: 'x' }]) {
+      expect(nameOf({ 'General::Name': none, General: { Name: none } })).toBe('NVDA');
+    }
+  });
+  it('a name is trimmed', () => {
+    expect(nameOf({ 'General::Name': '  NVIDIA Corporation ' })).toBe('NVIDIA Corporation');
+    expect(nameOf({ General: { Name: ' Under General  ' } })).toBe('Under General');
+  });
+  it('the name is the only part of the shaping that reads either place', () => {
+    const { name: _a, ...withKey } = measures.shapeFundamentals({ 'General::Name': 'NVIDIA Corporation', General: { Name: 'Under General' } }, 'NVDA');
+    const { name: _b, ...without } = measures.shapeFundamentals({}, 'NVDA');
+    expect(withKey).toEqual(without);
+  });
+});

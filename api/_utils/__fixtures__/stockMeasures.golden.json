@@ -937,7 +937,7 @@
      "=ShortPercentFloat": 0.0091,
      "=ShortRatio": 2.07
     },
-    "=name": "JPM"
+    "=name": "JPMorgan Chase & Co"
    },
    "=metrics": {
     "$keys": [
@@ -1013,7 +1013,7 @@
     "=low52": 202.16,
     "=ebit": 81234567890.13,
     "=interestExpense": -91234567890.77,
-    "=name": "JPM"
+    "=name": "JPMorgan Chase & Co"
    },
    "=logs": []
   },
@@ -1673,7 +1673,7 @@
      "=ShortPercentFloat": 0.0269,
      "=ShortRatio": 1.97
     },
-    "=name": "GLW"
+    "=name": "Corning Incorporated"
    },
    "=metrics": {
     "$keys": [
@@ -1749,7 +1749,7 @@
     "=low52": 81.0498,
     "=ebit": 2412000000.37,
     "=interestExpense": -331000000.13,
-    "=name": "GLW"
+    "=name": "Corning Incorporated"
    },
    "=logs": [
     "[RankingsCron] [RANK] undefined stock: earnings consistency using 3 quarters (sector default for beat rate)"
@@ -4993,7 +4993,7 @@
      "=ShortPercentOfFloat": 1.13,
      "=ShortRatio": 1.31
     },
-    "=name": "ANET"
+    "=name": "Arista Networks Inc"
    },
    "=metrics": {
     "$keys": [
@@ -5069,7 +5069,7 @@
     "=low52": 59.43,
     "=ebit": 0,
     "=interestExpense": -100000000,
-    "=name": "ANET"
+    "=name": "Arista Networks Inc"
    },
    "=logs": []
   }
