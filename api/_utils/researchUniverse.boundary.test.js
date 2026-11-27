@@ -12,6 +12,13 @@
 // researchUniverse.js. The names include the generator's (build-research-directory), so nothing imports its fetch
 // and writer either. Skipped: dot-folders (other sessions' worktrees live under .claude/), node_modules, build
 // output and docs/. Out of scope by design: a path assembled at run time from pieces (no honest import does that).
+//
+// Build 2 (build prompt section 5.7) adds two more names, each with its own allowed files:
+//   - the fetch module, api/_utils/researchMeasures.js: researchUniverse.js and it may be named only by each other, the
+//     hand-run script (scripts/research-stock.mjs) and their tests;
+//   - the per-stock math, api/_utils/stockMeasures.js: named only by the rankings job (compute-rankings.js), the
+//     research modules and their tests.
+// Any other file naming one fails.
 
 import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
@@ -36,6 +43,37 @@ const ALLOWED = new Set([
   'scripts/build-research-directory.test.js',
   'scripts/research-directory-corrections.mjs',
   'scripts/research-directory-corrections.test.js',
+  // Build 2: the fetch module imports researchUniverse.js; its test reads the research sector.
+  'api/_utils/researchMeasures.js',
+  'api/_utils/researchMeasures.test.js',
+  'api/_utils/researchMeasures.precedence.test.js',
+]);
+
+/** Build 2: the fetch module. Named only by itself, the hand-run script, their tests and this file. */
+const FETCH_NAMES = /research[-_]?measures|research-stock\.(?:m?js|test)/i;
+const FETCH_ALLOWED = new Set([
+  'api/_utils/researchMeasures.js',
+  'api/_utils/researchMeasures.test.js',
+  'api/_utils/researchMeasures.precedence.test.js',
+  'scripts/research-stock.mjs',
+  'scripts/research-stock.test.js',
+  'api/_utils/researchUniverse.boundary.test.js',
+]);
+
+/** Build 2: the per-stock math. Named only by the rankings job, the research modules and their tests, and this file. */
+const MEASURES_NAMES = /stock[-_]?measures/i;
+const MEASURES_ALLOWED = new Set([
+  'api/_utils/stockMeasures.js',
+  'api/_utils/stockMeasures.test.js',
+  'api/cron/compute-rankings.js',
+  'api/cron/compute-rankings.measuresGolden.test.js',
+  'api/cron/compute-rankings.beatRateSource.test.js',
+  'api/_utils/__fixtures__/stockMeasuresGoldenInputs.js',
+  'api/_utils/researchMeasures.js',
+  'api/_utils/researchMeasures.test.js',
+  'scripts/research-stock.mjs',
+  'scripts/research-stock.test.js',
+  'api/_utils/researchUniverse.boundary.test.js',
 ]);
 
 function walk(rel, out) {
@@ -49,9 +87,33 @@ function walk(rel, out) {
 }
 
 /** Files (repo-relative path, text) that name either module and are not allowed to. */
-function offendersIn(files, allowed = ALLOWED) {
-  return files.filter((f) => (NAMES.test(f.path) || NAMES.test(f.text)) && !allowed.has(f.path)).map((f) => f.path);
+function offendersIn(files, allowed = ALLOWED, names = NAMES) {
+  return files.filter((f) => (names.test(f.path) || names.test(f.text)) && !allowed.has(f.path)).map((f) => f.path);
 }
+
+describe('Build 2: the scanner catches every way of reaching the fetch module and the per-stock math (planted)', () => {
+  it.each([
+    ['a route importing the fetch module', 'api/stocks/research.js', "import { fetchResearchStock } from '../_utils/researchMeasures.js';", FETCH_ALLOWED, FETCH_NAMES],
+    ['a cron importing the fetch module', 'api/cron/zz-research.js', "const m = await import('../_utils/researchMeasures.js');", FETCH_ALLOWED, FETCH_NAMES],
+    ['a screen importing the fetch module', 'src/components/Research/x.jsx', "import { readResearchStock } from '../../../api/_utils/researchMeasures';", FETCH_ALLOWED, FETCH_NAMES],
+    ['a case variant of the fetch module', 'src/g.ts', "import x from '../api/_utils/ResearchMeasures.js';", FETCH_ALLOWED, FETCH_NAMES],
+    ['an importer of the hand-run script', 'api/cron/zz2.js', "import { runCli } from '../../scripts/research-stock.mjs';", FETCH_ALLOWED, FETCH_NAMES],
+    ['a game module importing the per-stock math', 'api/cron/compute-estimates.js', "import { extractMetrics } from '../_utils/stockMeasures.js';", MEASURES_ALLOWED, MEASURES_NAMES],
+    ['a screen importing the per-stock math', 'src/components/x.jsx', "import { getQuarterlyTTM } from '../../api/_utils/stockMeasures';", MEASURES_ALLOWED, MEASURES_NAMES],
+    ['a file named for the per-stock math', 'api/_utils/stock_measures_copy.js', 'export const X = 1;', MEASURES_ALLOWED, MEASURES_NAMES],
+  ])('%s', (_title, p, text, allowed, names) => {
+    expect(offendersIn([{ path: p, text }], allowed, names)).toEqual([p]);
+  });
+  it('passes the allowed files', () => {
+    expect(offendersIn([...FETCH_ALLOWED].map((p) => ({ path: p, text: "import './researchMeasures.js';" })), FETCH_ALLOWED, FETCH_NAMES)).toEqual([]);
+    expect(offendersIn([...MEASURES_ALLOWED].map((p) => ({ path: p, text: "import './stockMeasures.js';" })), MEASURES_ALLOWED, MEASURES_NAMES)).toEqual([]);
+  });
+  it('the rankings job may import the per-stock math but never the fetch module or the research list', () => {
+    expect(MEASURES_ALLOWED.has('api/cron/compute-rankings.js')).toBe(true);
+    expect(FETCH_ALLOWED.has('api/cron/compute-rankings.js')).toBe(false);
+    expect(ALLOWED.has('api/cron/compute-rankings.js')).toBe(false);
+  });
+});
 
 describe('the scanner catches every way of reaching the modules (planted)', () => {
   it.each([
@@ -89,12 +151,18 @@ describe('nothing outside the two modules and their tests names them', () => {
     expect(files.some((p) => p.startsWith('.') || p.includes('/.') || p.includes('node_modules/'))).toBe(false);
   });
   it('every allowed file exists (no stale allowance)', () => {
-    for (const p of ALLOWED) expect(existsSync(path.join(ROOT, p))).toBe(true);
+    for (const p of [...ALLOWED, ...FETCH_ALLOWED, ...MEASURES_ALLOWED]) expect(existsSync(path.join(ROOT, p))).toBe(true);
   });
   // Read at collection time, outside any row's timeout (about 2 seconds for ~3,000 files on a quiet machine).
   const scanned = files.map((p) => ({ path: p, text: readFileSync(path.join(ROOT, p), 'utf8') }));
   it('finds no other file naming researchUniverse or researchDirectory', () => {
     expect(offendersIn(scanned)).toEqual([]);
+  });
+  it('Build 2: finds no other file naming the fetch module or the hand-run script', () => {
+    expect(offendersIn(scanned, FETCH_ALLOWED, FETCH_NAMES)).toEqual([]);
+  });
+  it('Build 2: finds no other file naming the per-stock math (the rankings job and the research modules only)', () => {
+    expect(offendersIn(scanned, MEASURES_ALLOWED, MEASURES_NAMES)).toEqual([]);
   });
 });
 
