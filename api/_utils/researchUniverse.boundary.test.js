@@ -46,6 +46,7 @@ const ALLOWED = new Set([
   // Build 2: the fetch module imports researchUniverse.js; its test reads the research sector.
   'api/_utils/researchMeasures.js',
   'api/_utils/researchMeasures.test.js',
+  'api/_utils/researchMeasures.precedence.test.js',
 ]);
 
 /** Build 2: the fetch module. Named only by itself, the hand-run script, their tests and this file. */
@@ -53,6 +54,7 @@ const FETCH_NAMES = /research[-_]?measures|research-stock\.(?:m?js|test)/i;
 const FETCH_ALLOWED = new Set([
   'api/_utils/researchMeasures.js',
   'api/_utils/researchMeasures.test.js',
+  'api/_utils/researchMeasures.precedence.test.js',
   'scripts/research-stock.mjs',
   'scripts/research-stock.test.js',
   'api/_utils/researchUniverse.boundary.test.js',

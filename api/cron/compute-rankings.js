@@ -344,9 +344,10 @@ function getStockPriceHistory(sectorDocs, ticker) {
 
 // ---------------------------------------------------------------------------
 // Metric Extraction: moved verbatim to api/_utils/stockMeasures.js (research
-// universe Build 2) and imported above: getQuarterlyTTM, computeEpsRevisionScore,
-// computeAvgSurprise, extractBalanceSheetMetrics, computeEarningsConsistency,
-// computeShortInterestMetrics, extractYearlyDebtMetrics, extractMetrics.
+// universe Build 2): getQuarterlyTTM, computeEpsRevisionScore, computeAvgSurprise,
+// extractBalanceSheetMetrics, computeEarningsConsistency, computeShortInterestMetrics,
+// extractYearlyDebtMetrics, extractMetrics. This job imports extractMetrics,
+// computeEarningsConsistency and shapeFundamentals above; the rest are theirs.
 // ---------------------------------------------------------------------------
 
 /**

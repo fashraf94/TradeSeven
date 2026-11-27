@@ -4204,6 +4204,874 @@
     "=name": "AMZN"
    },
    "=logs": []
+  },
+  "fallback-fields": {
+   "$keys": [
+    "urls",
+    "shaped",
+    "metrics",
+    "logs"
+   ],
+   "=urls": [
+    "https://eodhd.com/api/fundamentals/CSCO.US?api_token=TESTKEY&fmt=json&filter=Highlights,Valuation,Technicals,Earnings,Financials,SharesStats,General::Name"
+   ],
+   "=shaped": {
+    "$keys": [
+     "highlights",
+     "valuation",
+     "technicals",
+     "earnings",
+     "incomeQ",
+     "cashFlowQ",
+     "incomeY",
+     "balanceSheetQ",
+     "balanceSheetY",
+     "sharesStats",
+     "name"
+    ],
+    "=highlights": {
+     "$keys": [
+      "MarketCapitalization",
+      "QuarterlyRevenueGrowthYOY",
+      "QuarterlyEarningsGrowthYOY",
+      "OperatingMarginTTM",
+      "GrossProfitTTM",
+      "RevenueTTM",
+      "ReturnOnAssetsTTM",
+      "ReturnOnEquityTTM",
+      "DividendYield"
+     ],
+     "=MarketCapitalization": 251234567890,
+     "=QuarterlyRevenueGrowthYOY": 0.0713,
+     "=QuarterlyEarningsGrowthYOY": 0.0917,
+     "=OperatingMarginTTM": 0.2413,
+     "=GrossProfitTTM": 36123456789,
+     "=RevenueTTM": 57123456789,
+     "=ReturnOnAssetsTTM": 0.0913,
+     "=ReturnOnEquityTTM": 0.2117,
+     "=DividendYield": 0.0263
+    },
+    "=valuation": {
+     "$keys": [
+      "EnterpriseValueEbitda",
+      "TrailingPE",
+      "PriceSalesTTM",
+      "PriceBookMRQ"
+     ],
+     "=EnterpriseValueEbitda": 200,
+     "=TrailingPE": 500,
+     "=PriceSalesTTM": 4.31,
+     "=PriceBookMRQ": 0
+    },
+    "=technicals": {
+     "$keys": [
+      "52WeekHigh",
+      "52WeekLow"
+     ],
+     "=52WeekHigh": 72.13,
+     "=52WeekLow": 51.37
+    },
+    "=earnings": {
+     "$keys": [
+      "History",
+      "Trend"
+     ],
+     "=History": {
+      "$keys": [
+       "2026-09-30",
+       "2026-06-30",
+       "2026-03-31"
+      ],
+      "=2026-09-30": {
+       "$keys": [
+        "reportDate",
+        "date",
+        "beforeAfterMarket",
+        "currency",
+        "epsActual",
+        "epsEstimate",
+        "epsDifference",
+        "surprisePercent"
+       ],
+       "=reportDate": "2026-09-30",
+       "=date": "2026-09-30",
+       "=beforeAfterMarket": "AfterMarket",
+       "=currency": "USD",
+       "=epsActual": 0.98,
+       "=epsEstimate": 0.95,
+       "=epsDifference": null,
+       "=surprisePercent": null
+      },
+      "=2026-06-30": {
+       "$keys": [
+        "reportDate",
+        "date",
+        "beforeAfterMarket",
+        "currency",
+        "epsActual",
+        "epsEstimate",
+        "epsDifference",
+        "surprisePercent"
+       ],
+       "=reportDate": "2026-06-30",
+       "=date": "2026-06-30",
+       "=beforeAfterMarket": "AfterMarket",
+       "=currency": "USD",
+       "=epsActual": 0.91,
+       "=epsEstimate": 0.93,
+       "=epsDifference": null,
+       "=surprisePercent": null
+      },
+      "=2026-03-31": {
+       "$keys": [
+        "reportDate",
+        "date",
+        "beforeAfterMarket",
+        "currency",
+        "epsActual",
+        "epsEstimate",
+        "epsDifference",
+        "surprisePercent"
+       ],
+       "=reportDate": "2026-03-31",
+       "=date": "2026-03-31",
+       "=beforeAfterMarket": "AfterMarket",
+       "=currency": "USD",
+       "=epsActual": 0.87,
+       "=epsEstimate": 0,
+       "=epsDifference": null,
+       "=surprisePercent": null
+      }
+     },
+     "=Trend": {
+      "$keys": [
+       "2027-07-31"
+      ],
+      "=2027-07-31": {
+       "$keys": [
+        "date",
+        "period",
+        "growth",
+        "earningsEstimateAvg",
+        "epsTrendCurrent",
+        "epsTrend30daysAgo"
+       ],
+       "=date": "2027-07-31",
+       "=period": "0y",
+       "=growth": "0.1730",
+       "=earningsEstimateAvg": "4.0100",
+       "=epsTrendCurrent": "4.0100",
+       "=epsTrend30daysAgo": "3.9700"
+      }
+     }
+    },
+    "=incomeQ": {
+     "$keys": []
+    },
+    "=cashFlowQ": {
+     "$keys": [
+      "2025-12-31",
+      "2026-03-31",
+      "2026-06-30",
+      "2026-09-30"
+     ],
+     "=2025-12-31": {
+      "$keys": [
+       "date",
+       "totalCashFromOperatingActivities",
+       "capitalExpenditures"
+      ],
+      "=date": "2025-12-31",
+      "=totalCashFromOperatingActivities": "3712345678.9",
+      "=capitalExpenditures": "-212345678.30"
+     },
+     "=2026-03-31": {
+      "$keys": [
+       "date",
+       "totalCashFromOperatingActivities",
+       "capitalExpenditures"
+      ],
+      "=date": "2026-03-31",
+      "=totalCashFromOperatingActivities": "3712345689.9",
+      "=capitalExpenditures": "-212345678.30"
+     },
+     "=2026-06-30": {
+      "$keys": [
+       "date",
+       "totalCashFromOperatingActivities",
+       "capitalExpenditures"
+      ],
+      "=date": "2026-06-30",
+      "=totalCashFromOperatingActivities": "3712345700.9",
+      "=capitalExpenditures": "-212345678.30"
+     },
+     "=2026-09-30": {
+      "$keys": [
+       "date",
+       "totalCashFromOperatingActivities",
+       "capitalExpenditures"
+      ],
+      "=date": "2026-09-30",
+      "=totalCashFromOperatingActivities": "3712345711.9",
+      "=capitalExpenditures": "-212345678.30"
+     }
+    },
+    "=incomeY": {
+     "$keys": [
+      "2026-07-31"
+     ],
+     "=2026-07-31": {
+      "$keys": [
+       "ebit",
+       "interestExpense",
+       "depreciationAndAmortization"
+      ],
+      "=ebit": "15123456789.10",
+      "=interestExpense": "-412345678.90",
+      "=depreciationAndAmortization": "None"
+     }
+    },
+    "=balanceSheetQ": {
+     "$keys": []
+    },
+    "=balanceSheetY": {
+     "$keys": [
+      "2026-07-31"
+     ],
+     "=2026-07-31": {
+      "$keys": [
+       "totalStockholderEquity",
+       "totalCurrentAssets",
+       "totalCurrentLiabilities",
+       "netDebt"
+      ],
+      "=totalStockholderEquity": "51234567890.00",
+      "=totalCurrentAssets": "33123456789.00",
+      "=totalCurrentLiabilities": "30123456789.00",
+      "=netDebt": "12345678901.00"
+     }
+    },
+    "=sharesStats": {
+     "$keys": [
+      "ShortPercentOfFloat",
+      "ShortRatio"
+     ],
+     "=ShortPercentOfFloat": 15,
+     "=ShortRatio": 2.13
+    },
+    "=name": "CSCO"
+   },
+   "=metrics": {
+    "$keys": [
+     "revenueGrowthYOY",
+     "earningsGrowthYOY",
+     "opMarginTTM",
+     "profitMarginTTM",
+     "grossMargin",
+     "roaTTM",
+     "roeTTM",
+     "evEbitda",
+     "trailingPE",
+     "priceSalesTTM",
+     "priceBookMRQ",
+     "fcfYield",
+     "dividendYield",
+     "fcfMargin",
+     "sixMonthReturn",
+     "threeMonthReturn",
+     "oneMonthReturn",
+     "debtToEquity",
+     "currentRatio",
+     "interestCoverage",
+     "netDebtEbitda",
+     "beatRate",
+     "beatRateSource",
+     "avgSurpriseMag",
+     "surpriseConsistency",
+     "earningsRevisions",
+     "avgEarningsSurprise",
+     "shortInterestScore",
+     "shortRatio",
+     "squeezeWatch",
+     "marketCap",
+     "high52",
+     "low52",
+     "ebit",
+     "interestExpense",
+     "name"
+    ],
+    "=revenueGrowthYOY": 0.0713,
+    "=earningsGrowthYOY": 0.0917,
+    "=opMarginTTM": 0.2413,
+    "=profitMarginTTM": null,
+    "=grossMargin": 0.6323751891001829,
+    "=roaTTM": 0.0913,
+    "=roeTTM": 0.2117,
+    "=evEbitda": 200,
+    "=trailingPE": 500,
+    "=priceSalesTTM": 4.31,
+    "=priceBookMRQ": null,
+    "=fcfYield": 5.572481599956312,
+    "=dividendYield": 0.0263,
+    "=fcfMargin": 24.508320846395126,
+    "=sixMonthReturn": null,
+    "=threeMonthReturn": null,
+    "=oneMonthReturn": null,
+    "=debtToEquity": 0,
+    "=currentRatio": 1.0995901639381405,
+    "=interestCoverage": 36.67664671409753,
+    "=netDebtEbitda": 0.8163265233050395,
+    "=beatRate": 72,
+    "=beatRateSource": "sector_default",
+    "=avgSurpriseMag": 2.654216185625356,
+    "=surpriseConsistency": null,
+    "=earningsRevisions": 1.007556675062962,
+    "=avgEarningsSurprise": 0.5036785512167519,
+    "=shortInterestScore": 15,
+    "=shortRatio": 2.13,
+    "=squeezeWatch": false,
+    "=marketCap": 251234567890,
+    "=high52": 72.13,
+    "=low52": 51.37,
+    "=ebit": 15123456789.1,
+    "=interestExpense": -412345678.9,
+    "=name": "CSCO"
+   },
+   "=logs": [
+    "[RankingsCron] [RANK] XLK stock: earnings consistency using 2 quarters (sector default for beat rate)"
+   ]
+  },
+  "odd-income": {
+   "$keys": [
+    "urls",
+    "shaped",
+    "metrics",
+    "logs"
+   ],
+   "=urls": [
+    "https://eodhd.com/api/fundamentals/ORCL.US?api_token=TESTKEY&fmt=json&filter=Highlights,Valuation,Technicals,Earnings,Financials,SharesStats,General::Name"
+   ],
+   "=shaped": {
+    "$keys": [
+     "highlights",
+     "valuation",
+     "technicals",
+     "earnings",
+     "incomeQ",
+     "cashFlowQ",
+     "incomeY",
+     "balanceSheetQ",
+     "balanceSheetY",
+     "sharesStats",
+     "name"
+    ],
+    "=highlights": {
+     "$keys": [
+      "MarketCapitalization",
+      "QuarterlyRevenueGrowthYOY",
+      "QuarterlyEarningsGrowthYOY",
+      "OperatingMarginTTM",
+      "GrossProfitTTM",
+      "RevenueTTM",
+      "DividendYield"
+     ],
+     "=MarketCapitalization": 512345678901,
+     "=QuarterlyRevenueGrowthYOY": 0.1213,
+     "=QuarterlyEarningsGrowthYOY": 0.0817,
+     "=OperatingMarginTTM": 0.3017,
+     "=GrossProfitTTM": 41234567890,
+     "=RevenueTTM": 57123456789,
+     "=DividendYield": 0.0091
+    },
+    "=valuation": {
+     "$keys": [
+      "EnterpriseValueEbitda",
+      "TrailingPE",
+      "PriceSalesTTM",
+      "PriceBookMRQ"
+     ],
+     "=EnterpriseValueEbitda": 31.17,
+     "=TrailingPE": 41.13,
+     "=PriceSalesTTM": 9.13,
+     "=PriceBookMRQ": 23.71
+    },
+    "=technicals": {
+     "$keys": [
+      "52WeekHigh",
+      "52WeekLow"
+     ],
+     "=52WeekHigh": 345.72,
+     "=52WeekLow": 118.86
+    },
+    "=earnings": {
+     "$keys": [
+      "History"
+     ],
+     "=History": {
+      "$keys": [
+       "2026-09-30",
+       "2026-06-30"
+      ],
+      "=2026-09-30": {
+       "$keys": [
+        "reportDate",
+        "date",
+        "beforeAfterMarket",
+        "currency",
+        "epsActual",
+        "epsEstimate",
+        "epsDifference",
+        "surprisePercent"
+       ],
+       "=reportDate": "2026-09-30",
+       "=date": "2026-09-30",
+       "=beforeAfterMarket": "AfterMarket",
+       "=currency": "USD",
+       "=epsActual": 1.47,
+       "=epsEstimate": 1.43,
+       "=epsDifference": null,
+       "=surprisePercent": null
+      },
+      "=2026-06-30": {
+       "$keys": [
+        "reportDate",
+        "date",
+        "beforeAfterMarket",
+        "currency",
+        "epsActual",
+        "epsEstimate",
+        "epsDifference",
+        "surprisePercent"
+       ],
+       "=reportDate": "2026-06-30",
+       "=date": "2026-06-30",
+       "=beforeAfterMarket": "AfterMarket",
+       "=currency": "USD",
+       "=epsActual": 1.39,
+       "=epsEstimate": 0,
+       "=epsDifference": null,
+       "=surprisePercent": null
+      }
+     }
+    },
+    "=incomeQ": {
+     "$keys": []
+    },
+    "=cashFlowQ": {
+     "$keys": [
+      "2025-12-31",
+      "2026-03-31",
+      "2026-06-30",
+      "2026-09-30"
+     ],
+     "=2025-12-31": {
+      "$keys": [
+       "date",
+       "totalCashFromOperatingActivities",
+       "capitalExpenditures"
+      ],
+      "=date": "2025-12-31",
+      "=totalCashFromOperatingActivities": "5123456789.3",
+      "=capitalExpenditures": "-8123456789.70"
+     },
+     "=2026-03-31": {
+      "$keys": [
+       "date",
+       "totalCashFromOperatingActivities",
+       "capitalExpenditures"
+      ],
+      "=date": "2026-03-31",
+      "=totalCashFromOperatingActivities": "5123456776.3",
+      "=capitalExpenditures": "-8123456789.70"
+     },
+     "=2026-06-30": {
+      "$keys": [
+       "date",
+       "totalCashFromOperatingActivities",
+       "capitalExpenditures"
+      ],
+      "=date": "2026-06-30",
+      "=totalCashFromOperatingActivities": "5123456763.3",
+      "=capitalExpenditures": "-8123456789.70"
+     },
+     "=2026-09-30": {
+      "$keys": [
+       "date",
+       "totalCashFromOperatingActivities",
+       "capitalExpenditures"
+      ],
+      "=date": "2026-09-30",
+      "=totalCashFromOperatingActivities": "5123456750.3",
+      "=capitalExpenditures": "-8123456789.70"
+     }
+    },
+    "=incomeY": {
+     "$keys": [
+      "2026-05-31"
+     ],
+     "=2026-05-31": {
+      "$keys": [
+       "operatingIncome",
+       "interestExpense",
+       "depreciationAndAmortization"
+      ],
+      "=operatingIncome": "None",
+      "=interestExpense": "-3412345678.10",
+      "=depreciationAndAmortization": "4123456789.10"
+     }
+    },
+    "=balanceSheetQ": {
+     "$keys": []
+    },
+    "=balanceSheetY": {
+     "$keys": [
+      "2026-05-31"
+     ],
+     "=2026-05-31": {
+      "$keys": [
+       "shortLongTermDebtTotal",
+       "totalStockholderEquity",
+       "totalCurrentAssets",
+       "totalCurrentLiabilities",
+       "netDebt"
+      ],
+      "=shortLongTermDebtTotal": "92123456789.00",
+      "=totalStockholderEquity": "0",
+      "=totalCurrentAssets": "24123456789.00",
+      "=totalCurrentLiabilities": "31123456789.00",
+      "=netDebt": "0"
+     }
+    },
+    "=sharesStats": {
+     "$keys": [
+      "ShortPercentOfFloat",
+      "ShortRatio"
+     ],
+     "=ShortPercentOfFloat": 1.31,
+     "=ShortRatio": 1.71
+    },
+    "=name": "ORCL"
+   },
+   "=metrics": {
+    "$keys": [
+     "revenueGrowthYOY",
+     "earningsGrowthYOY",
+     "opMarginTTM",
+     "profitMarginTTM",
+     "grossMargin",
+     "roaTTM",
+     "roeTTM",
+     "evEbitda",
+     "trailingPE",
+     "priceSalesTTM",
+     "priceBookMRQ",
+     "fcfYield",
+     "dividendYield",
+     "fcfMargin",
+     "sixMonthReturn",
+     "threeMonthReturn",
+     "oneMonthReturn",
+     "debtToEquity",
+     "currentRatio",
+     "interestCoverage",
+     "netDebtEbitda",
+     "beatRate",
+     "beatRateSource",
+     "avgSurpriseMag",
+     "surpriseConsistency",
+     "earningsRevisions",
+     "avgEarningsSurprise",
+     "shortInterestScore",
+     "shortRatio",
+     "squeezeWatch",
+     "marketCap",
+     "high52",
+     "low52",
+     "ebit",
+     "interestExpense",
+     "name"
+    ],
+    "=revenueGrowthYOY": 0.1213,
+    "=earningsGrowthYOY": 0.0817,
+    "=opMarginTTM": 0.3017,
+    "=profitMarginTTM": null,
+    "=grossMargin": 0.7218500106236629,
+    "=roaTTM": null,
+    "=roeTTM": null,
+    "=evEbitda": 31.17,
+    "=trailingPE": 41.13,
+    "=priceSalesTTM": 9.13,
+    "=priceBookMRQ": 23.71,
+    "=fcfYield": -2.342168690744193,
+    "=dividendYield": 0.0091,
+    "=fcfMargin": -21.00713219076543,
+    "=sixMonthReturn": null,
+    "=threeMonthReturn": null,
+    "=oneMonthReturn": null,
+    "=debtToEquity": null,
+    "=currentRatio": 0.7750892502893825,
+    "=interestCoverage": null,
+    "=netDebtEbitda": null,
+    "=beatRate": 72,
+    "=beatRateSource": "sector_default",
+    "=avgSurpriseMag": null,
+    "=surpriseConsistency": null,
+    "=earningsRevisions": null,
+    "=avgEarningsSurprise": null,
+    "=shortInterestScore": 1.31,
+    "=shortRatio": 1.71,
+    "=squeezeWatch": false,
+    "=marketCap": 512345678901,
+    "=high52": 345.72,
+    "=low52": 118.86,
+    "=ebit": null,
+    "=interestExpense": -3412345678.1,
+    "=name": "ORCL"
+   },
+   "=logs": [
+    "[RankingsCron] [RANK] XLK stock: earnings consistency using 1 quarters (sector default for beat rate)"
+   ]
+  },
+  "no-history-unknown-sector": {
+   "$keys": [
+    "urls",
+    "shaped",
+    "metrics",
+    "logs"
+   ],
+   "=urls": [
+    "https://eodhd.com/api/fundamentals/ANET.US?api_token=TESTKEY&fmt=json&filter=Highlights,Valuation,Technicals,Earnings,Financials,SharesStats,General::Name"
+   ],
+   "=shaped": {
+    "$keys": [
+     "highlights",
+     "valuation",
+     "technicals",
+     "earnings",
+     "incomeQ",
+     "cashFlowQ",
+     "incomeY",
+     "balanceSheetQ",
+     "balanceSheetY",
+     "sharesStats",
+     "name"
+    ],
+    "=highlights": {
+     "$keys": [
+      "MarketCapitalization",
+      "QuarterlyRevenueGrowthYOY",
+      "QuarterlyEarningsGrowthYOY",
+      "OperatingMarginTTM",
+      "GrossProfitTTM",
+      "RevenueTTM",
+      "DividendYield"
+     ],
+     "=MarketCapitalization": 171234567890,
+     "=QuarterlyRevenueGrowthYOY": 0.2713,
+     "=QuarterlyEarningsGrowthYOY": 0.3117,
+     "=OperatingMarginTTM": 0.4213,
+     "=GrossProfitTTM": 5712345678,
+     "=RevenueTTM": 8123456789,
+     "=DividendYield": 0
+    },
+    "=valuation": {
+     "$keys": [
+      "EnterpriseValueEbitda",
+      "TrailingPE",
+      "PriceSalesTTM",
+      "PriceBookMRQ"
+     ],
+     "=EnterpriseValueEbitda": 51.13,
+     "=TrailingPE": 57.31,
+     "=PriceSalesTTM": 21.13,
+     "=PriceBookMRQ": 17.31
+    },
+    "=technicals": {
+     "$keys": [
+      "52WeekHigh",
+      "52WeekLow"
+     ],
+     "=52WeekHigh": 164.94,
+     "=52WeekLow": 59.43
+    },
+    "=earnings": {
+     "$keys": []
+    },
+    "=incomeQ": {
+     "$keys": []
+    },
+    "=cashFlowQ": {
+     "$keys": [
+      "2025-12-31",
+      "2026-03-31",
+      "2026-06-30",
+      "2026-09-30"
+     ],
+     "=2025-12-31": {
+      "$keys": [
+       "date",
+       "totalCashFromOperatingActivities",
+       "capitalExpenditures"
+      ],
+      "=date": "2025-12-31",
+      "=totalCashFromOperatingActivities": "1012345678.1",
+      "=capitalExpenditures": "-31234567.10"
+     },
+     "=2026-03-31": {
+      "$keys": [
+       "date",
+       "totalCashFromOperatingActivities",
+       "capitalExpenditures"
+      ],
+      "=date": "2026-03-31",
+      "=totalCashFromOperatingActivities": "1012345695.1",
+      "=capitalExpenditures": "-31234567.10"
+     },
+     "=2026-06-30": {
+      "$keys": [
+       "date",
+       "totalCashFromOperatingActivities",
+       "capitalExpenditures"
+      ],
+      "=date": "2026-06-30",
+      "=totalCashFromOperatingActivities": "1012345712.1",
+      "=capitalExpenditures": "-31234567.10"
+     },
+     "=2026-09-30": {
+      "$keys": [
+       "date",
+       "totalCashFromOperatingActivities",
+       "capitalExpenditures"
+      ],
+      "=date": "2026-09-30",
+      "=totalCashFromOperatingActivities": "1012345729.1",
+      "=capitalExpenditures": "-31234567.10"
+     }
+    },
+    "=incomeY": {
+     "$keys": [
+      "2025-12-31"
+     ],
+     "=2025-12-31": {
+      "$keys": [
+       "operatingIncome",
+       "interestExpense",
+       "depreciationAndAmortization"
+      ],
+      "=operatingIncome": "0",
+      "=interestExpense": "-100000000.00",
+      "=depreciationAndAmortization": "61234567.10"
+     }
+    },
+    "=balanceSheetQ": {
+     "$keys": []
+    },
+    "=balanceSheetY": {
+     "$keys": [
+      "2025-12-31"
+     ],
+     "=2025-12-31": {
+      "$keys": [
+       "shortLongTermDebtTotal",
+       "totalStockholderEquity",
+       "totalCurrentAssets",
+       "totalCurrentLiabilities",
+       "netDebt"
+      ],
+      "=shortLongTermDebtTotal": "0",
+      "=totalStockholderEquity": "10123456789.00",
+      "=totalCurrentAssets": "12123456789.00",
+      "=totalCurrentLiabilities": "3123456789.00",
+      "=netDebt": "-5123456789.00"
+     }
+    },
+    "=sharesStats": {
+     "$keys": [
+      "ShortPercentOfFloat",
+      "ShortRatio"
+     ],
+     "=ShortPercentOfFloat": 1.13,
+     "=ShortRatio": 1.31
+    },
+    "=name": "ANET"
+   },
+   "=metrics": {
+    "$keys": [
+     "revenueGrowthYOY",
+     "earningsGrowthYOY",
+     "opMarginTTM",
+     "profitMarginTTM",
+     "grossMargin",
+     "roaTTM",
+     "roeTTM",
+     "evEbitda",
+     "trailingPE",
+     "priceSalesTTM",
+     "priceBookMRQ",
+     "fcfYield",
+     "dividendYield",
+     "fcfMargin",
+     "sixMonthReturn",
+     "threeMonthReturn",
+     "oneMonthReturn",
+     "debtToEquity",
+     "currentRatio",
+     "interestCoverage",
+     "netDebtEbitda",
+     "beatRate",
+     "beatRateSource",
+     "avgSurpriseMag",
+     "surpriseConsistency",
+     "earningsRevisions",
+     "avgEarningsSurprise",
+     "shortInterestScore",
+     "shortRatio",
+     "squeezeWatch",
+     "marketCap",
+     "high52",
+     "low52",
+     "ebit",
+     "interestExpense",
+     "name"
+    ],
+    "=revenueGrowthYOY": 0.2713,
+    "=earningsGrowthYOY": 0.3117,
+    "=opMarginTTM": 0.4213,
+    "=profitMarginTTM": null,
+    "=grossMargin": 0.703191489334332,
+    "=roaTTM": null,
+    "=roeTTM": null,
+    "=evEbitda": 51.13,
+    "=trailingPE": 57.31,
+    "=priceSalesTTM": 21.13,
+    "=priceBookMRQ": 17.31,
+    "=fcfYield": 2.2918529794293865,
+    "=dividendYield": 0,
+    "=fcfMargin": 48.31003165196993,
+    "=sixMonthReturn": null,
+    "=threeMonthReturn": null,
+    "=oneMonthReturn": null,
+    "=debtToEquity": 0,
+    "=currentRatio": 3.8814229259375868,
+    "=interestCoverage": null,
+    "=netDebtEbitda": -1,
+    "=beatRate": 68,
+    "=beatRateSource": "sector_default",
+    "=avgSurpriseMag": null,
+    "=surpriseConsistency": null,
+    "=earningsRevisions": null,
+    "=avgEarningsSurprise": null,
+    "=shortInterestScore": 1.13,
+    "=shortRatio": 1.31,
+    "=squeezeWatch": false,
+    "=marketCap": 171234567890,
+    "=high52": 164.94,
+    "=low52": 59.43,
+    "=ebit": 0,
+    "=interestExpense": -100000000,
+    "=name": "ANET"
+   },
+   "=logs": []
   }
  },
  "failure": {

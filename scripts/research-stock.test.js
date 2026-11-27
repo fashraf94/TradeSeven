@@ -84,6 +84,13 @@ describe('fetch without --go: says what it would do and cost; no call and no wri
     expect(r.code).toBe(EXIT.REFUSED);
     expect(r.text).toContain('REFUSED: AAPL is not a research stock (game_stock). No call.');
   });
+  it.each([['AAPL', 'game_stock'], ['MMC', 'retired'], ['ZZZZ', 'not_on_list']])('%s is refused before any read (review R2-3)', async (sym, reason) => {
+    // Awaiting a value probes its then; every other property is a store access.
+    const untouchable = new Proxy({}, { get: (_t, k) => { if (k === 'then') return undefined; throw new Error('the store was touched'); } });
+    const r = await cli(['fetch', sym], { db: untouchable });
+    expect(r.code).toBe(EXIT.REFUSED);
+    expect(r.text).toBe(`REFUSED: ${sym} is not a research stock (${reason}). No call.`);
+  });
 });
 
 describe('fetch --go: fetches if needed, stores, prints the measures with plain labels', () => {

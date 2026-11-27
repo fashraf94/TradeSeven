@@ -22,8 +22,10 @@ const GOLDEN = JSON.parse(readFileSync(path.join(HERE, '__fixtures__', 'stockMea
 
 describe('the module', () => {
   it('imports rankingConfig.js only, so the rankings job can never reach a research module through it', () => {
-    const specifiers = [...SRC.matchAll(/\bfrom\s+['"]([^'"]+)['"]|\bimport\s*\(\s*['"]([^'"]+)['"]|\brequire\s*\(\s*['"]([^'"]+)['"]/g)].map((m) => m[1] ?? m[2] ?? m[3]);
-    expect(specifiers).toEqual(['./rankingConfig.js']);
+    // Every form: `from '…'`, a bare side-effect `import '…'` (review L1-5), `import('…')`, `require('…')`.
+    const specifiersOf = (src) => [...src.matchAll(/\bfrom\s+['"]([^'"]+)['"]|\bimport\s+['"]([^'"]+)['"]|\bimport\s*\(\s*['"]([^'"]+)['"]|\brequire\s*\(\s*['"]([^'"]+)['"]/g)].map((m) => m[1] ?? m[2] ?? m[3] ?? m[4]);
+    expect(specifiersOf(SRC)).toEqual(['./rankingConfig.js']);
+    expect(specifiersOf("import { a } from './rankingConfig.js';\nimport './metricSnapshots.js';")).toEqual(['./rankingConfig.js', './metricSnapshots.js']);
   });
   it('exports the shaper and the eight moved functions, and nothing else', () => {
     expect(Object.keys(measures).sort()).toEqual([

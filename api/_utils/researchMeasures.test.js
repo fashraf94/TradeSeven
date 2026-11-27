@@ -262,7 +262,8 @@ describe('kept numbers first; one request otherwise', () => {
     await run('GLW', { db, fetchImpl: fakeFetch(RESPONSE) });
     await db.doc('researchMeasures/GLW').update({ shapeVersion: 0 });
     const fetchImpl = fakeFetch(RESPONSE);
-    expect((await run('GLW', { db, fetchImpl })).outcome).toBe('fetched');
+    // The next day: a symbol is fetched at most once a UTC day.
+    expect((await run('GLW', { db, fetchImpl, at: new Date(T0.getTime() + 86400e3) })).outcome).toBe('fetched');
     expect(fetchImpl.urls).toHaveLength(1);
   });
   it('readResearchStock and readFetchDay read only', async () => {
@@ -272,7 +273,7 @@ describe('kept numbers first; one request otherwise', () => {
     const before = paths(db).map((p) => db._versionOf(p));
     const later = new Date(T0.getTime() + 3600e3);
     expect((await readResearchStock(db, 'GLW', later)).ageMs).toBe(3600e3);
-    expect(await readFetchDay(db, T0)).toEqual({ day: '2026-11-26', fetches: 1, ceiling: 200 });
+    expect(await readFetchDay(db, T0)).toEqual({ day: '2026-11-26', fetches: 1, ceiling: 200, symbols: { GLW: T0.toISOString() } });
     expect(paths(db).map((p) => db._versionOf(p))).toEqual(before);
   });
 });
@@ -388,8 +389,8 @@ describe('the daily ceiling', () => {
   });
   it('two claims at once take two slots (the loser re-reads the winner\'s count)', async () => {
     const db = seeded(5);
-    db.setBarrier(async () => { await claimFetchSlot(db, T0); });
-    const a = await claimFetchSlot(db, T0);
+    db.setBarrier(async () => { await claimFetchSlot(db, T0, { symbol: 'ANET' }); });
+    const a = await claimFetchSlot(db, T0, { symbol: 'GLW' });
     expect(a).toEqual({ ok: true, day: '2026-11-26', fetches: 7 });
     expect(db._get('researchFetchDays/2026-11-26').fetches).toBe(7);
     expect(db._txAttempts()).toBeGreaterThanOrEqual(3);
@@ -397,24 +398,121 @@ describe('the daily ceiling', () => {
   it('two claims at once for the last slot: one goes through, the other is refused (the ceiling cannot be passed)', async () => {
     const db = seeded(199);
     let rival;
-    db.setBarrier(async () => { rival = await claimFetchSlot(db, T0); });
-    const a = await claimFetchSlot(db, T0);
+    db.setBarrier(async () => { rival = await claimFetchSlot(db, T0, { symbol: 'ANET' }); });
+    const a = await claimFetchSlot(db, T0, { symbol: 'GLW' });
     expect([rival.ok, a.ok].sort()).toEqual([false, true]);
     expect(db._get('researchFetchDays/2026-11-26').fetches).toBe(200);
   });
-  it('two touches of the same new stock at once each claim before calling: two slots, two calls, one record', async () => {
+  it('a symbol is claimed at most once a UTC day: a second claim for it is refused and takes no slot (review R2-1)', async () => {
+    const db = seeded(5);
+    expect(await claimFetchSlot(db, T0, { symbol: 'GLW' })).toEqual({ ok: true, day: '2026-11-26', fetches: 6 });
+    expect(await claimFetchSlot(db, T0, { symbol: 'GLW' })).toEqual({ ok: false, reason: 'symbol_claimed_today', day: '2026-11-26', fetches: 6 });
+    expect(db._get('researchFetchDays/2026-11-26').fetches).toBe(6);
+    expect((await claimFetchSlot(db, new Date('2026-11-27T00:00:01.000Z'), { symbol: 'GLW' })).ok).toBe(true);
+  });
+  it('two touches of the same new stock at once: one claim, one call, one record; the other makes no call (review R2-1, R2-2)', async () => {
     const db = makeMandateFakeDb();
     const fetchImpl = fakeFetch(RESPONSE);
-    await Promise.all([run('GLW', { db, fetchImpl }), run('GLW', { db, fetchImpl })]);
-    expect(fetchImpl.urls).toHaveLength(2);
-    expect(db._get('researchFetchDays/2026-11-26').fetches).toBe(2);
+    const outs = await Promise.all([run('GLW', { db, fetchImpl }), run('GLW', { db, fetchImpl })]);
+    expect(fetchImpl.urls).toHaveLength(1);
+    expect(db._get('researchFetchDays/2026-11-26').fetches).toBe(1);
+    expect(outs.map((o) => o.calls).sort()).toEqual([0, 10]);
     expect(paths(db)).toEqual(['researchFetchDays/2026-11-26', 'researchMeasures/GLW']);
+    expect(db._get('researchMeasures/GLW').status).toBe('ok');
   });
   it('a refused claim writes nothing', async () => {
     const db = seeded(200);
     const v = db._versionOf('researchFetchDays/2026-11-26');
-    expect((await claimFetchSlot(db, T0)).ok).toBe(false);
+    expect((await claimFetchSlot(db, T0, { symbol: 'GLW' })).ok).toBe(false);
     expect(db._versionOf('researchFetchDays/2026-11-26')).toBe(v);
+  });
+  it.each([
+    ['a string', 'abc'], ['a negative count', -500], ['null', null], ['a fraction', 1.5], ['missing', undefined],
+  ])('a malformed counter (%s) refuses every claim: fail closed (review R2-5)', async (_t, fetches) => {
+    const db = makeMandateFakeDb({ 'researchFetchDays/2026-11-26': { day: '2026-11-26', ...(fetches === undefined ? {} : { fetches }) } });
+    const fetchImpl = fakeFetch(RESPONSE);
+    expect(await claimFetchSlot(db, T0, { symbol: 'GLW' })).toMatchObject({ ok: false, reason: 'counter_malformed' });
+    const out = await run('GLW', { db, fetchImpl });
+    expect(out).toMatchObject({ outcome: 'over_ceiling', reason: 'counter_malformed', calls: 0 });
+    expect(fetchImpl.urls).toEqual([]);
+  });
+});
+
+describe('an error after the call cannot cost a call on every touch (review R2-1)', () => {
+  it('a store write that fails after the call: the touch fails, and later touches that day make no call', async () => {
+    const db = makeMandateFakeDb();
+    db.failNextWrites('researchMeasures/GLW', 3);
+    const fetchImpl = fakeFetch(RESPONSE);
+    await expect(run('GLW', { db, fetchImpl })).rejects.toThrow();
+    for (let i = 1; i <= 3; i += 1) {
+      const out = await run('GLW', { db, fetchImpl, at: new Date(T0.getTime() + i * 60e3) });
+      expect(out).toMatchObject({ outcome: 'unavailable', reason: 'symbol_claimed_today', calls: 0 });
+    }
+    expect(fetchImpl.urls).toHaveLength(1);
+    expect(db._get('researchFetchDays/2026-11-26').fetches).toBe(1);
+  });
+  it('math that throws on the response stores compute_error, and the next touch makes no call', async () => {
+    const broken = structuredClone(RESPONSE);
+    broken.Earnings.History['2026-03-31'] = null;
+    const db = makeMandateFakeDb();
+    const fetchImpl = fakeFetch(broken);
+    const out = await run('GLW', { db, fetchImpl });
+    expect(out).toMatchObject({ outcome: 'unavailable', reason: 'compute_error', calls: CALLS_PER_FETCH });
+    expect(db._get('researchMeasures/GLW')).toMatchObject({ status: 'unavailable', metrics: null, unavailable: { reason: 'compute_error', at: T0.toISOString() } });
+    const again = await run('GLW', { db, fetchImpl, at: new Date(T0.getTime() + UNAVAILABLE_RETRY_MS + 1) });
+    expect(again.calls).toBe(CALLS_PER_FETCH);
+    expect(await run('GLW', { db, fetchImpl, at: new Date(T0.getTime() + UNAVAILABLE_RETRY_MS + 2) })).toMatchObject({ calls: 0 });
+    expect(fetchImpl.urls).toHaveLength(2);
+  });
+});
+
+describe('a slower failure never replaces numbers fetched after it began (review R2-2)', () => {
+  /** A fetch that answers after `ms` milliseconds. */
+  const slow = (answer, ms) => async () => {
+    await new Promise((r) => setTimeout(r, ms));
+    if (typeof answer === 'number') return { ok: false, status: answer, json: async () => ({}) };
+    return { ok: true, status: 200, json: async () => structuredClone(answer) };
+  };
+  it.each([
+    ['a new stock', null],
+    ['a stock with numbers 8 days old', '2026-11-18T23:00:00.000Z'],
+  ])('%s: a refresh that began before midnight UTC and fails late leaves the success that landed after midnight', async (_t, oldFetchedAt) => {
+    const seed = oldFetchedAt ? { 'researchMeasures/GLW': quiet(() => buildRecord('GLW', structuredClone(RESPONSE), oldFetchedAt)) } : {};
+    const db = makeMandateFakeDb(seed);
+    const beforeMidnight = new Date('2026-11-26T23:59:59.000Z');
+    const afterMidnight = new Date('2026-11-27T00:00:01.000Z');
+    const [failed, fetched] = await Promise.all([
+      quietAsync(() => fetchResearchStock('GLW', { db, apiKey: KEY, fetchImpl: slow(503, 40), now: clockAt(beforeMidnight) })),
+      quietAsync(() => fetchResearchStock('GLW', { db, apiKey: KEY, fetchImpl: slow(RESPONSE, 5), now: clockAt(afterMidnight) })),
+    ]);
+    expect(fetched.outcome).toBe('fetched');
+    expect(failed).toMatchObject({ outcome: 'unavailable', reason: 'http_503', calls: CALLS_PER_FETCH });
+    const stored = db._get('researchMeasures/GLW');
+    expect(stored).toMatchObject({ status: 'ok', fetchedAt: afterMidnight.toISOString(), unavailable: null });
+    expect(failed.record).toEqual(stored);
+  });
+});
+
+describe('clocks and versions (review R2-4, R2-6)', () => {
+  it('a kept record dated in the future (beyond a minute of clock skew) is not fresh: refetched once', () => {
+    const rec = quiet(() => buildRecord('GLW', structuredClone(RESPONSE), '2027-06-01T00:00:00.000Z'));
+    expect(planResearchFetch('GLW', rec, T0.getTime()).action).toBe('fetch');
+    const skewed = quiet(() => buildRecord('GLW', structuredClone(RESPONSE), new Date(T0.getTime() + 30e3).toISOString()));
+    expect(planResearchFetch('GLW', skewed, T0.getTime()).action).toBe('use_kept');
+  });
+  it('an unavailable mark dated in the future does not hold a stock for ever', () => {
+    const rec = { symbol: 'GLW', status: 'unavailable', metrics: null, fetchedAt: null, unavailable: { reason: 'http_404', at: '2027-06-01T00:00:00.000Z' }, shapeVersion: MEASURES_SHAPE_VERSION };
+    expect(planResearchFetch('GLW', rec, T0.getTime()).action).toBe('fetch');
+  });
+  it('a failed refetch keeps the record\'s own shape version (none stays none), so old-shape numbers are not later reused as current', async () => {
+    const old = { ...quiet(() => buildRecord('GLW', structuredClone(RESPONSE), new Date(T0.getTime() - 86400e3).toISOString())) };
+    delete old.shapeVersion;
+    const db = makeMandateFakeDb({ 'researchMeasures/GLW': old });
+    const out = await run('GLW', { db, fetchImpl: fakeFetch(503) });
+    expect(out.outcome).toBe('unavailable');
+    expect(db._get('researchMeasures/GLW').shapeVersion).toBeNull();
+    const twoDaysOn = T0.getTime() + 2 * 86400e3;
+    expect(planResearchFetch('GLW', db._get('researchMeasures/GLW'), twoDaysOn).action).toBe('fetch');
   });
 });
 
@@ -423,8 +521,10 @@ describe('the daily ceiling', () => {
 describe('what it may touch', () => {
   it('names two collections and writes nothing the game reads', () => {
     expect([RESEARCH_MEASURES_COLLECTION, RESEARCH_FETCH_DAYS_COLLECTION]).toEqual(['researchMeasures', 'researchFetchDays']);
+    // Literal names, so the protected-store write scan resolves every write site (compositionProtectedStores.scan.test.js).
     const collections = [...MODULE_SRC.matchAll(/\.collection\(\s*([^)]+?)\s*\)/g)].map((m) => m[1]);
-    expect(new Set(collections)).toEqual(new Set(['RESEARCH_MEASURES_COLLECTION', 'RESEARCH_FETCH_DAYS_COLLECTION']));
+    expect(collections.length).toBe(5);
+    expect(new Set(collections)).toEqual(new Set(["'researchMeasures'", "'researchFetchDays'"]));
     for (const name of ['peerRankings', 'sectorRankings', 'scannerSummary', 'estimatesCache', 'indexIntelligence', 'institutionalAggregates', 'stockRankings', 'priceHistory']) {
       expect(MODULE_SRC).not.toContain(`'${name}'`);
     }

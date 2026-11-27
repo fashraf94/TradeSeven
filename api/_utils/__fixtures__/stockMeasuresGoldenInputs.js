@@ -256,6 +256,62 @@ export const GOLDEN_CASES = [
       },
     },
   },
+  // Added after the review (lens 1, findings L1-2 and L1-3), captured, like every case above, from the UNMOVED code
+  // (the tree at the golden commit 0f0cbd0e): the branches and boundaries the first twelve cases did not reach.
+  {
+    id: 'fallback-fields',
+    note: 'a balance sheet with no debt field (debt 0, so debt / equity 0); a yearly income statement with ebit, not operatingIncome, beside a balance sheet (the ebit fallback in coverage and EBITDA); depreciation not a number (taken as 0); exactly two usable quarters (a partial surprise magnitude); boundaries kept: EV/EBITDA exactly 200, P/E exactly 500, short interest exactly 15 (no squeeze); P/B exactly 0 (null)',
+    ticker: 'CSCO',
+    response: {
+      Highlights: { MarketCapitalization: 251234567890, QuarterlyRevenueGrowthYOY: 0.0713, QuarterlyEarningsGrowthYOY: 0.0917, OperatingMarginTTM: 0.2413, GrossProfitTTM: 36123456789, RevenueTTM: 57123456789, ReturnOnAssetsTTM: 0.0913, ReturnOnEquityTTM: 0.2117, DividendYield: 0.0263 },
+      Valuation: { EnterpriseValueEbitda: 200, TrailingPE: 500, PriceSalesTTM: 4.31, PriceBookMRQ: 0 },
+      Technicals: { '52WeekHigh': 72.13, '52WeekLow': 51.37 },
+      Earnings: {
+        History: history([[0.98, 0.95], [0.91, 0.93], [0.87, 0]]),
+        Trend: { '2027-07-31': trendRow('0y', '2027-07-31', '4.0100', '3.9700') },
+      },
+      Financials: {
+        Income_Statement: { yearly: { '2026-07-31': { ebit: '15123456789.10', interestExpense: '-412345678.90', depreciationAndAmortization: 'None' } } },
+        Cash_Flow: { quarterly: quarterly(Q8.slice(-4), (i) => ({ totalCashFromOperatingActivities: String(3712345678.9 + i * 11), capitalExpenditures: '-212345678.30' })) },
+        Balance_Sheet: { yearly: { '2026-07-31': { totalStockholderEquity: '51234567890.00', totalCurrentAssets: '33123456789.00', totalCurrentLiabilities: '30123456789.00', netDebt: '12345678901.00' } } },
+      },
+      SharesStats: { ShortPercentOfFloat: 15, ShortRatio: 2.13 },
+    },
+  },
+  {
+    id: 'odd-income',
+    note: 'operating income not a number and no ebit field (coverage null; EBITDA null, so net debt / EBITDA null; the debt badge EBIT null); equity exactly 0 (debt / equity null); net debt exactly 0 (not net cash); exactly one usable quarter (no average surprise, no partial magnitude)',
+    ticker: 'ORCL',
+    response: {
+      Highlights: { MarketCapitalization: 512345678901, QuarterlyRevenueGrowthYOY: 0.1213, QuarterlyEarningsGrowthYOY: 0.0817, OperatingMarginTTM: 0.3017, GrossProfitTTM: 41234567890, RevenueTTM: 57123456789, DividendYield: 0.0091 },
+      Valuation: { EnterpriseValueEbitda: 31.17, TrailingPE: 41.13, PriceSalesTTM: 9.13, PriceBookMRQ: 23.71 },
+      Technicals: { '52WeekHigh': 345.72, '52WeekLow': 118.86 },
+      Earnings: { History: history([[1.47, 1.43], [1.39, 0]]) },
+      Financials: {
+        Income_Statement: { yearly: { '2026-05-31': { operatingIncome: 'None', interestExpense: '-3412345678.10', depreciationAndAmortization: '4123456789.10' } } },
+        Cash_Flow: { quarterly: quarterly(Q8.slice(-4), (i) => ({ totalCashFromOperatingActivities: String(5123456789.3 - i * 13), capitalExpenditures: '-8123456789.70' })) },
+        Balance_Sheet: { yearly: { '2026-05-31': { shortLongTermDebtTotal: '92123456789.00', totalStockholderEquity: '0', totalCurrentAssets: '24123456789.00', totalCurrentLiabilities: '31123456789.00', netDebt: '0' } } },
+      },
+      SharesStats: { ShortPercentOfFloat: 1.31, ShortRatio: 1.71 },
+    },
+  },
+  {
+    id: 'no-history-unknown-sector',
+    note: 'a symbol outside the 228 with no earnings at all (the 0.68 default from the no-history branch, no sector); EBIT exactly 0 with interest expense (coverage 0, so null); net cash',
+    ticker: 'ANET',
+    response: {
+      Highlights: { MarketCapitalization: 171234567890, QuarterlyRevenueGrowthYOY: 0.2713, QuarterlyEarningsGrowthYOY: 0.3117, OperatingMarginTTM: 0.4213, GrossProfitTTM: 5712345678, RevenueTTM: 8123456789, DividendYield: 0 },
+      Valuation: { EnterpriseValueEbitda: 51.13, TrailingPE: 57.31, PriceSalesTTM: 21.13, PriceBookMRQ: 17.31 },
+      Technicals: { '52WeekHigh': 164.94, '52WeekLow': 59.43 },
+      Financials: {
+        Income_Statement: { yearly: { '2025-12-31': { operatingIncome: '0', interestExpense: '-100000000.00', depreciationAndAmortization: '61234567.10' } } },
+        Cash_Flow: { quarterly: quarterly(Q8.slice(-4), (i) => ({ totalCashFromOperatingActivities: String(1012345678.1 + i * 17), capitalExpenditures: '-31234567.10' })) },
+        Balance_Sheet: { yearly: { '2025-12-31': { shortLongTermDebtTotal: '0', totalStockholderEquity: '10123456789.00', totalCurrentAssets: '12123456789.00', totalCurrentLiabilities: '3123456789.00', netDebt: '-5123456789.00' } } },
+      },
+      SharesStats: { ShortPercentOfFloat: 1.13, ShortRatio: 1.31 },
+      'General::Name': 'Arista Networks Inc',
+    },
+  },
 ];
 
 /** A failed request (the fetch path throws, as the rankings job's batch loop expects). */

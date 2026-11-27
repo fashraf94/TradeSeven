@@ -47,6 +47,15 @@ describe('the golden holds every case, and they reach the branches it claims', (
     ['valuation outliers null', () => m['valuation-outliers'].evEbitda === null && m['valuation-outliers'].trailingPE === null],
     ['a gap in the last four quarters of cash flow: no FCF', () => m['cash-flow-gap'].fcfYield === null && m['cash-flow-gap'].fcfMargin === null],
     ['the +1q fallback for the revision score', () => typeof m['net-cash-no-interest'].earningsRevisions === 'number'],
+    // Added after the review (L1-2, L1-3); the cases were captured from the unmoved code at 0f0cbd0e.
+    ['no debt field: debt / equity 0', () => m['fallback-fields'].debtToEquity === 0],
+    ['ebit beside a balance sheet: coverage and net debt / EBITDA computed from it', () => m['fallback-fields'].interestCoverage > 0 && m['fallback-fields'].netDebtEbitda > 0],
+    ['boundaries kept: EV/EBITDA 200, P/E 500, short interest 15 is no squeeze; P/B 0 is null', () => m['fallback-fields'].evEbitda === 200 && m['fallback-fields'].trailingPE === 500 && m['fallback-fields'].squeezeWatch === false && m['fallback-fields'].priceBookMRQ === null],
+    ['exactly two usable quarters: a partial magnitude and an average surprise', () => m['fallback-fields'].avgSurpriseMag !== null && m['fallback-fields'].avgEarningsSurprise !== null],
+    ['operating income not a number: coverage, net debt / EBITDA and the debt badge EBIT null', () => m['odd-income'].interestCoverage === null && m['odd-income'].netDebtEbitda === null && m['odd-income'].ebit === null],
+    ['equity exactly 0: debt / equity null; exactly one usable quarter: no average surprise', () => m['odd-income'].debtToEquity === null && m['odd-income'].avgEarningsSurprise === null && m['odd-income'].avgSurpriseMag === null],
+    ['no earnings and no sector: the 0.68 default from the no-history branch', () => m['no-history-unknown-sector'].beatRate === 68 && m['no-history-unknown-sector'].beatRateSource === 'sector_default'],
+    ['EBIT exactly 0 with interest: coverage null', () => m['no-history-unknown-sector'].interestCoverage === null && m['no-history-unknown-sector'].ebit === 0],
   ])('%s', (_t, holds) => { expect(holds()).toBe(true); });
 });
 

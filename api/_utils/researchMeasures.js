@@ -195,7 +195,9 @@ export function buildRecord(symbol, data, nowIso) {
 /** The record stored for a failed fetch: kept numbers from an earlier fetch stay; none are invented. */
 export function buildUnavailableRecord(symbol, previous, reason, nowIso) {
   const hadNumbers = previous?.status === 'ok' && previous.metrics;
-  if (hadNumbers) return { ...previous, unavailable: { reason, at: nowIso }, shapeVersion: previous.shapeVersion ?? MEASURES_SHAPE_VERSION };
+  // The record keeps its own shape version (none stays none), so numbers kept in an older shape are not later reused
+  // as current (review R2-6).
+  if (hadNumbers) return { ...previous, unavailable: { reason, at: nowIso }, shapeVersion: previous.shapeVersion ?? null };
   return {
     symbol,
     name: researchNameOf(symbol) ?? symbol,
@@ -212,9 +214,14 @@ export function buildUnavailableRecord(symbol, previous, reason, nowIso) {
 
 // -- The plan ----------------------------------------------------------------------------------------------------
 
+/** Allowed clock disagreement between the writer of a record and the reader. */
+const CLOCK_SKEW_MS = 60 * 1000;
+
+/** Age of a stored time; Infinity (never fresh) when it is not a date or lies in the future beyond the skew (review R2-4). */
 const ageMs = (iso, nowMs) => {
   const t = Date.parse(iso);
-  return Number.isFinite(t) ? nowMs - t : Infinity;
+  if (!Number.isFinite(t) || t > nowMs + CLOCK_SKEW_MS) return Infinity;
+  return nowMs - t;
 };
 
 /**
@@ -242,17 +249,30 @@ export function planResearchFetch(symbol, kept, nowMs) {
 // -- The ceiling -------------------------------------------------------------------------------------------------
 
 /**
- * Claims one fetch slot for today, in a transaction, before any call. Over the ceiling nothing is written and no slot
- * is taken. Returns { ok, day, fetches } (fetches: the count after the claim, or the count that refused it).
+ * Claims one fetch slot for today, in a transaction, before any call. Refused, with nothing written and no slot taken:
+ *   - over the ceiling (reason 'ceiling');
+ *   - a symbol already claimed today (reason 'symbol_claimed_today'): a symbol is fetched at most once a UTC day, so
+ *     whatever fails after the call (a store write, the math on an odd response) costs one request a day, never one a
+ *     touch, and two touches at once cannot both fetch it (review R2-1, R2-2);
+ *   - a counter that is not a whole number of fetches (reason 'counter_malformed'): fail closed (review R2-5).
+ * Returns { ok, day, fetches, reason? } (fetches: the count after the claim, or the count that refused it).
  */
-export async function claimFetchSlot(db, now, { ceiling = DAILY_FETCH_CEILING } = {}) {
+export async function claimFetchSlot(db, now, { ceiling = DAILY_FETCH_CEILING, symbol = null } = {}) {
   const day = fetchDayOf(now);
-  const ref = db.collection(RESEARCH_FETCH_DAYS_COLLECTION).doc(day);
+  const ref = db.collection('researchFetchDays').doc(day);
   return db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
-    const fetches = snap.exists ? Number(snap.data()?.fetches) || 0 : 0;
-    if (fetches >= ceiling) return { ok: false, day, fetches };
-    tx.set(ref, { day, fetches: fetches + 1, ceiling, callsPerFetch: CALLS_PER_FETCH, updatedAt: now.toISOString() });
+    const data = snap.exists ? snap.data() ?? {} : null;
+    const fetches = data === null ? 0 : data.fetches;
+    if (!(Number.isInteger(fetches) && fetches >= 0)) return { ok: false, reason: 'counter_malformed', day, fetches: null };
+    const symbols = data?.symbols && typeof data.symbols === 'object' ? data.symbols : {};
+    if (symbol !== null && Object.hasOwn(symbols, symbol)) return { ok: false, reason: 'symbol_claimed_today', day, fetches };
+    if (fetches >= ceiling) return { ok: false, reason: 'ceiling', day, fetches };
+    const at = now.toISOString();
+    tx.set(ref, {
+      day, fetches: fetches + 1, ceiling, callsPerFetch: CALLS_PER_FETCH, updatedAt: at,
+      symbols: symbol === null ? symbols : { ...symbols, [symbol]: at },
+    });
     return { ok: true, day, fetches: fetches + 1 };
   });
 }
@@ -260,8 +280,9 @@ export async function claimFetchSlot(db, now, { ceiling = DAILY_FETCH_CEILING } 
 /** Today's counter, read only. */
 export async function readFetchDay(db, now) {
   const day = fetchDayOf(now);
-  const snap = await db.collection(RESEARCH_FETCH_DAYS_COLLECTION).doc(day).get();
-  return { day, fetches: snap.exists ? Number(snap.data()?.fetches) || 0 : 0, ceiling: DAILY_FETCH_CEILING };
+  const snap = await db.collection('researchFetchDays').doc(day).get();
+  const data = snap.exists ? snap.data() ?? {} : {};
+  return { day, fetches: Number(data.fetches) || 0, ceiling: DAILY_FETCH_CEILING, symbols: data.symbols && typeof data.symbols === 'object' ? data.symbols : {} };
 }
 
 // -- The request -------------------------------------------------------------------------------------------------
@@ -301,11 +322,16 @@ export async function fetchResearchStock(symbol, { db, apiKey, fetchImpl = globa
   const refused = refusalOf(symbol);
   if (refused) return { symbol, outcome: 'refused', reason: refused, calls: 0, record: null, stale: false };
 
-  const ref = db.collection(RESEARCH_MEASURES_COLLECTION).doc(symbol);
+  // Collections are named by their literal (as RESEARCH_MEASURES_COLLECTION and RESEARCH_FETCH_DAYS_COLLECTION give
+  // them), so the protected-store write scan (compositionProtectedStoresScan.js) resolves the plain write here; its two
+  // transaction writes (claimFetchSlot, storeFailure) are handle-form and allowlisted by name with a human review
+  // (compositionProtectedStoresAllowlist.json, _notes_research_numbers).
+  const ref = db.collection('researchMeasures').doc(symbol);
   const snap = await ref.get();
   const kept = snap.exists ? snap.data() : null;
   const at = now();
-  const plan = planResearchFetch(symbol, kept, at.getTime());
+  const nowMs = at.getTime();
+  const plan = planResearchFetch(symbol, kept, nowMs);
   const keptNumbers = kept?.status === 'ok' && kept.metrics ? kept : null;
 
   if (plan.action === 'use_kept') return { symbol, outcome: 'kept', calls: 0, record: kept, stale: false };
@@ -314,26 +340,57 @@ export async function fetchResearchStock(symbol, { db, apiKey, fetchImpl = globa
   }
 
   if (typeof apiKey !== 'string' || apiKey.length === 0) throw new Error('fetchResearchStock: no EODHD key');
-  const claim = await claimFetchSlot(db, at, { ceiling });
+  const claim = await claimFetchSlot(db, at, { ceiling, symbol });
   if (!claim.ok) {
-    return { symbol, outcome: 'over_ceiling', reason: 'daily_ceiling', day: claim.day, calls: 0, record: keptNumbers, stale: Boolean(keptNumbers) };
+    if (claim.reason === 'symbol_claimed_today') {
+      // Fetched, or tried, earlier today: what that touch stored comes back, and never a second call (review R2-1).
+      const again = await ref.get();
+      const latest = again.exists ? again.data() : null;
+      if (planResearchFetch(symbol, latest, nowMs).action === 'use_kept') return { symbol, outcome: 'kept', calls: 0, record: latest, stale: false };
+      const latestNumbers = latest?.status === 'ok' && latest.metrics ? latest : null;
+      return { symbol, outcome: 'unavailable', reason: 'symbol_claimed_today', day: claim.day, calls: 0, record: latest, stale: Boolean(latestNumbers) };
+    }
+    return { symbol, outcome: 'over_ceiling', reason: claim.reason === 'ceiling' ? 'daily_ceiling' : claim.reason, day: claim.day, calls: 0, record: keptNumbers, stale: Boolean(keptNumbers) };
   }
 
   const got = await requestFundamentals(symbol, apiKey, fetchImpl);
   const nowIso = now().toISOString();
-  if (!got.ok) {
-    const record = buildUnavailableRecord(symbol, kept, got.reason, nowIso);
-    await ref.set(record);
-    return { symbol, outcome: 'unavailable', reason: got.reason, day: claim.day, calls: CALLS_PER_FETCH, record, stale: Boolean(keptNumbers) };
+  let record = null;
+  let reason = got.ok ? null : got.reason;
+  if (got.ok) {
+    // The moved math throws on some malformed responses (a null history row, say): stored as a failure (review R2-1).
+    try { record = buildRecord(symbol, got.data, nowIso); } catch { reason = 'compute_error'; }
   }
-  const record = buildRecord(symbol, got.data, nowIso);
-  await ref.set(record);
-  return { symbol, outcome: 'fetched', day: claim.day, calls: CALLS_PER_FETCH, record, stale: false };
+  if (record) {
+    await ref.set(record);
+    return { symbol, outcome: 'fetched', day: claim.day, calls: CALLS_PER_FETCH, record, stale: false };
+  }
+  const stored = await storeFailure(db, symbol, reason, nowIso, at.toISOString());
+  const storedNumbers = stored?.status === 'ok' && stored.metrics ? stored : null;
+  const stale = Boolean(storedNumbers) && ageMs(storedNumbers.fetchedAt, nowMs) > KEEP_MS;
+  return { symbol, outcome: 'unavailable', reason, day: claim.day, calls: CALLS_PER_FETCH, record: stored, stale };
+}
+
+/**
+ * Stores a failed attempt in a transaction that reads the record as it is now, not as it was before the call: numbers
+ * another touch stored after this attempt began are newer than the failure and stay as they are (review R2-2);
+ * otherwise kept numbers stay, marked with the failure, or an unavailable record is written.
+ */
+async function storeFailure(db, symbol, reason, nowIso, attemptStartIso) {
+  const ref = db.collection('researchMeasures').doc(symbol);
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const current = snap.exists ? snap.data() : null;
+    if (current?.status === 'ok' && current.metrics && Date.parse(current.fetchedAt) >= Date.parse(attemptStartIso)) return current;
+    const marked = buildUnavailableRecord(symbol, current, reason, nowIso);
+    tx.set(ref, marked);
+    return marked;
+  });
 }
 
 /** What is kept for a symbol, read only: { record, ageMs } (record null when nothing is kept). */
 export async function readResearchStock(db, symbol, now = new Date()) {
-  const snap = await db.collection(RESEARCH_MEASURES_COLLECTION).doc(symbol).get();
+  const snap = await db.collection('researchMeasures').doc(symbol).get();
   if (!snap.exists) return { record: null, ageMs: null };
   const record = snap.data();
   return { record, ageMs: typeof record?.fetchedAt === 'string' ? ageMs(record.fetchedAt, now.getTime()) : null };

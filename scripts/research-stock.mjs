@@ -125,12 +125,16 @@ async function cmdStatus({ symbol, db, now }) {
 }
 
 async function cmdFetchDry({ symbol, db, now }) {
+  // Refused before anything is read (review R2-3).
+  const refused = refusalOf(symbol);
+  if (refused) return { exitCode: EXIT.REFUSED, lines: [`REFUSED: ${symbol} is not a research stock (${refused}). No call.`] };
   const { record } = await readResearchStock(db, symbol, now);
   const plan = planResearchFetch(symbol, record, now.getTime());
   const day = await readFetchDay(db, now);
   const lines = [];
-  if (plan.action === 'refuse') return { exitCode: EXIT.REFUSED, lines: [`REFUSED: ${symbol} is not a research stock (${plan.reason}). No call.`] };
+  const claimedToday = Object.hasOwn(day.symbols ?? {}, symbol);
   if (plan.action === 'use_kept') lines.push(`Would use the kept numbers (${ageText(plan.ageMs)}). Cost: 0 calls.`);
+  else if (plan.action === 'fetch' && claimedToday) lines.push(`Would make no call: ${symbol} was already fetched or tried today (UTC). Cost: 0 calls.`);
   else if (plan.action === 'wait') lines.push(`Would make no call: the last attempt failed (${plan.reason}); retry after ${plan.retryAfter}.${plan.stale ? ' Kept numbers would come back stale.' : ''} Cost: 0 calls.`);
   else if (day.fetches >= DAILY_FETCH_CEILING) lines.push(`Would make no call: today's ceiling (${DAILY_FETCH_CEILING} fetches) is reached.${plan.refresh ? ' Kept numbers would come back stale.' : ' Not available today.'} Cost: 0 calls.`);
   else lines.push(`Would ${plan.refresh ? 'refresh numbers older than 7 days with' : 'make'} one fundamentals request: ${CALLS_PER_FETCH} calls, fetch ${day.fetches + 1} of ${DAILY_FETCH_CEILING} today, then store researchMeasures/${symbol}.`);
