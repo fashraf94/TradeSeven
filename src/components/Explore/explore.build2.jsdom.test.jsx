@@ -105,9 +105,10 @@ function seen() {
   const out = [];
   const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   for (let n = w.nextNode(); n; n = w.nextNode()) if (!n.parentElement.closest('style, script')) out.push(n.nodeValue);
-  return [out.join(' '), ...$$('[aria-label]').map((e) => e.getAttribute('aria-label'))].join(' ');
+  return [out.join(' '), ...$$('[aria-label], [title], [alt]').flatMap((e) => ['aria-label', 'title', 'alt'].map((a) => e.getAttribute(a)).filter(Boolean))].join(' ');
 }
 const observerOn = (el) => observers.filter((o) => !o.disconnected && o.targets.includes(el)).at(-1);
+const clone = (x) => JSON.parse(JSON.stringify(x));
 
 // ── the front page ───────────────────────────────────────────────────────────
 
@@ -785,6 +786,77 @@ describe('the review\'s fixes (lens c: P-2, P-3, P-5, P-6)', () => {
   });
 });
 
+describe('the review\'s fixes and gaps (lens a: H-1 to H-7)', () => {
+  const openNoQuestion = () => { const r = clone(READS.walkDeepAfterPart); r.items[0].open.question = null; return answerOf(r); };
+  it('H-1: with the read\'s open.question null, the bar beside Continue research carries no question (never the chooser\'s), the panel none, the shelf none', async () => {
+    await openPage({ answer: openNoQuestion() });
+    expect($(`[data-explore-progress-row="${DEEP}"] [data-explore-shelf-question]`)).toBeNull();
+    click($(`[data-explore-latest="${DEEP}"]`));
+    await waitStory(DEEP);
+    click(storyEl().querySelector('[data-explore-question="minimums"]'));
+    const primary = storyEl().querySelector('[data-explore-primary]');
+    act(() => observerOn(primary).cb([{ target: primary, isIntersecting: false, intersectionRatio: 0 }]));
+    expect($('[data-explore-bar-action]').textContent).toBe(COPY.panel.continue);
+    expect($('[data-explore-bar-question]')).toBeNull();
+    expect(storyEl().querySelector('[data-explore-open-question]')).toBeNull();
+  });
+  it('H-2: the count line is the connections\' basis — the deep story lists five sources and counts three sourced', async () => {
+    await openPage();
+    click($(`[data-explore-latest="${DEEP}"]`));
+    await waitStory(DEEP);
+    expect(storyEl().querySelector('[data-explore-sources] button').textContent).toContain('5');
+    expect(storyEl().querySelector('[data-explore-connections] [data-explore-count]').textContent).toBe('5 connections · 3 sourced · 2 not checked yet');
+  });
+  it.each([['complete', true], ['not complete, absent by id', false]])('H-3: an overview on a CARD whose deep story is unreadable (%s) carries no "Deep story ›"', async (_n, complete) => {
+    sources = fixtureSources({ stories: [S_UTIL, PILOT_OVERVIEW, S_AI], complete });
+    await openPage();
+    expect(hero().dataset.exploreHero).toBe(S_UTIL.id);
+    expect(card(OV).querySelector('[data-explore-door-mark]')).toBeNull();
+    expect(sources.calls.filter((c) => c.kind === 'readStory')).toEqual([]);
+  });
+  it('H-4: Where next shows another connection\'s door only for a readable deep story (the one door rule)', async () => {
+    const cloudDeep = { ...PILOT_DEEP, id: 'deep-cloud', title: 'The cloud companies, in depth', parent: { storyId: OV, connectionId: 'cloud' } };
+    const withDoor = (to) => ({ ...PILOT_OVERVIEW, connections: PILOT_OVERVIEW.connections.map((c) => (c.id === 'cloud' ? { ...c, leadsToStory: to } : c)) });
+    sources = fixtureSources({ stories: [PILOT_DEEP, cloudDeep, withDoor('deep-cloud'), S_AI, S_UTIL] });
+    await openPage();
+    click($(`[data-explore-latest="${DEEP}"]`));
+    await waitStory(DEEP);
+    expect(storyEl().querySelector('[data-explore-where-step="cloud"] [data-explore-where-door]').textContent).toContain(cloudDeep.title);
+    expect(storyEl().querySelectorAll('[data-explore-where-door]')).toHaveLength(1);
+    mounted.pop().unmount();
+    sources = fixtureSources({ stories: [PILOT_DEEP, withDoor(S_AI.id), S_AI, S_UTIL] });
+    await openPage();
+    click($(`[data-explore-latest="${DEEP}"]`));
+    await waitStory(DEEP);
+    expect(storyEl().querySelectorAll('[data-explore-where-door]')).toHaveLength(0);
+  });
+  it('H-5: nothing is ordered by a value — the cards, the tiles and Latest keep the read\'s own order', async () => {
+    const tap2 = { ...S_TAP, id: 'sample-tap-2', productName: 'Contactless', connections: S_TAP.connections.map((c) => ({ ...c, basis: 'no_source_yet' })) };
+    const deep = (id) => ({ ...PILOT_DEEP, id, title: `Deep ${id}` });
+    sources = fixtureSources({ stories: [deep('deep-c'), PILOT_OVERVIEW, deep('deep-a'), S_UTIL, tap2, S_AI, S_TAP, deep('deep-b')] });
+    await openPage();
+    expect($$('[data-explore-card]').map((c) => c.dataset.exploreCard)).toEqual([S_UTIL.id, S_AI.id]);
+    expect($$('[data-explore-tile]').map((t) => t.dataset.exploreTile)).toEqual(['sample-tap-2', S_TAP.id]);
+    expect($$('[data-explore-latest]').map((r) => r.dataset.exploreLatest)).toEqual(['deep-c', 'deep-a', 'deep-b']);
+  });
+  it.each([
+    ['no name, no list', { id: 'agent-9', name: null, equippedList: null }, { agentId: 'agent-9', agentName: null, equippedListLabel: null }],
+    ['a name, a list without a name', { id: 'agent-9', name: 'Nova', equippedList: { id: 'wl-1', name: null } }, { agentId: 'agent-9', agentName: 'Nova', equippedListLabel: null }],
+  ])('H-6: an agent with %s: the sheet gets exactly what the read names, nothing in its place', async (_n, agent, props) => {
+    await openPage({ answer: answerOf({ ...READS.fresh, agent }) });
+    await openOverview();
+    click(storyEl().querySelector('[data-explore-primary]'));
+    await until(() => body.mounts.length === 1, 'the body');
+    expect(body.mounts[0]).toMatchObject(props);
+  });
+  it('H-7: the shelf\'s heading counts the read\'s lists, not the rows drawn: five finished, three shown', async () => {
+    const last = (n) => ({ itemRef: { recordKind: 'exploreStories', recordId: `gone-${n}` }, itemVersion: 1, open: null, last: { sessionId: `s-${n}`, ended: 'concluded', at: `2026-11-2${n}T10:00:00.000Z`, question: `Q${n}`, statement: null } });
+    await openPage({ answer: answerOf({ ...READS.fresh, items: [1, 2, 3, 4, 5].map(last) }) });
+    expect($('[data-explore-shelf-counts]').textContent).toBe(COPY.shelf.counts(0, 5));
+    expect($$('[data-explore-thesis-row]')).toHaveLength(3);
+  });
+});
+
 describe('the sheet (Amendment B §7, K-16)', () => {
   it('Work this idea: the read\'s agent (id, name, equipped list) and the chosen question\'s id', async () => {
     await openPage();
@@ -835,15 +907,17 @@ describe('the sheet (Amendment B §7, K-16)', () => {
 });
 
 describe('the words (K-18, B-7)', () => {
-  it.each([['fresh', READS.fresh], ['returning', READS.returning], ['gated', GATED], ['failed', NO_ANSWER]])('%s: no screen says "not written yet", "Supported", "Source-backed" or "Shadow"', async (_n, answer) => {
+  it.each([['fresh', READS.fresh], ['returning', READS.returning], ['saved', READS.saved], ['concluded', READS.concluded], ['limit', READS.limit], ['ledger', READS.ledger], ['gated', GATED], ['failed', NO_ANSWER]])('%s: no screen says "not written yet", "Supported", "Source-backed" or "Shadow" (every branch and the sources open)', async (_n, answer) => {
     await openPage({ answer: answer.gated !== undefined || answer.status !== undefined ? answer : answerOf(answer) });
     const banned = /not written yet|supported|source-backed|shadow|confidence/i;
     expect(seen()).not.toMatch(banned);
     await openOverview();
     for (const c of PILOT_OVERVIEW.connections) click(toggle(c.ref));
+    click(storyEl().querySelector('[data-explore-sources] button'));
     expect(seen()).not.toMatch(banned);
     await throughDoor();
     for (const c of PILOT_DEEP.connections) click(toggle(c.ref));
+    click(storyEl().querySelector('[data-explore-sources] button'));
     expect(seen()).not.toMatch(banned);
   });
 });

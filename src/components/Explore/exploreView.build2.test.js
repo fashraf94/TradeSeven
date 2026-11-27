@@ -93,6 +93,10 @@ describe('K-3: the pilot deep story, field by field', () => {
     expect(v.sources.map((s) => s.id)).toEqual(['s1', 's2', 's3', 's4', 's5']);
     expect(v.connections.find((c) => c.id === 'regulator').leads).toEqual([]);
   });
+  it('about keeps the record\'s order (never sorted: review H-5)', () => {
+    const v2 = storyOf('d', { ...DP, about: [{ symbol: 'NEE', name: 'NextEra Energy' }, { symbol: 'D', name: 'Dominion Energy' }] });
+    expect(v2.about.map((c) => c.symbol)).toEqual(['NEE', 'D']);
+  });
   it('a parent and about are a deep story\'s only: an overview carrying them reads none', () => {
     const v2 = storyOf('ai-buildout', { ...OV, parent: { storyId: 'x', connectionId: 'y' }, about: [{ symbol: 'D', name: 'Dominion Energy' }] });
     expect(v2.parent).toBeNull();
@@ -253,6 +257,8 @@ describe('K-13: the front page\'s split (B-3, B-4, B-5)', () => {
 describe('K-6, K-7: the counts, the doors, the way up, and what a page reads by id', () => {
   const byId = storiesByIdOf(KIT_STORIES);
   it('the count line\'s numbers come from the connections\' basis', () => {
+    // basis alone: a Known on a reading, a blank Known on a cited source, and the sources listed count for nothing (review H-2)
+    expect(countsOf({ connections: [{ basis: 'reporters_reading', known: 'A line' }, { basis: 'source_cited', known: null }, { basis: 'no_source_yet', known: 'x' }], sources: [1, 2, 3, 4] })).toEqual({ n: 3, sourced: 1, unchecked: 2 });
     expect(countsOf(PILOT_OVERVIEW)).toEqual({ n: 5, sourced: 3, unchecked: 2 });
     expect(countsOf(PILOT_DEEP)).toEqual({ n: 5, sourced: 3, unchecked: 2 });
     expect(countsOf(S_UTIL)).toEqual({ n: 2, sourced: 1, unchecked: 1 });

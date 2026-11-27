@@ -19,7 +19,7 @@
 
 import React, { useRef } from 'react';
 import { EXPLORE_COPY } from './exploreCopy';
-import { FORMS, KINDS, atLimitOf, dateOf, formOf, itemFor, parentOf, saveBusyOf } from './exploreView';
+import { FORMS, KINDS, atLimitOf, dateOf, doorOf, formOf, itemFor, parentOf, saveBusyOf } from './exploreView';
 import { CAPS, S, T, WIDE_QUERY, wash } from './exploreStyle';
 import { BookmarkError, Disclosure, Eyebrow, Icon, LinkBtn, SaveToggle, Tag, Tickers, useMatches } from './exploreParts';
 import ExploreQuestions from './ExploreQuestions';
@@ -83,8 +83,7 @@ function WhereNext({ story, parent, byId, onOpenStory, section }) {
           <span style={{ ...CAPS, color: T.ink3, paddingTop: 6 }}>{COPY.across(name)}</span>
           <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
             {across.map((c) => {
-              const target = c.leadsToStory ? byId.get(c.leadsToStory) ?? null : null;
-              const deep = target && target.kind === KINDS.DEEP ? target : null;
+              const deep = doorOf(c, byId, overview.id); // the one door rule (review H-4)
               return (
                 <li key={c.ref}>
                   <button type="button" className="ftx-btn" data-explore-where-step={c.ref} data-explore-focus={`where:${c.ref}`} onClick={(event) => onOpenStory(overview.id, null, event, { branch: c.ref })} style={{ ...RESET, minHeight: 44, width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '4px 0' }}>
@@ -296,7 +295,8 @@ export default function ExploreStory({
           inertNow={sheetOpen}
           navBelow={navBelow}
           left={barLeft}
-          question={bar.kind === 'continue' ? item.open.question ?? value : value}
+          // Continue research continues the read's own investigation: its question, or none (never the chooser's: review H-1)
+          question={bar.kind === 'continue' ? item.open.question : value}
           onQuestion={() => jumpTo('questions')}
         />
       )}
