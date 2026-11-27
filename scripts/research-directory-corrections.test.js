@@ -93,6 +93,18 @@ describe('validateCorrections refuses a malformed list (a run with one writes no
     expect(() => validateCorrections(list)).toThrow(msg);
     expect(() => buildDirectory({ screenerRows: [], exchangeList: [], corrections: list })).toThrow(/nothing written/);
   });
+  it('a real run checks the list before any network call: nothing spent, nothing written (review R2-7)', async () => {
+    const requests = [];
+    const written = [];
+    await expect(runMain({
+      env: { EODHD_API_KEY: 'k' },
+      fetchJson: async (url) => { requests.push(url); return {}; },
+      writeFile: (p) => written.push(p), makeDir: () => {}, outPath: '/out/x.js', defaultRunDir: '/run', log: () => {},
+      corrections: { leaveOut: [entry('AAPL', { kind: 'shell' })], sectorFix: [], restore: [], venues: [] },
+    })).rejects.toThrow(/corrections list is malformed, nothing written/);
+    expect(requests).toEqual([]);
+    expect(written).toEqual([]);
+  });
   it('the kinds are the four the list uses', () => {
     expect(LEAVE_OUT_KINDS).toEqual(['closed_end_fund', 'debt', 'shell', 'game_share_class']);
   });
@@ -177,6 +189,16 @@ describe('the generator applies each kind of correction (fixtures)', () => {
     expect(dropOf('BTSX')).toEqual(['sector_unmapped']);
     expect(c.venueAdmitted).toEqual([{ symbol: 'CBOE', name: 'CBOE Corp', exchange: 'BATS', sector: 'XLF' }]);
     expect(c.applied.find((a) => a.kind === 'venue')).toEqual({ kind: 'venue', exchange: 'BATS', ruling: 'RU-8', admitted: ['CBOE'] });
+  });
+  it('venue and restore together: a restored share class on BATS is kept and named as a BATS row (review R2-8)', () => {
+    const both = buildDirectory({
+      screenerRows: [row('BPX-B', 5e9, { sector: 'Industrials' })],
+      exchangeList: [listing('BPX-B', 'BATS', 'Preferred Stock')],
+      corrections: { leaveOut: [], sectorFix: [], restore: [entry('BPX-B', { ruling: 'RU-11' })], venues: [{ exchange: 'BATS', ruling: 'RU-8', reason: 'r' }] },
+    });
+    expect(both.entries.map((e) => e.symbol)).toEqual(['BPX-B']);
+    expect(both.corrections.venueAdmitted.map((r) => r.symbol)).toEqual(['BPX-B']);
+    expect(both.corrections.applied.find((a) => a.kind === 'restore')).toMatchObject({ symbol: 'BPX-B' });
   });
   it('a correction naming a symbol the fetch does not hold is reported stale, not an error', () => {
     expect(c.stale.map((s) => s.symbol).sort()).toEqual(['GNE1', 'GNE2', 'GNE3']);
