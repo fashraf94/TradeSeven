@@ -25,6 +25,9 @@
 //     `metrics` block has exactly the keys and units of peerRankings/{sym}.metrics (raw values, not converted;
 //     fcfYield and fcfMargin are x100, grossMargin and the growth figures are fractions, as the rankings job stores
 //     them). netDebtEbitda is carried exactly as the math gives it.
+//   - RU-19 (Build 3b): the record says which currency the company reports in (`reportsIn`, from the statements' own
+//     currency_symbol; null when the response names none). When it is not USD, fcfYield, fcfMargin and priceSalesTTM
+//     are stored as null and named under `heldBack`; the company stays researchable.
 //   - Written only here, through the Admin SDK the caller passes in: researchMeasures and researchFetchDays. Nothing
 //     the game reads is written. firestore.rules names neither collection, so its default rule denies every client.
 //
@@ -45,8 +48,38 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export const KEEP_MS = 7 * DAY_MS;
 /** Section 5.4: an unavailable stock is retried only after 1 day. */
 export const UNAVAILABLE_RETRY_MS = DAY_MS;
-/** The version of the stored record's shape. */
-export const MEASURES_SHAPE_VERSION = 1;
+/**
+ * The version of the stored record's shape. 2 (Build 3b, RU-19): the record gains `reportsIn` and `heldBack`, so a
+ * record kept under version 1 is fetched again on its next touch (planResearchFetch).
+ */
+export const MEASURES_SHAPE_VERSION = 2;
+
+/**
+ * RU-19 (founder ruling, Nov 27 2026): the measures held back when a company reports in a currency other than US
+ * dollars. Each is a statement figure set against a dollar market value (fcfYield; EODHD's own PriceSalesTTM), or a
+ * cash-flow sum the Build 2 live check found unreliable for such a filer (fcfMargin: TSM's read 97.5%). Stored as
+ * null, and named under the record's `heldBack`.
+ */
+export const HELD_BACK_NON_USD = Object.freeze(['fcfYield', 'fcfMargin', 'priceSalesTTM']);
+/** The statements whose `currency_symbol` the response carries (the filter takes `Financials` whole), in reading order. */
+const STATEMENTS = Object.freeze(['Income_Statement', 'Cash_Flow', 'Balance_Sheet']);
+
+/**
+ * The currency a company reports its statements in, from the same response: each statement's own
+ * `Financials.{Income_Statement,Cash_Flow,Balance_Sheet}.currency_symbol` (Build 2 measured TSM's as TWD). Never
+ * the listing's currency code (USD for TSM), which the response carries apart. A three-letter code, upper-cased; when the
+ * statements disagree, the first one that is not USD (any non-dollar statement holds the measures back). Null when
+ * no statement names one: the currency is unknown and nothing is held back (as before RU-19).
+ */
+export function reportingCurrencyOf(data) {
+  const codes = [];
+  for (const s of STATEMENTS) {
+    const v = data?.Financials?.[s]?.currency_symbol;
+    if (typeof v === 'string' && /^[A-Za-z]{3}$/.test(v.trim())) codes.push(v.trim().toUpperCase());
+  }
+  if (codes.length === 0) return null;
+  return codes.find((c) => c !== 'USD') ?? 'USD';
+}
 export const API_BASE = 'https://eodhd.com/api';
 
 /**
@@ -172,6 +205,11 @@ export function isEmptyResponse(data) {
 export function buildRecord(symbol, data, nowIso) {
   const sectorId = researchSectorOf(symbol);
   const shaped = shapeFundamentals(data, symbol);
+  const metrics = measuresOf(symbol, shaped, sectorId);
+  // RU-19: a company that reports in another currency stays researchable; the measures that mix currencies are blank.
+  const reportsIn = reportingCurrencyOf(data);
+  const heldBack = reportsIn !== null && reportsIn !== 'USD' ? [...HELD_BACK_NON_USD] : [];
+  for (const k of heldBack) metrics[k] = null;
   return {
     symbol,
     // The name has one home, the shared shaping (Build 3a); the directory's when the shaping returns the ticker.
@@ -179,10 +217,12 @@ export function buildRecord(symbol, data, nowIso) {
     sectorId,
     industry: researchIndustryOf(symbol),
     status: 'ok',
-    metrics: measuresOf(symbol, shaped, sectorId),
+    metrics,
     estimates: estimatesOf(shaped.earnings),
     fetchedAt: nowIso,
     unavailable: null,
+    reportsIn,
+    heldBack,
     shapeVersion: MEASURES_SHAPE_VERSION,
   };
 }
@@ -203,6 +243,8 @@ export function buildUnavailableRecord(symbol, previous, reason, nowIso) {
     estimates: null,
     fetchedAt: null,
     unavailable: { reason, at: nowIso },
+    reportsIn: null,
+    heldBack: [],
     shapeVersion: MEASURES_SHAPE_VERSION,
   };
 }

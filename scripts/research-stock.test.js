@@ -115,6 +115,41 @@ describe('fetch --go: fetches if needed, stores, prints the measures with plain 
   });
 });
 
+describe('RU-19 (Build 3b): the script prints the currency and which measures are held back', () => {
+  const withCurrency = (code) => {
+    const r = structuredClone(GLW_RESPONSE);
+    r.Financials = { ...(r.Financials ?? {}) };
+    for (const s of ['Income_Statement', 'Cash_Flow', 'Balance_Sheet']) r.Financials[s] = { ...(r.Financials[s] ?? {}), ...(code ? { currency_symbol: code } : {}) };
+    return r;
+  };
+  it('a TWD filer: the currency, the three held back, and each held-back measure says so instead of a number', async () => {
+    const r = await cli(['fetch', 'GLW', '--go'], { fetchImpl: fakeFetch(withCurrency('TWD')) });
+    expect(r.code).toBe(EXIT.DONE);
+    expect(r.text).toContain('  reports in: TWD; held back (left blank): fcfYield, fcfMargin, priceSalesTTM. They would mix TWD figures with a US-dollar market value.');
+    expect(r.text).toContain('    Free cash flow yield (free cash flow over market value): held back (reports in TWD)');
+    expect(r.text).toContain('    Free cash flow margin (free cash flow over revenue): held back (reports in TWD)');
+  });
+  it('a USD filer: the currency and nothing held back', async () => {
+    const r = await cli(['fetch', 'GLW', '--go'], { fetchImpl: fakeFetch(withCurrency('USD')) });
+    expect(r.text).toContain('  reports in: USD; nothing held back');
+    expect(r.text).not.toContain('held back (reports in');
+  });
+  it('no currency in the response: unknown, nothing held back', async () => {
+    const r = await cli(['fetch', 'GLW', '--go'], { fetchImpl: fakeFetch(withCurrency(null)) });
+    expect(r.text).toContain('  reports in: unknown (the response names no statement currency); nothing held back');
+  });
+  it('a record kept under version 1 says the currency is not recorded yet (status reads only)', async () => {
+    const db = makeMandateFakeDb();
+    await cli(['fetch', 'GLW', '--go'], { db, fetchImpl: fakeFetch(withCurrency('USD')) });
+    const v1 = { ...db._get('researchMeasures/GLW'), shapeVersion: 1 };
+    delete v1.reportsIn;
+    delete v1.heldBack;
+    await db.doc('researchMeasures/GLW').set(v1);
+    const r = await cli(['status', 'GLW'], { db });
+    expect(r.text).toContain('  reports in: not recorded (shape version 1; the next fetch records it)');
+  });
+});
+
 describe('status: what is kept and how old, and today\'s counter; 0 calls, no write', () => {
   it('reads only', async () => {
     const db = makeMandateFakeDb();

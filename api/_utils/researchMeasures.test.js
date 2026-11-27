@@ -21,7 +21,7 @@ import {
   CALLS_PER_FETCH, DAILY_FETCH_CEILING, KEEP_MS, MEASURES_SHAPE_VERSION, RESEARCH_FETCH_DAYS_COLLECTION,
   RESEARCH_MEASURES_COLLECTION, STORED_METRIC_KEYS, UNAVAILABLE_RETRY_MS, buildRecord, claimFetchSlot, estimatesOf,
   fetchDayOf, fetchResearchStock, fundamentalsUrlOf, isEmptyResponse, measuresOf, planResearchFetch, readFetchDay,
-  readResearchStock, refusalOf, requestFundamentals,
+  readResearchStock, refusalOf, requestFundamentals, HELD_BACK_NON_USD, reportingCurrencyOf,
 } from './researchMeasures.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -177,7 +177,7 @@ describe('the stored record', () => {
     const all = keysOf(record);
     expect(all.length).toBeGreaterThan(40);
     expect(all.filter((k) => banned.test(k))).toEqual([]);
-    expect(Object.keys(record).sort()).toEqual(['estimates', 'fetchedAt', 'industry', 'metrics', 'name', 'sectorId', 'shapeVersion', 'status', 'symbol', 'unavailable']);
+    expect(Object.keys(record).sort()).toEqual(['estimates', 'fetchedAt', 'heldBack', 'industry', 'metrics', 'name', 'reportsIn', 'sectorId', 'shapeVersion', 'status', 'symbol', 'unavailable']);
   });
   it('carries the fundamentals name, the directory sector and industry, the time and the shape version', () => {
     expect(record).toMatchObject({ symbol: 'GLW', name: 'Corning Incorporated', sectorId: 'XLK', industry: 'Electronic Components', status: 'ok', fetchedAt: T0.toISOString(), unavailable: null, shapeVersion: MEASURES_SHAPE_VERSION });
@@ -318,6 +318,80 @@ describe('kept numbers first; one request otherwise', () => {
     expect((await readResearchStock(db, 'GLW', later)).ageMs).toBe(3600e3);
     expect(await readFetchDay(db, T0)).toEqual({ day: '2026-11-26', fetches: 1, ceiling: 200, symbols: { GLW: T0.toISOString() } });
     expect(paths(db).map((p) => db._versionOf(p))).toEqual(before);
+  });
+});
+
+// -- RU-19 (Build 3b): a company that reports in another currency -------------------------------------------------
+
+/** RESPONSE with each statement's currency_symbol set (undefined: the key left out). */
+const inCurrency = (codes) => {
+  const r = structuredClone(RESPONSE);
+  for (const [s, code] of Object.entries(codes)) {
+    if (code === undefined) delete r.Financials[s].currency_symbol;
+    else r.Financials[s].currency_symbol = code;
+  }
+  return r;
+};
+const ALL_USD = { Income_Statement: 'USD', Cash_Flow: 'USD', Balance_Sheet: 'USD' };
+const ALL_TWD = { Income_Statement: 'TWD', Cash_Flow: 'TWD', Balance_Sheet: 'TWD' };
+
+describe('RU-19: a company that reports in another currency stays researchable, with the measures that mix currencies blank', () => {
+  const asBefore = quiet(() => buildRecord('GLW', structuredClone(RESPONSE), T0.toISOString()));
+  it('the three held-back measures are fcfYield, fcfMargin and priceSalesTTM, and the shape version is 2', () => {
+    expect([...HELD_BACK_NON_USD]).toEqual(['fcfYield', 'fcfMargin', 'priceSalesTTM']);
+    expect(MEASURES_SHAPE_VERSION).toBe(2);
+  });
+  it('a USD filer is unchanged: every measure as before, reportsIn USD, nothing held back', () => {
+    const rec = quiet(() => buildRecord('GLW', inCurrency(ALL_USD), T0.toISOString()));
+    expect(rec.metrics).toEqual(asBefore.metrics);
+    expect(rec.metrics.fcfYield).not.toBeNull();
+    expect(rec.metrics.priceSalesTTM).not.toBeNull();
+    expect(rec).toMatchObject({ reportsIn: 'USD', heldBack: [] });
+  });
+  it('a TWD filer: the three measures are blank and the record says why; every other measure is as before', () => {
+    const rec = quiet(() => buildRecord('TSM', inCurrency(ALL_TWD), T0.toISOString()));
+    expect(rec).toMatchObject({ status: 'ok', reportsIn: 'TWD', heldBack: ['fcfYield', 'fcfMargin', 'priceSalesTTM'] });
+    for (const k of HELD_BACK_NON_USD) expect(rec.metrics[k]).toBeNull();
+    const twin = quiet(() => buildRecord('TSM', structuredClone(RESPONSE), T0.toISOString()));
+    for (const k of STORED_METRIC_KEYS.filter((x) => !HELD_BACK_NON_USD.includes(x))) expect(rec.metrics[k]).toEqual(twin.metrics[k]);
+    for (const k of HELD_BACK_NON_USD) expect(twin.metrics[k]).not.toBeNull();
+  });
+  it('a response with no currency is treated as before, and the record says the currency is unknown', () => {
+    const rec = quiet(() => buildRecord('GLW', inCurrency({ Income_Statement: undefined, Cash_Flow: undefined, Balance_Sheet: undefined }), T0.toISOString()));
+    expect(rec.metrics).toEqual(asBefore.metrics);
+    expect(rec).toMatchObject({ reportsIn: null, heldBack: [] });
+  });
+  it.each([
+    ['only the cash-flow statement in TWD', { Income_Statement: 'USD', Cash_Flow: 'TWD', Balance_Sheet: 'USD' }, 'TWD'],
+    ['only the income statement names one, lower case', { Income_Statement: 'twd', Cash_Flow: undefined, Balance_Sheet: undefined }, 'TWD'],
+    ['one statement in USD, the others silent', { Income_Statement: undefined, Cash_Flow: 'USD', Balance_Sheet: undefined }, 'USD'],
+    ['a value that is not a code counts as silent', { Income_Statement: '$', Cash_Flow: 'US Dollar', Balance_Sheet: 7 }, null],
+  ])('%s', (_t, codes, expected) => {
+    expect(reportingCurrencyOf(inCurrency(codes))).toBe(expected);
+  });
+  it('never the listing currency: General::CurrencyCode USD with TWD statements is TWD', () => {
+    expect(reportingCurrencyOf({ ...inCurrency(ALL_TWD), 'General::CurrencyCode': 'USD' })).toBe('TWD');
+    expect(reportingCurrencyOf({ 'General::CurrencyCode': 'TWD' })).toBeNull();
+  });
+  it('a record kept under version 1 is fetched again on its next touch, and then says its currency', async () => {
+    const db = makeMandateFakeDb();
+    await run('TSM', { db, fetchImpl: fakeFetch(inCurrency(ALL_TWD)) });
+    const v1 = { ...db._get('researchMeasures/TSM'), shapeVersion: 1 };
+    delete v1.reportsIn;
+    delete v1.heldBack;
+    v1.metrics = { ...v1.metrics, fcfYield: 271.56, fcfMargin: 97.51, priceSalesTTM: 0.3591 };
+    await db.doc('researchMeasures/TSM').set(v1);
+    expect(planResearchFetch('TSM', v1, T0.getTime() + 3600e3).action).toBe('fetch');
+    const fetchImpl = fakeFetch(inCurrency(ALL_TWD));
+    const out = await run('TSM', { db, fetchImpl, at: new Date(T0.getTime() + 86400e3) });
+    expect(out.outcome).toBe('fetched');
+    expect(fetchImpl.urls).toHaveLength(1);
+    expect(db._get('researchMeasures/TSM')).toMatchObject({ shapeVersion: 2, reportsIn: 'TWD', heldBack: ['fcfYield', 'fcfMargin', 'priceSalesTTM'] });
+    for (const k of HELD_BACK_NON_USD) expect(db._get('researchMeasures/TSM').metrics[k]).toBeNull();
+  });
+  it('a version 2 record is kept for 7 days as before', () => {
+    const rec = quiet(() => buildRecord('TSM', inCurrency(ALL_TWD), T0.toISOString()));
+    expect(planResearchFetch('TSM', rec, T0.getTime() + KEEP_MS).action).toBe('use_kept');
   });
 });
 
