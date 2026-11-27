@@ -31,6 +31,14 @@
 //   raw.json (every screener row with its market value, and the exchange symbol list) and run-report.json (every
 //   dropped row with its reason, the 228 sector check, the counts, the spend).
 //
+// CORRECTIONS (Build 2, PR A; rulings RU-6, RU-7, RU-8, RU-11, RU-13): every run applies the named list in
+// scripts/research-directory-corrections.mjs (validateCorrections first; a malformed list writes nothing). The venue
+// and restore corrections each relax one filter for the rows they name, and every other filter still applies; the
+// leave-outs and sector fixes are applied after the filters. The run report lists every correction applied, every
+// stale one (a symbol the fetch does not hold) and every one with no effect, every retired game symbol found in the
+// directory (RU-14), and the rows that entered, left or changed against the directory the run replaces.
+// buildDirectory's own default is no corrections; runMain passes the list.
+//
 // Imports are pure data modules only; importing this file makes no call (the main() guard at the bottom).
 
 /* global process -- Node script; eslint.config.js provides only browser globals */
@@ -53,6 +61,7 @@ import { INDEX_SYMBOLS as INTRADAY_INDEX_SYMBOLS } from '../api/_utils/intraday/
 import { INDEX_NAMES } from '../api/_utils/sharedResearch/stepSchema.js';
 import { INDEX_SUBJECTS } from '../api/_utils/wireContracts.js';
 import { PRACTICE_FIELD_FUNDS } from '../src/data/practiceFieldFunds.js';
+import { DIRECTORY_CORRECTIONS } from './research-directory-corrections.mjs';
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 export const PROJECT_ROOT = path.resolve(path.dirname(SCRIPT_PATH), '..');
@@ -115,6 +124,12 @@ export const EODHD_SECTOR_TO_HOUSE_ID = Object.freeze({
   'Consumer Defensive': 'XLP',
   'Basic Materials': 'XLB',
 });
+
+/** No corrections: buildDirectory's default (the filters alone). */
+export const NO_CORRECTIONS = Object.freeze({
+  leaveOut: Object.freeze([]), sectorFix: Object.freeze([]), restore: Object.freeze([]), venues: Object.freeze([]),
+});
+export const LEAVE_OUT_KINDS = Object.freeze(['closed_end_fund', 'debt', 'shell', 'game_share_class']);
 
 /** Symbols never written to the directory besides the 228: sector funds, industry funds, index symbols, Practice Field funds. */
 export const EXCLUDED_SYMBOLS = Object.freeze(new Set([
@@ -263,7 +278,12 @@ export function buildDirectory({
   gameTickers = ALL_TICKERS,
   gameSectorOf = (s) => TICKER_TO_SECTOR[s],
   excluded = EXCLUDED_SYMBOLS,
+  corrections = NO_CORRECTIONS,
 }) {
+  validateCorrections(corrections, { gameTickers });
+  const extraVenues = new Set(corrections.venues.map((v) => v.exchange));
+  const restored = new Set(corrections.restore.map((r) => r.symbol));
+  const relaxedBy = new Map();
   const listings = new Map();
   const listingRepeats = [];
   for (const row of exchangeList) {
@@ -309,9 +329,18 @@ export function buildDirectory({
     }
     if (kept.has(symbol)) { drop('repeat_symbol'); continue; }
     if (!listing) { drop('not_in_exchange_list'); continue; }
-    if (!KEPT_EXCHANGES.includes(listing.Exchange)) { drop('exchange'); continue; }
+    let relaxed = null;
+    if (!KEPT_EXCHANGES.includes(listing.Exchange)) {
+      // RU-8: a correction venue relaxes this filter only; the type filter and every later one still apply.
+      if (!extraVenues.has(listing.Exchange)) { drop('exchange'); continue; }
+      relaxed = 'venue';
+    }
     if (otcShapedOnNyseFamily(symbol, listing.Exchange)) { drop('otc_shaped_code'); continue; }
-    if (listing.Type !== KEPT_TYPE) { drop('type'); continue; }
+    if (listing.Type !== KEPT_TYPE) {
+      // RU-11: a restored symbol passes the type filter only; it still needs a mapped sector and a name.
+      if (!restored.has(symbol)) { drop('type'); continue; }
+      relaxed = 'restore';
+    }
     const sector = houseSectorOf(sectorString);
     if (!sector) { drop('sector_unmapped'); continue; }
     let name = cleanText(row?.name);
@@ -329,10 +358,127 @@ export function buildDirectory({
       marketValue,
       exchange: listing.Exchange,
     });
+    if (relaxed) relaxedBy.set(symbol, relaxed);
   }
 
+  const correctionReport = applyCorrectionsAfterFilters({ kept, dropped, relaxedBy, corrections, screenerRows });
   const entries = [...kept.values()].sort((a, b) => byCodePoint(a.symbol, b.symbol));
-  return { entries, dropped, gameRows, sectorStrings, listingRepeats, nameFromExchangeList };
+  return { entries, dropped, gameRows, sectorStrings, listingRepeats, nameFromExchangeList, corrections: correctionReport };
+}
+
+/**
+ * Throws on a malformed corrections list, so a run with one writes nothing: every symbol in house spelling and named
+ * once across leave-outs, sector fixes and restores; none of the 228 (they never reach the directory); a known
+ * leave-out kind; a house sector id and an industry on a sector fix; a venue that is not already kept; a ruling and a
+ * reason on every entry.
+ */
+export function validateCorrections(corrections, { gameTickers = ALL_TICKERS } = {}) {
+  const problems = [];
+  const game = new Set(gameTickers);
+  const seen = new Map();
+  for (const list of ['leaveOut', 'sectorFix', 'restore', 'venues']) {
+    if (!Array.isArray(corrections?.[list])) { problems.push(`${list} is not a list`); continue; }
+    for (const [i, e] of corrections[list].entries()) {
+      const at = `${list}[${i}]`;
+      if (!(typeof e?.ruling === 'string' && /^RU-\d+$/.test(e.ruling))) problems.push(`${at} has no ruling`);
+      if (!(typeof e?.reason === 'string' && e.reason.trim().length > 0)) problems.push(`${at} has no reason`);
+      if (list === 'venues') {
+        if (!(typeof e?.exchange === 'string' && e.exchange.length > 0)) problems.push(`${at} has no exchange`);
+        else if (KEPT_EXCHANGES.includes(e.exchange)) problems.push(`${at}: ${e.exchange} is already kept`);
+        continue;
+      }
+      const symbol = e?.symbol;
+      if (typeof symbol !== 'string' || houseSpelling(symbol) !== symbol) { problems.push(`${at} has a malformed symbol ${JSON.stringify(symbol)}`); continue; }
+      if (game.has(symbol)) problems.push(`${at}: ${symbol} is one of the 228, which never reach the directory`);
+      if (seen.has(symbol)) problems.push(`${at}: ${symbol} is already named at ${seen.get(symbol)}`);
+      else seen.set(symbol, at);
+      if (list === 'leaveOut' && !LEAVE_OUT_KINDS.includes(e.kind)) problems.push(`${at}: unknown kind ${JSON.stringify(e.kind)}`);
+      if (list === 'sectorFix') {
+        if (!HOUSE_SECTOR_IDS.includes(e.sector)) problems.push(`${at}: ${JSON.stringify(e.sector)} is not a house sector id`);
+        if (!(typeof e.industry === 'string' && e.industry.trim().length > 0)) problems.push(`${at} has no industry`);
+      }
+    }
+  }
+  if (problems.length > 0) throw new Error(`corrections list is malformed, nothing written: ${problems.join('; ')}`);
+  return true;
+}
+
+/**
+ * The leave-outs and sector fixes, applied to the kept rows after the filters (mutates `kept` and `dropped`), and the
+ * account of every correction: applied, stale (no screener row names the symbol) or no effect (the row was dropped by
+ * a filter first; the filter is named).
+ */
+function applyCorrectionsAfterFilters({ kept, dropped, relaxedBy, corrections, screenerRows }) {
+  const fetched = new Set();
+  for (const row of screenerRows) {
+    const s = houseSpelling(typeof row?.code === 'string' ? row.code : null);
+    if (s) fetched.add(s);
+  }
+  const dropReason = (symbol) => dropped.find((d) => d.symbol === symbol)?.reason ?? null;
+  const applied = [];
+  const stale = [];
+  const noEffect = [];
+  const account = (kind, e, ok, detail) => {
+    if (ok) applied.push({ kind, symbol: e.symbol, ruling: e.ruling, ...detail });
+    else if (!fetched.has(e.symbol)) stale.push({ kind, symbol: e.symbol, ruling: e.ruling });
+    else noEffect.push({ kind, symbol: e.symbol, ruling: e.ruling, droppedBy: dropReason(e.symbol), ...detail });
+  };
+
+  for (const e of corrections.leaveOut) {
+    const row = kept.get(e.symbol);
+    if (row) {
+      kept.delete(e.symbol);
+      relaxedBy.delete(e.symbol);
+      dropped.push({ code: e.symbol, symbol: e.symbol, reason: 'correction_leave_out', name: row.name, sector: row.sector, industry: row.industry, marketValue: row.marketValue, exchange: row.exchange, type: null, correction: { kind: e.kind, ruling: e.ruling } });
+    }
+    account(`leave_out:${e.kind}`, e, Boolean(row), row ? { name: row.name } : {});
+  }
+  for (const e of corrections.sectorFix) {
+    const row = kept.get(e.symbol);
+    const detail = row ? { name: row.name, from: [row.sector, row.industry], to: [e.sector, e.industry] } : {};
+    if (row) { row.sector = e.sector; row.industry = e.industry; }
+    account('sector_fix', e, Boolean(row), detail);
+  }
+  for (const e of corrections.restore) {
+    const row = kept.get(e.symbol);
+    const entered = Boolean(row) && relaxedBy.get(e.symbol) === 'restore';
+    // Kept with no help from the correction (the vendor's type is now right): no effect, recorded so the review drops it.
+    if (row && !entered) noEffect.push({ kind: 'restore', symbol: e.symbol, ruling: e.ruling, droppedBy: null, note: 'kept by the filters alone' });
+    else account('restore', e, entered, row ? { name: row.name, sector: row.sector } : {});
+  }
+  const venueAdmitted = [...relaxedBy].filter(([, why]) => why === 'venue').map(([symbol]) => kept.get(symbol))
+    .filter(Boolean).sort((a, b) => byCodePoint(a.symbol, b.symbol))
+    .map((r) => ({ symbol: r.symbol, name: r.name, exchange: r.exchange, sector: r.sector }));
+  for (const v of corrections.venues) {
+    const admitted = venueAdmitted.filter((r) => r.exchange === v.exchange);
+    applied.push({ kind: 'venue', exchange: v.exchange, ruling: v.ruling, admitted: admitted.map((r) => r.symbol) });
+  }
+  return { applied, stale, noEffect, venueAdmitted };
+}
+
+/** Entries of a generated directory module, read back from its text: { symbol: [name, sector, industry] }. */
+export function parseDirectoryModuleEntries(text) {
+  const out = {};
+  for (const line of String(text).split(/\r?\n/)) {
+    if (!/^ {2}"[^"]+": \[/.test(line)) continue;
+    Object.assign(out, JSON.parse(`{${line.trim().replace(/,$/, '')}}`));
+  }
+  return out;
+}
+
+/** The rows that entered, left or changed (name, sector or industry) against the directory a run replaces. */
+export function diffDirectories(previous, entries) {
+  const next = Object.fromEntries(entries.map((e) => [e.symbol, [e.name, e.sector, e.industry]]));
+  const prevSyms = Object.keys(previous ?? {});
+  const row = (symbol, [name, sector, industry]) => ({ symbol, name, sector, industry });
+  return {
+    before: previous ? prevSyms.length : null,
+    after: entries.length,
+    entered: Object.keys(next).filter((s) => !Object.hasOwn(previous ?? {}, s)).sort(byCodePoint).map((s) => row(s, next[s])),
+    left: prevSyms.filter((s) => !Object.hasOwn(next, s)).sort(byCodePoint).map((s) => row(s, previous[s])),
+    changed: prevSyms.filter((s) => Object.hasOwn(next, s) && JSON.stringify(previous[s]) !== JSON.stringify(next[s])).sort(byCodePoint)
+      .map((s) => ({ symbol: s, from: previous[s], to: next[s] })),
+  };
 }
 
 /** Throws when the final count is outside [COUNT_MIN, COUNT_MAX]: a filter is wrong, and nothing is written. */
@@ -346,7 +492,7 @@ export function checkCount(count, { min = COUNT_MIN, max = COUNT_MAX } = {}) {
 const fmtInt = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 
 /** The generated module's text: a header, then one entry per line sorted by symbol, LF line endings. */
-export function renderDirectoryModule({ entries, generatedOn, floor = FLOOR_USD }) {
+export function renderDirectoryModule({ entries, generatedOn, floor = FLOOR_USD, corrected = false }) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(generatedOn))) throw new Error(`generatedOn must be YYYY-MM-DD, got ${generatedOn}`);
   const sorted = [...entries].sort((a, b) => byCodePoint(a.symbol, b.symbol));
   const perSector = Object.fromEntries(HOUSE_SECTOR_IDS.map((id) => [id, 0]));
@@ -366,6 +512,12 @@ export function renderDirectoryModule({ entries, generatedOn, floor = FLOOR_USD 
     '// Kept: listed on NYSE, NASDAQ or NYSE American (on NYSE and NYSE American a root of at most 4 letters; a longer',
     '// code there is an OTC line); EODHD type Common Stock (ADRs included); a screener sector that maps to one of the',
     '// 11 house sector ids; a name; not a sector fund, industry fund, index symbol or Practice Field fund.',
+    ...(corrected ? [
+      '// Corrections: the named list in scripts/research-directory-corrections.mjs (rulings RU-6, RU-7, RU-8, RU-11, RU-13)',
+      '// is applied on every run: closed-end funds, debt and shells the vendor types Common Stock are left out, as are second',
+      '// share classes of game stocks; wrong vendor sectors are fixed; common shares the vendor types Preferred are restored;',
+      '// common stock listed on BATS is kept.',
+    ] : []),
     '// Sector: the screener\'s own sector words (Morningstar-style) mapped to a house sector id; they can differ from GICS.',
     '// Industry: the screener\'s own industry string, not the GICS industry rankingConfig.js STOCK_INDUSTRIES holds.',
     `// Per sector: ${HOUSE_SECTOR_IDS.map((id) => `${id} ${perSector[id]}`).join(', ')}`,
@@ -388,7 +540,7 @@ export function renderDirectoryModule({ entries, generatedOn, floor = FLOOR_USD 
 }
 
 /** The run's report (written to the run directory, never the repo). */
-export function summarizeRun({ build, passes, spend, gameTickers = ALL_TICKERS, retired = RETIRED_STOCKS, watch = [] }) {
+export function summarizeRun({ build, passes, spend, gameTickers = ALL_TICKERS, retired = RETIRED_STOCKS, watch = [], previous = null }) {
   const { entries, dropped, gameRows } = build;
   const bySymbol = new Map(entries.map((e) => [e.symbol, e]));
   const droppedBySymbol = new Map(dropped.filter((d) => d.symbol).map((d) => [d.symbol, d]));
@@ -416,6 +568,10 @@ export function summarizeRun({ build, passes, spend, gameTickers = ALL_TICKERS, 
     gameReturned: returnedGame.size,
     gameNotReturned: gameTickers.filter((s) => !returnedGame.has(s)),
     retired: Object.keys(retired).map(landing),
+    // RU-14: every retired game symbol that appears in the directory (nothing changes for it now; each rebuild reports it).
+    retiredInDirectory: entries.filter((e) => Object.hasOwn(retired, e.symbol)).map((e) => ({ symbol: e.symbol, name: e.name, sector: e.sector })),
+    corrections: build.corrections ?? null,
+    againstPrevious: diffDirectories(previous, entries),
     watch: watch.map(landing),
     hyphenated: entries.filter((e) => e.symbol.includes('-')).map((e) => ({ symbol: e.symbol, name: e.name, exchange: e.exchange })),
     lowest20: [...entries].sort((a, b) => a.marketValue - b.marketValue).slice(0, 20),
@@ -521,6 +677,7 @@ export async function runMain({
   defaultRunDir = path.join(os.tmpdir(), 'research-directory'),
   watch = ['GLW', 'HPE', 'ANET', 'MRVL', 'COHR', 'CIEN', 'VRT'],
   log = (line) => console.error(line),
+  corrections = DIRECTORY_CORRECTIONS,
 }) {
   const opts = parseArgs(argv);
   const runDir = opts.runDir || defaultRunDir;
@@ -568,12 +725,21 @@ export async function runMain({
     writeFile(path.join(runDir, 'raw.json'), JSON.stringify(raw));
   }
 
-  const build = buildDirectory({ screenerRows: raw.screenerRows, exchangeList: raw.exchangeList, floor: raw.floor });
-  const report = summarizeRun({ build, passes: raw.passes, spend, watch });
+  const build = buildDirectory({ screenerRows: raw.screenerRows, exchangeList: raw.exchangeList, floor: raw.floor, corrections });
+  // The directory this run replaces, read back for the entered / left / changed list (none on a first run).
+  let previous = null;
+  try { previous = parseDirectoryModuleEntries(readFile(outPath)); } catch { previous = null; }
+  const report = summarizeRun({ build, passes: raw.passes, spend, watch, previous });
   writeFile(path.join(runDir, 'run-report.json'), JSON.stringify(report, null, 2));
   log(`[build] ${build.entries.length} kept, ${build.dropped.length} dropped ${JSON.stringify(report.dropCounts)}; ${build.gameRows.length} game rows`);
+  const c = report.corrections;
+  log(`[corrections] ${c.applied.length} applied, ${c.stale.length} stale${c.stale.length ? ` (${c.stale.map((s) => s.symbol).join(', ')})` : ''}, ${c.noEffect.length} with no effect${c.noEffect.length ? ` (${c.noEffect.map((s) => `${s.symbol}: ${s.droppedBy ?? s.note}`).join(', ')})` : ''}; venue let in ${c.venueAdmitted.map((r) => `${r.symbol} (${r.name})`).join(', ') || 'nothing'}`);
+  log(`[retired] retired game symbols in the directory: ${report.retiredInDirectory.map((r) => r.symbol).join(', ') || 'none'}`);
+  const d = report.againstPrevious;
+  log(`[diff] ${d.before ?? 'no previous directory'} -> ${d.after}: ${d.entered.length} entered, ${d.left.length} left, ${d.changed.length} changed`);
   checkCount(build.entries.length);
-  writeFile(outPath, renderDirectoryModule({ entries: build.entries, generatedOn: raw.fetchedOn, floor: raw.floor }));
+  const corrected = ['leaveOut', 'sectorFix', 'restore', 'venues'].some((k) => corrections[k].length > 0);
+  writeFile(outPath, renderDirectoryModule({ entries: build.entries, generatedOn: raw.fetchedOn, floor: raw.floor, corrected }));
   log(`[write] ${outPath}: ${build.entries.length} entries`);
   return { report, build };
 }

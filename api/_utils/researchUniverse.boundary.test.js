@@ -24,7 +24,7 @@ const CODE_FILE = /\.(?:[cm]?js|jsx|ts|tsx)$/;
 const SKIP = new Set(['node_modules', 'dist', 'coverage', 'docs']);
 const NAMES = /research[-_]?(?:universe|directory)/i;
 
-/** The two modules and their tests, and the generator that writes the directory and its test: the only files that may name them. */
+/** The two modules and their tests, the generator that writes the directory and its test, and the generator's corrections list and its test (Build 2): the only files that may name them. */
 const ALLOWED = new Set([
   'api/_utils/researchUniverse.js',
   'api/_utils/researchDirectory.js',
@@ -34,6 +34,8 @@ const ALLOWED = new Set([
   'api/_utils/researchUniverse.precedence.test.js',
   'scripts/build-research-directory.mjs',
   'scripts/build-research-directory.test.js',
+  'scripts/research-directory-corrections.mjs',
+  'scripts/research-directory-corrections.test.js',
 ]);
 
 function walk(rel, out) {
