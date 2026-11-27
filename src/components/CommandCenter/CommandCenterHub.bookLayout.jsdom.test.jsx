@@ -609,6 +609,13 @@ describe('the loadout: no tab, a sheet, from the game strip on the phone and the
     expect(dialogs()).toEqual([]);
     expect(shell().hasAttribute('data-hub-modal-open')).toBe(false);
     expect(hostOf().hasAttribute('inert')).toBe(false);
+    // The slot was freed, not just hidden: a read that takes the book away again does not reopen today's armory without a tap.
+    net.answer = { status: 200, body: { book: null } };
+    vi.setSystemTime(NOW + REFOCUS_QUIET_MS + 1);
+    act(() => { window.dispatchEvent(new Event('focus')); });
+    await flush();
+    expect(document.querySelector('[data-hub-layout]').getAttribute('data-hub-layout')).toBe('today');
+    expect(document.querySelector('[data-hub-armory="open"]')).toBeNull();
   });
 
   it('the loadout\'s sheet belongs to the book layout: a read that takes the book away closes it and frees the slot', async () => {
