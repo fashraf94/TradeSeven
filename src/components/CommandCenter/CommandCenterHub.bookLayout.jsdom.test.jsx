@@ -415,7 +415,8 @@ describe('Needs you draws every kind the selector returns, with its action and L
       expect(buttons.map(nameOf), `${label}: the screen-reader names`).toEqual([actionName, 'Later']);
       // Nothing else is drawn: the candidate's why and detail are the card's, not the strip's.
       expect(strip.textContent, label).toBe(`${title}${action}Later`);
-      const words = [strip.textContent, ...[strip, ...strip.querySelectorAll('*')].flatMap((el) => ['aria-label', 'title', 'alt'].map((a) => el.getAttribute(a)).filter(Boolean))].join('\n');
+      const NAMED = ['aria-label', 'aria-roledescription', 'aria-description', 'aria-valuetext', 'title', 'alt', 'placeholder'];
+      const words = [strip.textContent, ...[strip, ...strip.querySelectorAll('*')].flatMap((el) => NAMED.map((a) => el.getAttribute(a)).filter(Boolean))].join('\n');
       expect(words.match(/shadow/gi), `${label}: "Shadow"`).toBeNull();
       expect(words.match(BARRED), `${label}: a word spec §5 bars`).toBeNull();
     }
@@ -444,6 +445,8 @@ describe('a press on the Idea book\'s rows shows at once in the hub (review S3F-
     expect(styles).toHaveLength(1);
     const css = styles[0].textContent;
     expect(css).toBe(PRESS_CSS);
+    // For every medium, always on: the element carries its marker and nothing else (no media, no disabled).
+    expect([...styles[0].attributes].map((a) => a.name)).toEqual(['data-hub-book-press']);
     // Its own element, outside the panel (so the panel's words are the book's) and never the hub's shared style string.
     expect(panel().contains(styles[0])).toBe(false);
     expect(styles[0].hasAttribute('data-hub-css')).toBe(false);
@@ -461,7 +464,8 @@ describe('a press on the Idea book\'s rows shows at once in the hub (review S3F-
     expect(rows.headers.length).toBeGreaterThan(0);
     expect(rows.names.length).toBeGreaterThan(0);
     for (const [kind, list] of Object.entries(rows)) for (const el of list) expect(el.matches(scope), `${kind}: ${el.getAttribute('aria-label')}`).toBe(true);
-    // Setups keeps it, in its own scope.
+    // The style stays across a tab change (one element, never one per tab). Setups is in its scope, but its body (the Desks content)
+    // draws no tappable row today (refuter, fix round): the scope is for slice 5's, so this asserts only that the scope is there.
     click(tabNamed('Setups'));
     await flush();
     expect(document.querySelectorAll('style[data-hub-book-press]')).toHaveLength(1);

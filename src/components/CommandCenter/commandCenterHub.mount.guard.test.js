@@ -1542,10 +1542,14 @@ describe('S5 — the exports the hub takes from the shipped services, hooks and 
     // Review S3F-2: this row reddens in a Practice Field build that never touched the hub, so each failure says what to do.
     const GUIDE = [
       'The Command Center draws parts of src/components/PracticeField/IdeaBookScreen.jsx in its hub: BookLine, Strip, PosTable and',
-      'DesksTab, and every function they call. Every top-level function in that file is listed in this row, in DRAWN or in PAGE_ONLY',
-      '(src/components/CommandCenter/commandCenterHub.mount.guard.test.js, "slice 3: the Idea book parts the hub draws").',
-      '- A new function: add its name to DRAWN if BookLine, Strip, PosTable or DesksTab, or anything they call, uses it; otherwise add',
-      '  it to PAGE_ONLY. A removed function: take its name out of its list.',
+      'DesksTab, and every function they call. Every top-level function DECLARATION (`function name() {}`) in that file is listed in',
+      'this row, in DRAWN or in PAGE_ONLY (src/components/CommandCenter/commandCenterHub.mount.guard.test.js, "slice 3: the Idea book',
+      'parts the hub draws"). Arrow-function constants at the top level (amountOf, panelStyle) are not listed: they are scanned with the',
+      'drawn parts as module code.',
+      '- A new function declaration: add its name to DRAWN if BookLine, Strip, PosTable or DesksTab, or anything they call, uses it;',
+      '  otherwise add it to PAGE_ONLY. A removed one: take its name out of its list.',
+      '- A page-only helper that holds an effect, timer or listener must be a function declaration listed in PAGE_ONLY: written as',
+      '  `const name = () => {...}` it is module code, the scan below finds its effect, and listing it does not help.',
       '- A DRAWN function may hold no effect, timer, listener, observer or read (no useEffect, setTimeout, addEventListener, fetch...).',
       '- A drawn part that starts calling a page-only function fails as "Part -> function" (e.g. "PosTable -> Quiet"). If the function',
       '  holds none of those, move its name from PAGE_ONLY to DRAWN. If it does (useWidth, the page\'s effects), the drawn part must',

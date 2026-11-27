@@ -1,5 +1,5 @@
 // src/components/PracticeField/IdeaBookScreen.jsx
-// The Command Center draws parts of this file: class every new function in commandCenterHub.mount.guard.test.js (DRAWN or PAGE_ONLY).
+// The Command Center draws parts of this file: class every new top-level function declaration in commandCenterHub.mount.guard.test.js (DRAWN or PAGE_ONLY).
 //
 // Practice Field build B3 — THE IDEA BOOK SCREEN (design of record docs/design/practice-field/IDEA_BOOK_ROUND_2.html, its
 // ib2-parts.jsx and ib2-screens.jsx; rulings B3-1 to B3-7). Read only: the player never acts here. Taps open detail and

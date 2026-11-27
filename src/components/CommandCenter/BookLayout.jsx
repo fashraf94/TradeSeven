@@ -140,8 +140,10 @@ function SetupsBody({ view }) {
  * A press on the Idea book's parts, in the hub (review S3F-4; Amendment B PH-33, R12). The parts turn off the browser's tap
  * highlight and press with the screen's own style (ideaBookStyle.js IB_CSS), which moves and so is not loaded here: in the hub a
  * press showed nothing. This shows it at once — the token's scrim laid over the row's own background while it is pressed, with no
- * motion of any kind — for the parts' tappable rows in the Overview and the Setups body only. Its own element beside the panel,
- * never the hub's shared style (HUB_SCOPED_CSS): a plain string, so with the switch off nothing of it ships.
+ * motion of any kind — for the parts' tappable rows in the Overview and the Setups body only. Today the Overview's desk rows, slot
+ * headers and name rows are its rows; the Setups body (the Desks content) draws no tappable row yet, so its scope is for slice 5's.
+ * Its own element beside the panel, never the hub's shared style (HUB_SCOPED_CSS): a plain string, so with the switch off nothing of
+ * it ships.
  */
 const BOOK_PRESS_CSS = '[data-hub-book-overview] .ib-tap:active, [data-hub-book-setups] .ib-tap:active { background-image: linear-gradient(rgba(var(--ft-scrim-rgb), 0.08), rgba(var(--ft-scrim-rgb), 0.08)) !important; }';
 
