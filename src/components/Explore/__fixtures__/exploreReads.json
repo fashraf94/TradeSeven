@@ -11,6 +11,25 @@
     "items": [],
     "agent": null
   },
+  "fresh": {
+    "quota": {
+      "investigationsToday": 0,
+      "perDay": 3,
+      "framingsToday": 0,
+      "framingsPerDay": 10,
+      "stepsToday": 0,
+      "stepsPerDay": 30
+    },
+    "items": [],
+    "agent": {
+      "id": "agent-1",
+      "name": "Atlas",
+      "equippedList": {
+        "id": "wl-bb",
+        "name": "Grid builders"
+      }
+    }
+  },
   "progress": {
     "quota": {
       "investigationsToday": 1,

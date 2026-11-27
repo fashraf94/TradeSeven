@@ -95,6 +95,8 @@ export const STATEMENT = "My theme is AI cloud growth, through cloud companies, 
 export function composeReads() {
   return {
     none: readOf([], 0, { agent: null }),
+    // Build 2 — a player with a ranked agent who has researched nothing yet (the smoke page's first visit and walk)
+    fresh: readOf([], 0),
     // the AI story in progress: a builder, one part set, two steps used, three findings
     progress: readOf([plant({ n: 1, story: SAMPLE_AI, question: Q_AI, createdAt: at(1), updatedAt: at(9), thesis: ONE_PART_SET, stepsUsed: 2, extraFindings: 2 })], 1),
     // the same, as a ledger investigation: no card, so no count
