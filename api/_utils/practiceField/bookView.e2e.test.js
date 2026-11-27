@@ -12,6 +12,10 @@
 // and each desk's use is the sum of its ideas' stored `markedHoldingsValue` at that close (computed here from the stored
 // rows, not from the view's helpers), against the desk's share of the stored equity; and the desks read by their names —
 // the caller's agent "Atlas" (seeded beside the run, the caller's own) and the epoch's archetype — never "Shadow".
+//
+// B6 (ruling B6-3): never "Shadow" or "archetype desk" in ANY string a player reads, a desk's own words included — the
+// scripted notes name the old desks and quote the book's idea ids (bookViewFixtures.js), and the view shows each desk's
+// name and "the {slot} idea" — and the stored close row is the same after the read as before it.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { setPracticeFieldModeForTests } from './mode.js';
@@ -73,6 +77,7 @@ afterEach(() => { restoreMode(); errSpy.mockRestore(); });
 describe('the view after every close of the B2 history agrees with the stored rows to the cent', () => {
   it('the book line, the groups and the names, at each of thirteen closes; reads bounded; no id', { timeout: 60_000 }, async () => {
     const seen = [];
+    const wordsSeen = { shadow: 0, reasons: 0 };
     const days = historySessions(13);
     const { ctx } = await runBookHistory({
       n: 13,
@@ -83,6 +88,7 @@ describe('the view after every close of the B2 history agrees with the stored ro
         const agentId = c.db._get(base).attributionAgentId;
         if (!c.db._get(`agents/${agentId}`)) c.db._store.set(`agents/${agentId}`, { data: { ownerId: c.uid, name: AGENT_NAME, archetype: 'degen' }, version: 1 });
         const { db, count } = counting(c.db);
+        const closeRowBefore = JSON.stringify(c.db._get(`${base}/windows/${date}_close`));
         const { book: v } = await readBookView(db, { uid: c.uid, agentOn: true });
         const book = c.db._get(base);
         const last = c.db._get(`${base}/dailyRows/${date}`);
@@ -164,11 +170,33 @@ describe('the view after every close of the B2 history agrees with the stored ro
           expect(shown, `${date} ${key} shown`).toBe(used[desk]);
         }
         expect(v.split.parts.find((x) => x.key === 'cash')).toMatchObject({ name: 'Cash', share: { number: cashPpm / 1e6 } });
-        // B5-3: the desks by their names, in every sentence; never "Shadow" in the module's own words (the agent's own notes,
-        // shown as written, are the only place the word can come from — the scripted Shadow notes here say it).
-        const agentWords = new Set(Object.values(c.db._get(`${base}/windows/${date}_close`)?.agent?.desks || {}).flatMap((d) => [d.note, ...(d.actions || []).map((a) => a.reason), ...(d.considered || []).map((x) => x.thesis)]).filter(Boolean));
-        for (const s of playerStrings(v).filter((x) => !agentWords.has(x))) expect(s, `${date}: ${s}`).not.toMatch(/shadow|archetype desk/i);
+        // B5-3: the desks by their names, in every sentence. Build B6 (B6-3): never "Shadow" or "archetype desk" in ANY string a
+        // player reads — a desk's own words included. The scripted notes here say "Shadow desk, …" and "Archetype desk, …" and
+        // quote the book's idea ids (bookViewFixtures.js scriptedDesks): the view shows each desk's name and "the {slot} idea".
+        for (const s of playerStrings(v)) expect(s, `${date}: ${s}`).not.toMatch(/shadow|archetype desk/i);
         for (const s of v.strip) expect(s.deskName, date).toBe(s.desk === 'shadow' ? 'Atlas’s desk' : 'Trend Follower’s desk');
+        // (Not vacuous: the stored words still say them, and the view's desk notes are those words with the two replaced.)
+        const stored = c.db._get(`${base}/windows/${date}_close`)?.agent?.desks || {};
+        const shown = Object.fromEntries(v.desks.map((dk) => [dk.desk, dk.note?.text ?? null]));
+        if (stored.shadow?.source === 'model') {
+          expect(stored.shadow.note, date).toMatch(/^Shadow desk, /);
+          expect(shown.shadow, date).toBe(stored.shadow.note.replace(/^Shadow desk/, 'Atlas’s desk').replace(/ I hold (.*)\.$/, (_, ids) => ` I hold ${ids.split(' and ').map((id) => `the ${c.db._get(`${base}/ideas/${id}`).contract.slot} idea`).join(' and ')}.`));
+          wordsSeen.shadow += 1;
+        }
+        if (stored.archetype?.source === 'model') {
+          expect(stored.archetype.note, date).toBe(`Archetype desk, ${date}: short-term only; the Shadow desk keeps the banks.`);
+          expect(shown.archetype, date).toBe(`Trend Follower’s desk, ${date}: short-term only; Atlas’s desk keeps the banks.`);
+          for (const a of stored.archetype.actions || []) {
+            const call = v.groups.find((g) => g.call && g.slot === 'short')?.call;
+            if (call && a.ideaId === book.slots.short) {
+              expect(a.reason, date).toContain(a.ideaId);
+              expect(call.text, date).toBe(a.reason.split(a.ideaId).join('the short idea').replace(/^the short idea/, 'The short idea'));
+              wordsSeen.reasons += 1;
+            }
+          }
+        }
+        // The stored close row is unchanged by the read: the view returns new strings and writes nothing.
+        expect(JSON.stringify(c.db._get(`${base}/windows/${date}_close`)), date).toBe(closeRowBefore);
 
         // The reads: bounded by the reader's own formula (bookViewRead.js header: one pass, 55 + 3·I + 20·P — B5-4 restated
         // B3-A10's 48 with the epoch, the agent, the rows of ideas finished since the close and the second reads of the book
@@ -186,6 +214,10 @@ describe('the view after every close of the B2 history agrees with the stored ro
     });
     expect(seen).toHaveLength(13);
     expect(ctx.bookId).toBeTruthy();
+    // B6-3 was exercised: the shadow desk's note on every model close (12: its 24 Nov call fails), and the archetype desk's
+    // reasons quoting its short idea's id.
+    expect(wordsSeen.shadow).toBe(12);
+    expect(wordsSeen.reasons).toBeGreaterThan(5);
 
     // What the history shows along the way: the exit, its settlement, the failed call, the early close.
     const at = (d) => seen.find((s) => s.date === d).v;
@@ -193,6 +225,8 @@ describe('the view after every close of the B2 history agrees with the stored ro
     expect(at(EXIT_SESSION).groups[0]).toMatchObject({ slot: 'short', state: 'selling', selling: { word: 'Exit' } });
     expect(at('2026-11-23').history.items[0]).toMatchObject({ namesText: 'XOM', ended: 'Settled early by the manager', endedOn: '23 Nov', notMeasurable: null });
     expect(at('2026-11-23').history.items[0].columns.map((col) => col.label)).toEqual(['Lines', 'Result', 'Process', 'Evidence', 'Adoption']);
+    // B6-3 in History: the exit's reason quoted the idea's id; History says "the short idea".
+    expect(at('2026-11-23').history.items[0].lastCall).toMatchObject({ kind: 'Exit', text: 'The breakout failed on the short idea; the setup no longer holds.', deskName: 'Trend Follower’s desk' });
     expect(at(FAIL_SESSION).strip.find((s) => s.desk === 'shadow')).toMatchObject({ failed: true });
     expect(at(EARLY_CLOSE).day).toBe('Fri 27 Nov');
     expect(at(days[0]).groups.find((g) => g.slot === 'medium').names.every((n) => n.isNew)).toBe(true);

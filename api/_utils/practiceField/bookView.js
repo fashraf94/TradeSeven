@@ -37,8 +37,19 @@
 // name of the idea (review B3-A01). The book's own row below full quality holds the book line (ruling B3-11): its headline
 // waits, with today's change, since open and SPY; cash shows.
 //
-// EVERY TEXT FROM AN AGENT OR A PLAYER (notes, reasons, theses) is passed through as plain text, with its desk and date.
+// EVERY TEXT FROM AN AGENT OR A PLAYER (notes, reasons, theses) is passed through as plain text, with its desk and date —
+// save the two replacements of build B6 below, in a desk's own words only.
 // No id leaves this function: groups are keyed by slot, names by symbol, desks by desk, History rows by position.
+//
+// BUILD B6 — A DESK'S OWN WORDS (ruling B6-3, the founder's PH-5; it amends B3's "shown as written"). Until B6 the desks'
+// prompts named the engine's desks ("You are the Shadow desk…") and gave the model its ideas' ids, so a desk's words could
+// say "the Shadow desk" or quote an id (Astra B5-A03). Inside a desk's own words — its note, each call's reason, a draft's
+// thesis, the thesis on an idea it authored (`author: 'agent'`), and the same in History (a finished idea's thesis and its
+// exit's reason) — the view replaces EXACTLY TWO THINGS, through ONE helper (deskOwnWords) that every one of those places
+// uses: the old desk names ("Shadow desk", "archetype desk", any case, with or without "the") with that desk's name below
+// (B5's casing: `name` at a sentence's head, `mid` inside one), and each idea id of the caller's own book that the view
+// holds (live or finished — never a pattern guess) with "the {slot} idea". Nothing else in a desk's words is touched; a
+// founder's thesis and a player's text are not desk words and are shown as written. The stored record is unchanged.
 //
 // BUILD B5 — THE VIEW FOR THE HUB (rulings B5-1 to B5-5; the Command Center chat's note,
 // docs/design/20261126_NOTE_TO_PRACTICE_FIELD_BOOK_VIEW_FOR_THE_HUB.md):
@@ -82,7 +93,7 @@ import {
   MARKS_AS_OF, MARKS_AS_OF_UNOBSERVED, DRAFT_OUTCOMES, REFUSAL_REASONS, REFUSAL_UNMAPPED, QUALITY_REASONS, QUALITY_REASON_UNKNOWN,
   ROW_REASON_HELD, ROW_REASON_STANDING, ROW_REASON_UNKNOWN, EXIT_NOT_CARRIED, ENDED_WORDS, ENDED_UNKNOWN, UNMEASURABLE_REASONS, UNMEASURABLE_STANDING, UNMEASURABLE_UNKNOWN,
   EVIDENCE_UNCHECKED, NOT_MEASURABLE, RESULT_COLUMNS, RESULT_VALUE_UNKNOWN, NO_FINISHED_IDEAS,
-  BOOK_WAITING, BOOK_WAITING_REASON, THESIS_BY_FOUNDER,
+  BOOK_WAITING, BOOK_WAITING_REASON, THESIS_BY_FOUNDER, IDEA_IN_DESK_WORDS,
 } from './bookViewCopy.js';
 
 /**
@@ -147,6 +158,83 @@ export function deskNamesOf({ agentName = null, archetypeName = null } = {}) {
 }
 /** A desk's label, or null for no desk (or a desk id this view does not know). */
 const deskLabel = (names, desk) => (typeof desk === 'string' && Object.hasOwn(names, desk) ? names[desk].name : null);
+
+// ── A DESK'S OWN WORDS (build B6, ruling B6-3 — the founder's PH-5, amending B3's "shown as written") ────────────────────
+
+/**
+ * The engine's two old desk names as a desk may have written them before build B6 (its prompt named them): "Shadow desk"
+ * and "archetype desk", in any letter case, with or without "the" before them, as whole words.
+ */
+const OLD_DESK_NAME = /\b(?:the\s+)?(shadow|archetype)\s+desk\b/giu;
+/** A character an idea id may hold (ideas are `idea_` and hex: admission.js ideaIdFor): an id is matched only whole. */
+const ID_CHAR = /^[A-Za-z0-9_-]$/;
+const isIdChar = (c) => typeof c === 'string' && ID_CHAR.test(c);
+/** "the " right before an id: replaced with it, so "the idea_…" never reads "the the medium idea". */
+const THE_BEFORE = /\bthe\s+$/iu;
+/** Is `index` the head of a sentence: the text's start, or after a sentence's end (. ! ?, then any closing quote or
+ *  bracket, then a space) or a line break — B5's casing rule (bookViewCopy.js DESK_NAMES: `name` heads, `mid` inside). */
+const SENTENCE_HEAD = /(?:^|[.!?]['"’”)\]]*\s|\n)\s*$/u;
+const atSentenceHead = (text, index) => SENTENCE_HEAD.test(text.slice(0, index));
+
+/**
+ * The idea ids this view holds — the caller's own book's ideas, live and finished — each to its slot. Only these ids are
+ * replaced (never a pattern guess); an idea with no known slot is not in it. Pure.
+ * @param {object[]} ideas
+ * @returns {Map<string, 'short'|'medium'|'long'>}
+ */
+export function ideaSlotsOf(ideas) {
+  const out = new Map();
+  for (const idea of ideas || []) {
+    const id = idea?.ideaId;
+    const slot = idea?.contract?.slot;
+    if (typeof id === 'string' && id.length > 0 && Object.hasOwn(IDEA_IN_DESK_WORDS, slot)) out.set(id, slot);
+  }
+  return out;
+}
+
+/**
+ * B6-3 — A DESK'S OWN WORDS AS THE VIEW SHOWS THEM. THE ONE HELPER every place a desk's own words appear uses (its note, each
+ * call's reason, a draft's thesis, the thesis on an idea it authored, the same in History). It replaces EXACTLY two
+ * things, and nothing else in the text is touched:
+ *   1. the old desk names ("the Shadow desk", "Archetype desk", … — OLD_DESK_NAME) with that desk's player-facing name
+ *      (deskNamesOf): `name` at a sentence's head, `mid` inside one — so a fallback is lower-cased mid-sentence, as B5's
+ *      sentences do — "the" dropped, since no sentence puts "the" before a name;
+ *   2. each idea id of the caller's own book (`ideaSlots`: ideaSlotsOf — the ids the view already holds) with "the {slot}
+ *      idea" (bookViewCopy.js IDEA_IN_DESK_WORDS), matched whole, with a "the" right before it taken in. An id the view
+ *      does not hold is left as written.
+ * WHY: the desks' prompts named the engine's desks until build B6, and gave the model its ideas' ids (B5-A03): a desk's
+ * words could say "the Shadow desk" or quote an id. A player never sees either. The stored record is unchanged: this reads
+ * the text and returns a new string. One pass over the text as written: a replacement is never read again, and a given
+ * name is put in as it is (no `$` pattern of String.replace can reach it). Not a string: returned as it is. Pure.
+ * @param {string|null} text
+ * @param {{ names: object, ideaSlots?: Map<string, string> }} words
+ * @returns {string|null}
+ */
+export function deskOwnWords(text, { names, ideaSlots = new Map() }) {
+  if (typeof text !== 'string' || text.length === 0) return text;
+  const hits = [];
+  for (const m of text.matchAll(OLD_DESK_NAME)) {
+    hits.push({ at: m.index, end: m.index + m[0].length, words: names[m[1].toLowerCase() === 'shadow' ? 'shadow' : 'archetype'] });
+  }
+  for (const [id, slot] of ideaSlots) {
+    for (let at = text.indexOf(id); at >= 0; at = text.indexOf(id, at + 1)) {
+      const end = at + id.length;
+      if (isIdChar(text[at - 1]) || isIdChar(text[end])) continue; // part of a longer token: not this id
+      const the = THE_BEFORE.exec(text.slice(0, at));
+      hits.push({ at: the ? at - the[0].length : at, end, words: IDEA_IN_DESK_WORDS[slot] });
+    }
+  }
+  if (hits.length === 0) return text;
+  hits.sort((a, b) => (a.at - b.at) || (b.end - a.end));
+  let out = '';
+  let pos = 0;
+  for (const h of hits) {
+    if (h.at < pos) continue; // (cannot happen: a name holds a space and an id none; the first wins)
+    out += text.slice(pos, h.at) + (atSentenceHead(text, h.at) ? h.words.name : h.words.mid);
+    pos = h.end;
+  }
+  return out + text.slice(pos);
+}
 
 // ── FORMATTING (display only: every figure below is already whole cents, a stored price or a stored percent) ──────────
 
@@ -469,11 +557,16 @@ function bylineOf(idea, names) {
   if (author === 'agent') return deskLabel(names, deskOfIdea(idea));
   return null;
 }
-function thesisOf(idea, names) {
+/**
+ * An idea's thesis. B6-3: a thesis a desk wrote (`author: 'agent'`) is that desk's own words (deskOwnWords); a founder's
+ * thesis, or one of any other author, is shown as written. `words`: { names, ideaSlots } (deskOwnWords).
+ */
+function thesisOf(idea, words) {
   const text = str(idea?.contract?.thesis?.text);
   if (!text) return null;
   const admitted = typeof idea.admittedAt === 'string' ? idea.admittedAt : (idea.admittedAt?.toDate?.().toISOString?.() ?? null);
-  return { text, byline: bylineOf(idea, names), date: dayLabel(admitted ? etDateOfIso(admitted) : null) };
+  const shown = idea?.contract?.thesis?.author === 'agent' ? deskOwnWords(text, words) : text;
+  return { text: shown, byline: bylineOf(idea, words.names), date: dayLabel(admitted ? etDateOfIso(admitted) : null) };
 }
 /** The ET calendar date of an ISO instant (the founder's dates are Eastern). */
 const ET_DATE = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' });
@@ -486,13 +579,17 @@ const sourceChipOf = (idea) => SOURCE_CHIPS[idea?.contract?.origin?.kind] ?? SOU
 /** The desk's part on the close row, or null. */
 const deskPartOf = (closeRow, desk) => (isPlain(closeRow?.agent?.desks?.[desk]) ? closeRow.agent.desks[desk] : null);
 
-/** Today's call on an idea: the desk's action and reason on the close row, the failed check, or none. */
-function callOf(part, ideaId, desk, session, names) {
+/**
+ * Today's call on an idea: the desk's action and its reason on the close row (B6-3: the desk's own words, deskOwnWords), the
+ * failed check, or none. `words`: { names, ideaSlots }.
+ */
+function callOf(part, ideaId, desk, session, words) {
+  const { names } = words;
   if (!part) return null;
   if (part.source === AGENT_NOTE_SOURCE.CODE_FALLBACK) return { failed: true, text: FAILED_CHECK.sentence(deskLabel(names, desk)), deskName: deskLabel(names, desk) };
   const a = (part.actions || []).find((x) => x?.ideaId === ideaId);
   if (!a || !str(a.reason)) return null;
-  const call = { kind: a.action === 'exit' ? 'Exit' : 'Hold', text: a.reason, deskName: deskLabel(names, desk), date: dayLabel(session) };
+  const call = { kind: a.action === 'exit' ? 'Exit' : 'Hold', text: deskOwnWords(a.reason, words), deskName: deskLabel(names, desk), date: dayLabel(session) };
   // An Exit code did not carry out (refused, or nothing to do): said beside it, so it never reads as done.
   if (a.action === 'exit' && a.outcome !== 'exit_settled') call.notCarriedOut = EXIT_NOT_CARRIED(a.outcome);
   return call;
@@ -509,7 +606,7 @@ function groupOf(slot, idea, ctx) {
     return { ...head, state: 'open', text: OPEN_SLOT.row(SLOT_NAMES[slot], ctx.names[desk].mid, ctx.looks), names: [] };
   }
   const { session } = ctx;
-  const common = { ...head, thesis: thesisOf(idea, ctx.names), source: sourceChipOf(idea) };
+  const common = { ...head, thesis: thesisOf(idea, ctx.words), source: sourceChipOf(idea) };
   // Entering: admitted, waiting for the next session's first window.
   if (idea.status === IDEA_STATUS.ACCEPTED || idea.status === IDEA_STATUS.ENTERING) {
     return {
@@ -547,7 +644,7 @@ function groupOf(slot, idea, ctx) {
     line: boughtThisSession ? GROUP_LINES.enteredToday(sessions) : GROUP_LINES.day(day, sessions),
     day, of: sessions, sessionsLeft: left, sessionsLeftText: GROUP_LINES.sessionsLeft(left), progress: sessions > 0 ? day / sessions : 0,
     gap: gapOf(last, idea.contract, session, lastHeld),
-    call: callOf(ctx.deskParts[desk], idea.ideaId, desk, session, ctx.names),
+    call: callOf(ctx.deskParts[desk], idea.ideaId, desk, session, ctx.words),
     names,
     namesText: names.map((n) => n.symbol).join(' · '),
   };
@@ -559,7 +656,8 @@ function groupOf(slot, idea, ctx) {
 }
 
 /** A slot whose idea finished at this session (its last sale filled today), shown in its place until the next. */
-function settledTodayGroupOf(slot, f, names) {
+function settledTodayGroupOf(slot, f, words) {
+  const { names } = words;
   const idea = f.idea;
   const desk = deskOfIdea(idea) ?? deskOfSlot(slot);
   const sessions = sessionsOfIdea(idea, slot);
@@ -573,7 +671,7 @@ function settledTodayGroupOf(slot, f, names) {
     state: 'settled_today', line: GROUP_LINES.settledToday,
     gap: f.view.notMeasurable ? { notMeasurable: NOT_MEASURABLE } : f.view.gap,
     // The manager's exit is a past call here (made at its endpoint), never today's.
-    thesis: thesisOf(idea, names), source: sourceChipOf(idea), call: null, lastCall: f.view.lastCall, names: soldNames,
+    thesis: thesisOf(idea, words), source: sourceChipOf(idea), call: null, lastCall: f.view.lastCall, names: soldNames,
     namesText: soldNames.map((n) => n.symbol).join(' · '),
   };
 }
@@ -647,32 +745,35 @@ export function refusalReasonOf(refusals) {
   return seen.length > 0 ? seen.join('; ') : REFUSAL_UNMAPPED;
 }
 
-function draftView(c, session) {
+/** A draft the desk considered. B6-3: its thesis is the desk's own words (deskOwnWords). */
+function draftView(c, session, words) {
   const outcome = DRAFT_OUTCOMES[c?.outcome] ?? DRAFT_OUTCOMES.refused;
   const why = c?.outcome === 'refused' || c?.outcome === 'waiting' ? refusalReasonOf(c?.refusals) : null;
   return {
     names: (c?.names || []).map(upper).join(' · '),
-    thesis: str(c?.thesis),
+    thesis: deskOwnWords(str(c?.thesis), words),
     date: dayLabel(session),
     outcome,
     why: c?.outcome === 'waiting' && (c?.refusals || []).length === 0 ? null : why,
   };
 }
 
-function desksOf({ session, deskParts, groups, archetypeName, looks, names }) {
+function desksOf({ session, deskParts, groups, archetypeName, looks, words }) {
+  const { names } = words;
   return DESK_ORDER.map((desk) => {
     const part = deskParts[desk];
     const lane = desk === 'archetype' && str(archetypeName) ? `${archetypeName} · ${DESK_LANES[desk]}` : DESK_LANES[desk];
     let note = null;
     if (part?.source === AGENT_NOTE_SOURCE.CODE_FALLBACK) note = { failed: true, text: FAILED_CHECK.sentence(deskLabel(names, desk)), date: dayLabel(session) };
-    else if (part?.source === AGENT_NOTE_SOURCE.MODEL && str(part.note)) note = { failed: false, text: part.note, date: dayLabel(session) };
+    // B6-3: the desk's note is its own words (deskOwnWords).
+    else if (part?.source === AGENT_NOTE_SOURCE.MODEL && str(part.note)) note = { failed: false, text: deskOwnWords(part.note, words), date: dayLabel(session) };
     const calls = groups.filter((g) => g.desk === desk).map((g) => {
       const row = { slot: g.slot, slotName: g.slotName, namesText: g.namesText ?? null };
       if (g.state === 'open') return { ...row, state: 'open', text: OPEN_SLOT.desks(names[desk].name, looks) };
       if (g.state === 'entering') return { ...row, state: 'entering', text: BUYS_NEXT_WINDOW };
       return { ...row, state: 'call', call: g.call ?? null, selling: g.selling ?? null };
     });
-    const considered = (part && part.source === AGENT_NOTE_SOURCE.MODEL ? part.considered || [] : []).map((c) => draftView(c, session));
+    const considered = (part && part.source === AGENT_NOTE_SOURCE.MODEL ? part.considered || [] : []).map((c) => draftView(c, session, words));
     const count = (o) => (part?.considered || []).filter((c) => c?.outcome === o).length;
     const tally = considered.length === 0 ? null : [
       `${considered.length} draft${considered.length === 1 ? '' : 's'}`,
@@ -729,9 +830,12 @@ function columnsOf(result, gap) {
 
 /**
  * One finished idea for History (and for its slot's "settled today" group). `bookId`: the book it is read under; `names`: the
- * desks' names (B5-3; deskNamesOf).
+ * desks' names (B5-3; deskNamesOf); `ideaSlots`: the idea ids the view holds, each to its slot (B6-3; ideaSlotsOf — on its
+ * own, none: the old desk names are still replaced, and no id is). Its thesis (when a desk wrote it) and its last call's
+ * reason are the desk's own words (deskOwnWords).
  */
-export function finishedView(f, { bookId = null, names = deskNamesOf() } = {}) {
+export function finishedView(f, { bookId = null, names = deskNamesOf(), ideaSlots = new Map() } = {}) {
+  const words = { names, ideaSlots };
   const idea = f.idea;
   const slot = idea?.contract?.slot ?? null;
   const desk = deskOfIdea(idea) ?? deskOfSlot(slot);
@@ -746,13 +850,13 @@ export function finishedView(f, { bookId = null, names = deskNamesOf() } = {}) {
     desk, deskName: deskLabel(names, desk),
     // The day it finished: its last sale filled (the liquidation), else its endpoint.
     ended, endedOn: dayLabel(idea?.liquidation?.completedSession ?? result?.endpointSession ?? idea?.endpoint?.session ?? null),
-    thesis: idea ? thesisOf(idea, names) : null,
+    thesis: idea ? thesisOf(idea, words) : null,
     source: sourceChipOf(idea),
   };
   const managerExit = result?.managerExit ?? null;
   const exitDesk = managerExit ? deskLabel(names, managerExit.desk) : null;
   const lastCall = managerExit && str(managerExit.reason) && exitDesk !== null
-    ? { kind: 'Exit', text: managerExit.reason, deskName: exitDesk, date: dayLabel(managerExit.session) }
+    ? { kind: 'Exit', text: deskOwnWords(managerExit.reason, words), deskName: exitDesk, date: dayLabel(managerExit.session) }
     : null;
   if (!check.ok) return { ...base, gap: null, notMeasurable: { reasons: [EVIDENCE_UNCHECKED] }, columns: null, lastCall: null };
   const econ = result.economic || {};
@@ -773,12 +877,15 @@ const SPLIT_DESKS = Object.freeze([['agent', 'shadow'], ['archetype', 'archetype
  * The book's shares, in whole millionths, from the epoch it runs under: each desk's the sum of its slots' caps
  * (`rails.slotCapShare`, each slot to its desk by deskOfSlot), cash's the cash floor (`gateConfig.cashFloorPct`). Null when
  * the epoch is missing, a share does not read as a decimal of at most six places in (0, 1] (money.js weightPpm), a slot
- * belongs to no desk, or the three do not sum to exactly 1. Pure.
+ * belongs to no desk, or the three do not sum to exactly 1. Build B6 (ruling B6-5, Astra B5-A05): every slot this module
+ * names (PRACTICE_FIELD_SLOT_NAMES) must have its own cap in the epoch BEFORE the total is checked — an epoch missing one
+ * carries no split, whatever its other shares add up to. Pure.
  * @returns {{ shadow: number, archetype: number, cash: number } | null}
  */
 export function epochSharesOf(epoch) {
   const caps = epoch?.rails?.slotCapShare;
   if (!isPlain(caps)) return null;
+  if (!PRACTICE_FIELD_SLOT_NAMES.every((slot) => Object.hasOwn(caps, slot))) return null;
   const out = { shadow: 0, archetype: 0, cash: weightPpm(epoch?.gateConfig?.cashFloorPct) };
   if (out.cash === null) return null;
   for (const [slot, share] of Object.entries(caps)) {
@@ -868,20 +975,23 @@ export function buildBookView({ book, ideas = [], rows = new Map(), dailyRows = 
   const looks = agentOn === true && !paused && !windingDown;
   const deskParts = { shadow: deskPartOf(closeRow, 'shadow'), archetype: deskPartOf(closeRow, 'archetype') };
   const byId = new Map(ideas.map((i) => [i.ideaId, i]));
-  const finishedViews = finished.map((f) => ({ ...f, view: finishedView(f, { bookId: book?.bookId ?? null, names }) }));
+  // B6-3: the idea ids this view holds (the caller's own book's, live and finished), for a desk's own words (deskOwnWords).
+  const ideaSlots = ideaSlotsOf([...ideas, ...finished.map((f) => f?.idea)]);
+  const words = { names, ideaSlots };
+  const finishedViews = finished.map((f) => ({ ...f, view: finishedView(f, { bookId: book?.bookId ?? null, names, ideaSlots }) }));
 
   // The groups, one per slot in order.
   // One allotment per row for this view: the names' position values and the split's use read the same one (and it is
   // computed once).
   const allotted = new Map();
   const allot = (row) => { if (!allotted.has(row)) allotted.set(row, allotCents(row)); return allotted.get(row); };
-  const ctx = { session, rows, deskParts, looks, names, allot };
+  const ctx = { session, rows, deskParts, looks, names, words, allot };
   const groups = PRACTICE_FIELD_SLOT_NAMES.map((slot) => {
     const id = book?.slots?.[slot] ?? null;
     const idea = typeof id === 'string' ? byId.get(id) ?? null : null;
     if (idea) return groupOf(slot, idea, ctx);
     const today = finishedViews.find((f) => f.idea?.contract?.slot === slot && f.idea?.liquidation?.completedSession === session && session !== null);
-    return today ? settledTodayGroupOf(slot, today, names) : groupOf(slot, null, ctx);
+    return today ? settledTodayGroupOf(slot, today, words) : groupOf(slot, null, ctx);
   });
 
   // The book line.
@@ -903,10 +1013,14 @@ export function buildBookView({ book, ideas = [], rows = new Map(), dailyRows = 
   // SPY since the book opened (B3-6), from the book's own records: SPY's quote at the book's FIRST fill (the first entered
   // idea's inception row, its SPY leg — the same window the book's first money went in, which "since" measures from) to its
   // vendor-timed close mark at the last close (the first idea row there with a clean one). Either missing: a dash.
+  // Build B6 (ruling B6-4, Astra B5-A04): the idea rows of that close are the live ideas' AND, after them, those of the ideas
+  // finished since it (`atClose`, which the reader already loads for the split) — so SPY still reads between a book's last
+  // sale and the next close, while that close's equity still shows. No new read; the live ideas' rows come first, as before.
   let spy = { label: 'SPY', value: '—' };
   const startLeg = (firstEntry?.inception?.legs?.spy || []).find((r) => upper(r?.symbol) === PRACTICE_FIELD_BENCHMARK_SYMBOL) ?? null;
   const startMark = startLeg && Number(startLeg.mark) > 0 && typeof startLeg.markVendorTimeIso === 'string' ? startLeg.mark : null;
-  const nowMark = ideas.map((i) => rows.get(i.ideaId)?.last?.date === session ? rows.get(i.ideaId).last.spyMarks?.[PRACTICE_FIELD_BENCHMARK_SYMBOL] : null)
+  const closeRows = [...ideas.map((i) => rows.get(i.ideaId)?.last), ...finished.map((f) => f?.atClose)];
+  const nowMark = closeRows.map((r) => (isPlain(r) && r.date === session ? r.spyMarks?.[PRACTICE_FIELD_BENCHMARK_SYMBOL] : null))
     .find((m) => m && m.quality === MARK_QUALITY.VENDOR_TIME && Number(m.mark) > 0)?.mark ?? null;
   if (startMark !== null && nowMark !== null && first?.kind === 'since' && !lineWaits) {
     const pct = pctText(((nowMark - startMark) * 100) / startMark);
@@ -946,7 +1060,7 @@ export function buildBookView({ book, ideas = [], rows = new Map(), dailyRows = 
     strip: deriveStrip({ session, deskParts, ideas, finishedIdeas: finished.map((f) => f.idea).filter(Boolean), rows: stripRows, names }),
     groups,
     cash: moneyText(cashCents),
-    desks: desksOf({ session, deskParts, groups, archetypeName, looks, names }),
+    desks: desksOf({ session, deskParts, groups, archetypeName, looks, words }),
     history: { empty: NO_FINISHED_IDEAS, items: finishedViews.map((f) => f.view) },
   };
 }

@@ -65,6 +65,16 @@ export const DESK_NAMES = Object.freeze({
     ? Object.freeze({ name: `${archetypeName}’s desk`, mid: `${archetypeName}’s desk` })
     : Object.freeze({ name: 'Your archetype’s desk', mid: 'your archetype’s desk' })),
 });
+/**
+ * Build B6 (ruling B6-3, the founder's PH-5): an idea's id inside a desk's own words reads as its slot's idea — `mid`
+ * inside a sentence ("I hold the medium idea"), `name` at a sentence's head ("The medium idea holds its line"). Only an
+ * id of the caller's own book is replaced (bookView.js deskOwnWords).
+ */
+export const IDEA_IN_DESK_WORDS = Object.freeze({
+  short: Object.freeze({ name: 'The short idea', mid: 'the short idea' }),
+  medium: Object.freeze({ name: 'The medium idea', mid: 'the medium idea' }),
+  long: Object.freeze({ name: 'The long idea', mid: 'the long idea' }),
+});
 /** Each desk's slots, as the Desks tab says them under its name (agentConfig.js DESKS: the agent's medium and long). */
 export const DESK_LANES = Object.freeze({ shadow: 'Medium · Long', archetype: 'Short' });
 /** B5-2: the split's third part. */

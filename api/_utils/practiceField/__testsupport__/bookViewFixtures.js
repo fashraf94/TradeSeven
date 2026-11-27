@@ -24,7 +24,12 @@ export function historySessions(n = 13) {
   return out;
 }
 
-/** The scripted desks of the B2 run (agentEndToEnd.test.js scriptedDesks), unchanged. */
+/**
+ * The scripted desks of the B2 run (agentEndToEnd.test.js scriptedDesks), the same calls and actions — and, since build B6,
+ * the words a desk could have written before B6 (its prompt named the desks and gave it its ideas' ids): the notes name
+ * the old desks, the archetype desk's reasons quote its idea's own id, and the shadow desk's note the ids it holds. The view
+ * shows none of it (ruling B6-3: bookView.e2e.test.js scans every close). Nothing here is pinned as a dump.
+ */
 export function scriptedDesks(date) {
   const shortNames = [['XOM'], ['CVX'], ['KO']];
   let shortDrafts = 0;
@@ -33,14 +38,15 @@ export function scriptedDesks(date) {
     if (desk === 'shadow') {
       if (d === FAIL_SESSION) return transportError();
       const drafts = emptySlots.includes('long') ? [draft({ slot: 'long', names: ['MSFT', 'NVDA'] })] : [];
-      return toolResponse(holdAll(request, { note: `Shadow desk, ${d}: the banks hold their line against XLF.`, drafts }), { inputTokens: 6200, outputTokens: 1900 });
+      const holding = openIdeaIds.length > 0 ? ` I hold ${openIdeaIds.join(' and ')}.` : '';
+      return toolResponse(holdAll(request, { note: `Shadow desk, ${d}: the banks hold their line against XLF.${holding}`, drafts }), { inputTokens: 6200, outputTokens: 1900 });
     }
     const actions = openIdeaIds.map((ideaId) => (d === EXIT_SESSION
-      ? { ideaId, action: 'exit', reason: 'The breakout failed; the setup no longer holds.' }
-      : { ideaId, action: 'hold', reason: 'Still inside its ten-session window.' }));
+      ? { ideaId, action: 'exit', reason: `The breakout failed on ${ideaId}; the setup no longer holds.` }
+      : { ideaId, action: 'hold', reason: `${ideaId} is still inside its ten-session window.` }));
     const outside = d === DAYS.d1 ? [draft({ slot: 'short', names: ['XOM'], distance: 0.2 })] : [];
     const drafts = emptySlots.includes('short') ? [...outside, draft({ slot: 'short', names: shortNames[shortDrafts++ % 3] })] : [];
-    return toolResponse({ bookNote: `Archetype desk, ${d}: short-term only.`, actions, drafts }, { inputTokens: 4800, outputTokens: 1500 });
+    return toolResponse({ bookNote: `Archetype desk, ${d}: short-term only; the Shadow desk keeps the banks.`, actions, drafts }, { inputTokens: 4800, outputTokens: 1500 });
   };
 }
 
