@@ -962,7 +962,15 @@ describe('F-1 — a Try again never drops focus to <body>: focus sits on an elem
     .filter((t) => !t.disabled && t.tabIndex >= 0 && !t.closest('[inert], [hidden]') && !el.contains(t))
     .find((t) => el.compareDocumentPosition(t) & Node.DOCUMENT_POSITION_FOLLOWING) ?? null;
   /** The arguments of the focus call made on `el` (the last one), or null when it was never focused by a call. */
-  const focusArgsOf = (spy, el) => { const i = spy.mock.contexts.lastIndexOf(el); return i < 0 ? null : spy.mock.calls[i]; };
+  /**
+   * The arguments of the focus calls made on `el`: the first call that is NOT exactly `{ preventScroll: true }` when
+   * there is one (any call that may scroll fails the row: review D-5), else the last; null when it was never focused.
+   */
+  const focusArgsOf = (spy, el) => {
+    const calls = spy.mock.calls.filter((_, i) => spy.mock.contexts[i] === el);
+    const quiet = (c) => c.length === 1 && c[0] !== null && typeof c[0] === 'object' && Object.keys(c[0]).length === 1 && c[0].preventScroll === true;
+    return calls.length === 0 ? null : calls.find((c) => !quiet(c)) ?? calls.at(-1);
+  };
   const panelOf = () => storyEl()?.querySelector('[data-explore-panel]') ?? null;
   const formNow = () => panelOf()?.dataset.explorePanel ?? null;
   /** The panel's own heading (its id is the panel's aria-labelledby). */
@@ -999,6 +1007,8 @@ describe('F-1 — a Try again never drops focus to <body>: focus sits on an elem
     expect(h.isConnected).toBe(true);
     expect(panelHeading()).toBe(h);
     expect(h.textContent).toBe(words());
+    expect(h.getAttribute('tabindex')).toBe('-1'); // focusable in every form, not only in E (review D-4)
+    expect(focusArgsOf(spy, h)).toEqual([{ preventScroll: true }]);
   });
   it('the story panel: a retry that fails again — the heading holds focus throughout, and the next Tab stop is the new Try again', async () => {
     await openPage({ answer: NO_ANSWER });
@@ -1042,6 +1052,8 @@ describe('F-1 — a Try again never drops focus to <body>: focus sits on an elem
     expect(document.activeElement).not.toBe(document.body);
     expect(document.activeElement).toBe(h);
     expect($('#ftx-cards-h')).toBe(h);
+    expect(h.getAttribute('tabindex')).toBe('-1');
+    expect(focusArgsOf(spy, h)).toEqual([{ preventScroll: true }]);
     if (end === 'failed') expect(nextTabStopAfter(h)).toBe($('[data-explore-retry-stories]'));
   });
 
@@ -1064,6 +1076,8 @@ describe('F-1 — a Try again never drops focus to <body>: focus sits on an elem
     await until(() => (end === 'ready' ? $(`[data-explore-saved-row="${S_AI.id}"]`) : $('[data-explore-retry-bookmarks]')), 'the answer');
     expect(document.activeElement).not.toBe(document.body);
     expect(document.activeElement).toBe(h);
+    expect(h.getAttribute('tabindex')).toBe('-1');
+    expect(focusArgsOf(spy, h)).toEqual([{ preventScroll: true }]);
     if (end === 'failed') expect(nextTabStopAfter(h)).toBe($('[data-explore-retry-bookmarks]'));
   });
 
@@ -1078,6 +1092,7 @@ describe('F-1 — a Try again never drops focus to <body>: focus sits on an elem
     click(retry);
     await flush();
     expect(document.activeElement).toBe(h);
+    expect(focusArgsOf(spy, h)).toEqual([{ preventScroll: true }]); // the tap's own call never scrolls (review D-5)
     held.resolve(answerOf(READS.progress));
     await until(() => $('[data-explore-shelf]')?.dataset.exploreShelfPlacement === 'top', 'the shelf above the hero');
     expect(document.activeElement).not.toBe(document.body);
@@ -1094,11 +1109,24 @@ describe('F-1 — a Try again never drops focus to <body>: focus sits on an elem
     held.resolve(NO_ANSWER);
     await until(() => $('[data-explore-shelf-retry]'), 'the failed line again');
     expect(document.activeElement).toBe(h);
+    expect(focusArgsOf(spy, h)).toEqual([{ preventScroll: true }]);
     expect(nextTabStopAfter(h)).toBe($('[data-explore-shelf-retry]'));
   });
-  it('the shelf: once the retry has answered, a later move of the shelf (the screen turned wide) never takes focus — the hand-over is only for a retry that is out', async () => {
+  it('the shelf on a phone: the player moves focus while the retry is out — the moved shelf leaves it where they put it (review D-3)', async () => {
+    await openPage({ answer: NO_ANSWER });
+    const held = deferred();
+    read.mockImplementation(() => held.promise);
+    click($('[data-explore-shelf-retry]'));
+    await flush();
+    const elsewhere = hero().querySelector('[data-explore-hero-read]');
+    elsewhere.focus();
+    held.resolve(answerOf(READS.progress));
+    await until(() => $('[data-explore-shelf]')?.dataset.exploreShelfPlacement === 'top', 'the shelf above the hero');
+    expect(document.activeElement).toBe(elsewhere);
+  });
+  it.each([['fails again', () => NO_ANSWER], ['answers with nothing on the shelf', () => answerOf(READS.fresh)]])('the shelf: once the retry has answered (it %s), a later move of the shelf (the screen turned wide) never takes focus — the hand-over is only for a retry that is out', async (_, answer) => {
     const matchMedia = window.matchMedia;
-    const wideQ = { matches: false, on: [], addEventListener(_, f) { this.on.push(f); }, removeEventListener(_, f) { this.on = this.on.filter((x) => x !== f); } };
+    const wideQ = { matches: false, on: [], addEventListener(__, f) { this.on.push(f); }, removeEventListener(__, f) { this.on = this.on.filter((x) => x !== f); } };
     window.matchMedia = (q) => (q === '(min-width: 1000px)' ? wideQ : { matches: false, addEventListener() {}, removeEventListener() {} });
     try {
       await openPage({ answer: NO_ANSWER });
@@ -1106,8 +1134,8 @@ describe('F-1 — a Try again never drops focus to <body>: focus sits on an elem
       read.mockImplementation(() => held.promise);
       click($('[data-explore-shelf-retry]'));
       await flush();
-      held.resolve(NO_ANSWER);
-      await until(() => $('[data-explore-shelf-retry]'), 'the failed line again');
+      held.resolve(answer());
+      await until(() => $('[data-explore-shelf]') && !$('[data-explore-shelf]').textContent.includes(COPY.shelf.checking) && $('[data-explore-shelf]').dataset.exploreShelf !== 'loading', 'the answer');
       expect($('[data-explore-shelf]').dataset.exploreShelfPlacement).toBe('after-cards');
       document.activeElement.blur();
       expect(document.activeElement).toBe(document.body);

@@ -385,6 +385,8 @@ describe.skipIf(!BASE)('Explore in a real browser (Build 1 §9 checks 1–5; Bui
       const r = row.getBoundingClientRect();
       const btns = [...row.querySelectorAll('[data-explore-jump-to]')];
       const bad = [];
+      // the page clips sideways overflow (index.css), so the row itself is measured against the screen (review D-7)
+      if (r.right > innerWidth + 0.5 || r.left < -0.5) bad.push('the row runs past the screen');
       for (const b of btns) {
         const br = b.getBoundingClientRect();
         if (br.right > r.right + 0.5 || br.left < r.left - 0.5) bad.push(`${b.dataset.exploreJumpTo}: past the row's edge`);
@@ -410,6 +412,7 @@ describe.skipIf(!BASE)('Explore in a real browser (Build 1 §9 checks 1–5; Bui
         await page.waitForSelector(PINNED, { timeout: ROW });
         await page.waitForTimeout(300);
         expect(await measure(page, PINNED), `${w}: pinned`).toEqual({ bad: [], drawn: want, sideways: false });
+        expect(await namesOf(page, PINNED), `${w}: the pinned copy's names`).toEqual(want.map((n) => n.replace(/\s+/g, '')));
       } finally {
         await ctx.close();
       }
