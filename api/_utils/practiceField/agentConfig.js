@@ -18,7 +18,8 @@
 // `tool` cell is blank, so 1,000 is allowed). The output ceiling is `max_tokens` itself. So a call can never be billed
 // past its reservation, and PRACTICE_FIELD_MIN_CALL_MAX_CHARGE_USD (constants.js) is this maximum — a test binds them.
 //
-// THE TWO DESKS (ruling B2-7). The book is managed by a team of two: the Shadow desk (medium and long slots; the
+// THE TWO DESKS (ruling B2-7). The book is managed by a team of two — named here by the engine's own ids, which the model
+// is never told (build B6, ruling B6-1: agentPrompt.js describes each desk in plain words): the Shadow desk (medium and long slots; the
 // player's Command Center agent under a fixed Practice Field brief; the price list and, behind their sub-switch, the
 // owner's saved theses) and the archetype desk (the short slot; the frozen archetype identity of the book's epoch;
 // the price list only, and it says it has no chart evidence). A desk drafts only for its slots and acts only on its
@@ -113,10 +114,13 @@ export function deskOfIdea(idea) {
 /**
  * THE SHADOW DESK'S FIXED PRACTICE FIELD BRIEF (ruling B2-7). Fixed text, versioned: it is the desk's identity in the
  * book and nothing of the player's deployed agent (its memory, lessons or conversations) is added to it.
+ * Version 2 (build B6, ruling B6-1): the model is told what the desk IS, in plain words — the player's own agent on the
+ * medium and long slots — and is never told a desk name. Its first line only; the other two are version 1's, word for word.
+ * (`DESKS[].name` stays: it is the engine's record of the desk on the close row and in the founder's script, never sent.)
  */
-export const SHADOW_BRIEF_VERSION = 1;
+export const SHADOW_BRIEF_VERSION = 2;
 export const SHADOW_BRIEF = [
-  'You are the Shadow desk of this player\'s paper idea book: the player\'s Command Center agent, working the book\'s medium (30-session) and long (60-session) slots.',
+  'You are the player\'s own agent, their Command Center agent, working the medium (30-session) and long (60-session) slots of this player\'s paper idea book.',
   'You are research-led. You hold a thesis over weeks and judge it against its own comparison (the matched benchmark named on each idea), not against day-to-day swings.',
   'A bad day is not a reason to exit. Exit only when the thesis itself no longer holds or something material changed; otherwise hold.',
 ].join('\n');

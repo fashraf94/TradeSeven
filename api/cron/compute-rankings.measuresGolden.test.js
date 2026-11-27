@@ -8,6 +8,12 @@
 //
 // The encoding keeps NaN, Infinity, -0, undefined and key order (a JSON round trip would hide all five), and the log
 // lines are compared with their timestamp cut.
+//
+// Company names, Build 3a: the one deliberate change since the capture. shapeFundamentals now reads the name from the
+// top-level "General::Name" key the rankings filter returns, so the three cases whose input carries that key
+// (financial-no-history, research-stock-short-history, no-history-unknown-sector) were regenerated: only their
+// shaped.name and metrics.name moved, from the ticker to the company's name. Every other value of every case, and the
+// failure, is byte-identical to the capture (docs/audits/20261127_BUILD_COMPANY_NAMES.md).
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -56,6 +62,9 @@ describe('the golden holds every case, and they reach the branches it claims', (
     ['equity exactly 0: debt / equity null; exactly one usable quarter: no average surprise', () => m['odd-income'].debtToEquity === null && m['odd-income'].avgEarningsSurprise === null && m['odd-income'].avgSurpriseMag === null],
     ['no earnings and no sector: the 0.68 default from the no-history branch', () => m['no-history-unknown-sector'].beatRate === 68 && m['no-history-unknown-sector'].beatRateSource === 'sector_default'],
     ['EBIT exactly 0 with interest: coverage null', () => m['no-history-unknown-sector'].interestCoverage === null && m['no-history-unknown-sector'].ebit === 0],
+    // Build 3a: the name from the top-level "General::Name" key; General.Name (full-xlk) as before.
+    ['the top-level "General::Name" key: the company\'s name, in the shaped response and the metrics', () => [['financial-no-history', 'JPMorgan Chase & Co'], ['research-stock-short-history', 'Corning Incorporated'], ['no-history-unknown-sector', 'Arista Networks Inc']].every(([id, name]) => decode(GOLDEN.cases[id]).shaped.name === name && m[id].name === name)],
+    ['General.Name when the top-level key is absent', () => decode(GOLDEN.cases['full-xlk']).shaped.name === 'Apple Inc' && m['full-xlk'].name === 'Apple Inc'],
   ])('%s', (_t, holds) => { expect(holds()).toBe(true); });
 });
 
