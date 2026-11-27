@@ -668,6 +668,14 @@ const PERMITTED_TERMINALS = Object.freeze({
   // away). The card owns its one read (GET /api/practice-field/book, keyed by uid and auth epoch; on mount, on open and on
   // window focus — no poll) and the page it opens as a layer over the app; its own suites pin that.
   'src/components/PracticeField/IdeaBookEntry.jsx': 'the idea book entry card and its read-only page: one read per owner and epoch, on mount, open and focus, no poll (Practice Field B3 §4)',
+  // The portfolio hub's slice 1 (spec docs/specs/20261126_COMMAND_CENTER_PORTFOLIO_HUB_BUILD_SPEC_V1.md §3, §4; ruling PH-20):
+  // the portfolio switch's flag module (its own, for the fold's sake; read as the literal COMMAND_CENTER_PORTFOLIO_HUB_ENABLED at
+  // the connected arm (CommandCenterHub.jsx), the card's hub site (sections/ActivitySection.jsx) and the decision's default
+  // (hub/hubLayout.js), so with it false every read folds away; it imports nothing: its pin row reads inside it). With it on, the
+  // book's ONE read moves from the card to the connected shell's scope (HubBookScope.jsx), through the card's module above (its
+  // re-export of useIdeaBook, the same hook, keyed by owner and epoch, no poll), and the card is handed that read as props
+  // (IdeaBookEntryView): still one read, now at the shell. The exports the hub takes from both are named in the S5 row below.
+  'src/config/commandCenterPortfolioFlags.js': 'COMMAND_CENTER_PORTFOLIO_HUB_ENABLED — the portfolio hub, read as a literal so flag-off folds away (spec 20261126 PH-20)',
 });
 /** framer-motion: motion.div and useReducedMotion (the house precedent for OS reduced motion); react-dom: createPortal for the sheet. */
 const PERMITTED_PACKAGES = Object.freeze(['framer-motion', 'react', 'react-dom']);
@@ -1443,6 +1451,10 @@ describe('S5 — the exports the hub takes from the shipped services, hooks and 
     '/hooks/useHubStories': ['default'],
     '/hooks/useHubSharedResearch': ['default'],
     '/selectors/storySelection': ['selectStories'],
+    // Practice Field B3, and the portfolio hub's slice 1 (spec 20261126 §3): the card, its screen switch, and — with the portfolio
+    // switch on only — the card's drawing part handed the shell's read and the one read hook, re-exported for the shell's scope.
+    '/PracticeField/IdeaBookEntry': ['IDEA_BOOK_SCREEN_ON', 'IdeaBookEntryView', 'default', 'useIdeaBook'],
+    '/config/commandCenterPortfolioFlags': ['COMMAND_CENTER_PORTFOLIO_HUB_ENABLED'],
   });
 
   it('across every file of the directory, exactly these names and no others', () => {

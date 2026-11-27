@@ -25,6 +25,8 @@ const ALLOWED_IMPORTS = Object.freeze({
   'activityRows.js': [/^\.\.\/\.\.\/\.\.\/\.\.\/api\/_utils\/leanRevalidation\.js$/, /^\.\/activityDates$/, /^\.\/hubCopy$/, /^\.\/hubDate$/, /^\.\/selectors\/loadout$/],
   // The S8 fix build (ruling R-S8F-9): a review's day from another year carries its year, through activityDates.js.
   'nextAction.js': [/^\.\/activityDates$/, /^\.\/hubCopy$/, /^\.\/hubDate$/, /^\.\/selectors\/deployState$/],
+  // The portfolio hub's slice 1 (spec 20261126 §3): the layout decision imports nothing but its switch.
+  'hubLayout.js': [/^\.\.\/\.\.\/\.\.\/config\/commandCenterPortfolioFlags$/],
 });
 
 const IMPURE_GLOBALS = new Set([
@@ -85,6 +87,7 @@ describe('purity — S4\'s derivations read only their arguments (review T-9)', 
     };
     expect(exported('activityRows.js')).toEqual(expect.arrayContaining(['deriveActivity', 'activitySectionOf', 'loadoutKnowledgeOf']));
     expect(exported('nextAction.js')).toEqual(expect.arrayContaining(['deriveNextAction', 'firstDeploymentOffer', 'laterKeyOf']));
+    expect(exported('hubLayout.js')).toEqual(expect.arrayContaining(['hubLayoutOf']));
   });
 
   it('the scan flags what it names', () => {

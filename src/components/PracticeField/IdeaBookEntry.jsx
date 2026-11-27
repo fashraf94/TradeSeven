@@ -77,6 +77,62 @@ function focusBesideCard(host) {
   else if (typeof document !== 'undefined' && document.activeElement && document.activeElement !== document.body) document.activeElement.blur?.();
 }
 
+/**
+ * The portfolio hub's slice 1 (spec docs/specs/20261126_COMMAND_CENTER_PORTFOLIO_HUB_BUILD_SPEC_V1.md §3): THE CARD'S DRAWING
+ * PART, handed the read. With COMMAND_CENTER_PORTFOLIO_HUB_ENABLED on, the hub's connected shell reads the book once
+ * (CommandCenter/HubBookScope.jsx), decides the layout from that read and hands the same read here, so the card makes no read
+ * of its own and the card and the layout can never disagree. Its body is the default export's below with the read taken as
+ * props instead of made: the two are kept as two copies ON PURPOSE, because the default export must build byte for byte as it
+ * did while the switch is off (the hub chunk is otherwise unchanged); the switch's flip PR or a cleanup after it makes the
+ * default `<IdeaBookEntryView {...useIdeaBook(…)} />`. Until then a change to one is a change to both: the card's suite runs
+ * its switch-on rows against each (IdeaBookEntry.jsdom.test.jsx).
+ */
+export function IdeaBookEntryView({ read, refresh }) {
+  const [open, setOpen] = useState(false);
+  const cardRef = useRef(null);
+  // The hub's block the card sits in, remembered at open: where focus goes if the card is gone when the page closes.
+  const hostRef = useRef(null);
+  const onOpen = useCallback(() => {
+    hostRef.current = cardRef.current?.closest('[data-ib="entry"]')?.parentElement ?? null;
+    setOpen(true);
+    refresh();
+  }, [refresh]);
+  const onClose = useCallback(() => { setOpen(false); }, []);
+  // Review B3-A09: a refresh that answers 404 while the page is open (the mode, the switch or its gate now says "not for
+  // you") closes the page: the layer unmounts, which lifts `inert` from the app, and focus goes beside the card. So does an
+  // answer of no book (it closed — its wind-down completed — or its claim went stale: the refuter's R4): the card is gone too.
+  const gone = read.status === 'off' || (read.status === 'ready' && !read.book);
+  useEffect(() => { if (open && gone) setOpen(false); }, [open, gone]);
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    if (wasOpen.current && !open) {
+      if (cardRef.current) cardRef.current.focus();
+      else focusBesideCard(hostRef.current);
+    }
+    wasOpen.current = open;
+  }, [open]);
+  const view = read.status === 'ready' ? read.book : null;
+  if (!PRACTICE_FIELD_SCREEN_ENABLED) return null;
+  return (
+    <>
+      {view ? (
+        <div data-ib="entry">
+          <style>{IB_CSS}</style>
+          <IdeaBookCard view={view} onOpen={onOpen} buttonRef={cardRef} />
+        </div>
+      ) : null}
+      {open ? <IdeaBookLayer read={read} onClose={onClose} /> : null}
+    </>
+  );
+}
+
+/**
+ * The portfolio hub's slice 1: the book's one read, for the hub's connected shell (CommandCenter/HubBookScope.jsx), through the
+ * hub's one import of this module — the same hook the card below calls, keyed by owner and epoch, no poll.
+ */
+// eslint-disable-next-line react-refresh/only-export-components
+export { useIdeaBook };
+
 /** The hub's one render site. Reads only while the switch is on. */
 export default function IdeaBookEntry() {
   const { read, refresh } = useIdeaBook({ enabled: PRACTICE_FIELD_SCREEN_ENABLED });
