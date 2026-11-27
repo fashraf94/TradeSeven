@@ -290,6 +290,20 @@ describe('switch on, a book owner: one read at the shell, and the card draws fro
     expect(card()).not.toBeNull();
   });
 
+  it.each([false, true])('a site change starts the shell afresh, scope and all (ruling R-S1-5): one more read, as today — switch on: %s', async (on) => {
+    f.portfolio = on;
+    const hub = hubOf();
+    const x = await render('mobile', hub);
+    expect(bookReads()).toBe(1);
+    layout.state.hubWidth = 1216;
+    x.rerender(<CommandCenterHub site="desktop" hub={hub} />);
+    await flush();
+    expect(document.querySelector('[data-hub="shell"]').getAttribute('data-hub-site')).toBe('desktop');
+    expect(bookReads()).toBe(2);
+    expect(markers().map((m) => m.getAttribute('data-hub-layout'))).toEqual(on ? ['book'] : []);
+    expect(card()).not.toBeNull();
+  });
+
   it('a hub handed no App object (the S1 frames) has no connected shell: no decision, and the card reads for itself, as today', async () => {
     layout.state.hubWidth = 1216;
     const x = mount(<CommandCenterHub site="desktop" />);
