@@ -8,18 +8,23 @@
 //
 // Each row runs the real path: a peerRankings document in the in-memory store, the real readNames, the real step
 // validator (validateStepTurn) and the real companiesOf. Only the stored name differs between the rows of a pair.
-// These rows pass before and after the fix; they document what the stored name decides. The row that shows the fix
-// itself (the rankings job's own name reaching this path) is added with the fix.
+// These rows pass before and after the fix; they document what the stored name decides. The last describe, added
+// with the fix (build prompt section 3), runs the rankings job's own fundamentals path into this one: it failed on
+// the unfixed code, where the stored name was always the ticker.
 //
 // DEPENDENCY-SURFACE GUARD (BUILD_RULES §4): the real, unmocked imports below are the runtime guard for these
 // modules' graphs. Never mock them.
 
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { validateStepTurn } from './stepSchema.js';
 import { companiesOf } from './companies.js';
 import { readNames } from './store.js';
 import { makeInMemoryDb } from '../__fixtures__/inMemoryFirestore.js';
 import { dataCenterRecord } from './__fixtures__/records.js';
+import { fetchSingleFundamental, extractMetrics } from '../../cron/compute-rankings.js';
 
 const READ = '2026-11-27T15:00:00.000Z';
 const NOW = '2026-11-27T15:00:05.000Z';
@@ -106,5 +111,34 @@ describe('why it passed unnoticed: a company whose common name is its ticker mat
     }), ctx(await namesFromStore(symbol, storedName)));
     expect(out.ok).toBe(true);
     expect(out.findings[0].symbol).toBe('AMD');
+  });
+});
+
+describe('the fix: the name the rankings job stores now carries the company, so the fact keeps it (build prompt section 3)', () => {
+  // Read with LF line ends: a Windows checkout may hold CRLF.
+  const RANKINGS_SRC = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'cron', 'compute-rankings.js'), 'utf8')
+    .split(String.fromCharCode(13, 10)).join(String.fromCharCode(10));
+  it('the rankings job stores its shaped name, else the ticker, in peerRankings/{symbol}.name and in every leaderboard row', () => {
+    const LF = String.fromCharCode(10);
+    expect(RANKINGS_SRC).toContain(`${LF}      name: stock.metrics?.name || stock.ticker,${LF}`);
+    expect(RANKINGS_SRC).toContain(`${LF}    name: s.metrics.name || s.ticker,${LF}`);
+  });
+  it('a response carrying the top-level "General::Name" key: the stored name is "NVIDIA Corporation" and the NVIDIA fact keeps NVDA', async () => {
+    const realFetch = globalThis.fetch;
+    const realLog = console.log;
+    globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ Highlights: {}, 'General::Name': 'NVIDIA Corporation' }) });
+    console.log = () => {};
+    let metrics;
+    try {
+      metrics = extractMetrics('NVDA', await fetchSingleFundamental('NVDA', 'TESTKEY'));
+    } finally {
+      globalThis.fetch = realFetch;
+      console.log = realLog;
+    }
+    const stored = metrics?.name || 'NVDA'; // the expression the job stores, pinned by the row above
+    expect(stored).toBe('NVIDIA Corporation');
+    const out = validateStepTurn(turn(), ctx(await namesFromStore('NVDA', stored)));
+    expect(out.findings[0]).toMatchObject({ kind: 'relationship', symbol: 'NVDA', status: 'verified' });
+    expect(out.notes.filter((x) => x.startsWith('identity_'))).toEqual([]);
   });
 });

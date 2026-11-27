@@ -132,6 +132,28 @@ describe('the record name for GLW, ANET and TSM (pinned before the name got one 
   });
 });
 
+// Company names, Build 3a (build prompt section 3 point 3): the name has one home. The record takes the name the
+// shared response shaping returns, and the directory's when the shaping returns the ticker (the response carries no
+// name, or carries the ticker itself as the name). This module reads no name from the response on its own.
+describe("the record name has one home: the shaping's", () => {
+  const { 'General::Name': _drop, ...noName } = RESPONSE;
+  const named = (v) => ({ ...noName, 'General::Name': v });
+  const nameOf = (sym, data) => quiet(() => buildRecord(sym, structuredClone(data), T0.toISOString())).name;
+  it('the record name is the name the shaping returns', () => {
+    const data = named('Corning Inc, as the response spells it');
+    expect(shapeFundamentals(structuredClone(data), 'GLW').name).toBe('Corning Inc, as the response spells it');
+    expect(nameOf('GLW', data)).toBe('Corning Inc, as the response spells it');
+  });
+  it('the directory name when the shaping returns the ticker: no name in the response, or the ticker as the name', () => {
+    expect(shapeFundamentals(structuredClone(noName), 'GLW').name).toBe('GLW');
+    expect(nameOf('GLW', noName)).toBe('Corning Incorporated');
+    expect(nameOf('GLW', named('GLW'))).toBe('Corning Incorporated');
+  });
+  it('researchMeasures.js reads no name from the response itself', () => {
+    expect(MODULE_SRC).not.toMatch(/General/);
+  });
+});
+
 describe('the stored record', () => {
   const record = quiet(() => buildRecord('GLW', structuredClone(RESPONSE), T0.toISOString()));
 

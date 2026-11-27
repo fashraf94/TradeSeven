@@ -161,12 +161,6 @@ export function estimatesOf(earnings) {
   };
 }
 
-/** The fuller name the fundamentals response carries (the filter returns it under a top-level "General::Name" key). */
-function fundamentalsNameOf(data) {
-  const raw = data?.['General::Name'] ?? data?.General?.Name;
-  return typeof raw === 'string' && raw.trim().length > 0 ? raw.trim() : null;
-}
-
 /** A response with nothing to compute from: not an object, an array, or neither Highlights nor Financials. */
 export function isEmptyResponse(data) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) return true;
@@ -180,7 +174,8 @@ export function buildRecord(symbol, data, nowIso) {
   const shaped = shapeFundamentals(data, symbol);
   return {
     symbol,
-    name: fundamentalsNameOf(data) ?? researchNameOf(symbol) ?? symbol,
+    // The name has one home, the shared shaping (Build 3a); the directory's when the shaping returns the ticker.
+    name: shaped.name !== symbol ? shaped.name : (researchNameOf(symbol) ?? symbol),
     sectorId,
     industry: researchIndustryOf(symbol),
     status: 'ok',

@@ -14,8 +14,9 @@
 //
 // Known faults, kept as they are (moved verbatim; fixing them is separate work, reported in the build report):
 // Highlights carries ProfitMargin, not ProfitMarginTTM, so profitMarginTTM is always null; SharesStats carries
-// ShortPercentFloat, not ShortPercentOfFloat, so shortInterestScore is always null; the filter's General::Name comes
-// back as a top-level "General::Name" key, so shapeFundamentals' name is always the ticker.
+// ShortPercentFloat, not ShortPercentOfFloat, so shortInterestScore is always null. (The third, the name, is fixed:
+// the filter's General::Name comes back as a top-level "General::Name" key, which shapeFundamentals now reads first;
+// company names Build 3a, docs/audits/20261127_BUILD_COMPANY_NAMES.md.)
 //
 // Imports rankingConfig.js only (pinned by stockMeasures.test.js), so the rankings job's import graph can never reach
 // a research module through this one.
@@ -32,7 +33,8 @@ function logInfo(message, data = null) {
 
 /**
  * The response shaping the rankings job did inside fetchSingleFundamental, as a pure function of the parsed
- * fundamentals response (moved verbatim: the return statement is unchanged).
+ * fundamentals response (moved verbatim; Build 3a changed only the name line). The name: the top-level
+ * "General::Name" key, then General.Name, then the ticker; a name is a non-blank string, trimmed.
  */
 export function shapeFundamentals(data, ticker) {
   return {
@@ -46,7 +48,7 @@ export function shapeFundamentals(data, ticker) {
     balanceSheetQ: data.Financials?.Balance_Sheet?.quarterly || {},
     balanceSheetY: data.Financials?.Balance_Sheet?.yearly || {},
     sharesStats: data.SharesStats || {},
-    name: data.General?.Name || ticker,
+    name: [data['General::Name'], data.General?.Name].map((v) => (typeof v === 'string' ? v.trim() : '')).find(Boolean) || ticker,
   };
 }
 
