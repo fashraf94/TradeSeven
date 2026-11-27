@@ -182,6 +182,10 @@ import useHubSharedResearch from '../../hooks/useHubSharedResearch';
 import { selectStories } from '../../selectors/storySelection';
 import { admissionBattleIdOf, doorRetryOf, equippedListLabelOf, researchDoorOf, researchRecordsOf, researchSheetHeldBy } from './hub/researchDoorView';
 import SharedResearchSheet from './SharedResearchSheet';
+// The portfolio hub's slice 1 (spec 20261126 §3, §4): the switch, read as a literal at the connected arm below, and the scope it
+// puts around the connected shell. With it false the arm folds away and the scope is never built.
+import { COMMAND_CENTER_PORTFOLIO_HUB_ENABLED } from '../../config/commandCenterPortfolioFlags';
+import HubBookScope from './HubBookScope';
 
 /** Shadow's box per composition (the design: 340 desktop, 260 tablet, 200 phone — 196 under 375 px). */
 export function shadowSizeFor(composition, width) {
@@ -968,10 +972,15 @@ export default function CommandCenterHub({ site, hub = null, sections = HUB_DEFA
   const deployAttempt = useDeployAttempt();
   const cancelCharging = connected && deployAttempt ? deployAttempt.api.cancelCharging : null;
   // Keyed by site: a hub handed the other site starts from that site's defaults (ruling R-S1-5).
+  // The portfolio hub's slice 1 (spec 20261126 §3): with its switch on, the connected shell sits in its book scope — the hub's
+  // one read of the idea book and the layout decided from it (HubBookScope.jsx), keyed by site with it. The switch is a literal
+  // (off on merge), so the arm folds to today's shell.
   return (
     <HubOverlayProvider onOpen={cancelCharging}>
       {connected
-        ? <ConnectedHub key={site} site={site} hub={hub} sections={resolved} />
+        ? COMMAND_CENTER_PORTFOLIO_HUB_ENABLED
+          ? <HubBookScope key={site}><ConnectedHub site={site} hub={hub} sections={resolved} /></HubBookScope>
+          : <ConnectedHub key={site} site={site} hub={hub} sections={resolved} />
         : site === HUB_SITES.MOBILE
           ? <PhoneHub key={HUB_SITES.MOBILE} sections={resolved} />
           : <WideHub key={HUB_SITES.DESKTOP} sections={resolved} />}

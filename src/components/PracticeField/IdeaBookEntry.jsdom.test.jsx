@@ -22,7 +22,7 @@ vi.mock('../../utils/fetchWithAuth', () => ({
   },
 }));
 
-import IdeaBookEntry, { IDEA_BOOK_SCREEN_ON } from './IdeaBookEntry';
+import IdeaBookEntry, { IDEA_BOOK_SCREEN_ON, IdeaBookEntryView } from './IdeaBookEntry';
 import { entryTodayOf } from './ideaBookCopy';
 import ActivitySection from '../CommandCenter/sections/ActivitySection';
 import useIdeaBook, { REFOCUS_QUIET_MS } from './useIdeaBook';
@@ -60,6 +60,11 @@ async function mount(el) {
 }
 const click = (el) => act(() => { el.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
 const ACTIVITY = { status: 'ready', items: [], rows: [] };
+/** The drawing part as the hub's connected shell uses it: the read made once above it and handed down (the portfolio hub's slice 1). */
+function IdeaBookEntryHandedRead() {
+  const { read, refresh } = useIdeaBook({ enabled: IDEA_BOOK_SCREEN_ON });
+  return <IdeaBookEntryView read={read} refresh={refresh} />;
+}
 
 describe('the switch off (the shipped value): no request, no card, the hub\'s site as it was', () => {
   // (The shipped literal itself is pinned by practiceFieldScreenFlags.test.js; this file reads the switch through a getter.)
@@ -82,12 +87,18 @@ describe('the switch off (the shipped value): no request, no card, the hub\'s si
   });
 });
 
-describe('the switch on: the card, its read and the page', () => {
+// The portfolio hub's slice 1: every switch-on row runs against both copies of the card — today's default export, which reads
+// for itself, and the drawing part handed a read (IdeaBookEntryView, what the hub's connected shell hands its one read to),
+// so the two copies cannot drift apart (IdeaBookEntry.jsx keeps both until the portfolio switch's flip).
+describe.each([
+  ['the default export', IdeaBookEntry],
+  ['the drawing part, handed the read', IdeaBookEntryHandedRead],
+])('the switch on: the card, its read and the page — %s', (_copy, Entry) => {
   beforeEach(() => { state.on = true; });
 
   it('one read on mount, of the one endpoint; the card shows the value and today\'s change', async () => {
     const v = viewOf('sample');
-    const m = await mount(<IdeaBookEntry />);
+    const m = await mount(<Entry />);
     expect(state.calls.map((c) => [c.url, c.opts.method])).toEqual([['/api/practice-field/book', 'GET']]);
     const card = m.host.querySelector('[data-ib="entry-card"]');
     expect(card.textContent).toContain(v.line.value);
@@ -98,20 +109,15 @@ describe('the switch on: the card, its read and the page', () => {
   it('no card without a book: { book: null }, a 404, a failed read', async () => {
     for (const answer of [{ status: 200, body: { book: null } }, { status: 404, body: { error: 'disabled' } }, { status: 500, body: { error: 'internal_error' } }]) {
       state.answer = answer;
-      const m = await mount(<IdeaBookEntry />);
+      const m = await mount(<Entry />);
       expect(m.host.querySelector('[data-ib="entry-card"]'), JSON.stringify(answer)).toBeNull();
       act(() => m.root.unmount());
       mounted = [];
     }
   });
 
-  it('the card\'s second line: paused, a new book\'s opening day', () => {
-    expect(entryTodayOf(viewOf('paused').line)).toEqual({ text: 'Paused', dir: 0 });
-    expect(entryTodayOf(viewOf('newBook').line)).toEqual({ text: 'Opens 23 Nov', dir: 0 });
-  });
-
   it('a tap opens the page as a layer over the app: read again, the app inert, Escape closes, focus returns', async () => {
-    const m = await mount(<IdeaBookEntry />);
+    const m = await mount(<Entry />);
     const card = m.host.querySelector('[data-ib="entry-card"]');
     card.focus();
     click(card);
@@ -132,7 +138,7 @@ describe('the switch on: the card, its read and the page', () => {
   it('reads again when the window regains focus — once, however many signals arrive together — and never on a timer', async () => {
     let now = 1_000_000;
     vi.spyOn(Date, 'now').mockImplementation(() => now);
-    await mount(<IdeaBookEntry />);
+    await mount(<Entry />);
     expect(state.calls).toHaveLength(1);
     act(() => { window.dispatchEvent(new Event('focus')); });
     await flush();
@@ -144,11 +150,11 @@ describe('the switch on: the card, its read and the page', () => {
   });
 
   it('keyed by the owner and their epoch: a new identity drops the old view and reads for itself', async () => {
-    const m = await mount(<IdeaBookEntry />);
+    const m = await mount(<Entry />);
     expect(m.host.querySelector('[data-ib="entry-card"]')).not.toBeNull();
     state.identity = { resolved: true, uid: 'owner-2', authEpoch: 2 };
     state.answer = () => ({ status: 200, body: { book: null } });
-    m.render(<IdeaBookEntry key="same" />);
+    m.render(<Entry key="same" />);
     await flush();
     expect(state.calls.map((c) => c.uid)).toEqual(['owner-1', 'owner-2']);
     expect(m.host.querySelector('[data-ib="entry-card"]')).toBeNull();
@@ -156,12 +162,12 @@ describe('the switch on: the card, its read and the page', () => {
 
   it('an identity changed IN PLACE never shows the earlier owner\x27s book — not at once, not when its answer lands last (review C10)', async () => {
     // owner-1 has a book on screen; the identity becomes owner-2 without a remount: the card goes at that very render.
-    const m = await mount(<IdeaBookEntry />);
+    const m = await mount(<Entry />);
     expect(m.host.querySelector('[data-ib="entry-card"]')).not.toBeNull();
     let releaseTwo;
     state.answer = () => new Promise((r) => { releaseTwo = () => r({ status: 200, body: { book: null } }); });
     state.identity = { resolved: true, uid: 'owner-2', authEpoch: 2 };
-    m.render(<IdeaBookEntry />);
+    m.render(<Entry />);
     expect(m.host.querySelector('[data-ib="entry-card"]')).toBeNull();
     releaseTwo();
     await flush();
@@ -169,17 +175,146 @@ describe('the switch on: the card, its read and the page', () => {
     let releaseLate;
     state.answer = () => new Promise((r) => { releaseLate = () => r({ status: 200, body: { book: viewOf('full') } }); });
     state.identity = { resolved: true, uid: 'owner-2', authEpoch: 3 };
-    m.render(<IdeaBookEntry />);
+    m.render(<Entry />);
     await flush();
     const lateForEpoch3 = releaseLate;
     state.answer = () => ({ status: 200, body: { book: null } });
     state.identity = { resolved: true, uid: 'owner-3', authEpoch: 4 };
-    m.render(<IdeaBookEntry />);
+    m.render(<Entry />);
     await flush();
     lateForEpoch3();
     await flush();
     expect(state.calls.map((c) => c.uid)).toEqual(['owner-1', 'owner-2', 'owner-2', 'owner-3']);
     expect(m.host.querySelector('[data-ib="entry-card"]')).toBeNull();
+  });
+
+  it('never reads on a timer: hours pass with no read', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval'] });
+    try {
+      await mount(<Entry />);
+      const before = state.calls.length;
+      act(() => { vi.advanceTimersByTime(6 * 60 * 60 * 1000); });
+      await flush();
+      expect(state.calls.length).toBe(before);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('after a 404 the window regaining focus does not ask again for that owner (review A5)', async () => {
+    let now = 5_000_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    state.answer = { status: 404, body: { error: 'disabled' } };
+    await mount(<Entry />);
+    expect(state.calls).toHaveLength(1);
+    now += 60_000;
+    act(() => { window.dispatchEvent(new Event('focus')); });
+    await flush();
+    expect(state.calls).toHaveLength(1);
+  });
+
+  it('B3-11 (B3-A02): the card draws the waiting headline and its reason, and says so to a screen reader — no figure', async () => {
+    const v = viewOf('waiting');
+    state.answer = { status: 200, body: { book: v } };
+    const m = await mount(<Entry />);
+    const card = m.host.querySelector('[data-ib="entry-card"]');
+    expect(card.textContent).toContain('Waiting on data');
+    expect(card.textContent).toContain(v.line.waiting.reason);
+    expect(card.textContent).not.toMatch(/\$/);
+    expect(card.getAttribute('aria-label')).toBe(`Idea book, Waiting on data, ${v.line.waiting.reason}. Open`);
+  });
+
+  it('B3-A09, refuter R4: an answer of no book while the page is open closes it the same way', async () => {
+    let now = 8_000_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const m = await mount(<div><Entry /><button type="button" data-next="">Recent activity</button></div>);
+    click(m.host.querySelector('[data-ib="entry-card"]'));
+    await flush();
+    expect(document.querySelector('[data-ib="layer"]')).not.toBeNull();
+    state.answer = { status: 200, body: { book: null } };
+    now += 60_000;
+    act(() => { window.dispatchEvent(new Event('focus')); });
+    await flush();
+    expect(document.querySelector('[data-ib="layer"]')).toBeNull();
+    expect(appRoot.hasAttribute('inert')).toBe(false);
+    expect(document.activeElement).toBe(m.host.querySelector('[data-next]'));
+  });
+
+  it('B3-A09: a refresh that answers 404 while the page is open closes the page, lifts inert, and puts focus beside the card', async () => {
+    let now = 7_000_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const m = await mount(<div><Entry /><button type="button" data-next="">Recent activity</button></div>);
+    const card = m.host.querySelector('[data-ib="entry-card"]');
+    card.focus();
+    click(card);
+    await flush();
+    expect(document.querySelector('[data-ib="layer"]')).not.toBeNull();
+    expect(appRoot.hasAttribute('inert')).toBe(true);
+    // The gate closes while the page is open: the next read answers 404.
+    state.answer = { status: 404, body: { error: 'disabled' } };
+    now += 60_000;
+    act(() => { window.dispatchEvent(new Event('focus')); });
+    await flush();
+    expect(document.querySelector('[data-ib="layer"]')).toBeNull();
+    expect(appRoot.hasAttribute('inert')).toBe(false);
+    expect(m.host.querySelector('[data-ib="entry-card"]')).toBeNull();
+    expect(document.activeElement).toBe(m.host.querySelector('[data-next]'));
+  });
+
+  it('a card that remounts (the phone Overview coming back) draws its last answer at once, then reads again (review C8)', async () => {
+    const first = await mount(<Entry />);
+    expect(first.host.querySelector('[data-ib="entry-card"]')).not.toBeNull();
+    act(() => first.root.unmount());
+    mounted = [];
+    let release;
+    state.answer = () => new Promise((r) => { release = () => r({ status: 200, body: { book: viewOf('sample') } }); });
+    const root = createRoot(appRoot);
+    act(() => root.render(<Entry />));
+    mounted.push({ root });
+    expect(appRoot.querySelector('[data-ib="entry-card"]')).not.toBeNull(); // before its answer
+    release();
+    await flush();
+    expect(state.calls).toHaveLength(2);
+  });
+
+  it('a signed-out or unresolved identity asks nothing', async () => {
+    state.identity = { resolved: false, uid: null, authEpoch: 0 };
+    await mount(<Entry />);
+    expect(state.calls).toEqual([]);
+  });
+
+  it('B5-4: the server\'s "try again" (503) is the existing error state — no card; a page already drawn keeps its last answer', async () => {
+    state.identity = { resolved: true, uid: 'owner-b5-try-again', authEpoch: 1 }; // (its own key: no last good answer cached)
+    state.answer = { status: 503, body: { error: 'try_again' } };
+    let api = null;
+    function Probe() { api = useIdeaBook({ enabled: true }); return null; }
+    await mount(<Probe />);
+    expect(api.read).toMatchObject({ status: 'error', book: null, error: 'try_again' });
+    act(() => mounted.pop().root.unmount());
+    const card = await mount(<Entry />);
+    expect(card.host.querySelector('[data-ib="entry-card"]')).toBeNull();
+    // A good answer, then a "try again" on the next read: the last good answer stays (the hook's existing rule).
+    act(() => mounted.pop().root.unmount());
+    state.answer = { status: 200, body: { book: viewOf('sample') } };
+    await mount(<Probe />);
+    expect(api.read.status).toBe('ready');
+    state.answer = { status: 503, body: { error: 'try_again' } };
+    act(() => { api.refresh(); });
+    await flush();
+    expect(api.read).toMatchObject({ status: 'ready', error: 'try_again' });
+    expect(api.read.book.version).toBe(3);
+  });
+});
+
+// The rows above that never mount the card (its words, the hook's own probes, and the hub's site, which draws today's
+// default card while the portfolio switch is off), once each rather than once per copy (review P1T-7). The drawing part at
+// the hub's site is the hub suite's (CommandCenter/CommandCenterHub.portfolioSwitch.jsdom.test.jsx).
+describe('the switch on: the card\'s words, the read itself and the hub\'s site', () => {
+  beforeEach(() => { state.on = true; });
+
+  it('the card\'s second line: paused, a new book\'s opening day', () => {
+    expect(entryTodayOf(viewOf('paused').line)).toEqual({ text: 'Paused', dir: 0 });
+    expect(entryTodayOf(viewOf('newBook').line)).toEqual({ text: 'Opens 23 Nov', dir: 0 });
   });
 
   it('the read is keyed: no render ever hands one owner the other\x27s answer (the hook\x27s return filter)', async () => {
@@ -220,105 +355,10 @@ describe('the switch on: the card, its read and the page', () => {
     expect(appRoot.querySelector('[data-value]').getAttribute('data-value')).toBe(newer.line.value);
   });
 
-  it('never reads on a timer: hours pass with no read', async () => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval'] });
-    try {
-      await mount(<IdeaBookEntry />);
-      const before = state.calls.length;
-      act(() => { vi.advanceTimersByTime(6 * 60 * 60 * 1000); });
-      await flush();
-      expect(state.calls.length).toBe(before);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('after a 404 the window regaining focus does not ask again for that owner (review A5)', async () => {
-    let now = 5_000_000;
-    vi.spyOn(Date, 'now').mockImplementation(() => now);
-    state.answer = { status: 404, body: { error: 'disabled' } };
-    await mount(<IdeaBookEntry />);
-    expect(state.calls).toHaveLength(1);
-    now += 60_000;
-    act(() => { window.dispatchEvent(new Event('focus')); });
-    await flush();
-    expect(state.calls).toHaveLength(1);
-  });
-
-  it('B3-11 (B3-A02): the card draws the waiting headline and its reason, and says so to a screen reader — no figure', async () => {
-    const v = viewOf('waiting');
-    state.answer = { status: 200, body: { book: v } };
-    const m = await mount(<IdeaBookEntry />);
-    const card = m.host.querySelector('[data-ib="entry-card"]');
-    expect(card.textContent).toContain('Waiting on data');
-    expect(card.textContent).toContain(v.line.waiting.reason);
-    expect(card.textContent).not.toMatch(/\$/);
-    expect(card.getAttribute('aria-label')).toBe(`Idea book, Waiting on data, ${v.line.waiting.reason}. Open`);
-  });
-
   it('B3-11, refuter R3: a paused book whose last close waits still says why on the card', () => {
     const v = viewOf('waiting');
     expect(entryTodayOf({ ...v.line, paused: true })).toEqual({ text: `Paused · ${v.line.waiting.reason}`, dir: 0 });
     expect(entryTodayOf(v.line)).toEqual({ text: v.line.waiting.reason, dir: 0 });
-  });
-
-  it('B3-A09, refuter R4: an answer of no book while the page is open closes it the same way', async () => {
-    let now = 8_000_000;
-    vi.spyOn(Date, 'now').mockImplementation(() => now);
-    const m = await mount(<div><IdeaBookEntry /><button type="button" data-next="">Recent activity</button></div>);
-    click(m.host.querySelector('[data-ib="entry-card"]'));
-    await flush();
-    expect(document.querySelector('[data-ib="layer"]')).not.toBeNull();
-    state.answer = { status: 200, body: { book: null } };
-    now += 60_000;
-    act(() => { window.dispatchEvent(new Event('focus')); });
-    await flush();
-    expect(document.querySelector('[data-ib="layer"]')).toBeNull();
-    expect(appRoot.hasAttribute('inert')).toBe(false);
-    expect(document.activeElement).toBe(m.host.querySelector('[data-next]'));
-  });
-
-  it('B3-A09: a refresh that answers 404 while the page is open closes the page, lifts inert, and puts focus beside the card', async () => {
-    let now = 7_000_000;
-    vi.spyOn(Date, 'now').mockImplementation(() => now);
-    const m = await mount(<div><IdeaBookEntry /><button type="button" data-next="">Recent activity</button></div>);
-    const card = m.host.querySelector('[data-ib="entry-card"]');
-    card.focus();
-    click(card);
-    await flush();
-    expect(document.querySelector('[data-ib="layer"]')).not.toBeNull();
-    expect(appRoot.hasAttribute('inert')).toBe(true);
-    // The gate closes while the page is open: the next read answers 404.
-    state.answer = { status: 404, body: { error: 'disabled' } };
-    now += 60_000;
-    act(() => { window.dispatchEvent(new Event('focus')); });
-    await flush();
-    expect(document.querySelector('[data-ib="layer"]')).toBeNull();
-    expect(appRoot.hasAttribute('inert')).toBe(false);
-    expect(m.host.querySelector('[data-ib="entry-card"]')).toBeNull();
-    expect(document.activeElement).toBe(m.host.querySelector('[data-next]'));
-  });
-
-  it('a card that remounts (the phone Overview coming back) draws its last answer at once, then reads again (review C8)', async () => {
-    const first = await mount(<IdeaBookEntry />);
-    expect(first.host.querySelector('[data-ib="entry-card"]')).not.toBeNull();
-    act(() => first.root.unmount());
-    mounted = [];
-    let release;
-    state.answer = () => new Promise((r) => { release = () => r({ status: 200, body: { book: viewOf('sample') } }); });
-    const root = createRoot(appRoot);
-    act(() => root.render(<IdeaBookEntry />));
-    mounted.push({ root });
-    expect(appRoot.querySelector('[data-ib="entry-card"]')).not.toBeNull(); // before its answer
-    release();
-    await flush();
-    expect(state.calls).toHaveLength(2);
-  });
-
-  it('a signed-out or unresolved identity asks nothing', async () => {
-    state.identity = { resolved: false, uid: null, authEpoch: 0 };
-    await mount(<IdeaBookEntry />);
-    expect(state.calls).toEqual([]);
   });
 
   it('B5-5: the view\'s version 3 is drawn; a version-2 answer is refused as an error, never drawn', async () => {
@@ -334,28 +374,6 @@ describe('the switch on: the card, its read and the page', () => {
     act(() => { api.refresh(); });
     await flush();
     expect(api.read).toMatchObject({ status: 'ready', error: null });
-    expect(api.read.book.version).toBe(3);
-  });
-
-  it('B5-4: the server\'s "try again" (503) is the existing error state — no card; a page already drawn keeps its last answer', async () => {
-    state.identity = { resolved: true, uid: 'owner-b5-try-again', authEpoch: 1 }; // (its own key: no last good answer cached)
-    state.answer = { status: 503, body: { error: 'try_again' } };
-    let api = null;
-    function Probe() { api = useIdeaBook({ enabled: true }); return null; }
-    await mount(<Probe />);
-    expect(api.read).toMatchObject({ status: 'error', book: null, error: 'try_again' });
-    act(() => mounted.pop().root.unmount());
-    const card = await mount(<IdeaBookEntry />);
-    expect(card.host.querySelector('[data-ib="entry-card"]')).toBeNull();
-    // A good answer, then a "try again" on the next read: the last good answer stays (the hook's existing rule).
-    act(() => mounted.pop().root.unmount());
-    state.answer = { status: 200, body: { book: viewOf('sample') } };
-    await mount(<Probe />);
-    expect(api.read.status).toBe('ready');
-    state.answer = { status: 503, body: { error: 'try_again' } };
-    act(() => { api.refresh(); });
-    await flush();
-    expect(api.read).toMatchObject({ status: 'ready', error: 'try_again' });
     expect(api.read.book.version).toBe(3);
   });
 

@@ -24,6 +24,9 @@ vi.mock('../../contexts/UserContext', () => ({ useUser: () => userState }));
 vi.mock('../../firebase/config', () => ({ db: {}, auth: {}, default: {} }));
 // The screen-on PR (ruling B3-13): this suite was written for the hub without the idea book card; its switch is pinned off here (the card's own suites cover it on).
 vi.mock('../../config/practiceFieldScreenFlags', () => ({ PRACTICE_FIELD_SCREEN_ENABLED: false }));
+// The portfolio hub's slice 1 (review P1G-2): with its switch on, the shell's book scope calls the identity source too (useIdeaBook),
+// so this suite's one-agent-read rows, which count identity reads as renders, pin the switch off here (its own suites cover it on).
+vi.mock('../../config/commandCenterPortfolioFlags', () => ({ COMMAND_CENTER_PORTFOLIO_HUB_ENABLED: false }));
 // The Daily Regime Brief's read (hooks/useDailyRegimeBrief.js) is not under test here. Left real it reaches Firestore (`db` is `{}`),
 // fails, and its 1.5 s retry can outlive this file (the PR #1003 CI flake). `loading` is the state the real read held for those 1.5 s.
 vi.mock('../../hooks/useDailyRegimeBrief', () => ({

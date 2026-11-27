@@ -274,6 +274,12 @@ const GUARDED_FILES = [
   'src/components/CommandCenter/SharedResearchSheet.jsx',
   'src/components/CommandCenter/hub/loadSharedResearch.js',
   'src/components/CommandCenter/hub/researchDoorView.js',
+  // The portfolio hub's slice 1 (spec docs/specs/20261126_COMMAND_CENTER_PORTFOLIO_HUB_BUILD_SPEC_V1.md §3, §4): the connected
+  // shell's book scope, its context and the pure layout decision — no colour and no motion from birth. Introduced in the slice's
+  // code commit without registration; the Linux full suite caught it and they are registered here (hazard 34).
+  'src/components/CommandCenter/HubBookScope.jsx',
+  'src/components/CommandCenter/hub/hubBookRead.js',
+  'src/components/CommandCenter/hub/hubLayout.js',
   // Agent form build S0 (the WebGL engine port, its wrapper and the lab): every colour through readToken /
   // cssVar from birth — zero core-palette literals, registered in the commit that introduces them (hazard 34).
   'src/components/AgentForm/engine/armor.js',

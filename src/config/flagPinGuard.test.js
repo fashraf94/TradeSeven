@@ -63,6 +63,8 @@ const FLAG_SOURCE_MODULES = [
   'src/config/practiceFieldFlags.js',
   // Practice Field build B3: the idea book screen's switch, a module of its own (its header says why; both sides read it).
   'src/config/practiceFieldScreenFlags.js',
+  // The portfolio hub's slice 1 (spec 20261126 PH-20): the portfolio hub's switch, a module of its own (its header says why).
+  'src/config/commandCenterPortfolioFlags.js',
 ];
 
 // ── Deliberately-dark flags (founder ruling 2026-08-10: keep the loud tripwire) ─
@@ -130,6 +132,9 @@ const DARK_BY_DESIGN = {
   // practiceFieldScreenFlags.test.js asserts the live true value AND, turned around, that this entry is gone; a rollback
   // moves the flag and its pin, and the entry stays out (a kill switch now). Re-adding it while it ships true fails the
   // DARK_BY_DESIGN integrity test below.
+  // The portfolio hub (spec docs/specs/20261126_COMMAND_CENTER_PORTFOLIO_HUB_BUILD_SPEC_V1.md, ruling PH-20): ships off.
+  COMMAND_CENTER_PORTFOLIO_HUB_ENABLED:
+    'The portfolio hub (spec 20261126 V1, ruling PH-20) — for a player with an idea book the Command Center becomes the portfolio; built dark across six slices (§4), every player sees today\'s hub while it is false. Flips in its own PR, never a build PR, after the cumulative review, the phone timing and the founder\'s walk of the preview; the flip moves the pin in commandCenterPortfolioFlags.test.js to true, turns that file\'s guard row around (this entry gone) AND removes this entry in the same commit',
   EDITORIAL_REVIEW_ENABLED:
     'Wire runway step 5 — flips after WIRE_WRITES_ENABLED (first Sunday after writes)',
   // COMPOSITION_EPOCH_FENCE_ENABLED intentionally ABSENT: it flipped true at
