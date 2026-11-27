@@ -47,7 +47,7 @@ vi.mock('../../utils/fetchWithAuth', () => ({
 
 import CommandCenterHub from './CommandCenterHub';
 import { HUB_COPY as COPY } from './hub/hubCopy';
-import { IDEA_BOOK_PATH, REFOCUS_QUIET_MS } from '../PracticeField/useIdeaBook';
+import useIdeaBook, { IDEA_BOOK_PATH, REFOCUS_QUIET_MS } from '../PracticeField/useIdeaBook';
 import { entryHeadlineOf } from '../PracticeField/ideaBookCopy';
 import { buildBookView } from '../../../api/_utils/practiceField/bookView.js';
 import { sceneInput } from '../../../api/_utils/practiceField/__testsupport__/bookViewScenes.js';
@@ -71,7 +71,20 @@ let fetchSpy;
 let errorSpy;
 beforeAll(() => { removeTokens = injectTokens(); });
 afterAll(() => { removeTokens(); });
-beforeEach(() => {
+
+/**
+ * useIdeaBook keeps the last good answer per owner and epoch in its module (a card that remounts draws at once), and a read
+ * that fails keeps it. So each row starts from an empty store, the way the hook itself empties it: an answer of 404.
+ */
+function ClearLastGood() { useIdeaBook({ enabled: true }); return null; }
+async function clearLastGood() {
+  net.answer = { status: 404, body: { error: 'not_found' } };
+  const x = mount(<ClearLastGood />);
+  await flush();
+  x.unmount();
+}
+
+beforeEach(async () => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(NOW);
   sessionStorage.clear();
@@ -81,6 +94,7 @@ beforeEach(() => {
   r.agent = agentReady();
   r.window = windowOf();
   r.market = { state: 'OPEN', isOpen: true };
+  await clearLastGood();
   net.calls = [];
   net.answer = { status: 200, body: { book: BOOK } };
   fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => ({ ok: false, status: 404, json: async () => ({}) }));
