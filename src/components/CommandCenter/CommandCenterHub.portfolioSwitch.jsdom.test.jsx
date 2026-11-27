@@ -148,6 +148,8 @@ function drawn(x) {
   const wrapper = x.host.querySelector(':scope > [data-hub-layout]');
   return normalized((wrapper ?? x.host).innerHTML);
 }
+/** Everything else on the page — <body> outside the host, where a portal would land (review P1T-3). */
+const outside = (x) => normalized([...document.body.children].filter((el) => el !== x.host).map((el) => el.outerHTML).join('\n'));
 
 // Every case of spec §3, and the book owner. `requests` is the book reads on mount, the same with the switch off and on.
 const CASES = Object.freeze({
@@ -189,6 +191,7 @@ describe('switch on: slice 1 draws nothing new — for every case of §3, and fo
       c.setup();
       const off = await render(site);
       const offHtml = drawn(off);
+      const offOutside = outside(off);
       const offReads = bookReads();
       expect(markers()).toEqual([]);
       unmountAll();
@@ -207,7 +210,13 @@ describe('switch on: slice 1 draws nothing new — for every case of §3, and fo
       // Everything the hub draws inside it is exactly what it draws with the switch off.
       const onHtml = drawn(on);
       expect(onHtml, firstDiff(onHtml, offHtml)).toBe(offHtml);
+      // ...and nothing lands outside it either (a portal into <body>, review P1T-3).
+      const onOutside = outside(on);
+      expect(onOutside, firstDiff(onOutside, offOutside)).toBe(offOutside);
+      // The compared drawing is the whole hub, down to its activity section (and the card, for a book owner): review P1T-4.
       expect(offHtml).toContain('data-hub="shell"');
+      expect(offHtml).toContain('data-hub-section="activity"');
+      expect(offHtml.includes('data-ib="entry-card"')).toBe(c.card);
       // The same number of book reads: one (or none while idle) — the shell's, never the card's as well.
       expect(offReads).toBe(c.requests);
       expect(bookReads()).toBe(c.requests);
@@ -288,6 +297,28 @@ describe('switch on, a book owner: one read at the shell, and the card draws fro
     expect(bookReads()).toBe(2);
     expect(markers()[0].getAttribute('data-hub-layout')).toBe('book');
     expect(card()).not.toBeNull();
+  });
+
+  // Review P1W-2, a stated change (report §3): with the switch on the read belongs to the shell, so on the phone it no longer follows
+  // the card. The window's focus reads while the card is off screen, and the Overview coming back does not read again.
+  it.each([
+    [false, [1, 1, 1, 2]],
+    [true, [1, 1, 2, 2]],
+  ])('mobile, the read\'s triggers (switch on: %s) — reads after mount, the Research tab, a window focus, the Overview again: %j', async (on, expected) => {
+    f.portfolio = on;
+    await render('mobile');
+    const seen = [bookReads()];
+    click(byRole(document, 'tab', COPY.phoneTabs.research)[0]);
+    await flush();
+    seen.push(bookReads());
+    vi.setSystemTime(NOW + REFOCUS_QUIET_MS + 1);
+    act(() => { window.dispatchEvent(new Event('focus')); });
+    await flush();
+    seen.push(bookReads());
+    click(byRole(document, 'tab', COPY.phoneTabs.overview)[0]);
+    await flush();
+    seen.push(bookReads());
+    expect(seen).toEqual(expected);
   });
 
   it.each([false, true])('a site change starts the shell afresh, scope and all (ruling R-S1-5): one more read, as today — switch on: %s', async (on) => {

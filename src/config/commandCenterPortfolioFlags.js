@@ -15,8 +15,9 @@
  * from that read (hub/hubLayout.js: 'book' only for a ready read with a book; every other case is 'today') and hands the
  * same read to the entry card. It also needs PRACTICE_FIELD_SCREEN_ENABLED on, as the book's route does.
  * Runway: six slices merge dark (spec §4, §8); then its own flip PR, after the cumulative review, the phone timing and the
- * founder's walk of the preview, moving this literal, its pin row in commandCenterPortfolioFlags.test.js and its
- * DARK_BY_DESIGN entry in flagPinGuard.test.js in one commit (BUILD_RULES §2).
+ * founder's walk of the preview. In one commit (BUILD_RULES §2): this literal and the OFF above; the value row in
+ * commandCenterPortfolioFlags.test.js, and its guard row turned around (the entry is gone); and the DARK_BY_DESIGN entry in
+ * flagPinGuard.test.js removed. Rollback: the literal and its value row back to false.
  */
 // Pinned by: commandCenterPortfolioFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const COMMAND_CENTER_PORTFOLIO_HUB_ENABLED = false;

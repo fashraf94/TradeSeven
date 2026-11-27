@@ -56,8 +56,9 @@ describe('the layout decision (spec §3)', () => {
     }
   });
 
-  it('the switch must be the boolean true: any other value is off', () => {
-    for (const switchOn of [1, 'true', {}, null, undefined]) {
+  it('the switch must be the boolean true: any other value handed in is off', () => {
+    // (Not `undefined`: that is "no switch handed in", which decides on the shipped switch — the value-neutral row below.)
+    for (const switchOn of [1, 'true', {}, null, false]) {
       expect(hubLayoutOf({ read: READS.readyWithBook, switchOn }), String(switchOn)).toBe('today');
     }
   });

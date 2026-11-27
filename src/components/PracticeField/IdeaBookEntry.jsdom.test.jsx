@@ -116,11 +116,6 @@ describe.each([
     }
   });
 
-  it('the card\'s second line: paused, a new book\'s opening day', () => {
-    expect(entryTodayOf(viewOf('paused').line)).toEqual({ text: 'Paused', dir: 0 });
-    expect(entryTodayOf(viewOf('newBook').line)).toEqual({ text: 'Opens 23 Nov', dir: 0 });
-  });
-
   it('a tap opens the page as a layer over the app: read again, the app inert, Escape closes, focus returns', async () => {
     const m = await mount(<Entry />);
     const card = m.host.querySelector('[data-ib="entry-card"]');
@@ -193,44 +188,6 @@ describe.each([
     expect(m.host.querySelector('[data-ib="entry-card"]')).toBeNull();
   });
 
-  it('the read is keyed: no render ever hands one owner the other\x27s answer (the hook\x27s return filter)', async () => {
-    const seen = [];
-    function Probe() { const { read } = useIdeaBook({ enabled: true }); seen.push({ uid: state.identity.uid, key: read.key, book: read.book !== null }); return null; }
-    const root = createRoot(appRoot);
-    act(() => root.render(<Probe />));
-    mounted.push({ root });
-    await flush();
-    expect(seen.at(-1)).toMatchObject({ uid: 'owner-1', book: true });
-    let release;
-    state.answer = () => new Promise((r) => { release = () => r({ status: 200, body: { book: null } }); });
-    state.identity = { resolved: true, uid: 'owner-2', authEpoch: 2 };
-    act(() => root.render(<Probe />));
-    release();
-    await flush();
-    for (const r of seen) if (r.book) expect(r.key.startsWith(`${r.uid}:`), JSON.stringify(r)).toBe(true);
-  });
-
-  it('an older answer for the same owner never replaces a newer one (the stale-answer drop)', async () => {
-    const resolvers = [];
-    state.answer = () => new Promise((r) => { resolvers.push(r); });
-    let api;
-    function Probe() { api = useIdeaBook({ enabled: true }); return api.read.book ? <span data-value={api.read.book.line.value} /> : null; }
-    const root = createRoot(appRoot);
-    act(() => root.render(<Probe />));
-    mounted.push({ root });
-    await flush();
-    act(() => { api.refresh(); });
-    await flush();
-    expect(resolvers).toHaveLength(2);
-    const older = viewOf('full');
-    const newer = viewOf('sample');
-    resolvers[1]({ status: 200, body: { book: newer } });
-    await flush();
-    resolvers[0]({ status: 200, body: { book: older } });
-    await flush();
-    expect(appRoot.querySelector('[data-value]').getAttribute('data-value')).toBe(newer.line.value);
-  });
-
   it('never reads on a timer: hours pass with no read', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval'] });
     try {
@@ -265,12 +222,6 @@ describe.each([
     expect(card.textContent).toContain(v.line.waiting.reason);
     expect(card.textContent).not.toMatch(/\$/);
     expect(card.getAttribute('aria-label')).toBe(`Idea book, Waiting on data, ${v.line.waiting.reason}. Open`);
-  });
-
-  it('B3-11, refuter R3: a paused book whose last close waits still says why on the card', () => {
-    const v = viewOf('waiting');
-    expect(entryTodayOf({ ...v.line, paused: true })).toEqual({ text: `Paused · ${v.line.waiting.reason}`, dir: 0 });
-    expect(entryTodayOf(v.line)).toEqual({ text: v.line.waiting.reason, dir: 0 });
   });
 
   it('B3-A09, refuter R4: an answer of no book while the page is open closes it the same way', async () => {
@@ -332,22 +283,6 @@ describe.each([
     expect(state.calls).toEqual([]);
   });
 
-  it('B5-5: the view\'s version 3 is drawn; a version-2 answer is refused as an error, never drawn', async () => {
-    expect(viewOf('sample').version).toBe(3);
-    state.identity = { resolved: true, uid: 'owner-b5-version', authEpoch: 1 }; // (its own key: no last good answer cached)
-    const v2 = { ...viewOf('sample'), version: 2 };
-    state.answer = { status: 200, body: { book: v2 } };
-    let api = null;
-    function Probe() { api = useIdeaBook({ enabled: true }); return null; }
-    await mount(<Probe />);
-    expect(api.read).toMatchObject({ status: 'error', book: null, error: 'view_version' });
-    state.answer = { status: 200, body: { book: viewOf('sample') } };
-    act(() => { api.refresh(); });
-    await flush();
-    expect(api.read).toMatchObject({ status: 'ready', error: null });
-    expect(api.read.book.version).toBe(3);
-  });
-
   it('B5-4: the server\'s "try again" (503) is the existing error state — no card; a page already drawn keeps its last answer', async () => {
     state.identity = { resolved: true, uid: 'owner-b5-try-again', authEpoch: 1 }; // (its own key: no last good answer cached)
     state.answer = { status: 503, body: { error: 'try_again' } };
@@ -367,6 +302,78 @@ describe.each([
     act(() => { api.refresh(); });
     await flush();
     expect(api.read).toMatchObject({ status: 'ready', error: 'try_again' });
+    expect(api.read.book.version).toBe(3);
+  });
+});
+
+// The rows above that never mount the card (its words, the hook's own probes, and the hub's site, which draws today's
+// default card while the portfolio switch is off), once each rather than once per copy (review P1T-7). The drawing part at
+// the hub's site is the hub suite's (CommandCenter/CommandCenterHub.portfolioSwitch.jsdom.test.jsx).
+describe('the switch on: the card\'s words, the read itself and the hub\'s site', () => {
+  beforeEach(() => { state.on = true; });
+
+  it('the card\'s second line: paused, a new book\'s opening day', () => {
+    expect(entryTodayOf(viewOf('paused').line)).toEqual({ text: 'Paused', dir: 0 });
+    expect(entryTodayOf(viewOf('newBook').line)).toEqual({ text: 'Opens 23 Nov', dir: 0 });
+  });
+
+  it('the read is keyed: no render ever hands one owner the other\x27s answer (the hook\x27s return filter)', async () => {
+    const seen = [];
+    function Probe() { const { read } = useIdeaBook({ enabled: true }); seen.push({ uid: state.identity.uid, key: read.key, book: read.book !== null }); return null; }
+    const root = createRoot(appRoot);
+    act(() => root.render(<Probe />));
+    mounted.push({ root });
+    await flush();
+    expect(seen.at(-1)).toMatchObject({ uid: 'owner-1', book: true });
+    let release;
+    state.answer = () => new Promise((r) => { release = () => r({ status: 200, body: { book: null } }); });
+    state.identity = { resolved: true, uid: 'owner-2', authEpoch: 2 };
+    act(() => root.render(<Probe />));
+    release();
+    await flush();
+    for (const r of seen) if (r.book) expect(r.key.startsWith(`${r.uid}:`), JSON.stringify(r)).toBe(true);
+  });
+
+  it('an older answer for the same owner never replaces a newer one (the stale-answer drop)', async () => {
+    const resolvers = [];
+    state.answer = () => new Promise((r) => { resolvers.push(r); });
+    let api;
+    function Probe() { api = useIdeaBook({ enabled: true }); return api.read.book ? <span data-value={api.read.book.line.value} /> : null; }
+    const root = createRoot(appRoot);
+    act(() => root.render(<Probe />));
+    mounted.push({ root });
+    await flush();
+    act(() => { api.refresh(); });
+    await flush();
+    expect(resolvers).toHaveLength(2);
+    const older = viewOf('full');
+    const newer = viewOf('sample');
+    resolvers[1]({ status: 200, body: { book: newer } });
+    await flush();
+    resolvers[0]({ status: 200, body: { book: older } });
+    await flush();
+    expect(appRoot.querySelector('[data-value]').getAttribute('data-value')).toBe(newer.line.value);
+  });
+
+  it('B3-11, refuter R3: a paused book whose last close waits still says why on the card', () => {
+    const v = viewOf('waiting');
+    expect(entryTodayOf({ ...v.line, paused: true })).toEqual({ text: `Paused · ${v.line.waiting.reason}`, dir: 0 });
+    expect(entryTodayOf(v.line)).toEqual({ text: v.line.waiting.reason, dir: 0 });
+  });
+
+  it('B5-5: the view\'s version 3 is drawn; a version-2 answer is refused as an error, never drawn', async () => {
+    expect(viewOf('sample').version).toBe(3);
+    state.identity = { resolved: true, uid: 'owner-b5-version', authEpoch: 1 }; // (its own key: no last good answer cached)
+    const v2 = { ...viewOf('sample'), version: 2 };
+    state.answer = { status: 200, body: { book: v2 } };
+    let api = null;
+    function Probe() { api = useIdeaBook({ enabled: true }); return null; }
+    await mount(<Probe />);
+    expect(api.read).toMatchObject({ status: 'error', book: null, error: 'view_version' });
+    state.answer = { status: 200, body: { book: viewOf('sample') } };
+    act(() => { api.refresh(); });
+    await flush();
+    expect(api.read).toMatchObject({ status: 'ready', error: null });
     expect(api.read.book.version).toBe(3);
   });
 

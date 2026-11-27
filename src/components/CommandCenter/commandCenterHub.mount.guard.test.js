@@ -1477,6 +1477,22 @@ describe('S5 — the exports the hub takes from the shipped services, hooks and 
     expect(`${readers}\nconst again = useAgent(signedInUid);`.match(/\buseAgent\(/g)).toHaveLength(2);
   });
 
+  // The portfolio hub's slice 1 (spec 20261126 §3; review P1W-1): ONE read of the idea book in the whole hub. With the switch on it
+  // is the connected shell's (HubBookScope.jsx, the one taker of useIdeaBook, called once); the card is taken by its one site
+  // (sections/ActivitySection.jsx), which hands it that read. The S5 names row above pins only the names, so a second file taking
+  // the same names would pass it.
+  it('one idea book read in the whole hub: only HubBookScope.jsx takes useIdeaBook, and calls it once; only sections/ActivitySection.jsx takes the card', () => {
+    const takers = (name) => hubDirFiles().filter((rel) => importedNames(stripComments(read(rel)), '/PracticeField/IdeaBookEntry').includes(name));
+    expect(takers('useIdeaBook')).toEqual([HUB_FILE('HubBookScope.jsx')]);
+    expect(takers('default')).toEqual([HUB_FILE('sections/ActivitySection.jsx')]);
+    expect(takers('IdeaBookEntryView')).toEqual([HUB_FILE('sections/ActivitySection.jsx')]);
+    expect(hubDirFiles().filter((rel) => importedNames(stripComments(read(rel)), '/PracticeField/useIdeaBook').length > 0)).toEqual([]);
+    const scope = stripComments(read(HUB_FILE('HubBookScope.jsx')));
+    expect(scope.match(/\buseIdeaBook\(/g)).toHaveLength(1);
+    // The count bites: a second read is two.
+    expect(`${scope}\nconst again = useIdeaBook({ enabled: true });`.match(/\buseIdeaBook\(/g)).toHaveLength(2);
+  });
+
   it('the only writes the hub can make are the equips: nothing else of agentService, and no other service of the shipped set', () => {
     const files = hubDirFiles();
     const writers = files.filter((rel) => importedNames(stripComments(read(rel)), '/services/agentService').length > 0);
