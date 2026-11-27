@@ -61,9 +61,13 @@ describe('computeEarningsConsistency — beatRateSource (D2)', () => {
 
 describe('persist + extract wiring (static-source guard)', () => {
   const src = readFileSync(SOURCE_PATH, 'utf8');
+  // Research universe Build 2 moved extractMetrics, verbatim, to api/_utils/stockMeasures.js, which this job imports;
+  // the row reads the file it lives in now (same pattern), and the import is pinned beside it.
+  const measuresSrc = readFileSync(path.join(path.dirname(SOURCE_PATH), '..', '_utils', 'stockMeasures.js'), 'utf8');
 
   it('extractMetrics forwards the marker', () => {
-    expect(/beatRateSource: earningsConsistencyMetrics\.beatRateSource,/.test(src)).toBe(true);
+    expect(/beatRateSource: earningsConsistencyMetrics\.beatRateSource,/.test(measuresSrc)).toBe(true);
+    expect(src).toMatch(/^import \{ shapeFundamentals, extractMetrics, computeEarningsConsistency \} from '\.\.\/_utils\/stockMeasures\.js';$/m);
   });
 
   it('persistResults writes the marker beside beatRate with the ?? null idiom', () => {
