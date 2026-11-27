@@ -47,5 +47,9 @@ export function bookPartsLayoutOf(composition, width) {
   return 'p390';
 }
 
-/** The loadout's sheet in the book layout (hub/useHubSheets.js opens any key; this one is a HubSheet, which registers itself). */
-export const BOOK_SHEETS = /* @__PURE__ */ Object.freeze({ LOADOUT: 'loadout' });
+/**
+ * The book layout's own sheets (hub/useHubSheets.js opens any key; both are HubSheets, which register themselves): the loadout's,
+ * and on the phone the armory's. The armory's key is its own, not today's ARCHETYPE, so an armory open in one layout never reopens
+ * in the other layout's home when the layout changes (review S3W-2, S3W-3): each layout closes the other's.
+ */
+export const BOOK_SHEETS = /* @__PURE__ */ Object.freeze({ LOADOUT: 'loadout', ARMORY: 'bookArmory' });

@@ -187,6 +187,8 @@ describe('the tab row: Overview · Ideas · Setups · Partnership, on the phone 
     expect(panel().getAttribute('aria-labelledby')).toBe(tabNamed('Overview').id);
     for (const t of tabs()) expect(t.getAttribute('aria-controls')).toBe(panel().id);
     expect(tabRow().getAttribute('data-hub-book-tabs')).toBe(where === 'mobile' ? 'phone' : 'wide');
+    // Review S3W-5: off the desktop the wide tabs take 12 px a side, so the four fit the tablet's narrowest column (332 px).
+    expect(tabNamed('Overview').style.padding).toBe({ mobile: '0px', desktop: '0px 16px', tablet: '0px 12px', stacked: '0px 12px' }[where]);
   });
 
   it.each(['mobile', 'desktop', 'stacked'])('%s: the arrow keys, Home and End move the selection and the focus together, wrapping; a modified arrow and Up/Down do nothing', async (where) => {
@@ -569,6 +571,46 @@ describe('the loadout: no tab, a sheet, from the game strip on the phone and the
     expect(document.activeElement).toBe(opener);
   });
 
+  // Review S3W-2, S3W-3: each layout's armory has its own home and key, so a layout change closes the other's and opens nothing.
+  it('mobile: the armory\'s sheet open when a read takes the book away closes; today\'s hero box does not open in its place', async () => {
+    await render('mobile');
+    const opener = stripOpener();
+    click(opener);
+    await flush();
+    click(byRole(dialogNamed(BOOK_COPY.loadoutSheet), 'button', LOADOUT_COPY.changeArmor(LOADOUT_COPY.games.baggerbomb))[0]);
+    await flush();
+    expect(dialogNamed(ARMORY_COPY.title)).not.toBeNull();
+    net.answer = { status: 200, body: { book: null } };
+    vi.setSystemTime(NOW + REFOCUS_QUIET_MS + 1);
+    act(() => { window.dispatchEvent(new Event('focus')); });
+    await flush();
+    expect(document.querySelector('[data-hub-layout]').getAttribute('data-hub-layout')).toBe('today');
+    expect(dialogNamed(ARMORY_COPY.title)).toBeNull();
+    expect(document.querySelector('[data-hub-armory="open"]')).toBeNull();
+    expect(shell().hasAttribute('data-hub-modal-open')).toBe(false);
+    expect(hostOf().hasAttribute('inert')).toBe(false);
+    expect(document.activeElement).toBe(stripOpener());
+  });
+
+  it('mobile: today\'s armory open in the hero\'s box when the book arrives closes; no sheet opens without a tap (PH-9)', async () => {
+    let answer;
+    const pending = new Promise((resolve) => { answer = resolve; });
+    net.answer = () => pending;
+    await render('mobile');
+    click(byRole(document, 'tab', COPY.phoneTabs.loadout)[0]);
+    await flush();
+    click(byRole(document.querySelector('[data-hub-phone-panel]'), 'button', LOADOUT_COPY.changeArmor(LOADOUT_COPY.games.baggerbomb))[0]);
+    await flush();
+    expect(document.querySelector('[data-hub-armory="open"]')).not.toBeNull();
+    answer({ status: 200, body: { book: viewOf('sample') } });
+    await flush();
+    expect(document.querySelector('[data-hub-layout]').getAttribute('data-hub-layout')).toBe('book');
+    expect(document.querySelector('[data-hub-armory="open"]')).toBeNull();
+    expect(dialogs()).toEqual([]);
+    expect(shell().hasAttribute('data-hub-modal-open')).toBe(false);
+    expect(hostOf().hasAttribute('inert')).toBe(false);
+  });
+
   it('the loadout\'s sheet belongs to the book layout: a read that takes the book away closes it and frees the slot', async () => {
     await render('mobile');
     click(stripOpener());
@@ -633,14 +675,16 @@ describe('no player-facing "Shadow" in anything the book layout draws (spec PH-5
     expect(words.match(/shadow/gi)).toBeNull();
   });
 
-  // Review S3G-1: the rows above scan the layout's own words. Around them, today's hub still names "Shadow" in strings the prompt keeps
-  // (the hero until the band; the Deploy card; the armory dialog's centre; the Huddle sheet's eyebrow) — report §7 R1 and Q-1. This
-  // row scans the WHOLE page and every sheet the layout opens, and pins that each "Shadow" it finds is one of those named strings,
-  // so a new one is a decision, not a drift; inside the layout's own region and its two new sheets there is none.
+  // Review S3G-1, S3R-1: the rows above scan the layout's own words. Around them, today's hub still names "Shadow" in strings the prompt
+  // keeps — report §7 R1 and Q-1. This row scans the WHOLE page, and the loadout's and the armory's sheets the layout opens, and pins
+  // every occurrence: each is one of today's named strings, and their count per place is exact, so a new one (even of a kept string) is
+  // a decision, not a drift. Inside the layout's own region and its two new sheets there is none. The inventory of today's kept strings
+  // (report R1): the hero's name and stage label, its image label bare or armored, the Deploy card's title, the armory dialog's centre
+  // and intro, the first deployment's why (not drawn by Needs you), and the Huddle sheet's eyebrow (no Huddle member in this suite).
   const KEPT = () => new Set([
     COPY.shadow.name, COPY.shadow.stageLabel,
     ...Object.values(COPY.shadow.states).map((state) => COPY.shadow.imageLabel(state, null)),
-    COPY.deploy.title, ARMORY_COPY.centre, COPY.huddle.sheetEyebrow,
+    COPY.deploy.title, ARMORY_COPY.centre, ARMORY_COPY.intro, COPY.nextAction.firstWhy, COPY.huddle.sheetEyebrow,
   ]);
   /** Every visible text node and every label in `root` that names Shadow, each as drawn. */
   function shadowHits(root) {
@@ -655,12 +699,18 @@ describe('no player-facing "Shadow" in anything the book layout draws (spec PH-5
   it.each(['mobile', 'desktop'])('%s: the whole page and every sheet the layout opens name "Shadow" only in today\'s kept strings, and the layout\'s own region and new sheets not at all', async (where) => {
     net.answer = { status: 200, body: { book: viewOf('desksAdmit') } };
     await render(where);
-    const seen = new Set();
-    const check = (label) => {
-      for (const s of shadowHits(document.body)) {
-        expect(KEPT().has(s), `${label}: "${s}"`).toBe(true);
-        seen.add(s);
-      }
+    // Every occurrence, counted: the hero's name line, its stage's label, its one image label; on the wide compositions the Deploy
+    // card's title, and with today's armory dialog open its centre label.
+    const expected = (extra = []) => {
+      const hits = shadowHits(document.body);
+      const image = hits.filter((s) => s.startsWith(`${COPY.shadow.name} — `));
+      expect(image, 'one image label').toHaveLength(1);
+      return [COPY.shadow.name, COPY.shadow.stageLabel, image[0], ...(where === 'mobile' ? [] : [COPY.deploy.title]), ...extra].sort();
+    };
+    const check = (label, extra) => {
+      const hits = shadowHits(document.body);
+      for (const s of hits) expect(KEPT().has(s), `${label}: "${s}"`).toBe(true);
+      expect(hits.sort(), `${label}: every occurrence`).toEqual(expected(extra));
       expect(shadowHits(tabRow()).concat(shadowHits(panel())), `${label}: the layout's own region`).toEqual([]);
     };
     check('the page');
@@ -672,14 +722,9 @@ describe('no player-facing "Shadow" in anything the book layout draws (spec PH-5
     click(byRole(dialogNamed(BOOK_COPY.loadoutSheet), 'button', LOADOUT_COPY.changeArmor(LOADOUT_COPY.games.baggerbomb))[0]);
     await flush();
     const armory = dialogNamed(ARMORY_COPY.title);
+    expect(armory).not.toBeNull();
     if (where === 'mobile') expect(shadowHits(armory), 'the phone armory\'s new sheet').toEqual([]);
-    check('the armory open');
-    // What was seen, pinned per site: the hero (name, stage label, image label), and on the wide compositions the Deploy card's title
-    // and today's armory dialog's centre label.
-    // (The name line and the stage's label are one string, "Shadow".)
-    const hero = [COPY.shadow.name, COPY.shadow.stageLabel].concat([...seen].filter((s) => s.startsWith(`${COPY.shadow.name} — `)));
-    expect([...seen].sort()).toEqual([...new Set(where === 'mobile' ? hero : [...hero, COPY.deploy.title, ARMORY_COPY.centre])].sort());
-    expect([...seen].filter((s) => s.startsWith(`${COPY.shadow.name} — `))).toHaveLength(1);
+    check('the armory open', where === 'mobile' ? [] : [ARMORY_COPY.centre]);
   });
 
   it('the scan sees a "Shadow" the view would carry (a planted desk name), so the row above is not vacuous', async () => {

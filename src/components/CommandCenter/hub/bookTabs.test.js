@@ -66,9 +66,10 @@ describe('the parts\' layout from the hub\'s composition and width (PH-28)', () 
   });
 });
 
-describe('the loadout\'s sheet key', () => {
-  it('is its own, beside the hub\'s sheet table, and collides with none of it', () => {
-    expect(BOOK_SHEETS.LOADOUT).toBe('loadout');
-    expect(Object.values(HUB_SHEETS)).not.toContain(BOOK_SHEETS.LOADOUT);
+describe('the book layout\'s sheet keys', () => {
+  it('the loadout\'s and the phone armory\'s are their own, beside the hub\'s sheet table, and collide with none of it (review S3W-2)', () => {
+    expect(BOOK_SHEETS).toEqual({ LOADOUT: 'loadout', ARMORY: 'bookArmory' });
+    for (const key of Object.values(BOOK_SHEETS)) expect(Object.values(HUB_SHEETS)).not.toContain(key);
+    expect(BOOK_SHEETS.ARMORY).not.toBe(HUB_SHEETS.ARCHETYPE);
   });
 });

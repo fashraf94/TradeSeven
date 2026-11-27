@@ -208,7 +208,7 @@ function withoutSwitch(code) {
 
 const SLICE3_FILES = Object.freeze([
   // [file, the exports the switch-off graph takes from it, the switch sites it holds]
-  [HUB, ['default'], 15],
+  [HUB, ['default'], 16],
   ['src/components/CommandCenter/PhoneTabs.jsx', ['PhonePanel', 'PhoneTabRow'], 4],
   ['src/components/CommandCenter/ShadowStage.jsx', ['PhoneStage', 'ShadowStage'], 1],
   ['src/components/CommandCenter/Armory.jsx', ['default', 'ArmorySheetContext', 'ArmoryStageContext', 'PHONE_ARMORY', 'PHONE_ARMORY_GRID', 'PHONE_HERO', 'PhoneArmoryDetails', 'PhoneArmoryRing', 'PhoneArmoryScope', 'armoryHeroRead', 'phoneArmoryGridHeight', 'phoneArmoryLayout'], 2],

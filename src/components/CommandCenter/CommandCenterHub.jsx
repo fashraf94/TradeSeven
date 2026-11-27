@@ -446,8 +446,11 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
   // Amendment E V1.1 §3.2: admission ending while the research sheet is open closes it, as the Huddle's lapse does — and so does an
   // owner or epoch change (review B3: the open investigation is the former owner's).
   if (sheet.sheet === HUB_SHEETS.RESEARCH && !researchSheetHeldBy(researchDoor, sheet.entry)) runtime.closeSheet();
-  // The portfolio hub's slice 3: the loadout's sheet belongs to the book layout; a layout that leaves it (an owner change) frees the slot.
-  if (COMMAND_CENTER_PORTFOLIO_HUB_ENABLED && sheet.sheet === BOOK_SHEETS.LOADOUT && use(HubBookReadContext)?.layout !== HUB_LAYOUTS.BOOK) runtime.closeSheet();
+  // The portfolio hub's slice 3: the loadout's and the armory's sheets belong to the book layout; a layout that leaves it (an owner
+  // change) frees the slot. And today's armory (the hero's box, ARCHETYPE) has no home in the book layout: the book arriving closes it,
+  // so an armory never reopens in the other layout's home without a tap (review S3W-2, S3W-3; the HU-4 rule above).
+  if (COMMAND_CENTER_PORTFOLIO_HUB_ENABLED && (sheet.sheet === BOOK_SHEETS.LOADOUT || sheet.sheet === BOOK_SHEETS.ARMORY) && use(HubBookReadContext)?.layout !== HUB_LAYOUTS.BOOK) runtime.closeSheet();
+  if (COMMAND_CENTER_PORTFOLIO_HUB_ENABLED && sheet.sheet === HUB_SHEETS.ARCHETYPE && use(HubBookReadContext)?.layout === HUB_LAYOUTS.BOOK) runtime.closeSheet();
   return (
     <HubLayoutContext.Provider value={composition}>
       <style data-hub-css="">{HUB_SCOPED_CSS}</style>
@@ -484,7 +487,7 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
                 summaries={shared.summaries}
                 reducedMotion={shared.reducedMotion}
                 createdAttemptId={shared.createdAttemptId}
-                paused={COMMAND_CENTER_PORTFOLIO_HUB_ENABLED && use(HubBookReadContext)?.layout === HUB_LAYOUTS.BOOK ? coverOpen || sheet.sheet === HUB_SHEETS.ARCHETYPE : coverOpen}
+                paused={COMMAND_CENTER_PORTFOLIO_HUB_ENABLED && use(HubBookReadContext)?.layout === HUB_LAYOUTS.BOOK ? coverOpen || sheet.sheet === BOOK_SHEETS.ARMORY : coverOpen}
                 holdPhase={deploy?.holdPhase ?? null}
                 progress={deploy?.progress ?? null}
               />

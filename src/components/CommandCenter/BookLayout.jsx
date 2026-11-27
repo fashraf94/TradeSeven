@@ -35,7 +35,6 @@ import { HUB_AREAS, HUB_COMPOSITIONS, rovingIndex } from './hub/composition';
 import { HubBookReadContext } from './hub/hubBookRead';
 import { PORTFOLIO_HUB_COPY as BOOK } from './hub/hubCopy';
 import { C, HAIR } from './hub/hubStyle';
-import { HUB_SHEETS } from './hub/useHubSheets';
 import { PerGameLoadoutContext } from './hub/perGameLoadoutContext';
 import { PER_GAME_LOADOUT_ENABLED } from '../../config/perGameLoadoutFlags';
 import { AGENT_FORM_ARMORY_ENABLED } from '../../config/agentFormFlags';
@@ -118,12 +117,13 @@ export function BookTabRow({ idBase, tab, onSelect, phone = false, compact = fal
 
 /**
  * A tab change from inside the panel (a desk row): the row goes away with the panel it sits in, so focus moves to the newly
- * selected tab, which stays mounted (review S3W-1). In the handler, not an effect: the hub holds none.
+ * selected tab, which stays mounted (review S3W-1). In the handler, not an effect: the hub holds none. On the phone the tab row is
+ * sticky inside the pane's scroll padding, where a focus would scroll the pane, so it moves no scroll there (`preventScroll`).
  */
-function focusing(select, idBase) {
+function focusing(select, idBase, preventScroll = false) {
   return (next) => {
     select(next);
-    document.getElementById(bookTabId(idBase, next))?.focus();
+    document.getElementById(bookTabId(idBase, next))?.focus({ preventScroll });
   };
 }
 
@@ -192,12 +192,22 @@ export function BookPhoneBody({ idBase, initialTab, width, sections, actions, ag
     <>
       <BookTabRow idBase={idBase} tab={tab} onSelect={select} phone />
       <div style={{ padding: '14px 14px 24px' }}>
-        <BookPanel idBase={idBase} tab={tab} view={view} layout={bookPartsLayoutOf(HUB_COMPOSITIONS.PHONE, width)} sections={sections} actions={actions} onSelectTab={focusing(select, idBase)} reducedMotion={reducedMotion} />
+        <BookPanel idBase={idBase} tab={tab} view={view} layout={bookPartsLayoutOf(HUB_COMPOSITIONS.PHONE, width)} sections={sections} actions={actions} onSelectTab={focusing(select, idBase, true)} reducedMotion={reducedMotion} />
       </div>
       {sheet.sheet === BOOK_SHEETS.LOADOUT ? (
-        <BookLoadoutSheet phone sections={sections} actions={actions} lists={lists} onClose={onCloseSheet} opener={sheet.opener} fallbackFocus={sheet.fallback} reducedMotion={reducedMotion} />
+        <BookLoadoutSheet
+          phone
+          sections={sections}
+          // The phone armory opens on the book layout's own key (hub/bookTabs.js BOOK_SHEETS.ARMORY), where today's opens ARCHETYPE.
+          actions={{ ...actions, changeArchetype: typeof actions.changeArchetype === 'function' ? sheet.open(BOOK_SHEETS.ARMORY) : undefined }}
+          lists={lists}
+          onClose={onCloseSheet}
+          opener={sheet.opener}
+          fallbackFocus={sheet.fallback}
+          reducedMotion={reducedMotion}
+        />
       ) : null}
-      <PhoneArmorySheet open={sheet.sheet === HUB_SHEETS.ARCHETYPE} agent={agent} onClose={onCloseSheet} opener={sheet.opener} fallbackFocus={sheet.fallback} reducedMotion={reducedMotion} width={width} />
+      <PhoneArmorySheet open={sheet.sheet === BOOK_SHEETS.ARMORY} agent={agent} onClose={onCloseSheet} opener={sheet.opener} fallbackFocus={sheet.fallback} reducedMotion={reducedMotion} width={width} />
     </>
   );
 }

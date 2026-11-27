@@ -1532,11 +1532,23 @@ describe('S5 — the exports the hub takes from the shipped services, hooks and 
     const PAGE_ONLY = ['Tabs', 'FinishedRow', 'ResultSheet', 'HistoryTab', 'useWidth', 'Quiet', 'IdeaBookScreen'];
     const code = read(SCREEN);
     const fns = new Map();
+    const ranges = new Map();
     for (const node of Parser.extend(acornJsx()).parse(code, { ecmaVersion: 'latest', sourceType: 'module' }).body) {
       const decl = node.type === 'ExportNamedDeclaration' || node.type === 'ExportDefaultDeclaration' ? node.declaration : node;
-      if (decl?.type === 'FunctionDeclaration') fns.set(decl.id.name, code.slice(decl.start, decl.end));
+      if (decl?.type === 'FunctionDeclaration') { fns.set(decl.id.name, code.slice(decl.start, decl.end)); ranges.set(decl.id.name, [node.start, node.end]); }
+      // The import lines name what the page's own functions use (useEffect); a part's call of it is in its body, scanned below.
+      if (node.type === 'ImportDeclaration') ranges.set(`import@${node.start}`, [node.start, node.end]);
     }
     expect([...fns.keys()].sort()).toEqual([...DRAWN, ...PAGE_ONLY].sort());
+    // Review S3R-2: the whole module but the page's own functions is scanned — module-level statements and helpers too — and no part
+    // the hub draws may call into the page's own functions (whose effects and listener are the page's).
+    const cut = [...PAGE_ONLY.map((name) => ranges.get(name)), ...[...ranges.entries()].filter(([k]) => k.startsWith('import@')).map(([, r]) => r)];
+    const withoutPage = cut.sort((a, b) => b[0] - a[0]).reduce((text, [s, e]) => text.slice(0, s) + text.slice(e), code);
+    expect(activityInCode(`${SCREEN} (less the page's own)`, stripComments(withoutPage))).toEqual([]);
+    const callsPage = (body) => PAGE_ONLY.filter((name) => new RegExp(`\\b${name}\\b`).test(stripComments(body)));
+    expect(DRAWN.flatMap((name) => callsPage(fns.get(name)).map((p) => `${name} -> ${p}`))).toEqual([]);
+    expect(callsPage(`${fns.get('PosTable')}\nconst w = useWidth(null);`), 'the call check bites').toEqual(['useWidth']);
+    expect(activityInCode('planted', stripComments(`${withoutPage}\nconst settle = () => setTimeout(f, 0);`)), 'the module scan bites').not.toEqual([]);
     const inParts = DRAWN.flatMap((name) => activityInCode(`${SCREEN}#${name}`, stripComments(fns.get(name))));
     const PARTS_MODULES = ['src/components/PracticeField/IdeaBookParts.jsx', 'src/components/PracticeField/ideaBookStyle.js', 'src/components/PracticeField/ideaBookCopy.js', 'src/components/PracticeField/ideaBookPartsOptions.js'];
     expect([...inParts, ...PARTS_MODULES.flatMap((rel) => activityInCode(rel, stripComments(read(rel))))]).toEqual([]);
