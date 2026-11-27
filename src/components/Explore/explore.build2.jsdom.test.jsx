@@ -1096,6 +1096,28 @@ describe('F-1 — a Try again never drops focus to <body>: focus sits on an elem
     expect(document.activeElement).toBe(h);
     expect(nextTabStopAfter(h)).toBe($('[data-explore-shelf-retry]'));
   });
+  it('the shelf: once the retry has answered, a later move of the shelf (the screen turned wide) never takes focus — the hand-over is only for a retry that is out', async () => {
+    const matchMedia = window.matchMedia;
+    const wideQ = { matches: false, on: [], addEventListener(_, f) { this.on.push(f); }, removeEventListener(_, f) { this.on = this.on.filter((x) => x !== f); } };
+    window.matchMedia = (q) => (q === '(min-width: 1000px)' ? wideQ : { matches: false, addEventListener() {}, removeEventListener() {} });
+    try {
+      await openPage({ answer: NO_ANSWER });
+      const held = deferred();
+      read.mockImplementation(() => held.promise);
+      click($('[data-explore-shelf-retry]'));
+      await flush();
+      held.resolve(NO_ANSWER);
+      await until(() => $('[data-explore-shelf-retry]'), 'the failed line again');
+      expect($('[data-explore-shelf]').dataset.exploreShelfPlacement).toBe('after-cards');
+      document.activeElement.blur();
+      expect(document.activeElement).toBe(document.body);
+      wideQ.matches = true;
+      act(() => { for (const f of wideQ.on) f(); });
+      await flush();
+      expect($('[data-explore-shelf]').dataset.exploreShelfPlacement).toBe('side');
+      expect(document.activeElement).toBe(document.body);
+    } finally { window.matchMedia = matchMedia; }
+  });
 });
 
 // ── F-3 (the fix prompt of Nov 27): the jump row at 320 px ────────────────────────────────────────────────────────────
