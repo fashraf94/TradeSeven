@@ -216,7 +216,8 @@ describe.skipIf(!BASE)('Explore in a real browser (Build 1 §9 checks 1–5; Bui
           return { inside: li.contains(d), tall: Math.round(d.getBoundingClientRect().height) > 100, lists: document.querySelectorAll('[data-explore-screen="story"] [data-explore-chain]').length };
         });
         expect(opened).toEqual({ inside: true, tall: true, lists: 1 });
-        await page.evaluate(() => document.querySelector(`[data-explore-door="dominion-data-centers"]`).scrollIntoView({ block: 'center' }));
+        // scoped to the story: the front page (hidden under it) has the hero's door too
+        await page.evaluate(() => document.querySelector('[data-explore-screen="story"] [data-explore-door="dominion-data-centers"]').scrollIntoView({ block: 'center' }));
         await page.waitForTimeout(300);
         const before = await page.evaluate(() => Math.round(window.scrollY));
         await page.click(`[data-explore-screen="story"] [data-explore-door="${DEEP}"]`);
@@ -313,7 +314,7 @@ describe.skipIf(!BASE)('Explore in a real browser (Build 1 §9 checks 1–5; Bui
         await page.click(`[data-explore-hero="${OV}"] [data-explore-hero-read]`);
         await inStory(page);
         await page.click('[data-explore-screen="story"] [data-explore-branch-toggle="power"]');
-        await page.evaluate(() => document.querySelector('[data-explore-door="dominion-data-centers"]').scrollIntoView({ block: 'center' }));
+        await page.evaluate(() => document.querySelector('[data-explore-screen="story"] [data-explore-door="dominion-data-centers"]').scrollIntoView({ block: 'center' }));
         await page.waitForTimeout(250);
         const doorY = await page.evaluate(() => Math.round(window.scrollY));
         await page.click(`[data-explore-screen="story"] [data-explore-door="${DEEP}"]`);
