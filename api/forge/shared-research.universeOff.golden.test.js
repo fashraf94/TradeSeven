@@ -234,7 +234,7 @@ async function storyBuilder() {
 async function storyLedger() {
   const r = {};
   opening();
-  r.open = await post({ action: 'open', requestId: 'req-sl-1', entry: { kind: 'item', itemRef: { recordKind: 'fantasyTimesStories', recordId: 'story-1' }, question: 'Which companies earn from accelerator orders?', direction: 'suppliers first' } });
+  r.open = await post({ action: 'open', requestId: 'req-sl-1', entry: { kind: 'item', itemRef: { recordKind: 'fantasyTimesStories', recordId: 'story-1' }, question: 'Which companies earn from accelerator orders, and is QZXW one of them?', direction: 'suppliers first' } });
   opened();
   const id = r.open.body.session.sessionId;
   state.retrievalQueue.push(search());

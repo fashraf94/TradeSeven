@@ -298,6 +298,9 @@ describe('review L2-1: a name another company could be meant by resolves to none
     expect(run(R, turnOf({ fact: 'Viking Therapeutics is testing an oral weight-loss pill.', symbolCandidate: 'VKTX', companyName: 'Viking Therapeutics' }), dir('VKTX')).symbol).toBe('VKTX');
     expect(run(R, turnOf({ fact: NEUTRAL, companyName: 'Viking Therapeutics' }), dir('VKTX')).symbol).toBe('VKTX');
   });
+  it('a symbol offered with its own whole name is dropped when that name is the first word of another company: VIK with "Viking" (a recall limit, fails safe)', () => {
+    expect(run(R, turnOf({ fact: 'Viking runs river cruises.', symbolCandidate: 'VIK', companyName: 'Viking' }), dir('VIK')).symbol).toBeNull();
+  });
   it('a whole name nothing else begins with still resolves: Corning, Arista Networks, the everyday names', () => {
     expect([lookupName('Corning'), lookupName('Arista Networks'), lookupName('Micron'), lookupName('Palantir'), lookupName('Uber')]).toEqual(['GLW', 'ANET', 'MU', 'PLTR', 'UBER']);
   });
