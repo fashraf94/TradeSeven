@@ -413,6 +413,18 @@ const DARK_BY_DESIGN = {
   //   exploreFlags.test.js in the same commit (BUILD_RULES §2); the 'on' step
   //   also reconciles the nav label rows of leagueHide.nav.jsdom.test.jsx,
   //   which list the entry as "Search". Rollback: one step back with its pin row.
+  // EXPLORE_COMPARE_ROUTE intentionally ABSENT, and it must stay absent: Explore
+  // Build 2's compare switch (spec docs/specs/
+  // 20261125_EXPLORE_BUILD_2_SPEC_AMENDMENT_B.md §6, B-9) is a boolean that is
+  // not an *_ENABLED name, in src/config/exploreFlags.js, which is not one of
+  // FLAG_SOURCE_MODULES, so buildFlagMap never sees it. Noted HERE so a flip is
+  // loud in the place a reader looks for the dark runway; exploreFlags.test.js
+  // asserts both halves (the false pin, and this note).
+  //   Runway: false ships with Build 2 (dark): it changes words only, and the
+  //   panel says what the investigation that exists does. The compare build
+  //   (the one that makes the compare investigation real) sets it true in its
+  //   own commit, moving the pin row in exploreFlags.test.js (BUILD_RULES §2).
+  //   Rollback: back to false with its pin row.
   // PRACTICE_FIELD_MODE intentionally ABSENT, and it must stay absent: the
   // Practice Field's idea book (build T1a-1 + T1c, report
   // docs/audits/20261113_BUILD_T1A1_T1C_IDEA_BOOK_ACCOUNTING.md) is a STRING

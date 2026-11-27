@@ -4,10 +4,61 @@
 // <button> at least 44 px tall; its label is an inner span (src/index.css forces 16 px on <button>). Tones are
 // tokens (exploreStyle.js). No words here: callers pass them from exploreCopy.js.
 
-import React, { forwardRef, useId, useState } from 'react';
+import React, { forwardRef, useEffect, useId, useState } from 'react';
 import { S, T, btnStyle, linkStyle, wash } from './exploreStyle';
 import { EXPLORE_COPY } from './exploreCopy';
-import { BOOKMARKS_MAX } from './exploreView';
+import { BOOKMARKS_MAX, leadAssetOf } from './exploreView';
+
+/** Whether a media query matches, now and as it changes (no matchMedia, as in jsdom: false). */
+export function useMatches(query) {
+  const read = () => (typeof window !== 'undefined' && typeof window.matchMedia === 'function' ? window.matchMedia(query).matches : false);
+  const [matches, setMatches] = useState(read);
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined;
+    const mq = window.matchMedia(query);
+    const on = () => setMatches(mq.matches);
+    on();
+    mq.addEventListener?.('change', on);
+    return () => mq.removeEventListener?.('change', on);
+  }, [query]);
+  return matches;
+}
+
+/**
+ * A company (K-11): with a symbol, a 44 px button — symbol, then name — that opens the stock's research page; without
+ * one, plain text, never a button. Never a figure, a change or a price beside it.
+ */
+export function Ticker({ company, onOpen }) {
+  if (!company.symbol) {
+    return (
+      <span data-explore-lead="text" style={{ display: 'inline-flex', alignItems: 'center', minHeight: 44, padding: '6px 12px', borderRadius: 12, border: `1px dashed ${T.hair}`, fontSize: 13.5, color: T.ink2, minWidth: 0, overflowWrap: 'anywhere' }}>
+        {company.name}
+      </span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      className="ftx-btn"
+      aria-label={EXPLORE_COPY.story.company(company.symbol, company.name)}
+      data-explore-lead={company.symbol}
+      onClick={() => onOpen?.(leadAssetOf(company))}
+      style={{ ...btnStyle('secondary'), justifyContent: 'flex-start', padding: '6px 10px 6px 12px', gap: 6, minWidth: 0 }}
+    >
+      <span style={{ fontSize: 14, fontWeight: 700 }}>{company.symbol}</span>
+      <span style={{ fontSize: 12.5, fontWeight: 500, color: T.ink2, minWidth: 0, overflowWrap: 'anywhere' }}>{company.name}</span>
+    </button>
+  );
+}
+
+/** Companies in the story's order, two to a row on a phone (B-15). */
+export function Tickers({ list, onOpen }) {
+  return (
+    <div className="ftx-tickers" data-explore-tickers="">
+      {list.map((c, i) => <Ticker key={`${c.symbol ?? c.name}:${i}`} company={c} onOpen={onOpen} />)}
+    </div>
+  );
+}
 
 export function Eyebrow({ as = 'div', id, tone = null, style, children }) {
   return React.createElement(as, { id, style: { ...S.eyebrow, color: tone ? T[tone] : T.ink3, ...style } }, children);
@@ -83,6 +134,10 @@ export function Icon({ name, size = 16 }) {
     mark: <path {...p} d="M4 2.5h8v11L8 10.6 4 13.5z" />,
     markOn: <path d="M4 2.5h8v11L8 10.6 4 13.5z" fill="currentColor" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />,
     x: <path {...p} d="M3.5 3.5l9 9M12.5 3.5l-9 9" />,
+    right: <path {...p} d="M6 3.5L10.5 8 6 12.5" />,
+    down: <path {...p} d="M3.5 6L8 10.5 12.5 6" />,
+    up: <path {...p} d="M8 13V3.5M3.5 7.5L8 3l4.5 4.5" />,
+    back: <path {...p} d="M13 8H3.5M7.5 3.5L3 8l4.5 4.5" />,
   };
   return <svg aria-hidden="true" width={size} height={size} viewBox="0 0 16 16" style={{ flexShrink: 0, display: 'block' }}>{g[name]}</svg>;
 }
@@ -118,9 +173,14 @@ export function BookmarkError({ bookmarks, storyId, origin = null }) {
   return <Notice role="alert" tone="copper"><span data-explore-bookmark-error={error.kind}>{words}</span></Notice>;
 }
 
-/** A collapsed section (spec §3.4 items 8 and 9). */
-export function Disclosure({ label, count = null, children }) {
-  const [open, setOpen] = useState(false);
+/**
+ * A collapsed section (spec §3.4 items 8 and 9). Build 2: optionally controlled (`open` + `onToggle`), so a story's
+ * Sources stay open when the player comes back to the story (the history holds it, review N-1).
+ */
+export function Disclosure({ label, count = null, children, open: controlled = undefined, onToggle = null }) {
+  const [own, setOwn] = useState(false);
+  const open = controlled ?? own;
+  const setOpen = (f) => (onToggle ? onToggle() : setOwn(f));
   const id = `ftx-d${useId()}`;
   return (
     <section style={{ borderRadius: 14, border: `1px solid ${T.hair}`, background: T.surface, overflow: 'hidden' }}>

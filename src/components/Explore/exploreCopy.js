@@ -37,6 +37,48 @@ export const EXPLORE_COPY = Object.freeze({
     topics: 'Browse topics',
     allTopics: 'All topics',
     noTopicMatch: 'No question under this topic.',
+    // Build 2 (Amendment B §4.1)
+    overview: 'Overview',
+    deepStory: 'Deep story',
+    stillUnknown: 'Still unknown',
+    free: 'Reading and saving are free.',
+    startFrom: 'Start from something you use',
+    latest: 'Latest deep stories',
+    latestNote: 'One company or one product in depth. Each belongs to a connection in an overview.',
+    /** "AI buildout › Electric utilities": the overview a deep story belongs to, and its connection. */
+    path: (overview, connection) => `${overview} › ${connection}`,
+    /** The company a deep story is about (its `about`, one or two), as words. */
+    about: (companies) => `About ${companies.map((c) => (c.symbol && c.name !== c.symbol ? `${c.symbol} · ${c.name}` : c.symbol ?? c.name)).join(', ')}`,
+  }),
+
+  /** The shelf, "Your theses" (Amendment B §4.2): every number is the read's own. */
+  shelf: Object.freeze({
+    title: 'Your theses',
+    counts: (open, finished) => `${open} in progress · ${finished} finished`,
+    /** The builder's own sentence, blank (B-16): words and blanks in order. No part count: a thesis does not always have six. */
+    blank: Object.freeze([
+      ['text', 'My theme is '], ['blank', 'your theme'], ['text', ', through '], ['blank', 'a segment'], ['text', ', built on '],
+      ['blank', 'the names'], ['text', ', because '], ['blank', 'why'], ['text', ". It's wrong if "], ['blank', 'what would prove it wrong'],
+      ['text', '. Time frame: '], ['blank', 'time frame'], ['text', '.'],
+    ]),
+    blankLabel: 'An example of the thesis sentence you build, with its parts left blank',
+    empty: 'Nothing here yet. Work a question from a story and the thesis you build lands here.',
+    used: (used, perDay) => `${used} of ${perDay} investigations used today.`,
+    gated: 'Building a thesis needs research access. Reading and saving stay open.',
+    failed: "Couldn't check your research",
+    tryAgain: 'Try again',
+    checking: 'Checking your research',
+    continue: 'Continue research',
+    viewIt: 'View it',
+  }),
+
+  /** The chain (Amendment B §4.1, §4.3; B-1, B-2, B-8; K-6). The evidence labels are story.basis's, word for word. */
+  chain: Object.freeze({
+    count: (n, sourced, unchecked) => `${plural(n, 'connection', 'connections')} · ${sourced} sourced · ${unchecked} not checked yet`,
+    key: 'Key',
+    thisQuestion: 'This question',
+    deepStory: 'Deep story',
+    cardDoor: 'Deep story ›',
   }),
 
   card: Object.freeze({
@@ -77,6 +119,10 @@ export const EXPLORE_COPY = Object.freeze({
     limit: (perDay) => `You've used today's ${perDay} investigations. Try this one tomorrow.`,
     company: (symbol, name) => `${symbol} · ${name}`,
     companyNote: 'Opens the company’s research',
+    // Build 2 (Amendment B §4.6)
+    overview: 'Overview',
+    deepStory: 'Deep story',
+    deepIn: (overview, connection) => `Deep story · in ${overview} › ${connection}`,
   }),
 
   story: Object.freeze({
@@ -95,6 +141,27 @@ export const EXPLORE_COPY = Object.freeze({
     evidenceDated: (date) => `Evidence dated ${date}`,
     openSource: 'Open the source',
     unavailable: 'This story is no longer available.',
+    // Build 2 (Amendment B §4.3–§4.5)
+    /** The back link names where it goes (B-11): the front page, or the story that linked here. */
+    backTo: (name) => `← ${name}`,
+    backLabel: (name) => `Back to ${name}`,
+    explore: 'Explore',
+    jumpLabel: 'Sections of this story',
+    jump: Object.freeze({ story: 'Story', connections: 'Connections', questions: 'Questions', sources: 'Sources' }),
+    known: 'Known',
+    unknown: 'Unknown',
+    whereToLook: 'Where to look',
+    knownBlank: 'Nothing sourced yet.',
+    leadsTitle: 'Company leads',
+    leadsNote: "A ticker opens the stock's research page. A company stays a lead until a source ties it to the story.",
+    company: (symbol, name) => `${symbol}, ${name}: open the stock's research page`,
+    wayUp: (overview, connection) => `Up to ${overview}, ${connection}`,
+    about: 'About',
+    whereNext: 'Where next',
+    oneStepUp: 'One step up',
+    youAreHere: 'You are here · Deep story',
+    across: (subject) => `Other connections in ${subject}`,
+    acrossNote: 'Each opens the overview at that connection.',
   }),
 
   questions: Object.freeze({
@@ -132,6 +199,26 @@ export const EXPLORE_COPY = Object.freeze({
     gated: "Research records aren't available on this account",
     gatedNote: 'You can read the stories; starting an investigation needs research access.',
     save: 'Save for later',
+    /**
+     * Build 2 (Amendment B §6, B-9; K-14): a broad question's group, by EXPLORE_COMPARE_ROUTE. `off` describes the
+     * investigation that exists (the only one drawn while the switch is false); `on` is the compare build's.
+     */
+    group: Object.freeze({
+      off: Object.freeze({ heading: () => 'Companies this question names', note: "A ticker opens the stock's research page." }),
+      on: Object.freeze({
+        heading: (n) => `Compares ${n} companies`,
+        note: "Listed in the story's order. The comparing happens inside the investigation.",
+        measures: 'Compares on',
+        firstStep: "Your agent's first step compares the companies this question names.",
+        then: 'You narrow the group to the names you choose.',
+      }),
+    }),
+    startsThen: 'Then',
+  }),
+
+  /** The pinned bar's question (Amendment B §4.3, B-13): a button that jumps to the chooser. */
+  bar: Object.freeze({
+    toQuestions: (question) => `${question} — go to the questions`,
   }),
 
   /** The host of the Work an idea sheet (spec §3.6): the hub wrapper's lines, restated and pinned equal by test. */

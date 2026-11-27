@@ -9,7 +9,7 @@ import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const flags = vi.hoisted(() => ({ mode: 'on' }));
-vi.mock('../../config/exploreFlags', () => ({ EXPLORE_MODES: ['off', 'allowlist', 'on'], EXPLORE_MODE: 'off', exploreMode: () => flags.mode }));
+vi.mock('../../config/exploreFlags', () => ({ EXPLORE_MODES: ['off', 'allowlist', 'on'], EXPLORE_MODE: 'off', exploreMode: () => flags.mode, EXPLORE_COMPARE_ROUTE: false }));
 const read = vi.hoisted(() => vi.fn());
 vi.mock('../../services/sharedResearchService', () => ({ readExploreInvestigations: read }));
 vi.mock('../../firebase/config', () => ({ db: {} }));
@@ -33,6 +33,8 @@ const { act } = await import('react');
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const USER = { uid: 'u-explore-1' };
+// Build 2: the kit's default stories are the pilot pair and the three samples; the AI and utilities samples are cards,
+// one per story (B-3), and the tap-to-pay sample is a tile (B-5). Rows that used the tap-to-pay card use another.
 const [AI, TAP, UTIL] = SAMPLE_STORIES;
 const ROW = 15_000;
 let mounted = [];
@@ -109,7 +111,7 @@ describe('lens A — honesty', () => {
   it.each([['the byline', '[data-explore-screen="story"] article [data-explore-save]'], ['the panel at the limit', '[data-explore-actions] [data-explore-save]']])('A-4: a failed save from %s says so in the reader, once', async (_n, sel) => {
     sources = fixtureSources({ failWrites: new Set(['save']) });
     await openPage({ answer: answerOf(READS.limit) });
-    await openStory(TAP);
+    await openStory(AI);
     await until(() => $(sel)?.getAttribute('aria-disabled') !== 'true', 'the toggle ready');
     click($(sel));
     await until(() => $$('[data-explore-bookmark-error]').length > 0, 'the line');
@@ -121,13 +123,13 @@ describe('lens A — honesty', () => {
     const holdBookmarks = new Promise((r) => { release = r; });
     sources = fixtureSources({ holdBookmarks });
     await openPage();
-    const toggle = card(TAP.id).querySelector('[data-explore-save]');
+    const toggle = card(UTIL.id).querySelector('[data-explore-save]');
     expect(toggle.getAttribute('aria-disabled')).toBe('true');
     click(toggle);
     await flush();
     expect(sources.calls.filter((c) => c.kind === 'saveBookmark')).toEqual([]);
     release();
-    await until(() => card(TAP.id).querySelector('[data-explore-save]').getAttribute('aria-disabled') !== 'true', 'ready');
+    await until(() => card(UTIL.id).querySelector('[data-explore-save]').getAttribute('aria-disabled') !== 'true', 'ready');
   }, ROW);
   it('A-6: a sample story is labelled in search rows and in Saved for later', async () => {
     sources = fixtureSources({ bookmarks: [bookmarkOf(TAP)] });
@@ -146,7 +148,7 @@ describe('lens A — honesty', () => {
   it('A-8: no screen in any state shows a banned word, in its text or its labels', async () => {
     const BANNED = /supported|source-backed|verified|confirmed|confidence|shadow/i;
     const hits = (text) => [...text.matchAll(new RegExp(`.{0,40}(?:${BANNED.source}).{0,20}`, 'gi'))].map((x) => x[0]);
-    for (const [answer, story] of [[READS.none, AI], [READS.progress, AI], [READS.saved, AI], [GATED, TAP], [NO_ANSWER, UTIL], [READS.limit, TAP]]) {
+    for (const [answer, story] of [[READS.none, AI], [READS.progress, AI], [READS.saved, AI], [GATED, UTIL], [NO_ANSWER, UTIL], [READS.limit, AI]]) {
       const m = await openPage({ answer: answer.ok === undefined && !answer.gated && answer.status === undefined ? answerOf(answer) : answer });
       // every text node a player can meet (not the page's own <style> text), and every aria-label
       const words = () => { const out = []; const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT); for (let n = w.nextNode(); n; n = w.nextNode()) if (!n.parentElement.closest('style, script')) out.push(n.nodeValue); return out.join(' '); };
@@ -213,7 +215,7 @@ describe('lens B — separation and wiring', () => {
     sources.saveBookmark = async (uid, story) => { await slow; return save(uid, story); };
     await openPage();
     await until(() => $$('[data-explore-saved-row]').length === 49, '49 saved');
-    click(card(TAP.id).querySelector('[data-explore-save]'));
+    click(card(AI.id).querySelector('[data-explore-save]'));
     await flush();
     click(card(UTIL.id).querySelector('[data-explore-save]'));
     await flush();
@@ -224,23 +226,23 @@ describe('lens B — separation and wiring', () => {
   it('B-5: two failed saves on two stories each keep their own line', async () => {
     sources = fixtureSources({ failWrites: new Set(['save']) });
     await openPage();
-    await until(() => card(TAP.id).querySelector('[data-explore-save]').getAttribute('aria-disabled') !== 'true', 'ready');
-    click(card(TAP.id).querySelector('[data-explore-save]'));
+    await until(() => card(UTIL.id).querySelector('[data-explore-save]').getAttribute('aria-disabled') !== 'true', 'ready');
+    click(card(UTIL.id).querySelector('[data-explore-save]'));
     click(card(AI.id).querySelector('[data-explore-save]'));
     await until(() => $$('[data-explore-bookmark-error]').length === 2, 'two lines');
-    expect(card(TAP.id).querySelector('[data-explore-bookmark-error]')).not.toBeNull();
+    expect(card(UTIL.id).querySelector('[data-explore-bookmark-error]')).not.toBeNull();
     expect(card(AI.id).querySelector('[data-explore-bookmark-error]')).not.toBeNull();
   }, ROW);
-  it('B-9: a story on two cards says a failed save once, under the card tapped', async () => {
+  it('B-9 (Build 2, B-3: one card per story): a story with two featured questions has one card, and a failed save says so once, under it', async () => {
     sources = fixtureSources({ failWrites: new Set(['save']) });
     await openPage();
     const cards = $$(`[data-explore-card="${UTIL.id}"]`);
-    expect(cards).toHaveLength(2);
-    await until(() => cards[1].querySelector('[data-explore-save]').getAttribute('aria-disabled') !== 'true', 'ready');
-    click(cards[1].querySelector('[data-explore-save]'));
+    expect(cards).toHaveLength(1);
+    await until(() => cards[0].querySelector('[data-explore-save]').getAttribute('aria-disabled') !== 'true', 'ready');
+    click(cards[0].querySelector('[data-explore-save]'));
     await until(() => $$('[data-explore-bookmark-error]').length > 0, 'the line');
     expect($$('[data-explore-bookmark-error]')).toHaveLength(1);
-    expect(cards[1].querySelector('[data-explore-bookmark-error]')).not.toBeNull();
+    expect(cards[0].querySelector('[data-explore-bookmark-error]')).not.toBeNull();
   }, ROW);
   it('B-10: while the read after a close is out, the panel\'s button does nothing (aria-disabled), and keeps focus', async () => {
     await openPage();
@@ -333,26 +335,30 @@ describe('lens B and C — the pinned bar', () => {
 });
 
 describe('lens C — reading order and contrast', () => {
-  it('C-1: the reader\'s DOM is the phone\'s reading order: story, body, what it leaves open, the questions and panel, connections, sources', async () => {
+  it('C-1: the reader\'s DOM is the phone\'s reading order: story, the jump row, body, what it leaves open, then (an overview, B-14) connections before the questions and panel, sources', async () => {
     await openPage();
     await openStory(AI);
-    const kids = [...$('[data-ftx-grid="story"]').children].map((el) => (el.tagName === 'ARTICLE' ? 'story' : el.querySelector('[data-explore-body]') ? 'body'
+    const kids = [...$('[data-ftx-grid="story"]').children].map((el) => (el.tagName === 'ARTICLE' ? 'story' : el.matches('[data-explore-jump-holder]') ? 'jump' : el.querySelector('[data-explore-body]') ? 'body'
       : el.matches('[data-explore-leaves-open]') ? 'open' : el.matches('[data-ftx-side]') ? 'side' : el.matches('[data-explore-connections]') ? 'connections' : el.matches('[data-explore-sources]') ? 'sources' : '?'));
-    expect(kids).toEqual(['story', 'body', 'open', 'side', 'connections', 'sources']);
+    expect(kids).toEqual(['story', 'jump', 'body', 'open', 'connections', 'side', 'sources']);
     expect($('[data-ftx-grid="story"]').style.getPropertyValue('--ftx-left-rows')).toBe('5');
     expect(document.querySelector('.ftx-o1, .ftx-o2, .ftx-o3')).toBeNull();
   }, ROW);
-  it('C-1: home\'s DOM is the phone\'s reading order: search, Research in progress, the cards — and the side column\'s own copy for wide screens', async () => {
+  it('C-1 (Build 2, Amendment B §4.1): the front page\'s DOM is the phone\'s reading order: search, the shelf holding a thesis above the hero, the tiles, the cards, the Latest row, Saved for later — each drawn once', async () => {
     await openPage({ answer: answerOf(READS.progress) });
-    const main = [...$('[data-ftx-col="main"]').children].map((el) => (el.querySelector('[data-explore-search]') ? 'search' : el.matches('[data-explore-progress-placement]') ? `progress:${el.dataset.exploreProgressPlacement}` : el.matches('[data-explore-cards]') ? 'cards' : '?'));
-    expect(main).toEqual(['search', 'progress:phone', 'cards']);
-    expect($('[data-ftx-col="side"]').firstElementChild.dataset.exploreProgressPlacement).toBe('wide');
-    expect($('[data-explore-progress-placement="phone"]').className).toBe('ftx-phone-only');
-    expect($('[data-explore-progress-placement="wide"]').className).toBe('ftx-wide-only');
+    const home = [...$('[data-explore-screen="home"]').children].map((el) => (el.matches('[data-explore-intro]') ? 'intro' : el.querySelector('[data-explore-search]') ? 'search' : el.matches('[data-ftx-grid="home"]') ? 'top'
+      : el.matches('[data-explore-start]') ? 'tiles' : el.matches('[data-explore-cards]') ? 'cards' : el.matches('[data-explore-latest-row]') ? 'latest' : el.matches('[data-explore-saved]') ? 'saved' : el.matches('[data-explore-shelf]') ? 'shelf' : '?'));
+    expect(home).toEqual(['intro', 'search', 'top', 'tiles', 'cards', 'latest', 'saved']);
+    expect([...$('[data-ftx-col="main"]').children].map((el) => (el.matches('[data-explore-shelf]') ? `shelf:${el.dataset.exploreShelfPlacement}` : el.matches('[data-explore-hero]') ? 'hero' : '?'))).toEqual(['shelf:top', 'hero']);
+    expect($('[data-ftx-col="side"]')).toBeNull();
+    expect($$('[data-explore-shelf]')).toHaveLength(1);
+    expect($$('[data-explore-saved]')).toHaveLength(1);
   }, ROW);
-  it('C-4: the Product tag\'s words are ink, not purple', async () => {
+  it('C-4: the Product tag\'s words are ink, not purple (on the product-led story, opened from its tile)', async () => {
     await openPage();
-    const tag = [...card(TAP.id).querySelectorAll('span')].find((s) => s.textContent === COPY.card.product);
+    click($(`[data-explore-tile="${TAP.id}"]`));
+    await until(() => $('[data-explore-screen="story"]'), 'the story');
+    const tag = [...$('[data-explore-screen="story"] article').querySelectorAll('span')].find((s) => s.textContent === COPY.card.product);
     expect(tag.style.color).toBe('var(--ft-ink)');
   }, ROW);
 });

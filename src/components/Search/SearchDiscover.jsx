@@ -56,9 +56,10 @@ const SearchDiscover = ({ user, isMobile, isDesktop, setScreen, stocksData, side
   const tabs = withExplore
     ? [{ id: EXPLORE_HOME, label: 'Explore' }, ...TABS.map((tab) => (tab.id === 'explore' ? { ...tab, label: 'Markets' } : tab))]
     : TABS;
-  // Inside a story the tab row is not drawn (founder ruling F-1, Nov 22): the Explore tab says so through onInStory
-  // (false when it unmounts). Hidden ONLY while Explore is on, its tab is the open one, and a story shows — never on
-  // another tab, on Explore's home, or at 'off'.
+  // Inside a story the tab row is not drawn (founder ruling F-1, Nov 22), nor the page's heading (Explore Build 2,
+  // ruling B-12; build prompt K-9: the phone's account control is reached from the front page only): the Explore tab
+  // says so through onInStory (false when it unmounts). Hidden ONLY while Explore is on, its tab is the open one, and a
+  // story shows — never on another tab, on Explore's home, or at 'off'.
   const [inStory, setInStory] = useState(false);
   const hideTabRow = withExplore && activeTab === EXPLORE_HOME && inStory;
 
@@ -94,7 +95,8 @@ const SearchDiscover = ({ user, isMobile, isDesktop, setScreen, stocksData, side
         margin: isDesktop ? '0 auto' : undefined,
       }}
     >
-      {/* Header */}
+      {/* Header — not inside an Explore story */}
+      {hideTabRow ? null : (
       <div style={{
         display: 'flex',
         alignItems: 'center',
@@ -131,6 +133,7 @@ const SearchDiscover = ({ user, isMobile, isDesktop, setScreen, stocksData, side
           </div>
         )}
       </div>
+      )}
 
       {/* Search Bar — on every tab but Explore, whose own search takes its place */}
       {activeTab === EXPLORE_HOME ? null : (
