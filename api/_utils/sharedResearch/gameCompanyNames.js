@@ -3,8 +3,9 @@
 // Research universe Build 3b (lens 2 of the review, finding L2-1): THE 228 GAME COMPANIES' NAMES, AS DATA, for one use
 // only — the research session's name lookup (sessionUniverse.js lookupName) must know when a name written in words is
 // a GAME company's name, or its leading words, so that "Vertex" (Vertex Pharmaceuticals, VRTX) is never read as
-// Vertex Inc (VERX) and "Prudential" (Prudential Financial, PRU) never as Prudential plc (PUK): such a name is
-// ambiguous, and an ambiguous name resolves to no company (never a guess). Nothing here ever gives a symbol by itself.
+// Vertex Inc (VERX): such a name is ambiguous, and an ambiguous name resolves to no company (never a guess). (The
+// directory's own names do the same among research companies: "Prudential" is Prudential plc's whole name and
+// Prudential Financial's first word.) Nothing here ever gives a symbol by itself.
 //
 // Source: the EODHD screener names of Build 1's saved fetch (2026-11-26T21:29:31.241Z; the same fetch the research
 // directory was generated from), 227 of the 228; FMC, below the screener's floor that day, is written by hand as
