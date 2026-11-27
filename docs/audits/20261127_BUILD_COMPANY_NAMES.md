@@ -36,7 +36,8 @@
 | Tests | The §2 point 4 test (committed first), the three places in order, the golden with its name-only diff, one home for the research name, and a chain row from the rankings job's own fetch to the step validator. **7 rows failed on the unfixed code. Mutation battery: 8 of 8 killed** (§4). |
 | Full suite (Linux) | **exit 0** · `Test Files 1690 passed | 14 skipped (1704)` · 39,376 rows passed, 0 failed, 197 skipped · 570 s (§5) |
 | `lint:gate` | **exit 0** |
-| First rankings run with real names | **The first scheduled run after the merge is deployed.** The job runs at 11:00 UTC Monday to Friday (`vercel.json:69-70`); today's had already run. If the merge deploys before **Monday 30 Nov, 11:00 UTC (6:00 AM ET)**, that run rewrites all 240 names. Nothing triggers the job. |
+| First rankings run with real names | **The first scheduled run after the merge is deployed.** The job runs at 11:00 UTC Monday to Friday (`vercel.json:69-70`); today's had already run. If the merge deploys before **Monday 30 Nov, 11:00 UTC (6:00 AM ET)**, that run rewrites all 240 names. Nothing triggers the job. Work an idea reads Firestore directly, so it sees the names at once. The public `peer-rankings` endpoint caches for up to 5 minutes in memory and 1 hour at the CDN, plus 10 minutes stale-while-revalidate (`api/stocks/peer-rankings.js:97-98`). |
+| Facts already written | **Unchanged.** A fact's company is decided when its step is checked, so the 38 facts already stored keep no symbol. Steps after the fix match. |
 | Stopped on a ruling | Q-1 is answered ("go"). Q-2, the `metricSnapshots` copy, is recorded and needs no change (§6). |
 
 ---
@@ -48,6 +49,7 @@
   - Work an idea decides which company a fact is about by comparing the name the partner wrote with the stored name.
   - So far, not one of the 38 facts about a company in production's 6 Work an idea records carried its company. Some of those facts may be about companies the game doesn't hold. The rest were lost to the name.
   - The name check threw a game stock away 76 times, across 7 different stocks. From the next run, "NVIDIA" matches NVIDIA.
+  - **Facts already written stay as they are.** A fact keeps or loses its company at the moment the step is checked, so the 38 facts already in production keep no company. Steps run after the fix match. A later step that names the company again can bring it back to an idea.
 - **No number, rank, tier or score moves.** The profit-margin and short-interest faults found in Build 2 are untouched; they wait for their own build.
 - **Three AI prompts now get the real name**, which the founder approved:
   - Work an idea's thesis builder lists the companies an idea may use by name.
