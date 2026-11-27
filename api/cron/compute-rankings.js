@@ -113,7 +113,7 @@ function median(arr) {
 
 const API_BASE = 'https://eodhd.com/api';
 
-async function fetchSingleFundamental(ticker, apiKey) {
+export async function fetchSingleFundamental(ticker, apiKey) {
   const eohdTicker = ticker.replace(/\./g, '-');
   const url = `${API_BASE}/fundamentals/${eohdTicker}.US?api_token=${apiKey}&fmt=json&filter=${EODHD_FUNDAMENTALS_FILTER}`;
 
@@ -619,7 +619,7 @@ function extractYearlyDebtMetrics(incomeY) {
 /**
  * Extract raw metrics from EODHD fundamentals data across all dimensions.
  */
-function extractMetrics(ticker, fundamentals) {
+export function extractMetrics(ticker, fundamentals) {
   const h = fundamentals.highlights;
   const v = fundamentals.valuation;
   const t = fundamentals.technicals;
