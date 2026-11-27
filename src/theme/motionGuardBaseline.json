@@ -644,6 +644,18 @@
     "src/components/CommandCenter/hub/researchDoorView.js": {
       "count": 0,
       "authority": "Command Center Amendment E V1.1 Part 2 (the hub research door; rulings R-D1 to R-D4) - the Shared Research sheet wrapper, its loader and the door view: colours only through the hub style, motion only through the vocabulary (the HubSheet the wrapper renders), zero raw transition literals from birth. Registered in the final-check commit after the Linux full suite caught the code commit without it."
+    },
+    "src/components/CommandCenter/HubBookScope.jsx": {
+      "count": 0,
+      "authority": "The portfolio hub's slice 1 (spec 20261126 V1 section 3; ruling PH-20) - the connected shell's book scope, its context and the pure layout decision: no colour and no motion, zero raw transition literals from birth. Registered in the commit after the Linux full suite caught the code commit without it."
+    },
+    "src/components/CommandCenter/hub/hubBookRead.js": {
+      "count": 0,
+      "authority": "The portfolio hub's slice 1 (spec 20261126 V1 section 3; ruling PH-20) - the connected shell's book scope, its context and the pure layout decision: no colour and no motion, zero raw transition literals from birth. Registered in the commit after the Linux full suite caught the code commit without it."
+    },
+    "src/components/CommandCenter/hub/hubLayout.js": {
+      "count": 0,
+      "authority": "The portfolio hub's slice 1 (spec 20261126 V1 section 3; ruling PH-20) - the connected shell's book scope, its context and the pure layout decision: no colour and no motion, zero raw transition literals from birth. Registered in the commit after the Linux full suite caught the code commit without it."
     }
   }
 }
