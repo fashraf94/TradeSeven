@@ -45,7 +45,11 @@ export function Segment({ basis }) {
   const line = (style, flex = 1) => <span style={{ flex, height: 0, borderTop: `2px ${style} ${color}` }} />;
   return (
     <span aria-hidden="true" data-explore-line={basis} style={{ flex: 1, display: 'flex', alignItems: 'center', minWidth: 0 }}>
-      {basis === 'source_cited' ? line('solid') : basis === 'reporters_reading' ? line('dashed') : <>{line('solid')}<span style={{ flex: 1.8 }} />{line('solid')}</>}
+      {basis === 'source_cited'
+        ? line('solid')
+        // fine 3 px dashes at every size: at a card's 19 px a browser's own dashes looked like the broken line (review P-4)
+        : basis === 'reporters_reading' ? <span style={{ flex: 1, height: 2, background: `repeating-linear-gradient(90deg, ${color} 0 3px, transparent 3px 6px)` }} />
+          : <>{line('solid')}<span style={{ flex: 1.8 }} />{line('solid')}</>}
     </span>
   );
 }

@@ -27,7 +27,7 @@
 
 import React, { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { EXPLORE_COPY } from './exploreCopy';
-import { EXPLORE_CSS, S } from './exploreStyle';
+import { BOTTOM_NAV_PX, EXPLORE_CSS, S } from './exploreStyle';
 import { LINKED_READS_MAX, agentFor, linkedIdsOf, questionIdFor, sheetItemOf, storiesByIdOf } from './exploreView';
 import { LinkBtn, StatusLine, useMatches } from './exploreParts';
 import { ExploreSourcesContext } from './exploreSources';
@@ -82,6 +82,16 @@ export default function ExploreTab({ explore = null, onOpenResearch, stocksData 
   // tab reports false when it unmounts.
   const storyShown = view.kind === 'story' && storiesReady && Boolean(story);
   useLayoutEffect(() => { onInStory?.(storyShown); }, [storyShown, onInStory]);
+
+  // On a phone the app's bottom nav covers the screen's last 65 px: while Explore shows, a control reached by Tab is
+  // scrolled above it, not left under it (review P-2). The pinned bar reserves more while it shows, and gives this back.
+  useLayoutEffect(() => {
+    if (!isMobile) return undefined;
+    const root = document.documentElement;
+    const before = root.style.scrollPaddingBottom;
+    root.style.scrollPaddingBottom = `${BOTTOM_NAV_PX + 8}px`;
+    return () => { root.style.scrollPaddingBottom = before; };
+  }, [isMobile]);
   useLayoutEffect(() => () => { onInStory?.(false); }, [onInStory]);
 
   // After a view change: the scroll and the focus the change asked for (never a scroll on focus).

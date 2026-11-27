@@ -155,7 +155,11 @@ describe.skipIf(!BASE)('Explore in a real browser (Build 1 §9 checks 1–5; Bui
               const r = el.getBoundingClientRect();
               const bar = document.querySelector('[data-explore-pinned-bar]')?.getBoundingClientRect() ?? null;
               const row = document.querySelector('[data-explore-jump="pinned"]')?.getBoundingClientRect() ?? null;
-              const covered = (bar ? r.bottom > bar.top + 1 && r.top < bar.bottom : false) || (row ? r.top < row.bottom - 1 && r.bottom > row.top : false);
+              // anything over the control at its centre — the bar, the pinned row, or the app's bottom nav (review P-2)
+              const cx = r.left + r.width / 2;
+              const cy = r.top + Math.min(r.height / 2, 20);
+              const top = cy >= 0 && cy < innerHeight ? document.elementFromPoint(cx, cy) : el;
+              const covered = (bar ? r.bottom > bar.top + 1 && r.top < bar.bottom : false) || (row ? r.top < row.bottom - 1 && r.bottom > row.top : false) || !(top === el || el.contains(top));
               return { y: Math.round(r.top + window.scrollY), x: Math.round(r.left), covered, what: (el.textContent || el.tagName).trim().slice(0, 30) };
             });
             if (!at) break; // left the Explore tab
@@ -254,6 +258,23 @@ describe.skipIf(!BASE)('Explore in a real browser (Build 1 §9 checks 1–5; Bui
         try {
           await inStory(page);
           expect(await page.evaluate(() => document.querySelector('[data-explore-jump="pinned"]'))).toBeNull();
+          // review P-1: no label spills into the next, and a tap at the end of each label lands on its own section
+          const fit = await page.evaluate(() => {
+            const btns = [...document.querySelectorAll('[data-explore-screen="story"] [data-explore-jump="flow"] [data-explore-jump-to]')];
+            const bad = [];
+            btns.forEach((b, i) => {
+              const r = b.getBoundingClientRect();
+              const words = [...b.querySelectorAll('span')].filter((s) => s.textContent.trim()).map((s) => s.getBoundingClientRect());
+              if (words.some((w) => w.right > r.right + 0.5 || w.left < r.left - 0.5)) bad.push(`${b.dataset.exploreJumpTo}: words outside the button`);
+              if (i + 1 < btns.length && r.right > btns[i + 1].getBoundingClientRect().left + 0.5) bad.push(`${b.dataset.exploreJumpTo}: overlaps the next`);
+              const hit = document.elementFromPoint(r.right - 2, r.top + r.height / 2);
+              if (!(hit === b || b.contains(hit))) bad.push(`${b.dataset.exploreJumpTo}: its end hits ${hit?.closest('[data-explore-jump-to]')?.dataset.exploreJumpTo ?? hit?.tagName}`);
+            });
+            const row = document.querySelector('[data-explore-screen="story"] [data-explore-jump="flow"]').getBoundingClientRect();
+            if (btns.length && btns.at(-1).getBoundingClientRect().right > row.right + 0.5) bad.push('the last label leaves the row');
+            return bad;
+          });
+          expect(fit).toEqual([]);
           const marked = () => page.evaluate(() => document.querySelector('[data-explore-jump="pinned"] [aria-current="location"]')?.dataset.exploreJumpTo ?? null);
           for (const [section, sel] of [['connections', '[data-explore-connections] h3'], ['questions', '[data-explore-questions] h3']]) {
             await page.evaluate((s) => { const el = document.querySelector(`[data-explore-screen="story"] ${s}`); window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - 60); }, sel);

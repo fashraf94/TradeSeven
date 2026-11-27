@@ -20,8 +20,8 @@
 import React, { useRef } from 'react';
 import { EXPLORE_COPY } from './exploreCopy';
 import { FORMS, KINDS, atLimitOf, dateOf, formOf, itemFor, parentOf, saveBusyOf } from './exploreView';
-import { CAPS, S, T, wash } from './exploreStyle';
-import { BookmarkError, Disclosure, Eyebrow, Icon, LinkBtn, SaveToggle, Tag, Tickers } from './exploreParts';
+import { CAPS, S, T, WIDE_QUERY, wash } from './exploreStyle';
+import { BookmarkError, Disclosure, Eyebrow, Icon, LinkBtn, SaveToggle, Tag, Tickers, useMatches } from './exploreParts';
 import ExploreQuestions from './ExploreQuestions';
 import ExplorePanel, { progressLineOf } from './ExplorePanel';
 import ExplorePinnedBar from './ExplorePinnedBar';
@@ -128,6 +128,10 @@ export default function ExploreStory({
   const work = (event) => onWork(event, story, value, question.id);
   const published = dateOf(story.publishedAt);
   const deep = story.kind === KINDS.DEEP;
+  // From 1000 px the questions and the panel stand beside the story: they come first after the story in the DOM, so
+  // Tab reaches the primary action before an overview's (long) connections list, as Build 1 had it (review P-6).
+  // Below 1000 px an overview reads its connections first (B-14), and the DOM follows.
+  const wide = useMatches(WIDE_QUERY);
   const parent = parentOf(story, byId);
   const hasConnections = story.connections.length > 0;
   const hasSources = story.sources.length > 0;
@@ -257,7 +261,7 @@ export default function ExploreStory({
             <p style={{ margin: 0, fontSize: 16.5, fontWeight: 600, lineHeight: 1.4, color: T.ink, overflowWrap: 'anywhere' }}>{story.openQuestion}</p>
           </div>
         )}
-        {deep ? [side, connections] : [connections, side]}
+        {deep || wide ? [side, connections] : [connections, side]}
         {hasSources && (
           <div data-explore-sources="" data-explore-section="sources">
             <Disclosure label={COPY.sources} count={String(story.sources.length)} open={open.has(SOURCES_OPEN)} onToggle={() => onToggleBranch(SOURCES_OPEN)}>
@@ -278,6 +282,8 @@ export default function ExploreStory({
         )}
         {parent ? <WhereNext story={story} parent={parent} byId={byId} onOpenStory={onOpenStory} section={sections.at(-1).id} /> : null}
       </div>
+      {/* the story's end: the jump row marks the last section that shows once it is in view (review P-5) */}
+      <div aria-hidden="true" data-explore-story-end="" style={{ height: 1 }} />
       {bar && (
         <ExplorePinnedBar
           targetRef={primaryRef}

@@ -18,7 +18,7 @@ import React from 'react';
 import { EXPLORE_COPY } from './exploreCopy';
 import { RESEARCH, dateOf, shelfOf } from './exploreView';
 import { S, T } from './exploreStyle';
-import { Btn, Eyebrow, LinkBtn, Notice, StatusLine, Tag } from './exploreParts';
+import { Btn, LinkBtn, Notice, StatusLine, Tag } from './exploreParts';
 import { progressLineOf } from './ExplorePanel';
 
 const COPY = EXPLORE_COPY.shelf;
@@ -62,7 +62,8 @@ export default function ExploreShelf({ research, byId, onContinue, onViewIt, pla
     body = (
       <div style={S.section}>
         <Notice role="alert" tone="copper">{COPY.failed}</Notice>
-        <div><Btn kind="secondary" onClick={research.retry} data-explore-shelf-retry="">{COPY.tryAgain}</Btn></div>
+        {/* the button leaves with the retry: focus goes to the shelf's heading first, never to <body> (review P-3) */}
+        <div><Btn kind="secondary" onClick={() => { const h = document.getElementById(headingId); research.retry(); if (h) h.focus({ preventScroll: true }); }} data-explore-shelf-retry="">{COPY.tryAgain}</Btn></div>
       </div>
     );
   } else if (status !== RESEARCH.READY) body = <StatusLine>{COPY.checking}</StatusLine>;
@@ -113,7 +114,7 @@ export default function ExploreShelf({ research, byId, onContinue, onViewIt, pla
   return (
     <section aria-labelledby={headingId} style={{ ...S.section, gap: 12 }} data-explore-shelf={state} data-explore-shelf-placement={placement}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-        <Eyebrow as="h2" id={headingId} tone={holds ? 'teal' : null}>{COPY.title}</Eyebrow>
+        <h2 id={headingId} tabIndex={-1} style={{ ...S.eyebrow, color: holds ? T.teal : T.ink3, outline: 'none' }}>{COPY.title}</h2>
         {holds ? <span style={S.meta} data-explore-shelf-counts="">{COPY.counts(shelf.openCount, shelf.finishedCount)}</span> : null}
       </div>
       {body}

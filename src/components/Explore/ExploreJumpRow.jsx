@@ -9,8 +9,8 @@
 //     above the screen. The in-flow row keeps the Tab stops; the copy's buttons take none (focusing the in-flow row
 //     scrolls it back, which unpins). While pinned, the page keeps the top band clear for focus (scroll-padding-top).
 //   - ONE IntersectionObserver marks the section in view (`aria-current="location"`): the first of the story's
-//     section blocks, in reading order, that shows below the row. A tap marks its section at once and keeps it while
-//     the page stays where the jump put it (the last section may never reach the top of a short page).
+//     section blocks, in reading order, that shows below the row — or, once the story's end is in view, the last one
+//     that shows. A tap marks its section at once and keeps it while the page stays where the jump put it.
 //   - A tap scrolls to the section (instantly) and moves focus to its heading, never scrolling on focus.
 // Nothing here reads or writes anything but the page's own scroll and focus.
 
@@ -25,20 +25,27 @@ const RESET = { appearance: 'none', font: 'inherit', background: 'none', border:
 /** The row's height: 44 px targets and a 1 px rule. */
 export const JUMP_ROW_PX = 45;
 
-/** The section the reader is in: the first section block (in reading order) that shows below the row. */
-export function sectionInViewOf(blocks) {
-  const first = blocks.find((b) => b.showing);
-  return first ? first.section : null;
+/**
+ * The section the reader is in: the first section block (in reading order) that shows below the row — or, once the
+ * story's end is in view, the last block that shows (the last section of a short page never reaches the top: review
+ * P-5).
+ */
+export function sectionInViewOf(blocks, endInView = false) {
+  const showing = blocks.filter((b) => b.showing);
+  const pick = endInView ? showing.at(-1) : showing[0];
+  return pick ? pick.section : null;
 }
 
 function Row({ sections, current, onJump, backLabel, onBack, copy }) {
   const stop = copy ? -1 : undefined;
   return (
     <>
-      <button type="button" className="ftx-btn" tabIndex={stop} aria-label={COPY.backLabel(backLabel)} data-explore-jump-back="" onClick={onBack} style={{ ...RESET, width: 40, height: 44, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.ink }}>
+      <button type="button" className="ftx-btn" tabIndex={stop} aria-label={COPY.backLabel(backLabel)} data-explore-jump-back="" onClick={onBack} style={{ ...RESET, width: 36, height: 44, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.ink }}>
         <Icon name="back" size={18} />
       </button>
-      <div style={{ flex: 1, minWidth: 0, display: 'flex', justifyContent: 'space-between', gap: 2 }}>
+      {/* never shrunk below their words (review P-1: at 320 px a shrunk label spilled into the next, and a tap there
+          hit the wrong section); the marker takes no width of its own */}
+      <div style={{ flex: 1, minWidth: 0, display: 'flex', justifyContent: 'space-between', columnGap: 6 }}>
         {sections.map((s) => {
           const on = s.id === current;
           return (
@@ -50,11 +57,11 @@ function Row({ sections, current, onJump, backLabel, onBack, copy }) {
               aria-current={on ? 'location' : undefined}
               data-explore-jump-to={s.id}
               onClick={() => onJump(s.id)}
-              style={{ ...RESET, minHeight: 44, display: 'inline-flex', alignItems: 'center', gap: 4, fontWeight: 600, color: on ? T.ink : T.ink2, whiteSpace: 'nowrap', flexShrink: 1, minWidth: 0 }}
+              style={{ ...RESET, position: 'relative', minHeight: 44, display: 'inline-flex', alignItems: 'center', gap: 3, fontWeight: 600, color: on ? T.ink : T.ink2, whiteSpace: 'nowrap', flexShrink: 0 }}
             >
-              {on ? <span aria-hidden="true" style={{ width: 6, height: 6, borderRadius: '50%', background: T.teal, flexShrink: 0 }} /> : null}
-              <span style={{ fontSize: 13, lineHeight: 1.3 }}>{s.label}</span>
-              {s.count !== null ? <span style={{ fontSize: 13, lineHeight: 1.3, color: T.ink3, fontWeight: 500 }}>{s.count}</span> : null}
+              <span style={{ fontSize: 12, lineHeight: 1.3 }}>{s.label}</span>
+              {s.count !== null ? <span style={{ fontSize: 12, lineHeight: 1.3, color: T.ink3, fontWeight: 500 }}>{s.count}</span> : null}
+              {on ? <span aria-hidden="true" data-explore-jump-mark="" style={{ position: 'absolute', left: 0, right: 0, bottom: 5, height: 2, borderRadius: 1, background: T.teal }} /> : null}
             </button>
           );
         })}
@@ -97,18 +104,22 @@ export default function ExploreJumpRow({ sections, rootRef, onJump, backLabel, o
     if (!root || typeof IntersectionObserver !== 'function') return undefined;
     const blocks = [...root.querySelectorAll('[data-explore-section]')].map((el) => ({ el, section: el.dataset.exploreSection, showing: false }));
     if (!blocks.length) return undefined;
+    const end = root.querySelector('[data-explore-story-end]');
+    let endInView = false;
     const observer = new IntersectionObserver((entries) => {
       for (const e of entries) {
+        if (e.target === end) { endInView = e.isIntersecting; continue; }
         const b = blocks.find((x) => x.el === e.target);
         if (b) b.showing = e.isIntersecting;
       }
       const tap = jumped.current;
       if (tap && Math.abs(window.scrollY - tap.y) < 2) { setCurrent(tap.id); return; }
       jumped.current = null;
-      const inView = sectionInViewOf(blocks);
+      const inView = sectionInViewOf(blocks, endInView);
       if (inView) setCurrent(inView);
     }, { rootMargin: `-${JUMP_ROW_PX}px 0px 0px 0px`, threshold: 0 });
     for (const b of blocks) observer.observe(b.el);
+    if (end) observer.observe(end);
     return () => observer.disconnect();
   }, [rootRef, sectionKey]);
 
@@ -127,7 +138,7 @@ export default function ExploreJumpRow({ sections, rootRef, onJump, backLabel, o
     setCurrent(id);
   };
   const props = { sections, current, onJump: jump, backLabel, onBack };
-  const bar = { display: 'flex', alignItems: 'center', gap: 4, padding: '0 10px 0 2px', background: T.bg, borderBottom: `1px solid ${T.hair}`, minWidth: 0 };
+  const bar = { display: 'flex', alignItems: 'center', gap: 4, padding: '0 4px 0 0', background: T.bg, borderBottom: `1px solid ${T.hair}`, minWidth: 0 };
 
   return (
     <div className="ftx-phone-only" data-explore-jump-holder="">

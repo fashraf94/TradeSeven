@@ -582,7 +582,7 @@ describe('the phone\'s jump row and bar (B-13, B-14, K-10)', () => {
     await openOverview();
     const blocks = inStory('[data-explore-section]');
     const o = observerOn(blocks[0]);
-    expect(o.targets).toEqual(blocks);
+    expect(o.targets).toEqual([...blocks, storyEl().querySelector('[data-explore-story-end]')]);
     act(() => o.cb(blocks.map((t) => ({ target: t, isIntersecting: t.dataset.exploreSection === 'connections' || t.dataset.exploreSection === 'questions' }))));
     expect(storyEl().querySelector('[data-explore-jump="flow"] [aria-current="location"]').dataset.exploreJumpTo).toBe('connections');
     click(storyEl().querySelector('[data-explore-jump="flow"] [data-explore-jump-to="questions"]'));
@@ -736,6 +736,52 @@ describe('the review\'s fixes (lens b: N-1, N-2, N-3)', () => {
     const next = await until(() => storyEl().querySelector('[data-explore-where-next]'), 'Where next');
     await flush();
     expect(observerOn(next)?.targets).toContain(next);
+  });
+});
+
+describe('the review\'s fixes (lens c: P-2, P-3, P-5, P-6)', () => {
+  it('P-5: once the story\'s end is in view the row marks the last section that shows (Sources), not the first', async () => {
+    await openPage();
+    await openOverview();
+    const blocks = inStory('[data-explore-section]');
+    const end = storyEl().querySelector('[data-explore-story-end]');
+    const o = observerOn(end);
+    const showing = (t) => t.dataset.exploreSection === 'questions' || t.dataset.exploreSection === 'sources';
+    act(() => o.cb(blocks.map((t) => ({ target: t, isIntersecting: showing(t) }))));
+    expect(storyEl().querySelector('[data-explore-jump="flow"] [aria-current="location"]').dataset.exploreJumpTo).toBe('questions');
+    act(() => o.cb([{ target: end, isIntersecting: true }]));
+    expect(storyEl().querySelector('[data-explore-jump="flow"] [aria-current="location"]').dataset.exploreJumpTo).toBe('sources');
+    act(() => o.cb([{ target: end, isIntersecting: false }]));
+    expect(storyEl().querySelector('[data-explore-jump="flow"] [aria-current="location"]').dataset.exploreJumpTo).toBe('questions');
+  });
+  it('P-6: from 1000 px an overview\'s questions and panel come before its connections in the DOM (Tab reaches the action first); below, after', async () => {
+    const matchMedia = window.matchMedia;
+    window.matchMedia = (q) => ({ matches: q === '(min-width: 1000px)', addEventListener() {}, removeEventListener() {} });
+    try {
+      await openPage({ props: { isMobile: false, isDesktop: true } });
+      await openOverview();
+      const kids = [...$('[data-ftx-grid="story"]').children].map((el) => (el.matches('[data-ftx-side]') ? 'side' : el.matches('[data-explore-connections]') ? 'connections' : null)).filter(Boolean);
+      expect(kids).toEqual(['side', 'connections']);
+    } finally { window.matchMedia = matchMedia; }
+  });
+  it('P-3: the shelf\'s Try again hands focus to the shelf\'s heading, never to <body>', async () => {
+    await openPage({ answer: NO_ANSWER });
+    const retry = $('[data-explore-shelf-retry]');
+    retry.focus();
+    read.mockResolvedValue(answerOf(READS.fresh));
+    click(retry);
+    await until(() => $('[data-explore-shelf="empty"]'), 'the shelf');
+    expect(document.activeElement).toBe($('[data-explore-shelf] h2'));
+  });
+  it('P-2: on a phone the bottom nav\'s band is kept clear for focus while Explore shows, and given back when it goes', async () => {
+    document.documentElement.style.scrollPaddingBottom = '';
+    const m = await openPage();
+    expect(document.documentElement.style.scrollPaddingBottom).toBe('73px');
+    m.unmount();
+    mounted = mounted.filter((x) => x !== m);
+    expect(document.documentElement.style.scrollPaddingBottom).toBe('');
+    await openPage({ props: { isMobile: false, isDesktop: true } });
+    expect(document.documentElement.style.scrollPaddingBottom).toBe('');
   });
 });
 
