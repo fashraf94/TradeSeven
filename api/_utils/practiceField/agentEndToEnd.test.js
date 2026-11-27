@@ -26,6 +26,7 @@ import { CODE_FALLBACK_NOTE } from './agentConfig.js';
 import { getBook, getIdea, DAYS, dumpStore, bannedWordsOnResults } from './__testsupport__/fixtures.js';
 import { deskPartsOf } from './__testsupport__/agentFixtures.js';
 import { runFoundersBook, EARLY_CLOSE, EXIT_SESSION, FAIL_SESSION } from './__testsupport__/agentEndToEndRun.js';
+import { restoreMainPromptLeaves, CLOSE_ROW_DOC, PROMPT_LEAF } from './__testsupport__/promptLeaves.js';
 
 let restoreMode;
 let restoreAgent;
@@ -163,12 +164,27 @@ describe('the run is reproducible byte for byte', () => {
   //   'allowlist' with the founder on the new player list. Leaf-compared at 3 and 12: the same 26,201 leaves, and the ONLY
   //   changed ones are the slots version (the book, its epoch's rails, each of the four ideas' contracts and admission packets:
   //   10 leaves), the four admission packets' derived `contentHash`, and the registry's `cap` (4 → 12, the one extra byte).
-  const EXPECTED_AGENT_DUMP = { sha256: 'd45565abcdeedae9d0da36a09e843c6f5f5d2aff8269e3304034d007a7aacdeb', bytes: 830895 };
+  //   Build B6 (the desks' wording, rulings B6-1 and B6-2): re-pinned from d45565ab…, 830,895 bytes. Leaf-compared with it:
+  //   the same 26,201 leaves, and the ONLY changed ones are the prompt's own 144 (__fixtures__/agentRunMainPromptLeaves.js:
+  //   on the 13 close rows, each desk manifest's `version` 1 → 2 (26), the Shadow brief's `identity.version` 1 → 2 (13),
+  //   `inputHash`, `inputSha256` and `inputBytes` (78), and each attempt's `inputHash` (27)). With main's values put back
+  //   there, the dump is d45565ab… byte for byte — asserted below.
+  const MAIN_AGENT_DUMP = { sha256: 'd45565abcdeedae9d0da36a09e843c6f5f5d2aff8269e3304034d007a7aacdeb', bytes: 830895 };
+  const EXPECTED_AGENT_DUMP = { sha256: '88d3f1d34e1e2ee91b6661facee8fc70e4717ceee7de74060045dd7e6d046c17', bytes: 830895 };
   it('the final store of the theses-off run, dumped and pinned', { timeout: 60_000 }, async () => {
     const { ctx } = await runBook({ theses: false });
     const dump = dumpStore(ctx.db);
     const evidence = { sha256: createHash('sha256').update(dump).digest('hex'), bytes: Buffer.byteLength(dump) };
     console.log(`PF_AGENT_E2E_EVIDENCE ${JSON.stringify(evidence)}`);
     expect(evidence).toEqual(EXPECTED_AGENT_DUMP);
+    // Build B6: only the prompt's own leaves moved — main's values put back give main's pin, byte for byte.
+    const { restored, moved } = restoreMainPromptLeaves(dump);
+    expect({ sha256: createHash('sha256').update(restored).digest('hex'), bytes: Buffer.byteLength(restored) }).toEqual(MAIN_AGENT_DUMP);
+    expect(moved).toHaveLength(144);
+    for (const m of moved) {
+      expect(m.doc).toMatch(CLOSE_ROW_DOC);
+      expect(m.field).toMatch(PROMPT_LEAF);
+      expect(m.now).not.toEqual(m.main);
+    }
   });
 });
