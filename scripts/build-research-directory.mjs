@@ -329,17 +329,18 @@ export function buildDirectory({
     }
     if (kept.has(symbol)) { drop('repeat_symbol'); continue; }
     if (!listing) { drop('not_in_exchange_list'); continue; }
-    let relaxed = null;
+    // Each correction that let the row through (both can: a restored share class on BATS; review R2-8).
+    const relaxed = new Set();
     if (!KEPT_EXCHANGES.includes(listing.Exchange)) {
       // RU-8: a correction venue relaxes this filter only; the type filter and every later one still apply.
       if (!extraVenues.has(listing.Exchange)) { drop('exchange'); continue; }
-      relaxed = 'venue';
+      relaxed.add('venue');
     }
     if (otcShapedOnNyseFamily(symbol, listing.Exchange)) { drop('otc_shaped_code'); continue; }
     if (listing.Type !== KEPT_TYPE) {
       // RU-11: a restored symbol passes the type filter only; it still needs a mapped sector and a name.
       if (!restored.has(symbol)) { drop('type'); continue; }
-      relaxed = 'restore';
+      relaxed.add('restore');
     }
     const sector = houseSectorOf(sectorString);
     if (!sector) { drop('sector_unmapped'); continue; }
@@ -358,7 +359,7 @@ export function buildDirectory({
       marketValue,
       exchange: listing.Exchange,
     });
-    if (relaxed) relaxedBy.set(symbol, relaxed);
+    if (relaxed.size > 0) relaxedBy.set(symbol, relaxed);
   }
 
   const correctionReport = applyCorrectionsAfterFilters({ kept, dropped, relaxedBy, corrections, screenerRows });
@@ -441,12 +442,12 @@ function applyCorrectionsAfterFilters({ kept, dropped, relaxedBy, corrections, s
   }
   for (const e of corrections.restore) {
     const row = kept.get(e.symbol);
-    const entered = Boolean(row) && relaxedBy.get(e.symbol) === 'restore';
+    const entered = Boolean(row) && relaxedBy.get(e.symbol)?.has('restore') === true;
     // Kept with no help from the correction (the vendor's type is now right): no effect, recorded so the review drops it.
     if (row && !entered) noEffect.push({ kind: 'restore', symbol: e.symbol, ruling: e.ruling, droppedBy: null, note: 'kept by the filters alone' });
     else account('restore', e, entered, row ? { name: row.name, sector: row.sector } : {});
   }
-  const venueAdmitted = [...relaxedBy].filter(([, why]) => why === 'venue').map(([symbol]) => kept.get(symbol))
+  const venueAdmitted = [...relaxedBy].filter(([, why]) => why.has('venue')).map(([symbol]) => kept.get(symbol))
     .filter(Boolean).sort((a, b) => byCodePoint(a.symbol, b.symbol))
     .map((r) => ({ symbol: r.symbol, name: r.name, exchange: r.exchange, sector: r.sector }));
   for (const v of corrections.venues) {
@@ -680,6 +681,8 @@ export async function runMain({
   corrections = DIRECTORY_CORRECTIONS,
 }) {
   const opts = parseArgs(argv);
+  // The corrections list is checked before any network call or write (review R2-7).
+  validateCorrections(corrections);
   const runDir = opts.runDir || defaultRunDir;
   makeDir(runDir);
 
