@@ -170,6 +170,29 @@ describe('the stamp at open (section 5.1)', () => {
     const b = await openOwn('I think glass matters', 'req-b');
     expect('universe' in sessionDoc(b.session.sessionId)).toBe(false);
   });
+  it('a framed ledger (the builder off) is stamped at open, not at its framing: the frame runs on the game list, the open stamps research', async () => {
+    state.builder = 'off';
+    state.turnQueue.push(turnOk({ question: 'Which listed companies sell the glass inside AI data centers?', check: 'Find who supplies fiber glass.', notEstablished: 'Whether glass is a large part of any supplier\'s sales.' }));
+    const f = await post({ action: 'frame', requestId: 'req-frame', observation: 'Corning glass is in every AI data center' });
+    expect(f.statusCode, JSON.stringify(f.body)).toBe(200);
+    expect('universe' in sessionDoc(f.body.sessionId)).toBe(false);
+    expect(state.turns[0].system).not.toContain(RESEARCH_NAMES_RULE);
+    const o = await post({ action: 'open', sessionId: f.body.sessionId, question: 'Which listed companies sell the glass inside AI data centers?' });
+    expect(o.statusCode, JSON.stringify(o.body)).toBe(200);
+    expect(sessionDoc(f.body.sessionId).universe).toBe('research');
+    expect(o.body.session.universe).toBe('research');
+    // its first step runs on the research list: the rule, and Corning in words resolved
+    state.retrievalQueue.push(search());
+    state.turnQueue.push(turnOk({
+      reply: 'Corning supplies the fiber.', findings: [{ tempId: 'c1', kind: 'relationship', fact: 'Corning supplies the optical fiber inside AI data centers.', symbolCandidate: null, companyName: 'Corning', support: { kind: 'retrieval', index: 0, from: [], reason: null }, at: null, supersedes: null }],
+      summary: null, lines: { support: 'c1', complication: null, missing: null }, nextAction: { label: 'Size the fiber sales', purpose: 'Significance is the weakest link.' }, companies: [],
+    }));
+    const s = await post({ action: 'step', sessionId: f.body.sessionId, stepId: uuid(9), intent: 'next' });
+    expect(s.statusCode, JSON.stringify(s.body)).toBe(200);
+    expect(state.turns.at(-1).system).toContain(RESEARCH_NAMES_RULE);
+    expect(s.body.companies.supported).toEqual([expect.objectContaining({ symbol: 'GLW', eligibility: 'research' })]);
+    expect(s.body.storedRows.find((r) => r.symbol === 'GLW')).toMatchObject({ research: true, numbers: 'shown' });
+  });
   it('the stamp never changes: a research session stays one with the switch off, a game-list one stays one with it on', async () => {
     const research = await openOwn('Corning glass', 'req-r');
     state.universe = 'off';
