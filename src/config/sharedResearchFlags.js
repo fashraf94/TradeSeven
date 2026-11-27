@@ -75,3 +75,34 @@ export const SHARED_RESEARCH_BUILDER_MODES = Object.freeze(['off', 'on']);
  */
 // Pinned by: sharedResearchFlags.test.js (the pin and this value move together — BUILD_RULES §2).
 export const SHARED_RESEARCH_BUILDER_MODE = 'on';
+
+/** The walked states of SHARED_RESEARCH_UNIVERSE_MODE, in runway order. */
+export const SHARED_RESEARCH_UNIVERSE_MODES = Object.freeze(['off', 'founder', 'on']);
+
+/**
+ * SHARED_RESEARCH_UNIVERSE_MODE — Work an idea accepts research companies (research universe Build 3b; founder
+ * rulings RU-17 to RU-22 of Nov 27, 2026). It decides only which list a NEW investigation is stamped with at open:
+ * the game's 228 (no stamp, today's behaviour) or the research list (the 228 plus the directory). Who may use Shared
+ * Research at all is still SHARED_RESEARCH_MODE above.
+ *
+ * A STRING ('off' | 'founder' | 'on'), resolved at CALL time by universeModeNow()
+ * (api/_utils/sharedResearch/sessionUniverse.js), which maps any other value — or a read that throws — to 'off'.
+ * Never read at module scope.
+ *
+ *   'off'      every investigation opens on the game list, exactly as before: no stamp, the same prompts, answers and
+ *              stored records.
+ *   'founder'  only a uid on the founder list (MANDATE_FOUNDER_UIDS, read at call time by readPracticeFieldFounderList,
+ *              api/_utils/practiceField/playerList.js) opens on the research list (RU-22).
+ *   'on'       every investigation opened now opens on the research list.
+ * The stamp is read once, at open, and never changes: an investigation opened on the game list stays on it.
+ *
+ * NOTHING A BATTLE AGENT TRADES changes at any value: a research company is never ranked, never eligible, and a saved
+ * idea holding one is refused by the equip route (research_only_list, RU-18).
+ *
+ * RUNWAY: 'off' ships with Build 3b (PR B, dark). 'founder' is its own one-line PR (PR C) after B merges. 'on' is
+ * another, after the founder's own use. Never a build PR.
+ * ROLLBACK: move the literal back one step with its pin: new investigations open on the game list; open research
+ * investigations keep their stamp.
+ */
+// Pinned by: sharedResearchFlags.test.js (the pin and this value move together — BUILD_RULES §2).
+export const SHARED_RESEARCH_UNIVERSE_MODE = 'off';

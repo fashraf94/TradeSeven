@@ -45,7 +45,7 @@ import {
   FINDINGS_MAX, FINDING_ID_PREFIX, currentFindingsOf, isInstant, buildFinding, isSourceUrl,
 } from '../researchRecords/model.js';
 import { RELATIONSHIP_ROLES, ROLE_SEPARATOR, UNRESOLVED_REASONS } from '../../../src/constants/sharedResearch.js';
-import { gameUniverse, resolveSymbol, namesCompany, isSameCompany } from './companies.js';
+import { gameUniverse, resolveSymbol, namesCompany, isSameCompany, nameAsTickerOf } from './companies.js';
 import { METHOD_SOURCE, methodMarkersFor } from './method.js';
 
 /**
@@ -465,10 +465,21 @@ export function validateStepTurn(output, ctx) {
    */
   const identityOf = (candidate, companyName, factText = null) => {
     let symbol = resolveSymbol(candidate, universe);
-    if (symbol === null && companyName) symbol = resolveSymbol(companyName, universe);
+    if (symbol === null && companyName) {
+      // a name written as its ticker (on a research session, in capitals only — Build 3b section 5.7); then, on a
+      // research session only, the one company whose core or everyday name it is (section 5.6). Both, naming two
+      // different companies, is no company: never a guess.
+      const asTicker = nameAsTickerOf(companyName, universe);
+      const byName = typeof universe.lookupName === 'function' ? universe.lookupName(companyName) : null;
+      if (asTicker !== null && byName !== null && asTicker !== byName) {
+        notes.push(`identity_ambiguous:${asTicker}|${byName}`);
+        return null;
+      }
+      symbol = asTicker ?? byName;
+    }
     if (symbol === null) return null;
     // the named company must BE the symbol's (every word of the name in the stored name — refuter SH-2)
-    if (companyName && !isSameCompany(companyName, { symbol, name: names[symbol] })) {
+    if (companyName && !isSameCompany(companyName, { symbol, name: names[symbol] }, universe)) {
       notes.push(`identity_mismatch:${symbol}`);
       return null;
     }

@@ -24,6 +24,7 @@
 import { ALL_TICKERS, isRetiredStock } from '../rankingConfig.js';
 import { METHOD } from './method.js';
 import { ACRONYMS, INDEX_NAMES, maskStrayTickers } from './stepSchema.js';
+import { gameUniverse } from './companies.js';
 import { RELATIONSHIP_ROLES, UNRESOLVED_REASONS } from '../../../src/constants/sharedResearch.js';
 import { acceptsOf } from './thesisSchema.js';
 
@@ -41,6 +42,19 @@ export const WRITTEN_OPENING_RULES = Object.freeze([
 ]);
 
 const UNIVERSE_LINE = ALL_TICKERS.filter((t) => !isRetiredStock(t)).join(' ');
+/**
+ * Build 3b section 5.3: the one rule a RESEARCH session's partner gains (sessionUniverse.js stamps the session). Its
+ * list of symbols stays the game's: the directory's symbols are never added to the prompt.
+ */
+export const RESEARCH_NAMES_RULE = 'For any company not on the list, write its name in words and leave the symbol empty. The server looks the company up. Never write a ticker from memory in a sentence.';
+/**
+ * The universe lines of a system prompt, for the session's universe: the game's list (on every session), then — on a
+ * research session only — RESEARCH_NAMES_RULE. A game-list session's lines are byte-identical to before.
+ */
+const universeLinesOf = (universe) => [
+  `Game universe (the only symbols you may write, in a fact or in symbolCandidate): ${UNIVERSE_LINE}`,
+  ...(universe?.research === true ? [RESEARCH_NAMES_RULE] : []),
+];
 const partnerOf = (name) => (typeof name === 'string' && name.trim() ? name.trim().slice(0, 40) : 'the research partner');
 
 /**
@@ -71,8 +85,11 @@ export function methodBlockOf(method) {
   ].join('\n');
 }
 
-/** The step turn's system prompt. `method`: the turn's effective method (KB-1); the baseline when omitted. */
-export function buildStepSystemPrompt({ partnerName, method = null } = {}) {
+/**
+ * The step turn's system prompt. `method`: the turn's effective method (KB-1); the baseline when omitted. `universe`:
+ * the session's (Build 3b; sessionUniverse.js universeOf) — the game's when omitted.
+ */
+export function buildStepSystemPrompt({ partnerName, method = null, universe = gameUniverse } = {}) {
   return [
     `You are ${partnerOf(partnerName)}, the player's research partner on FantasyTrades. You investigate one fixed question; you never trade or instruct the agent.`,
     '',
@@ -82,7 +99,7 @@ export function buildStepSystemPrompt({ partnerName, method = null } = {}) {
     'Method:',
     methodBlockOf(method),
     '',
-    `Game universe (the only symbols you may write, in a fact or in symbolCandidate): ${UNIVERSE_LINE}`,
+    ...universeLinesOf(universe),
     `Index names you may write: ${INDEX_NAMES.join(' ')}. Capital abbreviations you may write: ${ACRONYMS.join(' ')}. Write every other abbreviation and every other company in plain words ("Taiwan Semiconductor", "graphics processors").`,
     '',
     'Output (the schema you are given):',
@@ -119,22 +136,22 @@ export function buildFrameSystemPrompt({ partnerName, method = null } = {}) {
  * What the model sees of any text: a ticker the universe does not hold is masked (spec §17 FQ-14) — the player's
  * words stay verbatim in the record and the exchange (rulebook §4 (1)), but the partner cannot echo such a ticker into
  * a fact. Every text the prompts render goes through it (the record's own texts never hold one; retrieved titles and
- * highlights may).
+ * highlights may). Build 3b: masked against the SESSION's universe (the game's when omitted), so on a research session
+ * a research-list ticker in a retrieved text is shown as written.
  */
-const seen = (s) => maskStrayTickers(String(s ?? '').replace(/\s+/g, ' ').trim());
+const seenIn = (universe = gameUniverse) => (s) => maskStrayTickers(String(s ?? '').replace(/\s+/g, ' ').trim(), universe);
 
 /** The framing turn's user message. */
-export const renderFrameUser = ({ observation }) => `The player's observation (their words, not a fact):\n${seen(observation)}`;
+export const renderFrameUser = ({ observation, universe = gameUniverse }) => `The player's observation (their words, not a fact):\n${seenIn(universe)(observation)}`;
 
 const STARTED = {
   item: 'a FantasyTimes story (reporter content, not a primary source)',
   observation: "the player's own words (their observation, not a fact)",
   signaldrop: "the player's SignalDrop (their own material, not a fact)",
 };
-const line = seen;
-
 /** The examine step's target block (Correction B): a different company is a different block. */
-export function targetBlockOf({ symbol, relationshipFact, openFact, question }) {
+export function targetBlockOf({ symbol, relationshipFact, openFact, question, universe = gameUniverse }) {
+  const line = seenIn(universe);
   const bare = (s) => line(s).replace(/[.!?]+$/, '');
   return `Investigate ${symbol}'s ${bare(relationshipFact)}. Resolve: ${openFact ? bare(openFact) : 'how much this relationship matters to its results'}. Stay inside the question: ${bare(question)}.`;
 }
@@ -145,8 +162,9 @@ export function targetBlockOf({ symbol, relationshipFact, openFact, question }) 
  */
 export function renderStepUser({
   question, entryKind, intent, direction = null, nextAction = null, target = null, summary = null, stepsLeft,
-  findings, items, retrieval, firstStep = false, room = null, answerStale = false,
+  findings, items, retrieval, firstStep = false, room = null, answerStale = false, universe = gameUniverse,
 }) {
+  const line = seenIn(universe);
   const out = [`Question (fixed; never change it): ${line(question)}`, `Started from: ${STARTED[entryKind] ?? 'the player'}`];
   if (intent === 'next') out.push(`This step: run the current next action${nextAction ? `: ${line(nextAction)}` : '.'}`);
   if (intent === 'examine') out.push(`This step: examine one connection. ${target}`);
@@ -218,8 +236,8 @@ export const PLAYER_WORDS_RULE_INDEX = 0;
 /** §4's lines without lines (1) and (7), in order (the builder prompt only; the ledger's prompts carry §4 whole). */
 export const BUILDER_OPENING_RULES = Object.freeze(WRITTEN_OPENING_RULES.filter((_, i) => i !== WEAKEST_LINK_RULE_INDEX && i !== PLAYER_WORDS_RULE_INDEX));
 
-/** The builder turn's system prompt. `method`: the turn's effective method (KB-1); the baseline when omitted. */
-export function buildBuildSystemPrompt({ partnerName, method = null } = {}) {
+/** The builder turn's system prompt. `method`: the turn's effective method (KB-1); the baseline when omitted. `universe`: as the step's. */
+export function buildBuildSystemPrompt({ partnerName, method = null, universe = gameUniverse } = {}) {
   return [
     `You are ${partnerOf(partnerName)}, the player's research partner on FantasyTrades. You help the player build one thesis, one step at a time; you never trade or instruct the agent.`,
     '',
@@ -232,7 +250,7 @@ export function buildBuildSystemPrompt({ partnerName, method = null } = {}) {
     'Method:',
     methodBlockOf(method),
     '',
-    `Game universe (the only symbols you may write, in a fact or in symbolCandidate): ${UNIVERSE_LINE}`,
+    ...universeLinesOf(universe),
     `Index names you may write: ${INDEX_NAMES.join(' ')}. Capital abbreviations you may write: ${ACRONYMS.join(' ')}. Write every other abbreviation and every other company in plain words ("Taiwan Semiconductor", "graphics processors").`,
     '',
     "Output (the schema you are given holds only this step's fields). Fill what this step's goal asks for; leave a proposal null or empty when you have none.",
@@ -256,7 +274,7 @@ export function buildBuildSystemPrompt({ partnerName, method = null } = {}) {
 const STRENGTHEN_REVISES = Object.freeze({ segment: 'the segment map (segments)', why: 'the why proposal (why)', wrongIf: 'the wrong-if options (wrongIfOptions)' });
 
 /** What each goal asks of the step (the user turn's goal line). */
-function goalLineOf({ goal, part, card }) {
+function goalLineOf({ goal, part, card, line }) {
   const names = card?.names?.state === 'set' ? card.names.value.join(', ') : null;
   // §B13 T-2: find_names may run with no theme set; it then works on the question above, never on "the theme"
   const themed = card?.theme?.state === 'set' && card.theme.value;
@@ -284,13 +302,14 @@ function directionLineOf(shape) {
   return `The proposals you may make are those of the card's next step (${of}); make one only when what you find supports it.`;
 }
 
-const said = (v) => (v === null || v === undefined || v === '' ? null : line(v));
+const saidIn = (line) => (v) => (v === null || v === undefined || v === '' ? null : line(v));
 const BY_WORDS = Object.freeze({ player_wrote: 'the player wrote it', player_chose: 'the player chose it', partner_suggested_confirmed: 'you suggested it; the player confirmed' });
 const byWords = (b) => BY_WORDS[b] ?? 'set';
 
 /** The card as the model sees it (every text through `seen`: a ticker the universe does not hold is masked). */
-function cardLinesOf(card, supported = []) {
+function cardLinesOf(card, supported = [], line = seenIn()) {
   if (!card) return ['  (no card)'];
+  const said = saidIn(line);
   const out = [];
   const t = card.theme;
   out.push(`  Theme: ${t.state === 'set' ? `${said(t.value)} (${byWords(t.by)})` : t.suggestion ? `not set; you suggested "${said(t.suggestion)}"` : 'not set'}`);
@@ -322,13 +341,15 @@ function cardLinesOf(card, supported = []) {
  */
 export function renderBuildUser({
   question, entryKind, goal, part = null, shape = null, direction = null, card, supported = [], stepsLeft, findings, items, retrieval, room = null,
+  universe = gameUniverse,
 }) {
+  const line = seenIn(universe);
   const out = [`Question (fixed; never change it): ${line(question)}`, `Started from: ${STARTED[entryKind] ?? 'the player'}`];
-  out.push('The thesis card as it stands:', ...cardLinesOf(card, supported));
+  out.push('The thesis card as it stands:', ...cardLinesOf(card, supported, line));
   out.push('Listed companies with a sourced connection (the only names a thesis may use):');
   for (const c of supported) out.push(`  ${c.symbol} | ${line(c.name)} | ${line(c.role)} | ${line(c.relationship)}`);
   if (supported.length === 0) out.push('  (none yet)');
-  out.push(goalLineOf({ goal, part, card }));
+  out.push(goalLineOf({ goal, part, card, line }));
   if (goal === 'direction') out.push(directionLineOf(shape));
   if (direction) out.push(`The player's direction (their words): ${line(direction)}`);
   out.push(`Steps left after this one: ${stepsLeft}`);

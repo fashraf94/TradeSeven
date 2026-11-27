@@ -642,7 +642,12 @@ describe('row 11 — ownership and the archetype boundary', () => {
     const reached = [...reach(roots, readReal)];
     expect(reached.length).toBeGreaterThan(30); // not vacuous: the graph reaches the record models, the KB loader, src/ constants
     expect(reached).toContain(path.join(REPO, 'api', '_utils', 'kb', 'loader.js'));
-    expect(reached.filter((f) => FORBIDDEN.some((d) => inside(f, d))).map((f) => path.relative(REPO, f))).toEqual([]);
+    // Build 3b (RU-22): the founder list's one parser (ruling B4-5) is the one file under practiceField/ a Shared Research
+    // module may reach — sessionUniverse.js reads MANDATE_FOUNDER_UIDS through readPracticeFieldFounderList. It reads
+    // the environment and nothing else: it imports nothing (pinned here), so no store is reachable through it.
+    const FOUNDER_LIST = path.join(REPO, 'api', '_utils', 'practiceField', 'playerList.js');
+    expect(specsOf(readReal(FOUNDER_LIST))).toEqual([]);
+    expect(reached.filter((f) => FORBIDDEN.some((d) => inside(f, d)) && f !== FOUNDER_LIST).map((f) => path.relative(REPO, f))).toEqual([]);
     // Proven on a planted edge: a Shared Research module importing a Practice Field store is caught.
     const planted = new Map([[path.join(SR, 'zz.js'), "import { x } from './method.js';\nimport { y } from '../practiceField/ideaBook.js';"]]);
     const readPlanted = (f) => (planted.has(f) ? planted.get(f) : readReal(f));

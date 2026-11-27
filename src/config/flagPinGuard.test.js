@@ -397,6 +397,15 @@ const DARK_BY_DESIGN = {
   // (the client, dark); then one founder PR to 'on' after B4 merges, moving the
   // pin row in sharedResearchFlags.test.js in the same commit (BUILD_RULES §2).
   // Rollback: back to 'off' with its pin row; open builder sessions keep working.
+  // SHARED_RESEARCH_UNIVERSE_MODE intentionally ABSENT, and it must stay absent:
+  // the research universe's switch for Work an idea (research universe Build 3b,
+  // rulings RU-17 to RU-22) is a STRING ('off' | 'founder' | 'on') in the same
+  // module, src/config/sharedResearchFlags.js, so buildFlagMap never sees it. It
+  // decides only which list a NEW investigation is stamped with at `open`.
+  // Runway: 'off' with Build 3b (PR B, dark); 'founder' in its own one-line PR
+  // (PR C); 'on' later. Each step moves the pin row in sharedResearchFlags.test.js
+  // in the same commit (BUILD_RULES §2). Rollback: one step back with its pin row;
+  // open research investigations keep their stamp.
   // EXPLORE_MODE intentionally ABSENT, and it must stay absent: Explore, the
   // front page of Search (spec docs/specs/
   // 20261121_EXPLORE_BUILD_1_SPEC_V1_1.md §6), is a STRING TRI-STATE

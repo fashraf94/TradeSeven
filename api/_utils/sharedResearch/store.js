@@ -51,6 +51,7 @@ import {
 } from './thesis.js';
 import { companiesOf } from './companies.js';
 import { CLAIMS_READ_LIMIT } from './opening.js';
+import { RESEARCH_STAMP } from './sessionUniverse.js';
 import { EXPLORE_RECORD_KIND } from '../../../src/constants/sharedResearch.js';
 import {
   EXPLORE_OPEN_READ, EXPLORE_ENDED_READ, EXPLORE_RECORDS_READ, sessionsToReadOf, sessionsByIdOf, livePerStoryOf, lastPerStoryOf, exploreItemsOf,
@@ -443,9 +444,11 @@ async function attributionIn(tx, db, uid, nowIso) {
  * `method`: the stamp the route selected (KB-1: the baseline, for a story or a drop).
  * `builder`: `{ thesis }` when the builder mode stamps this new session a thesis builder (Amendment B §B2) — the
  * session is written with `shape: 'builder'` and its card; absent, the session is written exactly as before.
+ * `universe`: the research universe's stamp (Build 3b; sessionUniverse.js universeStampFor) — 'research' writes
+ * `universe: 'research'` on the new session; null writes no field (a game-list session is written exactly as before).
  * @returns {Promise<{ session, record, day, existing: boolean, replay: boolean, previous: object|null }>}
  */
-export async function openFromItem(db, { uid, requestId, sessionId, entry, exchanges, findings, nowIso, method = null, builder = null }) {
+export async function openFromItem(db, { uid, requestId, sessionId, entry, exchanges, findings, nowIso, method = null, builder = null, universe = null }) {
   const etDate = etDateOf(nowIso);
   const key = itemKeyOf(entry.itemRef);
   return db.runTransaction(async (tx) => {
@@ -471,6 +474,7 @@ export async function openFromItem(db, { uid, requestId, sessionId, entry, excha
     const record = mintRecord({ sessionId, uid, question: entry.question, findings, nowIso });
     const session = openSessionOf({ sessionId, userId: uid, requestId, entry, exchanges, attribution, researchWorkId: record.researchWorkId, nowIso, method });
     if (builder) Object.assign(session, { shape: 'builder', thesis: builder.thesis });
+    if (universe === RESEARCH_STAMP) session.universe = RESEARCH_STAMP;
     tx.set(sessionRefOf(db, sessionId), session);
     tx.create(researchWorkRefOf(db, record.researchWorkId), record);
     const after = { ...day, investigationsOpened: day.investigationsOpened + 1 };
@@ -496,9 +500,10 @@ export async function readPrevious(db, { uid, session }) {
 /**
  * Open a framed observation: the `framing` session moves to `open` and its
  * record is minted with the player's confirmed question, in one transaction. A
- * retry finds the record and writes nothing (mintWithHost's rule).
+ * retry finds the record and writes nothing (mintWithHost's rule). `universe`: as
+ * openFromItem's — stamped here, at open (a framing before it ran on the game list).
  */
-export async function openFromFraming(db, { uid, sessionId, question, direction, findings, nowIso }) {
+export async function openFromFraming(db, { uid, sessionId, question, direction, findings, nowIso, universe = null }) {
   const etDate = etDateOf(nowIso);
   const ref = sessionRefOf(db, sessionId);
   const rwId = researchWorkIdFor({ collection: SESSIONS_COLLECTION, id: sessionId });
@@ -513,13 +518,14 @@ export async function openFromFraming(db, { uid, sessionId, question, direction,
     if (day.investigationsOpened >= PER_DAY) throw refuse(429, 'daily_limit');
     const attribution = await attributionIn(tx, db, uid, nowIso);
     const record = mintRecord({ sessionId, uid, question, findings, nowIso });
-    const patch = { status: 'open', 'entry.direction': direction ?? null, researchWorkId: rwId, attribution, lastError: null, updatedAt: nowIso };
+    const stamp = universe === RESEARCH_STAMP ? { universe: RESEARCH_STAMP } : {};
+    const patch = { status: 'open', 'entry.direction': direction ?? null, researchWorkId: rwId, attribution, lastError: null, updatedAt: nowIso, ...stamp };
     tx.update(ref, patch);
     tx.create(researchWorkRefOf(db, rwId), record);
     const after = { ...day, investigationsOpened: day.investigationsOpened + 1 };
     tx.set(quotaRefOf(db, uid), { ...after, updatedAt: nowIso });
     return {
-      session: { ...s, status: 'open', entry: { ...s.entry, direction: direction ?? null }, researchWorkId: rwId, attribution, lastError: null, updatedAt: nowIso },
+      session: { ...s, status: 'open', entry: { ...s.entry, direction: direction ?? null }, researchWorkId: rwId, attribution, lastError: null, updatedAt: nowIso, ...stamp },
       record, day: after, existing: false, replay: false,
     };
   });
@@ -937,9 +943,9 @@ export async function adoptThesis(db, { uid, sessionId, rev, statement = null, c
  * transaction — the quota +1, the host created `open` and stamped `shape: 'builder'` with its card and its
  * attribution, the record minted with the composed question and the player's words. Idempotent on requestId: a retry
  * finds the session it made and writes nothing; a requestId another kind of request made answers invalid_request
- * (B1's SI-3 rule, both ways).
+ * (B1's SI-3 rule, both ways). `universe`: as openFromItem's.
  */
-export async function openOwnWords(db, { uid, requestId, sessionId, entry, exchanges, findings, nowIso, method, thesis }) {
+export async function openOwnWords(db, { uid, requestId, sessionId, entry, exchanges, findings, nowIso, method, thesis, universe = null }) {
   const etDate = etDateOf(nowIso);
   return db.runTransaction(async (tx) => {
     const prior = await byRequestIn(tx, db, uid, requestId);
@@ -956,6 +962,7 @@ export async function openOwnWords(db, { uid, requestId, sessionId, entry, excha
     const session = {
       ...openSessionOf({ sessionId, userId: uid, requestId, entry, exchanges, attribution, researchWorkId: record.researchWorkId, nowIso, method }),
       shape: 'builder', thesis,
+      ...(universe === RESEARCH_STAMP ? { universe: RESEARCH_STAMP } : {}),
     };
     tx.set(sessionRefOf(db, sessionId), session);
     tx.create(researchWorkRefOf(db, record.researchWorkId), record);

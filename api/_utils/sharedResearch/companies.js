@@ -40,6 +40,27 @@ export function resolveSymbol(raw, universe = gameUniverse) {
   return universe.has(s) && !universe.retired(s) ? s : null;
 }
 
+/** Written in capitals: at least one letter, and no lower-case letter ("GLW", "BRK.B" — not "Well", not "glw"). */
+const inCapitals = (s) => /[A-Z]/.test(s) && s === s.toUpperCase();
+
+/**
+ * A company NAME read as a ticker (stepSchema identityOf; refuter SH-2's "a company name written as its ticker").
+ * On the game list, as before: any name is upper-cased and tried as a symbol. On a universe that asks for capitals (a
+ * research session, Build 3b section 5.7) only a name the partner wrote in capitals is: many directory symbols are
+ * ordinary words (CASH, WELL, KEY, OPEN, NOW, ALL, LOW), and "Well" must never become WELL there.
+ */
+export function nameAsTickerOf(companyName, universe = gameUniverse) {
+  if (typeof companyName !== 'string') return null;
+  if (universe.strictCase === true) {
+    const c = companyName.trim();
+    if (!inCapitals(c)) return null;
+    // a single capital letter ("A", "U") is a word before it is a ticker: on a research session it is one only when it is
+    // one of the game's own symbols (as namesAListedCompany reads it)
+    if (c.length === 1 && resolveSymbol(c, gameUniverse) === null) return null;
+  }
+  return resolveSymbol(companyName, universe);
+}
+
 /** Words too common in company names to identify one ("Meta Platforms" is named by "Meta", not "Platforms"). */
 const GENERIC_NAME_WORDS = new Set([
   'international', 'holdings', 'holding', 'group', 'systems', 'technologies', 'technology', 'platforms', 'financial', 'corporation',
@@ -84,11 +105,19 @@ const nameWordsOf = (s) => coreNameOf(s).normalize('NFKC').toLowerCase().replace
  * are not Meta Platforms, Texas Instruments and Apple. Stricter than
  * namesCompany (which asks whether a TEXT names a company); no stored name →
  * only the symbol itself identifies.
+ *
+ * `universe` (Build 3b): the game's, as before. A research session's universe decides first through its own
+ * `sameCompany` (sessionUniverse.js): the symbol only as written, in capitals; a listed everyday name; a research-only
+ * company only by its whole core name. When it has no answer (one of the 228 named in words) the word rule below runs,
+ * as on the game list, without the upper-casing shortcut.
  */
-export function isSameCompany(companyName, { symbol, name }) {
+export function isSameCompany(companyName, { symbol, name }, universe = gameUniverse) {
   const c = String(companyName ?? '').trim();
   if (!c) return false;
-  if (typeof symbol === 'string' && c.toUpperCase() === symbol) return true;
+  if (typeof universe.sameCompany === 'function') {
+    const decided = universe.sameCompany(c, { symbol, name });
+    if (decided !== null) return decided;
+  } else if (typeof symbol === 'string' && c.toUpperCase() === symbol) return true;
   if (typeof name !== 'string' || !name.trim() || coreNameOf(name) === symbol) return false;
   const stored = new Set(nameWordsOf(name));
   const words = nameWordsOf(c);
@@ -139,7 +168,10 @@ export function companiesOf(record, { universe = gameUniverse, names = {} } = {}
       evidence: withSymbol.filter((f) => f.status === 'verified' && f.kind !== 'idea').map((f) => f.findingId),
       openQuestion: open ? { findingId: open.findingId, fact: open.fact, statusReason: open.statusReason } : null,
       claim: claim ? { findingId: claim.findingId, fact: claim.fact } : null,
-      eligibility: universe.has(symbol) && !universe.retired(symbol) ? 'eligible' : 'outside',
+      // Build 3b section 5.8: the research list's universe says 'research' for a research-only company (identity from
+      // the research list, eligibility still the game's); the game universe has no eligibilityOf and answers as before
+      eligibility: typeof universe.eligibilityOf === 'function' ? universe.eligibilityOf(symbol)
+        : universe.has(symbol) && !universe.retired(symbol) ? 'eligible' : 'outside',
     });
   }
   // Leads: a company a relationship or product finding names that is not supported.
