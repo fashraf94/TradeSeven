@@ -226,7 +226,7 @@ describe('the portfolio switch off: slice 3\'s book layout folds away (spec §4 
   it.each(SLICE3_FILES)('%s: the same code as the file without the switch (%j used; %i sites)', async (rel, used, sites) => {
     const source = read(rel);
     const without = withoutSwitch(source);
-    expect(without.count, `${rel}: the switch sites the transform found`).toBe(sites);
+    expect(without.count, `${rel}: the switch sites the transform found. If you added or removed a switch site on purpose, update this count (SLICE3_FILES)`).toBe(sites);
     expect(without.text).not.toMatch(new RegExp(`\\b${SWITCH}\\s*(?:&&|\\?)`));
     const [now, today] = [await bundle(rel, used, source), await bundle(rel, used, without.text)];
     expect(now).toBe(today);

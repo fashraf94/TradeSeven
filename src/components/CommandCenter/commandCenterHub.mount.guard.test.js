@@ -1539,19 +1539,34 @@ describe('S5 — the exports the hub takes from the shipped services, hooks and 
       // The import lines name what the page's own functions use (useEffect); a part's call of it is in its body, scanned below.
       if (node.type === 'ImportDeclaration') ranges.set(`import@${node.start}`, [node.start, node.end]);
     }
-    expect([...fns.keys()].sort()).toEqual([...DRAWN, ...PAGE_ONLY].sort());
+    // Review S3F-2: this row reddens in a Practice Field build that never touched the hub, so each failure says what to do.
+    const GUIDE = [
+      'The Command Center draws parts of src/components/PracticeField/IdeaBookScreen.jsx in its hub: BookLine, Strip, PosTable and',
+      'DesksTab, and every function they call. Every top-level function in that file is listed in this row, in DRAWN or in PAGE_ONLY',
+      '(src/components/CommandCenter/commandCenterHub.mount.guard.test.js, "slice 3: the Idea book parts the hub draws").',
+      '- A new function: add its name to DRAWN if BookLine, Strip, PosTable or DesksTab, or anything they call, uses it; otherwise add',
+      '  it to PAGE_ONLY. A removed function: take its name out of its list.',
+      '- A DRAWN function may hold no effect, timer, listener, observer or read (no useEffect, setTimeout, addEventListener, fetch...).',
+      '- A drawn part that starts calling a page-only function fails as "Part -> function" (e.g. "PosTable -> Quiet"). If the function',
+      '  holds none of those, move its name from PAGE_ONLY to DRAWN. If it does (useWidth, the page\'s effects), the drawn part must',
+      '  not call it: take what it needs as a prop from the page, or ask the Command Center\'s owner before changing this row.',
+    ].join('\n');
+    expect([...fns.keys()].sort(), `IdeaBookScreen.jsx gained or lost a top-level function.\n${GUIDE}`).toEqual([...DRAWN, ...PAGE_ONLY].sort());
     // Review S3R-2: the whole module but the page's own functions is scanned — module-level statements and helpers too — and no part
     // the hub draws may call into the page's own functions (whose effects and listener are the page's).
     const cut = [...PAGE_ONLY.map((name) => ranges.get(name)), ...[...ranges.entries()].filter(([k]) => k.startsWith('import@')).map(([, r]) => r)];
     const withoutPage = cut.sort((a, b) => b[0] - a[0]).reduce((text, [s, e]) => text.slice(0, s) + text.slice(e), code);
-    expect(activityInCode(`${SCREEN} (less the page's own)`, stripComments(withoutPage))).toEqual([]);
+    expect(activityInCode(`${SCREEN} (less the page's own)`, stripComments(withoutPage)),
+      `IdeaBookScreen.jsx, outside its PAGE_ONLY functions, now holds an effect, timer, listener, observer or read.\n${GUIDE}`).toEqual([]);
     const callsPage = (body) => PAGE_ONLY.filter((name) => new RegExp(`\\b${name}\\b`).test(stripComments(body)));
-    expect(DRAWN.flatMap((name) => callsPage(fns.get(name)).map((p) => `${name} -> ${p}`))).toEqual([]);
+    expect(DRAWN.flatMap((name) => callsPage(fns.get(name)).map((p) => `${name} -> ${p}`)),
+      `A part the Command Center draws now calls a page-only function of IdeaBookScreen.jsx.\n${GUIDE}`).toEqual([]);
     expect(callsPage(`${fns.get('PosTable')}\nconst w = useWidth(null);`), 'the call check bites').toEqual(['useWidth']);
     expect(activityInCode('planted', stripComments(`${withoutPage}\nconst settle = () => setTimeout(f, 0);`)), 'the module scan bites').not.toEqual([]);
     const inParts = DRAWN.flatMap((name) => activityInCode(`${SCREEN}#${name}`, stripComments(fns.get(name))));
     const PARTS_MODULES = ['src/components/PracticeField/IdeaBookParts.jsx', 'src/components/PracticeField/ideaBookStyle.js', 'src/components/PracticeField/ideaBookCopy.js', 'src/components/PracticeField/ideaBookPartsOptions.js'];
-    expect([...inParts, ...PARTS_MODULES.flatMap((rel) => activityInCode(rel, stripComments(read(rel))))]).toEqual([]);
+    expect([...inParts, ...PARTS_MODULES.flatMap((rel) => activityInCode(rel, stripComments(read(rel))))],
+      `A DRAWN function, or a module the drawn parts take (IdeaBookParts.jsx, ideaBookStyle.js, ideaBookCopy.js, ideaBookPartsOptions.js), now holds an effect, timer, listener, observer or read.\n${GUIDE}`).toEqual([]);
     // The scan bites: the page's own effects and listener are seen, where they are.
     expect(activityInCode(`${SCREEN}#useWidth`, stripComments(fns.get('useWidth')))).toEqual(expect.arrayContaining([`${SCREEN}#useWidth: \\baddEventListener\\b`, `${SCREEN}#useWidth: \\buseEffect\\b`]));
     expect(activityInCode(`${SCREEN}#PosTable`, stripComments(`${fns.get('PosTable')}\nuseEffect(() => { window.addEventListener('scroll', f); }, []);`))).not.toEqual([]);

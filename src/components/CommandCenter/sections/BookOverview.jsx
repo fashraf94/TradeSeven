@@ -48,7 +48,9 @@ function ctaIconOf(kind) {
 
 /**
  * "Needs you" (PH-12, PH-26): the next action the hub's selector returns, as one slim line. The first deployment's action is the
- * deploy provider's hold (`holdWiring` / `holding`, the card's own control id), so its words and its phases are the card's.
+ * deploy provider's hold (`holdWiring` / `holding`, the card's own control id), so its words and its phases are the card's: its
+ * label is the card's own "Hold to deploy" (COPY.deploy.hold; review S3F-3, Amendment B PH-33 R9), never the candidate's short
+ * "Deploy", because a tap does nothing on a hold. Its screen-reader name and its "Locked in" are HubHold's, as on the card.
  */
 export function NeedsYouStrip({ nextAction, deploy, onAct, onLater, holdWiring = null, holding = null }) {
   const candidate = nextAction?.status === 'ready' ? nextAction.candidate : null;
@@ -69,7 +71,7 @@ export function NeedsYouStrip({ nextAction, deploy, onAct, onLater, holdWiring =
       </span>
       <span style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0, marginLeft: 'auto' }}>
         {isDeploy ? (
-          <HubHold compact canStart={deployDisplay(deploy).canStart} label={candidate.cta} wiring={holdWiring} holding={holding} />
+          <HubHold compact canStart={deployDisplay(deploy).canStart} label={COPY.deploy.hold} wiring={holdWiring} holding={holding} />
         ) : (
           <HubButton kind="primary" small icon={ctaIconOf(candidate.key)} onPress={onAct}>{candidate.cta}</HubButton>
         )}

@@ -57,6 +57,9 @@ import { NeedsYouStrip } from './sections/BookOverview';
 import { BookPhoneBody, BookWidePanel } from './BookLayout';
 import { HubBookReadContext } from './hub/hubBookRead';
 import { DESKTOP_ACTIVITY_LIMIT, PHONE_ACTIVITY_LIMIT } from './hub/hubModel';
+import { deriveNextAction } from './hub/nextAction';
+import { huddleCandidateOf } from './hub/huddleView';
+import { liveGameRows } from './hub/gamesDisplay';
 import { buildBookView } from '../../../api/_utils/practiceField/bookView.js';
 import { hubSceneInput } from '../../../api/_utils/practiceField/__testsupport__/bookViewScenesHub.js';
 import { byRole, click, injectTokens, installFakeLayout, mount, mountFakeBottomNav, press } from './__fixtures__/hubTestKit';
@@ -369,6 +372,107 @@ describe('Needs you draws every kind the selector returns, with its action and L
     const m = mount(<NeedsYouStrip nextAction={nextAction} deploy={deploy} />);
     mounted.push(m);
     expect(m.host.innerHTML).toBe('');
+  });
+
+  // Review S3F-5 (and S3F-3's label): the rows above hand the strip stand-in titles. This one takes every kind from the hub's own
+  // selector (hub/nextAction.js deriveNextAction; the Huddle's candidate from hub/huddleView.js huddleCandidateOf; the live rows
+  // from hub/gamesDisplay.js liveGameRows) and the real copy, and pins what a player sees and hears, word for word, as the Fable
+  // review's section C.1 lists it with S3F-3's "Hold to deploy". None may say "Shadow" (PH-29) or use a word spec §5 bars
+  // (docs/specs/20261126_COMMAND_CENTER_PORTFOLIO_HUB_BUILD_SPEC_V1.md §5: "stop", "target", "progress mark", "plan", "setup",
+  // "strategy", "tests", and the Partnership row's "remembers"; PH-31 puts the Huddle's "game plan" and the tab's "Setups" outside it,
+  // and the strip draws neither).
+  it('every kind, from the real selector and the real copy: the exact title, action and screen-reader names; no "Shadow", no barred word', () => {
+    const BARRED = /\b(?:stops?|targets?|progress marks?|plans?|setups?|strateg(?:y|ies)|tests?|remembers?)\b/i;
+    const liveBattle = (id, over = {}) => ({ id, ownerId: UID, agentId: `casual-agent-${UID}`, status: 'active', activatedAt: iso(NOW - 2 * HOUR), expiresAt: iso(NOW + 3 * HOUR), scoreState: { currentScore: 3.1, tradeCount: 1 }, ...over });
+    const none = { liveRows: [], battles: [], rowsById: new Map(), firstDeployment: false, liveResolved: true, nowMs: NOW };
+    const reviewOf = (doc) => ({ ...none, battles: [doc], rowsById: new Map([[doc.id, { review: true, opponent: 'CPU', outcome: { text: 'Won' } }]]) });
+    const huddleRead = { status: 'ready', huddle: { status: 'ready', etDate: '2026-11-27', plan: { status: 'proposed', current: { stances: [{ symbol: 'XOM' }], lines: [] } }, session: { closeMs: NOW + HOUR } } };
+    const huddle = huddleCandidateOf(huddleRead, NOW);
+    expect(huddle).not.toBeNull();
+    const KINDS = [
+      // [the case, the selector's answer, its kind, title, action label, action's screen-reader name]
+      ['a live game, open', deriveNextAction({ ...none, liveRows: liveGameRows([liveBattle('g_live', { scoreState: { currentScore: 3.1, tradeCount: 1, evaluationCount: 4 } })], { nowMs: NOW, marketState: { state: 'OPEN', isOpen: true } }) }),
+        'openGame', 'Open your live game', 'Open game', 'Open game'],
+      ['a game deployed, waiting for the open', deriveNextAction({ ...none, liveRows: liveGameRows([liveBattle('g_wait')], { nowMs: NOW, marketState: { state: 'CLOSED', isOpen: false } }) }),
+        'openGame', 'Your game is deployed', 'Open game', 'Open game'],
+      ['a review, with its day', deriveNextAction(reviewOf(done(0))), 'review', 'Review your Nov 26 game in the Film Room', 'Open Film Room', 'Open Film Room'],
+      ['a review whose day cannot be read', deriveNextAction(reviewOf({ ...done(0), completedAt: null })), 'review', 'Review your game in the Film Room', 'Open Film Room', 'Open Film Room'],
+      ['the Huddle', deriveNextAction({ ...none, huddle }), 'huddle', 'Huddle ready', 'Open huddle', 'Open huddle'],
+      ['the first deployment', deriveNextAction({ ...none, firstDeployment: true }), 'deploy', 'Play your first BaggerBomb game against a CPU', 'Hold to deploy',
+        'Hold to deploy. Press and hold, or press Enter or Space to deploy now.'],
+    ];
+    const nameOf = (button) => button.getAttribute('aria-label') ?? button.textContent.trim();
+    for (const [label, nextAction, kind, title, action, actionName] of KINDS) {
+      expect(nextAction.status, label).toBe('ready');
+      const m = mount(<NeedsYouStrip nextAction={nextAction} deploy={deploy} onAct={() => {}} onLater={() => {}} />);
+      mounted.push(m);
+      const strip = m.host.querySelector('[data-hub-needs-you]');
+      expect(strip.getAttribute('data-hub-needs-you'), label).toBe(kind);
+      expect(strip.getAttribute('aria-label'), label).toBe('Needs you');
+      expect(strip.querySelector('[data-hub-needs-you-title]').textContent, label).toBe(title);
+      const buttons = [...strip.querySelectorAll('button')];
+      expect(buttons.map((b) => b.textContent.trim()), `${label}: the visible labels`).toEqual([action, 'Later']);
+      expect(buttons.map(nameOf), `${label}: the screen-reader names`).toEqual([actionName, 'Later']);
+      // Nothing else is drawn: the candidate's why and detail are the card's, not the strip's.
+      expect(strip.textContent, label).toBe(`${title}${action}Later`);
+      const words = [strip.textContent, ...[strip, ...strip.querySelectorAll('*')].flatMap((el) => ['aria-label', 'title', 'alt'].map((a) => el.getAttribute(a)).filter(Boolean))].join('\n');
+      expect(words.match(/shadow/gi), `${label}: "Shadow"`).toBeNull();
+      expect(words.match(BARRED), `${label}: a word spec §5 bars`).toBeNull();
+    }
+    // The scans bite: the first deployment's why (which the strip does not draw) says "Shadow"; a barred word is seen.
+    expect(/shadow/i.test(COPY.nextAction.firstWhy)).toBe(true);
+    expect('Open your game plan'.match(BARRED)).not.toBeNull();
+    // "Locked in" is unchanged: the committed hold's own word, with the label it offered still naming the hold (S3F-3).
+    const first = KINDS[5][1];
+    const m = mount(<NeedsYouStrip nextAction={first} deploy={deploy} onAct={() => {}} onLater={() => {}} holdWiring={{ controlId: 'hub-next-action', onComplete: () => {} }} holding="locked" />);
+    mounted.push(m);
+    const [hold] = m.host.querySelectorAll('[data-hub-needs-you] button');
+    expect(hold.textContent.trim()).toBe('Locked in');
+    expect(hold.getAttribute('aria-label')).toBe('Hold to deploy. Press and hold, or press Enter or Space to deploy now.');
+  });
+});
+
+// ── S3F-4: a press on the book's rows ────────────────────────────────────────────────────────────────────────────────────
+
+describe('a press on the Idea book\'s rows shows at once in the hub (review S3F-4; Amendment B PH-33, R12)', () => {
+  /** The book layout's one pressed state, as written: a background on :active, from a token, with no motion, in its two scopes. */
+  const PRESS_CSS = '[data-hub-book-overview] .ib-tap:active, [data-hub-book-setups] .ib-tap:active { background-image: linear-gradient(rgba(var(--ft-scrim-rgb), 0.08), rgba(var(--ft-scrim-rgb), 0.08)) !important; }';
+  it.each(['mobile', 'desktop'])('%s: one style of its own beside the panel, scoped to the Overview and Setups, reaching every desk row, slot header and name row; no motion', async (where) => {
+    net.answer = { status: 200, body: { book: viewOf('desksAdmit') } };
+    await render(where);
+    const styles = [...document.querySelectorAll('style[data-hub-book-press]')];
+    expect(styles).toHaveLength(1);
+    const css = styles[0].textContent;
+    expect(css).toBe(PRESS_CSS);
+    // Its own element, outside the panel (so the panel's words are the book's) and never the hub's shared style string.
+    expect(panel().contains(styles[0])).toBe(false);
+    expect(styles[0].hasAttribute('data-hub-css')).toBe(false);
+    expect([...document.querySelectorAll('style[data-hub-css]')].map((s) => s.textContent).join('\n')).not.toMatch(/ib-tap|data-hub-book/);
+    // A background, from a colour token, over the row's own inline style; nothing that moves.
+    expect(css).toMatch(/:active\s*\{\s*background-image:[^}]*var\(--ft-scrim-rgb\)[^}]*!important;\s*\}$/);
+    expect(css).not.toMatch(/transition|animation|transform|scale|translate|will-change|#[0-9a-f]{3,8}\b/i);
+    // Every selector is scoped to the Overview or the Setups body.
+    const selectors = css.slice(0, css.indexOf('{')).split(',').map((s) => s.trim());
+    expect(selectors).toEqual(['[data-hub-book-overview] .ib-tap:active', '[data-hub-book-setups] .ib-tap:active']);
+    // It reaches the parts' tappable rows: both desk rows, every slot header and every name row (jsdom matches the scope, not :active).
+    const scope = '[data-hub-book-overview] .ib-tap';
+    const rows = { desks: part('[data-ib="strip"]').querySelectorAll('button'), headers: part('[data-ib="positions"]').querySelectorAll('[data-ib-group] > button'), names: part('[data-ib="positions"]').querySelectorAll('[data-ib-name]') };
+    expect(rows.desks.length).toBe(2);
+    expect(rows.headers.length).toBeGreaterThan(0);
+    expect(rows.names.length).toBeGreaterThan(0);
+    for (const [kind, list] of Object.entries(rows)) for (const el of list) expect(el.matches(scope), `${kind}: ${el.getAttribute('aria-label')}`).toBe(true);
+    // Setups keeps it, in its own scope.
+    click(tabNamed('Setups'));
+    await flush();
+    expect(document.querySelectorAll('style[data-hub-book-press]')).toHaveLength(1);
+    expect(part('[data-hub-book-setups]')).not.toBeNull();
+  });
+
+  it.each(['mobile', 'desktop'])('%s: today\'s hub (no book) carries none of it', async (where) => {
+    net.answer = { status: 404, body: { error: 'not_found' } };
+    await render(where);
+    expect(document.querySelector('[data-hub-layout]')?.getAttribute('data-hub-layout')).not.toBe('book');
+    expect(document.querySelector('style[data-hub-book-press]')).toBeNull();
   });
 });
 

@@ -136,22 +136,34 @@ function SetupsBody({ view }) {
   return <div data-hub-book-setups="">{desks.length ? <DesksTab view={{ ...view, desks }} focus={ARCHETYPE_DESK} /> : null}</div>;
 }
 
+/**
+ * A press on the Idea book's parts, in the hub (review S3F-4; Amendment B PH-33, R12). The parts turn off the browser's tap
+ * highlight and press with the screen's own style (ideaBookStyle.js IB_CSS), which moves and so is not loaded here: in the hub a
+ * press showed nothing. This shows it at once — the token's scrim laid over the row's own background while it is pressed, with no
+ * motion of any kind — for the parts' tappable rows in the Overview and the Setups body only. Its own element beside the panel,
+ * never the hub's shared style (HUB_SCOPED_CSS): a plain string, so with the switch off nothing of it ships.
+ */
+const BOOK_PRESS_CSS = '[data-hub-book-overview] .ib-tap:active, [data-hub-book-setups] .ib-tap:active { background-image: linear-gradient(rgba(var(--ft-scrim-rgb), 0.08), rgba(var(--ft-scrim-rgb), 0.08)) !important; }';
+
 export function BookPanel({ idBase, tab, view, layout, sections, actions, onSelectTab, reducedMotion }) {
   return (
-    // tabIndex 0, as today's panels: Tab reaches the content even when it holds no enabled control (S1 review L3-4).
-    <div role="tabpanel" tabIndex={0} id={bookPanelId(idBase)} aria-labelledby={bookTabId(idBase, tab)} data-hub-book-panel={tab}>
-      <motion.div key={tab} initial={reducedMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} transition={motionToken('smooth', { reducedMotion })}>
-        {tab === BOOK_TABS.OVERVIEW ? (
-          <BookOverview view={view} layout={layout} sections={sections} actions={actions} onDesk={(desk) => onSelectTab(bookTabForDesk(desk))} />
-        ) : tab === BOOK_TABS.IDEAS ? (
-          <AreaBody area={HUB_AREAS.RESEARCH} sections={sections} actions={actions} />
-        ) : tab === BOOK_TABS.SETUPS ? (
-          <SetupsBody view={view} />
-        ) : (
-          <AreaBody area={HUB_AREAS.PARTNERSHIP} sections={sections} actions={actions} />
-        )}
-      </motion.div>
-    </div>
+    <>
+      <style data-hub-book-press="">{BOOK_PRESS_CSS}</style>
+      {/* tabIndex 0, as today's panels: Tab reaches the content even when it holds no enabled control (S1 review L3-4). */}
+      <div role="tabpanel" tabIndex={0} id={bookPanelId(idBase)} aria-labelledby={bookTabId(idBase, tab)} data-hub-book-panel={tab}>
+        <motion.div key={tab} initial={reducedMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} transition={motionToken('smooth', { reducedMotion })}>
+          {tab === BOOK_TABS.OVERVIEW ? (
+            <BookOverview view={view} layout={layout} sections={sections} actions={actions} onDesk={(desk) => onSelectTab(bookTabForDesk(desk))} />
+          ) : tab === BOOK_TABS.IDEAS ? (
+            <AreaBody area={HUB_AREAS.RESEARCH} sections={sections} actions={actions} />
+          ) : tab === BOOK_TABS.SETUPS ? (
+            <SetupsBody view={view} />
+          ) : (
+            <AreaBody area={HUB_AREAS.PARTNERSHIP} sections={sections} actions={actions} />
+          )}
+        </motion.div>
+      </div>
+    </>
   );
 }
 
