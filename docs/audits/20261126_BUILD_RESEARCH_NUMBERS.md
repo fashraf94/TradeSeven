@@ -593,7 +593,7 @@ All at the branch head `e619bc62` (`main` had not moved: §0).
 |---|---|
 | Full suite, Linux (WSL, `TZ=UTC`, `--maxWorkers=8`, under the shared suite lock, a private worktree with its own `npm ci` of this lockfile) | **exit 0** · `Test Files  1684 passed | 14 skipped (1698)` · `Tests  39264 passed | 197 skipped (39461)` · 488 s. Tested head `e619bc62` (recorded by the run); every new file ran: `researchMeasures` 81, its precedence 3, `stockMeasures` 34, the golden 37, `research-stock` 32, the corrections 47, the boundary 30, the protected-store scan 30, `beatRateSource` 6. The preliminary run at `853fdf54`, before the review fixes, had 2 failed files: the protected-store scan (L1-1) and one League raw-ids row timing out at 5 s under load. Both pass here, with the League file at 11 of 11. |
 | `lint:gate` (whole repo, Windows) | exit 0 |
-| `vite build`, `main` @ `a88c204a` and the branch in one tree | **byte-identical** `dist/` (`diff -rq`: no difference; 125 files). Built at `853fdf54`; the review fixes touch no `src/` file and no file the client imports. |
+| `vite build`, `main` @ `a88c204a` and the branch in one tree | **byte-identical** `dist/` (`diff -rq`: no difference; 125 files), at `853fdf54` and again at `dca4bf23` (the review fixes and this report; the commit that adds this line changes only this file). |
 | The verbatim move | every moved body identical to `main`'s (§4.3) |
 | The golden | 15 cases; captured from the unmoved code at `0f0cbd0e`; passes on the head |
 | Offline rebuild of the directory (PR A) | byte-identical to the committed file |
