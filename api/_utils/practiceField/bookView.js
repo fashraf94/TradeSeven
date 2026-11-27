@@ -162,16 +162,27 @@ const deskLabel = (names, desk) => (typeof desk === 'string' && Object.hasOwn(na
 // ── A DESK'S OWN WORDS (build B6, ruling B6-3 — the founder's PH-5, amending B3's "shown as written") ────────────────────
 
 /**
+ * The gap between two words of a replaced phrase (Astra's review, B6-A01): white space ON ONE LINE — spaces, tabs and the
+ * other spaces `\s` holds (a no-break space among them), never a line terminator (LF, CR, U+2028, U+2029). A phrase is
+ * matched on one line: "a long shadow" ending one line and "Desk action:" opening the next name no desk.
+ */
+const GAP = String.raw`[^\S\r\n\u2028\u2029]+`;
+/**
  * The engine's two old desk names as a desk may have written them before build B6 (its prompt named them): "Shadow desk"
- * and "archetype desk", in any ASCII letter case, with or without "the" before them, as whole words.
+ * and "archetype desk", in any ASCII letter case, with or without "the" before them, as whole words, on one line (GAP).
+ * Its edges (Astra's review, B6-A02): no letter, digit or underscore touches the phrase — or a run of emphasis underscores
+ * stands on each side, the same run on both, with no letter, digit or underscore beyond it (`_Shadow desk_`,
+ * `__Archetype desk__`). The run is captured by the look-behind and required again by the look-ahead, so it stays outside
+ * the match and is kept as written, as `*Shadow desk*` keeps its asterisks. Anything longer is another token and is left as
+ * written: `my_Shadow desk`, `Shadow desk_v2`, `_Shadow desk__`. Group 1 is the run, group 2 the desk's word.
  * (No `u` flag: under /iu a look-alike such as U+017F folds to "s" and would match while naming no desk — review A1.)
  */
-const OLD_DESK_NAME = /\b(?:the\s+)?(shadow|archetype)\s+desk\b/gi;
+const OLD_DESK_NAME = new RegExp(String.raw`(?<=(?<![A-Za-z0-9_])(_*))(?:the${GAP})?(shadow|archetype)${GAP}desk(?=\1(?![A-Za-z0-9_]))`, 'gi');
 /** A character an idea id may hold (ideas are `idea_` and hex: admission.js ideaIdFor): an id is matched only whole. */
 const ID_CHAR = /^[A-Za-z0-9_]$/;
 const isIdChar = (c) => typeof c === 'string' && ID_CHAR.test(c);
-/** "the " right before an id: replaced with it, so "the idea_…" never reads "the the medium idea". */
-const THE_BEFORE = /\bthe\s+$/i;
+/** "the " right before an id, on the id's own line (GAP): replaced with it, so "the idea_…" never reads "the the medium idea". */
+const THE_BEFORE = new RegExp(String.raw`\bthe${GAP}$`, 'i');
 /** Is `index` the head of a sentence: the text's start, or after a sentence's end (. ! ? …, then any closing quote or
  *  bracket, then a space) or a line break — then any opening quote or bracket. B5's casing rule (bookViewCopy.js
  *  DESK_NAMES: `name` heads, `mid` inside). */
@@ -222,7 +233,7 @@ export function deskOwnWords(text, { names, ideaSlots = new Map() }) {
   if (typeof text !== 'string' || text.length === 0) return text;
   const hits = [];
   for (const m of text.matchAll(OLD_DESK_NAME)) {
-    hits.push({ at: m.index, end: m.index + m[0].length, cased: true, words: names[m[1].toLowerCase() === 'shadow' ? 'shadow' : 'archetype'] });
+    hits.push({ at: m.index, end: m.index + m[0].length, cased: true, words: names[m[2].toLowerCase() === 'shadow' ? 'shadow' : 'archetype'] });
   }
   for (const [id, slot] of ideaSlots) {
     if (typeof id !== 'string' || id.length === 0) continue; // (ideaSlotsOf never holds one; an empty id would never end)

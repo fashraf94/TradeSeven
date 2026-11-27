@@ -7,13 +7,15 @@
 //   B6-5  an epoch must state every slot's cap before the view carries a split (Astra B5-A05).
 // Pure, on the scenes (__testsupport__/bookViewScenes.js, bookViewScenesHub.js), and through the reader on the in-memory store.
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { buildBookView, deskOwnWords, ideaSlotsOf, deskNamesOf, epochSharesOf, finishedView } from './bookView.js';
 import { IDEA_IN_DESK_WORDS } from './bookViewCopy.js';
 import { readBookView } from './bookViewRead.js';
-import { setPracticeFieldModeForTests } from './mode.js';
+import { setPracticeFieldModeForTests, setPracticeFieldAgentForTests } from './mode.js';
+import { admitIdea } from './admission.js';
 import { sealAdjustment, verifyPacket } from './evidence.js';
-import { makeMandateFakeDb } from './__testsupport__/fixtures.js';
+import { makeMandateFakeDb, seedBook, getIdea, dumpStore, etIso, DAYS } from './__testsupport__/fixtures.js';
+import { quotesOn, foundersMediumIdea, fakeTransport, toolResponse, holdAll, runSession, deskPartsOf } from './__testsupport__/agentFixtures.js';
 import { SCENE_NAMES, sceneInput, SCENE_UID, SCENE_BOOK_ID } from './__testsupport__/bookViewScenes.js';
 import { hubSceneInput, hubSceneDocs, sceneEpoch, HUB_AGENT_NAME } from './__testsupport__/bookViewScenesHub.js';
 
@@ -71,10 +73,12 @@ describe('B6-3 — deskOwnWords: exactly two replacements', () => {
     for (const [text, want] of rows) expect(say(text, { names: FALLBACK }), text).toBe(want);
   });
 
-  it('review A1, A7, A11: a look-alike of "s" names no desk; a line break inside "the … Shadow desk" is part of the replaced phrase (A7 refuted); an empty id is never searched for', () => {
+  it('review A1, A7, A11: a look-alike of "s" names no desk; a line break is never part of a replaced phrase (A7, confirmed by Astra as B6-A01): "the" on the line before stays, and the line break stays; an empty id is never searched for', () => {
     const longS = String.fromCodePoint(0x17f); // LATIN SMALL LETTER LONG S: /iu would fold it to "s"
     expect(say(`${longS}hadow desk holds`)).toBe(`${longS}hadow desk holds`);
-    expect(say('I keep the\nidea_aaa and the\nShadow desk agrees.')).toBe('I keep the medium idea and Atlas’s desk agrees.');
+    // The id and the name open their lines, so each is at a sentence's head (R-4): the id takes `name`, and the desk's own
+    // capital keeps the name's.
+    expect(say('I keep the\nidea_aaa and the\nShadow desk agrees.')).toBe('I keep the\nThe medium idea and the\nAtlas’s desk agrees.');
     expect(say('Held.\nI agree.')).toBe('Held.\nI agree.'); // (a line break outside a replacement is never touched)
     expect(deskOwnWords('x idea_aaa', { names: NAMED, ideaSlots: new Map([['', 'short'], ['idea_aaa', 'medium']]) })).toBe('x the medium idea');
   });
@@ -113,6 +117,80 @@ describe('B6-3 — deskOwnWords: exactly two replacements', () => {
   it('a given name is put in as it is: no `$` pattern of String.replace reaches it', () => {
     const names = deskNamesOf({ agentName: '$& $1 $$ $`', archetypeName: 'Trend Follower' });
     expect(say('The Shadow desk holds.', { names })).toBe('$& $1 $$ $`’s desk holds.');
+  });
+
+  it('fix round, B6-A01: a phrase is matched on one line — a tab between its words matches, a line break (LF, CRLF, CR, U+2028, U+2029) never does: for a name, for "the" before a name and for "the" before an id', () => {
+    const breaks = ['\n', '\r\n', '\r', '\u2028', '\u2029'];
+    // A tab, or a no-break space (R-5: the gap is the white space `\s` holds, on one line), still joins a phrase.
+    expect(say('Shadow\tdesk holds; the\tarchetype\tdesk exits; I hold the\tidea_aaa.'))
+      .toBe('Atlas’s desk holds; Trend Follower’s desk exits; I hold the medium idea.');
+    expect(say('I side with the\u00a0Shadow\u00a0desk on the\u00a0idea_aaa.')).toBe('I side with Atlas’s desk on the medium idea.');
+    for (const br of breaks) {
+      // Between the two words of a name: no name, and the text is returned as it is.
+      for (const t of [`a long shadow${br}Desk action: hold.`, `the archetype${br}desk exits.`, `Shadow ${br} desk`]) expect(say(t), JSON.stringify(t)).toBe(t);
+      // Between "the" and a name, or an id: "the" stays, with its line break, and the name or id after it is replaced.
+      expect(say(`I agree with the${br}Shadow desk.`), JSON.stringify(br)).toBe(`I agree with the${br}Atlas’s desk.`);
+      for (const t of [`I agree with the${br}Shadow desk.`, `I hold the${br}idea_aaa.`]) {
+        const out = say(t, { names: FALLBACK });
+        expect(out.startsWith(`I ${t.includes('hold') ? 'hold' : 'agree with'} the${br}`), JSON.stringify(t)).toBe(true);
+        expect(out, JSON.stringify(t)).toMatch(/(?:our agent’s desk|he medium idea)\.$/);
+      }
+    }
+    // At a line break R-4 knows (LF, and so CRLF), the name or id opening the next line is at a sentence's head: a fallback
+    // name capitalised, a desk's own lower case kept inside. (A lone CR, U+2028 and U+2029 are no sentence head for R-4:
+    // the casing rule is not this round's, and is unchanged.)
+    for (const br of ['\n', '\r\n']) {
+      expect(say(`I agree with the${br}Shadow desk.`, { names: FALLBACK }), JSON.stringify(br)).toBe(`I agree with the${br}Your agent’s desk.`);
+      expect(say(`I agree with the${br}shadow desk.`, { names: FALLBACK }), JSON.stringify(br)).toBe(`I agree with the${br}your agent’s desk.`);
+      expect(say(`I hold the${br}idea_aaa.`), JSON.stringify(br)).toBe(`I hold the${br}The medium idea.`);
+    }
+    // CRLF is LF: the head of a line after either reads the same (R-4).
+    for (const br of ['\n', '\r\n']) {
+      expect(say(`Held.${br}Shadow desk next.`, { names: FALLBACK })).toBe(`Held.${br}Your agent’s desk next.`);
+      expect(say(`Holding${br}Shadow desk next`, { names: FALLBACK })).toBe(`Holding${br}Your agent’s desk next`);
+      expect(say(`Holding${br}shadow desk next`, { names: FALLBACK })).toBe(`Holding${br}your agent’s desk next`);
+      expect(say(`Holding${br}idea_aaa next`)).toBe(`Holding${br}The medium idea next`);
+    }
+  });
+
+  it('fix round, B6-A02: a paired, standalone run of emphasis underscores is a delimiter, kept as written; the ids\' rule does not change; nothing longer is matched', () => {
+    const rows = [
+      ['I agree with _Shadow desk_ today.', 'I agree with _Atlas’s desk_ today.'],
+      ['I agree with __Archetype desk__ today.', 'I agree with __Trend Follower’s desk__ today.'],
+      ['I agree with *Shadow desk* today.', 'I agree with *Atlas’s desk* today.'], // her control, unchanged
+      ['I agree with ___the archetype desk___.', 'I agree with ___Trend Follower’s desk___.'],
+      ['(_Shadow desk_), "_Shadow desk_".', '(_Atlas’s desk_), "_Atlas’s desk_".'],
+      ['the _Shadow desk_ holds', 'the _Atlas’s desk_ holds'], // "the" outside the emphasis stays, as with `the *Shadow desk*`
+      ['the *Shadow desk* holds', 'the *Atlas’s desk* holds'],
+      ['_the Shadow desk_ holds', '_Atlas’s desk_ holds'],
+      ['_the Shadow desk holds', '_the Atlas’s desk holds'], // one underscore, unpaired: the name alone stands free, as before
+    ];
+    for (const [text, want] of rows) expect(say(text), text).toBe(want);
+    // Nothing longer: a token that only contains an old name stays as written.
+    for (const t of ['shadow_desk', 'Shadow desk_v2', 'my_Shadow desk', 'x_the Shadow desk_y', '_Shadow desk__', '__Shadow desk_', '_Shadow desk', 'Shadow desk_']) expect(say(t), t).toBe(t);
+    // The ids' rule is unchanged: an underscore is one of an id's characters, so emphasis around an id is a longer token.
+    for (const t of ['_idea_aaa_', '__idea_aaa__']) expect(say(t), t).toBe(t);
+    expect(say('*idea_aaa* holds')).toBe('*the medium idea* holds');
+    // Underscores and asterisks case alike at a sentence's head (the place is the name's own first letter).
+    expect(say('_Shadow desk_ holds.', { names: FALLBACK })).toBe(say('*Shadow desk* holds.', { names: FALLBACK }).split('*').join('_'));
+  });
+
+  it('fix round, B6-A03 (ruled: it stays): an agent the player named "Archetype Desk" or "Shadow desk" is shown as written — once, and never read again', () => {
+    for (const agentName of ['Archetype Desk', 'Shadow desk']) {
+      const names = deskNamesOf({ agentName, archetypeName: 'Trend Follower' });
+      expect(say('The Shadow desk holds JPM.', { names })).toBe(`${agentName}’s desk holds JPM.`);
+      expect(say('I agree with the shadow desk; the archetype desk exits.', { names })).toBe(`I agree with ${agentName}’s desk; Trend Follower’s desk exits.`);
+    }
+    // In every place of every scene (each desk's words voiced with both old names): the name "Shadow desk" is put in once
+    // and never read again — no string a player reads holds "Shadow desk’s desk’s desk".
+    let seen = 0;
+    for (const n of SCENE_NAMES) {
+      for (const s of playerStrings(buildBookView(voiced(hubSceneInput(n, { agentName: 'Shadow desk' }))))) {
+        expect(s, `${n}: ${s}`).not.toContain('’s desk’s desk');
+        if (s.includes('Shadow desk’s desk')) seen += 1;
+      }
+    }
+    expect(seen).toBeGreaterThan(0);
   });
 
   it('ideaSlotsOf: the ids the view holds, each to its slot; an idea with no known slot is not in it', () => {
@@ -356,5 +434,60 @@ describe('the agent\'s name stays the caller\'s own (B5-3) inside a desk\'s word
     expect(v.desks.find((d) => d.desk === 'shadow').note.text.startsWith('Your agent’s desk and Trend Follower’s desk agree on ')).toBe(true);
     expect(JSON.stringify(v)).not.toContain('Mallory');
     expect(HUB_AGENT_NAME).toBe('Atlas');
+  });
+});
+
+// ── Fix round (Astra's review of B6): her rows, through the reader, as she ran them ─────────────────────────────────
+
+describe('fix round, Astra\'s review — her rows through the reader: a founder book with its medium JPM idea, a first session whose agent desk answers holdAll with the note, then readBookView', () => {
+  let restoreAgent;
+  let errSpy;
+  beforeEach(() => {
+    restoreAgent = setPracticeFieldAgentForTests({ agent: true, theses: false });
+    errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+  afterEach(() => { restoreAgent(); errSpy.mockRestore(); });
+
+  /** Her reproduction: the book, the founder's medium idea, the verified owner's agent named `agentName`, the first session. */
+  async function firstSessionWith(note, agentName = 'Atlas') {
+    const ctx = await seedBook({ nowIso: etIso(DAYS.admit, 9, 0) });
+    const admitted = await admitIdea(ctx.db, { bookId: ctx.bookId, contract: foundersMediumIdea(), opId: 'founder-medium', nowIso: etIso(DAYS.admit, 11, 0) });
+    expect(admitted.ok).toBe(true);
+    await ctx.db.collection('agents').doc('agent-ranked-1').set({ ownerId: ctx.uid, name: agentName });
+    const fake = fakeTransport(({ desk, request }) => toolResponse(desk === 'shadow' ? holdAll(request, { note }) : holdAll(request)));
+    await runSession(ctx.db, ctx.bookId, DAYS.d1, { quotes: quotesOn(), transport: fake.transport });
+    expect(fake.calls.map((c) => c.desk).sort()).toEqual(['archetype', 'shadow']);
+    const part = deskPartsOf(ctx.db, ctx.bookId, DAYS.d1).shadow;
+    expect(part.source).toBe('model');
+    expect(part.note).toBe(note); // the stored note equals the input
+    expect(getIdea(ctx.db, ctx.bookId, admitted.ideaId).contract.names).toContain('JPM');
+    const before = dumpStore(ctx.db);
+    const { book } = await readBookView(ctx.db, { uid: ctx.uid, agentOn: true });
+    expect(dumpStore(ctx.db)).toBe(before); // the store's bytes, unchanged by the read
+    return book.desks.find((d) => d.desk === 'shadow');
+  }
+
+  it('B6-A01: her two-line note round-trips byte for byte (LF and CRLF); the same-line control still reads the desk\'s name', async () => {
+    for (const note of ['Rising rates still cast a long shadow\nDesk action: hold JPM.', 'Rising rates still cast a long shadow\r\nDesk action: hold JPM.']) {
+      expect((await firstSessionWith(note)).note.text).toBe(note);
+    }
+    expect((await firstSessionWith('The Shadow desk holds JPM.')).note.text).toBe('Atlas’s desk holds JPM.');
+  });
+
+  it('B6-A02: both underscore forms keep their underscores and read the desk\'s name; her asterisk control is unchanged', async () => {
+    expect((await firstSessionWith('I agree with _Shadow desk_ today.')).note.text).toBe('I agree with _Atlas’s desk_ today.');
+    const archetypeName = (await firstSessionWith('I agree with __Archetype desk__ today.')).note.text;
+    expect(archetypeName).toMatch(/^I agree with __[^_]+’s desk__ today\.$/);
+    expect(archetypeName).not.toMatch(OLD_NAMES);
+    expect((await firstSessionWith('I agree with *Shadow desk* today.')).note.text).toBe('I agree with *Atlas’s desk* today.');
+  });
+
+  it('B6-A03 (ruled: it stays): an agent the player named "Archetype Desk", or "Shadow desk" — the heading and the note each carry that name once, as written', async () => {
+    for (const agentName of ['Archetype Desk', 'Shadow desk']) {
+      const desk = await firstSessionWith('The Shadow desk holds JPM.', agentName);
+      expect(desk.deskName).toBe(`${agentName}’s desk`);
+      expect(desk.note.text).toBe(`${agentName}’s desk holds JPM.`);
+      for (const s of [desk.deskName, desk.note.text]) expect(s.split(agentName).length - 1, s).toBe(1);
+    }
   });
 });
