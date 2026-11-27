@@ -292,6 +292,11 @@ describe('F-2 (the Explore chat\'s fix prompt, Nov 27; review N-5) — a padded 
     ['a stated cell\'s sourceId', OV, 'questions[0].measures[0].cells[0].sourceId', (ov) => { ov.sources[3].id = pad('s4'); cell(ov, 0).sourceId = pad('s4'); }],
     ['a computed cell\'s input\'s sourceId', OV, 'questions[0].measures[0].cells[3].inputs[1].sourceId', (ov) => { ov.sources[6].id = pad('s7'); for (const i of cell(ov, 3).inputs) i.sourceId = pad('s7'); }],
     ['a deep story\'s parent.connectionId', DP, 'parent.connectionId', (ov, dp) => { ov.connections[4].id = pad('power'); dp.parent.connectionId = pad('power'); }],
+    // review B-1: a deep story's own connection's door (only noted before, padded or not)
+    ['a deep story\'s connection\'s leadsToStory', DP, 'connections[customers].leadsToStory', (ov, dp) => { dp.connections[0].leadsToStory = pad(OV); }],
+    // review B-2: padding is what the page's trim removes — one side alone, a tab, a no-break space
+    ['a question\'s id padded on one side', DP, 'questions[1].id', (ov, dp) => { dp.questions[1].id = `${dp.questions[1].id} `; }],
+    ['a question\'s id padded with a tab and a no-break space', DP, 'questions[1].id', (ov, dp) => { dp.questions[1].id = `\t${dp.questions[1].id}${String.fromCodePoint(0xa0)}`; }],
   ])('%s: refused under F-2, the message naming the field and why', (_, id, field, mutate) => {
     const r = checkPair(mutate);
     expect(r.refused).toBe(true);
@@ -299,10 +304,18 @@ describe('F-2 (the Explore chat\'s fix prompt, Nov 27; review N-5) — a padded 
     expect(hasPadMessage(r, id, field)).toBe(true);
   });
   it.each([
-    ['a connection\'s leadsToStory', OV, 'connections[power].leadsToStory', (ov) => { ov.connections[4].leadsToStory = pad(DP); }],
+    ['an overview\'s connection\'s leadsToStory', OV, 'connections[power].leadsToStory', (ov) => { ov.connections[4].leadsToStory = pad(DP); }],
     ['a deep story\'s parent.storyId', DP, 'parent.storyId', (ov, dp) => { dp.parent.storyId = pad(OV); }],
   ])('%s: already refused before F-2 (a story id never holds a space, so a padded one names no story) — unchanged', (_, id, field, mutate) => {
     expect(refusedOf(checkPair(mutate), id)).toContainEqual(['K-4(e)', field]);
+  });
+  it('a padded id used twice is refused once per field (review B-3): the reuse, not the padding twice', () => {
+    const r = checkPair((ov) => { ov.connections[2].id = pad('x'); ov.connections[3].id = pad('x'); ov.sources[2].id = pad('s9'); ov.sources[5].id = pad('s9'); });
+    const at = (field) => refusedOf(r, OV).filter(([, f]) => f === field).map(([rule]) => rule);
+    expect(at('connections[2].id')).toEqual(['F-2']);
+    expect(at('connections[3].id')).toEqual(['K-4(g)']);
+    expect(at('sources[2].id')).toEqual(['F-2']);
+    expect(at('sources[5].id')).toEqual(['K-4(h)']);
   });
   it('a space INSIDE an id is not padding: it passes, as before', () => {
     expect(checkPair((ov, dp) => { dp.questions[1].id = 'min payments'; }).refused).toBe(false);

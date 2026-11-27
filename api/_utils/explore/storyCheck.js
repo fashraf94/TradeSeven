@@ -171,7 +171,7 @@ function checkOne({ id, record, discarded }, ctx) {
     if (!cid) refuse('K-4(g)', `${at}.id`, c.id, 'every connection has an `id`');
     else if (connById.has(cid)) refuse('K-4(g)', `${at}.id`, c.id, `the connection id "${cid}" is used twice`);
     else connById.set(cid, c);
-    if (cid && padded(cid)) refuse('F-2', `${at}.id`, c.id, paddedMessage(`${at}.id`, c.id));
+    if (cid && padded(cid) && connById.get(cid) === c) refuse('F-2', `${at}.id`, c.id, paddedMessage(`${at}.id`, c.id)); // one refusal per field: a reused id is refused above
     if (!BASES.includes(c.basis)) refuse('K-4(g)', `${at}.basis`, c.basis, `\`basis\` is one of ${BASES.join(', ')}`);
     if (!textOf(c.unknown)) refuse('K-4(g)', `${at}.unknown`, c.unknown, 'every connection states its one unknown (the gap, standard §5)');
     if (!textOf(c.whereToLook)) refuse('K-4(g)', `${at}.whereToLook`, c.whereToLook, 'every connection says where to look (the gap, standard §5)');
@@ -215,7 +215,7 @@ function checkOne({ id, record, discarded }, ctx) {
     // Two sources under one id: a citation of it names no ONE source, and a figure's match could rest on the other
     // (review H5/A7). Refused under K-4(h).
     if (typeof s.id === 'string' && seenSource.has(s.id)) refuse('K-4(h)', `${at}.id`, s.id, 'two sources share this id: a citation of it names no one source');
-    if (padded(s.id)) refuse('F-2', `${at}.id`, s.id, paddedMessage(`${at}.id`, s.id));
+    else if (padded(s.id)) refuse('F-2', `${at}.id`, s.id, paddedMessage(`${at}.id`, s.id));
     seenSource.add(s.id);
     if (typeof s.id === 'string' && !cites.some(([, sid]) => sid === s.id)) note('record', `${at}.id`, s.id, 'no connection and no figure cites this source');
   });
@@ -419,7 +419,12 @@ function checkLinks({ id, record, kind, connById }, ctx, refuse, note) {
     // K-4(e) reads (review A12 put the looser reading to the founder: SQ-8).
     if (c.leadsToStory === undefined) continue;
     const at = `connections[${cid}].leadsToStory`;
-    if (kind !== 'overview') { note('standard §7', at, c.leadsToStory, 'only an overview\'s connection leads to a deep story'); continue; }
+    if (kind !== 'overview') {
+      // a deep story's own door is still followed by the page (doorOf), which drops a padded one: refused (F-2, review B-1)
+      if (padded(c.leadsToStory)) refuse('F-2', at, c.leadsToStory, paddedMessage(at, c.leadsToStory));
+      else note('standard §7', at, c.leadsToStory, 'only an overview\'s connection leads to a deep story');
+      continue;
+    }
     const target = typeof c.leadsToStory === 'string' && c.leadsToStory ? found(c.leadsToStory) : null;
     if (!target || target.kind !== 'deep') {
       refuse('K-4(e)', at, c.leadsToStory, `names no existing deep story (${where})${typeof c.leadsToStory === 'string' ? ctx.describeMissing(c.leadsToStory) : ''}`);

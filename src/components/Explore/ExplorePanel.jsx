@@ -21,7 +21,8 @@
 // F-1 (the fix prompt of Nov 27): the panel's heading (`ftx-panel-h`) is ONE element across every form, loading
 // included (the same keyed child of the same <section>), focusable by script (tabIndex -1). Form E's Try again leaves
 // the page with the retry, so the tap puts focus on that heading first (never scrolling): it holds focus while the read
-// is out and after it answers — whether forms A, B or C draw, or E again, where the next Tab stop is Try again.
+// is out and after it answers — whether forms A, B or C draw, or E again. In E the next Tab stop is Try again for a
+// specific question; for a broad one its group's company buttons come first (they sit between the heading and it).
 
 //
 // Build 2 (spec docs/specs/20261125_EXPLORE_BUILD_2_SPEC_AMENDMENT_B.md §4.3, §6; build prompt K-11, K-14): a broad
