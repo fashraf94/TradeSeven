@@ -177,3 +177,39 @@ describe('GET /api/practice-field/book — the caller\'s own book, and nothing e
     expect(await call()).toMatchObject({ status: 500, body: { error: 'internal_error' } });
   });
 });
+
+describe('GET /api/practice-field/book — B5-4: one consistent book, or "try again"', () => {
+  /** The store, where the book's revision moves (as a close moves it) each time the reader asks for the daily rows. */
+  function changingUnderEachPass(db, times) {
+    let left = times;
+    const bump = () => {
+      if (left <= 0) return;
+      left -= 1;
+      const e = db._store.get(`mandates/${SCENE_BOOK_ID}`);
+      db._store.set(`mandates/${SCENE_BOOK_ID}`, { data: { ...e.data, revision: (e.data.revision ?? 0) + 1 }, version: e.version + 1 });
+    };
+    const wrapQuery = (q, daily) => ({
+      where: (...a) => wrapQuery(q.where(...a), daily), orderBy: (...a) => wrapQuery(q.orderBy(...a), daily), limit: (n) => wrapQuery(q.limit(n), daily),
+      get: async () => { const s = await q.get(); if (daily) bump(); return s; },
+    });
+    const wrapDoc = (d) => ({ id: d.id, get: () => d.get(), collection: (n) => wrapCol(d.collection(n), n === 'dailyRows') });
+    const wrapCol = (c, daily = false) => ({ ...wrapQuery(c, daily), doc: (id) => wrapDoc(c.doc(id)) });
+    return { collection: (n) => wrapCol(db.collection(n)) };
+  }
+
+  it('the book changing under both passes: 503 { error: \'try_again\' }, private, no-store — never a mixed book, never "no book"', async () => {
+    const store = state.db;
+    state.db = changingUnderEachPass(store, 2);
+    const out = await call();
+    expect(out).toEqual({ status: 503, body: { error: 'try_again' }, headers: { 'cache-control': 'private, no-store' } });
+  });
+
+  it('the book changing under the first pass only: 200, the second pass\'s whole book', async () => {
+    const store = state.db;
+    state.db = changingUnderEachPass(store, 1);
+    const out = await call();
+    expect(out.status).toBe(200);
+    state.db = store;
+    expect(out.body).toEqual((await call()).body);
+  });
+});

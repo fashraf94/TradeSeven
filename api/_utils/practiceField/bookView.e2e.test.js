@@ -7,13 +7,30 @@
 // must agree with the stored rows to the cent; the reads it makes are counted against the reader's own bound; and no id
 // leaves it.
 
+//
+// B5 (rulings B5-1 to B5-3), at every close too: the archetype is the epoch's; the split's shares are the stored epoch's,
+// and each desk's use is the sum of its ideas' stored `markedHoldingsValue` at that close (computed here from the stored
+// rows, not from the view's helpers), against the desk's share of the stored equity; and the desks read by their names —
+// the caller's agent "Atlas" (seeded beside the run, the caller's own) and the epoch's archetype — never "Shadow".
+
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { setPracticeFieldModeForTests } from './mode.js';
 import { readBookView } from './bookViewRead.js';
 import { allotCents, pctText } from './bookView.js';
 import { toCents } from './money.js';
 import { nextSessionDate } from './windows.js';
+import { deskOfIdea, deskOfSlot } from './agentConfig.js';
+import { getArchetypeDefinition } from '../archetypeRegistry.js';
 import { runBookHistory, historySessions, EARLY_CLOSE, EXIT_SESSION, FAIL_SESSION } from './__testsupport__/bookViewFixtures.js';
+
+const AGENT_NAME = 'Atlas';
+/** Every string of a view a player reads: the desk ids (`desk`) are the engine's keys, and the agent's own words are shown as written. */
+const playerStrings = (v, key = null, out = []) => {
+  if (typeof v === 'string') { if (key !== 'desk') out.push(v); }
+  else if (Array.isArray(v)) v.forEach((x) => playerStrings(x, key, out));
+  else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) playerStrings(x, k, out);
+  return out;
+};
 
 const cents = (text) => {
   const neg = text.startsWith('−');
@@ -60,9 +77,13 @@ describe('the view after every close of the B2 history agrees with the stored ro
     const { ctx } = await runBookHistory({
       n: 13,
       onSession: async (date, i, c) => {
+        const base = `mandates/${c.bookId}`;
+        // B5-3: the book's attribution agent, the caller's own, as the agent creation path stores it (seeded in the store's
+        // own map: no write path is added to the protected-store scan's view of `agents`).
+        const agentId = c.db._get(base).attributionAgentId;
+        if (!c.db._get(`agents/${agentId}`)) c.db._store.set(`agents/${agentId}`, { data: { ownerId: c.uid, name: AGENT_NAME, archetype: 'degen' }, version: 1 });
         const { db, count } = counting(c.db);
         const { book: v } = await readBookView(db, { uid: c.uid, agentOn: true });
-        const base = `mandates/${c.bookId}`;
         const book = c.db._get(base);
         const last = c.db._get(`${base}/dailyRows/${date}`);
         const prevDate = days[i - 1] ?? null;
@@ -114,14 +135,51 @@ describe('the view after every close of the B2 history agrees with the stored ro
           .find((m) => m && m.quality === 'vendor_time')?.mark;
         expect(v.line.spy.value, `${date} SPY`).toBe(pctText(((nowMark - startQuote) * 100) / startQuote));
 
-        // The reads: bounded by the reader's own formula (bookViewRead.js header: one pass, 48 + 3·I + 20·P — review B3-A10),
-        // no receipt parts here and no close during the read. I counts the UNIQUE ideas the open set and the slots name.
+        // B5-1: the archetype the book runs under — its epoch's — never the agent's battle archetype ('degen' above).
+        const epoch = c.db._get(`${base}/epochs/${book.currentEpochId}`);
+        expect(v.archetype, date).toEqual({ codeId: epoch.archetypeCodeId, name: getArchetypeDefinition(epoch.archetypeCodeId).displayName });
+        // B5-2: the split, from the stored epoch and the stored rows of this close (no view helper used here).
+        const ppm = (x) => Number(BigInt(Math.round(x * 1e6)));
+        const sharePpm = { shadow: 0, archetype: 0 };
+        for (const [slot, share] of Object.entries(epoch.rails.slotCapShare)) sharePpm[deskOfSlot(slot)] += ppm(share);
+        const cashPpm = ppm(epoch.gateConfig.cashFloorPct);
+        expect(sharePpm.shadow + sharePpm.archetype + cashPpm, date).toBe(1_000_000);
+        const used = { shadow: 0, archetype: 0 };
+        const ideaPaths = [...c.db._store.keys()].filter((p) => new RegExp(`^${base}/ideas/[^/]+$`).test(p));
+        for (const p of ideaPaths) {
+          const row = c.db._get(`${p}/rows/${date}`);
+          if (row) used[deskOfIdea(c.db._get(p))] += toCents(row.markedHoldingsValue);
+        }
+        const equityCents = toCents(last.markedEquity);
+        for (const [key, desk] of [['agent', 'shadow'], ['archetype', 'archetype']]) {
+          const part = v.split.parts.find((x) => x.key === key);
+          const ofCents = Number((BigInt(equityCents) * BigInt(sharePpm[desk])) / 1_000_000n);
+          expect(part, `${date} ${key}`).toMatchObject({ desk, share: { number: sharePpm[desk] / 1e6 } });
+          if (!last.fullQuality) { expect(part.use, `${date} ${key} waits`).toBeNull(); continue; }
+          expect(cents(part.use.amount.text), `${date} ${key} use`).toBe(used[desk]);
+          expect(cents(part.use.of.text), `${date} ${key} of`).toBe(ofCents);
+          expect(part.use.bar, `${date} ${key} bar`).toBe(Math.min(1, used[desk] / ofCents));
+          // §9: the desk's use is the sum of the position values its groups show, to the cent.
+          const shown = v.groups.filter((g) => g.desk === desk).flatMap((g) => g.names).filter((n) => n.positionValue).reduce((s, n) => s + cents(n.positionValue), 0);
+          expect(shown, `${date} ${key} shown`).toBe(used[desk]);
+        }
+        expect(v.split.parts.find((x) => x.key === 'cash')).toMatchObject({ name: 'Cash', share: { number: cashPpm / 1e6 } });
+        // B5-3: the desks by their names, in every sentence; never "Shadow" in the module's own words (the agent's own notes,
+        // shown as written, are the only place the word can come from — the scripted Shadow notes here say it).
+        const agentWords = new Set(Object.values(c.db._get(`${base}/windows/${date}_close`)?.agent?.desks || {}).flatMap((d) => [d.note, ...(d.actions || []).map((a) => a.reason), ...(d.considered || []).map((x) => x.thesis)]).filter(Boolean));
+        for (const s of playerStrings(v).filter((x) => !agentWords.has(x))) expect(s, `${date}: ${s}`).not.toMatch(/shadow|archetype desk/i);
+        for (const s of v.strip) expect(s.deskName, date).toBe(s.desk === 'shadow' ? 'Atlas’s desk' : 'Trend Follower’s desk');
+
+        // The reads: bounded by the reader's own formula (bookViewRead.js header: one pass, 55 + 3·I + 20·P — B5-4 restated
+        // B3-A10's 48 with the epoch, the agent, the rows of ideas finished since the close and the second reads of the book
+        // and the close row), no receipt parts here and no close during the read. I counts the UNIQUE ideas the open set and
+        // the slots name.
         const ideasRead = new Set([...(book.openIdeaIds || []), ...Object.values(book.slots || {}).filter(Boolean)]).size;
-        expect(count.docs, date).toBeLessThanOrEqual(48 + 3 * ideasRead);
+        expect(count.docs, date).toBeLessThanOrEqual(55 + 3 * ideasRead);
         expect(count.queries, date).toBe(3);
 
-        // No id of the owner, the book or an idea reaches the view.
-        const ids = [c.uid, c.bookId, ...[...c.db._store.keys()].filter((p) => p.startsWith(`${base}/ideas/`) && p.split('/').length === 4).map((p) => p.split('/')[3])];
+        // No id of the owner, the book, its agent or an idea reaches the view.
+        const ids = [c.uid, c.bookId, agentId, ...[...c.db._store.keys()].filter((p) => p.startsWith(`${base}/ideas/`) && p.split('/').length === 4).map((p) => p.split('/')[3])];
         for (const s of strings(v)) for (const id of ids) expect(s.includes(id), `${date}: ${s}`).toBe(false);
         seen.push({ date, v });
       },
@@ -131,7 +189,7 @@ describe('the view after every close of the B2 history agrees with the stored ro
 
     // What the history shows along the way: the exit, its settlement, the failed call, the early close.
     const at = (d) => seen.find((s) => s.date === d).v;
-    expect(at(EXIT_SESSION).strip[0]).toMatchObject({ deskName: 'Archetype desk', text: 'called Exit on XOM' });
+    expect(at(EXIT_SESSION).strip[0]).toMatchObject({ deskName: 'Trend Follower’s desk', text: 'called Exit on XOM' });
     expect(at(EXIT_SESSION).groups[0]).toMatchObject({ slot: 'short', state: 'selling', selling: { word: 'Exit' } });
     expect(at('2026-11-23').history.items[0]).toMatchObject({ namesText: 'XOM', ended: 'Settled early by the manager', endedOn: '23 Nov', notMeasurable: null });
     expect(at('2026-11-23').history.items[0].columns.map((col) => col.label)).toEqual(['Lines', 'Result', 'Process', 'Evidence', 'Adoption']);
@@ -139,7 +197,11 @@ describe('the view after every close of the B2 history agrees with the stored ro
     expect(at(EARLY_CLOSE).day).toBe('Fri 27 Nov');
     expect(at(days[0]).groups.find((g) => g.slot === 'medium').names.every((n) => n.isNew)).toBe(true);
     // B3-A08: the entry close reads "Entered today"; the next, Day 1. B3-A06: the founder's thesis is the founder's.
-    expect(at(days[0]).groups.find((g) => g.slot === 'medium')).toMatchObject({ line: 'Entered today · 30 sessions', day: 0, thesis: { byline: 'The founder' }, deskName: 'Shadow desk' });
+    expect(at(days[0]).groups.find((g) => g.slot === 'medium')).toMatchObject({ line: 'Entered today · 30 sessions', day: 0, thesis: { byline: 'The founder' }, deskName: 'Atlas’s desk' });
+    // B5-2 along the run: on the first close the short slot's idea is still entering — its desk's use is zero.
+    expect(at(days[0]).groups.find((g) => g.slot === 'short').state).toBe('entering');
+    expect(at(days[0]).split.parts.find((x) => x.key === 'archetype').use).toMatchObject({ amount: { text: '$0.00' }, pct: '0%', bar: 0 });
+    expect(at(days[0]).split.parts.find((x) => x.key === 'agent').use.bar).toBeGreaterThan(0);
     expect(at(days[1]).groups.find((g) => g.slot === 'medium')).toMatchObject({ line: 'Day 1 of 30', day: 1 });
   });
 });

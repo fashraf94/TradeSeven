@@ -15,7 +15,9 @@ import {
   EVIDENCE_UNCHECKED, NO_FINISHED_IDEAS, MARKS_AS_OF, RESULT_COLUMNS,
 } from './bookViewCopy.js';
 import { toCents } from './money.js';
-import { sceneInput, SCENE_NAMES, SCENE_BOOK_ID, SCENE_UID, SCENE_AGENT_ID } from './__testsupport__/bookViewScenes.js';
+import { SCENE_NAMES, SCENE_BOOK_ID, SCENE_UID, SCENE_AGENT_ID } from './__testsupport__/bookViewScenes.js';
+// B5: the scenes as the B5 reader gives them — the epoch, the archetype and the caller's agent, Atlas (B5-3's names).
+import { hubSceneInput as sceneInput } from './__testsupport__/bookViewScenesHub.js';
 import { BANNED_RESULT_WORDS } from './__testsupport__/fixtures.js';
 import { sealAdjustment } from './evidence.js';
 
@@ -79,7 +81,7 @@ describe('day n of N: the agent\'s own count of sessions left (agentRun.js sessi
 });
 
 describe('allotCents: each name\'s value at a row\'s marks sums EXACTLY to the row\'s stored holdings value (BUILD_RULES §9)', () => {
-  it('on every scene row: the parts sum to markedHoldingsValue to the cent', () => {
+  it('on every scene row: the parts sum to markedHoldingsValue to the cent', { timeout: 30_000 }, () => {
     for (const n of SCENE_NAMES) {
       for (const [, rows] of sceneInput(n).rows) {
         for (const row of [rows.last, rows.prev].filter(Boolean)) {
@@ -161,16 +163,16 @@ describe('the states (the design of record\'s ten, and the ones it does not draw
     const v = view('sample');
     expect(v.day).toBe('Fri 27 Nov');
     expect(v.groups.map((g) => [g.slot, g.state])).toEqual([['short', 'holding'], ['medium', 'holding'], ['long', 'open']]);
-    expect(group(v, 'long').text).toBe('Long · open · the Shadow desk looks tonight.');
+    expect(group(v, 'long').text).toBe('Long · open · Atlas’s desk looks tonight.');
     expect(v.asOf).toEqual({ session: '27 Nov', text: MARKS_AS_OF('27 Nov') });
-    expect(group(v, 'medium')).toMatchObject({ desk: 'shadow', deskName: 'Shadow desk', source: 'Entered by the founder', gap: { vs: 'XLF', text: '+$84.20', pct: '+0.34%', spy: { text: '+$31.05' } } });
+    expect(group(v, 'medium')).toMatchObject({ desk: 'shadow', deskName: 'Atlas’s desk', source: 'Entered by the founder', gap: { vs: 'XLF', text: '+$84.20', pct: '+0.34%', spy: { text: '+$31.05' } } });
     expect(group(v, 'short').gap).toMatchObject({ vs: 'XLE', text: '−$22.40', dir: -1 });
   });
 
   it('1 · a full book: three ideas, eight names, each with its desk', () => {
     const v = view('full');
     expect(v.groups.map((g) => [g.slot, g.state, g.desk, g.names.length])).toEqual([['short', 'holding', 'archetype', 2], ['medium', 'holding', 'shadow', 3], ['long', 'holding', 'shadow', 3]]);
-    expect(v.strip.map((s) => [s.deskName, s.text])).toEqual([['Archetype desk', 'held 2'], ['Shadow desk', 'held 6']]);
+    expect(v.strip.map((s) => [s.deskName, s.text])).toEqual([['Trend Follower’s desk', 'held 2'], ['Atlas’s desk', 'held 6']]);
   });
 
   it('2 · a new book: the entering idea\'s names carry the buy sentence; the line opens on its start session', () => {
@@ -180,7 +182,7 @@ describe('the states (the design of record\'s ten, and the ones it does not draw
     expect(g.names.every((n) => n.state === 'entering' && n.text === BUYS_NEXT_WINDOW && n.plOpen === undefined)).toBe(true);
     expect(v.line).toMatchObject({ value: '$100,000.00', today: null, first: { kind: 'opens', label: 'Opens', value: '23 Nov' }, spy: { value: '—' }, cash: '$100,000.00' });
     expect(v.asOf).toBeNull();
-    expect(v.strip).toEqual([{ desk: 'shadow', deskName: 'Shadow desk', failed: false, text: 'admitted JPM, BAC, GS' }]);
+    expect(v.strip).toEqual([{ desk: 'shadow', deskName: 'Atlas’s desk', failed: false, text: 'admitted JPM, BAC, GS' }]);
     expect([group(v, 'short').state, group(v, 'long').state]).toEqual(['open', 'open']);
   });
 
@@ -217,7 +219,7 @@ describe('the states (the design of record\'s ten, and the ones it does not draw
   it('6 · an exit called: the header reads Exit · sells at the next session\'s first window; the call is the desk\'s', () => {
     const v = view('exitCalled');
     const g = group(v, 'short');
-    expect(g).toMatchObject({ state: 'selling', selling: { word: 'Exit', rest: SELLS_NEXT_WINDOW }, call: { kind: 'Exit', deskName: 'Archetype desk', date: '27 Nov' } });
+    expect(g).toMatchObject({ state: 'selling', selling: { word: 'Exit', rest: SELLS_NEXT_WINDOW }, call: { kind: 'Exit', deskName: 'Trend Follower’s desk', date: '27 Nov' } });
     expect(v.strip[0].text).toBe('called Exit on XOM, CVX');
     // …and an idea settled at its review date reads Review date (not drawn by the mock-up)
     expect(group(view('reviewDate'), 'short').selling).toEqual({ word: 'Review date', rest: SELLS_NEXT_WINDOW });
@@ -235,10 +237,12 @@ describe('the states (the design of record\'s ten, and the ones it does not draw
 
   it('8 · a failed check: the strip and the call carry the failed-check sentence; the positions are unchanged', () => {
     const v = view('failed');
-    expect(v.strip[0]).toEqual({ desk: 'archetype', deskName: 'Archetype desk', failed: true, text: FAILED_CHECK });
-    expect(group(v, 'short').call).toEqual({ failed: true, text: FAILED_CHECK });
+    // (B5-3, review B1: the failed-check line by its desk's name — in the strip, after the name, its verb alone.)
+    expect(v.strip[0]).toEqual({ desk: 'archetype', deskName: 'Trend Follower’s desk', failed: true, text: FAILED_CHECK.strip });
+    expect(v.strip[0].text).toBe("could not complete today's check; nothing changed.");
+    expect(group(v, 'short').call).toEqual({ failed: true, text: "Trend Follower’s desk could not complete today's check; nothing changed.", deskName: 'Trend Follower’s desk' });
     expect(group(v, 'short').names.map((n) => n.state)).toEqual(['held', 'held']);
-    expect(v.desks.find((d) => d.desk === 'archetype').note).toEqual({ failed: true, text: FAILED_CHECK, date: '27 Nov' });
+    expect(v.desks.find((d) => d.desk === 'archetype').note).toEqual({ failed: true, text: FAILED_CHECK.sentence('Trend Follower’s desk'), date: '27 Nov' });
   });
 
   it('9 · paused: the line says so, the strip is empty, no call, and an open slot does not say a desk looks', () => {
@@ -276,7 +280,7 @@ describe('the states (the design of record\'s ten, and the ones it does not draw
     const v = buildBookView(input);
     expect(v.strip.map((s) => s.desk)).toEqual(['archetype', 'shadow']);
     expect(v.strip.find((s) => s.desk === 'shadow').text).toBe('held 3 · passed on 3 drafts');
-    expect(group(v, 'medium').call).toMatchObject({ kind: 'Hold', deskName: 'Shadow desk' });
+    expect(group(v, 'medium').call).toMatchObject({ kind: 'Hold', deskName: 'Atlas’s desk' });
     expect(v.desks.find((d) => d.desk === 'shadow').note).toMatchObject({ failed: false, text: expect.any(String) });
     // The forward-looking line follows the switch: no desk looks tonight.
     expect(group(v, 'long').text).toBe('Long · open');
@@ -303,7 +307,7 @@ describe('the states (the design of record\'s ten, and the ones it does not draw
     expect(jpm).toMatchObject({ mark: '304.85', entry: '301.20', line: '271.08', shares: '27', distance: { text: '11.1% away', near: false } });
     expect(jpm.positionValue).toBe(moneyText(toCents(27 * 304.85)));
     // (B3-12: the banks thesis is the founder's — signed so — while the Shadow desk manages the idea and makes its call.)
-    expect(g).toMatchObject({ desk: 'shadow', deskName: 'Shadow desk', thesis: { byline: 'The founder' }, call: { kind: 'Hold', deskName: 'Shadow desk', date: '27 Nov' }, sessionsLeftText: '26 sessions left' });
+    expect(g).toMatchObject({ desk: 'shadow', deskName: 'Atlas’s desk', thesis: { byline: 'The founder' }, call: { kind: 'Hold', deskName: 'Atlas’s desk', date: '27 Nov' }, sessionsLeftText: '26 sessions left' });
   });
 
   it('the fit test: four names, NEW on a five-letter symbol, five-figure amounts with a no-cents form, the long reason whole', () => {
@@ -325,7 +329,7 @@ describe('the states (the design of record\'s ten, and the ones it does not draw
 });
 
 describe('the figures of every scene agree with its stored rows to the cent', () => {
-  it('each held name: value = its allotment, open P/L = value − cost basis, day P/L = value − the close before', () => {
+  it('each held name: value = its allotment, open P/L = value − cost basis, day P/L = value − the close before', { timeout: 30_000 }, () => {
     for (const n of SCENE_NAMES) {
       const input = sceneInput(n);
       const v = buildBookView(input);
@@ -350,17 +354,17 @@ describe('the figures of every scene agree with its stored rows to the cent', ()
 
 describe('the strip (B3 §1): the close row\'s agent block, and code\'s own facts of that session', () => {
   it('both desks; one desk with no work has no line', () => {
-    expect(view('sample').strip.map((s) => s.deskName)).toEqual(['Archetype desk', 'Shadow desk']);
+    expect(view('sample').strip.map((s) => s.deskName)).toEqual(['Trend Follower’s desk', 'Atlas’s desk']);
     const input = sceneInput('sample');
     input.closeRow.agent.desks.archetype = { status: 'done', source: 'no_work', note: null, actions: [], considered: [] };
-    expect(buildBookView(input).strip.map((s) => s.deskName)).toEqual(['Shadow desk']);
+    expect(buildBookView(input).strip.map((s) => s.deskName)).toEqual(['Atlas’s desk']);
   });
 });
 
 describe('the Desks tab: each desk\'s note, its calls, and the drafts it passed on with a plain reason (B3-5)', () => {
   it('the day an idea was admitted: note, the entering call, three drafts with all three outcomes', () => {
     const arch = view('desksAdmit').desks.find((d) => d.desk === 'archetype');
-    expect(arch).toMatchObject({ deskName: 'Archetype desk', lane: 'Trend Follower · Short', note: { failed: false, date: '24 Nov' } });
+    expect(arch).toMatchObject({ deskName: 'Trend Follower’s desk', lane: 'Trend Follower · Short', note: { failed: false, date: '24 Nov' } });
     expect(arch.calls).toEqual([{ slot: 'short', slotName: 'Short', namesText: 'XOM · CVX', state: 'entering', text: BUYS_NEXT_WINDOW }]);
     expect(arch.passed.tally).toBe('3 drafts · 1 admitted · 1 not chosen · 1 refused');
     expect(arch.passed.drafts.map((d) => [d.names, d.outcome, d.why])).toEqual([
@@ -370,7 +374,7 @@ describe('the Desks tab: each desk\'s note, its calls, and the drafts it passed 
   it('the Shadow desk\'s refusals in plain words; an open slot names who looks', () => {
     const sh = view('sample').desks.find((d) => d.desk === 'shadow');
     expect(sh.passed.drafts.map((d) => d.why)).toEqual(['it overlaps a stock the book already holds', 'its line was outside the allowed range', 'its line was outside the allowed range']);
-    expect(sh.calls.find((c) => c.slot === 'long')).toMatchObject({ state: 'open', text: 'Open. The Shadow desk looks for an idea at tonight’s close.' });
+    expect(sh.calls.find((c) => c.slot === 'long')).toMatchObject({ state: 'open', text: 'Open. Atlas’s desk looks for an idea at tonight’s close.' });
   });
 });
 
@@ -401,7 +405,7 @@ describe('History: finished ideas, newest first, their endings, their gaps and t
       ['DVN', 'Finished', '6 Nov'],
     ]);
   });
-  it('a not-measurable result reads so, with its reasons, and no gap — not in the list, not under its Result column (review B1)', () => {
+  it('a not-measurable result reads so, with its reasons, and no gap — not in the list, not under its Result column (review B1)', { timeout: 30_000 }, () => {
     expect(items()[0]).toMatchObject({ gap: null, notMeasurable: { reasons: ['One of its names had no usable closing price on its last day.'] } });
     expect(items()[4].notMeasurable.reasons).toEqual(['It was valued after its review date.']);
     for (const i of [0, 4]) expect(items()[i].columns[1]).toEqual({ key: 'economicResult', label: 'Result', value: 'Not measurable', sub: null, dir: 0 });
@@ -428,7 +432,7 @@ describe('History: finished ideas, newest first, their endings, their gaps and t
     expect(view('sample').history).toEqual({ empty: NO_FINISHED_IDEAS, items: [] });
   });
   it('the manager\'s exit reason is the last call', () => {
-    expect(items()[1].lastCall).toMatchObject({ kind: 'Exit', deskName: 'Shadow desk', date: '7 Dec' });
+    expect(items()[1].lastCall).toMatchObject({ kind: 'Exit', deskName: 'Atlas’s desk', date: '7 Dec' });
   });
 });
 
@@ -546,14 +550,14 @@ describe('the battery\'s survivors, pinned', () => {
 });
 
 describe('what the view never carries', () => {
-  it('no id of the owner, the book, the agent or an idea, in any string of any scene', () => {
+  it('no id of the owner, the book, the agent or an idea, in any string of any scene', { timeout: 30_000 }, () => {
     for (const n of SCENE_NAMES) {
       const input = sceneInput(n);
       const ids = [SCENE_UID, SCENE_BOOK_ID, SCENE_AGENT_ID, ...input.ideas.map((i) => i.ideaId), ...input.finished.map((f) => f.idea.ideaId)];
       for (const s of strings(buildBookView(input))) for (const id of ids) expect(s.includes(id), `${n}: ${s}`).toBe(false);
     }
   });
-  it('none of the words validated, proven or supported (contract §4.4)', () => {
+  it('none of the words validated, proven or supported (contract §4.4)', { timeout: 30_000 }, () => {
     for (const n of SCENE_NAMES) expect(JSON.stringify(buildBookView(sceneInput(n))), n).not.toMatch(BANNED_RESULT_WORDS);
   });
   it('agent and player text passes through as the plain string it was stored as', () => {

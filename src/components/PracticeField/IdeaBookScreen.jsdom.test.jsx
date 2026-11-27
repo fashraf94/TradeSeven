@@ -12,7 +12,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import IdeaBookScreen from './IdeaBookScreen';
 import { IDEA_BOOK_COPY, layoutOfWidth, DESK_FROM_PX, PHONE_MAX_PX } from './ideaBookCopy';
 import { buildBookView } from '../../../api/_utils/practiceField/bookView.js';
-import { sceneInput } from '../../../api/_utils/practiceField/__testsupport__/bookViewScenes.js';
+// B5: the scenes as the B5 reader gives them — the epoch, the archetype and the caller's agent, Atlas (B5-3's names).
+import { hubSceneInput as sceneInput } from '../../../api/_utils/practiceField/__testsupport__/bookViewScenesHub.js';
 import { FAILED_CHECK, BUYS_NEXT_WINDOW, PAPER_MONEY, PAUSED_LINE, BOOK_WAITING, BOOK_WAITING_REASON, ROW_REASON_HELD } from '../../../api/_utils/practiceField/bookViewCopy.js';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -50,7 +51,7 @@ describe('the states draw their fixed copy (the design of record\'s ten, and the
   it('the sample day: the book line, the strip, the table\'s columns, the open slot, cash and the timestamp', () => {
     const v = viewOf('sample');
     const m = screen('sample');
-    for (const s of [v.line.value, v.line.cash, PAPER_MONEY, 'Positions', 'Desks', 'History', 'Symbol', 'Mark', 'P/L Open', 'P/L Day', 'Long · open · the Shadow desk looks tonight.', 'Marks as of the close, 27 Nov.', 'Archetype desk', 'held 2', 'held 3 · passed on 3 drafts']) {
+    for (const s of [v.line.value, v.line.cash, PAPER_MONEY, 'Positions', 'Desks', 'History', 'Symbol', 'Mark', 'P/L Open', 'P/L Day', 'Long · open · Atlas’s desk looks tonight.', 'Marks as of the close, 27 Nov.', 'Trend Follower’s desk', 'held 2', 'held 3 · passed on 3 drafts']) {
       expect(text(m), s).toContain(s);
     }
     expect(m.host.querySelector('[data-ib="cash"]').textContent).toContain(v.cash);
@@ -93,7 +94,7 @@ describe('the states draw their fixed copy (the design of record\'s ten, and the
   });
   it('8 · a failed check: the strip reads the failed-check sentence', () => {
     const m = screen('failed');
-    expect(m.host.querySelector('[data-ib="strip"]').textContent).toContain(FAILED_CHECK);
+    expect(m.host.querySelector('[data-ib="strip"]').textContent).toContain(`Trend Follower’s desk · ${FAILED_CHECK.strip}`);
   });
   it('9 · paused: the book line says Paused and code still sells; the strip is gone', () => {
     const m = screen('paused');
@@ -171,14 +172,14 @@ describe('the tabs, the strip and History', () => {
   });
   it('a strip line opens Desks with that desk first', () => {
     const m = screen('sample');
-    const shadowLine = [...m.host.querySelectorAll('[data-ib="strip"] button')].find((b) => b.textContent.includes('Shadow desk'));
+    const shadowLine = [...m.host.querySelectorAll('[data-ib="strip"] button')].find((b) => b.textContent.includes('Atlas’s desk'));
     click(shadowLine);
     expect(m.host.querySelector('#ib-tab-desks').getAttribute('aria-selected')).toBe('true');
     expect(m.host.querySelector('[data-ib-desk]').getAttribute('data-ib-desk')).toBe('shadow');
   });
   it('Desks: the note quoted and dated, the calls, the drafts with their outcome and reason', () => {
     const m = screen('desksAdmit', { initial: { tab: 'desks', desk: 'archetype' } });
-    for (const s of ['Archetype desk', 'Trend Follower · Short', 'written after the close, 24 Nov', '3 drafts · 1 admitted · 1 not chosen · 1 refused', 'Not chosen', 'Refused: the name is not on the price list']) {
+    for (const s of ['Trend Follower’s desk', 'Trend Follower · Short', 'written after the close, 24 Nov', '3 drafts · 1 admitted · 1 not chosen · 1 refused', 'Not chosen', 'Refused: the name is not on the price list']) {
       expect(text(m), s).toContain(s);
     }
   });
@@ -281,11 +282,11 @@ describe("the fix round for Astra's review (docs/audits/20261124_ASTRA_REVIEW_B3
   });
   it('B3-12 (B3-A06): the thesis of the founder is signed "The founder" in Positions, its idea managed by the Shadow desk', () => {
     const m = screen('sample');
-    expect(header(m, 'medium').getAttribute('aria-label')).toContain('Shadow desk');
+    expect(header(m, 'medium').getAttribute('aria-label')).toContain('Atlas’s desk');
     click(nameRow(m, 'JPM'));
     const caps = [...m.host.querySelectorAll('[role="region"][aria-label="JPM detail"] figcaption')].map((c) => c.textContent);
     expect(caps).toContain('The founder · 19 Nov');
-    expect(caps.some((c) => c.startsWith('Shadow desk · after the close'))).toBe(true); // the desk's own call keeps its desk
+    expect(caps.some((c) => c.startsWith('Atlas’s desk · after the close'))).toBe(true); // the desk's own call keeps its desk
   });
   it('B3-12 (B3-A06): History — a founder-authored finished idea is signed "The founder"; an unknown author shows no byline, never "null"', () => {
     const founder = (input) => { input.finished[1].idea.contract.thesis.author = 'founder_fixture'; };
@@ -324,9 +325,39 @@ describe('what the screen never does', () => {
     expect(text(m)).toContain('<img src=x');
     expect(window.__ib_pwned).toBeUndefined();
   });
+  it('B5-3: the agent\'s given name with markup in it is drawn as text — in the strip, the headers\' labels and the Desks tab', () => {
+    const agentName = '<b>A</b><img src=x>';
+    const pos = screen('sample', { patch: (input) => { input.agentName = agentName; } });
+    expect(pos.host.querySelector('b, img')).toBeNull();
+    expect(text(pos)).toContain('<b>A</b><img src=x>’s desk');
+    expect(header(pos, 'medium').getAttribute('aria-label')).toContain('<b>A</b><img src=x>’s desk');
+    const desks = screen('sample', { initial: { tab: 'desks', desk: 'shadow' }, patch: (input) => { input.agentName = agentName; } });
+    expect(desks.host.querySelector('b, img')).toBeNull();
+    expect(text(desks)).toContain('Open. <b>A</b><img src=x>’s desk looks for an idea at tonight’s close.');
+  });
   it('up and down are never colour alone: every signed figure carries its sign', () => {
     const v = viewOf('full');
     for (const g of v.groups) for (const n of g.names) for (const a of [n.plOpen, n.plDay].filter(Boolean)) if (a.dir !== 0) expect(a.text).toMatch(/^[+−]/);
+  });
+});
+
+describe('B5-A01 (Astra): the Desks tab\'s heading wraps a wide name', () => {
+  // The 18 px heading beside the 56 px mark is the one place a desk's name had no wrap rule: twenty "W"s ran 154 px past
+  // 320 and 84 px past 390. jsdom lays nothing out, so this row pins the style; the browser measure is in the B5 report.
+  it('every desk\'s name heading carries overflowWrap: anywhere, at 320 and at 390, with a twenty-W agent name', () => {
+    const agentName = 'W'.repeat(20);
+    for (const width of [320, 390]) {
+      const m = screen('sample', { width, initial: { tab: 'desks', desk: 'shadow' }, patch: (input) => { input.agentName = agentName; } });
+      const sections = [...m.host.querySelectorAll('section[data-ib-desk]')];
+      expect(sections.map((s) => s.getAttribute('aria-label')), `${width}`).toEqual([`${agentName}’s desk`, 'Trend Follower’s desk']);
+      for (const s of sections) {
+        const name = s.getAttribute('aria-label');
+        const heads = [...s.querySelectorAll('div')].filter((d) => d.children.length === 0 && d.textContent === name);
+        expect(heads, `${width} · ${name}`).toHaveLength(1);
+        expect(heads[0].style.fontSize, `${width} · ${name}`).toBe('18px');
+        expect(heads[0].style.overflowWrap, `${width} · ${name}`).toBe('anywhere');
+      }
+    }
   });
 });
 

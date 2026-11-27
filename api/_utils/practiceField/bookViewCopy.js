@@ -1,7 +1,7 @@
 // api/_utils/practiceField/bookViewCopy.js
 //
-// Practice Field build B3 — THE IDEA BOOK SCREEN'S FIXED WORDS (rulings B3-1, B3-2, B3-5). DATA ONLY, one import (the
-// agent's own failed-check sentence, so the screen and the close row say the same words). Every sentence the view
+// Practice Field build B3 — THE IDEA BOOK SCREEN'S FIXED WORDS (rulings B3-1, B3-2, B3-5; B5-3 the desks' names). DATA
+// ONLY, one import (the agent's own failed-check sentence, so the screen and the close row say the same words). Every sentence the view
 // (bookView.js) puts on the screen in the book's own voice comes from here: the design of record's fixed strings
 // (docs/design/practice-field/IDEA_BOOK_ROUND_2.html), the plain-words reason for each refusal code (B3-5), each mark
 // quality's "waiting on data" reason, and the result's five columns in plain words (B3-3).
@@ -11,8 +11,17 @@
 
 import { CODE_FALLBACK_NOTE } from './agentConfig.js';
 
-/** The failed-check sentence: the agent's own code-built note (agentConfig.js), the mock-up's fixed string. */
-export const FAILED_CHECK = CODE_FALLBACK_NOTE;
+/**
+ * The failed-check line: the agent's own code-built note (agentConfig.js CODE_FALLBACK_NOTE, the mock-up's fixed string,
+ * stored on the close row) — B5-3 (review B1): with ITS DESK as the subject, "Trend Follower’s desk could not complete
+ * today's check; nothing changed.", where the line stands alone (the idea's call, the Desks tab's note); in the strip, after
+ * the desk's name, its verb alone. The stored note itself is unchanged.
+ */
+const FAILED_CHECK_VERB = CODE_FALLBACK_NOTE.replace(/^The agent /, '');
+export const FAILED_CHECK = Object.freeze({
+  sentence: (deskName) => `${deskName} ${FAILED_CHECK_VERB}`,
+  strip: FAILED_CHECK_VERB,
+});
 
 /** An entering name, in place of its mark (the mock-up's B2_BUYS). */
 export const BUYS_NEXT_WINDOW = 'Buys at the next session’s first window';
@@ -37,11 +46,29 @@ export const THESIS_BY_FOUNDER = 'The founder';
 /** The slots in order, with their names and lengths (the idea record's window table; windows.js slotSessions). */
 export const SLOT_NAMES = Object.freeze({ short: 'Short', medium: 'Medium', long: 'Long' });
 
-/** The desks as the screen names them (the mock-up's DESKS). `the` opens a sentence's middle. */
-export const DESK_COPY = Object.freeze({
-  shadow: Object.freeze({ name: 'Shadow desk', the: 'the Shadow desk', The: 'The Shadow desk', lane: 'Medium · Long' }),
-  archetype: Object.freeze({ name: 'Archetype desk', the: 'the archetype desk', The: 'The archetype desk', lane: 'Short' }),
+/**
+ * B5-3 (the founder's PH-5) — THE DESKS' NAMES. No player sees the engine's internal word for the agent's desk: the agent's
+ * desk reads "{the agent's given name}’s desk", the archetype's "{the archetype's name}’s desk" — one name everywhere these
+ * words appear (the strip, the groups, the open slot, the Desks tab, the thesis byline, History, the calls and every label
+ * built for a screen reader). The server finishes each name; the client completes nothing. With no usable given name, or no
+ * archetype name, the desk reads "Your agent’s desk" / "Your archetype’s desk".
+ *   name  heads a label or a sentence;
+ *   mid   sits inside a sentence: a fallback is lower-cased there ("…open · your agent’s desk looks tonight."); a given name
+ *         or an archetype's name is never re-cased.
+ * No sentence puts "the" before a name. The desk ids (`shadow`, `archetype`) stay the engine's keys and are never shown.
+ */
+export const DESK_NAMES = Object.freeze({
+  agent: (given) => (given
+    ? Object.freeze({ name: `${given}’s desk`, mid: `${given}’s desk` })
+    : Object.freeze({ name: 'Your agent’s desk', mid: 'your agent’s desk' })),
+  archetype: (archetypeName) => (archetypeName
+    ? Object.freeze({ name: `${archetypeName}’s desk`, mid: `${archetypeName}’s desk` })
+    : Object.freeze({ name: 'Your archetype’s desk', mid: 'your archetype’s desk' })),
 });
+/** Each desk's slots, as the Desks tab says them under its name (agentConfig.js DESKS: the agent's medium and long). */
+export const DESK_LANES = Object.freeze({ shadow: 'Medium · Long', archetype: 'Short' });
+/** B5-2: the split's third part. */
+export const SPLIT_CASH_NAME = 'Cash';
 
 /** Where an idea came from, as its source chip says it (by the contract's origin kind). */
 export const SOURCE_CHIPS = Object.freeze({
@@ -98,10 +125,13 @@ export const SELLING_WORDS = Object.freeze({
   early_resolution: 'Ended',
 });
 
-/** An open slot. With the agent off, or the book paused or winding down, no desk looks: the slot is only open. */
+/**
+ * An open slot. With the agent off, or the book paused or winding down, no desk looks: the slot is only open. B5-3: the desk
+ * by its name — `mid` inside the row's sentence, `name` at the head of the Desks tab's.
+ */
 export const OPEN_SLOT = Object.freeze({
-  row: (slotName, deskThe, looks) => (looks ? `${slotName} · open · ${deskThe} looks tonight.` : `${slotName} · open`),
-  desks: (deskThe, looks) => (looks ? `Open. ${deskThe[0].toUpperCase()}${deskThe.slice(1)} looks for an idea at tonight’s close.` : 'Open.'),
+  row: (slotName, deskMid, looks) => (looks ? `${slotName} · open · ${deskMid} looks tonight.` : `${slotName} · open`),
+  desks: (deskName, looks) => (looks ? `Open. ${deskName} looks for an idea at tonight’s close.` : 'Open.'),
 });
 
 /**

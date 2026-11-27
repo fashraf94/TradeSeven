@@ -49,8 +49,11 @@ describe('B3-5: the refusal map', () => {
 });
 
 describe('the fixed words', () => {
-  it('the failed-check sentence is the agent\'s own code-built note, word for word', () => {
-    expect(FAILED_CHECK).toBe(CODE_FALLBACK_NOTE);
+  it('the failed-check sentence is the agent\'s own code-built note, word for word, with its desk as the subject (B5-3, review B1)', () => {
+    expect(CODE_FALLBACK_NOTE.startsWith('The agent ')).toBe(true);
+    expect(FAILED_CHECK.sentence('The agent')).toBe(CODE_FALLBACK_NOTE);
+    expect(FAILED_CHECK.sentence('Atlas’s desk')).toBe(CODE_FALLBACK_NOTE.replace(/^The agent/, 'Atlas’s desk'));
+    expect(`The agent ${FAILED_CHECK.strip}`).toBe(CODE_FALLBACK_NOTE);
   });
   it('no fixed word says validated, proven or supported (contract §4.4)', () => {
     const texts = [];
