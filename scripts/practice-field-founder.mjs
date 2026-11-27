@@ -20,7 +20,8 @@
 //
 // WHAT EACH COMMAND DOES
 //   status       Reads only. The mode, whether the uid is a founder, whether the book's owner (--owner, else the uid) is on
-//                the idea book's player list ON THIS MACHINE (build B4; the deployed app reads its own copy), the
+//                the idea book's player list ON THIS MACHINE (build B4; the deployed app reads its own copy) — and
+//                (build B6) a warning with the COUNT of entries on that list the door's owner-id rule would refuse, the
 //                book (state, cash, its three slots: each idea's names, status, lines and sessions left after the last
 //                close — the agent's and the screen's own count), the open
 //                records the founder can rule on (each with its idea, kind and record id — what `resolve` needs), and the
@@ -449,9 +450,13 @@ async function parseAlertsOf(db, book, ideas) {
   const alerts = [];
   const held = new Set(bookSymbolsOf(covered));
   for (const sym of bookSymbolsOf(ideas)) {
-    const verdict = parseEntryVerdict(parseReportEntry(report, session, sym));
+    const entry = parseReportEntry(report, session, sym);
+    const verdict = parseEntryVerdict(entry);
     if (verdict.clean) continue;
-    if (held.has(sym) || verdict.reason !== 'parse_report_missing') alerts.push({ session, symbol: sym, reason: verdict.reason });
+    // Build B6 (ruling B6-8, Astra B4-A03): a late symbol is excused only when the report has NO entry for it. A stored
+    // `null` or array is an entry — malformed — and alerts, under the verdict's own reason (parseEntryVerdict reads every
+    // non-object entry as missing; that shared verdict is the close's, and is not changed here).
+    if (held.has(sym) || entry !== undefined) alerts.push({ session, symbol: sym, reason: verdict.reason });
   }
   return { session, stored: report !== null, alerts, cutoff, admittedAfter: after.map((i) => i.ideaId) };
 }
@@ -511,7 +516,17 @@ export function readGates(uid, owner = null) {
     founder: isPracticeFieldFounder(uid), onFounderList: founderAllowlist().includes(uid),
     owner: subject, ownerIsUid: subject === uid,
     onPlayerList: readPracticeFieldPlayerList().includes(subject), modeAdmitsOwner: practiceFieldAdmits(subject),
+    playerListMalformed: malformedPlayerEntries(),
   };
+}
+
+/**
+ * Build B6 (ruling B6-7, Astra B4-A02): how many entries of THIS machine's player list the door's own owner-id rule
+ * (founderControls.js validOwnerUid) would refuse. The gate keeps reading the list as it is — a typo must not lock every
+ * player out; a malformed entry admits nobody by itself — and status warns. A count only: no entry's value is printed.
+ */
+export function malformedPlayerEntries() {
+  return readPracticeFieldPlayerList().filter((u) => !validOwnerUid(u)).length;
 }
 
 /** Why gates 1 and 2 refuse, by name (the founder's own machine: the script says which — the door does not). */
@@ -755,12 +770,18 @@ export async function runCommand(db, parsed, { nowIso, fileValue = null }) {
 /** The sentence status adds under the player-list line (build B4). */
 export const PLAYER_LIST_REDEPLOY_SENTENCE = 'The deployed app reads its own copy of the list: a change there needs a production redeploy.';
 
+/** Build B6 (B6-7): status's warning for malformed player-list entries — how many, never which. */
+export function playerListWarning(n) {
+  return `                WARNING: ${n} ${n === 1 ? 'entry' : 'entries'} on this machine's player list (${PRACTICE_FIELD_PLAYER_ENV}) ${n === 1 ? 'is' : 'are'} not a uid the door accepts (1 to 128 characters from ! to ~, so no space and no accent; no "/"; not "." or ".."; not starting with "_"). No book can be made for ${n === 1 ? 'it' : 'them'}; the other entries still count. Correct the list here and in the deployed app's copy.`;
+}
+
 function gateLines(r) {
   const whose = r.ownerIsUid === false ? ` for owner ${r.owner}` : '';
   return [
     `mode            ${r.mode}   (this checkout: ${r.modeSource} ships '${r.shippedMode}')`,
     `founder list    ${r.onFounderList ? 'yes' : 'no'}   (MANDATE_FOUNDER_UIDS, this machine)`,
     `player list     ${r.onPlayerList ? 'yes' : 'no'}${whose}   (${PRACTICE_FIELD_PLAYER_ENV}, this machine — at 'allowlist' creating a book, admitting an idea and the screen need it)`,
+    ...(r.playerListMalformed > 0 ? [playerListWarning(r.playerListMalformed)] : []),
     `                ${PLAYER_LIST_REDEPLOY_SENTENCE}`,
     `founder         ${r.founder ? 'yes' : 'no'}   (the door's gate: the mode is not 'off' AND on the founder list)`,
     `mode admits     ${r.modeAdmitsOwner ? 'yes' : 'no'}${whose}   (the mode's own gate for creating a book, admitting an idea and the screen)`,

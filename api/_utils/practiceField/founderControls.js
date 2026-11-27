@@ -68,7 +68,7 @@
 // namespace (createForOpIdOf: `for#…`, a character no request key may hold), so it can never be mistaken for a create_book.
 
 import { createHash } from 'node:crypto';
-import { createIdeaBook, isKnownArchetypeId, ideaBookIdFor } from './ideaBook.js';
+import { createIdeaBook, isKnownArchetypeId, madeIdeaBookOf } from './ideaBook.js';
 import { admitIdea } from './admission.js';
 import { practiceFieldMode } from './mode.js';
 import { readPracticeFieldPlayerList, readPracticeFieldFounderList } from './playerList.js';
@@ -314,14 +314,21 @@ async function createBookFor(db, { uid, requestKey, body, nowIso, fingerprint })
     },
     run: async ({ ownerUid: owner, attributionAgentId, archetypeCodeId }) => {
       const opId = createForOpIdOf(uid, requestKey);
+      const answer = (res) => {
+        if (res.ok) return reply(res.idempotentReplay ? 200 : 201, { ok: true, action: 'create_book_for', ownerUid: owner, bookId: res.bookId, epochId: res.epochId, attributionAgentId, archetypeCodeId, idempotentReplay: res.idempotentReplay });
+        const status = { open_book_exists: 409, founder_cap_reached: 409, op_id_conflict: 409, mode_not_admitted: 403 }[res.code] ?? 400;
+        return reply(status, { ok: false, error: res.code, ownerUid: owner, ...(res.bookId ? { bookId: res.bookId } : {}) });
+      };
       if (!readPracticeFieldPlayerList().includes(owner)) {
-        const made = await db.collection('mandates').doc(ideaBookIdFor(owner, opId)).get();
-        if (!made.exists) return reply(403, { ok: false, error: 'owner_not_on_player_list', ownerUid: owner });
+        // Build B6 (ruling B6-6, Astra B4-A01): the book this request would make ALREADY EXISTS — its run was interrupted
+        // after the book committed — so it is the answer: its creation identity checked against the RECORDED target (the
+        // owner, the agent, the archetype, this request's operation), never through createIdeaBook's mode gate, which would
+        // refuse an owner removed since and store that refusal for good. A book never made: refused, as before.
+        const made = await madeIdeaBookOf(db, { uid: owner, attributionAgentId, archetypeCodeId, opId });
+        if (made === null) return reply(403, { ok: false, error: 'owner_not_on_player_list', ownerUid: owner });
+        return answer(made);
       }
-      const res = await createIdeaBook(db, { uid: owner, attributionAgentId, archetypeCodeId, opId, nowIso });
-      if (res.ok) return reply(res.idempotentReplay ? 200 : 201, { ok: true, action: 'create_book_for', ownerUid: owner, bookId: res.bookId, epochId: res.epochId, attributionAgentId, archetypeCodeId, idempotentReplay: res.idempotentReplay });
-      const status = { open_book_exists: 409, founder_cap_reached: 409, op_id_conflict: 409, mode_not_admitted: 403 }[res.code] ?? 400;
-      return reply(status, { ok: false, error: res.code, ownerUid: owner, ...(res.bookId ? { bookId: res.bookId } : {}) });
+      return answer(await createIdeaBook(db, { uid: owner, attributionAgentId, archetypeCodeId, opId, nowIso }));
     },
   });
 }
