@@ -17,6 +17,11 @@
 // FOCUS (spec §9 check 5): the primary button is ONE element across forms A, B and C (a keyed child of a keyed
 // block), so when the read after a close turns "Work this idea" into "Continue research", the button that opened the
 // sheet — and holds focus again — is the same node.
+//
+// F-1 (the fix prompt of Nov 27): the panel's heading (`ftx-panel-h`) is ONE element across every form, loading
+// included (the same keyed child of the same <section>), focusable by script (tabIndex -1). Form E's Try again leaves
+// the page with the retry, so the tap puts focus on that heading first (never scrolling): it holds focus while the read
+// is out and after it answers — whether forms A, B or C draw, or E again, where the next Tab stop is Try again.
 
 //
 // Build 2 (spec docs/specs/20261125_EXPLORE_BUILD_2_SPEC_AMENDMENT_B.md §4.3, §6; build prompt K-11, K-14): a broad
@@ -137,11 +142,13 @@ export default function ExplorePanel({
   const save = (kind) => <SaveToggle key="save" kind={kind} pressed={saved} busy={saveBusy} label={COPY.save} onToggle={onToggleSave} />;
   const compare = EXPLORE_COMPARE_ROUTE ? true : false; // the switch, read at call time (K-2): a literal ternary, which the build folds away
   const group = question.broad ? <GroupBlock key="group" question={question} compare={compare} onOpenCompany={onOpenCompany} /> : null;
+  // The panel's heading: ONE element in every form (the same key in the same <section>), so it stays through a re-read (F-1)
+  const heading = (words, tone = null) => <Eyebrow key="panel-h" as="h3" id="ftx-panel-h" tabIndex={-1} tone={tone} style={{ outline: 'none' }}>{words}</Eyebrow>;
 
   if (form === FORMS.LOADING) {
     return (
       <section aria-labelledby="ftx-panel-h" style={S.section} data-explore-panel="loading">
-        <Eyebrow as="h3" id="ftx-panel-h">{COPY.investigation}</Eyebrow>
+        {heading(COPY.investigation)}
         <StatusLine>{COPY.checking}</StatusLine>
       </section>
     );
@@ -151,7 +158,7 @@ export default function ExplorePanel({
   if (form === FORMS.D || form === FORMS.E) {
     return (
       <section aria-labelledby="ftx-panel-h" style={{ ...S.box, gap: 14, padding: 16 }} data-explore-panel={form}>
-        <Eyebrow as="h3" id="ftx-panel-h">{COPY.investigation}</Eyebrow>
+        {heading(COPY.investigation)}
         <div style={S.card}><p style={{ ...S.body, fontSize: 14.5, fontWeight: 600 }} data-explore-question-text="">{value}</p></div>
         {group}
         <StartsWithIt story={story} question={question} compare={compare} />
@@ -160,7 +167,8 @@ export default function ExplorePanel({
         ) : (
           <div style={S.section}>
             <Notice role="alert" tone="copper">{COPY.readFailed}</Notice>
-            <div><Btn kind="secondary" onClick={onRetry} data-explore-retry-read="">{COPY.tryAgain}</Btn></div>
+            {/* the button leaves with the retry: focus goes to the panel's heading first, never to <body> (F-1) */}
+            <div><Btn kind="secondary" onClick={(event) => { const h = event.currentTarget.closest('[data-explore-panel]')?.querySelector('#ftx-panel-h'); onRetry?.(); if (h) h.focus({ preventScroll: true }); }} data-explore-retry-read="">{COPY.tryAgain}</Btn></div>
           </div>
         )}
         <div style={S.actions}>{save('secondary')}</div>
@@ -171,7 +179,7 @@ export default function ExplorePanel({
 
   const limit = atLimitOf(quota);
   const proposed = [
-    <Eyebrow key="proposed-h" as={form === FORMS.A ? 'h3' : 'h4'} id={form === FORMS.A ? 'ftx-panel-h' : undefined} tone="teal">{form === FORMS.A ? COPY.proposed : COPY.newOne}</Eyebrow>,
+    form === FORMS.C ? <Eyebrow key="proposed-h" as="h4" tone="teal">{COPY.newOne}</Eyebrow> : null,
     <div key="field" style={{ minWidth: 0 }}>
       <label htmlFor={fieldId} style={S.label}>{COPY.question}</label>
       <QuestionBox id={fieldId} value={value} onChange={onEdit} describedBy={helpId} />
@@ -190,7 +198,6 @@ export default function ExplorePanel({
     const open = item.open;
     const differs = open.question === null || norm(open.question) !== norm(value);
     children = [
-      <Eyebrow key="yours-h" as="h3" id="ftx-panel-h" tone="teal">{COPY.yours}</Eyebrow>,
       <Notice key="open-note" role="status" tone="teal">{COPY.open}</Notice>,
       <div key="open-card" style={{ ...S.card, border: `1px solid ${wash('teal', 0.3)}` }} data-explore-open="">
         {open.question && <p style={{ ...S.body, fontSize: 14.5, fontWeight: 600 }} data-explore-open-question="">{open.question}</p>}
@@ -204,7 +211,6 @@ export default function ExplorePanel({
   } else if (form === FORMS.C) {
     const last = item.last;
     children = [
-      <Eyebrow key="yours-h" as="h3" id="ftx-panel-h" tone="teal">{COPY.yours}</Eyebrow>,
       <div key="ended" style={{ ...S.card, gap: 10 }} data-explore-ended={last.ended}>
         <p style={{ ...S.body, fontWeight: 600 }} data-explore-state="">{endedLineOf(last)}</p>
         {last.question ? <p style={{ ...S.body, fontSize: 14.5 }} data-explore-ended-question="">{last.question}</p> : null}
@@ -221,6 +227,7 @@ export default function ExplorePanel({
 
   return (
     <section aria-labelledby="ftx-panel-h" style={{ ...S.box, gap: 14, padding: 16, background: wash('teal', 0.05), border: `1px solid ${wash('teal', 0.25)}` }} data-explore-panel={form}>
+      {heading(form === FORMS.B || form === FORMS.C ? COPY.yours : COPY.proposed, 'teal')}
       {children}
       <div key="actions" style={S.actions} data-explore-actions="">
         {primary

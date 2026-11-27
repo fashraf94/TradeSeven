@@ -11,7 +11,8 @@
 //     else to `fallbackFocus()`; never scrolling the page (`preventScroll`); Escape closes; Tab stays inside;
 //   - the body is loaded lazily through ./loadSharedResearch.js (the sheet's second door) inside Suspense and an
 //     error boundary with the hub wrapper's three lines: loading, a failed load with Try again (a fresh import), and
-//     the same line for a body that throws;
+//     the same line for a body that throws; Try again puts focus on the sheet's own heading first (never scrolling): the
+//     link leaves when the fresh import lands and the body draws, and the heading stays (F-1, the fix prompt of Nov 27);
 //   - the body mounts fresh for each opening (`key` is the opening's id), standalone: `overlayStack` null,
 //     `stories` [] — and (Build 2, spec docs/specs/20261125_EXPLORE_BUILD_2_SPEC_AMENDMENT_B.md §7, build prompt K-16)
 //     the player's agent from the one research read: `agentId`, `agentName` and `equippedListLabel` are the read's
@@ -119,6 +120,7 @@ export function createExploreSheetHost(load) {
     const backdropRef = useRef(null);
     const dialogRef = useRef(null);
     const closeRef = useRef(null);
+    const headingRef = useRef(null);
     const reducedMotion = useReducedMotion() === true;
     const [loads, setLoads] = useState(0);
     const [retrying, setRetrying] = useState(false);
@@ -173,6 +175,7 @@ export function createExploreSheetHost(load) {
 
     const tryAgain = () => {
       if (retrying) return;
+      headingRef.current?.focus({ preventScroll: true });
       setRetrying(true);
       loader.retry().then(
         () => { setRetrying(false); setLoads((n) => n + 1); },
@@ -221,7 +224,7 @@ export function createExploreSheetHost(load) {
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={S.eyebrow}>{COPY.eyebrow}</div>
-              <h2 style={{ fontSize: 19, fontWeight: 700, letterSpacing: '-0.015em', margin: '4px 0 0', color: T.ink, lineHeight: 1.3 }}>{COPY.title}</h2>
+              <h2 ref={headingRef} tabIndex={-1} style={{ fontSize: 19, fontWeight: 700, letterSpacing: '-0.015em', margin: '4px 0 0', color: T.ink, lineHeight: 1.3, outline: 'none' }}>{COPY.title}</h2>
             </div>
             <button
               ref={closeRef}

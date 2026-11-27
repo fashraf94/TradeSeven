@@ -277,5 +277,50 @@ describe('the layers', () => {
   });
 });
 
+describe('F-1 (the fix prompt of Nov 27) — the failed load\'s Try again never drops focus to <body>', () => {
+  let opener;
+  beforeEach(() => {
+    opener = document.createElement('button');
+    opener.textContent = 'opener';
+    document.body.append(opener);
+    opener.focus();
+    window.scrollTo = vi.fn();
+  });
+  afterEach(() => { opener.remove(); });
+
+  it.each([['lands (the body draws)', 'body'], ['fails again', 'failed']])('a retry that %s: the sheet\'s own heading holds focus while the import is out and after it answers, never scrolling', async (_, end) => {
+    const body = recordingBody();
+    const held = deferred();
+    const load = vi.fn().mockRejectedValueOnce(new Error('chunk')).mockImplementationOnce(() => held.promise);
+    const Host = createExploreSheetHost(load);
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus');
+    try {
+      keep(mount(<Host entry={ENTRY} onClose={vi.fn()} opener={opener} />));
+      await until(() => $('[data-explore-sheet-load-failed]'), 'the failed line');
+      const h = $('[data-explore-sheet] h2');
+      const link = $('[data-explore-sheet-load-failed] button');
+      link.focus();
+      click(link);
+      await flush();
+      expect(document.activeElement).not.toBe(document.body);
+      expect(document.activeElement).toBe(h);
+      const i = focus.mock.contexts.lastIndexOf(h);
+      expect(i).toBeGreaterThanOrEqual(0);
+      expect(focus.mock.calls[i]).toEqual([{ preventScroll: true }]);
+      if (end === 'body') held.resolve(body.module);
+      else held.reject(new Error('again'));
+      await until(() => (end === 'body' ? body.mounts.length === 1 : $('[data-explore-sheet-load-failed]')?.dataset.exploreSheetLoadFailed === ''), 'the answer');
+      expect(link.isConnected).toBe(end !== 'body');
+      expect(document.activeElement).not.toBe(document.body);
+      expect(document.activeElement).toBe(h);
+      expect(h.isConnected).toBe(true);
+    } finally {
+      focus.mockRestore();
+      quiet.mockRestore();
+    }
+  });
+});
+
 // keep the unused helper import honest
 void $$;
