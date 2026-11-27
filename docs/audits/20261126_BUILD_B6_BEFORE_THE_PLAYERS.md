@@ -464,3 +464,174 @@ The merge changes the words the model reads, and nothing it does with money. Aft
    - `status` should show no `WARNING` line under "player list".
    - If one shows, an entry on that machine's list is not a valid uid. It shows a count, never the entry. Correct the list there and in Vercel's copy, then redeploy.
 6. **Nothing else should differ.** That covers the ideas, admissions, lines, sales and the book's value.
+
+## Fix round, Astra's review
+
+**Date:** 27 Nov 2026 · **Review:** `docs/audits/20261127_ASTRA_REVIEW_B6.md` (Astra, at `16c72537`; committed byte-identical, SHA-256 `9c7dec69…0c887c90`) · **Base:** `origin/main` `a2e05fa9` (fetched first) · **Code head:** `b3d8e72d` · **Not merged; CI not watched.**
+
+| Question | Answer |
+|---|---|
+| B6-A01: does a line break still turn a word into a desk name? | **No.** A replaced phrase is matched on one line. Her two-line note comes back byte for byte, through the close and the reader, with LF and with CRLF. "The Shadow desk holds JPM." still reads "Atlas’s desk holds JPM." |
+| B6-A02: does underscore emphasis still show the old name? | **No.** `_Shadow desk_` reads `_Atlas’s desk_`, and `__Archetype desk__` reads the archetype desk's name between its two underscores. `*Shadow desk*` is unchanged. `shadow_desk`, `Shadow desk_v2` and `my_Shadow desk` stay as written. |
+| B6-A03 | **Stays, as ruled.** One pin: an agent named "Archetype Desk" or "Shadow desk" is shown as written, once, in the heading and in the note. |
+| Did anything else change? | **No.** Only the two patterns in `bookView.js` and the line that reads the desk's word. Not the prompt, the six fixes, the reader or the client. |
+| Checks | Battery: 28 mutants, 28 killed (one only after a row was added). Refuter: no ruling example broken and no regression against base over 2.4 million fuzzed inputs. Full Linux suite green: 39,412 passed, 0 failed. `lint:gate` and `vite build` pass. |
+| For you | **Three questions** from the refuter (Q-5 to Q-7, below). None blocks. |
+
+### The founder's rulings on her findings
+
+| | Finding | Ruling |
+|---|---|---|
+| B6-A01 | The old-name pattern matches across a line break. "…cast a long shadow" and, on the next line, "Desk action: hold JPM." become "…cast a long Atlas’s desk action: hold JPM." | **Fix here.** A desk's meaning changed |
+| B6-A02 | `_Shadow desk_` and `__Archetype desk__` keep the old name, because an underscore counts as a word character at the pattern's edges | **Fix here** |
+| B6-A03 | An agent the player named "Archetype Desk" reads "Archetype Desk’s desk" | **Ruled: it stays.** A player's own agent name is shown as they wrote it. B5 recorded the same for an agent named after the book's archetype, and for the creation form's own suggestion, "Shadow". PH-5 is about the names this product gives the desks. One pin row, no other change |
+| B6-A04 | A founder fixture submitted with the author `agent` shows its thesis under the desk's byline | **Recorded.** It needs the founder to submit that label himself |
+
+### The rebase
+
+- `main` moved from `a88c204a` to `a2e05fa9`: PR #1119 and PR #1120 (the research directory and its numbers) and PR #1122 (the portfolio hub's slice 1).
+- The rebase conflicted only in `docs/README.md`. Both sides' rows are kept.
+- **B6's diff outside the docs index is the same, byte for byte**, before and after the rebase (`git diff a88c204a 16c72537` against `git diff a2e05fa9 HEAD`, both without `docs/README.md`). B6's index rows are unchanged too.
+- The new code on `main` under the Practice Field is the hub's `src/components/PracticeField/IdeaBookEntry.jsx` and its two tests. B6 does not touch them. The lockfile did not move (`6d01297094c2`).
+- The rebased B6 head is `2f8e6c5b`. The commits since: Astra's review and its index row `7bf36148`, the fixes `0891d228`, one more row `b3d8e72d` (the battery's U04), then this report.
+
+### The fixes, by file and line
+
+All in `api/_utils/practiceField/bookView.js`.
+
+| Where | Before (B6) | After |
+|---|---|---|
+| `:169` (new) | none | ``const GAP = String.raw`[^\S\r\n\u2028\u2029]+`;`` |
+| `:180` (B6 `:169`) | `const OLD_DESK_NAME = /\b(?:the\s+)?(shadow\|archetype)\s+desk\b/gi;` | ``const OLD_DESK_NAME = new RegExp(String.raw`(?<=(?<![A-Za-z0-9_])(_*))(?:the${GAP})?(shadow\|archetype)${GAP}desk(?=\1(?![A-Za-z0-9_]))`, 'gi');`` |
+| `:185` (B6 `:174`) | `const THE_BEFORE = /\bthe\s+$/i;` | ``const THE_BEFORE = new RegExp(String.raw`\bthe${GAP}$`, 'i');`` |
+| `:236` | `names[m[1]…]` | `names[m[2]…]`: group 1 is now the underscore run, and group 2 is the desk's word |
+
+**1. B6-A01, one line.** Every gap inside a replaced phrase is now `GAP`, in all three places: between "Shadow" or "archetype" and "desk", after "the" before a name, and after "the" before an id. `GAP` is the white space `\s` holds, without the four ECMAScript line terminators (LF, CR, U+2028, U+2029). So a CRLF is two terminators and never joins, the same as an LF.
+
+**2. B6-A02, underscore emphasis.** The edges are no longer `\b`. Each edge is now one of two things:
+- No letter, digit or underscore touches the phrase. That is exactly what `\b` did before, so text without underscores reads as before.
+- A run of underscores stands on each side. It must be the same run on both sides, with no letter, digit or underscore beyond it.
+
+The look-behind captures the run, and the look-ahead requires it again (`\1`). The run is never part of the match, so it is kept as written, the same way `*Shadow desk*` keeps its asterisks. The id rule (`ID_CHAR`, `isIdChar`) is unchanged: an underscore is still one of an id's characters.
+
+The `/i` flag stays, without `/u` (review A1).
+
+### R-5, as corrected
+
+| | Reading | Why |
+|---|---|---|
+| R-5 | **"the" before an old name or an id is taken in only on the same line, and a line break is never part of a replaced phrase.** So "the Shadow desk" becomes "Atlas’s desk", and "the idea_…" becomes "the medium idea", never "the the medium idea". No other word is taken in. "an archetype desk" reads "an your archetype’s desk" (review A6). "Same line" means the gap holds spaces, tabs and the other spaces `\s` holds (a no-break space among them), and no line terminator: LF, CR (so CRLF too), U+2028 or U+2029. Across a line break nothing is taken in. "the" stays on its line, the line break stays, and the name or id that opens the next line is replaced where it stands. R-4 then reads it as the head of a sentence: "I keep the␤idea_…" reads "I keep the␤The medium idea", and "the␤Shadow desk" reads "the␤Atlas’s desk". | B6-3 names "the", and says nothing else is touched. Astra's B6-A01 and the founder's ruling: a phrase is matched on one line. |
+
+- **What B6 claimed, and what B6 did.** As shipped, R-5 said a line break stays, but the code (`\s+`) and the row at `bookView.b6.test.js:77` both joined across it. §6.3's **A7, "REFUTED", was wrong.** It is the same defect as Astra's B6-A01, and is confirmed and fixed here. The row is turned around and retitled.
+- **The width of "a space" is a reading.** The brief says "spaces and tabs". I kept every horizontal space B6 already joined on, such as the no-break space. Narrowing to space and tab would show the old name again for a desk that writes `Shadow␣desk` with a no-break space. That would be the same class of defect as B6-A02. A row pins it.
+- **Underscores and "the".** `the _Shadow desk_` keeps its "the", the same as `the *Shadow desk*` already did. `_the Shadow desk_` reads `_Atlas’s desk_`, the same as `*the Shadow desk*`.
+
+### The rows
+
+`api/_utils/practiceField/bookView.b6.test.js`:
+
+- **`:76`, turned around.** "I keep the␤idea_aaa and the␤Shadow desk agrees." now reads "I keep the␤The medium idea and the␤Atlas’s desk agrees.". The line breaks stay, and "the" is not taken in.
+- **`:122`, B6-A01.**
+  - A tab and a no-break space still join a name, "the" before a name, and "the" before an id.
+  - LF, CRLF, lone CR, U+2028 and U+2029 never join any of them:
+    - "a long shadow␤Desk action: hold." and "the archetype␤desk exits." come back as written.
+    - "the␤Shadow desk" keeps "the" and its line break, and replaces the name.
+  - With LF and CRLF, the head of the next line follows R-4: a fallback name is capitalised, and a desk's own lower case stays inside.
+  - CRLF reads as LF in four head-of-line rows.
+- **`:156`, B6-A02.**
+  - `_Shadow desk_`, `__Archetype desk__`, `___the archetype desk___`, and emphasis inside brackets and quotes are replaced.
+  - Her asterisk control is unchanged.
+  - "the" outside the emphasis stays, as with asterisks.
+  - These stay as written:
+    - longer tokens: `shadow_desk`, `Shadow desk_v2`, `my_Shadow desk`, `x_the Shadow desk_y`;
+    - unpaired runs: `_Shadow desk__`, `__Shadow desk_`, `_Shadow desk`, `Shadow desk_`;
+    - a run glued to a word on one side only: `my_Shadow desk_ here`, `x__Archetype desk__ here`, `a _Shadow desk_v2`, `my_the Shadow desk_ here`.
+  - `_idea_aaa_` stays, and `*idea_aaa*` is replaced: the ids' rule is unchanged.
+  - Underscores and asterisks case alike at a sentence's head.
+- **`:178`, B6-A03, the pin.**
+  - An agent named "Archetype Desk" or "Shadow desk" reads "{name}’s desk holds JPM.".
+  - In every scene, with each desk's words voiced, no string a player reads holds "’s desk’s desk": the name is put in once and never read again. This makes Lens A's two equivalent survivors killable (X01 to X03 below).
+- **`:442`, Astra's rows through the reader, as she ran them.**
+  - Setup: a founder book with its medium JPM idea, and the verified owner's agent named in the row. On the first session (`2026-11-16`), the agent desk answers `holdAll` with the note, and the archetype desk holds. Both desks call.
+  - The stored part's source is `model`, and its stored note equals the input.
+  - Then `readBookView` runs. The whole store's dump is the same before and after the read.
+  - **A01:** her two-line note, with LF and with CRLF, is shown byte for byte. The control reads "Atlas’s desk holds JPM.".
+  - **A02:** `_Atlas’s desk_`; the archetype desk's name between double underscores, with no old name; `*Atlas’s desk*`.
+  - **A03:** for both names, the heading is "{name}’s desk", the note is "{name}’s desk holds JPM.", and each holds the name once.
+- **Still passing:**
+  - every B6 row, the scan over every scene and the 13-session run;
+  - the six fixes' rows;
+  - the Practice Field folder on Windows: 1,747 rows in 61 files;
+  - the full Linux suite (below).
+
+### The battery
+
+`scripts/practice-field/battery/run-battery.mjs`, tiered, 4 trees × 4 workers, with `--prior` from B6's battery (`7a7e1c09`). The default row set was used, because only `bookView.js` is mutated.
+
+| Run | Mutants | Killed | Survived | Broken | Time |
+|---|---|---|---|---|---|
+| `0891d228` (the fixes) | 28 | 27 | 1 (U04) | 0 | 5.0 min. Baseline green, 1,905 rows in 67 files. 27 decided by the first tier, 1 by the full row set. |
+| `b3d8e72d` (one row added), `--only U04` | 1 | 1 | 0 | 0 | 1.4 min |
+
+- **The helper's mutants of B6 (14):**
+  - D01 to D08, D19 and H01 to H05.
+  - D01, D02, H01 and D08 were re-cut on the new patterns under the same ids, so `--prior` still ordered them.
+  - The other ten are copied from B6's manifest unchanged. All 14 were killed.
+- **B6-A01 (6):**
+  - F01, F02, F03: `\s+` put back in each of the three gaps.
+  - F04, F05, F06: CR, LF or U+2028 allowed in the gap.
+- **B6-A02 (5):**
+  - U01: B6's `\b` edges.
+  - U02: the opening run taken into the match.
+  - U03: any closing run, not the same one.
+  - U04: the run's own left edge dropped.
+  - U05: the closing run's right edge dropped.
+- **B6-A03 (3):** X01 to X03. The note, a draft's thesis and the slot settled today's exit reason are each read a second time.
+- **U04 survived the first run.**
+  - JavaScript look-behinds are atomic, so `my_Shadow desk` failed even without the dropped check.
+  - Only a run glued to a word on one side and closed on the other, like `my_Shadow desk_ here`, tells them apart, and no row had one.
+  - Four such rows were added (`b3d8e72d`, test only), and U04 is killed.
+  - The refuter found the same gap independently (F3 below).
+- The manifest is in the session scratchpad, because its anchors belong to this PR's code.
+
+### The refuter
+
+One refuter worked on a `git archive` snapshot of `0891d228`, read-only. It was given the rulings and the diff, not my reading of them. Its probes:
+- old against new over 2.4 million random inputs, with no regression found;
+- an oracle written from the rulings, over 2.7 million random and structured inputs, with 0 differences;
+- its own mutants.
+
+| # | Finding | Class | Disposition |
+|---|---|---|---|
+| F1 | Emphasis that spans more than the name still shows the old name, the same as base. `_I agree with the Shadow desk_` stays as written, while `*I agree with the Shadow desk*` is replaced. `_The Shadow desk holds._` reads `_The Atlas’s desk holds._`. | Note: outside rule 2's "around an old desk name" | **Q-5.** |
+| F2 | A paired run glued to a non-ASCII letter is matched: `café_Shadow desk_` reads `café_Atlas’s desk_`. Base kept it, but base's `\b` is ASCII-only too, so base already reads `caféShadow desk` as `caféAtlas’s desk`. | Minor | **Q-6.** The word notion stays ASCII, as base's. A Unicode letter class needs `/u`, which brings back review A1's fold, so a fix would be a check in code. |
+| F3 | The run's left-edge check could be dropped with every row still green. | Test gap | **Fixed:** the four rows above. It is the battery's U04, now killed. |
+| F4 | A vertical tab or form feed joins a phrase, the same as base. They are not ECMAScript line terminators, but Unicode treats them as mandatory breaks. | Test gap, needs a ruling | **Q-7.** No row pins either reading. |
+| F5 | Time grows with the square of a run of underscores: 98 ms at 10,000 characters. | Note | **Recorded.** Every place is capped: a note at 600, a reason at 280, a thesis at 400. At 1,200 characters it takes 1.4 ms. |
+| F6 | An emphasised name at a sentence's head is lower case, `_your agent’s desk_ holds.`, the same as base and the same as asterisks. `SENTENCE_HEAD`'s opening class has no `*` or `_`. | Note: casing is outside this round | **Recorded.** |
+
+**What held:**
+- Every ruling example.
+- Her two-line note, byte for byte.
+- No difference from base on any input without a line terminator or an underscore at the phrase's edges: 1.2 million cases, about 47,000 of them real replacements.
+- Every difference from base on inputs with line terminators has a terminator inside the old match. That is 15,154 differences, and none is unexplained.
+- `\1` always holds the maximal run.
+- A lazy `_*?` is equivalent.
+- Ruling 3 holds.
+
+### Questions for you (new)
+
+- **Q-5.** Should emphasis that spans more than the name count, as in `_I agree with the Shadow desk_`? Today it reads the same as before B6-A02, so the old name shows. With asterisks it is replaced.
+- **Q-6.** Should a non-ASCII letter count as part of a word at the edges, so that `café_Shadow desk_` stays as written? It would cost a check in code.
+- **Q-7.** Is a vertical tab or form feed "a line break"? Today they join, as they did in B6.
+
+### The checks
+
+| Check | Where | Result |
+|---|---|---|
+| Full Linux suite, `TZ=UTC`, `--maxWorkers=8`, under `flock` | WSL `~/pd-ci-b6` at `b3d8e72d` (Node 20.20.2, lockfile `6d01297094c2`) | `Test Files 1694 passed \| 14 skipped (1708)` · `Tests 39412 passed \| 197 skipped (39609)` · `suite exit 0 seconds 389` |
+| `npm run lint:gate` | the same tree | `lint exit 0` |
+| `npx vite build` | the same tree | `✓ built in 30.87s` · `build exit 0` |
+| Practice Field folder | Windows, `0891d228` | `Test Files 61 passed (61)` · `Tests 1747 passed (1747)` |
+
+No real Firestore, model or EODHD call was made. Nothing was read from `.env` files, the environment or credentials. The only network steps were `git fetch origin` and `git push`.
