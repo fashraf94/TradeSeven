@@ -20,21 +20,9 @@ import {
   evidenceOf, findingsById, formatDay, formatWhen, isAged, linesOf, partnerReplyOf, quotaStateOf,
   remainingOf, splitNext, startingPointOf, stateOf, directionOfStep, labelOf,
 } from '../sharedResearchView';
-import { Button, CompanyCard, Disclosure, Eyebrow, Finding, Lead, LinkButton, Notice, Running, StatusTag, Tag } from '../parts';
+import { Button, CompanyCard, Disclosure, Eyebrow, Finding, Lead, LinkButton, Notice, Running, StatusTag, StoredRow, Tag } from '../parts';
 
 const RETRYABLE = new Set(['step_failed', 'network', 'step_in_flight', 'server_error']);
-
-/**
- * One stored row (Build 3b PR A, RU-21): name and symbol, the sector, "Ranked {n} of {total} in {sector}" exactly as the
- * server's row carries it (BUILD_RULES §9: no rounding, no re-derivation), and the date it was computed. A row with no
- * rank leaves the rank line out.
- */
-const storedRowLineOf = (row) => [
-  row.name !== row.symbol ? `${row.name} · ${row.symbol}` : row.symbol,
-  row.peer?.sector ?? null,
-  row.ranking ? COPY.storedRank(row.ranking.rank, row.ranking.of, row.ranking.sector) : null,
-  row.peer?.asOf && formatDay(row.peer.asOf) ? COPY.asOf(formatDay(row.peer.asOf)) : null,
-].filter(Boolean).join(' · ');
 const paragraphs = (text) => String(text ?? '').split(/\n{2,}/).map((p, i) => <p key={i} style={{ ...S.body, fontSize: 15, lineHeight: 1.55, marginTop: i ? 10 : 0 }}>{p}</p>);
 
 function Answer({ record, storedRows, entryKind, open, blocked, onRefresh }) {
@@ -48,11 +36,7 @@ function Answer({ record, storedRows, entryKind, open, blocked, onRefresh }) {
         {entryKind !== 'observation' && (
           <div style={{ ...S.card, gap: 6 }} data-sr-stored="">
             <Eyebrow>{COPY.storedFacts}</Eyebrow>
-            {storedRows.length ? storedRows.map((row) => (
-              <p key={row.symbol} style={S.meta}>
-                {storedRowLineOf(row)}
-              </p>
-            )) : <p style={S.small}>{COPY.storedNone}</p>}
+            {storedRows.length ? storedRows.map((row) => <StoredRow key={row.symbol} row={row} />) : <p style={S.small}>{COPY.storedNone}</p>}
           </div>
         )}
       </section>

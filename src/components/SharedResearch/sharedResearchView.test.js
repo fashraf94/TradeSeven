@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 import {
   namesCompanyView, coreNameView, GENERIC_NAME_WORDS, STATEMENT_MAX, withoutRole, labelOf, dateLineOf, splitNext, quotaStateOf, staleStoriesAt,
   draftOf, strayNamesOf, linesOf, isUndated, sourceLabelOf, safeUrlOf, stateOf, carriedByCompanyOf, adoptableOf,
+  holdsResearchOnlyIn,
 } from './sharedResearchView';
 import { namesCompany, coreNameOf, splitRole } from '../../../api/_utils/sharedResearch/companies.js';
 import { findingLabelOf } from '../../constants/sharedResearch';
@@ -126,5 +127,19 @@ describe('the rest of the view', () => {
     expect(stateOf(answers.getStepped.body.session, answers.getStepped.body.record)).toBe('open');
     expect(stateOf(answers.getShopPaySaved.body.session, answers.getShopPaySaved.body.record)).toBe('saved');
     expect(stateOf(answers.getConcluded.body.session, answers.getConcluded.body.record)).toBe('completed');
+  });
+});
+
+// Research universe Build 3b (section 7.2): the saved idea's research-only line, worked out from the companies each time.
+describe('holdsResearchOnlyIn', () => {
+  const companies = [{ symbol: 'NVDA', eligibility: 'eligible' }, { symbol: 'GLW', eligibility: 'research' }, { symbol: 'KRE', eligibility: 'outside' }];
+  it('true only when one of the symbols is a research-only company', () => {
+    expect(holdsResearchOnlyIn(['GLW'], companies)).toBe(true);
+    expect(holdsResearchOnlyIn(['NVDA', 'GLW'], companies)).toBe(true);
+    expect(holdsResearchOnlyIn(['NVDA'], companies)).toBe(false);
+    expect(holdsResearchOnlyIn(['KRE'], companies)).toBe(false);
+    expect(holdsResearchOnlyIn([], companies)).toBe(false);
+    expect(holdsResearchOnlyIn(['GLW'], null)).toBe(false);
+    expect(holdsResearchOnlyIn(null, companies)).toBe(false);
   });
 });

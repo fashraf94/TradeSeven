@@ -32,7 +32,7 @@ import {
   PriceLines, Rail, ResearchButton, Said, Sentence, Strip, ThemeLine, WhyBlock, WhyProposal, WRAP, basisTagOf, freeLabelOf, researchLabelOf, usePanelInView,
   scrollParentOf, STRIP_ROOM, useFootRoom, useFocusKept, useWideEnough,
 } from '../builderParts';
-import { Button, LinkButton, Notice, Running, Tag } from '../parts';
+import { Button, Disclosure, LinkButton, Notice, Running, StoredRow, Tag } from '../parts';
 import ThesisReady from './ThesisReady';
 import ThesisSaved from './ThesisSaved';
 
@@ -100,6 +100,7 @@ export function SaveOutcome({ sr, sessionId, rev }) {
 
 function BuilderWork({ sr, agentName, phone, wide, open, viewingEarlier, onBackToCurrent, onOpenEarlier, onDiscard, onNewInvestigation, onClose, onAllEvidence, onBackToThesis }) {
   const { session, record, companies, thesis, previous } = sr.inv;
+  const storedRows = Array.isArray(sr.inv.storedRows) ? sr.inv.storedRows : [];
   const state = stateOf(session, record);
   const [tapped, setTapped] = useState(null);
   const [clearAsk, setClearAsk] = useState(null);
@@ -243,6 +244,13 @@ function BuilderWork({ sr, agentName, phone, wide, open, viewingEarlier, onBackT
         {open && revisedWhyChoiceOf(thesis) && tapped !== 'why' && <LinkButton onClick={() => tapPart('why')} attrs={{ 'data-sr-revised-waiting': '' }}>{B.revisedWaiting}</LinkButton>}
         {(thesis.filled ?? 0) > 1 && <LinkButton onClick={onAllEvidence} attrs={{ 'data-sr-all-evidence-open': '' }}>{`${B.allEvidence} ›`}</LinkButton>}
       </div>
+      {/* Build 3b (the founder's ruling of Nov 27): on a research session only, what the records hold for its companies —
+          a research company with its own numbers and no rank. A game-list session draws nothing here, as before. */}
+      {session.universe === 'research' && storedRows.length > 0 && (
+        <Disclosure label={COPY.storedFacts} count={storedRows.length} attrs={{ 'data-sr-stored': '' }}>
+          {storedRows.map((row) => <StoredRow key={row.symbol} row={row} />)}
+        </Disclosure>
+      )}
     </section>
   );
 

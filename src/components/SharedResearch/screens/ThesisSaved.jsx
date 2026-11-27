@@ -21,7 +21,7 @@
 import React from 'react';
 import { SR_COPY as COPY } from '../sharedResearchCopy';
 import { T, S, wash } from '../sharedResearchStyle';
-import { formatWhen } from '../sharedResearchView';
+import { formatWhen, holdsResearchOnlyIn } from '../sharedResearchView';
 import { FreeButton, WRAP } from '../builderParts';
 import { Notice, Running } from '../parts';
 
@@ -75,6 +75,7 @@ export default function ThesisSaved({ sr, agentName, agentId, equippedListLabel 
         <span style={{ fontWeight: 700, color: T.ink }}>{names.join(', ')}</span>
         {thesis?.parts?.timeFrame?.label ? ` · ${thesis.parts.timeFrame.label}` : ''}
       </p>
+      {holdsResearchOnlyIn(names, sr.inv.companies?.supported) && <p style={{ ...S.small, ...WRAP }} data-sr-research-only="">{COPY.research.holdsResearchOnly}</p>}
       <div style={{ paddingTop: 16, borderTop: `1px solid ${T.hair}`, display: 'flex', flexDirection: 'column', gap: 8 }}>
         <p style={{ ...S.body, ...WRAP, color: T.ink2 }} data-sr-honest="">{B.honestLine(agentName)}</p>
         <p style={{ ...S.body, ...WRAP, color: T.ink2 }} data-sr-idea-book="">{B.ideaBook(agentName)}</p>
@@ -88,7 +89,7 @@ export default function ThesisSaved({ sr, agentName, agentId, equippedListLabel 
         {canEquip && eq.status === 'done' && <p style={{ ...S.body, ...WRAP }} data-sr-equipped="">{COPY.equipped}</p>}
         {canEquip && eq.status === 'failed' && (
           <>
-            <Notice role="alert" attrs={{ 'data-sr-equip-failed': '' }}>{COPY.equipFailed}</Notice>
+            <Notice role="alert" attrs={{ 'data-sr-equip-failed': eq.code ?? '' }}>{eq.code === 'research_only_list' ? COPY.research.equipRefused : COPY.equipFailed}</Notice>
             <FreeButton label={COPY.retry} trail={B.optional} disabled={busy} onClick={() => sr.equipNow({ agentId, watchlistId })} />
           </>
         )}

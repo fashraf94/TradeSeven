@@ -195,6 +195,43 @@ const BUILDER = Object.freeze({
   start: 'Start my thesis',
 });
 
+/**
+ * Research universe Build 3b (rulings RU-15, RU-18, RU-19): a research company's stored row, and the lines a saved idea
+ * holding one carries. Shown on a research session only; a game-list session never draws one of these.
+ */
+const RESEARCH = Object.freeze({
+  noRank: 'Research only · no rank',
+  // §7.2: wherever the saved idea or its preview shows (worked out from the idea's companies each time)
+  holdsResearchOnly: "Holds a research-only company. It can't be equipped to a battle agent.",
+  // §7.3: the equip route's refusal (research_only_list), shown where its other refusals show
+  equipRefused: "This idea holds a research-only company and can't be equipped to a battle agent.",
+  notFetched: 'Its numbers were not fetched: an investigation fetches numbers for at most 10 research companies.',
+  notAvailable: 'Its numbers are not available today.',
+  stale: 'These numbers are more than 7 days old.',
+  // RU-19, said once per row when a measure is held back
+  heldBack: (currency) => `Reports in ${currency}. Free cash flow yield, free cash flow margin and price to sales are left blank, so ${currency} figures are never set against a US-dollar market value.`,
+  /** The measures a row shows, in order, when kept and not null: [stored key, label, how it is written]. */
+  measures: Object.freeze([
+    ['revenueGrowthYOY', 'Revenue, latest quarter against a year earlier', 'change'],
+    ['earningsGrowthYOY', 'Earnings, latest quarter against a year earlier', 'change'],
+    ['grossMargin', 'Gross margin', 'fraction'],
+    ['profitMarginTTM', 'Profit margin', 'fraction'],
+    ['fcfMargin', 'Free cash flow margin', 'percent'],
+    ['fcfYield', 'Free cash flow yield', 'percent'],
+    ['priceSalesTTM', 'Price to sales', 'ratio'],
+    ['debtToEquity', 'Debt to equity', 'ratio'],
+    ['currentRatio', 'Current ratio', 'ratio'],
+    ['interestCoverage', 'Interest coverage', 'ratio'],
+    ['netDebtEbitda', 'Net debt to EBITDA', 'ratio'],
+  ].map((m) => Object.freeze(m))),
+  /** A stored value as the row writes it: a fraction or a stored percent as "N.N percent" (a change signed), a ratio to two places. */
+  value: (kind, v) => (kind === 'change' ? `${v >= 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(1)} percent`
+    : kind === 'fraction' ? `${(v * 100).toFixed(1)} percent`
+      : kind === 'percent' ? `${v.toFixed(1)} percent`
+        : v.toFixed(2)),
+  measure: (label, value) => `${label}: ${value}`,
+});
+
 export const SR_COPY = Object.freeze({
   agentFallback: 'your agent',
   title: 'Work an idea',
@@ -437,4 +474,7 @@ export const SR_COPY = Object.freeze({
 
   // ── the thesis builder (B4) ─────────────────────────────────────────────────
   builder: BUILDER,
+
+  // ── research companies (research universe Build 3b; a research session only) ─────────────────────────────────
+  research: RESEARCH,
 });

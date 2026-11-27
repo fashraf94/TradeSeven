@@ -91,6 +91,8 @@ export const UNRESOLVED_REASONS = Object.freeze(['not_checked', 'not_disclosed',
 export const ELIGIBILITY_LABELS = Object.freeze({
   eligible: "In the game's universe",
   outside: "Outside the game's universe · research still valid",
+  // Research universe Build 3b (section 5.8): a research-only company, on a research session; never eligible
+  research: 'Research only · not in the game',
   unresolved: "Symbol · not in the app's records",
 });
 
