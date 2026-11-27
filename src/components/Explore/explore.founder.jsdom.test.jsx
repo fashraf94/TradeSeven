@@ -15,7 +15,7 @@ import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const flags = vi.hoisted(() => ({ mode: 'on' }));
-vi.mock('../../config/exploreFlags', () => ({ EXPLORE_MODES: ['off', 'allowlist', 'on'], EXPLORE_MODE: 'off', exploreMode: () => flags.mode }));
+vi.mock('../../config/exploreFlags', () => ({ EXPLORE_MODES: ['off', 'allowlist', 'on'], EXPLORE_MODE: 'off', exploreMode: () => flags.mode, EXPLORE_COMPARE_ROUTE: false, exploreCompareRoute: () => false }));
 const read = vi.hoisted(() => vi.fn());
 vi.mock('../../services/sharedResearchService', () => ({ readExploreInvestigations: read }));
 vi.mock('../../firebase/config', () => ({ db: {} }));
@@ -38,14 +38,16 @@ const { default: ExploreTab } = await import('./ExploreTab');
 const { default: ExploreRuntime } = await import('./ExploreRuntime');
 const { CORRELATION_LAB_ENABLED } = await import('../../config/featureFlags');
 const kit = await import('./__fixtures__/exploreKit');
-const { READS, GATED, NO_ANSWER, SAMPLE_STORIES, answerOf, fixtureSources, mount, flush, click, typeInto, $, $$, buttonNamed, deferred, until } = kit;
+const { READS, GATED, NO_ANSWER, SAMPLE_STORIES, KIT_STORIES, answerOf, fixtureSources, mount, flush, click, typeInto, $, $$, buttonNamed, deferred, until } = kit;
 const { EXPLORE_COPY: COPY } = await import('./exploreCopy');
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 // Rows wait on lazy modules and the page's own animations in real time: 15 s each, so a loaded machine cannot time one out.
 vi.setConfig({ testTimeout: 15_000 });
 const USER = { uid: 'u-explore-1' };
-const [AI, TAP] = SAMPLE_STORIES;
+// Build 2: the tap-to-pay sample is a tile now (B-5), and the AI sample is a card beside the pilot hero (B-4): the rows
+// open the AI and utilities cards, over the kit's default stories (the pilot pair and the samples).
+const [AI, TAP, UTIL] = SAMPLE_STORIES;
 const OLD_TABS = ['Explore', 'Rankings', 'Institutional', 'Screen', ...(CORRELATION_LAB_ENABLED ? ['Correlations'] : [])];
 const NEW_TABS = ['Explore', 'Markets', 'Rankings', 'Institutional', 'Screen', ...(CORRELATION_LAB_ENABLED ? ['Correlations'] : [])];
 const CONTENT = { Explore: '[data-explore-tab]', Markets: '[data-stub="markets"]', Rankings: '[data-stub="rankings"]', Institutional: '[data-stub="institutional"]', Screen: '[data-stub="screen"]', Correlations: '[data-stub="correlations"]' };
@@ -147,19 +149,20 @@ describe('SQ-8: search at the daily limit', () => {
 });
 
 describe('F-1: no tab row inside a story', () => {
-  it.each([['on'], ['allowlist']])('at \'%s\': home shows the row; a story hides it (the heading and "← Explore" stay); "← Explore" brings it back, at the scroll left, focus on the opener', async (mode) => {
+  it.each([['on'], ['allowlist']])('at \'%s\': home shows the row; a story hides it and the heading (B-12; "← Explore" stays); "← Explore" brings both back, at the scroll left, focus on the opener', async (mode) => {
     flags.mode = mode;
     await openPage();
     expect(tabLabels()).toEqual(NEW_TABS);
     Object.defineProperty(window, 'scrollY', { value: 640, configurable: true });
     const opener = await openStory(AI);
     expect(tabLabels()).toEqual([]);
-    expect(heading()).toBe('Explore');
+    expect(heading()).toBeUndefined(); // Build 2, B-12: no page heading inside a story
     expect($('[data-explore-back]').textContent).toBe(COPY.story.back);
     expect(document.activeElement).toBe($('[data-explore-story-title]'));
     click($('[data-explore-back]'));
     await until(onHome, 'home');
     expect(tabLabels()).toEqual(NEW_TABS);
+    expect(heading()).toBe('Explore');
     expect(window.scrollTo).toHaveBeenLastCalledWith(0, 640);
     expect(document.activeElement).toBe(opener);
   });
@@ -182,7 +185,7 @@ describe('F-1: no tab row inside a story', () => {
     click($('[data-explore-back]'));
     await until(onHome, 'home');
     expect(tabLabels()).toEqual(NEW_TABS);
-    await openStory(TAP);
+    await openStory(UTIL);
     expect(tabLabels()).toEqual([]);
   });
   it('the row is there on every other tab, and on Explore\'s home after each', async () => {
@@ -199,16 +202,16 @@ describe('F-1: no tab row inside a story', () => {
   it('the story disappearing brings the row back (a player change at \'on\', whose stories no longer hold it)', async () => {
     const second = deferred();
     let n = 0;
-    sources = fixtureSources({ stories: () => { n += 1; return n === 1 ? SAMPLE_STORIES : second.promise; } });
+    sources = fixtureSources({ stories: () => { n += 1; return n === 1 ? KIT_STORIES : second.promise; } });
     const m = await openPage();
     await openStory(AI);
     expect(tabLabels()).toEqual([]);
     m.rerender(page({ user: { uid: 'u-explore-2' } }));
     await flush();
     expect(tabLabels()).toEqual(NEW_TABS); // the stories are loading: no story shows
-    second.resolve(SAMPLE_STORIES.filter((s) => s.id !== AI.id));
+    second.resolve(KIT_STORIES.filter((s) => s.id !== AI.id));
     // the stories READY without the story (review V-1: the gone line also shows while they load, so wait for the list)
-    await until(() => card(TAP.id) && !card(AI.id), 'the new stories, without the open one');
+    await until(() => card(UTIL.id) && !card(AI.id), 'the new stories, without the open one');
     await flush();
     expect($('[data-explore-screen="gone"]')).not.toBeNull();
     expect(tabLabels()).toEqual(NEW_TABS);

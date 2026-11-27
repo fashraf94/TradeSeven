@@ -8,11 +8,12 @@
 // and noted by name in that block instead. A flip moves the first row below in its
 // own founder PR.
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 import { EXPLORE_MODE, EXPLORE_MODES, exploreMode } from './exploreFlags.js';
+import { EXPLORE_COMPARE_ROUTE, exploreCompareRoute } from './exploreFlags.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SRC = readFileSync(path.join(HERE, 'exploreFlags.js'), 'utf8').replace(/\r\n/g, '\n');
@@ -73,5 +74,59 @@ describe('EXPLORE_MODE — the pin (BUILD_RULES §2; spec §6, K-2)', () => {
   it('no boolean twin exists, and the switch is not a line in featureFlags.js (the entry-chunk reason in the module header)', () => {
     expect(SRC).not.toMatch(/^export const EXPLORE_ENABLED\b/m);
     expect(FEATURE_FLAGS).not.toMatch(/EXPLORE_MODE/);
+  });
+});
+
+// Explore Build 2 — THE COMPARE SWITCH'S PIN (spec docs/specs/20261125_EXPLORE_BUILD_2_SPEC_AMENDMENT_B.md §6, B-9;
+// build prompt K-2). A plain boolean, false until the compare build sets it.
+describe('EXPLORE_COMPARE_ROUTE — the pin (BUILD_RULES §2; Amendment B §6, K-2)', () => {
+  it('is false — the compare build sets it, moving this row and the literal together', () => {
+    // THE ROW THAT MOVES WITH A FLIP, in the compare build's own commit.
+    expect(EXPLORE_COMPARE_ROUTE).toBe(false);
+    expect(exploreCompareRoute()).toBe(false);
+  });
+
+  it('is a plain boolean literal with a Pinned-by pointer naming this file, and its docstring says the compare build sets it', () => {
+    expect(SRC).toMatch(/^export const EXPLORE_COMPARE_ROUTE = (true|false);$/m);
+    const idx = SRC.indexOf('export const EXPLORE_COMPARE_ROUTE = ');
+    expect(SRC.slice(0, idx).split('\n').slice(-2).join('\n')).toContain('Pinned by: exploreFlags.test.js');
+    const doc = SRC.slice(SRC.lastIndexOf('/**', idx), idx);
+    expect(doc).toContain('THE COMPARE BUILD SETS IT');
+    expect(doc).toContain('IT CHANGES WORDS ONLY');
+    expect(doc).toContain('ROLLBACK:');
+  });
+
+  it('the reader resolves at call time: true only for the literal true; the file reads it nowhere else', () => {
+    const body = /export function exploreCompareRoute\(\) \{\s*([^}]*)\}/.exec(SRC)[1];
+    expect(body.trim()).toBe('return EXPLORE_COMPARE_ROUTE === true;');
+    const reads = SRC.split('\n').filter((l) => /\bEXPLORE_COMPARE_ROUTE\b/.test(l) && !/^\s*(\/\/|\*|\/\*)/.test(l));
+    expect(reads).toEqual([`export const EXPLORE_COMPARE_ROUTE = ${EXPLORE_COMPARE_ROUTE};`, '  return EXPLORE_COMPARE_ROUTE === true;']);
+  });
+
+  it('never a DARK_BY_DESIGN key (not an *_ENABLED name, not a flag-source module), but noted by name in that block', () => {
+    expect(GUARD).not.toMatch(/^\s*EXPLORE_COMPARE_ROUTE\s*:/m);
+    expect(GUARD).toContain('EXPLORE_COMPARE_ROUTE intentionally ABSENT');
+    expect(GUARD).toMatch(/EXPLORE_COMPARE_ROUTE intentionally ABSENT[\s\S]{0,700}exploreFlags\.test\.js\s+\/\/\s+asserts both halves/);
+    expect(FEATURE_FLAGS).not.toMatch(/EXPLORE_COMPARE_ROUTE/);
+  });
+
+  it('every reader outside this file calls exploreCompareRoute() inside a function, never the constant, never at module scope', () => {
+    const SRC_ROOT = path.join(HERE, '..');
+    const files = [];
+    const walk = (dir) => {
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        const p = path.join(dir, e.name);
+        if (e.isDirectory()) { if (e.name !== 'node_modules') walk(p); } else if (/\.(js|jsx|mjs)$/.test(e.name) && !/\.test\./.test(e.name)) files.push(p);
+      }
+    };
+    walk(SRC_ROOT);
+    const readers = [];
+    for (const p of files) {
+      if (p === path.join(HERE, 'exploreFlags.js')) continue;
+      const text = readFileSync(p, 'utf8').replace(/\r\n/g, '\n');
+      if (/\bEXPLORE_COMPARE_ROUTE\b/.test(text.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, ''))) readers.push(`constant: ${path.relative(SRC_ROOT, p)}`);
+      text.split('\n').forEach((line) => { if (/^\S.*\bexploreCompareRoute\(\)/.test(line)) readers.push(`module scope: ${path.relative(SRC_ROOT, p)}`); });
+    }
+    expect(readers).toEqual([]);
   });
 });

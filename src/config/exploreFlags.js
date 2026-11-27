@@ -51,3 +51,25 @@ export const EXPLORE_MODE = 'off';
 export function exploreMode() {
   return EXPLORE_MODE === 'allowlist' || EXPLORE_MODE === 'on' ? EXPLORE_MODE : 'off';
 }
+
+/**
+ * EXPLORE_COMPARE_ROUTE — whether the research server runs the compare-and-narrow investigation for a broad question
+ * (Explore Build 2, spec docs/specs/20261125_EXPLORE_BUILD_2_SPEC_AMENDMENT_B.md §6, ruling B-9; build prompt K-2,
+ * K-14). A plain BOOLEAN, read at CALL time through exploreCompareRoute() below, never at module scope.
+ *
+ * IT CHANGES WORDS ONLY. false: the panel describes the investigation that exists — "Companies this question names",
+ * the first step "checks the story against its source", no "Compares on", no "Then", and the word "compare" on no
+ * screen. true: the compare wording of §6's right column. At either value the page shows no figure and orders nothing.
+ *
+ * RUNWAY: false ships with Build 2 (dark). THE COMPARE BUILD SETS IT — the build that makes the compare investigation
+ * real on the research server sets it true in its own commit, with this file's pin (exploreFlags.test.js) and this
+ * docstring moved in the same commit (BUILD_RULES §2). Never Explore's own build PR.
+ * ROLLBACK: back to false by moving the literal and its pin together; the panel then says only what exists.
+ */
+// Pinned by: exploreFlags.test.js (the pin and this value move together — BUILD_RULES §2).
+export const EXPLORE_COMPARE_ROUTE = false;
+
+/** The compare switch at call time: true only for the literal true. */
+export function exploreCompareRoute() {
+  return EXPLORE_COMPARE_ROUTE === true;
+}

@@ -18,14 +18,46 @@
 // block), so when the read after a close turns "Work this idea" into "Continue research", the button that opened the
 // sheet — and holds focus again — is the same node.
 
+//
+// Build 2 (spec docs/specs/20261125_EXPLORE_BUILD_2_SPEC_AMENDMENT_B.md §4.3, §6; build prompt K-11, K-14): a broad
+// question's group (its companies as tickers, in the story's order, never ordered by anything), and the words the
+// compare switch (src/config/exploreFlags.js EXPLORE_COMPARE_ROUTE, read at call time) decides. With the switch off —
+// as it ships — every line is §6's left column, and the word "compare" is on no screen. Form C shows the read's
+// question. No figure is ever drawn.
+
 import React, { useLayoutEffect, useRef } from 'react';
+import { exploreCompareRoute } from '../../config/exploreFlags';
 import { EXPLORE_COPY } from './exploreCopy';
 import { FORMS, QUESTION_MAX, atLimitOf, dateOf } from './exploreView';
 import { S, T, wash } from './exploreStyle';
-import { Btn, Eyebrow, LinkBtn, Notice, SaveToggle, StatusLine } from './exploreParts';
+import { Btn, Eyebrow, LinkBtn, Notice, SaveToggle, StatusLine, Tickers } from './exploreParts';
 
 const COPY = EXPLORE_COPY.panel;
 const STATE = EXPLORE_COPY.state;
+const GROUP = COPY.group;
+
+/**
+ * A broad question's group (Amendment B §6): the heading, the companies as tickers in the story's order, the line
+ * under them, and — with the switch on and the story naming any — "Compares on" and its measure names, as labels.
+ */
+export function GroupBlock({ question, compare, onOpenCompany, keyPrefix, notes = true }) {
+  const words = compare ? GROUP.on : GROUP.off;
+  return (
+    <div style={S.section} data-explore-group={question.id}>
+      <Eyebrow as="span">{words.heading(question.group.length)}</Eyebrow>
+      <Tickers list={question.group} onOpen={onOpenCompany} keyPrefix={keyPrefix} />
+      {notes ? <p style={S.meta} data-explore-group-note="">{words.note}</p> : null}
+      {notes && compare && question.measureNames.length > 0 ? (
+        <div style={S.section} data-explore-measures="">
+          <Eyebrow as="span">{GROUP.on.measures}</Eyebrow>
+          <div style={S.row}>
+            {question.measureNames.map((m) => <span key={m} style={{ padding: '3px 10px', borderRadius: 999, border: `1px solid ${T.hair}`, fontSize: 12.5, fontWeight: 600, color: T.ink, lineHeight: 1.5 }}>{m}</span>)}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
 const norm = (v) => String(v ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
 
 /** "In progress · {set} of {total}" when the read gives both numbers, else "In progress" (spec §3.7). */
@@ -59,12 +91,14 @@ function QuestionBox({ id, value, onChange, describedBy }) {
 }
 
 /** "What starts with it" (spec §4, N-3): only what the investigation receives in Build 1. */
-export function StartsWithIt({ story, question }) {
+export function StartsWithIt({ story, question, compare = false }) {
+  const comparing = compare && question.broad; // §6: the compare route is a broad question's, and only with the switch on
   const rows = [
     ['story', COPY.startsRows.story, COPY.startsStory(story.title, story.reporter.name, dateOf(story.publishedAt))],
     ['question', COPY.startsRows.question, COPY.startsQuestion],
     question.angleLabel ? ['angle', COPY.startsRows.angle, question.angleLabel] : null,
-    ['firstStep', COPY.startsRows.firstStep, COPY.startsFirstStep],
+    ['firstStep', COPY.startsRows.firstStep, comparing ? GROUP.on.firstStep : COPY.startsFirstStep],
+    comparing ? ['then', COPY.startsThen, GROUP.on.then] : null,
     story.tickers.length > 0 ? ['companies', COPY.startsRows.companies, COPY.startsCompanies] : null,
     question.unknown ? ['open', COPY.startsRows.open, question.unknown] : null,
   ].filter(Boolean);
@@ -95,11 +129,14 @@ export function StartsWithIt({ story, question }) {
 export default function ExplorePanel({
   form, story, question, value, onEdit, onReset, item = null, quota = null,
   saved = false, saveBusy = false, onToggleSave, saveError = null, onWork, onContinue, onViewIt, onRetry, primaryRef, refreshing = false,
+  onOpenCompany = null,
 }) {
   const fieldId = `ftx-q-${story.id}`;
   const helpId = `${fieldId}-help`;
   const edited = value !== question.text;
   const save = (kind) => <SaveToggle key="save" kind={kind} pressed={saved} busy={saveBusy} label={COPY.save} onToggle={onToggleSave} />;
+  const compare = exploreCompareRoute(); // the switch, at call time (K-2)
+  const group = question.broad ? <GroupBlock key="group" question={question} compare={compare} onOpenCompany={onOpenCompany} keyPrefix={`group:${question.id}`} /> : null;
 
   if (form === FORMS.LOADING) {
     return (
@@ -116,7 +153,8 @@ export default function ExplorePanel({
       <section aria-labelledby="ftx-panel-h" style={{ ...S.box, gap: 14, padding: 16 }} data-explore-panel={form}>
         <Eyebrow as="h3" id="ftx-panel-h">{COPY.investigation}</Eyebrow>
         <div style={S.card}><p style={{ ...S.body, fontSize: 14.5, fontWeight: 600 }} data-explore-question-text="">{value}</p></div>
-        <StartsWithIt story={story} question={question} />
+        {group}
+        <StartsWithIt story={story} question={question} compare={compare} />
         {form === FORMS.D ? (
           <Notice role="status" tone="ink2"><span data-explore-gated="">{COPY.gated}</span><br />{COPY.gatedNote}</Notice>
         ) : (
@@ -140,7 +178,8 @@ export default function ExplorePanel({
       <p id={helpId} style={{ ...S.small, marginTop: 6 }}>{COPY.questionHelp}</p>
     </div>,
     edited ? <div key="reset" style={{ marginTop: -8 }}><LinkBtn onClick={onReset} data-explore-reset="">{COPY.useWording}</LinkBtn></div> : null,
-    <StartsWithIt key="starts" story={story} question={question} />,
+    group,
+    <StartsWithIt key="starts" story={story} question={question} compare={compare} />,
     limit ? null : <p key="cost" style={S.meta} data-explore-cost="">{COPY.cost(quota.perDay, quota.investigationsToday)}</p>,
     limit ? <Notice key="limit" role="status" tone="gold"><span data-explore-limit="">{COPY.limit(quota.perDay)}</span></Notice> : null,
   ];
@@ -168,6 +207,7 @@ export default function ExplorePanel({
       <Eyebrow key="yours-h" as="h3" id="ftx-panel-h" tone="teal">{COPY.yours}</Eyebrow>,
       <div key="ended" style={{ ...S.card, gap: 10 }} data-explore-ended={last.ended}>
         <p style={{ ...S.body, fontWeight: 600 }} data-explore-state="">{endedLineOf(last)}</p>
+        {last.question ? <p style={{ ...S.body, fontSize: 14.5 }} data-explore-ended-question="">{last.question}</p> : null}
         <div><Btn kind="secondary" onClick={(event) => onViewIt(event, last.sessionId)} data-explore-view-it="">{COPY.viewIt}</Btn></div>
       </div>,
       <hr key="rule" style={{ border: 'none', borderTop: `1px solid ${T.hair}`, margin: '4px 0', width: '100%' }} />,

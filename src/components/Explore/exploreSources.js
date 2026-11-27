@@ -4,7 +4,8 @@
 // docs/specs/20261121_EXPLORE_BUILD_1_SPEC_V1_1.md §5.1–§5.3; build prompt K-6, K-11).
 // Firestore, client SDK, no listener:
 //   stories    `exploreStories` where status == 'published', newest publishedAt first, at most
-//              STORIES_READ — one getDocs per page mount (and one per tap of Try again). The
+//              STORIES_READ (40 since Build 2) — one getDocs per page mount (and one per tap of Try again); and, only
+//              when that read was not complete, a linked story by id (readStory). The
 //              composite index (status ASC, publishedAt DESC) is in firestore.indexes.json. Each
 //              document goes through storyOf (exploreView.js): a dropped record is never drawn.
 //   bookmarks  users/{uid}/exploreBookmarks/{storyId}, exactly { storyId, storyVersion, title,
@@ -16,9 +17,9 @@
 // here: it is useExploreResearch.js's alone (K-3).
 
 import { createContext } from 'react';
-import { collection, deleteDoc, doc, getDocs, limit, orderBy, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDoc, getDocs, limit, orderBy, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
 import { db } from '../../firebase/config';
-import { BOOKMARKS_MAX, BOOKMARK_TITLE_MAX, EXPLORE_RECORD_KIND, STORIES_READ, isoOf, storyOf } from './exploreView';
+import { BOOKMARKS_MAX, BOOKMARK_TITLE_MAX, EXPLORE_RECORD_KIND, STORIES_READ, STORY_ID, isoOf, storyOf } from './exploreView';
 
 /** The bookmarks subcollection under users/{uid}. */
 export const BOOKMARKS_COLLECTION = 'exploreBookmarks';
@@ -31,6 +32,22 @@ export const BOOKMARKS_COLLECTION = 'exploreBookmarks';
 export async function readStories() {
   const snap = await getDocs(query(collection(db, EXPLORE_RECORD_KIND), where('status', '==', 'published'), orderBy('publishedAt', 'desc'), limit(STORIES_READ)));
   return { list: snap.docs.map((d) => storyOf(d.id, d.data())).filter(Boolean), complete: snap.docs.length < STORIES_READ };
+}
+
+/**
+ * One story by id (Build 2, spec docs/specs/20261125_EXPLORE_BUILD_2_SPEC_AMENDMENT_B.md §5.1; build prompt K-4): a
+ * door's deep story or a deep story's parent, read only when the stories read was not complete and the story page that
+ * needs it opens (ExploreTab, at most LINKED_READS_MAX per story page). One getDoc, no listener. The rules admit a
+ * published story only, so a draft is refused; a missing, refused or dropped story reads as null (absent).
+ */
+export async function readStory(id) {
+  if (typeof id !== 'string' || !STORY_ID.test(id)) return null;
+  try {
+    const snap = await getDoc(doc(db, EXPLORE_RECORD_KIND, id));
+    return snap.exists() ? storyOf(snap.id, snap.data()) : null;
+  } catch {
+    return null;
+  }
 }
 
 /** A stored bookmark as the page reads it, or null. */
@@ -69,7 +86,7 @@ export async function removeBookmark(uid, storyId) {
   await deleteDoc(doc(db, 'users', uid, BOOKMARKS_COLLECTION, storyId));
 }
 
-export const FIRESTORE_SOURCES = Object.freeze({ readStories, readBookmarks, saveBookmark, removeBookmark });
+export const FIRESTORE_SOURCES = Object.freeze({ readStories, readStory, readBookmarks, saveBookmark, removeBookmark });
 
 /** The sources the page reads through. Default: Firestore. */
 export const ExploreSourcesContext = /* @__PURE__ */ createContext(FIRESTORE_SOURCES);

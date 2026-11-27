@@ -13,11 +13,15 @@
 // Never a dead end: with no story and no company, "No story on this yet." — and for a player without access, the
 // line that points at companies instead; said only once the stories read has answered (review A-3). There is no
 // "not available" row. Typing sends nothing.
+//
+// Build 2 (spec docs/specs/20261125_EXPLORE_BUILD_2_SPEC_AMENDMENT_B.md §4.6; build prompt K-17): both kinds of story
+// match. An overview's row is tagged "Overview"; a deep story's row "Deep story", with the overview and connection it
+// belongs to when that overview is at hand (search never reads a story by id). The company matcher is untouched.
 
 import React, { useMemo, useState } from 'react';
 import { matchCompanies, researchAssetOf } from '../Search/companyMatch';
 import { EXPLORE_COPY } from './exploreCopy';
-import { OWN_WORDS_MIN, RESEARCH, atLimitOf, storyMatchesOf } from './exploreView';
+import { KINDS, OWN_WORDS_MIN, RESEARCH, atLimitOf, parentOf, storyMatchesOf } from './exploreView';
 import { S, T, rowBtnStyle, wash } from './exploreStyle';
 import { Eyebrow, Icon, Tag } from './exploreParts';
 
@@ -26,7 +30,7 @@ const CARD = EXPLORE_COPY.card;
 const STORY_ROWS = 6;
 const COMPANY_ROWS = 5;
 
-export default function ExploreSearch({ stories, storiesReady = true, research, stocksData = [], onOpenStory, onOpenCompany, onOwnWords }) {
+export default function ExploreSearch({ stories, byId = null, storiesReady = true, research, stocksData = [], onOpenStory, onOpenCompany, onOwnWords }) {
   const [text, setText] = useState('');
   const typed = text.trim();
   const priceMap = useMemo(() => {
@@ -40,6 +44,12 @@ export default function ExploreSearch({ stories, storiesReady = true, research, 
   // At the daily limit (founder ruling SQ-8): the panel's own test on the read's own quota, never a second rule.
   const atLimit = access && atLimitOf(research.quota);
   const ownWords = access && typed.length >= OWN_WORDS_MIN;
+  /** "Overview", or "Deep story" with the overview and connection it belongs to (when that overview is at hand). */
+  const kindLineOf = (story) => {
+    if (story.kind !== KINDS.DEEP) return COPY.overview;
+    const parent = byId ? parentOf(story, byId) : null;
+    return parent ? COPY.deepIn(parent.overview.subject ?? parent.overview.title, parent.connection.who) : COPY.deepStory;
+  };
 
   return (
     <form role="search" onSubmit={(e) => e.preventDefault()} style={S.section} data-explore-search="">
@@ -68,6 +78,7 @@ export default function ExploreSearch({ stories, storiesReady = true, research, 
               onClick={(event) => onOpenStory(r.story.id, r.questionId, event)}
               style={rowBtnStyle}
             >
+              <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: T.ink2 }} data-explore-result-kind={r.story.kind}>{kindLineOf(r.story)}</span>
               <span style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.35, overflowWrap: 'anywhere' }}>{r.text}</span>
               <span style={S.meta}>{r.story.title}</span>
               {r.story.sample && <span><Tag tone="copper" dim>{CARD.sample}</Tag></span>}

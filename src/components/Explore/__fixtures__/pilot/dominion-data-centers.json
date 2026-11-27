@@ -1,0 +1,177 @@
+{
+  "version": 1,
+  "status": "draft",
+  "publishedAt": "<timestamp>",
+  "kind": "deep",
+  "parent": { "storyId": "ai-buildout", "connectionId": "power" },
+  "about": [{ "symbol": "D", "name": "Dominion Energy" }],
+  "lead": "story",
+  "subject": "Dominion's data centers",
+  "title": "Dominion has 54 GW of data centers on paper and 4.8 GW on the meter",
+  "deck": "Most of what is promised to Virginia's main utility is not firm yet, and what is firm arrives slowly. From 2027 its largest customers owe minimum payments.",
+  "reporter": { "name": "Kim", "beat": "Themes and changing business conditions" },
+  "evidenceSpan": "Nov 2025 to Sep 2026",
+  "body": [
+    "Dominion Energy, the main electric utility in Virginia, told the grid operator PJM in September 2026 that about 54 GW of data-center capacity was under contract. The peak its data centers had actually been billed for, as of August, was 4.8 GW. One gigawatt (GW) is roughly what a large power plant produces.",
+    "The 54 GW is three different promises. About 12.0 GW is under electric service agreements and 9.4 GW under construction letters. Dominion calls both firm. The other 32.5 GW is engineering letters, an earlier step, and Dominion leaves 59% of those out of its own forecast.",
+    "Firm does not mean fast. Dominion says a data center takes about five years to ramp up and settles at 63% of its contracted capacity. Kim's arithmetic: at that rate the firm 21 GW would mature at roughly 13 GW of demand.",
+    "How Dominion gets paid is changing too. Virginia's regulator ordered a new rate class, effective January 1, 2027, for customers of 25 megawatts or more. Contracts run 14 years, with minimum charges of 85% of contracted demand for the wires and 60% for generation. Kim's reading is that this makes part of the revenue arrive whether or not the load does.",
+    "One more fact sits over all of this. In May 2026 NextEra Energy agreed to buy Dominion, paying 0.8138 NextEra shares for each Dominion share. The companies expected closing in 12 to 18 months, subject to approvals.",
+    "Nothing cited here says which companies hold the contracts, or how much of the 54 GW will fall under the minimum charges."
+  ],
+  "openQuestion": "How fast does the firm part of Dominion's 54 GW become power it bills, and how much of it is covered by minimum payments?",
+  "connections": [
+    {
+      "id": "customers",
+      "who": "Data-center customers",
+      "what": "Reserve capacity years ahead, then pay Dominion as their buildings start drawing power.",
+      "basis": "source_cited",
+      "basisLine": "One Dominion presentation cited, three lines from it. It counts 55 data-center companies and names none of them.",
+      "sourceIds": ["s1", "s2", "s3"],
+      "leads": [
+        { "symbol": "AMZN", "name": "Amazon" },
+        { "symbol": "MSFT", "name": "Microsoft" },
+        { "symbol": "GOOGL", "name": "Alphabet" },
+        { "symbol": "DLR", "name": "Digital Realty" },
+        { "symbol": "EQIX", "name": "Equinix" }
+      ],
+      "known": "About 21 GW is firm: 12.0 GW of service agreements and 9.4 GW of construction letters. The billed peak was 4.8 GW in August 2026. Dominion's stated ramp is five years, settling at 63% of contracted capacity.",
+      "unknown": "How fast the firm 21 GW becomes billed load, year by year.",
+      "whereToLook": "Dominion's quarterly results and the yearly load forecast it files with PJM."
+    },
+    {
+      "id": "regulator",
+      "who": "Virginia's utility regulator",
+      "what": "Sets what Dominion may charge, including minimum payments from its largest customers.",
+      "basis": "source_cited",
+      "basisLine": "One regulator order cited. It sets the rules. It does not say how many existing contracts they cover.",
+      "sourceIds": ["s4"],
+      "leads": [],
+      "known": "From January 1, 2027, customers of 25 MW or more sign 14-year contracts with minimum charges of 85% of contracted demand for distribution and transmission and 60% for generation.",
+      "unknown": "How much of the 54 GW will fall under the minimum charges.",
+      "whereToLook": "Dominion's rate filings with the Virginia regulator, and its annual report."
+    },
+    {
+      "id": "acquirer",
+      "who": "The acquirer",
+      "what": "Has agreed to buy Dominion for shares. The deal still needs approvals.",
+      "basis": "source_cited",
+      "basisLine": "One joint company release cited. It gives the terms as announced.",
+      "sourceIds": ["s5"],
+      "leads": [
+        { "symbol": "NEE", "name": "NextEra Energy" }
+      ],
+      "known": "Announced May 18, 2026: 0.8138 NextEra shares for each Dominion share, with closing expected in 12 to 18 months.",
+      "unknown": "When regulators will rule on the deal, and what conditions they attach.",
+      "whereToLook": "The merger cases at the Virginia regulator and the federal energy regulator, and both companies' quarterly reports."
+    },
+    {
+      "id": "builders",
+      "who": "Grid equipment makers",
+      "what": "Sell the turbines, transformers and switchgear a utility needs to serve new load.",
+      "basis": "no_source_yet",
+      "basisLine": "Nobody has checked this yet.",
+      "sourceIds": [],
+      "leads": [
+        { "symbol": "GEV", "name": "GE Vernova" },
+        { "symbol": "ETN", "name": "Eaton" }
+      ],
+      "known": "",
+      "unknown": "Which suppliers Dominion is buying from, and how much it plans to spend.",
+      "whereToLook": "The capital plan in Dominion's annual report, and suppliers' remarks on utility orders."
+    },
+    {
+      "id": "onsite",
+      "who": "On-site power suppliers",
+      "what": "Sell data centers their own power supply, which could cut what they need from the utility.",
+      "basis": "reporters_reading",
+      "basisLine": "Kim's reading of an alternative data centers have. No source cited.",
+      "sourceIds": [],
+      "leads": [
+        { "symbol": "BE", "name": "Bloom Energy" }
+      ],
+      "known": "",
+      "unknown": "How many data centers in Dominion's territory plan to generate their own power.",
+      "whereToLook": "Bloom Energy's customer announcements, and data-center operators' filings."
+    }
+  ],
+  "sources": [
+    {
+      "id": "s1",
+      "name": "Dominion Energy presentation to PJM: 20-year data center forecast (market overview)",
+      "kind": "Company presentation",
+      "dated": "Sep 2026",
+      "excerpt": "Data center billing peak load as of August 2026 is 4.8 GW",
+      "url": "https://www.pjm.com/-/media/DotCom/committees-groups/subcommittees/las/2026/20260929/20260929-item-5ai---dominion_energy.pdf"
+    },
+    {
+      "id": "s2",
+      "name": "Dominion Energy presentation to PJM: 20-year data center forecast (ramp and utilization)",
+      "kind": "Company presentation",
+      "dated": "Sep 2026",
+      "excerpt": "Dominion's industry average ramp period is 5 years maturing at a utilization rate of 63%",
+      "url": "https://www.pjm.com/-/media/DotCom/committees-groups/subcommittees/las/2026/20260929/20260929-item-5ai---dominion_energy.pdf"
+    },
+    {
+      "id": "s3",
+      "name": "Dominion Energy presentation to PJM: 20-year data center forecast (contract stages)",
+      "kind": "Company presentation",
+      "dated": "Sep 2026",
+      "excerpt": "19 GW (59%) of ELOAs excluded from the forecast",
+      "url": "https://www.pjm.com/-/media/DotCom/committees-groups/subcommittees/las/2026/20260929/20260929-item-5ai---dominion_energy.pdf"
+    },
+    {
+      "id": "s4",
+      "name": "Virginia State Corporation Commission, Final Order, Case No. PUR-2025-00058",
+      "kind": "Regulator order",
+      "dated": "Nov 2025",
+      "excerpt": "The Company shall implement a new rate schedule, Rate Schedule GS-5, as set forth below, effective January 1, 2027.",
+      "url": "https://npr.brightspotcdn.com/b6/ac/706130b64d2b8eee6a9832b97e48/20251125-virginiascc-dominionenergyruling.pdf"
+    },
+    {
+      "id": "s5",
+      "name": "NextEra Energy and Dominion Energy joint news release on their agreement to combine",
+      "kind": "Company release",
+      "dated": "May 2026",
+      "excerpt": "a fixed exchange ratio of 0.8138 shares of NextEra Energy for each share of Dominion Energy they own",
+      "url": "https://s205.q4cdn.com/611413639/files/doc_news/NextEra-Energy-and-Dominion-Energy-to-Combine-Creating-the-Worlds-Largest-Regulated-Electric-Utility-Business-and-North-Americas-Prem-UUH80.pdf"
+    }
+  ],
+  "questions": [
+    {
+      "id": "paper-to-meter",
+      "angleLabel": "Paper to meter",
+      "featured": true,
+      "text": "How fast is Dominion's firm data-center capacity turning into power it actually bills?",
+      "unknown": "How fast the firm 21 GW becomes billed load, year by year.",
+      "fromConnection": "customers",
+      "shape": "when",
+      "wrongIfSeed": "The billed peak stays near 4.8 GW in the next yearly forecast while firm contracts keep growing.",
+      "watch": { "document": "Dominion's quarterly results and its yearly load forecast to PJM", "updates": "Quarterly; the forecast yearly" }
+    },
+    {
+      "id": "minimums",
+      "angleLabel": "Minimum payments",
+      "featured": false,
+      "text": "How much of Dominion's contracted data-center capacity will fall under the new minimum charges?",
+      "unknown": "How much of the 54 GW will fall under the minimum charges.",
+      "fromConnection": "regulator",
+      "shape": "how_much",
+      "wrongIfSeed": "Rate filings show contracts signed before 2027 are exempt from the minimum charges.",
+      "watch": { "document": "Dominion's rate filings with the Virginia regulator", "updates": "When filed; base rates are reviewed every two years" }
+    },
+    {
+      "id": "own-power",
+      "angleLabel": "Own power",
+      "featured": false,
+      "text": "What share of new data centers in Dominion's territory plan to supply their own power?",
+      "unknown": "How many data centers in Dominion's territory plan to generate their own power.",
+      "fromConnection": "onsite",
+      "shape": "what_replaces",
+      "wrongIfSeed": "Dominion's contracted capacity keeps rising while on-site power deals in Virginia stay rare.",
+      "watch": { "document": "Dominion's contract totals each quarter, and Bloom Energy's customer announcements", "updates": "Quarterly" }
+    }
+  ],
+  "topics": ["AI buildout", "Power", "Utilities"],
+  "tickers": ["D", "NEE", "AMZN", "MSFT", "GOOGL", "DLR", "EQIX", "GEV", "ETN", "BE"]
+}

@@ -10,7 +10,7 @@
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../../config/exploreFlags', () => ({ EXPLORE_MODES: ['off', 'allowlist', 'on'], EXPLORE_MODE: 'off', exploreMode: () => 'on' }));
+vi.mock('../../config/exploreFlags', () => ({ EXPLORE_MODES: ['off', 'allowlist', 'on'], EXPLORE_MODE: 'off', exploreMode: () => 'on', EXPLORE_COMPARE_ROUTE: false, exploreCompareRoute: () => false }));
 const service = vi.hoisted(() => ({
   readExploreInvestigations: vi.fn(), listOpenInvestigations: vi.fn(), readInvestigation: vi.fn(), frameQuestion: vi.fn(), openInvestigation: vi.fn(),
   takeStep: vi.fn(), closeInvestigation: vi.fn(), adoptIdea: vi.fn(), applyCardOp: vi.fn(), equipIdea: vi.fn(), newRequestId: vi.fn(),
@@ -30,7 +30,9 @@ const { READS, SAMPLE_STORIES, answerOf, fixtureSources, mount, flush, click, ty
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 // Rows wait on lazy modules and the page's own animations in real time: 15 s each, so a loaded machine cannot time one out.
 vi.setConfig({ testTimeout: 15_000 });
-const [AI, TAP] = SAMPLE_STORIES;
+// Build 2: the tap-to-pay sample is a tile (B-5); the run saves and reads the utilities card instead, and browses a
+// topic the cards carry (the AI and utilities overviews beside the pilot hero).
+const [AI, , UTIL] = SAMPLE_STORIES;
 let mounted = [];
 let fetchCalls;
 beforeEach(() => {
@@ -51,21 +53,21 @@ describe('N-4: browsing, searching, bookmarking, choosing and editing call only 
     mounted.push(mount(<SearchDiscover user={{ uid: 'u-explore-1' }} isMobile isDesktop={false} setScreen={vi.fn()} stocksData={[]} sidebarCollapsed={false} />, { sources }));
     await until(() => $(`[data-explore-card="${AI.id}"]`), 'the cards');
     // browse: topics
-    click($('[data-explore-topic="Payments"]'));
+    click($('[data-explore-topic="Energy grid"]'));
     click($('[data-explore-topic="*"]'));
     // search: a story, a company, nonsense (with the own-words row on screen, untouched)
     for (const q of ['power', 'NVDA', 'qqzzxx', '']) { typeInto($('#ftx-search'), q); await flush(); }
     // bookmark: save and remove
-    click($(`[data-explore-card="${TAP.id}"] [data-explore-save]`));
-    await until(() => $(`[data-explore-card="${TAP.id}"] [data-explore-save]`).getAttribute('aria-pressed') === 'true', 'saved');
-    click($(`[data-explore-card="${TAP.id}"] [data-explore-save]`));
-    await until(() => $(`[data-explore-card="${TAP.id}"] [data-explore-save]`).getAttribute('aria-pressed') === 'false', 'removed');
+    click($(`[data-explore-card="${UTIL.id}"] [data-explore-save]`));
+    await until(() => $(`[data-explore-card="${UTIL.id}"] [data-explore-save]`).getAttribute('aria-pressed') === 'true', 'saved');
+    click($(`[data-explore-card="${UTIL.id}"] [data-explore-save]`));
+    await until(() => $(`[data-explore-card="${UTIL.id}"] [data-explore-save]`).getAttribute('aria-pressed') === 'false', 'removed');
     // read a story with no investigation: choose, edit, reset, arrow keys, the two sections, save in the byline
-    click($(`[data-explore-card="${TAP.id}"] [data-explore-card-primary]`));
+    click($(`[data-explore-card="${UTIL.id}"] [data-explore-card-primary]`));
     await until(() => $('[data-explore-screen="story"]'), 'the story');
     const radios = () => $$('[role="radio"]');
     click(radios()[1]);
-    typeInto($('[data-explore-question-input]'), 'Which fee is largest for a corner shop?');
+    typeInto($('[data-explore-question-input]'), 'Which utility spends first?');
     click($('[data-explore-reset]'));
     radios()[1].focus();
     press(radios()[1], 'ArrowUp');

@@ -14,7 +14,7 @@ import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const flags = vi.hoisted(() => ({ mode: 'off' }));
-vi.mock('../../config/exploreFlags', () => ({ EXPLORE_MODES: ['off', 'allowlist', 'on'], EXPLORE_MODE: 'off', exploreMode: () => flags.mode }));
+vi.mock('../../config/exploreFlags', () => ({ EXPLORE_MODES: ['off', 'allowlist', 'on'], EXPLORE_MODE: 'off', exploreMode: () => flags.mode, EXPLORE_COMPARE_ROUTE: false, exploreCompareRoute: () => false }));
 const read = vi.hoisted(() => vi.fn());
 vi.mock('../../services/sharedResearchService', () => ({ readExploreInvestigations: read }));
 vi.mock('../../firebase/config', () => ({ db: {} }));

@@ -7,6 +7,12 @@
 // B6a route test's `plant`). So the page's rows and the fixture preview render exactly the shapes the merged
 // server answers with, and a server change that moves a shape reds this row.
 //
+// Explore Build 2 (build prompt K-19; B6c §1.1): the read is `{ quota, items, agent }`. Each read here now passes the
+// LAST-ENDED investigations' records too, as store.js readExploreInvestigations does, so `last.question` is real; a saved
+// one may carry the statement its save recorded; and `agent` is store.js's own exploreAgentOf over a planted ranked agent
+// (null in `none`: a player with no ranked agent). New reads: a returning player's shelf, a finished one whose record
+// cannot be read, and the smoke walk on the pilot deep story.
+//
 // Regenerate (after a deliberate server change):
 //   GENERATE_EXPLORE_FIXTURES=1 npx vitest run src/components/Explore/__fixtures__/exploreReads.test.js
 
@@ -18,7 +24,8 @@ import { livePerStoryOf, lastPerStoryOf, exploreItemsOf } from '../../../../api/
 import { openSessionOf, quotaViewOf, playerDayOf } from '../../../../api/_utils/sharedResearch/session.js';
 import { emptyCard } from '../../../../api/_utils/sharedResearch/thesis.js';
 import { buildRecord, buildFinding, findingAppendPatch, FINDING_ID_PREFIX, researchWorkIdFor, manualFunnel, emptyTelemetry } from '../../../../api/_utils/researchRecords/model.js';
-import { SAMPLE_AI, SAMPLE_TAP, SAMPLE_UTILITIES } from './stories';
+import { exploreAgentOf } from '../../../../api/_utils/sharedResearch/store.js';
+import { SAMPLE_AI, SAMPLE_TAP, SAMPLE_UTILITIES, PILOT_OVERVIEW, PILOT_DEEP } from './stories';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT = resolve(HERE, 'exploreReads.json');
@@ -64,22 +71,30 @@ function plant({ n, sessionId = uuid(n), story, question, status = 'open', creat
 }
 
 /** The read's answer for a set of planted investigations, as store.js readExploreInvestigations shapes it. */
-function readOf(planted, opened) {
+/** The player's ranked agent as the read names it (store.js exploreAgentOf over the agent document open reads). */
+export const AGENT = exploreAgentOf({ id: 'agent-1', ownerId: UID, name: 'Atlas', equippedWatchlistId: 'wl-bb', equippedWatchlistName: 'Grid builders' }, UID);
+
+function readOf(planted, opened, { agent = AGENT, unreadable = [] } = {}) {
   const sessions = planted.map((p) => p.session);
   const live = livePerStoryOf(sessions);
   const last = lastPerStoryOf(sessions);
-  const records = new Map([...live.values()].map((s) => [s.sessionId, planted.find((p) => p.session.sessionId === s.sessionId).record]));
-  return { quota: quota(opened), items: exploreItemsOf({ live, last, records }) };
+  // the open investigations' records and the last-ended ones' (B6c X-8); a record that cannot be read is null
+  const records = new Map([...live.values(), ...last.values()].map((s) => [s.sessionId, unreadable.includes(s.sessionId) ? null : planted.find((p) => p.session.sessionId === s.sessionId).record]));
+  return { quota: quota(opened), items: exploreItemsOf({ live, last, records }), agent };
 }
 
 const Q_AI = SAMPLE_AI.questions[0].text;
 const Q_UTIL = SAMPLE_UTILITIES.questions[0].text;
 const ONE_PART_SET = { ...emptyCard(), timeFrame: { state: 'set', by: 'player_chose', value: 'positional', suggestion: null } };
-const SAVED = (n) => ({ watchlistId: `wl-${n}`, versionId: `v-${n}`, at: at(40 + n) });
+const SAVED = (n, statement = undefined) => ({ watchlistId: `wl-${n}`, versionId: `v-${n}`, at: at(40 + n), ...(statement ? { statement } : {}) });
+const Q_PILOT = PILOT_OVERVIEW.questions[0].text;
+const Q_DEEP = PILOT_DEEP.questions[0].text;
+/** A saved thesis's sentence, as the builder composes one (the save records it on the session's adoption). */
+export const STATEMENT = "My theme is AI cloud growth, through cloud companies, built on MSFT and ORCL, because their cloud sales are growing fastest. It's wrong if both lose their lead at the next earnings report. Time frame: positional.";
 
 export function composeReads() {
   return {
-    none: readOf([], 0),
+    none: readOf([], 0, { agent: null }),
     // the AI story in progress: a builder, one part set, two steps used, three findings
     progress: readOf([plant({ n: 1, story: SAMPLE_AI, question: Q_AI, createdAt: at(1), updatedAt: at(9), thesis: ONE_PART_SET, stepsUsed: 2, extraFindings: 2 })], 1),
     // the same, as a ledger investigation: no card, so no count
@@ -103,6 +118,17 @@ export function composeReads() {
     walkAfterStep: readOf([plant({ n: 10, sessionId: WALK_SESSION_ID, story: SAMPLE_AI, question: Q_AI, createdAt: at(2), stepsUsed: 1, extraFindings: 2 })], 1),
     // ...after one part of the card is set (the sheet's storyConfirmTheme: one of six set)
     walkAfterPart: readOf([plant({ n: 11, sessionId: WALK_SESSION_ID, story: SAMPLE_AI, question: Q_AI, createdAt: at(2), stepsUsed: 1, extraFindings: 2, thesis: ONE_PART_SET })], 1),
+    // Build 2 — a returning player: the utilities story in progress, and a thesis saved on the pilot overview WITH its sentence
+    returning: readOf([
+      plant({ n: 12, story: SAMPLE_UTILITIES, question: Q_UTIL, createdAt: at(3), updatedAt: at(12), thesis: ONE_PART_SET, stepsUsed: 2, extraFindings: 1 }),
+      plant({ n: 13, story: PILOT_OVERVIEW, question: Q_PILOT, status: 'completed', createdAt: at(1), updatedAt: at(30), adoption: SAVED(13, STATEMENT) }),
+    ], 1),
+    // a saved thesis whose record cannot be read: the read names neither its question nor a sentence (both null)
+    savedBare: readOf([plant({ n: 14, story: SAMPLE_AI, question: Q_AI, status: 'completed', createdAt: at(1), updatedAt: at(30), adoption: SAVED(14) })], 1, { unreadable: [uuid(14)] }),
+    // the smoke walk on the pilot deep story, after Work this idea (the sheet's own story-open session) and its steps
+    walkDeepAfterOpen: readOf([plant({ n: 15, sessionId: WALK_SESSION_ID, story: PILOT_DEEP, question: Q_DEEP, createdAt: at(2) })], 1),
+    walkDeepAfterStep: readOf([plant({ n: 16, sessionId: WALK_SESSION_ID, story: PILOT_DEEP, question: Q_DEEP, createdAt: at(2), stepsUsed: 1, extraFindings: 2 })], 1),
+    walkDeepAfterPart: readOf([plant({ n: 17, sessionId: WALK_SESSION_ID, story: PILOT_DEEP, question: Q_DEEP, createdAt: at(2), stepsUsed: 1, extraFindings: 2, thesis: ONE_PART_SET })], 1),
   };
 }
 
@@ -114,7 +140,7 @@ describe('exploreReads.json — composed by the server (K-16)', () => {
   });
   it('holds the states the page draws: open with a count, open without one (a ledger), saved, concluded, both, the limit', () => {
     const r = composeReads();
-    expect(r.none).toEqual({ quota: expect.objectContaining({ investigationsToday: 0, perDay: 3 }), items: [] });
+    expect(r.none).toEqual({ quota: expect.objectContaining({ investigationsToday: 0, perDay: 3 }), items: [], agent: null });
     expect(r.progress.items[0].open).toMatchObject({ filled: 1, parts: 6, stepsLeft: 8, findingsCount: 3, question: Q_AI });
     expect(r.ledger.items[0].open.filled).toBeNull();
     expect(r.saved.items[0]).toMatchObject({ open: null, last: { ended: 'saved', at: at(43) } });
@@ -124,5 +150,17 @@ describe('exploreReads.json — composed by the server (K-16)', () => {
     expect(r.limit.quota).toMatchObject({ investigationsToday: 3, perDay: 3 });
     expect(r.walkAfterOpen.items[0].open.sessionId).toBe(WALK_SESSION_ID);
     expect([r.walkAfterOpen, r.walkAfterStep, r.walkAfterPart].map((x) => [x.items[0].open.filled, x.items[0].open.stepsLeft])).toEqual([[0, 10], [0, 9], [1, 9]]);
+  });
+  it("Build 2 (K-19): the read carries last.question, last.statement and agent, each from the server's own shaping", () => {
+    const r = composeReads();
+    expect(AGENT).toEqual({ id: 'agent-1', name: 'Atlas', equippedList: { id: 'wl-bb', name: 'Grid builders' } });
+    expect(r.progress.agent).toEqual(AGENT);
+    expect(r.saved.items[0].last).toMatchObject({ ended: 'saved', question: Q_AI, statement: null });
+    expect(r.concluded.items[0].last).toMatchObject({ ended: 'concluded', question: Q_AI, statement: null });
+    const saved = r.returning.items.find((it) => it.itemRef.recordId === PILOT_OVERVIEW.id);
+    expect(saved.last).toMatchObject({ ended: 'saved', question: Q_PILOT, statement: STATEMENT });
+    expect(r.returning.items.find((it) => it.itemRef.recordId === SAMPLE_UTILITIES.id).open).toMatchObject({ filled: 1, parts: 6 });
+    expect(r.savedBare.items[0].last).toMatchObject({ ended: 'saved', question: null, statement: null });
+    expect([r.walkDeepAfterOpen, r.walkDeepAfterPart].map((x) => [x.items[0].itemRef.recordId, x.items[0].open.sessionId, x.items[0].open.question])).toEqual([[PILOT_DEEP.id, WALK_SESSION_ID, Q_DEEP], [PILOT_DEEP.id, WALK_SESSION_ID, Q_DEEP]]);
   });
 });

@@ -9,12 +9,12 @@ import React from 'react';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import reads from './exploreReads.json';
-import { SAMPLE_STORIES } from './stories';
+import { KIT_STORIES, SAMPLE_STORIES } from './stories';
 import { ThemeProvider } from '../../../contexts/ThemeContext';
 import { ExploreSourcesContext } from '../exploreSources';
 
 export const READS = reads;
-export { SAMPLE_STORIES };
+export { KIT_STORIES, SAMPLE_STORIES };
 
 /** A research read that answered: the service's shape around a composed body. */
 export const answerOf = (body) => ({ ok: true, status: 200, body: JSON.parse(JSON.stringify(body)), retryAfterS: null, gated: false, network: false });
@@ -35,9 +35,11 @@ export function deferred() {
 
 /**
  * Fixture sources for ExploreSourcesContext. `stories` (a list, a function, or 'fail'), `bookmarks` (the stored list),
- * `failWrites` (a Set of 'save' | 'remove'). Every call is recorded in `calls`.
+ * `failWrites` (a Set of 'save' | 'remove'). Every call is recorded in `calls`. Build 2: the default stories are the
+ * pilot pair and the three samples (KIT_STORIES); `byId` answers a story read by id (id → a view, 'fail', or a promise;
+ * anything else, or nothing, is null: absent).
  */
-export function fixtureSources({ stories = SAMPLE_STORIES, complete = true, bookmarks = [], failWrites = new Set(), failBookmarks = false, holdBookmarks = null } = {}) {
+export function fixtureSources({ stories = KIT_STORIES, complete = true, bookmarks = [], failWrites = new Set(), failBookmarks = false, holdBookmarks = null, byId = {} } = {}) {
   const calls = [];
   const held = { bookmarks: bookmarks.map((b) => ({ ...b })) };
   return {
@@ -49,6 +51,12 @@ export function fixtureSources({ stories = SAMPLE_STORIES, complete = true, book
       if (stories === 'fail') throw new Error('stories failed');
       const list = await (typeof stories === 'function' ? stories() : stories);
       return { list, complete };
+    },
+    readStory: async (id) => {
+      calls.push({ kind: 'readStory', id });
+      const v = await byId[id];
+      if (v === 'fail') throw new Error('story refused');
+      return v && typeof v === 'object' ? v : null;
     },
     readBookmarks: async (uid) => {
       calls.push({ kind: 'readBookmarks', uid });
