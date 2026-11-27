@@ -168,6 +168,8 @@ describe('B6-3 — deskOwnWords: exactly two replacements', () => {
     for (const [text, want] of rows) expect(say(text), text).toBe(want);
     // Nothing longer: a token that only contains an old name stays as written.
     for (const t of ['shadow_desk', 'Shadow desk_v2', 'my_Shadow desk', 'x_the Shadow desk_y', '_Shadow desk__', '__Shadow desk_', '_Shadow desk', 'Shadow desk_']) expect(say(t), t).toBe(t);
+    // A run glued to a word on one side only is not standalone, even when the other side closes it (battery U04).
+    for (const t of ['my_Shadow desk_ here', 'x__Archetype desk__ here', 'a _Shadow desk_v2', 'my_the Shadow desk_ here']) expect(say(t), t).toBe(t);
     // The ids' rule is unchanged: an underscore is one of an id's characters, so emphasis around an id is a longer token.
     for (const t of ['_idea_aaa_', '__idea_aaa__']) expect(say(t), t).toBe(t);
     expect(say('*idea_aaa* holds')).toBe('*the medium idea* holds');
