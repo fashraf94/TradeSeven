@@ -126,7 +126,7 @@ describe('EXPLORE_COMPARE_ROUTE — the pin (BUILD_RULES §2; Amendment B §6, K
       code.forEach((line) => {
         if (!/\bEXPLORE_COMPARE_ROUTE\b/.test(line) || /^import\b/.test(line)) return;
         readers.push(path.relative(SRC_ROOT, p).split(path.sep).join('/'));
-        if (!/^\s+const compare = EXPLORE_COMPARE_ROUTE === true;\s*$/.test(line)) wrong.push(`${path.relative(SRC_ROOT, p)}: ${line.trim()}`);
+        if (!/^\s+const compare = EXPLORE_COMPARE_ROUTE \? true : false;\s*$/.test(line)) wrong.push(`${path.relative(SRC_ROOT, p)}: ${line.trim()}`);
       });
     }
     expect(wrong).toEqual([]);
