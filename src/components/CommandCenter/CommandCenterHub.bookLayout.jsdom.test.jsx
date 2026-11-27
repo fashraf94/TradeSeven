@@ -268,7 +268,10 @@ describe('the Overview, top to bottom, for a book owner', () => {
     expect(side.querySelector('[data-hub-section="deploy"]')).not.toBeNull();
     expect(side.querySelector('[data-hub-section="activity"]')).toBeNull();
     expect(side.querySelectorAll('section[aria-label]').length).toBe(1);
-    expect(document.querySelector('[data-hub-slot="next"]')).toBeNull();
+    // Today's next-action slot stays in the tree (so nothing around it remounts), hidden and empty: Needs you has the next action.
+    const next = document.querySelector('[data-hub-slot="next"]');
+    expect(next.style.display).toBe('none');
+    expect(next.children).toHaveLength(0);
     const main = document.querySelector('[data-hub-slot="main"]');
     expect(main.contains(tabRow())).toBe(true);
     expect(main.contains(panel())).toBe(true);
@@ -422,19 +425,39 @@ describe('the table: the Idea book\'s own, every state it draws, with no Cash ro
     expect(byRole(table, 'region', 'Medium idea detail')).toEqual([]);
   });
 
-  it.each(['mobile', 'desktop'])('%s: a desk row opens Setups for the archetype\'s desk and Ideas for the agent\'s', async (where) => {
+  it.each(['mobile', 'desktop'])('%s: a desk row opens Setups for the archetype\'s desk and Ideas for the agent\'s, and focus moves to that tab (review S3W-1)', async (where) => {
     await render(where);
     const rows = [...part('[data-ib="strip"]').querySelectorAll('button')];
     expect(rows.map((b) => b.textContent)).toEqual([expect.stringContaining('Trend Follower’s desk'), expect.stringContaining('Atlas’s desk')]);
+    act(() => { rows[0].focus(); });
     click(rows[0]);
     await flush();
     expect(selected()).toEqual(['setups']);
     expect(part('[data-ib-desk="archetype"]')).not.toBeNull();
+    // The row went away with the Overview; focus is on the tab it opened, never on <body>.
+    expect(document.activeElement).toBe(tabNamed('Setups'));
     click(tabNamed('Overview'));
     await flush();
-    click(part('[data-ib="strip"]').querySelectorAll('button')[1]);
+    const agentRow = part('[data-ib="strip"]').querySelectorAll('button')[1];
+    act(() => { agentRow.focus(); });
+    click(agentRow);
     await flush();
     expect(selected()).toEqual(['ideas']);
+    expect(document.activeElement).toBe(tabNamed('Ideas'));
+  });
+
+  it.each(['mobile', 'desktop'])('%s: each desk row is named for the tab it opens here; the Idea book\'s own screen keeps "Open Desks" (review S3W-4)', async (where) => {
+    const view = viewOf('sample');
+    await render(where);
+    const names = [...part('[data-ib="strip"]').querySelectorAll('button')].map((b) => b.getAttribute('aria-label'));
+    expect(names).toEqual([
+      BOOK_COPY.deskRowLabel(view.strip[0].deskName, view.strip[0].text, BOOK_COPY.tabs.setups),
+      BOOK_COPY.deskRowLabel(view.strip[1].deskName, view.strip[1].text, BOOK_COPY.tabs.ideas),
+    ]);
+    expect(names[0]).toBe(`Trend Follower’s desk · ${view.strip[0].text}. Open Setups`);
+    const m = mount(<IdeaBookScreen read={{ status: 'ready', book: view }} onClose={() => {}} width={390} />);
+    mounted.push(m);
+    expect([...m.host.querySelectorAll('[data-ib="strip"] button')].map((b) => b.getAttribute('aria-label'))).toEqual(view.strip.map((it) => `${it.deskName} · ${it.text}. Open Desks`));
   });
 });
 
@@ -577,7 +600,7 @@ function wordsOf(...roots) {
 }
 
 describe('no player-facing "Shadow" in anything the book layout draws (spec PH-5; B5\'s names)', () => {
-  it.each(['mobile', 'desktop'])('%s: every desk row and an open slot filled (the desksAdmit scene), every tab, every row and slot opened', async (where) => {
+  it.each(['mobile', 'desktop'])('%s: the layout\'s own words — every desk row and an open slot filled (the desksAdmit scene), every tab, every row and slot opened', async (where) => {
     const view = viewOf('desksAdmit');
     expect(view.strip.map((s) => s.desk)).toEqual(['archetype', 'shadow']);
     expect(view.groups.some((g) => g.state === 'open')).toBe(true);
@@ -608,6 +631,55 @@ describe('no player-facing "Shadow" in anything the book layout draws (spec PH-5
     expect(words).toContain('Trend Follower’s desk');
     expect(words).toContain('Atlas’s desk looks tonight');
     expect(words.match(/shadow/gi)).toBeNull();
+  });
+
+  // Review S3G-1: the rows above scan the layout's own words. Around them, today's hub still names "Shadow" in strings the prompt keeps
+  // (the hero until the band; the Deploy card; the armory dialog's centre; the Huddle sheet's eyebrow) — report §7 R1 and Q-1. This
+  // row scans the WHOLE page and every sheet the layout opens, and pins that each "Shadow" it finds is one of those named strings,
+  // so a new one is a decision, not a drift; inside the layout's own region and its two new sheets there is none.
+  const KEPT = () => new Set([
+    COPY.shadow.name, COPY.shadow.stageLabel,
+    ...Object.values(COPY.shadow.states).map((state) => COPY.shadow.imageLabel(state, null)),
+    COPY.deploy.title, ARMORY_COPY.centre, COPY.huddle.sheetEyebrow,
+  ]);
+  /** Every visible text node and every label in `root` that names Shadow, each as drawn. */
+  function shadowHits(root) {
+    const hits = [];
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) if (/shadow/i.test(node.nodeValue)) hits.push(node.nodeValue.trim());
+    for (const el of [root, ...root.querySelectorAll('*')]) {
+      for (const attr of ['aria-label', 'title', 'alt', 'placeholder']) if (el.hasAttribute?.(attr) && /shadow/i.test(el.getAttribute(attr))) hits.push(el.getAttribute(attr));
+    }
+    return hits;
+  }
+  it.each(['mobile', 'desktop'])('%s: the whole page and every sheet the layout opens name "Shadow" only in today\'s kept strings, and the layout\'s own region and new sheets not at all', async (where) => {
+    net.answer = { status: 200, body: { book: viewOf('desksAdmit') } };
+    await render(where);
+    const seen = new Set();
+    const check = (label) => {
+      for (const s of shadowHits(document.body)) {
+        expect(KEPT().has(s), `${label}: "${s}"`).toBe(true);
+        seen.add(s);
+      }
+      expect(shadowHits(tabRow()).concat(shadowHits(panel())), `${label}: the layout's own region`).toEqual([]);
+    };
+    check('the page');
+    // The loadout's sheet, then the armory from it.
+    click(where === 'mobile' ? stripOpener() : byRole(document.querySelector('[data-hub-slot="deploy"]'), 'button', LOADOUT_COPY.openCard)[0]);
+    await flush();
+    expect(shadowHits(dialogNamed(BOOK_COPY.loadoutSheet)), 'the loadout\'s sheet').toEqual([]);
+    check('the loadout open');
+    click(byRole(dialogNamed(BOOK_COPY.loadoutSheet), 'button', LOADOUT_COPY.changeArmor(LOADOUT_COPY.games.baggerbomb))[0]);
+    await flush();
+    const armory = dialogNamed(ARMORY_COPY.title);
+    if (where === 'mobile') expect(shadowHits(armory), 'the phone armory\'s new sheet').toEqual([]);
+    check('the armory open');
+    // What was seen, pinned per site: the hero (name, stage label, image label), and on the wide compositions the Deploy card's title
+    // and today's armory dialog's centre label.
+    // (The name line and the stage's label are one string, "Shadow".)
+    const hero = [COPY.shadow.name, COPY.shadow.stageLabel].concat([...seen].filter((s) => s.startsWith(`${COPY.shadow.name} — `)));
+    expect([...seen].sort()).toEqual([...new Set(where === 'mobile' ? hero : [...hero, COPY.deploy.title, ARMORY_COPY.centre])].sort());
+    expect([...seen].filter((s) => s.startsWith(`${COPY.shadow.name} — `))).toHaveLength(1);
   });
 
   it('the scan sees a "Shadow" the view would carry (a planted desk name), so the row above is not vacuous', async () => {
@@ -650,5 +722,21 @@ describe('the book layout arrives after today\'s hub has drawn (PH-9), and opens
     await arrive();
     expect(selected()).toEqual(['overview']);
     expect(document.querySelectorAll('[data-hub-area]')).toHaveLength(0);
+  });
+
+  // Review S3W-6: the book layout keeps today's tree, so the hero and the Deploy card stay the same nodes as the layout arrives.
+  it.each(['mobile', 'desktop', 'tablet', 'stacked'])('%s: the hero and the Deploy card (the strip, on the phone) are not remounted when the book arrives', async (where) => {
+    const arrive = lateRead();
+    await render(where);
+    const stage = document.querySelector('[data-hub-stage]');
+    const deployPart = where === 'mobile' ? document.querySelector('[data-hub-strip]') : document.querySelector('[data-hub-slot="deploy"] [data-hub-section="deploy"]');
+    expect(stage).not.toBeNull();
+    expect(deployPart).not.toBeNull();
+    await arrive();
+    expect(document.querySelector('[data-hub-layout]').getAttribute('data-hub-layout')).toBe('book');
+    expect(tabRow()).not.toBeNull();
+    expect(document.querySelector('[data-hub-stage]')).toBe(stage);
+    expect(where === 'mobile' ? document.querySelector('[data-hub-strip]') : document.querySelector('[data-hub-slot="deploy"] [data-hub-section="deploy"]')).toBe(deployPart);
+    expect(stage.isConnected && deployPart.isConnected).toBe(true);
   });
 });

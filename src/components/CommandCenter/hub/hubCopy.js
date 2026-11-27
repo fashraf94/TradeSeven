@@ -725,4 +725,6 @@ export const PORTFOLIO_HUB_COPY = Object.freeze({
   }),
   needsYou: 'Needs you',
   loadoutSheet: 'Loadout',
+  /** A desk row's screen-reader name in the hub: the row's own words, then the tab it opens (the screen's says "Open Desks"). */
+  deskRowLabel: (deskName, text, tabName) => `${deskName} · ${text}. Open ${tabName}`,
 });

@@ -24,13 +24,20 @@ import { IdeaBookPartsOptions } from '../../PracticeField/ideaBookPartsOptions';
 import { deployDisplay } from '../hub/deployDisplay';
 import { HUB_COPY as COPY, PORTFOLIO_HUB_COPY as BOOK } from '../hub/hubCopy';
 import { NEXT_ACTION_KINDS } from '../hub/nextAction';
+import { bookTabForDesk } from '../hub/bookTabs';
 import { C, tint } from '../hub/hubStyle';
 import { HubButton } from '../HubParts';
 import { PhoneOverview } from '../PhoneTabs';
 import HubHold from './HubHold';
 
-/** The table's options in the hub: no Cash row (the design's `cash={false}`, ccp5-parts.jsx). */
-const HUB_PARTS = Object.freeze({ cash: false });
+/**
+ * The parts' options in the hub: no Cash row (the design's `cash={false}`, ccp5-parts.jsx), and each desk row named for the tab it
+ * opens here (review S3W-4).
+ */
+const HUB_PARTS = /* @__PURE__ */ Object.freeze({
+  cash: false,
+  deskLabel: (item) => BOOK.deskRowLabel(item.deskName, item.text, BOOK.tabs[bookTabForDesk(item.desk)]),
+});
 
 /** The card's icons for its actions (NextActionCard.jsx): a game's sword, a review's film; none for the others. */
 function ctaIconOf(kind) {
@@ -92,8 +99,8 @@ export default function BookOverview({ view, layout, sections, actions, onDesk }
         holdWiring={actions.nextActionHold}
         holding={actions.nextActionHolding}
       />
-      <Strip items={view.strip} onDesk={onDesk} />
       <IdeaBookPartsOptions.Provider value={HUB_PARTS}>
+        <Strip items={view.strip} onDesk={onDesk} />
         <PosTable view={view} layout={layout} open={open} setOpen={setOpen} />
       </IdeaBookPartsOptions.Provider>
       <div data-hub-book-under="" style={{ marginTop: 10 }}>

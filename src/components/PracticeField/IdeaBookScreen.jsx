@@ -130,13 +130,15 @@ export function Tabs({ tab, setTab, layout, tabs = IDEA_BOOK_COPY.tabs }) {
 // ── THE STRIP ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 export function Strip({ items, onDesk }) {
+  // The portfolio hub's slice 3 (review S3W-4): a host whose desk rows open something other than Desks names it (ideaBookPartsOptions.js).
+  const hosted = COMMAND_CENTER_PORTFOLIO_HUB_ENABLED ? use(IdeaBookPartsOptions) : null;
   if (!items || items.length === 0) return null;
   return (
     <div aria-label={IDEA_BOOK_COPY.since} data-ib="strip">
       {items.map((it, i) => (
         <button
           key={it.desk} type="button" className="ib-tap ib-row" onClick={() => onDesk(it.desk)}
-          aria-label={`${it.deskName} · ${it.text}. Open Desks`}
+          aria-label={COMMAND_CENTER_PORTFOLIO_HUB_ENABLED && hosted?.deskLabel ? hosted.deskLabel(it) : `${it.deskName} · ${it.text}. Open Desks`}
           style={{ ...RESET, display: 'flex', alignItems: 'center', gap: 8, width: '100%', minHeight: 44, padding: 4, borderTop: i ? HAIR : 'none' }}
         >
           <DeskMark desk={it.desk} size={24} />

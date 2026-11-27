@@ -174,6 +174,9 @@ describe('the portfolio switch off: the slice folds away (spec §4 slice 1; revi
 // the switch" is made from its parse: every such ternary replaced by its switch-off arm, every such statement removed (slice 1's bare
 // `COMMAND_CENTER_PORTFOLIO_HUB_ENABLED ? a : b` too). Each file is then bundled as the switch-off graph takes it, both ways; the code
 // must be the same, and the site count is pinned so the transform cannot quietly find nothing.
+// What these rows prove, and what they do not (review S3G-3): every switch site folds to its off arm, and the new modules and table
+// leave nothing. They do not prove the off arms are main's text, nor that an edit outside a site (a prop, a default parameter) is
+// absent: that is each slice's whole-build comparison with main (the build report's §4.3), where every non-map file is byte-identical.
 
 const JSX_PARSER = Parser.extend(acornJsx());
 const SWITCH = 'COMMAND_CENTER_PORTFOLIO_HUB_ENABLED';
@@ -205,12 +208,12 @@ function withoutSwitch(code) {
 
 const SLICE3_FILES = Object.freeze([
   // [file, the exports the switch-off graph takes from it, the switch sites it holds]
-  [HUB, ['default'], 12],
+  [HUB, ['default'], 15],
   ['src/components/CommandCenter/PhoneTabs.jsx', ['PhonePanel', 'PhoneTabRow'], 4],
   ['src/components/CommandCenter/ShadowStage.jsx', ['PhoneStage', 'ShadowStage'], 1],
   ['src/components/CommandCenter/Armory.jsx', ['default', 'ArmorySheetContext', 'ArmoryStageContext', 'PHONE_ARMORY', 'PHONE_ARMORY_GRID', 'PHONE_HERO', 'PhoneArmoryDetails', 'PhoneArmoryRing', 'PhoneArmoryScope', 'armoryHeroRead', 'phoneArmoryGridHeight', 'phoneArmoryLayout'], 2],
   [ACTIVITY, ACTIVITY_USED, 1],
-  ['src/components/PracticeField/IdeaBookScreen.jsx', ['default'], 1],
+  ['src/components/PracticeField/IdeaBookScreen.jsx', ['default'], 3],
 ]);
 const SLICE3_MODULES = Object.freeze([
   'src/components/CommandCenter/BookLayout.jsx',
@@ -232,6 +235,21 @@ describe('the portfolio switch off: slice 3\'s book layout folds away (spec §4 
 
   it.each(SLICE3_MODULES)('%s, imported and unused: nothing', async (rel) => {
     expect((await bundle(rel, [])).trim()).toBe('');
+  }, 30000);
+
+  // Review S3G-3: the copy table gained a table of its own (PORTFOLIO_HUB_COPY), outside any switch site. Taken as the switch-off
+  // graph takes the module (its three other tables), it must leave nothing: the same code as the module with that declaration cut.
+  it('hub/hubCopy.js, as the switch-off graph takes it: the same code as without PORTFOLIO_HUB_COPY', async () => {
+    const rel = 'src/components/CommandCenter/hub/hubCopy.js';
+    const used = ['HUB_COPY', 'AGENT_FORM_COPY', 'ARMORY_COPY'];
+    const source = read(rel);
+    const decl = JSX_PARSER.parse(source, { ecmaVersion: 'latest', sourceType: 'module' }).body
+      .filter((node) => node.type === 'ExportNamedDeclaration' && node.declaration?.declarations?.[0]?.id?.name === 'PORTFOLIO_HUB_COPY');
+    expect(decl).toHaveLength(1);
+    const without = source.slice(0, decl[0].start) + source.slice(decl[0].end);
+    const [now, today] = [await bundle(rel, used, source), await bundle(rel, used, without)];
+    expect(now).toBe(today);
+    expect(now).not.toMatch(/PORTFOLIO_HUB_COPY|Needs you|deskRowLabel/);
   }, 30000);
 
   it('the transform and the check bite: a site that does not fold, an unmarked context and a module-level table each differ or survive', async () => {

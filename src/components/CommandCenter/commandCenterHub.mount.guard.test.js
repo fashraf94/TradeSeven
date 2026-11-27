@@ -78,6 +78,9 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
+// The portfolio hub's slice 3 (review S3G-2): a parse of the Idea book screen's module, to scan the parts the hub draws inside it.
+import { Parser } from 'acorn';
+import acornJsx from 'acorn-jsx';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..', '..', '..');
@@ -1517,6 +1520,29 @@ describe('S5 — the exports the hub takes from the shipped services, hooks and 
     expect(takers('/PracticeField/ideaBookPartsOptions', 'IdeaBookPartsOptions')).toEqual([HUB_FILE('sections/BookOverview.jsx')]);
     // The taker scan bites: a planted default import of the screen is seen.
     expect(importedNames("import IdeaBookScreen from '../PracticeField/IdeaBookScreen';", '/PracticeField/IdeaBookScreen')).toEqual(['default']);
+  });
+
+  // Review S3G-2: the screen's module is a terminal, so the walk and the directory scan never enter it, while the hub now draws four
+  // of its parts and what they call. This reads inside it: every function in the module is either one the hub draws (scanned here,
+  // with the parts' own modules) or the full-window page's own (whose effects and listener are the page's, outside the hub); a new
+  // function must be put in one list or the other.
+  it('slice 3: the Idea book parts the hub draws, inside their terminal, hold no read, timer, listener, observer or effect', () => {
+    const SCREEN = 'src/components/PracticeField/IdeaBookScreen.jsx';
+    const DRAWN = ['BookLine', 'Strip', 'PosTable', 'DesksTab', 'NamePanel', 'IdeaPanel', 'Ledger', 'Words', 'DeskSection'];
+    const PAGE_ONLY = ['Tabs', 'FinishedRow', 'ResultSheet', 'HistoryTab', 'useWidth', 'Quiet', 'IdeaBookScreen'];
+    const code = read(SCREEN);
+    const fns = new Map();
+    for (const node of Parser.extend(acornJsx()).parse(code, { ecmaVersion: 'latest', sourceType: 'module' }).body) {
+      const decl = node.type === 'ExportNamedDeclaration' || node.type === 'ExportDefaultDeclaration' ? node.declaration : node;
+      if (decl?.type === 'FunctionDeclaration') fns.set(decl.id.name, code.slice(decl.start, decl.end));
+    }
+    expect([...fns.keys()].sort()).toEqual([...DRAWN, ...PAGE_ONLY].sort());
+    const inParts = DRAWN.flatMap((name) => activityInCode(`${SCREEN}#${name}`, stripComments(fns.get(name))));
+    const PARTS_MODULES = ['src/components/PracticeField/IdeaBookParts.jsx', 'src/components/PracticeField/ideaBookStyle.js', 'src/components/PracticeField/ideaBookCopy.js', 'src/components/PracticeField/ideaBookPartsOptions.js'];
+    expect([...inParts, ...PARTS_MODULES.flatMap((rel) => activityInCode(rel, stripComments(read(rel))))]).toEqual([]);
+    // The scan bites: the page's own effects and listener are seen, where they are.
+    expect(activityInCode(`${SCREEN}#useWidth`, stripComments(fns.get('useWidth')))).toEqual(expect.arrayContaining([`${SCREEN}#useWidth: \\baddEventListener\\b`, `${SCREEN}#useWidth: \\buseEffect\\b`]));
+    expect(activityInCode(`${SCREEN}#PosTable`, stripComments(`${fns.get('PosTable')}\nuseEffect(() => { window.addEventListener('scroll', f); }, []);`))).not.toEqual([]);
   });
 
   it('the only writes the hub can make are the equips: nothing else of agentService, and no other service of the shipped set', () => {

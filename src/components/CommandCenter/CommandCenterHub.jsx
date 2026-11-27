@@ -192,7 +192,7 @@ import HubBookScope from './HubBookScope';
 import { HubBookReadContext } from './hub/hubBookRead';
 import { HUB_LAYOUTS } from './hub/hubLayout';
 import { BOOK_SHEETS } from './hub/bookTabs';
-import { BookPhoneBody, BookWideBody, DEPLOY_LOADOUT_OPENER } from './BookLayout';
+import { BookPhoneBody, BookWidePanel, DEPLOY_LOADOUT_OPENER, bookWideGrid } from './BookLayout';
 
 /** Shadow's box per composition (the design: 340 desktop, 260 tablet, 200 phone — 196 under 375 px). */
 export function shadowSizeFor(composition, width) {
@@ -727,33 +727,32 @@ function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, age
     brief: <BriefSection brief={sections.brief} onRetry={actions.retryBrief} />,
   };
   const hasNext = sections.nextAction?.status === 'ready' && Boolean(sections.nextAction.candidate);
-  const grid = wideGrid(composition, hasNext);
-  // The portfolio hub's slice 3 (spec 20261126 §4): in the book layout the body is the hero, the four tabs and their panel, and
-  // Deploy (BookLayout.jsx); the next action is the Overview's "Needs you" strip, and the side column's lists are under its table.
-  const body = COMMAND_CENTER_PORTFOLIO_HUB_ENABLED && use(HubBookReadContext)?.layout === HUB_LAYOUTS.BOOK ? (
-    <BookWideBody
-      composition={composition}
-      gutter={gutter}
-      stage={<>{stage}{DRB_HUDDLE_ENABLED && huddle ? <HuddleChip chip={huddle.chip} onOpen={actions.openHuddle} /> : null}</>}
-      deploy={side.deploy}
-      idBase={shared.idBase}
-      initialArea={area}
-      sections={sections}
-      actions={actions}
-      lists={runtime.lists}
-      sheet={sheet}
-      onCloseSheet={runtime.closeSheet}
-      onTabChange={() => deploy?.cancelCharging()}
-      reducedMotion={shared.reducedMotion}
-    />
-  ) : (
+  // The portfolio hub's slice 3 (spec 20261126 §4; review S3W-6): the book layout keeps today's grid and today's tree, so the hero
+  // and the Deploy card keep their places and never remount when the layout arrives or leaves. Only the grid's template (the hero,
+  // the tabs with their panel, and Deploy alone in the side: BookLayout.jsx bookWideGrid), the next-action slot (the Overview's
+  // "Needs you" strip has it) and the panel slot's content (BookWidePanel) change.
+  const grid = COMMAND_CENTER_PORTFOLIO_HUB_ENABLED && use(HubBookReadContext)?.layout === HUB_LAYOUTS.BOOK ? bookWideGrid(composition) : wideGrid(composition, hasNext);
+  const body = (
     <div data-hub-body={composition} style={{ padding: `14px ${gutter}px ${desktop ? 30 : 28}px`, ...grid.body }}>
-      <div data-hub-slot="next" style={{ gridArea: 'next', minWidth: 0, display: hasNext ? 'block' : 'none' }}>
-        <NextActionCard nextAction={sections.nextAction} deploy={sections.deploy} onAct={actions.nextAction} onLater={actions.laterNextAction} holdWiring={actions.nextActionHold} holding={actions.nextActionHolding} />
+      <div data-hub-slot="next" style={{ gridArea: 'next', minWidth: 0, display: (COMMAND_CENTER_PORTFOLIO_HUB_ENABLED && use(HubBookReadContext)?.layout === HUB_LAYOUTS.BOOK ? false : hasNext) ? 'block' : 'none' }}>
+        {COMMAND_CENTER_PORTFOLIO_HUB_ENABLED && use(HubBookReadContext)?.layout === HUB_LAYOUTS.BOOK ? null : <NextActionCard nextAction={sections.nextAction} deploy={sections.deploy} onAct={actions.nextAction} onLater={actions.laterNextAction} holdWiring={actions.nextActionHold} holding={actions.nextActionHolding} />}
       </div>
       <div data-hub-slot="main" style={grid.main}>
         <div data-hub-slot="stage" style={{ gridArea: 'stage', minWidth: 0 }}>{stage}{DRB_HUDDLE_ENABLED && huddle ? <HuddleChip chip={huddle.chip} onOpen={actions.openHuddle} /> : null}</div>
-        <div data-hub-slot="panel" style={{ gridArea: 'panel', minWidth: 0 }}>{panel}</div>
+        <div data-hub-slot="panel" style={{ gridArea: 'panel', minWidth: 0 }}>{COMMAND_CENTER_PORTFOLIO_HUB_ENABLED && use(HubBookReadContext)?.layout === HUB_LAYOUTS.BOOK ? (
+          <BookWidePanel
+            composition={composition}
+            idBase={shared.idBase}
+            initialArea={area}
+            sections={sections}
+            actions={actions}
+            lists={runtime.lists}
+            sheet={sheet}
+            onCloseSheet={runtime.closeSheet}
+            onTabChange={() => deploy?.cancelCharging()}
+            reducedMotion={shared.reducedMotion}
+          />
+        ) : panel}</div>
       </div>
       <div data-hub-slot="side" style={grid.side}>
         {grid.sideOrder.map((key) => (

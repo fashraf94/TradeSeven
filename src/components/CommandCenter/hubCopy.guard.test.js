@@ -714,7 +714,10 @@ describe('slice 3: the book layout\'s words, exactly (spec §5)', () => {
     expect(BOOK.loadoutSheet).toBe('Loadout');
     expect(BOOK.loadoutSheet).toBe(HUB_COPY.phoneTabs.loadout);
     expect(HUB_COPY.strip.openLoadoutLabel('A', 'B')).toBe('A. B. Open loadout');
-    expect(Object.keys(BOOK).sort()).toEqual(['loadoutSheet', 'needsYou', 'tabs']);
+    expect(Object.keys(BOOK).sort()).toEqual(['deskRowLabel', 'loadoutSheet', 'needsYou', 'tabs']);
+    // Review S3W-4: a desk row's screen-reader name in the hub names the tab it opens; the row's own words come first, as the screen's.
+    expect(BOOK.deskRowLabel('Trend Follower’s desk', 'held 2', BOOK.tabs.setups)).toBe('Trend Follower’s desk · held 2. Open Setups');
+    expect(BOOK.deskRowLabel('Atlas’s desk', 'held 6', BOOK.tabs.ideas)).toBe('Atlas’s desk · held 6. Open Ideas');
   });
 
   it('none of the words this build never uses, and no "Shadow": "Setups" is the one setup word, a tab\'s label', () => {
