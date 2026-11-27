@@ -402,8 +402,8 @@ const DARK_BY_DESIGN = {
   // rulings RU-17 to RU-22) is a STRING ('off' | 'founder' | 'on') in the same
   // module, src/config/sharedResearchFlags.js, so buildFlagMap never sees it. It
   // decides only which list a NEW investigation is stamped with at `open`.
-  // Runway: 'off' with Build 3b (PR B, dark); 'founder' in its own one-line PR
-  // (PR C); 'on' later. Each step moves the pin row in sharedResearchFlags.test.js
+  // Runway: 'off' with Build 3b (PR B, dark); 'founder' LIVE from its own one-line
+  // PR (PR C); 'on' later. Each step moves the pin row in sharedResearchFlags.test.js
   // in the same commit (BUILD_RULES §2). Rollback: one step back with its pin row;
   // open research investigations keep their stamp.
   // EXPLORE_MODE intentionally ABSENT, and it must stay absent: Explore, the

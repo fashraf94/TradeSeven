@@ -99,10 +99,11 @@ export const SHARED_RESEARCH_UNIVERSE_MODES = Object.freeze(['off', 'founder', '
  * NOTHING A BATTLE AGENT TRADES changes at any value: a research company is never ranked, never eligible, and a saved
  * idea holding one is refused by the equip route (research_only_list, RU-18).
  *
- * RUNWAY: 'off' ships with Build 3b (PR B, dark). 'founder' is its own one-line PR (PR C) after B merges. 'on' is
- * another, after the founder's own use. Never a build PR.
+ * RUNWAY: 'off' shipped with Build 3b (PR B, dark). 'founder' is LIVE as of this PR (PR C, its own one-line founder PR
+ * after B): only the founder list opens on the research list (RU-22). 'on' is another, after the founder's own use.
+ * Never a build PR.
  * ROLLBACK: move the literal back one step with its pin: new investigations open on the game list; open research
  * investigations keep their stamp.
  */
 // Pinned by: sharedResearchFlags.test.js (the pin and this value move together — BUILD_RULES §2).
-export const SHARED_RESEARCH_UNIVERSE_MODE = 'off';
+export const SHARED_RESEARCH_UNIVERSE_MODE = 'founder';
