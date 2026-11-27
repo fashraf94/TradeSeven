@@ -69,7 +69,7 @@ const byline = (story) => (
 
 /** The hero (Amendment B §4.1 item 3, B-8): an overview's featured question, never a large count. */
 function Hero({ story, question, byId, wide, saved, bookmarks, onOpenStory, onOpenCompany }) {
-  const compare = EXPLORE_COMPARE_ROUTE === true; // the switch, read at call time (K-2): the literal, which the build folds
+  const compare = EXPLORE_COMPARE_ROUTE ? true : false; // the switch, read at call time (K-2): a literal ternary, which the build folds away
   const origin = `hero:${story.id}`;
   const tags = <div style={S.row}><OriginTags story={story} /><KindTag story={story} /></div>;
   const head = <h2 id={`ftx-hero-h-${story.id}`} className="ftx-qh" style={{ textWrap: 'balance' }} data-explore-hero-question="">{question.text}</h2>;

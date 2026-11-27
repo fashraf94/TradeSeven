@@ -135,7 +135,7 @@ export default function ExplorePanel({
   const helpId = `${fieldId}-help`;
   const edited = value !== question.text;
   const save = (kind) => <SaveToggle key="save" kind={kind} pressed={saved} busy={saveBusy} label={COPY.save} onToggle={onToggleSave} />;
-  const compare = EXPLORE_COMPARE_ROUTE === true; // the switch, read at call time (K-2): the literal, which the build folds
+  const compare = EXPLORE_COMPARE_ROUTE ? true : false; // the switch, read at call time (K-2): a literal ternary, which the build folds away
   const group = question.broad ? <GroupBlock key="group" question={question} compare={compare} onOpenCompany={onOpenCompany} keyPrefix={`group:${question.id}`} /> : null;
 
   if (form === FORMS.LOADING) {

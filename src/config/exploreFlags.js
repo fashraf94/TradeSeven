@@ -55,8 +55,8 @@ export function exploreMode() {
 /**
  * EXPLORE_COMPARE_ROUTE — whether the research server runs the compare-and-narrow investigation for a broad question
  * (Explore Build 2, spec docs/specs/20261125_EXPLORE_BUILD_2_SPEC_AMENDMENT_B.md §6, ruling B-9; build prompt K-2,
- * K-14). A plain BOOLEAN, read at CALL time — the literal itself, compared with `true` inside a render, never at
- * module scope — so the production build folds it: no Explore chunk imports anything new from the entry chunk (a
+ * K-14). A plain BOOLEAN, read at CALL time — the literal in a literal ternary (`EXPLORE_COMPARE_ROUTE ? true : false`)
+ * inside a render, never at module scope — so the production build folds it: no Explore chunk imports anything new from the entry chunk (a
  * reader function here would be a new entry export, and every chunk's import letters would move).
  *
  * IT CHANGES WORDS ONLY. false: the panel describes the investigation that exists — "Companies this question names",

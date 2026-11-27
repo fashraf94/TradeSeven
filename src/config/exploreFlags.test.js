@@ -108,7 +108,7 @@ describe('EXPLORE_COMPARE_ROUTE — the pin (BUILD_RULES §2; Amendment B §6, K
     expect(FEATURE_FLAGS).not.toMatch(/EXPLORE_COMPARE_ROUTE/);
   });
 
-  it('every reader outside this file reads the literal at call time — `EXPLORE_COMPARE_ROUTE === true` inside a function, never at module scope — and the readers are exactly the panel and the hero', () => {
+  it('every reader outside this file reads the literal at call time — a literal ternary `EXPLORE_COMPARE_ROUTE ? true : false` inside a function, which the build folds, never at module scope — and the readers are exactly the panel and the hero', () => {
     const SRC_ROOT = path.join(HERE, '..');
     const files = [];
     const walk = (dir) => {
