@@ -264,7 +264,8 @@ describe.skipIf(!BASE)('Explore in a real browser (Build 1 §9 checks 1–5; Bui
             const bad = [];
             btns.forEach((b, i) => {
               const r = b.getBoundingClientRect();
-              const words = [...b.querySelectorAll('span')].filter((s) => s.textContent.trim()).map((s) => s.getBoundingClientRect());
+              // the words DRAWN (F-3: below 360 px a count is not drawn — display none, no box — and is not measured)
+              const words = [...b.querySelectorAll('span')].filter((s) => s.textContent.trim() && s.getClientRects().length > 0).map((s) => s.getBoundingClientRect());
               if (words.some((w) => w.right > r.right + 0.5 || w.left < r.left - 0.5)) bad.push(`${b.dataset.exploreJumpTo}: words outside the button`);
               if (i + 1 < btns.length && r.right > btns[i + 1].getBoundingClientRect().left + 0.5) bad.push(`${b.dataset.exploreJumpTo}: overlaps the next`);
               const hit = document.elementFromPoint(r.right - 2, r.top + r.height / 2);
