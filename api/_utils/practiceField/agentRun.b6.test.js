@@ -3,8 +3,12 @@
 // Practice Field build B6, ruling B6-9 (B4's Q-4, review C4) — THE PASS CHECKS ITS DEADLINE BEFORE IT READS A REMAINING DESK'S
 // PROMPT INPUTS. After a fire's first deferral, every later book's desk used to read its epoch, the close snapshot, its prior
 // notes and its ideas' rows before finding there was no time for a call. Now a desk the fire cannot serve costs no such read.
-// Nothing else moves: the desks checked, the calls and the deferrals are the same, and B4's three measurements
-// (agentPassAtTwelve.test.js, its PF_B4_MEASURE lines) are unchanged — the build report compares them before and after.
+// The calls never move, and B4's three measurements (agentPassAtTwelve.test.js, its PF_B4_MEASURE lines) are unchanged —
+// the build report compares them before and after. ONE THING MOVES, recorded (review B1; build report reading R-9): past
+// the deadline, a desk that main finished WITHOUT a call, after reading — no candidates in the close snapshot (`no_work`),
+// an archetype identity the registry cannot resolve, a prompt over its ceiling (both code fallbacks) — now defers like any
+// other desk, and the next close fire writes that part; on the window's last fire it is never written (`books`:
+// not_checked). The last row here pins it.
 // In-memory store, fake transport, injected clock.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -67,7 +71,7 @@ const promptInputRead = (p) => /\/epochs\//.test(p) || p.startsWith('mandateUniv
   || (/\/windows\/\d{4}-\d{2}-\d{2}_close$/.test(p) && !p.endsWith(`/${DATE}_close`));
 
 describe('B6-9 — the deadline before the reads', () => {
-  it('after the fire\'s first deferral, no remaining desk reads its prompt inputs; the desks checked, the calls and the deferrals are as before', async () => {
+  it('after the fire\'s first deferral, no remaining desk reads its prompt inputs; on these books (every desk with work to call for) the desks checked, the calls and the deferrals are as before', async () => {
     const { db: store, books } = await threeClosedBooks();
     const { db, log } = readLogged(store);
     const start = new Date(`${DATE}T21:30:00.000Z`).getTime();
@@ -117,5 +121,26 @@ describe('B6-9 — the deadline before the reads', () => {
     expect(out.calls).toBe(0);
     expect(log.filter(promptInputRead)).toEqual([]);
     expect(JSON.stringify(store._get(`mandates/${book}/windows/${DATE}_close`))).toBe(before);
+  });
+
+  it('review B1, pinned: past the deadline, a desk that would end with no call after its reads (no candidates: `no_work`) now defers and writes nothing — with time left, it is written as before', async () => {
+    const run = async (deadlineMs, start) => {
+      const { db, books } = await threeClosedBooks();
+      // The close snapshot is gone (as if built without the universe): every desk has empty slots and no candidates.
+      for (const k of [...db._store.keys()].filter((p) => p.startsWith('mandateUniverseSnapshots/') && p.includes(`${DATE}_close`))) db._store.delete(k);
+      const fake = fakeTransport(() => toolResponse(holdAll({})));
+      const out = await runIdeaBookAgentPass(db, { date: DATE, now: new Date(start), ownerToken: 'fire-x', deadlineMs, transport: fake.transport, clock: () => new Date(start) });
+      expect(fake.calls).toHaveLength(0);
+      return { out, parts: books.map((b) => deskPartsOf(db, b, DATE)) };
+    };
+    const start = new Date(`${DATE}T21:30:00.000Z`).getTime();
+    // With time left: each desk reads, finds no candidate, and is written `no_work` — main's behaviour, unchanged.
+    const inTime = await run(start + 290_000, start);
+    expect(inTime.out).toMatchObject({ books: 3, checked: 3, deferred: 0, calls: 0 });
+    expect(inTime.parts.flatMap((p) => Object.values(p)).map((p) => `${p.status}/${p.source}/${p.draftingSkipped}`)).toEqual(Array(6).fill('done/no_work/no_candidates'));
+    // Past the deadline: main read the snapshot and wrote the same six parts; B6 defers each book's first desk before the read.
+    const late = await run(start + 1_000, start);
+    expect(late.out).toMatchObject({ books: 3, checked: 0, deferred: 3, calls: 0 });
+    expect(late.parts.every((p) => p === null || Object.keys(p).length === 0)).toBe(true);
   });
 });

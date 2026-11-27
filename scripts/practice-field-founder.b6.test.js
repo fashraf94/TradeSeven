@@ -119,14 +119,25 @@ describe('B6-7 — status warns about a malformed player-list entry: how many, n
     const { json: j, text } = await statusOf([FOUNDER, ...bad, PLAYER].join(','));
     expect(j.body).toMatchObject({ onPlayerList: true, modeAdmitsOwner: true, playerListMalformed: bad.length });
     expect(text.out).toContain(playerListWarning(bad.length));
-    expect(text.out).toContain(`WARNING: ${bad.length} entries on this machine's list are not a uid the door accepts`);
-    expect(playerListWarning(1)).toContain('WARNING: 1 entry on this machine\'s list is not a uid the door accepts');
+    expect(text.out).toContain(`WARNING: ${bad.length} entries on this machine's player list (PRACTICE_FIELD_PLAYER_UIDS) are not a uid the door accepts`);
+    expect(playerListWarning(1)).toContain('WARNING: 1 entry on this machine\'s player list (PRACTICE_FIELD_PLAYER_UIDS) is not a uid the door accepts');
+    // Review B3: the rule as the door applies it (founderControls.js validOwnerUid), in full.
+    expect(playerListWarning(1)).toContain('(1 to 128 characters from ! to ~, so no space and no accent; no "/"; not "." or ".."; not starting with "_")');
     // No entry's value is printed — not a malformed one (a mistyped real uid), not a valid one — in the text or the JSON.
     // (Every entry long enough to tell apart from ordinary text: a bare "." is in any sentence.)
     for (const v of [...bad, PLAYER].filter((x) => x.length > 3)) {
       expect(text.out.includes(v), v).toBe(false);
       expect(JSON.stringify(j.body).includes(v), v).toBe(false);
     }
+  });
+
+  it('review B2: in `books`, whose gates drop the player-list line, the warning names the player list itself — and prints no value', async () => {
+    vi.stubEnv(PRACTICE_FIELD_PLAYER_ENV, `${FOUNDER},fixture-player,bad/path`);
+    const db = makeMandateFakeDb(seed(FOUNDER));
+    const text = await cli(db, ['books', '--uid', FOUNDER]);
+    expect(text.out).toContain(playerListWarning(1).trim());
+    expect(text.out).toContain('player list (PRACTICE_FIELD_PLAYER_UIDS)');
+    for (const v of ['bad/path', 'fixture-player']) expect(text.out.includes(v), v).toBe(false);
   });
 
   it('`fixture-player,bad/path`: one entry counted; the warning sits under the player-list line', async () => {

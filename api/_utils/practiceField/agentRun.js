@@ -342,11 +342,13 @@ export async function runDeskCheck(db, bookRef, { session, desk, transport = sea
     if (final) return fallback(final.outcome === 'invalid_answer' ? `answer_invalid:${final.invalidReason ?? 'unknown'}` : (final.outcome === 'interrupted' ? 'interrupted_call' : 'transport_refused'), { attempts, calledModel: true });
     if (attempts.length >= AGENT_MAX_ATTEMPTS) return fallback('attempts_spent', { attempts, calledModel: attempts.length > 0 });
     // Build B6 (ruling B6-9; B4's Q-4, review C4): the fire's deadline FIRST, before this desk's prompt inputs are read — so a
-    // desk the fire cannot serve costs no read (after a fire's first deferral, every later book's desk used to read its
-    // epoch, the close snapshot, its notes and its ideas' rows before finding there was no time). The same test as each
-    // attempt's below, which stays: time passes during the reads and the calls. Nothing is written: no attempt is reserved
-    // here, and the close row already holds every attempt made (each reservation and settlement wrote it). The next close
-    // fire serves the desk.
+    // desk the fire cannot serve costs none of those reads (after a fire's first deferral, every later book's desk used to
+    // read its epoch, the close snapshot, its notes and its ideas' rows before finding there was no time; the book, its
+    // close row and its ideas are still read above, to know the desk's work). The same test as each attempt's below, which
+    // stays: time passes during the reads and the calls. Nothing is written: no attempt is reserved here, and the close row
+    // already holds every attempt made (each reservation and settlement wrote it). The next close fire serves the desk.
+    // (Recorded, review B1: past the deadline, a desk that would end without a call AFTER these reads — no candidates, an
+    // identity the registry cannot resolve, a prompt over its ceiling — now defers too; the build report's R-9.)
     if (clock().getTime() + timeoutMs + AGENT_CALL_MARGIN_MS > deadlineMs) return { desk, status: 'deferred', calls: callsThisFire };
     // The prompt's inputs, each bounded and read-only.
     const epochSnap = await epochRefOf(bookRef, book).get();

@@ -114,6 +114,23 @@ describe('B6-1 — no desk name anywhere the model reads', () => {
   });
 });
 
+describe('reading R-1 — what the prompt QUOTES is quoted as stored (question Q-1)', () => {
+  it('a desk\'s own earlier note and the thesis a desk wrote on an open idea, written before B6, reach the model as they were written — and nothing else in the request names a desk', () => {
+    const oldNote = 'The Shadow desk holds idea_aaa against XLF.';
+    const oldThesis = 'The archetype desk sees XOM breaking out.';
+    const short = { ...SHORT, idea: { ...SHORT.idea, contract: { ...SHORT.idea.contract, thesis: { text: oldThesis, author: 'agent' } } } };
+    const r = assembleAgentRequest({
+      desk: 'shadow', identity: shadowIdentity(), session: '2026-11-18', snapshotKey: '2026-11-18_close', book: BOOK,
+      deskIdeas: [MEDIUM], otherIdeas: [short], emptySlots: [], priorNotes: [{ session: '2026-11-17', note: oldNote }], candidates: [],
+    });
+    const msg = r.content.messages[0].content;
+    expect(msg).toContain(`- 2026-11-17: ${JSON.stringify(oldNote)}`); // the note, under "Your last notes"
+    expect(msg).toContain(`  thesis: ${JSON.stringify(oldThesis)}`); // the thesis, under its idea's line
+    const rest = msg.replace(JSON.stringify(oldNote), '').replace(JSON.stringify(oldThesis), '');
+    expect(`${JSON.stringify(r.content.system)}${rest}${JSON.stringify(r.content.tools)}`).not.toMatch(OLD_NAMES);
+  });
+});
+
 describe('B6-1, B6-2 — against main\'s version 1, line by line: the lines B6 changed, and nothing else', () => {
   const cases = [
     ['the shadow desk, saved theses off', AGENT_SYSTEM_TEXT_V1.shadow.thesesOff, () => requestOn('shadow')],
@@ -196,7 +213,7 @@ describe('the thirteen-session run\'s own requests (B2\'s run, saved theses on)'
   beforeEach(() => { restoreMode = setPracticeFieldModeForTests('on'); });
   afterEach(() => { restoreAgent(); restoreAgent = () => {}; restoreMode(); vi.restoreAllMocks(); });
 
-  it('every request\'s scaffold — system text and tool — names no desk; a desk\'s OWN earlier note, quoted under "Your last notes", is the only place an old name can come from (reading R-1)', { timeout: 120_000 }, async () => {
+  it('every request\'s scaffold — system text and tool — names no desk; in this run an old name reaches the model only inside a desk\'s earlier notes, quoted as stored under "Your last notes" (reading R-1)', { timeout: 120_000 }, async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const { fake } = await runFoundersBook({ theses: true, onRestore: (r) => { restoreAgent = r; } });
     expect(fake.calls.length).toBeGreaterThan(20);

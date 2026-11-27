@@ -13,7 +13,9 @@
 // rows, not from the view's helpers), against the desk's share of the stored equity; and the desks read by their names —
 // the caller's agent "Atlas" (seeded beside the run, the caller's own) and the epoch's archetype — never "Shadow".
 //
-// B6 (ruling B6-3): never "Shadow" or "archetype desk" in ANY string a player reads, a desk's own words included — the
+// B6 (ruling B6-3): never "Shadow desk" or "archetype desk" in any string a player reads, a desk's own words included (the
+// scan is stricter still: no "shadow" at all — this run's words say only "Shadow desk"; a bare "Shadow" is not one of the
+// two things B6-3 replaces) — the
 // scripted notes name the old desks and quote the book's idea ids (bookViewFixtures.js), and the view shows each desk's
 // name and "the {slot} idea" — and the stored close row is the same after the read as before it.
 
@@ -170,7 +172,7 @@ describe('the view after every close of the B2 history agrees with the stored ro
           expect(shown, `${date} ${key} shown`).toBe(used[desk]);
         }
         expect(v.split.parts.find((x) => x.key === 'cash')).toMatchObject({ name: 'Cash', share: { number: cashPpm / 1e6 } });
-        // B5-3: the desks by their names, in every sentence. Build B6 (B6-3): never "Shadow" or "archetype desk" in ANY string a
+        // B5-3: the desks by their names, in every sentence. Build B6 (B6-3): no "Shadow desk" or "archetype desk" (nor any "shadow") in any string a
         // player reads — a desk's own words included. The scripted notes here say "Shadow desk, …" and "Archetype desk, …" and
         // quote the book's idea ids (bookViewFixtures.js scriptedDesks): the view shows each desk's name and "the {slot} idea".
         for (const s of playerStrings(v)) expect(s, `${date}: ${s}`).not.toMatch(/shadow|archetype desk/i);

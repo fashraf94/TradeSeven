@@ -772,7 +772,7 @@ export const PLAYER_LIST_REDEPLOY_SENTENCE = 'The deployed app reads its own cop
 
 /** Build B6 (B6-7): status's warning for malformed player-list entries — how many, never which. */
 export function playerListWarning(n) {
-  return `                WARNING: ${n} ${n === 1 ? 'entry' : 'entries'} on this machine's list ${n === 1 ? 'is' : 'are'} not a uid the door accepts (1 to 128 printable characters, no "/", not starting with "_"). No book can be made for ${n === 1 ? 'it' : 'them'}; the other entries still count. Correct the list here and in the deployed app's copy.`;
+  return `                WARNING: ${n} ${n === 1 ? 'entry' : 'entries'} on this machine's player list (${PRACTICE_FIELD_PLAYER_ENV}) ${n === 1 ? 'is' : 'are'} not a uid the door accepts (1 to 128 characters from ! to ~, so no space and no accent; no "/"; not "." or ".."; not starting with "_"). No book can be made for ${n === 1 ? 'it' : 'them'}; the other entries still count. Correct the list here and in the deployed app's copy.`;
 }
 
 function gateLines(r) {

@@ -51,8 +51,32 @@ describe('B6-3 — deskOwnWords: exactly two replacements', () => {
     // A fallback name is lower-cased inside a sentence and capitalised at its head (B5's rule).
     expect(say('The Shadow desk holds; I side with the shadow desk.', { names: FALLBACK })).toBe('Your agent’s desk holds; I side with your agent’s desk.');
     expect(say('Ask the archetype desk. Archetype desk agrees.', { names: FALLBACK })).toBe('Ask your archetype’s desk. Your archetype’s desk agrees.');
-    // After a line break, a new sentence.
-    expect(say('Held.\nshadow desk next.', { names: FALLBACK })).toBe('Held.\nYour agent’s desk next.');
+    // After a line break, a new sentence — with or without a full stop before it.
+    expect(say('Held.\nShadow desk next.', { names: FALLBACK })).toBe('Held.\nYour agent’s desk next.');
+    expect(say('Holding\nShadow desk next', { names: FALLBACK })).toBe('Holding\nYour agent’s desk next');
+    expect(say('Holding, shadow desk next', { names: FALLBACK })).toBe('Holding, your agent’s desk next');
+  });
+
+  it('review A5: the head of a sentence after "…" or behind an opening bracket or quote; a desk\'s own lower case after "vs." stays inside it', () => {
+    const rows = [
+      ['Wait… The Shadow desk holds.', 'Wait… Your agent’s desk holds.'],
+      ['Held. (The Shadow desk agrees.)', 'Held. (Your agent’s desk agrees.)'],
+      ['Held. “The archetype desk agrees.”', 'Held. “Your archetype’s desk agrees.”'],
+      ['Ahead vs. the archetype desk today.', 'Ahead vs. your archetype’s desk today.'],
+      ['Held. the shadow desk waits.', 'Held. your agent’s desk waits.'],
+      ['Held. the idea_aaa waits.', 'Held. the medium idea waits.'],
+      ['Held. The idea_aaa waits.', 'Held. The medium idea waits.'],
+      ['Held. idea_aaa waits.', 'Held. The medium idea waits.'],
+    ];
+    for (const [text, want] of rows) expect(say(text, { names: FALLBACK }), text).toBe(want);
+  });
+
+  it('review A1, A7, A11: a look-alike of "s" names no desk; a line break inside "the … Shadow desk" is part of the replaced phrase (A7 refuted); an empty id is never searched for', () => {
+    const longS = String.fromCodePoint(0x17f); // LATIN SMALL LETTER LONG S: /iu would fold it to "s"
+    expect(say(`${longS}hadow desk holds`)).toBe(`${longS}hadow desk holds`);
+    expect(say('I keep the\nidea_aaa and the\nShadow desk agrees.')).toBe('I keep the medium idea and Atlas’s desk agrees.');
+    expect(say('Held.\nI agree.')).toBe('Held.\nI agree.'); // (a line break outside a replacement is never touched)
+    expect(deskOwnWords('x idea_aaa', { names: NAMED, ideaSlots: new Map([['', 'short'], ['idea_aaa', 'medium']]) })).toBe('x the medium idea');
   });
 
   it('a note that names both desks and two ideas', () => {
@@ -64,14 +88,16 @@ describe('B6-3 — deskOwnWords: exactly two replacements', () => {
     expect(say('idea_aaa is near its line.')).toBe('The medium idea is near its line.');
     expect(say('I hold the idea_ccc; idea_aaa too.')).toBe('I hold the long idea; the medium idea too.');
     expect(say('Exit idea_bbb. idea_bbb failed.')).toBe('Exit the short idea. The short idea failed.');
-    expect(say('(idea_aaa), "idea_bbb", idea_ccc\'s line')).toBe('(the medium idea), "the short idea", the long idea\'s line');
+    expect(say('(idea_aaa), "idea_bbb", idea_ccc\'s line')).toBe('(The medium idea), "the short idea", the long idea\'s line');
+    // Review A4: an id is `idea_` and hex — a hyphen never extends one, so "idea_aaa-style" names the idea.
+    expect(say('I like idea_aaa-style trades.')).toBe('I like the medium idea-style trades.');
     for (const slot of ['short', 'medium', 'long']) expect(IDEA_IN_DESK_WORDS[slot]).toEqual({ name: `The ${slot} idea`, mid: `the ${slot} idea` });
   });
 
   it('nothing else is touched: an unknown id, a longer token, a bare "Shadow", "desk" or "archetype" — and text with nothing to replace is returned as it is', () => {
     const untouched = [
       'idea_zzz is not this book\'s.', // an id the view does not hold
-      'idea_aaa2 and xidea_aaa and idea_aaa-b', // a known id inside a longer token
+      'idea_aaa2 and xidea_aaa and idea_aaa_b', // a known id inside a longer token
       'Shadows lengthen on the desk; the archetype\'s frozen identity.',
       'The shadow-desk word and shadow desks stay.',
       'Holding steady; nothing material changed.',
@@ -162,6 +188,17 @@ describe('B6-3 — in each place a desk\'s words appear', () => {
     expect(v.groups.find((g) => g.slot === 'short').thesis).toMatchObject({ text: words, byline: null });
   });
 
+  it('review N1: a founder fixture whose thesis is labelled `agent` (the door forces the origin, not the author) is still the founder\'s text — untouched', () => {
+    const base = hubSceneInput('sample');
+    const words = 'The Shadow desk manages i_banks for me.';
+    const ideas = base.ideas.map((i) => (i.ideaId === 'i_banks' ? { ...i, contract: { ...i.contract, thesis: { text: words, author: 'agent' }, origin: { kind: 'founder_fixture', initiatedBy: 'agent' } } } : i));
+    const v = buildBookView({ ...base, ideas });
+    expect(v.groups.find((g) => g.slot === 'medium').thesis.text).toBe(words);
+    // (The control: the same words on a desk's own idea are replaced.)
+    const own = base.ideas.map((i) => (i.ideaId === 'i_banks' ? { ...i, contract: { ...i.contract, thesis: { text: words, author: 'agent' }, origin: { kind: 'market_scan', initiatedBy: 'agent' } } } : i));
+    expect(buildBookView({ ...base, ideas: own }).groups.find((g) => g.slot === 'medium').thesis.text).toBe('Atlas’s desk manages the medium idea for me.');
+  });
+
   it('History and the slot settled today: a finished idea\'s thesis and its exit\'s reason; History on its own replaces the names and no id', () => {
     for (const name of ['history', 'settledToday']) {
       const input = voiced(hubSceneInput(name));
@@ -177,6 +214,11 @@ describe('B6-3 — in each place a desk\'s words appear', () => {
         const g = v.groups.find((x) => x.state === 'settled_today');
         expect(g.lastCall.text.startsWith('Atlas’s desk and Trend Follower’s desk agree on ')).toBe(true);
         expect(g.thesis.text.startsWith('Atlas’s desk and Trend Follower’s desk agree on ')).toBe(true);
+        // The ids too: the finished idea's own and the live ones, each as its slot's idea.
+        for (const text of [g.lastCall.text, g.thesis.text]) {
+          expect(text).toContain('the long idea');
+          expect(text).not.toMatch(/\b[if]_[a-z]+\b/);
+        }
       }
     }
     // finishedView on its own (no ids handed in): the names change, an id is left as written.
@@ -264,6 +306,15 @@ describe('B6-4 — SPY keeps reading after the last position sells (Astra B5-A04
     expect(v.line.first).toMatchObject({ kind: 'since', label: 'Since 16 Nov' });
     // The control: without the finished idea's row of that close — main's lookup — SPY reads "—".
     expect(buildBookView(soldAfterTuesday({ withAtClose: false })).line.spy).toEqual({ label: 'SPY', value: '—' });
+  });
+
+  it('only a row OF the last close is read: a finished idea\'s row of another session, or one below the vendor\'s timed mark, gives "—"', () => {
+    const s = soldAfterTuesday();
+    const atClose = s.finished[0].atClose;
+    const other = { ...s, finished: [{ ...s.finished[0], atClose: { ...atClose, date: MON } }] };
+    expect(buildBookView(other).line.spy).toEqual({ label: 'SPY', value: '—' });
+    const carried = { ...s, finished: [{ ...s.finished[0], atClose: { ...atClose, spyMarks: { SPY: { mark: 510, quality: 'carried' } } } }] };
+    expect(buildBookView(carried).line.spy).toEqual({ label: 'SPY', value: '—' });
   });
 
   it('a live idea\'s row still comes first: with one, its mark is the one read (the scenes draw as before)', () => {

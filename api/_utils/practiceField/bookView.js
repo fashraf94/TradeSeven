@@ -163,18 +163,26 @@ const deskLabel = (names, desk) => (typeof desk === 'string' && Object.hasOwn(na
 
 /**
  * The engine's two old desk names as a desk may have written them before build B6 (its prompt named them): "Shadow desk"
- * and "archetype desk", in any letter case, with or without "the" before them, as whole words.
+ * and "archetype desk", in any ASCII letter case, with or without "the" before them, as whole words.
+ * (No `u` flag: under /iu a look-alike such as U+017F folds to "s" and would match while naming no desk — review A1.)
  */
-const OLD_DESK_NAME = /\b(?:the\s+)?(shadow|archetype)\s+desk\b/giu;
+const OLD_DESK_NAME = /\b(?:the\s+)?(shadow|archetype)\s+desk\b/gi;
 /** A character an idea id may hold (ideas are `idea_` and hex: admission.js ideaIdFor): an id is matched only whole. */
-const ID_CHAR = /^[A-Za-z0-9_-]$/;
+const ID_CHAR = /^[A-Za-z0-9_]$/;
 const isIdChar = (c) => typeof c === 'string' && ID_CHAR.test(c);
 /** "the " right before an id: replaced with it, so "the idea_…" never reads "the the medium idea". */
-const THE_BEFORE = /\bthe\s+$/iu;
-/** Is `index` the head of a sentence: the text's start, or after a sentence's end (. ! ?, then any closing quote or
- *  bracket, then a space) or a line break — B5's casing rule (bookViewCopy.js DESK_NAMES: `name` heads, `mid` inside). */
-const SENTENCE_HEAD = /(?:^|[.!?]['"’”)\]]*\s|\n)\s*$/u;
+const THE_BEFORE = /\bthe\s+$/i;
+/** Is `index` the head of a sentence: the text's start, or after a sentence's end (. ! ? …, then any closing quote or
+ *  bracket, then a space) or a line break — then any opening quote or bracket. B5's casing rule (bookViewCopy.js
+ *  DESK_NAMES: `name` heads, `mid` inside). */
+const SENTENCE_HEAD = /(?:^|[.!?…]['"’”)\]]*\s|\n)\s*['"‘“(\[]*$/u;
 const atSentenceHead = (text, index) => SENTENCE_HEAD.test(text.slice(0, index));
+/**
+ * Does a hit take `name` (the head of a sentence) or `mid`? Its place, and — where the desk wrote a word of its own there
+ * (an old name, or the "the" before an id) — the desk's own casing of it: a lower-case "the shadow desk" after "vs." stays
+ * inside the sentence (review A5). A bare id carries no casing of its own: its place decides.
+ */
+const headOf = (text, hit) => atSentenceHead(text, hit.at) && (!hit.cased || /[A-Z]/.test(text[hit.at]));
 
 /**
  * The idea ids this view holds — the caller's own book's ideas, live and finished — each to its slot. Only these ids are
@@ -197,8 +205,8 @@ export function ideaSlotsOf(ideas) {
  * call's reason, a draft's thesis, the thesis on an idea it authored, the same in History). It replaces EXACTLY two
  * things, and nothing else in the text is touched:
  *   1. the old desk names ("the Shadow desk", "Archetype desk", … — OLD_DESK_NAME) with that desk's player-facing name
- *      (deskNamesOf): `name` at a sentence's head, `mid` inside one — so a fallback is lower-cased mid-sentence, as B5's
- *      sentences do — "the" dropped, since no sentence puts "the" before a name;
+ *      (deskNamesOf): `name` at a sentence's head, `mid` inside one (headOf) — so a fallback is lower-cased mid-sentence,
+ *      as B5's sentences do — "the" dropped, since no sentence puts "the" before a name;
  *   2. each idea id of the caller's own book (`ideaSlots`: ideaSlotsOf — the ids the view already holds) with "the {slot}
  *      idea" (bookViewCopy.js IDEA_IN_DESK_WORDS), matched whole, with a "the" right before it taken in. An id the view
  *      does not hold is left as written.
@@ -214,14 +222,15 @@ export function deskOwnWords(text, { names, ideaSlots = new Map() }) {
   if (typeof text !== 'string' || text.length === 0) return text;
   const hits = [];
   for (const m of text.matchAll(OLD_DESK_NAME)) {
-    hits.push({ at: m.index, end: m.index + m[0].length, words: names[m[1].toLowerCase() === 'shadow' ? 'shadow' : 'archetype'] });
+    hits.push({ at: m.index, end: m.index + m[0].length, cased: true, words: names[m[1].toLowerCase() === 'shadow' ? 'shadow' : 'archetype'] });
   }
   for (const [id, slot] of ideaSlots) {
+    if (typeof id !== 'string' || id.length === 0) continue; // (ideaSlotsOf never holds one; an empty id would never end)
     for (let at = text.indexOf(id); at >= 0; at = text.indexOf(id, at + 1)) {
       const end = at + id.length;
       if (isIdChar(text[at - 1]) || isIdChar(text[end])) continue; // part of a longer token: not this id
       const the = THE_BEFORE.exec(text.slice(0, at));
-      hits.push({ at: the ? at - the[0].length : at, end, words: IDEA_IN_DESK_WORDS[slot] });
+      hits.push({ at: the ? at - the[0].length : at, end, cased: the !== null, words: IDEA_IN_DESK_WORDS[slot] });
     }
   }
   if (hits.length === 0) return text;
@@ -230,7 +239,7 @@ export function deskOwnWords(text, { names, ideaSlots = new Map() }) {
   let pos = 0;
   for (const h of hits) {
     if (h.at < pos) continue; // (cannot happen: a name holds a space and an id none; the first wins)
-    out += text.slice(pos, h.at) + (atSentenceHead(text, h.at) ? h.words.name : h.words.mid);
+    out += text.slice(pos, h.at) + (headOf(text, h) ? h.words.name : h.words.mid);
     pos = h.end;
   }
   return out + text.slice(pos);
@@ -558,14 +567,17 @@ function bylineOf(idea, names) {
   return null;
 }
 /**
- * An idea's thesis. B6-3: a thesis a desk wrote (`author: 'agent'`) is that desk's own words (deskOwnWords); a founder's
- * thesis, or one of any other author, is shown as written. `words`: { names, ideaSlots } (deskOwnWords).
+ * An idea's thesis. B6-3: a thesis a desk wrote is that desk's own words (deskOwnWords); a founder's thesis, or one of any
+ * other author, is shown as written. A desk wrote it when its author is `agent` AND the idea is not a founder fixture: the
+ * founder's door forces a fixture's origin but not its thesis's author, so a fixture labelled `agent` is still the
+ * founder's text (review N1). `words`: { names, ideaSlots } (deskOwnWords).
  */
 function thesisOf(idea, words) {
   const text = str(idea?.contract?.thesis?.text);
   if (!text) return null;
   const admitted = typeof idea.admittedAt === 'string' ? idea.admittedAt : (idea.admittedAt?.toDate?.().toISOString?.() ?? null);
-  const shown = idea?.contract?.thesis?.author === 'agent' ? deskOwnWords(text, words) : text;
+  const deskWrote = idea?.contract?.thesis?.author === 'agent' && idea?.contract?.origin?.kind !== 'founder_fixture';
+  const shown = deskWrote ? deskOwnWords(text, words) : text;
   return { text: shown, byline: bylineOf(idea, words.names), date: dayLabel(admitted ? etDateOfIso(admitted) : null) };
 }
 /** The ET calendar date of an ISO instant (the founder's dates are Eastern). */

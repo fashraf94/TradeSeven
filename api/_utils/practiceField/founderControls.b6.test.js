@@ -59,9 +59,9 @@ describe('B6-6 — a creation already made is answered with that book (Astra B4-
     // The request is done, with that answer — never a refusal stored for good.
     expect(db._get(opPath('k-made'))).toMatchObject({ state: 'done', response: { status: 200, body: { ok: true, bookId: made.bookId } } });
     expect(await act(db, body('k-made'))).toEqual(want);
-    // The answer is the one the engine's own replay gives where the mode admits anyone (B4's recovery row, at 'on').
-    restoreMode();
-    restoreMode = setPracticeFieldModeForTests('on');
+    // The answer is the one the engine's own replay gives (review B5): the same interruption, the owner still listed, so the
+    // re-run goes through createIdeaBook as before B6 — and answers the same body.
+    setList([FOUNDER, OWNER]);
     const { db: db2 } = await interruptedAfterTheBook('k-made');
     expect(await act(db2, body('k-made'))).toEqual(want);
   });
