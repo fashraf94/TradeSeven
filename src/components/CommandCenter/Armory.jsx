@@ -60,6 +60,9 @@ import { ARMORY_COPY, HUB_COPY as COPY } from './hub/hubCopy';
 import { C, HAIR, HAIR_2, MONO, PHONE_TARGET, tint } from './hub/hubStyle';
 import HubSheet from './HubSheet';
 import { Eyebrow, HubButton, Icon, useHubComposition } from './HubParts';
+// The portfolio hub's slice 3 (spec 20261126 PH-17): the phone armory's sheet, for the book layout. The switch is a literal (off on
+// merge), so the ring's two reads of the sheet's scope fold away and the hero box's ring is today's.
+import { COMMAND_CENTER_PORTFOLIO_HUB_ENABLED } from '../../config/commandCenterPortfolioFlags';
 
 /**
  * The six sets, clockwise from the top, in the locked Identity Contract order (ArchetypePicker.jsx ARCHETYPE_ORDER, which
@@ -563,7 +566,8 @@ export function PhoneArmoryRing({ scope }) {
   return (
     <>
       {grid ? null : <RingLine cx={half} cy={half} radius={radius} />}
-      <Eyebrow color={C.teal} style={{ position: 'absolute', left: 4, top: 6 }}>{ARMORY_COPY.title}</Eyebrow>
+      {/* The portfolio hub's slice 3: inside its sheet (PhoneArmorySheet), the sheet's own title and Close stand for these two. */}
+      {COMMAND_CENTER_PORTFOLIO_HUB_ENABLED && use(PhoneArmorySheetContext) ? null : <Eyebrow color={C.teal} style={{ position: 'absolute', left: 4, top: 6 }}>{ARMORY_COPY.title}</Eyebrow>}
       <div ref={focusOnOpen} role="listbox" aria-label={ARMORY_COPY.sets} aria-orientation="horizontal" onKeyDown={onKeyDown} data-armory-listbox="" data-armory-layout={grid ? 'grid' : 'ring'} style={listStyle}>
         {ARMORY_SETS.map((codeId, i) => {
           const selected = codeId === scope.previewed;
@@ -594,6 +598,7 @@ export function PhoneArmoryRing({ scope }) {
           );
         })}
       </div>
+      {COMMAND_CENTER_PORTFOLIO_HUB_ENABLED && use(PhoneArmorySheetContext) ? null : (
       <button
         type="button"
         onClick={scope.close}
@@ -603,6 +608,7 @@ export function PhoneArmoryRing({ scope }) {
       >
         <Icon name="x" size={16} />
       </button>
+      )}
     </>
   );
 }
@@ -617,5 +623,60 @@ export function PhoneArmoryDetails({ scope }) {
       {scope.card ? <div style={{ marginBottom: 12 }}><ArmoryContextLine card={scope.card} compact /></div> : null}
       <ArmoryDetails previewed={scope.previewed} equipped={scope.equipped} working={scope.working} error={scope.error} notice={scope.notice} onEquip={scope.equip} compact card={scope.card} />
     </div>
+  );
+}
+
+// ── The phone armory's sheet (the portfolio hub's slice 3) ──────────────────────────────────────────────────────────
+
+/** Set by PhoneArmorySheet around the ring: the sheet's own title and Close stand for the ring's (PhoneArmoryRing). */
+const PhoneArmorySheetContext = /* @__PURE__ */ createContext(false);
+
+/** The ring's box in the sheet: the same as in the hero's box, with the centre figure where the hero stands there. */
+function PhoneArmorySheetBox({ reducedMotion }) {
+  const scope = use(ArmoryStageContext);
+  const { centre, extent } = PHONE_ARMORY;
+  const grid = phoneArmoryLayout(scope.width) === 'grid';
+  return (
+    <div
+      data-armory-box=""
+      data-armory-sheet-layout={grid ? 'grid' : 'ring'}
+      style={grid ? { position: 'relative', width: '100%', height: phoneArmoryGridHeight(), margin: '0 auto' } : { position: 'relative', width: extent, height: extent, margin: '0 auto' }}
+    >
+      <div aria-hidden="true" data-armory-centre="" style={grid ? { position: 'absolute', left: '50%', marginLeft: -centre / 2, top: PHONE_ARMORY_GRID.top } : { position: 'absolute', left: (extent - centre) / 2, top: (extent - centre) / 2 }}>
+        <CentreFigure archetype={scope.previewed} size={centre} reducedMotion={reducedMotion} />
+      </div>
+      <PhoneArmoryRing scope={scope} />
+    </div>
+  );
+}
+
+/**
+ * The portfolio hub's slice 3 (spec docs/specs/20261126_COMMAND_CENTER_PORTFOLIO_HUB_BUILD_SPEC_V1.md PH-17): in the book layout the
+ * loadout is a sheet, so the phone armory gets one too, on the hub's overlay stack (HubSheet registers itself, traps focus, and gives
+ * focus back to the control that opened it). Its state is the hero box's own (PhoneArmoryScope): each open starts on the equipped
+ * set, Equip is the same write, a result in flight is dropped on close. The ring, the six sets and the details are the hero box's
+ * parts; the figure at the centre wears the previewed set, as the wide dialog's does, while the hub pauses its hero behind the sheet
+ * (CommandCenterHub.jsx), so the phone draws one live figure, as today. Rendered only from BookLayout.jsx.
+ */
+export function PhoneArmorySheet({ open, agent, onClose, opener = null, fallbackFocus = null, reducedMotion = false, width = null }) {
+  if (!open || !agent) return null;
+  return (
+    <PhoneArmoryScope open agent={agent} onClose={onClose} reducedMotion={reducedMotion} width={width}>
+      <PhoneArmorySheetContext.Provider value>
+        <PhoneArmorySheetFrame opener={opener} fallbackFocus={fallbackFocus} reducedMotion={reducedMotion} />
+      </PhoneArmorySheetContext.Provider>
+    </PhoneArmoryScope>
+  );
+}
+
+function PhoneArmorySheetFrame({ opener, fallbackFocus, reducedMotion }) {
+  const scope = use(ArmoryStageContext);
+  return (
+    <HubSheet phone title={ARMORY_COPY.title} label={ARMORY_COPY.title} onClose={scope.close} opener={opener} fallbackFocus={fallbackFocus} reducedMotion={reducedMotion}>
+      <div data-armory="sheet">
+        <PhoneArmorySheetBox reducedMotion={reducedMotion} />
+        <PhoneArmoryDetails scope={scope} />
+      </div>
+    </HubSheet>
   );
 }

@@ -12,20 +12,25 @@
 // overflow-x, which would otherwise make it the sticky container and let the
 // row scroll away).
 
-import React, { useRef } from 'react';
+import React, { use, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { motionToken } from '../../theme/motion';
-import { AREA_FOR_PHONE_TAB, HUB_AREAS, PHONE_TAB_ORDER, PHONE_TABS, rovingIndex } from './hub/composition';
-import { PHONE_ACTIVITY_LIMIT, PHONE_COMPLETED_LIMIT, liveGamesOf, splitGames } from './hub/hubModel';
+import { AREA_FOR_PHONE_TAB, HUB_AREAS, HUB_COMPOSITIONS, PHONE_TAB_ORDER, PHONE_TABS, rovingIndex } from './hub/composition';
+import { DESKTOP_ACTIVITY_LIMIT, PHONE_ACTIVITY_LIMIT, PHONE_COMPLETED_LIMIT, liveGamesOf, splitGames } from './hub/hubModel';
 import { HUB_COPY as COPY } from './hub/hubCopy';
 import { C, HAIR } from './hub/hubStyle';
-import { EmptyNote, Label, LoadingLine, Mono, Row, Section } from './HubParts';
+import { EmptyNote, HubLayoutContext, Label, LoadingLine, Mono, Row, Section } from './HubParts';
 import { AreaBody, AreaHeading } from './panels/AreaPanel';
 import ActivitySection from './sections/ActivitySection';
 import BriefSection from './sections/BriefSection';
 import { PhoneDeployCard } from './sections/DeploySection';
 import { GameRow, GamesLiveNote, GamesLoadingLine, GamesReadNote, gamesNoteDue } from './sections/GamesSection';
 import NextActionCard from './sections/NextActionCard';
+// The portfolio hub's slice 3 (spec 20261126 §4): the switch (a literal, off on merge, so each read below folds away) and the
+// book scope's decision, which the Overview's list reads where the book layout draws it (sections/BookOverview.jsx).
+import { COMMAND_CENTER_PORTFOLIO_HUB_ENABLED } from '../../config/commandCenterPortfolioFlags';
+import { HubBookReadContext } from './hub/hubBookRead';
+import { HUB_LAYOUTS } from './hub/hubLayout';
 
 export const phoneTabId = (idBase, tab) => `${idBase}-tab-${tab}`;
 export const phonePanelId = (idBase) => `${idBase}-tab-panel`;
@@ -81,8 +86,14 @@ export function PhoneTabRow({ idBase, tab, onSelect }) {
  * history entry, a short activity list and the brief, collapsed. With games
  * resolved and empty and no candidate, the design's empty note. In S1
  * everything but the frame is loading.
+ *
+ * The portfolio hub's slice 3 (spec 20261126 §4; Amendment A PH-26): in the book layout this list is the Overview's part under
+ * the table (sections/BookOverview.jsx), at both sites. There the next action is the "Needs you" strip above the table, so its
+ * card is not drawn here (its own game and review stay out of the rows, as today); and on the wide compositions the empty note
+ * and the activity count take the wide words and limit, since Deploy is not below. Each is a literal ternary on the switch, so
+ * with it off this is today's list.
  */
-function PhoneOverview({ sections, actions }) {
+export function PhoneOverview({ sections, actions }) {
   const { games, nextAction, deploy, activity, brief, career } = sections;
   const ready = games?.status === 'ready';
   const failed = games?.status === 'error';
@@ -105,12 +116,12 @@ function PhoneOverview({ sections, actions }) {
       {gamesNoteDue(games) && <GamesReadNote games={games} onRetry={actions.retryGames} />}
       {ready && !stale && !liveGame && !candidate && completed.length === 0 && (games.liveResolved === false
         ? <LoadingLine>{COPY.games.loading}</LoadingLine>
-        : <EmptyNote icon="sword" title={COPY.games.empty} sub={COPY.games.emptySubPhone} />)}
-      {liveIsCandidate && <NextActionCard nextAction={nextAction} deploy={deploy} onAct={actions.nextAction} onLater={actions.laterNextAction} holdWiring={actions.nextActionHold} holding={actions.nextActionHolding} />}
+        : <EmptyNote icon="sword" title={COPY.games.empty} sub={COMMAND_CENTER_PORTFOLIO_HUB_ENABLED && use(HubBookReadContext)?.layout === HUB_LAYOUTS.BOOK && use(HubLayoutContext) !== HUB_COMPOSITIONS.PHONE ? COPY.games.emptySub : COPY.games.emptySubPhone} />)}
+      {liveIsCandidate && (COMMAND_CENTER_PORTFOLIO_HUB_ENABLED && use(HubBookReadContext)?.layout === HUB_LAYOUTS.BOOK ? null : <NextActionCard nextAction={nextAction} deploy={deploy} onAct={actions.nextAction} onLater={actions.laterNextAction} holdWiring={actions.nextActionHold} holding={actions.nextActionHolding} />)}
       {/* The Overview's own live rows are Games live rows too: after a failed poll they carry its age (ruling R-S8F-8; review L3-2). */}
       {liveRows.length > 0 && <GamesLiveNote games={games} />}
       {liveRows.map((g) => <GameRow key={g.id} game={g} onOpen={actions.openGame} />)}
-      {candidate && !liveIsCandidate && <NextActionCard nextAction={nextAction} deploy={deploy} onAct={actions.nextAction} onLater={actions.laterNextAction} holdWiring={actions.nextActionHold} holding={actions.nextActionHolding} />}
+      {candidate && !liveIsCandidate && (COMMAND_CENTER_PORTFOLIO_HUB_ENABLED && use(HubBookReadContext)?.layout === HUB_LAYOUTS.BOOK ? null : <NextActionCard nextAction={nextAction} deploy={deploy} onAct={actions.nextAction} onLater={actions.laterNextAction} holdWiring={actions.nextActionHold} holding={actions.nextActionHolding} />)}
       {reviews.length > 0 && (
         <Section label={COPY.games.reviewsAvailable}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -129,7 +140,7 @@ function PhoneOverview({ sections, actions }) {
           <span style={{ display: 'block', fontSize: 12, color: C.ink3, marginTop: 2 }}>{COPY.history.rowSub(completed.length)}</span>
         </Row>
       )}
-      <ActivitySection activity={activity} limit={PHONE_ACTIVITY_LIMIT} onOpen={actions.openActivity} onAll={actions.openAllActivity} />
+      <ActivitySection activity={activity} limit={COMMAND_CENTER_PORTFOLIO_HUB_ENABLED && use(HubBookReadContext)?.layout === HUB_LAYOUTS.BOOK && use(HubLayoutContext) !== HUB_COMPOSITIONS.PHONE ? DESKTOP_ACTIVITY_LIMIT : PHONE_ACTIVITY_LIMIT} onOpen={actions.openActivity} onAll={actions.openAllActivity} />
       <BriefSection brief={brief} onRetry={actions.retryBrief} />
     </div>
   );

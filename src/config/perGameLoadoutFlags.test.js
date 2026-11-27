@@ -168,6 +168,10 @@ const CLIENT_READS = {
   "src/components/CommandCenter/LoadoutSheets.jsx": [
     "{PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? (",
   ],
+  // The portfolio hub's slice 3: the book layout's loadout sheet hands its cards the shell's committed lists, as today's panel does.
+  "src/components/CommandCenter/BookLayout.jsx": [
+    "{PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? (",
+  ],
   "src/components/CommandCenter/panels/LoadoutPanel.jsx": [
     "{PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? (",
     "{PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? null : (",

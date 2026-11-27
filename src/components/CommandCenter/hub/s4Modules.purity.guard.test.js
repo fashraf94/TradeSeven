@@ -27,6 +27,9 @@ const ALLOWED_IMPORTS = Object.freeze({
   'nextAction.js': [/^\.\/activityDates$/, /^\.\/hubCopy$/, /^\.\/hubDate$/, /^\.\/selectors\/deployState$/],
   // The portfolio hub's slice 1 (spec 20261126 §3): the layout decision imports nothing but its switch.
   'hubLayout.js': [/^\.\.\/\.\.\/\.\.\/config\/commandCenterPortfolioFlags$/],
+  // The portfolio hub's slice 3 (spec 20261126 §4; Amendment A PH-28): the book layout's tabs, where they open, a desk row's tab and
+  // the parts' layout, from the hub's composition table alone. The width is handed in; nothing is measured here.
+  'bookTabs.js': [/^\.\/composition$/],
 });
 
 const IMPURE_GLOBALS = new Set([
@@ -88,6 +91,7 @@ describe('purity — S4\'s derivations read only their arguments (review T-9)', 
     expect(exported('activityRows.js')).toEqual(expect.arrayContaining(['deriveActivity', 'activitySectionOf', 'loadoutKnowledgeOf']));
     expect(exported('nextAction.js')).toEqual(expect.arrayContaining(['deriveNextAction', 'firstDeploymentOffer', 'laterKeyOf']));
     expect(exported('hubLayout.js')).toEqual(expect.arrayContaining(['hubLayoutOf']));
+    expect(exported('bookTabs.js')).toEqual(expect.arrayContaining(['bookTabOf', 'bookTabForDesk', 'bookPartsLayoutOf']));
   });
 
   it('the scan flags what it names', () => {

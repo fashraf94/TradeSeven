@@ -33,7 +33,7 @@ import { fileURLToPath } from 'node:url';
 import { Parser } from 'acorn';
 import acornJsx from 'acorn-jsx';
 import { describe, expect, it } from 'vitest';
-import { ARMORY_COPY, HUB_COPY } from './hub/hubCopy';
+import { ARMORY_COPY, HUB_COPY, PORTFOLIO_HUB_COPY } from './hub/hubCopy';
 import { HUB_GATE_COPY } from './hubGateCopy';
 import { LOADOUT_COPY } from '../../constants/loadoutCopy';
 
@@ -694,5 +694,35 @@ describe('A2: the loadout copy — "next deploy" for BaggerBomb only, the lock s
     expect(growthIn(sourceStrings(code.replace(from, "  set: 'Set · 24 battles',")))).not.toEqual([]);
     expect(sourceStrings(code.replace(from, "  set: 'Deploy waits for a book',")).filter((s) => /waits for a book/i.test(s))).not.toEqual([]);
     expect(/next deploy/i.test('Open · the next deploy wears it')).toBe(true);
+  });
+});
+
+// The portfolio hub's slice 3 (spec docs/specs/20261126_COMMAND_CENTER_PORTFOLIO_HUB_BUILD_SPEC_V1.md §2, §5, PH-5, PH-18; Amendment A
+// PH-26): the book layout's own words, exactly. Its table of its own (PORTFOLIO_HUB_COPY) is read by every row above through the table's
+// source literals; these pin each string, and the words the spec keeps out of this build.
+describe('slice 3: the book layout\'s words, exactly (spec §5)', () => {
+  const BOOK = PORTFOLIO_HUB_COPY;
+  it('the four tab labels, in order, and the tablist\'s name (the phone\'s today, the design\'s)', () => {
+    expect([BOOK.tabs.overview, BOOK.tabs.ideas, BOOK.tabs.setups, BOOK.tabs.partnership]).toEqual(['Overview', 'Ideas', 'Setups', 'Partnership']);
+    expect(BOOK.tabs.listLabel).toBe('Command Center sections');
+    expect(BOOK.tabs.listLabel).toBe(HUB_COPY.phoneTabs.listLabel);
+    expect(Object.keys(BOOK.tabs).sort()).toEqual(['ideas', 'listLabel', 'overview', 'partnership', 'setups']);
+  });
+
+  it('"Needs you", the strip\'s name (the design\'s), and the loadout\'s sheet title, the word its opener already says ("… Open loadout")', () => {
+    expect(BOOK.needsYou).toBe('Needs you');
+    expect(BOOK.loadoutSheet).toBe('Loadout');
+    expect(BOOK.loadoutSheet).toBe(HUB_COPY.phoneTabs.loadout);
+    expect(HUB_COPY.strip.openLoadoutLabel('A', 'B')).toBe('A. B. Open loadout');
+    expect(Object.keys(BOOK).sort()).toEqual(['loadoutSheet', 'needsYou', 'tabs']);
+  });
+
+  it('none of the words this build never uses, and no "Shadow": "Setups" is the one setup word, a tab\'s label', () => {
+    const words = strings(BOOK);
+    const NEVER = [/\bstops?\b/i, /\btargets?\b/i, /\bplans?\b/i, /\bstrateg(y|ies)\b/i, /\btests?\b/i, /\bshadow\b/i, /\bprogress mark\b/i];
+    expect(words.filter((s) => NEVER.some((re) => re.test(s)))).toEqual([]);
+    expect(words.filter((s) => /\bsetups?\b/i.test(s))).toEqual(['Setups']);
+    // The rows bite: a planted word is caught.
+    expect(['Sold at its stop', 'Setups', 'Shadow desk'].filter((s) => NEVER.some((re) => re.test(s)))).toEqual(['Sold at its stop', 'Shadow desk']);
   });
 });

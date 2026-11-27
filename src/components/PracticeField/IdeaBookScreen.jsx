@@ -17,10 +17,14 @@
 //   History    finished ideas; a tap opens the five-column result (B3-3).
 // Layout by the page's own width: 'p320' under 360 px, 'p390' under 900 px, 'desk' from there (the mock-up's three modes).
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { use, useEffect, useRef, useState } from 'react';
 import { IB, HAIR, mono, signColor, BOOK_TEXT, RESET, IB_CSS } from './ideaBookStyle';
 import { Eyebrow, Icon, DeskMark, Quote, Chip, CallWord, BookSays, LineGauge } from './IdeaBookParts';
 import { IDEA_BOOK_COPY, layoutOfWidth, PHONE_MAX_PX, finishedKeyOf, thesisCapOf } from './ideaBookCopy';
+// The portfolio hub's slice 3 (spec 20261126 PH-10; Amendment A PH-28): the parts' options, read only while the portfolio switch is
+// on (a literal, off on merge, so the read folds away and the screen is its old self).
+import { COMMAND_CENTER_PORTFOLIO_HUB_ENABLED } from '../../config/commandCenterPortfolioFlags';
+import { IdeaBookPartsOptions } from './ideaBookPartsOptions';
 
 const MODE = {
   p320: { cols: 'minmax(0,1fr) 56px 70px 70px', fs: 11.5, pad: 4 },
@@ -366,9 +370,12 @@ export function PosTable({ view, layout, open, setOpen, inline = true }) {
           );
         })}
       </div>
-      <div data-ib="cash" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 36, padding: `0 ${M.pad}px`, marginTop: 6, borderTop: `1px solid ${IB.hair2}` }}>
-        <span style={{ fontSize: 13, fontWeight: 600, color: IB.ink }}>{IDEA_BOOK_COPY.cash}</span><span style={mono(M.fs, IB.ink, 600)}>{view.cash}</span>
-      </div>
+      {/* The portfolio hub's slice 3: a host may turn the Cash row off (ideaBookPartsOptions.js); the screen never does. */}
+      {COMMAND_CENTER_PORTFOLIO_HUB_ENABLED && use(IdeaBookPartsOptions)?.cash === false ? null : (
+        <div data-ib="cash" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 36, padding: `0 ${M.pad}px`, marginTop: 6, borderTop: `1px solid ${IB.hair2}` }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: IB.ink }}>{IDEA_BOOK_COPY.cash}</span><span style={mono(M.fs, IB.ink, 600)}>{view.cash}</span>
+        </div>
+      )}
       {view.asOf ? <div data-ib="stamp" style={{ padding: `4px ${M.pad}px 0`, fontSize: 11, color: IB.ink3, lineHeight: 1.4 }}>{view.asOf.text}</div> : null}
     </section>
   );

@@ -33,7 +33,7 @@
 // PhoneArmoryStage (below), where the phone armory opens in the hero's box
 // (founder ruling FD-8). One literal ternary at PhoneStage's return.
 
-import React, { useContext, useLayoutEffect, useRef, useState } from 'react';
+import React, { use, useContext, useLayoutEffect, useRef, useState } from 'react';
 import { cssVar, readToken } from '../../theme/cssTokens';
 import { useHoldProgress } from '../../contexts/DeployAttemptContext';
 import { HUB_COPY as COPY } from './hub/hubCopy';
@@ -44,6 +44,11 @@ import HubAgentForm, { HubAgentFormContext } from './HubAgentForm';
 import ShadowCanvas from './ShadowCanvas';
 import { AGENT_FORM_ARMORY_ENABLED } from '../../config/agentFormFlags';
 import { ArmoryStageContext, PHONE_ARMORY, PHONE_ARMORY_GRID, PHONE_HERO, PhoneArmoryDetails, PhoneArmoryRing, armoryHeroRead, phoneArmoryGridHeight, phoneArmoryLayout } from './Armory';
+// The portfolio hub's slice 3 (spec 20261126 §4): the switch (a literal, off on merge, so the read below folds away) and the book
+// scope's decision.
+import { COMMAND_CENTER_PORTFOLIO_HUB_ENABLED } from '../../config/commandCenterPortfolioFlags';
+import { HubBookReadContext } from './hub/hubBookRead';
+import { HUB_LAYOUTS } from './hub/hubLayout';
 
 /** The charge in flight, as a percentage: visible, aria-hidden, never in the live region (spec §5.5). */
 function HoldPercent({ progress, small }) {
@@ -174,6 +179,9 @@ export function ShadowStage({ composition, size, tier, status, processing, words
           )}
           <StatusLine processing={processing} words={words} maxWidth={size + 20} holdPhase={holdPhase} progress={progress} />
         </div>
+        {/* The portfolio hub's slice 3 (spec 20261126 §4): in the book layout the four tabs take the three-area list's place,
+            under the hero (BookLayout.jsx), so the stage draws none; with no control there is no connector either. */}
+        {COMMAND_CENTER_PORTFOLIO_HUB_ENABLED && use(HubBookReadContext)?.layout === HUB_LAYOUTS.BOOK ? null : (
         <AreaControls
           idBase={idBase}
           selected={selectedArea}
@@ -182,6 +190,7 @@ export function ShadowStage({ composition, size, tier, status, processing, words
           compact={compact}
           glyphRefs={glyphRefs}
         />
+        )}
       </div>
     </section>
   );

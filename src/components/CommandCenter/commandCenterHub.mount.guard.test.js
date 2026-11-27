@@ -676,6 +676,15 @@ const PERMITTED_TERMINALS = Object.freeze({
   // re-export of useIdeaBook, the same hook, keyed by owner and epoch, no poll), and the card is handed that read as props
   // (IdeaBookEntryView): still one read, now at the shell. The exports the hub takes from both are named in the S5 row below.
   'src/config/commandCenterPortfolioFlags.js': 'COMMAND_CENTER_PORTFOLIO_HUB_ENABLED — the portfolio hub, read as a literal so flag-off folds away (spec 20261126 PH-20)',
+  // The portfolio hub's slice 3 (spec 20261126 §4 slice 3, PH-10; Amendment A PH-25, PH-28): the book layout draws the Idea book's
+  // own parts — the book line, the desk rows (the strip), the positions table (its in-place detail panels inside it) and, on the
+  // Setups tab, the Desks content — from the scope's one read (HubBookScope.jsx), handed in as the view: no read of their own. The
+  // walk stops at the screen's module, whose default export (the full-window page) keeps its own window listener and effects; the
+  // hub takes only the four parts, named in the S5 row below, and none of them holds an effect, a timer, a listener or a read
+  // (IdeaBookScreen.jsx). The parts' options are a scope of their own (ideaBookPartsOptions.js: one pure-marked createContext and
+  // nothing else), set by the Overview to turn the Cash row off; the screen never sets it.
+  'src/components/PracticeField/IdeaBookScreen.jsx': "the Idea book's parts — BookLine, Strip, PosTable and DesksTab — drawn from the scope's one read, handed in (spec 20261126 PH-10)",
+  'src/components/PracticeField/ideaBookPartsOptions.js': "the Idea book parts' options scope: the Cash row off in the hub's Overview (spec PH-10; Amendment A PH-28)",
 });
 /** framer-motion: motion.div and useReducedMotion (the house precedent for OS reduced motion); react-dom: createPortal for the sheet. */
 const PERMITTED_PACKAGES = Object.freeze(['framer-motion', 'react', 'react-dom']);
@@ -1455,6 +1464,10 @@ describe('S5 — the exports the hub takes from the shipped services, hooks and 
     // switch on only — the card's drawing part handed the shell's read and the one read hook, re-exported for the shell's scope.
     '/PracticeField/IdeaBookEntry': ['IDEA_BOOK_SCREEN_ON', 'IdeaBookEntryView', 'default', 'useIdeaBook'],
     '/config/commandCenterPortfolioFlags': ['COMMAND_CENTER_PORTFOLIO_HUB_ENABLED'],
+    // The portfolio hub's slice 3 (spec 20261126 PH-10; Amendment A PH-25): the four parts the book layout draws, never the
+    // screen's default export (the full-window page, which the card alone opens), and the parts' options scope.
+    '/PracticeField/IdeaBookScreen': ['BookLine', 'DesksTab', 'PosTable', 'Strip'],
+    '/PracticeField/ideaBookPartsOptions': ['IdeaBookPartsOptions'],
   });
 
   it('across every file of the directory, exactly these names and no others', () => {
@@ -1491,6 +1504,19 @@ describe('S5 — the exports the hub takes from the shipped services, hooks and 
     expect(scope.match(/\buseIdeaBook\(/g)).toHaveLength(1);
     // The count bites: a second read is two.
     expect(`${scope}\nconst again = useIdeaBook({ enabled: true });`.match(/\buseIdeaBook\(/g)).toHaveLength(2);
+  });
+
+  // The portfolio hub's slice 3 (spec 20261126 PH-10; Amendment A PH-25): the Idea book's parts are drawn in two places only — the
+  // Overview (the book line, the desk rows and the table) and the Setups tab (the Desks content) — and the options scope is set by the
+  // Overview alone. The S5 names row above pins the names; this pins the takers, so a part drawn elsewhere is a decision, not a drift.
+  it('slice 3: the Idea book\'s parts are taken by the Overview and the book layout alone, and never the screen\'s default export', () => {
+    const takers = (tail, name) => hubDirFiles().filter((rel) => importedNames(stripComments(read(rel)), tail).includes(name));
+    for (const name of ['BookLine', 'PosTable', 'Strip']) expect(takers('/PracticeField/IdeaBookScreen', name), name).toEqual([HUB_FILE('sections/BookOverview.jsx')]);
+    expect(takers('/PracticeField/IdeaBookScreen', 'DesksTab')).toEqual([HUB_FILE('BookLayout.jsx')]);
+    expect(takers('/PracticeField/IdeaBookScreen', 'default')).toEqual([]);
+    expect(takers('/PracticeField/ideaBookPartsOptions', 'IdeaBookPartsOptions')).toEqual([HUB_FILE('sections/BookOverview.jsx')]);
+    // The taker scan bites: a planted default import of the screen is seen.
+    expect(importedNames("import IdeaBookScreen from '../PracticeField/IdeaBookScreen';", '/PracticeField/IdeaBookScreen')).toEqual(['default']);
   });
 
   it('the only writes the hub can make are the equips: nothing else of agentService, and no other service of the shipped set', () => {
