@@ -765,6 +765,14 @@ describe('the review\'s fixes (lens c: P-2, P-3, P-5, P-6)', () => {
       expect(kids).toEqual(['side', 'connections']);
     } finally { window.matchMedia = matchMedia; }
   });
+  it('P-4: each label draws its own line, also at card size — solid, fine 3 px dashes, broken (two pieces and a gap)', async () => {
+    await openPage();
+    const lineOf = (basis) => card(S_AI.id).querySelector(`[data-explore-line="${basis}"]`);
+    expect([...lineOf('source_cited').children].map((s) => s.style.borderTop)).toEqual([expect.stringMatching(/^2px solid/)]);
+    expect(lineOf('reporters_reading').children).toHaveLength(1);
+    expect(lineOf('reporters_reading').children[0].style.background).toMatch(/repeating-linear-gradient\(90deg, .* 0(px)? 3px, transparent 3px 6px\)/);
+    expect([...lineOf('no_source_yet').children].map((s) => s.style.borderTop || 'gap')).toEqual([expect.stringMatching(/^2px solid/), 'gap', expect.stringMatching(/^2px solid/)]);
+  });
   it('P-3: the shelf\'s Try again hands focus to the shelf\'s heading, never to <body>', async () => {
     await openPage({ answer: NO_ANSWER });
     const retry = $('[data-explore-shelf-retry]');
