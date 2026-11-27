@@ -24,7 +24,7 @@
 // story is only in the Latest row. Nothing on the front page reads a story by id.
 
 import React, { useState } from 'react';
-import { exploreCompareRoute } from '../../config/exploreFlags';
+import { EXPLORE_COMPARE_ROUTE } from '../../config/exploreFlags';
 import { EXPLORE_COPY } from './exploreCopy';
 import { RESEARCH, countsOf, dateOf, frontPageOf, itemFor, parentOf, saveBusyOf, stateOf, topicsOf } from './exploreView';
 import { S, T, WIDE_QUERY, btnStyle } from './exploreStyle';
@@ -69,7 +69,7 @@ const byline = (story) => (
 
 /** The hero (Amendment B §4.1 item 3, B-8): an overview's featured question, never a large count. */
 function Hero({ story, question, byId, wide, saved, bookmarks, onOpenStory, onOpenCompany }) {
-  const compare = exploreCompareRoute(); // the switch, at call time (K-2)
+  const compare = EXPLORE_COMPARE_ROUTE === true; // the switch, read at call time (K-2): the literal, which the build folds
   const origin = `hero:${story.id}`;
   const tags = <div style={S.row}><OriginTags story={story} /><KindTag story={story} /></div>;
   const head = <h2 id={`ftx-hero-h-${story.id}`} className="ftx-qh" style={{ textWrap: 'balance' }} data-explore-hero-question="">{question.text}</h2>;

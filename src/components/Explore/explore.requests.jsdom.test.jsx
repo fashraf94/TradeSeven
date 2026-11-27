@@ -10,7 +10,7 @@
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../../config/exploreFlags', () => ({ EXPLORE_MODES: ['off', 'allowlist', 'on'], EXPLORE_MODE: 'off', exploreMode: () => 'on', EXPLORE_COMPARE_ROUTE: false, exploreCompareRoute: () => false }));
+vi.mock('../../config/exploreFlags', () => ({ EXPLORE_MODES: ['off', 'allowlist', 'on'], EXPLORE_MODE: 'off', exploreMode: () => 'on', EXPLORE_COMPARE_ROUTE: false }));
 const service = vi.hoisted(() => ({
   readExploreInvestigations: vi.fn(), listOpenInvestigations: vi.fn(), readInvestigation: vi.fn(), frameQuestion: vi.fn(), openInvestigation: vi.fn(),
   takeStep: vi.fn(), closeInvestigation: vi.fn(), adoptIdea: vi.fn(), applyCardOp: vi.fn(), equipIdea: vi.fn(), newRequestId: vi.fn(),

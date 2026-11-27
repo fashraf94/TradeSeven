@@ -21,12 +21,12 @@
 //
 // Build 2 (spec docs/specs/20261125_EXPLORE_BUILD_2_SPEC_AMENDMENT_B.md §4.3, §6; build prompt K-11, K-14): a broad
 // question's group (its companies as tickers, in the story's order, never ordered by anything), and the words the
-// compare switch (src/config/exploreFlags.js EXPLORE_COMPARE_ROUTE, read at call time) decides. With the switch off —
+// compare switch (src/config/exploreFlags.js EXPLORE_COMPARE_ROUTE, read at call time inside the render) decides. With the switch off —
 // as it ships — every line is §6's left column, and the word "compare" is on no screen. Form C shows the read's
 // question. No figure is ever drawn.
 
 import React, { useLayoutEffect, useRef } from 'react';
-import { exploreCompareRoute } from '../../config/exploreFlags';
+import { EXPLORE_COMPARE_ROUTE } from '../../config/exploreFlags';
 import { EXPLORE_COPY } from './exploreCopy';
 import { FORMS, QUESTION_MAX, atLimitOf, dateOf } from './exploreView';
 import { S, T, wash } from './exploreStyle';
@@ -135,7 +135,7 @@ export default function ExplorePanel({
   const helpId = `${fieldId}-help`;
   const edited = value !== question.text;
   const save = (kind) => <SaveToggle key="save" kind={kind} pressed={saved} busy={saveBusy} label={COPY.save} onToggle={onToggleSave} />;
-  const compare = exploreCompareRoute(); // the switch, at call time (K-2)
+  const compare = EXPLORE_COMPARE_ROUTE === true; // the switch, read at call time (K-2): the literal, which the build folds
   const group = question.broad ? <GroupBlock key="group" question={question} compare={compare} onOpenCompany={onOpenCompany} keyPrefix={`group:${question.id}`} /> : null;
 
   if (form === FORMS.LOADING) {

@@ -9,7 +9,7 @@
 import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('../../config/exploreFlags', () => ({ EXPLORE_MODES: ['off', 'allowlist', 'on'], EXPLORE_MODE: 'off', exploreMode: () => 'off', EXPLORE_COMPARE_ROUTE: false, exploreCompareRoute: () => false }));
+vi.mock('../../config/exploreFlags', () => ({ EXPLORE_MODES: ['off', 'allowlist', 'on'], EXPLORE_MODE: 'off', exploreMode: () => 'off', EXPLORE_COMPARE_ROUTE: false }));
 const read = vi.hoisted(() => vi.fn());
 vi.mock('../../services/sharedResearchService', () => ({ readExploreInvestigations: read }));
 vi.mock('../../firebase/config', () => ({ db: {} }));

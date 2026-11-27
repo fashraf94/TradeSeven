@@ -13,7 +13,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 import { EXPLORE_MODE, EXPLORE_MODES, exploreMode } from './exploreFlags.js';
-import { EXPLORE_COMPARE_ROUTE, exploreCompareRoute } from './exploreFlags.js';
+import { EXPLORE_COMPARE_ROUTE } from './exploreFlags.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SRC = readFileSync(path.join(HERE, 'exploreFlags.js'), 'utf8').replace(/\r\n/g, '\n');
@@ -83,7 +83,6 @@ describe('EXPLORE_COMPARE_ROUTE — the pin (BUILD_RULES §2; Amendment B §6, K
   it('is false — the compare build sets it, moving this row and the literal together', () => {
     // THE ROW THAT MOVES WITH A FLIP, in the compare build's own commit.
     expect(EXPLORE_COMPARE_ROUTE).toBe(false);
-    expect(exploreCompareRoute()).toBe(false);
   });
 
   it('is a plain boolean literal with a Pinned-by pointer naming this file, and its docstring says the compare build sets it', () => {
@@ -96,11 +95,10 @@ describe('EXPLORE_COMPARE_ROUTE — the pin (BUILD_RULES §2; Amendment B §6, K
     expect(doc).toContain('ROLLBACK:');
   });
 
-  it('the reader resolves at call time: true only for the literal true; the file reads it nowhere else', () => {
-    const body = /export function exploreCompareRoute\(\) \{\s*([^}]*)\}/.exec(SRC)[1];
-    expect(body.trim()).toBe('return EXPLORE_COMPARE_ROUTE === true;');
+  it('the file declares it once and reads it nowhere else; it has no reader function (a new entry export: the bundle reason in its docstring)', () => {
     const reads = SRC.split('\n').filter((l) => /\bEXPLORE_COMPARE_ROUTE\b/.test(l) && !/^\s*(\/\/|\*|\/\*)/.test(l));
-    expect(reads).toEqual([`export const EXPLORE_COMPARE_ROUTE = ${EXPLORE_COMPARE_ROUTE};`, '  return EXPLORE_COMPARE_ROUTE === true;']);
+    expect(reads).toEqual([`export const EXPLORE_COMPARE_ROUTE = ${EXPLORE_COMPARE_ROUTE};`]);
+    expect(SRC).not.toMatch(/export function \w*[Cc]ompare/);
   });
 
   it('never a DARK_BY_DESIGN key (not an *_ENABLED name, not a flag-source module), but noted by name in that block', () => {
@@ -110,7 +108,7 @@ describe('EXPLORE_COMPARE_ROUTE — the pin (BUILD_RULES §2; Amendment B §6, K
     expect(FEATURE_FLAGS).not.toMatch(/EXPLORE_COMPARE_ROUTE/);
   });
 
-  it('every reader outside this file calls exploreCompareRoute() inside a function, never the constant, never at module scope', () => {
+  it('every reader outside this file reads the literal at call time — `EXPLORE_COMPARE_ROUTE === true` inside a function, never at module scope — and the readers are exactly the panel and the hero', () => {
     const SRC_ROOT = path.join(HERE, '..');
     const files = [];
     const walk = (dir) => {
@@ -121,12 +119,17 @@ describe('EXPLORE_COMPARE_ROUTE — the pin (BUILD_RULES §2; Amendment B §6, K
     };
     walk(SRC_ROOT);
     const readers = [];
+    const wrong = [];
     for (const p of files) {
       if (p === path.join(HERE, 'exploreFlags.js')) continue;
-      const text = readFileSync(p, 'utf8').replace(/\r\n/g, '\n');
-      if (/\bEXPLORE_COMPARE_ROUTE\b/.test(text.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, ''))) readers.push(`constant: ${path.relative(SRC_ROOT, p)}`);
-      text.split('\n').forEach((line) => { if (/^\S.*\bexploreCompareRoute\(\)/.test(line)) readers.push(`module scope: ${path.relative(SRC_ROOT, p)}`); });
+      const code = readFileSync(p, 'utf8').replace(/\r\n/g, '\n').replace(/\/\*[\s\S]*?\*\//g, '').split('\n').map((l) => l.replace(/\/\/.*$/, ''));
+      code.forEach((line) => {
+        if (!/\bEXPLORE_COMPARE_ROUTE\b/.test(line) || /^import\b/.test(line)) return;
+        readers.push(path.relative(SRC_ROOT, p).split(path.sep).join('/'));
+        if (!/^\s+const compare = EXPLORE_COMPARE_ROUTE === true;\s*$/.test(line)) wrong.push(`${path.relative(SRC_ROOT, p)}: ${line.trim()}`);
+      });
     }
-    expect(readers).toEqual([]);
+    expect(wrong).toEqual([]);
+    expect(readers.sort()).toEqual(['components/Explore/ExploreHome.jsx', 'components/Explore/ExplorePanel.jsx']);
   });
 });
