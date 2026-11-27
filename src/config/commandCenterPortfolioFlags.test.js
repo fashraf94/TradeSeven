@@ -25,7 +25,7 @@ const GUARD = codeOf(GUARD_SOURCE);
 describe('COMMAND_CENTER_PORTFOLIO_HUB_ENABLED — the pin (ruling PH-20, BUILD_RULES §2)', () => {
   it('holds the shipped value (the flip PR moves this literal with the flag\'s)', () => {
     // THE ROW THAT MOVES WITH A FLIP, in the flip PR's own commit; a rollback moves it back.
-    expect(COMMAND_CENTER_PORTFOLIO_HUB_ENABLED).toBe(false);
+    expect(COMMAND_CENTER_PORTFOLIO_HUB_ENABLED).toBe(true);
   });
 
   it('is a plain boolean-literal export with a Pinned-by pointer naming this file', () => {
@@ -39,7 +39,7 @@ describe('COMMAND_CENTER_PORTFOLIO_HUB_ENABLED — the pin (ruling PH-20, BUILD_
     expect(SRC).not.toMatch(/\bimport\s*\(/);
     expect(SRC.match(/^export /gm)).toEqual(['export ']);
     expect(GUARD).toMatch(/^ {2}'src\/config\/commandCenterPortfolioFlags\.js',$/m);
-    expect(GUARD).toMatch(/^ {2}COMMAND_CENTER_PORTFOLIO_HUB_ENABLED:$/m);
+    expect(GUARD).not.toMatch(/^ {2}COMMAND_CENTER_PORTFOLIO_HUB_ENABLED:$/m);
   });
 
   it('the guard rows read the guard\'s code, not its comments: an entry commented out is no entry (value-neutral: a sample, not the guard)', () => {
