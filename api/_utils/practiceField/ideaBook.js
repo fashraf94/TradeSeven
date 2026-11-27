@@ -62,6 +62,31 @@ export function ideaBookIdFor(uid, opId) {
 }
 
 /**
+ * Build B6 (ruling B6-6, Astra B4-A01) — IS THE BOOK AT AN OPERATION'S ID THAT CREATION? Its own record of who made it names
+ * the same owner (`userId`), the same operation (`createOpId`), the same attribution agent and the same archetype. The ONE
+ * test createIdeaBook's replay and the founder's pending create_book_for both make. Pure.
+ */
+export function isOwnCreation(made, { uid, opId, attributionAgentId, archetypeCodeId }) {
+  return made?.userId === uid && made?.createOpId === opId
+    && made.attributionAgentId === attributionAgentId && made.archetypeCodeId === archetypeCodeId;
+}
+
+/**
+ * Build B6 (ruling B6-6) — THE BOOK A CREATION ALREADY MADE, read without the mode's gate: null when this operation made no
+ * book; otherwise createIdeaBook's own replay answer (the book, its creation epoch, `idempotentReplay: true`) when the book
+ * is this creation (isOwnCreation), or `op_id_conflict` when it is not. One read, no write. A creation that committed its
+ * book is answered with that book even after its owner left the player list.
+ * @returns {Promise<null | { ok: true, bookId: string, epochId: string, idempotentReplay: true } | { ok: false, code: 'op_id_conflict', bookId: string }>}
+ */
+export async function madeIdeaBookOf(db, { uid, attributionAgentId, archetypeCodeId, opId }) {
+  const bookId = ideaBookIdFor(uid, opId);
+  const snap = await db.collection('mandates').doc(bookId).get();
+  if (!snap.exists) return null;
+  if (!isOwnCreation(snap.data(), { uid, opId, attributionAgentId, archetypeCodeId })) return { ok: false, code: 'op_id_conflict', bookId };
+  return { ok: true, bookId, epochId: FIRST_EPOCH_ID, idempotentReplay: true }; // the creation's epoch, as createIdeaBook answers
+}
+
+/**
  * Build B4 (ruling B4-3): is `id` an archetype the registry lists — the check createIdeaBook makes (`unknown_archetype`),
  * for the founder's create_book_for to refuse a named archetype before anything is recorded. Pure.
  */
@@ -233,9 +258,8 @@ export async function createIdeaBook(db, { uid, attributionAgentId, archetypeCod
     // for today's open book: a creation that committed book A, replayed after A closed and B opened, answers A — never
     // `open_book_exists` naming B. The same operation asking for a different book is a conflict, not a replay.
     if (bookSnap.exists) {
-      const made = bookSnap.data();
-      const ours = made?.userId === uid && made?.createOpId === opId;
-      if (!ours || made.attributionAgentId !== attributionAgentId || made.archetypeCodeId !== archetypeCodeId) return { ok: false, code: 'op_id_conflict', bookId };
+      // (Build B6: the one creation-identity test, isOwnCreation — the same four fields as before, unchanged.)
+      if (!isOwnCreation(bookSnap.data(), { uid, opId, attributionAgentId, archetypeCodeId })) return { ok: false, code: 'op_id_conflict', bookId };
       return { ok: true, bookId, epochId, idempotentReplay: true }; // the creation's epoch: a book is created at its first
     }
     const claim = claimSnap.exists ? claimSnap.data() : null;

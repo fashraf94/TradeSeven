@@ -20,6 +20,12 @@
 //
 // THE MANIFEST records what went in — its hash, its byte count, the counts of each source, the identity's version, the
 // model and the ceilings — and never the text itself.
+//
+// BUILD B6 (rulings B6-1, B6-2): NO DESK NAME IN ANYTHING THE MODEL READS. The engine's desk ids and names (agentConfig.js
+// DESKS) stay the engine's; the model is told what each desk is in plain words — the player's own agent on the medium and
+// long slots, the book's archetype on the short slot — to write as "I" and call the other one "the other desk", and to name
+// an idea by its slot, never by its id (the ids stay here and in the tool: the actions use them). What the prompt QUOTES —
+// the desk's own last notes, an idea's thesis, a saved thesis — is quoted as stored (build report, reading R-1).
 
 import { createHash } from 'node:crypto';
 import { getArchetypeDefinition } from '../archetypeRegistry.js';
@@ -36,8 +42,21 @@ import { slotSessions } from './windows.js';
 export const AGENT_PROMPT_INPUT_SOURCES = Object.freeze([
   'desk_identity', 'book_state', 'prior_notes', 'candidates', 'saved_theses', 'static_scaffold',
 ]);
-/** The prompt's own version (its own family). */
-export const AGENT_PROMPT_VERSION = 1;
+/**
+ * The prompt's own version (its own family). 2 (build B6, rulings B6-1, B6-2): no desk name anywhere the model reads — the
+ * archetype identity's first line and the system text's desk line say what each desk is in plain words — and the answer's
+ * two writing rules (write as "I", call the other one "the other desk"; name an idea by its slot, never by its id).
+ */
+export const AGENT_PROMPT_VERSION = 2;
+
+/**
+ * Build B6 (ruling B6-1): what each desk IS, in plain words — never a desk name, and never player text (not the agent's
+ * given name). The slots each one works are the engine's (DESKS).
+ */
+const DESK_IN_WORDS = Object.freeze({
+  shadow: 'the player\'s own agent',
+  archetype: 'the book\'s archetype',
+});
 
 const usd = (n) => (Number.isFinite(n) ? `$${n.toFixed(2)}` : 'n/a');
 const pctOf = (f) => (Number.isFinite(f) ? `${(f * 100).toFixed(1)}%` : 'n/a');
@@ -58,8 +77,9 @@ export function archetypeIdentityOf(epoch) {
   const def = getArchetypeDefinition(codeId, { identityVersion: version });
   if (!def) return null;
   const name = def.displayName || codeId;
+  // Build B6 (ruling B6-1): what the desk is, in plain words — the book's archetype — never a desk name.
   const lines = [
-    `You are the archetype desk of this player's paper idea book, working its short (10-session) slot under the frozen identity of the ${name}.`,
+    `You are this book's archetype, working the short (10-session) slot of this player's paper idea book under the frozen identity of the ${name}.`,
   ];
   if (def.identity?.reveal) lines.push(def.identity.reveal);
   if (def.identity?.voice) lines.push(`Your voice: ${def.identity.voice}`);
@@ -82,7 +102,10 @@ function systemText({ desk, identity, thesesOn }) {
   const lines = [identity.text, ''];
   lines.push('## This book, and what you do in it');
   lines.push(`This is the player's paper idea book: paper money, three slots — short (${slotSessions('short')} sessions), medium (${slotSessions('medium')}) and long (${slotSessions('long')}). Code admits ideas, enters them, sells at their price lines, settles them on their review session and keeps the books. You manage your desk's ideas and draft ideas for its empty slots; what you send is a proposal that code checks.`);
-  lines.push(`Your desk: ${d.name}. Your slots: ${d.slots.join(' and ')}. You act only on your own ideas and draft only for your own empty slots; anything else is refused.`);
+  // Build B6 (ruling B6-1): both desks in plain words, and which one this is — in place of "Your desk: {its name}".
+  const other = desk === 'shadow' ? 'archetype' : 'shadow';
+  lines.push(`The book is worked by two desks: ${DESK_IN_WORDS.shadow}, on the ${DESKS.shadow.slots.join(' and ')} slots, and ${DESK_IN_WORDS.archetype}, on the ${DESKS.archetype.slots.join(' and ')} slot. You are ${DESK_IN_WORDS[desk]}; ${DESK_IN_WORDS[other]} is the other desk.`);
+  lines.push(`Your slots: ${d.slots.join(' and ')}. You act only on your own ideas and draft only for your own empty slots; anything else is refused.`);
   lines.push('');
   lines.push('## What you do not have');
   lines.push('You carry no game memory, no lessons and no player chat. Every figure you may use is in the message below.');
@@ -99,6 +122,9 @@ function systemText({ desk, identity, thesesOn }) {
   lines.push('## Your answer');
   lines.push(`Call the tool ${AGENT_TOOL_NAME} exactly once, and write nothing else. Give exactly one action for each of your open ideas: hold (change nothing) or exit (settle it early; code sells at the next session's first window). Write a note on the book of at most ${AGENT_NOTE_MAX_CODE_POINTS} characters, and each reason in one line of at most ${AGENT_REASON_MAX_CODE_POINTS}.`);
   lines.push('One idea is one observation. Never use the words "validated", "proven" or "supported" about any idea or result.');
+  // Build B6 (rulings B6-1, B6-2): how the desk writes. The ids stay in this prompt and in the tool: the actions use them.
+  lines.push('Write as "I", and call the other desk "the other desk".');
+  lines.push('Name an idea by its slot ("the medium idea"), never by its id, in your note, in every reason and in every thesis. An idea\'s id goes only in an action\'s ideaId.');
   lines.push('This is a routine daily check with a small output budget: think briefly, then call the tool.');
   if (thesesOn) {
     lines.push('');

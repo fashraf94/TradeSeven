@@ -54,7 +54,7 @@ describe('the prompt (§3)', () => {
     expect(r.ok).toBe(true);
     const system = r.content.system[0].text;
     const msg = r.content.messages[0].content;
-    expect(system).toMatch(/You are the Shadow desk/);
+    expect(system.startsWith('You are the player\'s own agent, their Command Center agent, working the medium (30-session) and long (60-session) slots')).toBe(true); // B6-1: no desk name
     expect(system).toMatch(/judge it against its own comparison/);
     expect(system).toMatch(/no game memory, no lessons and no player chat/);
     expect(system).toMatch(/Never use the words "validated", "proven" or "supported"/);
@@ -74,7 +74,7 @@ describe('the prompt (§3)', () => {
   it('the archetype desk: the epoch\'s FROZEN archetype identity, and it says plainly it has no chart evidence; the other desk\'s idea is context only', () => {
     const r = requestOn('archetype');
     const system = r.content.system[0].text;
-    expect(system).toMatch(/You are the archetype desk .* under the frozen identity of the Trend Follower/);
+    expect(system.startsWith('You are this book\'s archetype, working the short (10-session) slot of this player\'s paper idea book under the frozen identity of the Trend Follower.')).toBe(true); // B6-1: no desk name
     expect(system).toMatch(/You have no chart evidence yet\. Make no chart reads/);
     expect(r.content.messages[0].content).toMatch(/## Other ideas on the book — the other desk's, and yours that are entering, selling or settling \(context only: you may not act on them\)\n- idea_aaa/);
     expect(r.manifest.identity).toEqual({ kind: 'archetype', codeId: 'momentum_chaser', identityVersion: EPOCH.archetypeIdentityVersion });
