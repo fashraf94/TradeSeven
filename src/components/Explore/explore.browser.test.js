@@ -1,14 +1,21 @@
-// Explore Build 1 — THE PAGE IN A REAL BROWSER (spec §3.9, §9 checks 1–5; build prompt Tests, K-14). jsdom lays out
+// Explore Build 1 and Build 2 — THE PAGE IN A REAL BROWSER (Build 1 spec §3.9, §9 checks 1–5; Build 2 spec
+// docs/specs/20261125_EXPLORE_BUILD_2_SPEC_AMENDMENT_B.md §8 checks 1, 2, 5, 15, 16; build prompt Tests). jsdom lays out
 // nothing, so these are measured on the smoke page (the smoke branch's `?exploreFixture=` loader: the real Search page
 // at 'on', every read answered from the committed fixtures, the real sheet body answered from the sheet's own) at
 // 1280×900, 393×852 and 320×700:
-//   - no element on an Explore screen has its own vertical scroll, and nothing scrolls sideways;
-//   - on the reader, the primary action is inside the viewport — the panel's button or the pinned bar's, once —
-//     at the top, the middle and the bottom of the page (and every tap target is 44 px tall);
-//   - opening and closing the sheet leaves scrollY unchanged and returns focus to the opener; after the walk's
-//     close the panel reads Continue research, and the card In progress;
-//   - inside a story the page's tab row is not drawn, and "← Explore" brings it back with the scroll and the focus
-//     the player left (founder ruling F-1, Nov 22).
+//   - no element on an Explore screen has its own vertical scroll, nothing scrolls sideways, every tap target is 44 px;
+//   - on both kinds of story, the primary action is inside the viewport — the panel's button or the pinned bar's,
+//     once — at the top, the middle and the bottom of the page;
+//   - Tab follows the visual order, and no focused control hides under the bar or the pinned jump row;
+//   - inside a story the page draws no heading and no tab row (B-12), and back brings both back at the scroll and the
+//     focus the player left;
+//   - one list of connections at every size, a branch opening in place; a door into the deep story and back, at the
+//     same scroll with the same branch open and focus on the door; the way up landing on the overview at that branch;
+//   - below 1000 px the jump row pins, marks the section in view, and its back arrow works mid-page; the bar's
+//     question jumps to the chooser;
+//   - a company lead outside the game's 54 (CRWV) opens the stock research page;
+//   - the walk: the front page → the overview → its door → the deep story → Work this idea → the sheet → close
+//     (scrollY kept, focus back) → Continue research → back to the overview at the branch left.
 //
 //   EXPLORE_BROWSER_URL=http://127.0.0.1:<port> or https://<smoke preview>   (the page)
 //   EXPLORE_BROWSER_CHANNEL=msedge                                          (optional; empty → Playwright's Chromium)
@@ -23,23 +30,26 @@ const BASE = (process.env.EXPLORE_BROWSER_URL || '').replace(/\/$/, '');
 const CHANNEL = process.env.EXPLORE_BROWSER_CHANNEL ?? 'msedge';
 const ROW = 120_000;
 const SIZES = [[1280, 900], [393, 852], [320, 700]];
+const OV = 'ai-buildout';
+const DEEP = 'dominion-data-centers';
 let browser;
 
-async function sceneAt(scene, [w, h], delay = 0) {
+async function sceneAt(scene, [w, h], delay = 0, extra = '') {
   const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 1, isMobile: w < 768, hasTouch: w < 768 });
   const page = await ctx.newPage();
-  await page.goto(`${BASE}/?exploreFixture=${scene}&delay=${delay}`, { waitUntil: 'domcontentloaded', timeout: ROW });
+  await page.goto(`${BASE}/?exploreFixture=${scene}&delay=${delay}${extra}`, { waitUntil: 'domcontentloaded', timeout: ROW });
   await page.waitForSelector('[data-explore-tab]', { timeout: ROW });
-  // never measure an empty page: every scene here draws cards or a story's panel (a row once passed on a page with no stories)
-  // (any one DRAWN: under a story, home's cards are mounted but hidden)
-  await page.waitForFunction(() => [...document.querySelectorAll('[data-explore-card], [data-explore-panel]')].some((el) => el.getBoundingClientRect().height > 0), null, { timeout: ROW });
+  // never measure an empty page: every scene here draws the hero, cards or a story's panel (any one DRAWN: under a
+  // story, the front page is mounted but hidden)
+  await page.waitForFunction(() => [...document.querySelectorAll('[data-explore-hero], [data-explore-card], [data-explore-panel]')].some((el) => el.getBoundingClientRect().height > 0), null, { timeout: ROW });
   await page.waitForTimeout(700); // the page's own entrance animation (framer, 0.3 s) settles
   return { ctx, page };
 }
+const inStory = (page) => page.waitForSelector('[data-explore-screen="story"] [data-explore-panel]', { timeout: ROW });
 
 /** Every element under the Explore roots that scrolls on its own, and whether the document scrolls sideways. */
 const scrollersOf = (page) => page.evaluate(() => {
-  const roots = [...document.querySelectorAll('[data-explore-tab], [data-explore-pinned-bar]')];
+  const roots = [...document.querySelectorAll('[data-explore-tab], [data-explore-pinned-bar], [data-explore-jump="pinned"]')];
   const own = [];
   for (const root of roots) {
     for (const el of [root, ...root.querySelectorAll('*')]) {
@@ -51,7 +61,7 @@ const scrollersOf = (page) => page.evaluate(() => {
     }
   }
   const doc = document.scrollingElement;
-  const wide = [...document.querySelectorAll('[data-explore-tab] *')].filter((el) => !el.closest('[hidden]') && el.getBoundingClientRect().right > innerWidth + 1).map((el) => el.tagName.toLowerCase());
+  const wide = [...document.querySelectorAll('[data-explore-tab] *, [data-explore-jump="pinned"] *')].filter((el) => !el.closest('[hidden]') && el.getBoundingClientRect().right > innerWidth + 1).map((el) => `${el.tagName.toLowerCase()}:${(el.textContent || '').trim().slice(0, 20)}`);
   return { own, sideways: doc.scrollWidth > innerWidth + 1, wide: wide.slice(0, 5) };
 });
 
@@ -70,13 +80,19 @@ const actionOf = (page) => page.evaluate(() => {
   return { panel: at(document.querySelector('[data-explore-primary]')), bar: at(document.querySelector('[data-explore-bar-action]')) };
 });
 
-/** Every visible tap target under the Explore tab under 44 px tall. */
-const smallTargetsOf = (page) => page.evaluate(() => [...document.querySelectorAll('[data-explore-tab] button, [data-explore-tab] input, [data-explore-tab] a, [data-explore-pinned-bar] button')]
+/** Every visible tap target under the Explore roots under 44 px tall. */
+const smallTargetsOf = (page) => page.evaluate(() => [...document.querySelectorAll('[data-explore-tab] button, [data-explore-tab] input, [data-explore-tab] a, [data-explore-pinned-bar] button, [data-explore-jump="pinned"] button')]
   .filter((el) => !el.closest('[hidden]') && el.getBoundingClientRect().width > 0)
   .map((el) => ({ h: el.getBoundingClientRect().height, t: (el.textContent || el.getAttribute('placeholder') || el.tagName).trim().slice(0, 30) }))
   .filter((x) => x.h < 43.5));
 
-describe.skipIf(!BASE)('Explore in a real browser (spec §9 checks 1–5)', () => {
+/** Opens every branch of the story on screen (so its leads and doors are measured too). */
+const openAllBranches = (page) => page.evaluate(() => { for (const b of document.querySelectorAll('[data-explore-screen="story"] [data-explore-branch-toggle][aria-expanded="false"]')) b.click(); });
+/** The back control on screen: the jump row's arrow below 1000 px (in the flow at the top), the back link above. */
+const backOf = (w) => (w < 1000 ? '[data-explore-screen="story"] [data-explore-jump="flow"] [data-explore-jump-back]' : '[data-explore-screen="story"] [data-explore-back]');
+const tabRowOf = (page) => page.evaluate(() => [...document.querySelectorAll('button')].filter((b) => b.style.borderRadius === '24px' && b.getBoundingClientRect().height > 0).map((b) => b.textContent.trim()));
+
+describe.skipIf(!BASE)('Explore in a real browser (Build 1 §9 checks 1–5; Build 2 §8 checks 1, 2, 5, 15, 16)', () => {
   beforeAll(async () => {
     const { chromium } = await import('playwright-core');
     browser = await chromium.launch({ headless: true, ...(CHANNEL ? { channel: CHANNEL } : {}) });
@@ -85,13 +101,15 @@ describe.skipIf(!BASE)('Explore in a real browser (spec §9 checks 1–5)', () =
 
   for (const size of SIZES) {
     const [w, h] = size;
-    it(`${w}×${h}: home, story, in progress, finished, no access, the limit — no inner scroll, nothing sideways, 44 px targets`, async () => {
-      for (const scene of ['home', 'home-progress', 'story', 'story-progress', 'story-finished', 'gated', 'limit', 'read-failed']) {
+    it(`${w}×${h}: every scene — no inner scroll, nothing sideways, 44 px targets, every branch open`, async () => {
+      for (const scene of ['home', 'home-returning', 'home-empty-rows', 'overview', 'overview-no-door', 'deep', 'deep-no-parent', 'broad-question', 'gated', 'limit', 'read-failed', 'old-shape', 'compare-on']) {
         const { ctx, page } = await sceneAt(scene, size);
         try {
+          await openAllBranches(page);
+          await page.waitForTimeout(150);
           for (const y of [0, 'mid', 'end']) {
             await page.evaluate((to) => { const max = document.scrollingElement.scrollHeight - innerHeight; window.scrollTo(0, to === 'mid' ? max / 2 : to === 'end' ? max : 0); }, y);
-            await page.waitForTimeout(150);
+            await page.waitForTimeout(200);
             const s = await scrollersOf(page);
             expect(s, `${scene} at ${y}`).toEqual({ own: [], sideways: false, wide: [] });
           }
@@ -100,12 +118,13 @@ describe.skipIf(!BASE)('Explore in a real browser (spec §9 checks 1–5)', () =
           await ctx.close();
         }
       }
-    }, ROW * 4);
+    }, ROW * 6);
 
-    it(`${w}×${h}: on the reader the primary action is on screen at the top, the middle and the bottom — once`, async () => {
-      for (const scene of ['story', 'story-progress', 'story-finished']) {
+    it(`${w}×${h}: on both kinds of story the primary action is on screen at the top, the middle and the bottom — once`, async () => {
+      for (const scene of ['overview', 'deep', 'broad-question']) {
         const { ctx, page } = await sceneAt(scene, size);
         try {
+          await inStory(page);
           const max = await page.evaluate(() => document.scrollingElement.scrollHeight - innerHeight);
           expect(max, `${scene}: the page is taller than the screen`).toBeGreaterThan(0);
           for (const to of [0, Math.round(max / 3), Math.round(max / 2), Math.round((2 * max) / 3), max]) {
@@ -121,13 +140,13 @@ describe.skipIf(!BASE)('Explore in a real browser (spec §9 checks 1–5)', () =
       }
     }, ROW * 3);
 
-    it(`${w}×${h}: Tab follows the page's visual order, and no focused control is ever hidden under the pinned bar (review C-1, C-2)`, async () => {
-      for (const scene of ['story', 'home-progress']) {
+    it(`${w}×${h}: Tab follows the page's visual order, and no focused control is ever hidden under the bar or the pinned row`, async () => {
+      for (const scene of ['overview', 'deep', 'home-returning']) {
         const { ctx, page } = await sceneAt(scene, size);
         try {
           await page.evaluate(() => { window.scrollTo(0, 0); document.querySelector('[data-explore-tab]').querySelector('[tabindex="-1"]')?.focus({ preventScroll: true }); });
           const seen = [];
-          for (let i = 0; i < 40; i += 1) {
+          for (let i = 0; i < 60; i += 1) {
             await page.keyboard.press('Tab');
             await page.waitForTimeout(60);
             const at = await page.evaluate(() => {
@@ -135,16 +154,17 @@ describe.skipIf(!BASE)('Explore in a real browser (spec §9 checks 1–5)', () =
               if (!el || !el.closest('[data-explore-tab]')) return null;
               const r = el.getBoundingClientRect();
               const bar = document.querySelector('[data-explore-pinned-bar]')?.getBoundingClientRect() ?? null;
-              const covered = bar ? r.bottom > bar.top + 1 && r.top < bar.bottom : false;
+              const row = document.querySelector('[data-explore-jump="pinned"]')?.getBoundingClientRect() ?? null;
+              const covered = (bar ? r.bottom > bar.top + 1 && r.top < bar.bottom : false) || (row ? r.top < row.bottom - 1 && r.bottom > row.top : false);
               return { y: Math.round(r.top + window.scrollY), x: Math.round(r.left), covered, what: (el.textContent || el.tagName).trim().slice(0, 30) };
             });
             if (!at) break; // left the Explore tab
             seen.push(at);
           }
           expect(seen.length, scene).toBeGreaterThan(3);
-          expect(seen.filter((s) => s.covered), `${scene}: focused under the bar`).toEqual([]);
+          expect(seen.filter((s) => s.covered), `${scene}: focused under the bar or the row`).toEqual([]);
           if (w < 1000) {
-            // one column: each next control sits at or below the last one
+            // one column: each next control sits at or below the last one (a row of tickers: at the same height)
             const back = seen.filter((s, i) => i > 0 && s.y < seen[i - 1].y - 4);
             expect(back, `${scene}: ${JSON.stringify(seen.map((s) => [s.y, s.what]))}`).toEqual([]);
           }
@@ -152,104 +172,184 @@ describe.skipIf(!BASE)('Explore in a real browser (spec §9 checks 1–5)', () =
           await ctx.close();
         }
       }
-    }, ROW * 2);
+    }, ROW * 3);
 
-    it(`${w}×${h}: a sheet opened from the pinned bar — after the close and the read, focus is never on <body> (review C-3)`, async () => {
-      const { ctx, page } = await sceneAt('walk', size, 300);
-      try {
-        await page.click('[data-explore-card="sample-ai-buildout"] [data-explore-card-primary="read"]');
-        await page.waitForSelector('[data-explore-primary]', { timeout: ROW });
-        await page.evaluate(() => window.scrollTo(0, 0));
-        await page.waitForSelector('[data-explore-bar-action]', { timeout: ROW });
-        await page.click('[data-explore-bar-action]');
-        await page.waitForSelector('[data-shared-research-body]', { timeout: ROW });
-        await page.keyboard.press('Escape');
-        await page.waitForSelector('[data-explore-sheet-overlay]', { state: 'detached', timeout: ROW });
-        await page.waitForFunction(() => document.querySelector('[data-explore-panel]')?.dataset.explorePanel === 'B', null, { timeout: ROW });
-        await page.waitForTimeout(400);
-        expect(await page.evaluate(() => document.activeElement !== document.body)).toBe(true);
-        await page.evaluate(() => document.querySelector('[data-explore-primary]').scrollIntoView({ block: 'center' }));
-        await page.waitForTimeout(500);
-        expect(await page.evaluate(() => ({ body: document.activeElement === document.body, bar: Boolean(document.querySelector('[data-explore-pinned-bar]')) }))).toEqual({ body: false, bar: false });
-      } finally {
-        await ctx.close();
-      }
-    }, ROW * 2);
-
-    it(`${w}×${h}: inside a story the page's tab row is gone and "← Explore" brings it back — top and title on opening, the scroll left and the opener on return (F-1)`, async () => {
+    it(`${w}×${h}: inside a story no heading and no tab row; back brings both back — top and title on opening, the scroll left and the opener on return`, async () => {
       const { ctx, page } = await sceneAt('home', size);
       try {
-        // as Safari (no scroll anchoring): Chromium's anchoring would quietly undo a row that returns after the scroll
-        await page.addStyleTag({ content: '* { overflow-anchor: none !important; }' });
-        const tabRow = () => page.evaluate(() => [...document.querySelectorAll('button')].filter((b) => b.style.borderRadius === '24px' && b.getBoundingClientRect().height > 0).map((b) => b.textContent.trim()));
-        const shown = await tabRow();
+        await page.addStyleTag({ content: '* { overflow-anchor: none !important; }' }); // as Safari: no scroll anchoring
+        const shown = await tabRowOf(page);
         expect(shown.slice(0, 2)).toEqual(['Explore', 'Markets']);
-        // the last card's Read the story, brought to the middle of the screen and marked, so the return can be measured
         await page.evaluate(() => {
-          const reads = [...document.querySelectorAll('[data-explore-card] [data-explore-card-read], [data-explore-card] [data-explore-card-primary="read"]')].filter((b) => b.getBoundingClientRect().height > 0);
-          const b = reads.at(-1);
+          const b = [...document.querySelectorAll('[data-explore-card] [data-explore-card-primary="read"]')].filter((x) => x.getBoundingClientRect().height > 0).at(-1);
           b.setAttribute('data-probe-opener', '');
           b.scrollIntoView({ block: 'center' });
         });
         await page.waitForTimeout(300);
         const before = await page.evaluate(() => ({ y: Math.round(window.scrollY), top: Math.round(document.querySelector('[data-probe-opener]').getBoundingClientRect().top) }));
-        console.log(`[F-1 ${w}x${h}] home scrolled to ${before.y}, the opener at ${before.top}`);
         await page.click('[data-probe-opener]');
-        await page.waitForSelector('[data-explore-screen="story"]', { timeout: ROW });
+        await inStory(page);
         await page.waitForTimeout(400);
-        const inStory = await page.evaluate(() => ({
-          y: Math.round(window.scrollY),
-          title: document.activeElement?.hasAttribute('data-explore-story-title') ?? false,
-          heading: document.querySelector('h1')?.textContent.trim(),
-          back: Boolean(document.querySelector('[data-explore-back]')),
-        }));
-        expect(await tabRow()).toEqual([]);
-        expect(inStory).toEqual({ y: 0, title: true, heading: 'Explore', back: true });
-        await page.click('[data-explore-back]');
-        await page.waitForFunction(() => { const h = document.querySelector('[data-explore-home-holder]'); return h && !h.hidden; }, null, { timeout: ROW });
+        expect(await tabRowOf(page)).toEqual([]);
+        expect(await page.evaluate(() => ({ y: Math.round(window.scrollY), title: document.activeElement?.hasAttribute('data-explore-story-title') ?? false, heading: document.querySelector('h1')?.textContent.trim() ?? null }))).toEqual({ y: 0, title: true, heading: null });
+        await page.click(backOf(w));
+        await page.waitForFunction(() => { const x = document.querySelector('[data-explore-home-holder]'); return x && !x.hidden; }, null, { timeout: ROW });
         await page.waitForTimeout(400);
-        expect(await tabRow()).toEqual(shown);
+        expect(await tabRowOf(page)).toEqual(shown);
         const after = await page.evaluate(() => ({ y: Math.round(window.scrollY), top: Math.round(document.querySelector('[data-probe-opener]').getBoundingClientRect().top), focus: document.activeElement?.hasAttribute('data-probe-opener') ?? false }));
-        // the row is back BEFORE the scroll is restored: the opener sits where it was on screen (±1 px)
         expect({ ...after, y: Math.abs(after.y - before.y) <= 1 ? before.y : after.y, top: Math.abs(after.top - before.top) <= 1 ? before.top : after.top }).toEqual({ ...before, focus: true });
       } finally {
         await ctx.close();
       }
     }, ROW * 2);
 
-    it(`${w}×${h}: the walk — Work this idea opens the sheet, close leaves scrollY and returns focus; Continue research then`, async () => {
-      // every answer 600 ms late, so the close can be measured before the read after it lands
-      const { ctx, page } = await sceneAt('walk', size, 600);
+    it(`${w}×${h}: one list of connections, a branch opening in place; its door to the deep story and back — the same scroll, the branch open, focus on the door; the way up lands at the branch`, async () => {
+      const { ctx, page } = await sceneAt('overview', size);
       try {
-        await page.click('[data-explore-card="sample-ai-buildout"] [data-explore-card-primary="read"]');
-        await page.waitForSelector('[data-explore-primary]', { timeout: ROW });
-        await page.fill('[data-explore-question-input]', 'Which chip suppliers name a data-center buyer in a filing?');
-        await page.evaluate(() => document.querySelector('[data-explore-primary]').scrollIntoView({ block: 'center' }));
-        await page.waitForTimeout(250);
-        const before = await page.evaluate(() => ({ y: window.scrollY, top: Math.round(document.querySelector('[data-explore-primary]').getBoundingClientRect().top) }));
-        await page.click('[data-explore-primary]');
-        await page.waitForSelector('[data-explore-sheet-close]', { timeout: ROW });
-        await page.waitForSelector('[data-shared-research-body]', { timeout: ROW });
-        await page.waitForTimeout(800);
-        expect(await page.evaluate(() => document.activeElement?.hasAttribute('data-explore-sheet-close') ?? false)).toBe(true);
-        expect(await page.evaluate(() => window.scrollY)).toBe(before.y);
-        await page.click('[data-explore-sheet-close]');
-        await page.waitForSelector('[data-explore-sheet-overlay]', { state: 'detached', timeout: ROW });
-        // the close itself: the page where it was, focus on the opener, the read not yet answered (form A still)
-        const atClose = await page.evaluate(() => ({ y: window.scrollY, focus: document.activeElement?.hasAttribute('data-explore-primary') ?? false, form: document.querySelector('[data-explore-panel]')?.dataset.explorePanel }));
-        expect(atClose).toEqual({ y: before.y, focus: true, form: 'A' });
-        await page.waitForFunction(() => document.querySelector('[data-explore-panel]')?.dataset.explorePanel === 'B', null, { timeout: ROW });
-        await page.waitForTimeout(100);
-        // the read landed: form B above the SAME button, kept where it was on screen
-        const after = await page.evaluate(() => ({ top: Math.round(document.querySelector('[data-explore-primary]').getBoundingClientRect().top), focus: document.activeElement?.dataset?.explorePrimary ?? null, label: document.querySelector('[data-explore-primary]')?.textContent.trim() }));
-        expect({ ...after, top: Math.abs(after.top - before.top) <= 1 ? before.top : after.top }).toEqual({ top: before.top, focus: 'continue', label: 'Continue research' }); // sub-pixel scroll: ±1 px
-        await page.click('[data-explore-back]');
-        await page.waitForSelector('[data-explore-screen="home"]:not([hidden])', { timeout: ROW }).catch(() => {});
-        const cardState = await page.evaluate(() => document.querySelector('[data-explore-card="sample-ai-buildout"] [data-explore-state]')?.textContent.trim());
-        expect(cardState).toMatch(/^In progress/);
+        await inStory(page);
+        expect(await page.evaluate(() => [...document.querySelectorAll('[data-explore-screen="story"] [data-explore-chain]')].map((c) => c.dataset.exploreChain))).toEqual(['story']);
+        expect(await page.evaluate(() => document.querySelectorAll('[data-explore-screen="story"] [data-explore-connection]').length)).toBe(5);
+        await page.click('[data-explore-screen="story"] [data-explore-branch-toggle="power"]');
+        const opened = await page.evaluate(() => {
+          const d = document.querySelector('[data-explore-branch-detail="power"]');
+          const li = document.querySelector('[data-explore-screen="story"] [data-explore-branch="power"]');
+          return { inside: li.contains(d), tall: Math.round(d.getBoundingClientRect().height) > 100, lists: document.querySelectorAll('[data-explore-screen="story"] [data-explore-chain]').length };
+        });
+        expect(opened).toEqual({ inside: true, tall: true, lists: 1 });
+        await page.evaluate(() => document.querySelector(`[data-explore-door="dominion-data-centers"]`).scrollIntoView({ block: 'center' }));
+        await page.waitForTimeout(300);
+        const before = await page.evaluate(() => Math.round(window.scrollY));
+        await page.click(`[data-explore-screen="story"] [data-explore-door="${DEEP}"]`);
+        await page.waitForFunction(() => document.querySelector('[data-explore-screen="story"]')?.dataset.exploreStoryKind === 'deep', null, { timeout: ROW });
+        await page.waitForTimeout(400);
+        expect(await page.evaluate(() => ({ y: Math.round(window.scrollY), title: document.activeElement?.hasAttribute('data-explore-story-title') ?? false }))).toEqual({ y: 0, title: true });
+        await page.click(backOf(w));
+        await page.waitForFunction(() => document.querySelector('[data-explore-screen="story"]')?.dataset.exploreStoryKind === 'overview', null, { timeout: ROW });
+        await page.waitForTimeout(400);
+        const back = await page.evaluate(() => ({ y: Math.round(window.scrollY), open: document.querySelector('[data-explore-branch-toggle="power"]').getAttribute('aria-expanded'), focus: document.activeElement?.dataset?.exploreDoor ?? null }));
+        expect({ ...back, y: Math.abs(back.y - before) <= 1 ? before : back.y }).toEqual({ y: before, open: 'true', focus: DEEP });
+        // the way up: from the deep story to the overview at its branch, open and on screen below any pinned row
+        await page.click(`[data-explore-screen="story"] [data-explore-door="${DEEP}"]`);
+        await page.waitForFunction(() => document.querySelector('[data-explore-screen="story"]')?.dataset.exploreStoryKind === 'deep', null, { timeout: ROW });
+        await page.waitForTimeout(300);
+        await page.click('[data-explore-way-up]');
+        await page.waitForFunction(() => document.querySelector('[data-explore-screen="story"]')?.dataset.exploreStoryKind === 'overview', null, { timeout: ROW });
+        await page.waitForTimeout(500);
+        const landed = await page.evaluate(() => {
+          const t = document.querySelector('[data-explore-branch-toggle="power"]');
+          const r = t.getBoundingClientRect();
+          const row = document.querySelector('[data-explore-jump="pinned"]')?.getBoundingClientRect() ?? null;
+          return { open: t.getAttribute('aria-expanded'), focus: document.activeElement === t, onScreen: r.top >= (row ? row.bottom - 1 : 0) && r.bottom <= innerHeight };
+        });
+        expect(landed).toEqual({ open: 'true', focus: true, onScreen: true });
       } finally {
         await ctx.close();
       }
     }, ROW * 2);
+
+    if (w < 1000) {
+      it(`${w}×${h}: the jump row pins once scrolled past, marks the section in view, jumps, and its back arrow works mid-page; the bar's question jumps to the chooser`, async () => {
+        const { ctx, page } = await sceneAt('overview', size);
+        try {
+          await inStory(page);
+          expect(await page.evaluate(() => document.querySelector('[data-explore-jump="pinned"]'))).toBeNull();
+          const marked = () => page.evaluate(() => document.querySelector('[data-explore-jump="pinned"] [aria-current="location"]')?.dataset.exploreJumpTo ?? null);
+          for (const [section, sel] of [['connections', '[data-explore-connections] h3'], ['questions', '[data-explore-questions] h3']]) {
+            await page.evaluate((s) => { const el = document.querySelector(`[data-explore-screen="story"] ${s}`); window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - 60); }, sel);
+            await page.waitForTimeout(400);
+            const pinned = await page.evaluate(() => { const r = document.querySelector('[data-explore-jump="pinned"]')?.getBoundingClientRect(); return r ? { top: Math.round(r.top), h: Math.round(r.height) } : null; });
+            expect(pinned, section).toEqual({ top: 0, h: expect.any(Number) });
+            expect(await marked(), section).toBe(section);
+          }
+          await page.click('[data-explore-jump="pinned"] [data-explore-jump-to="connections"]');
+          await page.waitForTimeout(300);
+          const jumped = await page.evaluate(() => {
+            const head = document.querySelector('[data-explore-screen="story"] [data-explore-connections] h3');
+            const row = document.querySelector('[data-explore-jump="pinned"]').getBoundingClientRect();
+            return { focus: document.activeElement === head, below: head.getBoundingClientRect().top >= row.bottom - 1 };
+          });
+          expect(jumped).toEqual({ focus: true, below: true });
+          expect(await marked()).toBe('connections');
+          // the bar's question: one line, beside the action; a tap jumps to the chooser
+          await page.evaluate(() => window.scrollTo(0, 0));
+          await page.waitForTimeout(300);
+          await page.waitForSelector('[data-explore-bar-question]', { timeout: ROW });
+          const bar = await page.evaluate(() => {
+            const q = document.querySelector('[data-explore-bar-question] span');
+            const a = document.querySelector('[data-explore-bar-action]').getBoundingClientRect();
+            const qr = q.getBoundingClientRect();
+            return { oneLine: qr.height < 24, beside: Math.abs((qr.top + qr.bottom) / 2 - (a.top + a.bottom) / 2) < 12 };
+          });
+          expect(bar).toEqual({ oneLine: true, beside: true });
+          await page.click('[data-explore-bar-question]');
+          await page.waitForTimeout(300);
+          expect(await page.evaluate(() => document.activeElement === document.querySelector('[data-explore-screen="story"] [data-explore-questions] h3'))).toBe(true);
+          // the back arrow, mid-page, from the pinned row
+          await page.evaluate(() => window.scrollTo(0, document.scrollingElement.scrollHeight / 2));
+          await page.waitForTimeout(400);
+          await page.click('[data-explore-jump="pinned"] [data-explore-jump-back]');
+          await page.waitForFunction(() => { const x = document.querySelector('[data-explore-home-holder]'); return x && !x.hidden; }, null, { timeout: ROW });
+        } finally {
+          await ctx.close();
+        }
+      }, ROW * 2);
+    }
+
+    it(`${w}×${h}: a company lead outside the game's 54 (CRWV) opens the stock research page`, async () => {
+      const { ctx, page } = await sceneAt('overview', size);
+      try {
+        await inStory(page);
+        await page.click('[data-explore-screen="story"] [data-explore-branch-toggle="cloud"]');
+        await page.click('[data-explore-branch-detail="cloud"] [data-explore-lead="CRWV"]');
+        await page.waitForFunction(() => [...document.body.querySelectorAll('*')].some((el) => !el.closest('[data-explore-tab]') && el.children.length === 0 && el.textContent.trim() === 'CRWV'), null, { timeout: ROW });
+      } finally {
+        await ctx.close();
+      }
+    }, ROW);
+
+    it(`${w}×${h}: the walk — the overview's door, the deep story, Work this idea, the sheet, close (scrollY kept, focus back), Continue research, then back to the overview at the branch left`, async () => {
+      const { ctx, page } = await sceneAt('walk', size, 600);
+      try {
+        await page.click(`[data-explore-hero="${OV}"] [data-explore-hero-read]`);
+        await inStory(page);
+        await page.click('[data-explore-screen="story"] [data-explore-branch-toggle="power"]');
+        await page.evaluate(() => document.querySelector('[data-explore-door="dominion-data-centers"]').scrollIntoView({ block: 'center' }));
+        await page.waitForTimeout(250);
+        const doorY = await page.evaluate(() => Math.round(window.scrollY));
+        await page.click(`[data-explore-screen="story"] [data-explore-door="${DEEP}"]`);
+        await page.waitForFunction(() => document.querySelector('[data-explore-screen="story"]')?.dataset.exploreStoryKind === 'deep', null, { timeout: ROW });
+        await page.click('[data-explore-screen="story"] [data-explore-question="minimums"]');
+        await page.evaluate(() => document.querySelector('[data-explore-primary]').scrollIntoView({ block: 'center' }));
+        await page.waitForTimeout(250);
+        const before = await page.evaluate(() => ({ y: window.scrollY, top: Math.round(document.querySelector('[data-explore-primary]').getBoundingClientRect().top) }));
+        await page.click('[data-explore-primary]');
+        await page.waitForSelector('[data-shared-research-body]', { timeout: ROW });
+        await page.waitForTimeout(800);
+        expect(await page.evaluate(() => window.scrollY)).toBe(before.y);
+        await page.click('[data-explore-sheet-close]');
+        await page.waitForSelector('[data-explore-sheet-overlay]', { state: 'detached', timeout: ROW });
+        const atClose = await page.evaluate(() => ({ y: window.scrollY, focus: document.activeElement?.hasAttribute('data-explore-primary') ?? false }));
+        expect(atClose).toEqual({ y: before.y, focus: true });
+        await page.waitForFunction(() => document.querySelector('[data-explore-panel]')?.dataset.explorePanel === 'B', null, { timeout: ROW });
+        await page.waitForTimeout(100);
+        const after = await page.evaluate(() => ({ top: Math.round(document.querySelector('[data-explore-primary]').getBoundingClientRect().top), focus: document.activeElement?.dataset?.explorePrimary ?? null }));
+        expect({ ...after, top: Math.abs(after.top - before.top) <= 1 ? before.top : after.top }).toEqual({ top: before.top, focus: 'continue' });
+        await page.click('[data-explore-primary]');
+        await page.waitForSelector('[data-shared-research-body]', { timeout: ROW });
+        await page.keyboard.press('Escape');
+        await page.waitForSelector('[data-explore-sheet-overlay]', { state: 'detached', timeout: ROW });
+        await page.waitForTimeout(800);
+        expect(await page.evaluate(() => document.activeElement !== document.body)).toBe(true);
+        await page.evaluate(() => window.scrollTo(0, 0));
+        await page.waitForTimeout(300);
+        await page.click(backOf(w));
+        await page.waitForFunction(() => document.querySelector('[data-explore-screen="story"]')?.dataset.exploreStoryKind === 'overview', null, { timeout: ROW });
+        await page.waitForTimeout(400);
+        const home = await page.evaluate(() => ({ y: Math.round(window.scrollY), open: document.querySelector('[data-explore-branch-toggle="power"]').getAttribute('aria-expanded'), focus: document.activeElement?.dataset?.exploreDoor ?? null }));
+        expect({ ...home, y: Math.abs(home.y - doorY) <= 1 ? doorY : home.y }).toEqual({ y: doorY, open: 'true', focus: DEEP });
+      } finally {
+        await ctx.close();
+      }
+    }, ROW * 3);
   }
 });

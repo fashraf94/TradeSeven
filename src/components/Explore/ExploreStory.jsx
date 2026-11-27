@@ -231,7 +231,7 @@ export default function ExploreStory({
           </div>
           <BookmarkError bookmarks={bookmarks} storyId={story.id} origin="byline" />
         </article>
-        <ExploreJumpRow sections={sections} rootRef={rootRef} onJump={jumpTo} backLabel={backLabel} onBack={onBack} left={barLeft} inertNow={sheetOpen} />
+        <ExploreJumpRow sections={sections} rootRef={rootRef} onJump={jumpTo} backLabel={backLabel} onBack={onBack} left={barLeft} inertNow={sheetOpen} blocksKey={parent ? 'where-next' : ''} />
         <div style={{ ...S.col, gap: 18 }} data-explore-section="story">
           <div className="ftx-prose" data-explore-body="">{story.body.map((p, i) => <p key={i} style={{ textWrap: 'pretty' }}>{p}</p>)}</div>
           {story.parts.length > 0 && (

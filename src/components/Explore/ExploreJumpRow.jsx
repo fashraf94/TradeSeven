@@ -71,7 +71,7 @@ function Row({ sections, current, onJump, backLabel, onBack, copy }) {
  * @param {string}   p.backLabel     where the back arrow goes ("Explore", or the story that linked here)
  * @param {() => void} p.onBack
  */
-export default function ExploreJumpRow({ sections, rootRef, onJump, backLabel, onBack, left = 0, inertNow = false }) {
+export default function ExploreJumpRow({ sections, rootRef, onJump, backLabel, onBack, left = 0, inertNow = false, blocksKey = '' }) {
   const navRef = useRef(null);
   const [pinned, setPinned] = useState(false);
   const [current, setCurrent] = useState(sections[0]?.id ?? null);
@@ -89,8 +89,9 @@ export default function ExploreJumpRow({ sections, rootRef, onJump, backLabel, o
     return () => observer.disconnect();
   }, []);
 
-  // The one observer that marks the section in view.
-  const sectionKey = sections.map((s) => s.id).join('|');
+  // The one observer that marks the section in view (made again when the story's blocks change: "Where next" arrives
+  // with a parent read by id).
+  const sectionKey = `${sections.map((s) => s.id).join('|')}#${blocksKey}`;
   useEffect(() => {
     const root = rootRef?.current ?? null;
     if (!root || typeof IntersectionObserver !== 'function') return undefined;
