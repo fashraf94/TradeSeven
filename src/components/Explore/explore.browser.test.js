@@ -374,4 +374,44 @@ describe.skipIf(!BASE)('Explore in a real browser (Build 1 §9 checks 1–5; Bui
       }
     }, ROW * 3);
   }
+
+  // F-3 (the fix prompt of Nov 27): the smoke page's `jump-row-long` story lists 12 sources and asks 10 questions.
+  it('F-3: two-digit counts — below 360 px the jump row draws the sections without their counts and every label sits inside the row (in flow and pinned), nothing sideways; from 360 px the counts are drawn; each button\'s name is what it draws', async () => {
+    const FLOW = '[data-explore-screen="story"] [data-explore-jump="flow"]';
+    const PINNED = '[data-explore-jump="pinned"]';
+    const measure = (page, sel) => page.evaluate((s) => {
+      const row = document.querySelector(s);
+      const r = row.getBoundingClientRect();
+      const btns = [...row.querySelectorAll('[data-explore-jump-to]')];
+      const bad = [];
+      for (const b of btns) {
+        const br = b.getBoundingClientRect();
+        if (br.right > r.right + 0.5 || br.left < r.left - 0.5) bad.push(`${b.dataset.exploreJumpTo}: past the row's edge`);
+        for (const w of b.querySelectorAll('span')) {
+          const wr = w.getBoundingClientRect();
+          if (w.textContent.trim() && wr.width > 0 && (wr.right > br.right + 0.5 || wr.left < br.left - 0.5)) bad.push(`${b.dataset.exploreJumpTo}: words outside the button`);
+        }
+      }
+      return { bad, drawn: btns.map((b) => b.innerText.replace(/\s+/g, ' ').trim()), sideways: document.scrollingElement.scrollWidth > innerWidth };
+    }, sel);
+    /** Each jump button's accessible name, as the browser computes it (the aria snapshot), spaces dropped. */
+    const namesOf = async (page, sel) => [...(await page.locator(sel).ariaSnapshot()).matchAll(/- button "([^"]*)"/g)].map((m) => m[1]).filter((n) => !n.startsWith('Back')).map((n) => n.replace(/\s+/g, ''));
+    for (const size of [[320, 700], [359, 700], [360, 700], [393, 852]]) {
+      const [w] = size;
+      const { ctx, page } = await sceneAt('jump-row-long', size);
+      try {
+        await inStory(page);
+        const want = w < 360 ? ['Story', 'Connections', 'Questions', 'Sources'] : ['Story', 'Connections 3', 'Questions 10', 'Sources 12'];
+        const flow = await measure(page, FLOW);
+        expect(flow, `${w}: in flow`).toEqual({ bad: [], drawn: want, sideways: false });
+        expect(await namesOf(page, FLOW), `${w}: the names`).toEqual(want.map((n) => n.replace(/\s+/g, '')));
+        await page.evaluate(() => { const el = document.querySelector('[data-explore-screen="story"] [data-explore-questions] h3'); window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - 60); });
+        await page.waitForSelector(PINNED, { timeout: ROW });
+        await page.waitForTimeout(300);
+        expect(await measure(page, PINNED), `${w}: pinned`).toEqual({ bad: [], drawn: want, sideways: false });
+      } finally {
+        await ctx.close();
+      }
+    }
+  }, ROW * 4);
 });

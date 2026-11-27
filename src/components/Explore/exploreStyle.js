@@ -123,6 +123,7 @@ export const EXPLORE_CSS = `
 .ftx-bar-line { flex: 1 1 100%; }
 .ftx-oneline { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ftx-gap-row { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+@media (max-width: 359.98px) { .ftx-jump-count { display: none; } }
 @media (min-width: 560px) {
   .ftx-two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ftx-parts { grid-template-columns: 140px minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: baseline; }

@@ -1097,3 +1097,29 @@ describe('F-1 — a Try again never drops focus to <body>: focus sits on an elem
     expect(nextTabStopAfter(h)).toBe($('[data-explore-shelf-retry]'));
   });
 });
+
+// ── F-3 (the fix prompt of Nov 27): the jump row at 320 px ────────────────────────────────────────────────────────────
+
+describe('F-3 — below 360 px the jump row draws its sections without their counts (jsdom lays out nothing: these rows pin the one rule; the browser row measures it)', () => {
+  it('in both copies (in flow and pinned) every count, and only a count, carries the one class; the labels and counts are unchanged', async () => {
+    await openPage();
+    await openOverview();
+    const flow = storyEl().querySelector('[data-explore-jump="flow"]');
+    const o = observerOn(flow);
+    act(() => o.cb([{ target: flow, isIntersecting: false, intersectionRatio: 0, boundingClientRect: { top: -60, height: 46 } }]));
+    const pinned = $('[data-explore-jump="pinned"]');
+    for (const row of [flow, pinned]) {
+      const read = $$('[data-explore-jump-to]', row).map((b) => [b.dataset.exploreJumpTo, b.querySelector('.ftx-jump-count')?.textContent ?? null]);
+      expect(read).toEqual([['story', null], ['connections', '5'], ['questions', '1'], ['sources', '3']]);
+      for (const c of $$('.ftx-jump-count', row)) {
+        expect(c.style.display).toBe(''); // an inline display would beat the class
+        expect(c.previousElementSibling.className).toBe(''); // the label before it is never hidden
+      }
+    }
+  });
+  it('the page\'s rules hide that class below 360 px, by one media query, and nowhere else', async () => {
+    const { EXPLORE_CSS } = await import('./exploreStyle');
+    expect(EXPLORE_CSS).toContain('@media (max-width: 359.98px) { .ftx-jump-count { display: none; } }');
+    expect(EXPLORE_CSS.match(/ftx-jump-count/g)).toHaveLength(1);
+  });
+});
