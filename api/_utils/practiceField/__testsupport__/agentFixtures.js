@@ -38,12 +38,16 @@ export function foundersMediumIdea(overrides = {}) {
   };
 }
 
-/** Which desk a request is for (its system text names it). */
+/**
+ * Which desk a request is for, by the slots its system text gives it (build B6: the text names no desk — ruling B6-1).
+ * Exactly one of the two lines, or null.
+ */
 export function deskOfRequest(request) {
   const text = request?.content?.system?.[0]?.text ?? '';
-  if (/Your desk: The Shadow desk\./.test(text)) return 'shadow';
-  if (/Your desk: The archetype desk\./.test(text)) return 'archetype';
-  return null;
+  const shadow = /^Your slots: medium and long\. /m.test(text);
+  const archetype = /^Your slots: short\. /m.test(text);
+  if (shadow === archetype) return null;
+  return shadow ? 'shadow' : 'archetype';
 }
 
 /** The section of the request's message under a heading, as lines. */
