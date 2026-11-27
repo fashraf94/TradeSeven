@@ -50,11 +50,11 @@ function Row({ sections, current, onJump, backLabel, onBack, copy }) {
               aria-current={on ? 'location' : undefined}
               data-explore-jump-to={s.id}
               onClick={() => onJump(s.id)}
-              style={{ ...RESET, minHeight: 44, display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, fontWeight: 600, color: on ? T.ink : T.ink2, whiteSpace: 'nowrap', flexShrink: 1, minWidth: 0 }}
+              style={{ ...RESET, minHeight: 44, display: 'inline-flex', alignItems: 'center', gap: 4, fontWeight: 600, color: on ? T.ink : T.ink2, whiteSpace: 'nowrap', flexShrink: 1, minWidth: 0 }}
             >
               {on ? <span aria-hidden="true" style={{ width: 6, height: 6, borderRadius: '50%', background: T.teal, flexShrink: 0 }} /> : null}
-              <span>{s.label}</span>
-              {s.count !== null ? <span style={{ color: T.ink3, fontWeight: 500 }}>{s.count}</span> : null}
+              <span style={{ fontSize: 13, lineHeight: 1.3 }}>{s.label}</span>
+              {s.count !== null ? <span style={{ fontSize: 13, lineHeight: 1.3, color: T.ink3, fontWeight: 500 }}>{s.count}</span> : null}
             </button>
           );
         })}

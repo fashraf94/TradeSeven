@@ -209,7 +209,7 @@ export default function ExploreStory({
             <div style={{ margin: '-8px 0 -6px' }}>
               <button type="button" className="ftx-btn" aria-label={COPY.wayUp(parent.overview.subject ?? parent.overview.title, parent.connection.who)} data-explore-way-up={parent.overview.id} data-explore-focus="wayup" onClick={(event) => onOpenStory(parent.overview.id, null, event, { branch: parent.connection.ref })} style={{ ...RESET, minHeight: 44, display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 600, color: T.teal, maxWidth: '100%' }}>
                 <Icon name="up" />
-                <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{HOME.path(parent.overview.subject ?? parent.overview.title, parent.connection.who)}</span>
+                <span style={{ fontSize: 14, lineHeight: 1.35, minWidth: 0, overflowWrap: 'anywhere' }}>{HOME.path(parent.overview.subject ?? parent.overview.title, parent.connection.who)}</span>
               </button>
             </div>
           ) : null}
