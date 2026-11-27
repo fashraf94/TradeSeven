@@ -22,8 +22,8 @@
 //     is not at hand is read by id (the stories source's readStory) when the story page that needs it opens, at most
 //     LINKED_READS_MAX for one story page, each id once for the tab's life. A missing, refused or wrong-kind story is
 //     absent. No listener, no polling.
-//   - THE SHEET is handed the read's agent (id, name, the equipped list's name; null when the read names none), and
-//     Work this idea hands the chosen question's id on the item.
+//   - THE SHEET is handed the read's agent (id, name, the equipped list's name; null when the read names none), as
+//     the read named it when the sheet opened, and Work this idea hands the chosen question's id on the item.
 
 import React, { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { EXPLORE_COPY } from './exploreCopy';
@@ -226,7 +226,8 @@ export default function ExploreTab({ explore = null, onOpenResearch, stocksData 
 
   const openSheet = (entry, event) => {
     openings.current += 1;
-    setSheet({ entry: { id: `opening-${openings.current}`, ...entry }, opener: event?.currentTarget ?? document.activeElement ?? null });
+    // the agent as the read names it at the opening: a later re-read that fails never takes it from an open sheet (review N-2)
+    setSheet({ entry: { id: `opening-${openings.current}`, ...entry }, opener: event?.currentTarget ?? document.activeElement ?? null, agent: agentFor(explore.research) });
   };
   const onWork = (event, s, text, questionId) => openSheet({ way: 'work', item: sheetItemOf(s, text, questionId) }, event);
   const onContinue = (event, sessionId) => openSheet({ way: 'continue', sessionId }, event);
@@ -299,7 +300,7 @@ export default function ExploreTab({ explore = null, onOpenResearch, stocksData 
           key={sheet.entry.id}
           entry={sheet.entry}
           gated={explore.research.status === 'gated'}
-          agent={agentFor(explore.research)}
+          agent={sheet.agent}
           phone={phoneSheet}
           onClose={closeSheet}
           opener={sheet.opener}

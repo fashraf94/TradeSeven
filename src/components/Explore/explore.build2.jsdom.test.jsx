@@ -20,6 +20,7 @@ const body = vi.hoisted(() => ({ mounts: [] }));
 vi.mock('./loadSharedResearch', async () => {
   const R = await import('react');
   function BodyStandIn(props) {
+    body.latest = props; // the props of the last render (review N-2: an open sheet's props must not change under it)
     R.useEffect(() => { body.mounts.push(props); }, []);
     return R.createElement('div', { 'data-body-stand-in': props.mode }, R.createElement('button', { type: 'button', onClick: props.onClose, 'data-body-close': '' }, 'close'));
   }
@@ -30,7 +31,7 @@ vi.mock('../draft/AssetResearchModal', () => ({ default: function AssetStub({ as
 
 const { default: SearchDiscover } = await import('../Search/SearchDiscover');
 const kit = await import('./__fixtures__/exploreKit');
-const { READS, GATED, NO_ANSWER, KIT_STORIES, SAMPLE_STORIES, answerOf, fixtureSources, bookmarkOf, mount, flush, click, typeInto, $, $$, until } = kit;
+const { READS, GATED, NO_ANSWER, KIT_STORIES, SAMPLE_STORIES, answerOf, fixtureSources, bookmarkOf, mount, flush, click, typeInto, $, $$, until, deferred } = kit;
 const { PILOT_OVERVIEW, PILOT_DEEP, OLD_SHAPE_STORY } = await import('./__fixtures__/stories');
 const { EXPLORE_COPY: COPY } = await import('./exploreCopy');
 const { act } = await import('react');
@@ -681,6 +682,60 @@ describe('the panel and the compare switch (B-9, §6, K-14)', () => {
     click(card(S_AI.id).querySelector('[data-explore-card-primary]'));
     await waitStory(S_AI.id);
     expect(storyEl().querySelector('[data-explore-ended-question]').textContent).toBe(READS.saved.items[0].last.question);
+  });
+});
+
+describe('the review\'s fixes (lens b: N-1, N-2, N-3)', () => {
+  it('N-1: back to a deep story keeps its Sources open, so Where next is where the player left it (scroll and focus)', async () => {
+    await openPage();
+    click($(`[data-explore-latest="${DEEP}"]`));
+    await waitStory(DEEP);
+    click(storyEl().querySelector('[data-explore-sources] button'));
+    expect(storyEl().querySelector('[data-explore-sources] button').getAttribute('aria-expanded')).toBe('true');
+    Object.defineProperty(window, 'scrollY', { value: 2400, configurable: true });
+    click(storyEl().querySelector('[data-explore-where-step="cloud"]'));
+    await waitStory(OV);
+    click(storyEl().querySelector('[data-explore-back]'));
+    await waitStory(DEEP);
+    expect(storyEl().querySelector('[data-explore-sources] button').getAttribute('aria-expanded')).toBe('true');
+    expect(window.scrollTo).toHaveBeenLastCalledWith(0, 2400);
+    expect(document.activeElement).toBe(storyEl().querySelector('[data-explore-where-step="cloud"]'));
+  });
+  it('N-2: an open sheet keeps the agent it opened with when a later re-read fails', async () => {
+    await openPage({ answer: answerOf(READS.returning) });
+    click($('[data-explore-progress-continue]'));
+    await until(() => body.mounts.length === 1, 'the sheet');
+    const held = deferred();
+    read.mockReturnValueOnce(held.promise);
+    click($('[data-body-close]'));
+    await until(() => !$('[data-explore-sheet-overlay]'), 'closed');
+    click($('[data-explore-progress-continue]')); // while the re-read is still out
+    await until(() => body.mounts.length === 2, 'the sheet again');
+    expect(body.latest).toMatchObject({ agentId: 'agent-1', agentName: 'Atlas', equippedListLabel: 'Grid builders' });
+    await act(async () => { held.resolve(NO_ANSWER); await Promise.resolve(); });
+    await flush();
+    expect(body.latest).toMatchObject({ agentId: 'agent-1', agentName: 'Atlas', equippedListLabel: 'Grid builders' });
+  });
+  it('N-3: Where next belongs to the row\'s last section — with no listed source, Connections is marked while it is in view', async () => {
+    sources = fixtureSources({ stories: [{ ...PILOT_DEEP, sources: [] }, PILOT_OVERVIEW, S_AI, S_UTIL] });
+    await openPage();
+    click($(`[data-explore-latest="${DEEP}"]`));
+    await waitStory(DEEP);
+    expect($$('[data-explore-jump-to]', storyEl()).map((b) => b.dataset.exploreJumpTo)).toEqual(['story', 'questions', 'connections']);
+    const next = storyEl().querySelector('[data-explore-where-next]');
+    expect(next.dataset.exploreSection).toBe('connections');
+    const o = observerOn(next);
+    act(() => o.cb(o.targets.map((t) => ({ target: t, isIntersecting: t === next }))));
+    expect(storyEl().querySelector('[data-explore-jump="flow"] [aria-current="location"]').dataset.exploreJumpTo).toBe('connections');
+  });
+  it('the section observer takes in Where next when the parent arrives by id', async () => {
+    sources = fixtureSources({ stories: [PILOT_DEEP, S_AI, S_UTIL], complete: false, byId: { [OV]: PILOT_OVERVIEW } });
+    await openPage();
+    click($(`[data-explore-latest="${DEEP}"]`));
+    await waitStory(DEEP);
+    const next = await until(() => storyEl().querySelector('[data-explore-where-next]'), 'Where next');
+    await flush();
+    expect(observerOn(next)?.targets).toContain(next);
   });
 });
 

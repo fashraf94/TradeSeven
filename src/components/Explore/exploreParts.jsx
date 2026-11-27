@@ -28,7 +28,7 @@ export function useMatches(query) {
  * A company (K-11): with a symbol, a 44 px button — symbol, then name — that opens the stock's research page; without
  * one, plain text, never a button. Never a figure, a change or a price beside it.
  */
-export function Ticker({ company, onOpen, focusKey = null }) {
+export function Ticker({ company, onOpen }) {
   if (!company.symbol) {
     return (
       <span data-explore-lead="text" style={{ display: 'inline-flex', alignItems: 'center', minHeight: 44, padding: '6px 12px', borderRadius: 12, border: `1px dashed ${T.hair}`, fontSize: 13.5, color: T.ink2, minWidth: 0, overflowWrap: 'anywhere' }}>
@@ -42,7 +42,6 @@ export function Ticker({ company, onOpen, focusKey = null }) {
       className="ftx-btn"
       aria-label={EXPLORE_COPY.story.company(company.symbol, company.name)}
       data-explore-lead={company.symbol}
-      data-explore-focus={focusKey ?? undefined}
       onClick={() => onOpen?.(leadAssetOf(company))}
       style={{ ...btnStyle('secondary'), justifyContent: 'flex-start', padding: '6px 10px 6px 12px', gap: 6, minWidth: 0 }}
     >
@@ -52,11 +51,11 @@ export function Ticker({ company, onOpen, focusKey = null }) {
   );
 }
 
-/** Companies in the story's order, two to a row on a phone (B-15). `keyPrefix` names each button for focus restore. */
-export function Tickers({ list, onOpen, keyPrefix = null }) {
+/** Companies in the story's order, two to a row on a phone (B-15). */
+export function Tickers({ list, onOpen }) {
   return (
     <div className="ftx-tickers" data-explore-tickers="">
-      {list.map((c, i) => <Ticker key={`${c.symbol ?? c.name}:${i}`} company={c} onOpen={onOpen} focusKey={keyPrefix && c.symbol ? `${keyPrefix}:${c.symbol}` : null} />)}
+      {list.map((c, i) => <Ticker key={`${c.symbol ?? c.name}:${i}`} company={c} onOpen={onOpen} />)}
     </div>
   );
 }
@@ -174,9 +173,14 @@ export function BookmarkError({ bookmarks, storyId, origin = null }) {
   return <Notice role="alert" tone="copper"><span data-explore-bookmark-error={error.kind}>{words}</span></Notice>;
 }
 
-/** A collapsed section (spec §3.4 items 8 and 9). */
-export function Disclosure({ label, count = null, children }) {
-  const [open, setOpen] = useState(false);
+/**
+ * A collapsed section (spec §3.4 items 8 and 9). Build 2: optionally controlled (`open` + `onToggle`), so a story's
+ * Sources stay open when the player comes back to the story (the history holds it, review N-1).
+ */
+export function Disclosure({ label, count = null, children, open: controlled = undefined, onToggle = null }) {
+  const [own, setOwn] = useState(false);
+  const open = controlled ?? own;
+  const setOpen = (f) => (onToggle ? onToggle() : setOwn(f));
   const id = `ftx-d${useId()}`;
   return (
     <section style={{ borderRadius: 14, border: `1px solid ${T.hair}`, background: T.surface, overflow: 'hidden' }}>

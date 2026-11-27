@@ -40,12 +40,12 @@ const GROUP = COPY.group;
  * A broad question's group (Amendment B §6): the heading, the companies as tickers in the story's order, the line
  * under them, and — with the switch on and the story naming any — "Compares on" and its measure names, as labels.
  */
-export function GroupBlock({ question, compare, onOpenCompany, keyPrefix, notes = true }) {
+export function GroupBlock({ question, compare, onOpenCompany, notes = true }) {
   const words = compare ? GROUP.on : GROUP.off;
   return (
     <div style={S.section} data-explore-group={question.id}>
       <Eyebrow as="span">{words.heading(question.group.length)}</Eyebrow>
-      <Tickers list={question.group} onOpen={onOpenCompany} keyPrefix={keyPrefix} />
+      <Tickers list={question.group} onOpen={onOpenCompany} />
       {notes ? <p style={S.meta} data-explore-group-note="">{words.note}</p> : null}
       {notes && compare && question.measureNames.length > 0 ? (
         <div style={S.section} data-explore-measures="">
@@ -136,7 +136,7 @@ export default function ExplorePanel({
   const edited = value !== question.text;
   const save = (kind) => <SaveToggle key="save" kind={kind} pressed={saved} busy={saveBusy} label={COPY.save} onToggle={onToggleSave} />;
   const compare = EXPLORE_COMPARE_ROUTE ? true : false; // the switch, read at call time (K-2): a literal ternary, which the build folds away
-  const group = question.broad ? <GroupBlock key="group" question={question} compare={compare} onOpenCompany={onOpenCompany} keyPrefix={`group:${question.id}`} /> : null;
+  const group = question.broad ? <GroupBlock key="group" question={question} compare={compare} onOpenCompany={onOpenCompany} /> : null;
 
   if (form === FORMS.LOADING) {
     return (

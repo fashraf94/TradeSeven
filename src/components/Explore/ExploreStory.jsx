@@ -33,6 +33,8 @@ const CARD = EXPLORE_COPY.card;
 const HOME = EXPLORE_COPY.home;
 const PANEL = EXPLORE_COPY.panel;
 const RESET = { appearance: 'none', font: 'inherit', background: 'none', border: 'none', padding: 0, margin: 0, cursor: 'pointer', color: 'inherit', textAlign: 'left' };
+/** The history's key for a story's open Sources list (kept with its open branches, so back restores it: review N-1). */
+export const SOURCES_OPEN = '@sources';
 const focusQuietly = (el) => { if (el && el.isConnected && typeof el.focus === 'function') el.focus({ preventScroll: true }); };
 
 export function OriginTags({ story }) {
@@ -55,12 +57,12 @@ export function barActionOf({ form, item, quota }) {
 }
 
 /** A deep story's "Where next" (Amendment B §4.4): one step up, where you are, and the overview's other connections. */
-function WhereNext({ story, parent, byId, onOpenStory }) {
+function WhereNext({ story, parent, byId, onOpenStory, section }) {
   const { overview, connection } = parent;
   const name = overview.subject ?? overview.title;
   const across = overview.connections.filter((c) => c.ref !== connection.ref);
   return (
-    <section aria-labelledby={`ftx-next-h-${story.id}`} style={{ ...S.section, borderTop: `1px solid ${T.hair}`, paddingTop: 20 }} data-explore-where-next="" data-explore-section="sources">
+    <section aria-labelledby={`ftx-next-h-${story.id}`} style={{ ...S.section, borderTop: `1px solid ${T.hair}`, paddingTop: 20 }} data-explore-where-next="" data-explore-section={section}>
       <h3 id={`ftx-next-h-${story.id}`} style={S.h2}>{COPY.whereNext}</h3>
       <button type="button" className="ftx-btn" data-explore-where-up={overview.id} data-explore-focus="where:up" onClick={(event) => onOpenStory(overview.id, null, event, { branch: connection.ref })} style={{ ...RESET, minHeight: 48, display: 'flex', alignItems: 'center', gap: 10 }}>
         <span aria-hidden="true" style={{ width: 14, display: 'flex', justifyContent: 'center', color: T.teal }}><Icon name="up" /></span>
@@ -217,7 +219,7 @@ export default function ExploreStory({
           {deep && story.about.length > 0 ? (
             <div style={{ ...S.row, gap: 10 }} data-explore-about="">
               <span style={{ ...CAPS, color: T.ink3 }}>{COPY.about}</span>
-              <Tickers list={story.about} onOpen={onOpenCompany} keyPrefix="about" />
+              <Tickers list={story.about} onOpen={onOpenCompany} />
             </div>
           ) : null}
           <h2 ref={titleRef} className="ftx-h1" tabIndex={-1} data-explore-story-title="" style={{ outline: 'none', textWrap: 'balance' }}>{story.title}</h2>
@@ -258,7 +260,7 @@ export default function ExploreStory({
         {deep ? [side, connections] : [connections, side]}
         {hasSources && (
           <div data-explore-sources="" data-explore-section="sources">
-            <Disclosure label={COPY.sources} count={String(story.sources.length)}>
+            <Disclosure label={COPY.sources} count={String(story.sources.length)} open={open.has(SOURCES_OPEN)} onToggle={() => onToggleBranch(SOURCES_OPEN)}>
               <p style={S.meta}>{COPY.sourcesOpen(published)}</p>
               {story.sources.map((s) => (
                 <div key={s.id} style={{ display: 'flex', flexDirection: 'column', gap: 4, paddingTop: 10, borderTop: `1px solid ${T.hair}` }} data-explore-source={s.id}>
@@ -274,7 +276,7 @@ export default function ExploreStory({
             </Disclosure>
           </div>
         )}
-        {parent ? <WhereNext story={story} parent={parent} byId={byId} onOpenStory={onOpenStory} /> : null}
+        {parent ? <WhereNext story={story} parent={parent} byId={byId} onOpenStory={onOpenStory} section={sections.at(-1).id} /> : null}
       </div>
       {bar && (
         <ExplorePinnedBar

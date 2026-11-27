@@ -210,7 +210,7 @@ export default function ExploreChain({ story, size = 'card', byId, thisConnectio
                   {c.leads.length > 0 ? (
                     <div style={S.section} data-explore-leads="">
                       <span style={S.eyebrow}>{STORY.leadsTitle}</span>
-                      <Tickers list={c.leads} onOpen={onOpenCompany} keyPrefix={`lead:${c.ref}`} />
+                      <Tickers list={c.leads} onOpen={onOpenCompany} />
                     </div>
                   ) : null}
                   {door ? <Door target={door} onOpen={onOpenStory} focusKey={`door:${c.ref}`} /> : null}

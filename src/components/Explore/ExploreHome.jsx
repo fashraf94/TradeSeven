@@ -74,7 +74,7 @@ function Hero({ story, question, byId, wide, saved, bookmarks, onOpenStory, onOp
   const tags = <div style={S.row}><OriginTags story={story} /><KindTag story={story} /></div>;
   const head = <h2 id={`ftx-hero-h-${story.id}`} className="ftx-qh" style={{ textWrap: 'balance' }} data-explore-hero-question="">{question.text}</h2>;
   const what = question.broad
-    ? <GroupBlock question={question} compare={compare} onOpenCompany={onOpenCompany} keyPrefix={`hero:${question.id}`} notes={false} />
+    ? <GroupBlock question={question} compare={compare} onOpenCompany={onOpenCompany} notes={false} />
     : question.unknown
       ? <p style={{ ...S.body, fontSize: 13.5 }} data-explore-hero-unknown=""><span style={{ ...S.eyebrow, display: 'inline', marginRight: 8 }}>{COPY.stillUnknown}</span>{question.unknown}</p>
       : null;
