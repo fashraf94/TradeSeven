@@ -54,6 +54,9 @@ import useIdeaBook, { REFOCUS_QUIET_MS } from '../PracticeField/useIdeaBook';
 import IdeaBookScreen from '../PracticeField/IdeaBookScreen';
 import { formatHubDay } from './hub/hubDate';
 import { NeedsYouStrip } from './sections/BookOverview';
+import { BookPhoneBody, BookWidePanel } from './BookLayout';
+import { HubBookReadContext } from './hub/hubBookRead';
+import { DESKTOP_ACTIVITY_LIMIT, PHONE_ACTIVITY_LIMIT } from './hub/hubModel';
 import { buildBookView } from '../../../api/_utils/practiceField/bookView.js';
 import { hubSceneInput } from '../../../api/_utils/practiceField/__testsupport__/bookViewScenesHub.js';
 import { byRole, click, injectTokens, installFakeLayout, mount, mountFakeBottomNav, press } from './__fixtures__/hubTestKit';
@@ -203,6 +206,8 @@ describe('the tab row: Overview · Ideas · Setups · Partnership, on the phone 
     expect(step('Home')).toEqual(['overview', 'overview']);
     expect(step('End')).toEqual(['partnership', 'partnership']);
     expect(step('ArrowLeft', { altKey: true })).toEqual(['partnership', 'partnership']);
+    expect(step('ArrowLeft', { metaKey: true })).toEqual(['partnership', 'partnership']);
+    expect(step('ArrowLeft', { ctrlKey: true })).toEqual(['partnership', 'partnership']);
     expect(step('ArrowDown')).toEqual(['partnership', 'partnership']);
     expect(tabs().filter((t) => t.tabIndex === 0).map((t) => t.getAttribute('data-hub-book-tab'))).toEqual(['partnership']);
     expect(panel().getAttribute('aria-labelledby')).toBe(tabNamed('Partnership').id);
@@ -214,7 +219,6 @@ describe('the tab row: Overview · Ideas · Setups · Partnership, on the phone 
     click(tabNamed('Ideas'));
     await flush();
     expect(panel().getAttribute('data-hub-book-panel')).toBe('ideas');
-    expect(part('[data-hub-research-door], [data-hub-section], section, div')).not.toBeNull();
     expect(panel().textContent).toContain(COPY.research.ideas);
     expect(part('[data-ib="positions"]')).toBeNull();
     click(tabNamed('Setups'));
@@ -243,12 +247,12 @@ describe('the Overview, top to bottom, for a book owner', () => {
       part(`[aria-label="${COPY.games.reviewsAvailable}"]`),
       byRole(panel(), 'button', COPY.history.rowLabel(3))[0],
       part('[data-hub-section="activity"]'),
-      part(`[aria-label="${COPY.brief.label}"]`) ?? part('[data-hub-section="brief"]'),
+      part('[data-hub-section="brief"]'),
     ];
     order.forEach((el, i) => expect(el, `part ${i}`).toBeTruthy());
     for (let i = 1; i < order.length; i += 1) expect(precedes(order[i - 1], order[i]), `part ${i - 1} before part ${i}`).toBe(true);
     // The stamp is the table's own last line.
-    expect(part('[data-ib="positions"]').contains(part('[data-ib="stamp"]'))).toBe(true);
+    expect(part('[data-ib="positions"]').lastElementChild).toBe(part('[data-ib="stamp"]'));
     // Needs you is today's next action: the newest ready review, its own title, its action and Later. No card anywhere.
     const strip = part('[data-hub-needs-you]');
     expect(strip.getAttribute('data-hub-needs-you')).toBe('review');
@@ -263,7 +267,7 @@ describe('the Overview, top to bottom, for a book owner', () => {
     expect(listed).toEqual(expect.arrayContaining(['done_02', 'done_03']));
   });
 
-  it('desktop: the side column holds Deploy alone, and there is no next-action slot; the hero, its Huddle chip place, the tabs and the panel are in the main column', async () => {
+  it('desktop: the side column holds Deploy alone, and the next-action slot is hidden and empty; the hero, the tabs and the panel are in the main column', async () => {
     r.window = windowOf(THREE);
     await render('desktop');
     const side = document.querySelector('[data-hub-slot="side"]');
@@ -315,6 +319,7 @@ describe('the Overview, top to bottom, for a book owner', () => {
     click(byRole(strip, 'button', COPY.nextAction.openGame)[0]);
     expect(hub.openGame).toHaveBeenCalledTimes(1);
     expect(panel().querySelector('[data-hub-game="bb_live"]')).toBeNull();
+    expect(document.querySelector('[data-hub-next-action]')).toBeNull();
   });
 
   it('the first deployment is the next action: its action is the deploy hold, inert without the deploy provider, as on the card', async () => {
@@ -488,7 +493,7 @@ describe('the loadout: no tab, a sheet, from the game strip on the phone and the
     await render('mobile');
     const opener = stripOpener();
     expect(opener).toBeTruthy();
-    act(() => { opener.focus(); });
+    // No pre-focus: a tap focuses nothing on Safari, so the sheet must be handed its opener (review S3T-3).
     click(opener);
     await flush();
     const sheet = dialogNamed(BOOK_COPY.loadoutSheet);
@@ -544,6 +549,11 @@ describe('the loadout: no tab, a sheet, from the game strip on the phone and the
     // The sheet's own title and Close stand for the ring's: one Close, the sheet's.
     expect(armory.querySelector('[data-armory-close]')).toBeNull();
     expect(byRole(armory, 'button', COPY.sheet.close)).toHaveLength(1);
+    // ...and one "Armory": the sheet's own title, not the ring's mark as well (review S3T-12).
+    const armoryWords = [];
+    const walker = document.createTreeWalker(armory, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) if (node.nodeValue.trim() === ARMORY_COPY.title) armoryWords.push(node);
+    expect(armoryWords).toHaveLength(1);
     expect(document.querySelector('[data-hub-armory="open"]')).toBeNull();
     expect(hostOf().hasAttribute('inert')).toBe(true);
     press(armory, 'Escape');
@@ -618,19 +628,25 @@ describe('the loadout: no tab, a sheet, from the game strip on the phone and the
     expect(document.querySelector('[data-hub-armory="open"]')).toBeNull();
   });
 
-  it('the loadout\'s sheet belongs to the book layout: a read that takes the book away closes it and frees the slot', async () => {
-    await render('mobile');
-    click(stripOpener());
+  it.each(['mobile', 'desktop'])('%s: the loadout\'s sheet belongs to the book layout: a read that takes the book away closes it and frees the slot, so the book coming back opens nothing (review S3T-1)', async (where) => {
+    await render(where);
+    click(where === 'mobile' ? stripOpener() : byRole(document.querySelector('[data-hub-slot="deploy"]'), 'button', LOADOUT_COPY.openCard)[0]);
     await flush();
     expect(dialogNamed(BOOK_COPY.loadoutSheet)).not.toBeNull();
-    net.answer = { status: 200, body: { book: null } };
-    vi.setSystemTime(NOW + REFOCUS_QUIET_MS + 1);
-    act(() => { window.dispatchEvent(new Event('focus')); });
-    await flush();
+    const refocus = async (answer, step) => {
+      net.answer = answer;
+      vi.setSystemTime(NOW + step * (REFOCUS_QUIET_MS + 1));
+      act(() => { window.dispatchEvent(new Event('focus')); });
+      await flush();
+    };
+    await refocus({ status: 200, body: { book: null } }, 1);
     expect(document.querySelector('[data-hub-layout]').getAttribute('data-hub-layout')).toBe('today');
     expect(dialogNamed(BOOK_COPY.loadoutSheet)).toBeNull();
     expect(shell().hasAttribute('data-hub-modal-open')).toBe(false);
     expect(hostOf().hasAttribute('inert')).toBe(false);
+    await refocus({ status: 200, body: { book: viewOf('sample') } }, 2);
+    expect(document.querySelector('[data-hub-layout]').getAttribute('data-hub-layout')).toBe('book');
+    expect(dialogs()).toEqual([]);
   });
 });
 
@@ -776,6 +792,33 @@ describe('the book layout arrives after today\'s hub has drawn (PH-9), and opens
     expect(document.querySelectorAll('[data-hub-area]')).toHaveLength(0);
   });
 
+  it('desktop: a player on today\'s Shared Research area when the book arrives lands on Ideas, and the hero then selects no area (review S3T-2, S3T-5)', async () => {
+    const arrive = lateRead();
+    await render('desktop');
+    click(document.querySelector('[data-hub-area="1"]'));
+    await flush();
+    const imageLabels = () => [...document.querySelectorAll('[data-hub-stage] [aria-label]')].map((el) => el.getAttribute('aria-label')).filter((l) => l.startsWith(`${COPY.shadow.name} — `));
+    // Today's: the hero names its selected area. The book layout's: none.
+    expect(imageLabels()).toEqual([expect.stringContaining('selected')]);
+    await arrive();
+    expect(selected()).toEqual(['ideas']);
+    expect(imageLabels()).toHaveLength(1);
+    expect(imageLabels()[0]).not.toMatch(/selected/);
+  });
+
+  it('mobile: after a book arrives on today\'s Research tab, the hero\'s three summary lines highlight no area (review S3T-5)', async () => {
+    const arrive = lateRead();
+    await render('mobile');
+    click(byRole(document, 'tab', COPY.phoneTabs.research)[0]);
+    await flush();
+    const colours = () => new Set([...document.querySelectorAll('[data-hub-summary]')].map((el) => el.style.color));
+    expect(colours().size).toBe(2);
+    await arrive();
+    expect(selected()).toEqual(['ideas']);
+    expect(document.querySelectorAll('[data-hub-summary]')).toHaveLength(3);
+    expect(colours().size).toBe(1);
+  });
+
   // Review S3W-6: the book layout keeps today's tree, so the hero and the Deploy card stay the same nodes as the layout arrives.
   it.each(['mobile', 'desktop', 'tablet', 'stacked'])('%s: the hero and the Deploy card (the strip, on the phone) are not remounted when the book arrives', async (where) => {
     const arrive = lateRead();
@@ -790,5 +833,60 @@ describe('the book layout arrives after today\'s hub has drawn (PH-9), and opens
     expect(document.querySelector('[data-hub-stage]')).toBe(stage);
     expect(where === 'mobile' ? document.querySelector('[data-hub-strip]') : document.querySelector('[data-hub-slot="deploy"] [data-hub-section="deploy"]')).toBe(deployPart);
     expect(stage.isConnected && deployPart.isConnected).toBe(true);
+  });
+});
+
+// ── The review's battery (lens S3T): rows for what its survivors showed unpinned ─────────────────────────────────────────────
+
+describe('the wide body, the wide words and the tab change (review S3T-6, S3T-8, S3T-10)', () => {
+  it.each([
+    ['desktop', '"main side"'],
+    ['tablet', '"stage stage" "panel side"'],
+    ['stacked', '"stage" "deploy" "panel"'],
+  ])('%s: the book layout\'s grid is %s (the stacked composition puts Deploy above the tabs)', async (where, areas) => {
+    await render(where);
+    expect(document.querySelector('[data-hub-body]').style.gridTemplateAreas).toBe(areas);
+  });
+
+  it.each([
+    ['mobile', 'emptySubPhone'],
+    ['desktop', 'emptySub'],
+  ])('%s: with no games and no next action, the Overview\'s empty note takes the %s words', async (where, key) => {
+    await render(where);
+    expect(panel().textContent).toContain(COPY.games[key]);
+    expect(panel().textContent.includes(COPY.games.emptySubPhone)).toBe(where === 'mobile');
+  });
+
+  it.each([
+    ['mobile', PHONE_ACTIVITY_LIMIT],
+    ['desktop', DESKTOP_ACTIVITY_LIMIT],
+  ])('%s: Recent activity under the table shows %i rows (the phone\'s limit, or the side column\'s)', async (where, limit) => {
+    r.window = windowOf(THREE);
+    await render(where);
+    const rows = part('[data-hub-section="activity"]').querySelectorAll('[data-hub-activity-row]');
+    expect(rows.length).toBe(limit);
+  });
+
+  /** A book layout body mounted alone, in the scope, with a spy for the tab change the shell hands it. */
+  function mountBody(Body, props) {
+    const onTabChange = vi.fn();
+    const scope = { read: { status: 'ready', book: viewOf('sample') }, refresh: () => {}, layout: 'book' };
+    const m = mount(<HubBookReadContext.Provider value={scope}><Body idBase="t" sections={{}} actions={{}} lists={{ status: 'ready', committed: [] }} sheet={{ sheet: null, open: () => () => {} }} onCloseSheet={() => {}} onTabChange={onTabChange} reducedMotion {...props} /></HubBookReadContext.Provider>);
+    mounted.push(m);
+    return { m, onTabChange };
+  }
+  it.each([
+    ['the phone', BookPhoneBody, { initialTab: 'overview', width: 390, agent: null }],
+    ['the wide compositions', BookWidePanel, { initialArea: 2, composition: 'desktop' }],
+  ])('%s: each tab change, by a tab or a desk row, is handed to the shell (which cancels an uncommitted hold)', (_, Body, props) => {
+    const { m, onTabChange } = mountBody(Body, props);
+    const tab = (key) => m.host.querySelector(`[data-hub-book-tab="${key}"]`);
+    click(tab('ideas'));
+    expect(onTabChange).toHaveBeenCalledTimes(1);
+    click(tab('overview'));
+    expect(onTabChange).toHaveBeenCalledTimes(2);
+    click(m.host.querySelector('[data-ib="strip"] button'));
+    expect(onTabChange).toHaveBeenCalledTimes(3);
+    expect(m.host.querySelector('[aria-selected="true"]').getAttribute('data-hub-book-tab')).toBe('setups');
   });
 });
