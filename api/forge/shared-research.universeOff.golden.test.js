@@ -8,10 +8,13 @@
 // code existed:
 //   GENERATE_UNIVERSE_OFF_GOLDEN=1 npx vitest run api/forge/shared-research.universeOff.golden.test.js
 // Five investigations run through the real route with the ids and the clock pinned, the model and the search as fixed
-// seams: a thesis builder from the player's own words to a saved thesis and the read after it; a builder from a story;
-// a ledger from a story, one step, its preview, the save and the read after; a framed ledger and its step; a SignalDrop.
-// Everything they answer, every model call's system and user text and schema, every search's arguments, every write
-// and every stored document at the end are compared, key by key, with the golden.
+// seams: a thesis builder from the player's own words — a failed step, then to a saved thesis (a stale save refused
+// first) and the read after it; a builder from a story; a ledger from a story — a step, an examine step, a direction
+// step, a replayed step, a failed step, a card op refused, its preview, the save and the read after; a framed ledger,
+// its step and its close; a SignalDrop; then the open list and Explore's read. Everything they answer, every model
+// call's system and user text and schema, every search's arguments, every shadow-log record, every write and every
+// stored document at the end are compared, key by key, with the golden. (Review L1-2 and L1-3 widened it to the shadow
+// log and these paths; it was regenerated at PR A's tip, as before, with the widened file.)
 //
 // The runs that compare (PR B adds the switch; at PR A's tip the mock's extra export is simply unread):
 //   - the switch 'off';
@@ -26,7 +29,7 @@ import { makeSrFirestore } from '../_utils/sharedResearch/__fixtures__/srFiresto
 
 const state = vi.hoisted(() => ({
   mode: 'on', builder: 'on', universe: 'off', user: { uid: 'u1' }, db: null, ids: 0, turns: [], turnQueue: [], retrievals: [], retrievalQueue: [],
-  openWith: 'off', thenUniverse: null,
+  openWith: 'off', thenUniverse: null, logs: [],
 }));
 vi.mock('node:crypto', async (importOriginal) => {
   const real = await importOriginal();
@@ -45,7 +48,7 @@ vi.mock('../_utils/hypothesisRecords/gate.js', () => ({ hypothesisRecordsOnFor: 
 vi.mock('../_utils/firebaseAdmin.js', () => ({ getFirebaseAdmin: () => state.db }));
 vi.mock('../_utils/security.js', () => ({ applySecurityMiddleware: () => false }));
 vi.mock('../_utils/authMiddleware.js', () => ({ requireAuth: async () => state.user }));
-vi.mock('../_utils/shadowLogger.js', () => ({ logConversation: async () => true }));
+vi.mock('../_utils/shadowLogger.js', () => ({ logConversation: async (r) => { state.logs.push(structuredClone(r)); return true; } }));
 vi.mock('@vercel/functions', () => ({ waitUntil: (p) => p }));
 vi.mock('../_utils/sharedResearch/modelTurn.js', async (importOriginal) => {
   const real = await importOriginal();
@@ -168,6 +171,7 @@ const LEDGER_STEP = () => turnOk({
     { companyName: 'Corning', symbolCandidate: null, role: 'Supplier', relationshipRef: 'g', openRef: null, claim: null },
   ],
 });
+const QUIET = () => turnOk({ reply: 'Nothing new this step.', findings: [], summary: null, lines: { support: null, complication: null, missing: null }, nextAction: { label: 'Look for a filing', purpose: 'Primary source.' }, companies: [] });
 const FRAME = () => turnOk({ question: 'Which listed companies sell the glass inside AI data centers?', check: 'Find who supplies fiber glass to data-center builders.', notEstablished: 'Whether glass is a large part of any supplier\'s sales.' });
 
 /** Own words → map → segment → names → NVDA → why → confirm → wrong if → time frame → save → the read after. */
@@ -197,6 +201,7 @@ async function ownWords() {
   };
   r.map = await step('map_segments', MAP());
   r.segment = await tap('set', 'segment', 'GPUs and accelerators');
+  r.namesFailed = await step('find_names', out({ reply: 'One company.', findings: [{ tempId: 'x1', kind: 'relationship', fact: 'QZXW sells the accelerators.', symbolCandidate: null, companyName: null, support: { kind: 'retrieval', index: 0, from: [], reason: null }, at: null, supersedes: null }] }));
   r.names = await step('find_names', NAMES());
   r.readAfterNames = await get({ sessionId: id });
   r.setNames = await tap('set', 'names', ['NVDA']);
@@ -204,6 +209,7 @@ async function ownWords() {
   r.confirm = await tap('confirm', 'why');
   r.wrongIf = await tap('set', 'wrongIf', { option: 0, priceLines: [{ symbol: 'NVDA', level: 120 }] });
   r.timeFrame = await tap('set', 'timeFrame', 'positional');
+  r.saveStale = await post({ action: 'adopt', sessionId: id, rev: rev + 5 });
   r.save = await post({ action: 'adopt', sessionId: id, rev });
   r.after = await get({ sessionId: id });
   return r;
@@ -234,6 +240,18 @@ async function storyLedger() {
   state.retrievalQueue.push(search());
   state.turnQueue.push(LEDGER_STEP());
   r.step = await post({ action: 'step', sessionId: id, stepId: '44444444-4444-4444-8444-000000000001', intent: 'next' });
+  const rel = r.step.body.record.findings.find((x) => x.kind === 'relationship' && x.symbol === 'NVDA');
+  state.retrievalQueue.push(search());
+  state.turnQueue.push(QUIET());
+  r.examine = await post({ action: 'step', sessionId: id, stepId: '44444444-4444-4444-8444-000000000002', intent: 'examine', target: { symbol: 'NVDA', relationshipFindingId: rel.findingId, openFindingId: null } });
+  state.retrievalQueue.push(search());
+  state.turnQueue.push(QUIET());
+  r.direction = await post({ action: 'step', sessionId: id, stepId: '44444444-4444-4444-8444-000000000003', intent: 'direction', direction: 'look at GLW and the glass suppliers' });
+  r.replay = await post({ action: 'step', sessionId: id, stepId: '44444444-4444-4444-8444-000000000002', intent: 'examine', target: { symbol: 'NVDA', relationshipFindingId: rel.findingId, openFindingId: null } });
+  state.retrievalQueue.push(search());
+  state.turnQueue.push(turnOk({ ...QUIET().output, findings: [{ tempId: 'q1', kind: 'coverage', fact: 'QZXW also sells them.', symbolCandidate: null, companyName: null, support: { kind: 'retrieval', index: 0, from: [], reason: null }, at: null, supersedes: null }] }));
+  r.failed = await post({ action: 'step', sessionId: id, stepId: '44444444-4444-4444-8444-000000000004', intent: 'refresh' });
+  r.cardRefused = await post({ action: 'card', sessionId: id, opId: '66666666-6666-4666-8666-000000000001', rev: 0, op: 'set', part: 'timeFrame', value: 'swing' });
   r.read = await get({ sessionId: id });
   const nvda = r.read.body.adoptPreview?.companies?.find((c) => c.symbol === 'NVDA');
   r.adopt = await post({ action: 'adopt', sessionId: id, statement: nvda?.fragment ?? 'x', horizonEnum: 'positional', symbols: ['NVDA'], previewRev: r.read.body.adoptPreview?.previewRev });
@@ -253,6 +271,7 @@ async function framedLedger() {
   state.retrievalQueue.push(search());
   state.turnQueue.push(LEDGER_STEP());
   r.step = await post({ action: 'step', sessionId: id, stepId: '55555555-5555-4555-8555-000000000001', intent: 'next' });
+  r.close = await post({ action: 'close', sessionId: id, reason: 'concluded' });
   return r;
 }
 
@@ -268,7 +287,7 @@ async function drop() {
 
 /** Every scenario on one fresh store, in order: the answers, the model calls, the searches, the writes and the store. */
 async function runAll({ universe = 'off', thenUniverse = null } = {}) {
-  Object.assign(state, { universe, openWith: universe, thenUniverse, ids: 0, turns: [], turnQueue: [], retrievals: [], retrievalQueue: [] });
+  Object.assign(state, { universe, openWith: universe, thenUniverse, ids: 0, turns: [], turnQueue: [], retrievals: [], retrievalQueue: [], logs: [] });
   const env = seed();
   state.env = env;
   state.db = env.db;
@@ -280,9 +299,10 @@ async function runAll({ universe = 'off', thenUniverse = null } = {}) {
   answers.storyLedger = await storyLedger();
   answers.framedLedger = await framedLedger();
   answers.drop = await drop();
+  answers.lists = { open: await get({ list: 'open' }), explore: await get({ list: 'explore' }) };
   state.builder = 'on';
   const docs = Object.fromEntries([...env.store.keys()].sort().map((k) => [k, env.doc(k)]));
-  return JSON.parse(JSON.stringify({ answers, turns: state.turns, retrievals: state.retrievals, writes: env.writes, docs }));
+  return JSON.parse(JSON.stringify({ answers, turns: state.turns, retrievals: state.retrievals, logs: state.logs, writes: env.writes, docs }));
 }
 
 beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date(NOW)); });
@@ -297,25 +317,35 @@ describe('off means off (build prompt section 9): game-list sessions answer, pro
     expect(g.answers.ownWords.save.body).toMatchObject({ version: 1, idempotent: false });
     expect(g.answers.storyLedger.adopt.status).toBe(200);
     expect(g.answers.storyBuilder.open.body.opening.storedRows.map((r) => r.symbol)).toEqual(['NVDA', 'AMD']);
-    expect(g.turns.length).toBe(7); // map, names, why; the source check; the ledger step; the frame and its step
-    for (const [name, run] of Object.entries(g.answers)) for (const [k, a] of Object.entries(run)) expect(a.status, `${name}.${k}`).toBe(200);
+    // map, names failed, names, why; the source check; the ledger's next, examine, direction and failed refresh; the frame and its step
+    expect(g.turns.length).toBe(11);
+    expect(g.logs.length).toBe(11);
+    const NOT_200 = { 'ownWords.saveStale': 409, 'storyLedger.cardRefused': 400 };
+    for (const [name, run] of Object.entries(g.answers)) for (const [k, a] of Object.entries(run)) expect(a.status, `${name}.${k}`).toBe(NOT_200[`${name}.${k}`] ?? 200);
+    expect(g.answers.ownWords.namesFailed.body).toMatchObject({ error: 'step_failed', reason: 'invalid_stray_ticker' });
+    expect(g.answers.storyLedger.failed.body).toMatchObject({ error: 'step_failed', reason: 'invalid_stray_ticker' });
+    expect(g.answers.storyLedger.replay.body.replay).toBe(true);
+    expect(g.answers.storyLedger.cardRefused.body.error).toBe('invalid_intent');
+    expect(g.answers.ownWords.saveStale.body.error).toBe('card_stale');
+    expect(g.turns.some((t) => t.user.includes('This step: examine one connection.'))).toBe(true);
+    expect(g.answers.lists.open.body.open.length).toBeGreaterThan(0);
   });
   it("the switch 'off': equal to the golden, key by key", async () => {
     const now = await runAll({ universe: 'off' });
     const g = JSON.parse(readFileSync(GOLDEN, 'utf8'));
-    for (const k of ['answers', 'turns', 'retrievals', 'writes', 'docs']) expect(now[k], k).toEqual(g[k]);
+    for (const k of ['answers', 'turns', 'retrievals', 'logs', 'writes', 'docs']) expect(now[k], k).toEqual(g[k]);
   });
   it("the switch 'founder', for a player not on the founder list: equal to the golden", async () => {
     process.env.MANDATE_FOUNDER_UIDS = 'someone-else, another-founder';
     const now = await runAll({ universe: 'founder' });
     const g = JSON.parse(readFileSync(GOLDEN, 'utf8'));
-    for (const k of ['answers', 'turns', 'retrievals', 'writes', 'docs']) expect(now[k], k).toEqual(g[k]);
+    for (const k of ['answers', 'turns', 'retrievals', 'logs', 'writes', 'docs']) expect(now[k], k).toEqual(g[k]);
   });
   it("a game-list session opened before the switch behaves the same after it is 'on' (the universe is stamped at open)", async () => {
     process.env.MANDATE_FOUNDER_UIDS = UID;
     // each investigation opens (or frames) with the switch 'off'; it turns 'on' at once, for every later request of it
     const now = await runAll({ universe: 'off', thenUniverse: 'on' });
     const g = JSON.parse(readFileSync(GOLDEN, 'utf8'));
-    for (const k of ['answers', 'turns', 'retrievals', 'writes', 'docs']) expect(now[k], k).toEqual(g[k]);
+    for (const k of ['answers', 'turns', 'retrievals', 'logs', 'writes', 'docs']) expect(now[k], k).toEqual(g[k]);
   });
 });

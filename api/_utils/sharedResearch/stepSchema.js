@@ -162,6 +162,8 @@ export function strayTickersOf(text, universe = gameUniverse) {
   for (const w of String(text ?? '').match(TICKERISH) || []) {
     if (ACRONYMS.includes(w) || INDEX_NAMES.includes(w)) continue;
     if (universe.has(w.replace('.', '-'))) continue;
+    // Build 3b (review L2-3): a research session's listed everyday names written in capitals ("TSMC"); none on the game list
+    if (typeof universe.allowsWord === 'function' && universe.allowsWord(w)) continue;
     out.push(w);
   }
   return out;
@@ -483,8 +485,9 @@ export function validateStepTurn(output, ctx) {
       notes.push(`identity_mismatch:${symbol}`);
       return null;
     }
-    // a finding that names no company carries the symbol only when its own fact names that company (refuter SH-1)
-    if (!companyName && factText !== null && !namesCompany(factText, { symbol, name: names[symbol] })) {
+    // a finding that names no company carries the symbol only when its own fact names that company (refuter SH-1); on a
+    // research session a research-only company is never identified without its name in words (review L2-4)
+    if (!companyName && factText !== null && ((typeof universe.needsName === 'function' && universe.needsName(symbol)) || !namesCompany(factText, { symbol, name: names[symbol] }))) {
       notes.push(`identity_unnamed:${symbol}`);
       return null;
     }

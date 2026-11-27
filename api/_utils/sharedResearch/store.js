@@ -51,7 +51,7 @@ import {
 } from './thesis.js';
 import { companiesOf } from './companies.js';
 import { CLAIMS_READ_LIMIT } from './opening.js';
-import { RESEARCH_STAMP } from './sessionUniverse.js';
+import { RESEARCH_STAMP, universeOf } from './sessionUniverse.js';
 import { EXPLORE_RECORD_KIND } from '../../../src/constants/sharedResearch.js';
 import {
   EXPLORE_OPEN_READ, EXPLORE_ENDED_READ, EXPLORE_RECORDS_READ, sessionsToReadOf, sessionsByIdOf, livePerStoryOf, lastPerStoryOf, exploreItemsOf,
@@ -992,7 +992,7 @@ export async function applyCard(db, { uid, sessionId, opId, rev, op, part, value
     if (isStaleRunning(s.lastStep, Date.parse(nowIso)) === false && s.lastStep?.status === 'running') throw refuse(409, 'step_in_flight');
     if (rev !== s.thesis.rev) return { session: s, record, applied: false, stale: true };
     if ((s.exchanges ?? []).filter((e) => e?.kind === CARD_EXCHANGE_KIND).length >= CARD_OPS_MAX) throw refuse(400, 'invalid_card', { reason: 'too_many_changes' });
-    const ctx = cardContextOf({ record, supported: companiesOf(record, { names }).supported, session: s });
+    const ctx = cardContextOf({ record, supported: companiesOf(record, { names, universe: universeOf(s) }).supported, session: s });
     const out = cardOpOf(s.thesis, { opId, op, part, value }, ctx);
     if (!out.ok) throw refuse(400, 'invalid_card', { reason: out.reason });
     const exchange = exchangeOf({ who: 'player', kind: CARD_EXCHANGE_KIND, text: out.label, at: nowIso, card: { op, part } }, { mintId: () => exchangeId });

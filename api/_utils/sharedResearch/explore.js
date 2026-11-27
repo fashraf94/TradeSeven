@@ -38,6 +38,7 @@ import { THESIS_PARTS, EXPLORE_RECORD_KIND } from '../../../src/constants/shared
 import { itemKeyOf, liveSessionOf, sessionViewOf, SESSIONS_COLLECTION } from './session.js';
 import { isBuilder, cardContextOf, thesisViewOf } from './thesis.js';
 import { companiesOf } from './companies.js';
+import { universeOf } from './sessionUniverse.js';
 
 /**
  * The open Explore sessions the exact query reads, at most. A player opens at most three investigations a day
@@ -125,7 +126,7 @@ export function exploreOpenOf(session, record) {
     question: record?.question ?? null,
     lastTurnAt: record?.telemetry?.lastTurnAt ?? null,
     // the thesis view's count — the number the sheet's card shows (§B4.4), never a recount of the stored states
-    filled: isBuilder(session) && record ? thesisViewOf(session.thesis, cardContextOf({ record, supported: companiesOf(record).supported, session })).filled : null,
+    filled: isBuilder(session) && record ? thesisViewOf(session.thesis, cardContextOf({ record, supported: companiesOf(record, { universe: universeOf(session) }).supported, session })).filled : null,
     parts: THESIS_PARTS.length,
     stepsLeft: Math.max(0, view.stepBudget - view.stepsUsed),
     findingsCount: Array.isArray(record?.findings) ? record.findings.length : 0,

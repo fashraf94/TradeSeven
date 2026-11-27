@@ -29,7 +29,7 @@ const TAKES_UNIVERSE = new Set([
   // the route's own wrappers
   'candidateSymbolsOf', 'cardCtxIn', 'targetOf',
 ]);
-/** Calls that carry the session itself (the route's wrappers that derive the universe and the name source from it). */
+/** Calls that carry the session itself (the ROUTE's wrappers that derive the universe and the name source from it; store.js's own companiesFor is a callback the route hands it). */
 const TAKES_SESSION = { companiesFor: 3, namesFor: 3, storedRowsFor: 2 };
 
 /** Every call of a named function in `src`: { name, line, args (source text), argCount }. */
@@ -50,6 +50,7 @@ function callsIn(src) {
   return out.sort((a, b) => a.start - b.start);
 }
 
+const ROUTE = 'api/forge/shared-research.js';
 const NAMES_THE_SESSION_UNIVERSE = /\buniverse\b|\buniverseOf\(/;
 /** The places that ask the GAME's list on purpose (each named in its module's comments): `gameUniverse` by name. */
 const NAMES_THE_GAME = /\bgameUniverse\b/;
@@ -63,18 +64,19 @@ function missesIn(file, src) {
     if (TAKES_UNIVERSE.has(c.name)) {
       if (NAMES_THE_SESSION_UNIVERSE.test(c.args) || NAMES_THE_GAME.test(c.args) || CARRIES_CONTEXT(file, c)) continue;
       misses.push(`${file}:${c.line} ${c.name}(${c.args.slice(0, 60)})`);
-    } else if (Object.hasOwn(TAKES_SESSION, c.name) && c.argCount < TAKES_SESSION[c.name]) {
+    } else if (file === ROUTE && Object.hasOwn(TAKES_SESSION, c.name) && c.argCount < TAKES_SESSION[c.name]) {
       misses.push(`${file}:${c.line} ${c.name} without the session`);
     }
   }
   return misses;
 }
 
-const ROUTE = 'api/forge/shared-research.js';
 const MODULES = [
   ROUTE,
   'api/_utils/sharedResearch/stepSchema.js', 'api/_utils/sharedResearch/opening.js', 'api/_utils/sharedResearch/thesisSchema.js',
   'api/_utils/sharedResearch/thesisWords.js', 'api/_utils/sharedResearch/stepPrompt.js', 'api/_utils/sharedResearch/companies.js',
+  // review L1-4: the card's free action (store.js applyCard) and Explore's read (explore.js) too
+  'api/_utils/sharedResearch/store.js', 'api/_utils/sharedResearch/explore.js',
 ];
 
 describe('every call of a universe-taking function names the session\'s universe (section 5.2)', () => {
@@ -106,7 +108,7 @@ describe('every call of a universe-taking function names the session\'s universe
 describe('the check catches a missed call site (one mutant per site)', () => {
   for (const file of MODULES) {
     const src = read(file);
-    const sites = callsIn(src).filter((c) => (TAKES_UNIVERSE.has(c.name) && NAMES_THE_SESSION_UNIVERSE.test(c.args)) || (Object.hasOwn(TAKES_SESSION, c.name) && c.argCount >= TAKES_SESSION[c.name]));
+    const sites = callsIn(src).filter((c) => (TAKES_UNIVERSE.has(c.name) && NAMES_THE_SESSION_UNIVERSE.test(c.args)) || (file === ROUTE && Object.hasOwn(TAKES_SESSION, c.name) && c.argCount >= TAKES_SESSION[c.name]));
     it(`${file}: every one of its ${sites.length} sites, its universe removed, is flagged`, () => {
       expect(sites.length).toBeGreaterThan(0);
       for (const site of sites) {

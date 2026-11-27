@@ -32,6 +32,7 @@ import { researchUniverse as researchList, isResearchStock, researchNameOf } fro
 import { RESEARCH_DIRECTORY } from '../researchDirectory.js';
 import { gameUniverse, coreNameOf } from './companies.js';
 import { EVERYDAY_NAMES } from './everydayNames.js';
+import { GAME_COMPANY_NAMES } from './gameCompanyNames.js';
 
 const OFF = 'off';
 /** The stamp a research session carries (`session.universe`). A game-list session carries none. */
@@ -78,8 +79,8 @@ const SHARE_TAIL = /[\s,]+(?:class\s+[a-c](?:\s+(?:ordinary|common)\s+(?:shares?
 
 /**
  * A company name as the lookup compares it: its core (coreNameOf) with share-type tails dropped, NFKC, lower case,
- * punctuation as spaces ("Corning Incorporated" → "corning"; "Ambev SA ADR" → "ambev"; "J&J" → "j&j"). Empty for
- * no name.
+ * apostrophes dropped ("Moody's" and "Moodys" are one name), other punctuation as spaces ("Corning Incorporated" →
+ * "corning"; "Ambev SA ADR" → "ambev"; "J&J" → "j&j"). Empty for no name.
  */
 export function lookupKeyOf(name) {
   let s = String(name ?? '').normalize('NFKC').trim();
@@ -88,37 +89,66 @@ export function lookupKeyOf(name) {
     if (next === s) break;
     s = next;
   }
-  return s.toLowerCase().replace(/[^\p{L}\p{N}&]+/gu, ' ').trim();
+  return s.toLowerCase().replace(/['’]/g, '').replace(/[^\p{L}\p{N}&]+/gu, ' ').trim();
 }
 
 let INDEX = null;
-/** key → the symbols it names: every directory company's core name, and every everyday name. Built once, on first use. */
+/**
+ * Built once, on first use:
+ *   exact    key → the symbols it names: every directory company's core name, and every everyday name — the names that
+ *            can give a symbol;
+ *   others   key → the symbols of every OTHER company that key could mean: a game company whose key it is, and every
+ *            directory or game company whose key begins with it ("viking" begins "viking therapeutics"; "vertex"
+ *            begins "vertex pharmaceuticals", a game company). Such a key never gives one company (review L2-1).
+ */
 function lookupIndex() {
   if (INDEX) return INDEX;
-  const index = new Map();
-  const add = (key, symbol) => {
+  const exact = new Map();
+  const others = new Map();
+  const add = (map, key, symbol) => {
     if (!key) return;
-    const hits = index.get(key) ?? new Set();
+    const hits = map.get(key) ?? new Set();
     hits.add(symbol);
-    index.set(key, hits);
+    map.set(key, hits);
   };
-  for (const [symbol, [name]] of Object.entries(RESEARCH_DIRECTORY)) add(lookupKeyOf(name), symbol);
-  for (const [name, symbol] of EVERYDAY_NAMES) add(lookupKeyOf(name), symbol);
-  INDEX = index;
-  return index;
+  /** Every leading run of words of a key, shorter than the key ("a b c" → "a", "a b"). */
+  const leading = (key) => { const w = key.split(' '); return w.slice(1).map((_, i) => w.slice(0, i + 1).join(' ')); };
+  for (const [symbol, [name]] of Object.entries(RESEARCH_DIRECTORY)) {
+    const key = lookupKeyOf(name);
+    add(exact, key, symbol);
+    for (const k of leading(key)) add(others, k, symbol);
+  }
+  for (const [name, symbol] of EVERYDAY_NAMES) add(exact, lookupKeyOf(name), symbol);
+  for (const [symbol, name] of Object.entries(GAME_COMPANY_NAMES)) {
+    const key = lookupKeyOf(name);
+    add(others, key, symbol);
+    for (const k of leading(key)) add(others, k, symbol);
+  }
+  INDEX = { exact, others };
+  return INDEX;
+}
+
+/** Every company a written name could mean: those whose name it is, and those it is the leading words of. */
+function candidatesOf(name) {
+  const key = lookupKeyOf(name);
+  if (!key) return { exact: new Set(), all: new Set() };
+  const { exact, others } = lookupIndex();
+  const e = exact.get(key) ?? new Set();
+  return { exact: e, all: new Set([...e, ...(others.get(key) ?? [])]) };
 }
 
 /**
  * A company named in words: the symbol whose directory core name — or listed everyday name — it is, when EXACTLY ONE
- * matches and that symbol is on the research list and not retired; null for none, or for more than one (never a
- * guess). The game's 228 are not in the directory: a game company named in words is found only through an everyday
- * name (Build 3b's offline check found no game name equal to a directory core name; the report says so).
+ * company could be meant, and that symbol is on the research list and not retired; null for none, or for more than one
+ * (never a guess). "Could be meant" counts every company whose name it is and every company whose name begins with it,
+ * the 228 included (gameCompanyNames.js): "Viking" is Viking Holdings' whole name and Viking Therapeutics' first
+ * word, so it is neither; "Vertex" is Vertex Inc's name and Vertex Pharmaceuticals' (a game company) first word. A
+ * game company is never found by its name here (only through an everyday name): its symbol is on the partner's list.
  */
 export function lookupName(name) {
-  const key = lookupKeyOf(name);
-  const hits = key ? lookupIndex().get(key) : null;
-  if (!hits || hits.size !== 1) return null;
-  const [symbol] = hits;
+  const { exact, all } = candidatesOf(name);
+  if (exact.size !== 1 || all.size !== 1) return null;
+  const [symbol] = exact;
   return researchList.has(symbol) && !researchList.retired(symbol) ? symbol : null;
 }
 
@@ -131,27 +161,44 @@ export function isEverydayNameOf(companyName, symbol) {
 }
 
 /**
+ * The everyday names written as one word in capitals that are no symbol ("TSMC"): on a research session the stray
+ * ticker scan lets them stand, so a listed everyday name never fails a step (review L2-3).
+ */
+const EVERYDAY_CAPITAL_WORDS = new Set(EVERYDAY_NAMES.map(([name]) => name).filter((n) => /^[A-Z]{2,5}$/.test(n) && !researchList.has(n)));
+export const allowsWord = (word) => EVERYDAY_CAPITAL_WORDS.has(word);
+
+/**
+ * A research-only company is never identified by its symbol alone (review L2-2, L2-4): a fact about it must name it
+ * in words (companyName), by its whole core name or a listed everyday name. "BYD", "CSL", "CMS" are other companies'
+ * everyday names before they are Boyd Gaming's, Carlisle's and CMS Energy's symbols.
+ */
+export const needsName = (symbol) => isResearchStock(symbol);
+
+/**
  * isSameCompany on a research session (companies.js asks this first). True or false when it decides; null hands the
  * question back to the game list's word rule (one of the 228 named in words, as on a game session):
- *   - the symbol itself, written in capitals ("GLW"), unless that word is another company's name ("HP" is HP Inc's name
- *     and Helmerich & Payne's symbol: false, never a guess);
  *   - a listed everyday name for the symbol ("Google" for GOOGL; RU-20);
  *   - a research-only company only by its WHOLE core name ("Corning" or "Corning Inc" for Corning Incorporated), never a
- *     part of it: "Apple" is not Apple Hospitality REIT, "Taiwan" is not Taiwan Semiconductor Manufacturing. The game
- *     list's word rule would accept a part, and the directory's 2,241 names are full of common words.
+ *     part of it ("Apple" is not Apple Hospitality REIT), never its symbol alone ("BYD" is not Boyd Gaming — review
+ *     L2-2), and never a name another company could be meant by ("Viking" names Viking Holdings and is Viking
+ *     Therapeutics' first word — L2-1): the directory's 2,241 names are full of common words;
+ *   - one of the 228 by its symbol written in capitals ("NVDA"), unless that word is another company's name ("HP" is HP
+ *     Inc's name and Helmerich & Payne's symbol); otherwise the word rule.
  */
 export function sameCompany(companyName, { symbol, name }) {
   const c = String(companyName ?? '').trim();
   if (typeof symbol !== 'string' || !c) return false;
-  if (c.replace(/\./g, '-') === symbol) {
-    const byName = lookupName(c);
-    return byName === null || byName === symbol;
-  }
   if (isEverydayNameOf(c, symbol)) return true;
   if (isResearchStock(symbol)) {
     const key = lookupKeyOf(c);
     const names = [name, researchNameOf(symbol)].filter((x) => typeof x === 'string' && x.trim());
-    return key !== '' && names.some((x) => lookupKeyOf(x) === key);
+    if (key === '' || !names.some((x) => lookupKeyOf(x) === key)) return false;
+    const { all } = candidatesOf(c);
+    return [...all].every((s) => s === symbol);
+  }
+  if (c.replace(/\./g, '-') === symbol) {
+    const byName = lookupName(c);
+    return byName === null || byName === symbol;
   }
   return null;
 }
@@ -178,6 +225,8 @@ export const RESEARCH_SESSION_UNIVERSE = Object.freeze({
   strictCase: true,
   lookupName,
   sameCompany,
+  needsName,
+  allowsWord,
   eligibilityOf,
 });
 

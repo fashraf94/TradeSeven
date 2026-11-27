@@ -43,6 +43,10 @@ import {
 // separate). isResearchStock is true only for a directory company, never for one of the 228 or for a symbol on neither
 // list (a fund such as KRE stays equippable: ruling F2 of Oct 25 governs it).
 import { isResearchStock } from '../_utils/researchUniverse.js';
+// Review L1-1: only a saved idea is refused (RU-18) — a list Work an idea saved, which carries its session marker. A
+// research-only company can enter a list only through a research session's save; a list made anywhere else (the Forge)
+// equips as it did before this build, whatever it holds.
+import { SHARED_RESEARCH_LIST_MARKER } from '../_utils/hypothesisRecords/model.js';
 
 export const config = { maxDuration: 10 };
 
@@ -61,6 +65,9 @@ const SENTINEL_TO_HTTP = Object.freeze({
 });
 
 /** Build 3b (RU-18): does the list hold a research-only company? Each symbol spelled as the house spells it (upper case, a share class with a hyphen). */
+/** A saved idea: a list Work an idea saved (its session marker). */
+export const isSavedIdea = (watchlist) => typeof watchlist?.[SHARED_RESEARCH_LIST_MARKER] === 'string' && watchlist[SHARED_RESEARCH_LIST_MARKER].length > 0;
+
 export function holdsResearchOnly(tickers) {
   return (Array.isArray(tickers) ? tickers : []).some((t) => typeof t?.symbol === 'string' && isResearchStock(t.symbol.trim().toUpperCase().replace(/\./g, '-')));
 }
@@ -80,8 +87,8 @@ function sentinelResponse(txErr) {
 }
 
 /**
- * The watchlist checks every equip makes: exists, not soft-deleted, the caller's, committed, and (Build 3b, RU-18) no
- * research-only company on it. Returns its data.
+ * The watchlist checks every equip makes: exists, not soft-deleted, the caller's, committed, and (Build 3b, RU-18) a
+ * saved idea holds no research-only company. Returns its data.
  */
 function equippableWatchlist(watchlistSnap, uid) {
   if (!watchlistSnap.exists) throw new Error(SENTINEL_PREFIX + 'watchlist_not_found');
@@ -89,7 +96,7 @@ function equippableWatchlist(watchlistSnap, uid) {
   if (watchlist.deletedAt) throw new Error(SENTINEL_PREFIX + 'watchlist_not_found');
   if (watchlist.userId !== uid) throw new Error(SENTINEL_PREFIX + 'forbidden');
   if (watchlist.status !== 'committed') throw new Error(SENTINEL_PREFIX + 'not_committed');
-  if (holdsResearchOnly(watchlist.tickers)) throw new Error(SENTINEL_PREFIX + 'research_only_list');
+  if (isSavedIdea(watchlist) && holdsResearchOnly(watchlist.tickers)) throw new Error(SENTINEL_PREFIX + 'research_only_list');
   return watchlist;
 }
 

@@ -1,7 +1,8 @@
 // api/agent/equip-watchlist.researchOnly.test.js
 //
 // Research universe Build 3b, build prompt section 7 (founder ruling RU-18): A SAVED IDEA HOLDING A RESEARCH-ONLY
-// COMPANY CANNOT BE EQUIPPED TO A BATTLE AGENT. The equip route refuses a list that holds one — code
+// COMPANY CANNOT BE EQUIPPED TO A BATTLE AGENT. The equip route refuses a saved idea (a list Work an idea saved — its
+// session marker; review L1-1: a Forge list equips as before, whatever it holds) that holds one — code
 // `research_only_list` — for every loadout, before the idempotent answer, with nothing written and no log. A list of game
 // stocks is equipped as today; a list with a fund outside both lists (KRE) is equipped as today (ruling F2 governs it).
 //
@@ -22,7 +23,7 @@ vi.mock('../_utils/authMiddleware.js', () => ({ requireAuth: async () => auth.cu
 vi.mock('../_utils/shadowLogger.js', () => ({ logSignalDrops: async (r) => { logs.current.push(r); } }));
 vi.mock('@vercel/functions', () => ({ waitUntil: (p) => p }));
 
-const { default: equipWatchlist, holdsResearchOnly } = await import('./equip-watchlist.js');
+const { default: equipWatchlist, holdsResearchOnly, isSavedIdea } = await import('./equip-watchlist.js');
 
 beforeEach(() => {
   auth.current = { uid: 'u1' };
@@ -34,13 +35,18 @@ beforeEach(() => {
 
 const RANKED = Object.freeze({ ownerId: 'u1', archetype: 'contrarian', equippedWatchlistId: null, equippedWatchlistName: null, activeBattleId: null, settingsRev: 5 });
 const list = (tickers, extra = {}) => ({ userId: 'u1', status: 'committed', name: 'An idea', tickers: tickers.map((symbol) => ({ symbol })), ...extra });
+/** A saved idea: a list Work an idea saved carries its session marker (store.js commitAdoption; hypothesisRecords SHARED_RESEARCH_LIST_MARKER). */
+const idea = (tickers) => list(tickers, { sourceSharedResearchSessionId: 'session-1', origin: 'shared_research' });
 const LISTS = {
-  'wl-research': list(['GLW']),
-  'wl-mixed': list(['NVDA', 'GLW']),
-  'wl-game': list(['NVDA', 'AMD']),
-  'wl-fund': list(['NVDA', 'KRE']),
-  'wl-dotted': list(['MOG.B']),
-  'wl-lower': list(['glw ']),
+  'wl-research': idea(['GLW']),
+  'wl-mixed': idea(['NVDA', 'GLW']),
+  'wl-game': idea(['NVDA', 'AMD']),
+  'wl-fund': idea(['NVDA', 'KRE']),
+  'wl-dotted': idea(['MOG.B']),
+  'wl-lower': idea(['glw ']),
+  // review L1-1: a list made anywhere else (the Forge) equips as before this build, whatever it holds
+  'wl-forge-tsm': list(['NVDA', 'TSM']),
+  'wl-forge-glw': list(['GLW']),
 };
 const REFUSAL = { error: 'research_only_list', message: "This idea holds a research-only company and can't be equipped to a battle agent." };
 
@@ -82,11 +88,28 @@ describe('everything else equips as today', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body).toMatchObject({ equippedWatchlistId: 'wl-game', idempotent: false });
   });
+  it.each(LOADOUTS)('%s: a Forge list (not a saved idea) holding a directory company is equipped as before this build (review L1-1)', async (_t, loadout) => {
+    for (const id of ['wl-forge-tsm', 'wl-forge-glw']) {
+      setup();
+      const res = await equip(id, loadout);
+      expect(res.statusCode, id).toBe(200);
+      expect(res.body, id).toMatchObject({ equippedWatchlistId: id, idempotent: false });
+    }
+  });
   it.each(LOADOUTS)('%s: a list with a fund outside both lists (KRE) is equipped (ruling F2 governs it)', async (_t, loadout) => {
     setup();
     const res = await equip('wl-fund', loadout);
     expect(res.statusCode).toBe(200);
     expect(res.body).toMatchObject({ equippedWatchlistId: 'wl-fund' });
+  });
+});
+
+describe('isSavedIdea: the session marker Work an idea writes, never another field', () => {
+  it('the marker name is the one the hypothesis records model writes', async () => {
+    const { SHARED_RESEARCH_LIST_MARKER } = await import('../_utils/hypothesisRecords/model.js');
+    expect(SHARED_RESEARCH_LIST_MARKER).toBe('sourceSharedResearchSessionId');
+    expect(isSavedIdea(idea(['GLW']))).toBe(true);
+    for (const w of [list(['GLW']), { ...list(['GLW']), sourceSharedResearchSessionId: '' }, { ...list(['GLW']), sourceSharedResearchSessionId: 7 }, null, undefined]) expect(isSavedIdea(w)).toBe(false);
   });
 });
 

@@ -23,6 +23,7 @@ import { validateBuildTurn } from './thesisSchema.js';
 import { emptyCard } from './thesis.js';
 import { dataCenterRecord } from './__fixtures__/records.js';
 import { researchNameOf } from '../researchUniverse.js';
+import { EVERYDAY_NAMES } from './everydayNames.js';
 import { RESEARCH_DIRECTORY } from '../researchDirectory.js';
 
 const flags = vi.hoisted(() => ({ mode: 'off', throws: false }));
@@ -205,9 +206,10 @@ describe('two companies with similar names (lens 2)', () => {
   });
 });
 
-// Section 5.7: 30 directory symbols that are ordinary words. For each, the title-case word is no directory company's
-// name (checked first), so prose that uses it names no company; the word in capitals, and the symbol with the company's
-// real name, each name the company.
+// Section 5.7: 37 directory symbols that are ordinary words. For each, the title-case word is no directory company's
+// name (checked first), so prose that uses it names no company; the word in capitals WITH the company's real name (the
+// symbol and the name) names the company; the word in capitals alone names none — a research-only company is never
+// identified by its symbol alone (review L2-2: "BYD" is the Chinese carmaker before it is Boyd Gaming's symbol).
 const WORDS = ['CASH', 'KEY', 'OPEN', 'ALL', 'AN', 'BILL', 'CAR', 'COLD', 'DOC', 'EAT', 'EYE', 'FAST', 'FIVE', 'FUN', 'GO', 'HAS', 'HOPE', 'IT',
   'KEYS', 'LIFE', 'MAIN', 'MAN', 'MOD', 'OUT', 'PAY', 'REAL', 'RUN', 'SKY', 'TEAM', 'TECH', 'TEN', 'WAY', 'YOU', 'CALM', 'FLY', 'STEP', 'SITE'];
 /** Neutral fact text: names no company in capitals, so the step's ticker scan never decides a row. */
@@ -222,7 +224,7 @@ describe('symbols that are also words (section 5.7)', () => {
       expect(lookupName(title(w)), w).toBeNull();
     }
   });
-  it.each(WORDS)('%s: ordinary prose naming it in words names no company; in capitals, or as its symbol with its real name, it does', (w) => {
+  it.each(WORDS)('%s: ordinary prose naming it in words names no company; in capitals with its real name it does; in capitals alone it does not', (w) => {
     const name = researchNameOf(w);
     const names = { [w]: name };
     const prose = turnOf({ fact: `${title(w)} matters more than price for these buyers.`, companyName: title(w), kind: 'product' });
@@ -231,8 +233,9 @@ describe('symbols that are also words (section 5.7)', () => {
     expect(nameAsTickerOf(title(w), R)).toBeNull();
     // the same prose with no company named at all: no symbol either
     expect(run(R, turnOf({ fact: `${title(w)} matters more than price for these buyers.`, kind: 'product' }), names).symbol).toBeNull();
-    // the word in capitals as the company named: the company
-    expect(run(R, turnOf({ fact: NEUTRAL, companyName: w }), names).symbol, `${w} capitals`).toBe(w);
+    // the word in capitals alone, as the company named: no company (the symbol alone never identifies a research company)
+    expect(run(R, turnOf({ fact: NEUTRAL, companyName: w }), names).symbol, `${w} capitals alone`).toBeNull();
+    expect(nameAsTickerOf(w, R), `${w} read as a ticker`).toBe(w);
     // the symbol with the company's real name: the company
     expect(run(R, turnOf({ fact: NEUTRAL, symbolCandidate: w, companyName: name }), names).symbol, `${w} real name`).toBe(w);
   });
@@ -242,11 +245,13 @@ describe('symbols that are also words (section 5.7)', () => {
     expect(nameAsTickerOf(w, R)).toBeNull();
     expect(run(R, turnOf({ fact: NEUTRAL, symbolCandidate: w, companyName: researchNameOf(w) }), names).symbol).toBe(w);
   });
-  it('ON is the symbol of ON Semiconductor and the name of On Holding, and Post is the name of Post Holdings: a word that is a company name is that company, and both is neither', () => {
-    expect(lookupName('On')).toBe('ONON');
+  it('ON is the symbol of ON Semiconductor and the name of On Holding, and Post is the name of Post Holdings: a word that is a company name is that company, and a word two companies could mean is neither', () => {
+    // "On" is On Holding's whole name and the first word of ON Semiconductor's: neither (review L2-1)
+    expect(researchNameOf('ONON')).toMatch(/^On /);
+    expect(lookupName('On')).toBeNull();
     const on = run(R, turnOf({ fact: NEUTRAL, companyName: 'ON' }), { ON: researchNameOf('ON'), ONON: researchNameOf('ONON') });
     expect(on.symbol).toBeNull();
-    expect(on.notes).toContain('identity_ambiguous:ON|ONON');
+    expect(on.notes).toContain('identity_mismatch:ON');
     expect(run(R, turnOf({ fact: NEUTRAL, symbolCandidate: 'ON', companyName: researchNameOf('ON') }), { ON: researchNameOf('ON') }).symbol).toBe('ON');
     expect(lookupName('Post')).toBe('POST');
   });
@@ -273,6 +278,77 @@ describe('symbols that are also words (section 5.7)', () => {
     expect(out.ok).toBe(true);
     expect(out.notes).not.toContain('reply_replaced:dead_end');
     expect(resolveSymbol('A', R)).toBe('A');
+  });
+});
+
+// Review lens 2 (Build 3b): the rows that failed on the build before its fixes.
+describe('review L2-1: a name another company could be meant by resolves to none', () => {
+  const dir = (...syms) => Object.fromEntries(syms.map((x) => [x, researchNameOf(x)]));
+  it.each([
+    ['Viking', 'Viking is testing an oral weight-loss pill.', ['VIK', 'VKTX']],
+    ['Prudential', 'Prudential sells group life insurance to employers.', ['PUK']],
+    ['Vertex', 'Vertex sells the cystic fibrosis drug Trikafta.', ['VERX']],
+    ['Compass Group', 'Compass Group runs the cafeterias at large tech campuses.', ['COMP']],
+  ])('"%s" in words: no company', (name, fact, syms) => {
+    expect(lookupName(name), name).toBeNull();
+    expect(run(R, turnOf({ fact, companyName: name }), dir(...syms)).symbol, name).toBeNull();
+  });
+  it('the right symbol offered with a name another company could mean is not accepted either (fails safe); its whole name is', () => {
+    expect(run(R, turnOf({ fact: 'Viking is testing an oral weight-loss pill.', symbolCandidate: 'VKTX', companyName: 'Viking' }), dir('VKTX')).symbol).toBeNull();
+    expect(run(R, turnOf({ fact: 'Viking Therapeutics is testing an oral weight-loss pill.', symbolCandidate: 'VKTX', companyName: 'Viking Therapeutics' }), dir('VKTX')).symbol).toBe('VKTX');
+    expect(run(R, turnOf({ fact: NEUTRAL, companyName: 'Viking Therapeutics' }), dir('VKTX')).symbol).toBe('VKTX');
+  });
+  it('a whole name nothing else begins with still resolves: Corning, Arista Networks, the everyday names', () => {
+    expect([lookupName('Corning'), lookupName('Arista Networks'), lookupName('Micron'), lookupName('Palantir'), lookupName('Uber')]).toEqual(['GLW', 'ANET', 'MU', 'PLTR', 'UBER']);
+  });
+});
+
+describe('review L2-2 and L2-4: a research-only company is never identified by its symbol alone', () => {
+  const dir = (...syms) => Object.fromEntries(syms.map((x) => [x, researchNameOf(x)]));
+  it.each([
+    ['BYD', 'BYD buys lithium under long-term contracts.'],
+    ['CSL', 'CSL collects plasma at its US centers.'],
+    ['CMS', 'CMS sets the payment rates insurers receive.'],
+  ])('"%s" written in capitals is no company (another company\'s everyday name before it is a directory symbol)', (sym, fact) => {
+    const r = run(R, turnOf({ fact, companyName: sym }), dir(sym));
+    expect(r.symbol).toBeNull();
+    expect(r.supported).toEqual([]);
+  });
+  it('the symbol with its real name is the company: BYD with "Boyd Gaming"', () => {
+    expect(run(R, turnOf({ fact: 'Boyd Gaming runs casinos.', symbolCandidate: 'BYD', companyName: 'Boyd Gaming' }), dir('BYD')).symbol).toBe('BYD');
+  });
+  it.each([
+    ['GOLD', 'Barrick mines gold in Nevada.'],
+    ['APLE', 'Apple buys chips for its phones.'],
+    ['GLW', 'Corning supplies the glass.'],
+  ])('%s offered with no company named: no symbol (identity_unnamed), whatever the fact says', (sym, fact) => {
+    const r = run(R, turnOf({ fact, symbolCandidate: sym }), dir(sym));
+    expect(r.symbol).toBeNull();
+    expect(r.notes).toContain(`identity_unnamed:${sym}`);
+  });
+  it('a game stock offered with no company named still reads as before (its fact names it)', () => {
+    expect(run(R, turnOf({ fact: 'NVIDIA supplies the chips.', symbolCandidate: 'NVDA' }), { NVDA: 'NVIDIA Corporation' }).symbol).toBe('NVDA');
+  });
+});
+
+describe('review L2-3 and L2-6: every everyday name works through the validator; possessives', () => {
+  it.each(EVERYDAY_NAMES.map(([n, s]) => [n, s]))('"%s" → %s, and the step is not failed', (name, symbol) => {
+    const r = run(R, turnOf({ fact: NEUTRAL, companyName: name }), { [symbol]: researchNameOf(symbol) ?? symbol });
+    expect(r.symbol).toBe(symbol);
+  });
+  it('TSMC may stand in a fact on a research session, and still fails the step on the game list', () => {
+    expect(validateStepTurn(turnOf({ fact: 'TSMC makes the accelerator chips.', companyName: 'TSMC' }), ctxFor(R, { TSM: researchNameOf('TSM') })).ok).toBe(true);
+    expect(validateStepTurn(turnOf({ fact: 'TSMC makes the accelerator chips.' }), ctxFor(gameUniverse))).toMatchObject({ ok: false, rule: 'stray_ticker' });
+  });
+  it('"Moody\'s" finds Moodys Corporation; "Kohl\'s" still finds Kohl\'s', () => {
+    expect(lookupName("Moody's")).toBe('MCO');
+    expect(lookupKeyOf("Moody's")).toBe(lookupKeyOf('Moodys Corporation'));
+  });
+  it('two capitals in a dead end\'s reply ("IT", "ON") never read as a company on a research session', () => {
+    const ctx = { ...ctxFor(R), card: emptyCard(), goal: 'find_names', part: null };
+    const out = validateBuildTurn({ reply: 'IT budgets moved on to other projects.', findings: [], companies: [], themeSuggestion: '', segments: [], why: null, wrongIfOptions: [], timeFramePick: null, pick: null }, ctx);
+    expect(out.ok).toBe(true);
+    expect(out.notes).not.toContain('reply_replaced:dead_end');
   });
 });
 

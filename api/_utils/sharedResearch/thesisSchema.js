@@ -533,12 +533,13 @@ export function validateBuildTurn(output, ctx) {
 export const DEAD_END_LINE = 'No listed company has a sourced connection yet; nothing is picked to finish the card.';
 /**
  * Does a text name a company in the game's universe by its symbol (the acronyms and index names never count)? On a
- * research session (Build 3b section 5.7) a single capital letter counts only as one of the game's own symbols: "A"
- * opens many a sentence and is a directory symbol (Agilent). On the game list this is exactly as before.
+ * research session (Build 3b section 5.7; review L2-6) a word of one or two capitals counts only as one of the game's own
+ * symbols: "A", "IT", "ON", "PR" open or fill many a sentence and are directory symbols. On the game list this is exactly
+ * as before.
  */
 function namesAListedCompany(text, universe) {
   return (String(text ?? '').match(/\b[A-Z]{1,5}(?:[.-][A-Z])?\b/g) || []).some((w) => !ACRONYMS.includes(w) && !INDEX_NAMES.includes(w) && resolveSymbol(w, universe) !== null
-    && (universe.strictCase !== true || w.length > 1 || resolveSymbol(w, gameUniverse) !== null));
+    && (universe.strictCase !== true || w.length > 2 || resolveSymbol(w, gameUniverse) !== null));
 }
 
 /**

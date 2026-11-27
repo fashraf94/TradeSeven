@@ -26,7 +26,6 @@ export const EVERYDAY_NAMES = Object.freeze([
   ['AmEx', 'AXP', 'The usual short name of American Express.'],
   ['BofA', 'BAC', 'The usual short name of Bank of America.'],
   ['JPMorgan', 'JPM', 'The everyday name of JPMorgan Chase.'],
-  ['JP Morgan', 'JPM', 'JPMorgan Chase written with a space.'],
   ['Goldman', 'GS', 'The everyday short name of Goldman Sachs.'],
   ['Disney', 'DIS', 'The everyday name of The Walt Disney Company.'],
   ['Exxon', 'XOM', 'The everyday short name of Exxon Mobil.'],

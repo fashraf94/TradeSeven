@@ -175,23 +175,33 @@ async function storedRowsFor(db, session, { record = null, companies = null, fet
 export const RESEARCH_FETCH_START_BY_MS = 18_000;
 export const RESEARCH_FETCH_ABORT_AT_MS = 26_000;
 /**
- * What a research row's fetch is handed: the EODHD key read now, the network, the clock. In a step (`t0` given) no fetch
- * starts past RESEARCH_FETCH_START_BY_MS, and one under way is aborted at RESEARCH_FETCH_ABORT_AT_MS, so the answer
- * still leaves inside the function's time (an aborted request is stored as Build 2's network_error: no call again today).
+ * What a research row's fetch is handed: the EODHD key read now, the network, the clock. From the request's start `t0`
+ * (a read, an open or a step — review L2-5) no fetch starts past RESEARCH_FETCH_START_BY_MS, and one under way is aborted
+ * at RESEARCH_FETCH_ABORT_AT_MS, so the answer still leaves inside the function's time (an aborted request is stored as
+ * Build 2's network_error, so that company's numbers wait a day for their next try).
  */
-function researchFetchOf(t0 = null) {
+function researchFetchOf(t0) {
   const apiKey = typeof process !== 'undefined' ? process.env?.EODHD_API_KEY : undefined;
-  if (t0 === null) return { apiKey, fetchImpl: (url, opts) => globalThis.fetch(url, opts), now: () => new Date(), deadlineAt: null };
   const abortAt = t0 + RESEARCH_FETCH_ABORT_AT_MS;
   return {
     apiKey, now: () => new Date(), deadlineAt: t0 + RESEARCH_FETCH_START_BY_MS,
     fetchImpl: (url, opts) => globalThis.fetch(url, { ...opts, signal: AbortSignal.timeout(Math.max(1, abortAt - Date.now())) }),
   };
 }
-/** A research session's step answer carries its stored rows (the client's builder shows them); a game-list session's carries none, as before. */
-const researchRowsPart = async (db, session, record, companies, t0) => (isResearchSession(session)
-  ? { storedRows: await storedRowsFor(db, session, { record, companies, fetch: researchFetchOf(t0) }) }
-  : {});
+/**
+ * A research session's step answer carries its stored rows (the client's builder shows them); a game-list session's
+ * carries none, as before. The step is already saved: a failure here leaves the rows out of this answer (the next read
+ * shows them) and never fails it (review L2-6).
+ */
+async function researchRowsPart(db, session, record, companies, t0) {
+  if (!isResearchSession(session)) return {};
+  try {
+    return { storedRows: await storedRowsFor(db, session, { record, companies, fetch: researchFetchOf(t0) }) };
+  } catch (err) {
+    console.warn('[shared-research] research rows left out of a step answer:', err?.message || err);
+    return {};
+  }
+}
 const answer = async (res, status, body, pending = null, deadlineAt = null) => {
   await settle(pending, deadlineAt);
   return res.status(status).json(body);
@@ -200,7 +210,8 @@ const answer = async (res, status, body, pending = null, deadlineAt = null) => {
 // ── GET ───────────────────────────────────────────────────────────────────────
 
 async function handleGet(req, res, { db, uid }) {
-  const nowIso = new Date().toISOString();
+  const t0 = Date.now();
+  const nowIso = new Date(t0).toISOString();
   const day = await readQuota(db, { uid, nowIso });
   if (req.query?.list === 'open') return res.status(200).json({ open: await listOpen(db, { uid }), quota: quotaViewOf(day) });
   // B6a X-1: Explore's one read — the day's quota and, per Explore story investigated, its open and last-ended
@@ -222,7 +233,7 @@ async function handleGet(req, res, { db, uid }) {
       record: projectionOf(record, { lines, nowIso }),
       companies,
       thesis: thesisFor(session, record, companies),
-      storedRows: await storedRowsFor(db, session, { record, companies, fetch: researchFetchOf() }),
+      storedRows: await storedRowsFor(db, session, { record, companies, fetch: researchFetchOf(t0) }),
       previous: await readPrevious(db, { uid, session }),
       quota: quotaViewOf(day),
       // B6c, the founder's Q-4: on a SAVED thesis only, the list "Use it in my next game" would replace — or the saved
@@ -236,7 +247,7 @@ async function handleGet(req, res, { db, uid }) {
     record: projectionOf(record, { lines, nowIso }),
     companies,
     adoptPreview: record ? adoptPreviewOf(record, { companies, lines }) : null,
-    storedRows: await storedRowsFor(db, session, { record, companies, fetch: researchFetchOf() }),
+    storedRows: await storedRowsFor(db, session, { record, companies, fetch: researchFetchOf(t0) }),
     previous: await readPrevious(db, { uid, session }), // spec §16 FQ-1: "Open the earlier one"
     quota: quotaViewOf(day),
   });
@@ -325,7 +336,7 @@ async function openAnswer(res, db, uid, opened, nowIso) {
     record: projectionOf(opened.record, { lines, nowIso }),
     companies,
     ...(shapeOf(opened.session) === 'builder' ? { thesis: thesisFor(opened.session, opened.record, companies) } : {}),
-    opening: { storedRows: await storedRowsFor(db, opened.session, { record: opened.record, companies, fetch: researchFetchOf() }) },
+    opening: { storedRows: await storedRowsFor(db, opened.session, { record: opened.record, companies, fetch: researchFetchOf(Date.parse(nowIso)) }) },
     quota: quotaViewOf(opened.day),
     ...(opened.existing ? { existing: true } : {}),
     previous: opened.previous ?? null, // spec §16 FQ-1: the newest ended investigation of this item, or null
