@@ -9,7 +9,7 @@ import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const flags = vi.hoisted(() => ({ mode: 'on' }));
-vi.mock('../../config/exploreFlags', () => ({ EXPLORE_MODES: ['off', 'allowlist', 'on'], EXPLORE_MODE: 'off', exploreMode: () => flags.mode }));
+vi.mock('../../config/exploreFlags', () => ({ EXPLORE_MODES: ['off', 'allowlist', 'on'], EXPLORE_MODE: 'off', exploreMode: () => flags.mode, EXPLORE_COMPARE_ROUTE: false }));
 const read = vi.hoisted(() => vi.fn());
 vi.mock('../../services/sharedResearchService', () => ({ readExploreInvestigations: read }));
 vi.mock('../../firebase/config', () => ({ db: {} }));
@@ -27,13 +27,16 @@ vi.mock('../draft/AssetResearchModal', () => ({ default: function AssetStub({ as
 
 const { default: SearchDiscover } = await import('../Search/SearchDiscover');
 const kit = await import('./__fixtures__/exploreKit');
-const { READS, GATED, NO_ANSWER, SAMPLE_STORIES, answerOf, fixtureSources, bookmarkOf, mount, flush, click, typeInto, press, $, $$, buttonNamed, deferred, until } = kit;
+const { READS, GATED, NO_ANSWER, SAMPLE_STORIES, KIT_STORIES, answerOf, fixtureSources, bookmarkOf, mount, flush, click, typeInto, press, $, $$, buttonNamed, deferred, until } = kit;
 const { EXPLORE_COPY: COPY } = await import('./exploreCopy');
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 // Rows wait on lazy modules and the page's own animations in real time: 15 s each, so a loaded machine cannot time one out.
 vi.setConfig({ testTimeout: 15_000 });
 const USER = { uid: 'u-explore-1' };
+// Build 2: the kit's default stories are the pilot pair and the three samples (KIT_STORIES). The pilot overview is the
+// hero (B-4); the AI and utilities samples are cards, one per story (B-3); the tap-to-pay sample is a tile (B-5). Rows
+// that opened or saved the tap-to-pay card use the utilities card.
 const [AI, TAP, UTIL] = SAMPLE_STORIES;
 let mounted = [];
 let sources;
@@ -85,22 +88,23 @@ describe('home (spec §3.2)', () => {
   });
   it('stories failed: the line and Try again, which reads the stories once more', async () => {
     let n = 0;
-    sources = fixtureSources({ stories: () => { n += 1; if (n === 1) throw new Error('x'); return SAMPLE_STORIES; } });
+    sources = fixtureSources({ stories: () => { n += 1; if (n === 1) throw new Error('x'); return KIT_STORIES; } });
     await openPage();
     expect($('[role="alert"]').textContent).toBe(COPY.home.failed);
     click($('[data-explore-retry-stories]'));
     await until(() => card(AI.id), 'the cards');
     expect(sources.calls.filter((c) => c.kind === 'readStories')).toHaveLength(2);
   });
-  it('the cards: one per featured question, the QUESTION as headline, origin and sample tags, Read the story, no state line', async () => {
+  it('the cards: one per story (B-3), its featured question as headline, origin and sample tags, Read the story, no state line; the product-led one is a tile (B-5)', async () => {
     await openPage();
     expect($$('[data-explore-card]').map((c) => c.querySelector('[data-explore-card-question]').textContent)).toEqual([
-      AI.questions[0].text, TAP.questions[0].text, UTIL.questions[0].text, UTIL.questions[1].text,
+      AI.questions[0].text, UTIL.questions[0].text,
     ]);
-    expect(card(TAP.id).textContent).toContain(COPY.card.product);
+    expect(card(TAP.id)).toBeNull();
+    expect($(`[data-explore-tile="${TAP.id}"]`).textContent).toContain(TAP.productName);
     expect(card(AI.id).textContent).toContain(COPY.card.fromReporter('Kim'));
     expect($$('[data-explore-card]').every((c) => c.textContent.includes(COPY.card.sample))).toBe(true);
-    expect($$('[data-explore-card-primary]').map((b) => b.dataset.exploreCardPrimary)).toEqual(['read', 'read', 'read', 'read']);
+    expect($$('[data-explore-card-primary]').map((b) => b.dataset.exploreCardPrimary)).toEqual(['read', 'read']);
     expect($$('[data-explore-card] [data-explore-state]')).toEqual([]);
     expect($('[data-explore-in-progress]')).toBeNull();
   });
@@ -158,10 +162,10 @@ describe('home (spec §3.2)', () => {
   });
   it('topics filter the cards; All topics clears', async () => {
     await openPage();
-    click($('[data-explore-topic="Payments"]'));
-    expect($$('[data-explore-card]').map((c) => c.dataset.exploreCard)).toEqual(['sample-tap-to-pay']);
+    click($('[data-explore-topic="AI buildout"]'));
+    expect($$('[data-explore-card]').map((c) => c.dataset.exploreCard)).toEqual(['sample-ai-buildout']);
     click($('[data-explore-topic="*"]'));
-    expect($$('[data-explore-card]')).toHaveLength(4);
+    expect($$('[data-explore-card]')).toHaveLength(2);
   });
 });
 
@@ -169,13 +173,13 @@ describe('K-7: every number on the page is the read\'s own (planted numbers no r
   const planted = (over) => answerOf({ ...READS.progress, ...over });
   it('the cost line and the limit come from the quota: 2 of 5 used, then 5 of 5', async () => {
     await openPage({ answer: planted({ quota: { ...READS.progress.quota, investigationsToday: 2, perDay: 5 } }) });
-    await openStory(TAP);
+    await openStory(UTIL);
     expect($('[data-explore-cost]').textContent).toBe('Uses 1 of your 5 investigations today · 2 used');
     expect(primary().textContent).toBe(COPY.panel.work);
   });
   it('at 5 of 5 the limit line names 5', async () => {
     await openPage({ answer: planted({ quota: { ...READS.progress.quota, investigationsToday: 5, perDay: 5 } }) });
-    await openStory(TAP);
+    await openStory(UTIL);
     expect($('[data-explore-limit]').textContent).toBe(COPY.panel.limit(5));
   });
   it('the state line carries filled, parts and steps left as read: 4 of 7, 13 steps', async () => {
@@ -198,9 +202,9 @@ describe('the reader and the panel (spec §3.4, §3.5)', () => {
   });
   it('form A: the question editable, what starts with it (only what travels), the cost line from the quota, Work this idea', async () => {
     await openPage({ answer: answerOf(READS.progress) });
-    await openStory(TAP);
+    await openStory(UTIL);
     expect(panel().dataset.explorePanel).toBe('A');
-    expect($('[data-explore-question-input]').value).toBe(TAP.questions[0].text);
+    expect($('[data-explore-question-input]').value).toBe(UTIL.questions[0].text);
     expect($('[data-explore-question-input]').maxLength).toBe(500);
     expect($$('[data-explore-starts-row]').map((r) => r.dataset.exploreStartsRow)).toEqual(['story', 'question', 'angle', 'firstStep', 'companies', 'open']);
     expect($('[data-explore-starts]').textContent).toContain(COPY.panel.startsFirstStep);
@@ -208,7 +212,7 @@ describe('the reader and the panel (spec §3.4, §3.5)', () => {
     expect(primary().textContent).toBe(COPY.panel.work);
   });
   it('a story without tickers has no Companies row', async () => {
-    sources = fixtureSources({ stories: [{ ...AI, tickers: [] }] });
+    sources = fixtureSources({ stories: KIT_STORIES.map((s) => (s.id === AI.id ? { ...AI, tickers: [] } : s)) });
     await openPage();
     await openStory(AI);
     expect($$('[data-explore-starts-row]').map((r) => r.dataset.exploreStartsRow)).not.toContain('companies');
@@ -282,11 +286,11 @@ describe('the reader and the panel (spec §3.4, §3.5)', () => {
     await until(() => panel()?.dataset.explorePanel === 'A', 'form A');
     expect(read).toHaveBeenCalledTimes(2);
   });
-  it('the connections carry one of the three labels each; the sources each carry their own date', async () => {
+  it('the connections carry one of the three labels each (one list, B-6); the sources each carry their own date', async () => {
     await openPage();
     await openStory(AI);
-    click($('[data-explore-connections] button'));
-    expect($$('[data-explore-connection]').map((c) => c.dataset.exploreConnection)).toEqual(['source_cited', 'reporters_reading', 'no_source_yet']);
+    expect($$('[data-explore-screen="story"] [data-explore-connection]').map((c) => c.dataset.exploreConnection)).toEqual(['source_cited', 'reporters_reading', 'no_source_yet']);
+    expect($$('[data-explore-screen="story"] [data-explore-basis]').map((c) => c.textContent)).toEqual(['Source cited', "Reporter's reading", 'No source yet']);
     expect($('[data-explore-connections]').textContent).toContain(COPY.story.connectionsClose);
     click($('[data-explore-sources] button'));
     expect($$('[data-explore-source-dated]').map((d) => d.textContent)).toEqual(['Evidence dated Aug 2026', 'Evidence dated Sep 2026', 'Evidence dated May 2026']);
@@ -451,30 +455,30 @@ describe('bookmarks (K-11, spec §3.8)', () => {
   it('Save for later saves the story (aria-pressed) and lists it; again removes it', async () => {
     await openPage();
     await until(() => $('[data-explore-saved]')?.textContent.includes(COPY.home.savedEmpty), 'the saved list');
-    const toggle = card(TAP.id).querySelector('[data-explore-save]');
+    const toggle = card(UTIL.id).querySelector('[data-explore-save]');
     expect(toggle.getAttribute('aria-pressed')).toBe('false');
     click(toggle);
-    await until(() => card(TAP.id).querySelector('[data-explore-save]').getAttribute('aria-pressed') === 'true', 'saved');
-    expect($('[data-explore-saved-row="sample-tap-to-pay"]')).not.toBeNull();
-    click(card(TAP.id).querySelector('[data-explore-save]'));
-    await until(() => card(TAP.id).querySelector('[data-explore-save]').getAttribute('aria-pressed') === 'false', 'removed');
+    await until(() => card(UTIL.id).querySelector('[data-explore-save]').getAttribute('aria-pressed') === 'true', 'saved');
+    expect($('[data-explore-saved-row="sample-utility-load"]')).not.toBeNull();
+    click(card(UTIL.id).querySelector('[data-explore-save]'));
+    await until(() => card(UTIL.id).querySelector('[data-explore-save]').getAttribute('aria-pressed') === 'false', 'removed');
     expect(sources.calls.filter((c) => /Bookmark$/.test(c.kind) && c.kind !== 'readBookmarks').map((c) => c.kind)).toEqual(['saveBookmark', 'removeBookmark']);
   });
   it('a failed save says so in one line and leaves the toggle as it was', async () => {
     sources = fixtureSources({ failWrites: new Set(['save']) });
     await openPage();
-    click(card(TAP.id).querySelector('[data-explore-save]'));
-    await until(() => card(TAP.id).querySelector('[data-explore-bookmark-error]'), 'the line');
-    expect(card(TAP.id).querySelector('[data-explore-bookmark-error]').textContent).toBe(COPY.bookmark.failedSave);
-    expect(card(TAP.id).querySelector('[data-explore-save]').getAttribute('aria-pressed')).toBe('false');
+    click(card(UTIL.id).querySelector('[data-explore-save]'));
+    await until(() => card(UTIL.id).querySelector('[data-explore-bookmark-error]'), 'the line');
+    expect(card(UTIL.id).querySelector('[data-explore-bookmark-error]').textContent).toBe(COPY.bookmark.failedSave);
+    expect(card(UTIL.id).querySelector('[data-explore-save]').getAttribute('aria-pressed')).toBe('false');
   });
   it('the cap of 50 is the client\'s: the 51st is refused with its line and nothing is written', async () => {
     sources = fixtureSources({ bookmarks: Array.from({ length: 50 }, (_, i) => ({ storyId: `old-${i}`, storyVersion: 1, title: `Old ${i}`, savedAt: '2026-11-01T00:00:00.000Z' })) });
     await openPage();
     await until(() => $$('[data-explore-saved-row]').length === 50, 'fifty saved');
-    click(card(TAP.id).querySelector('[data-explore-save]'));
+    click(card(UTIL.id).querySelector('[data-explore-save]'));
     await flush();
-    expect(card(TAP.id).querySelector('[data-explore-bookmark-error]').textContent).toBe(COPY.bookmark.cap(50));
+    expect(card(UTIL.id).querySelector('[data-explore-bookmark-error]').textContent).toBe(COPY.bookmark.cap(50));
     expect(sources.calls.filter((c) => c.kind === 'saveBookmark')).toEqual([]);
   });
 });

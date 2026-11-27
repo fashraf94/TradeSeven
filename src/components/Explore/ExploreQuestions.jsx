@@ -10,7 +10,7 @@ import { S, T, rowBtnStyle, wash } from './exploreStyle';
 
 const COPY = EXPLORE_COPY.questions;
 
-export default function ExploreQuestions({ story, selectedId, onSelect }) {
+export default function ExploreQuestions({ story, selectedId, onSelect, headingRef = null }) {
   const ids = story.questions.map((q) => q.id);
   const headingId = `ftx-q-h-${story.id}`;
   const onKeyDown = (event) => {
@@ -23,7 +23,7 @@ export default function ExploreQuestions({ story, selectedId, onSelect }) {
   };
   return (
     <section aria-labelledby={headingId} style={S.section} data-explore-questions="">
-      <h3 id={headingId} style={S.h2}>{COPY.title}</h3>
+      <h3 id={headingId} ref={headingRef} tabIndex={-1} style={{ ...S.h2, outline: 'none' }}>{COPY.title}</h3>
       <p style={S.meta}>{COPY.help}</p>
       <div role="radiogroup" aria-labelledby={headingId} onKeyDown={onKeyDown} style={{ display: 'grid', gap: 8 }}>
         {story.questions.map((q) => {

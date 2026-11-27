@@ -13,7 +13,9 @@
 //     error boundary with the hub wrapper's three lines: loading, a failed load with Try again (a fresh import), and
 //     the same line for a body that throws;
 //   - the body mounts fresh for each opening (`key` is the opening's id), standalone: `overlayStack` null,
-//     `stories` [], and no agent (no source outside the hub has it without a new read: spec §3.6, preamble 6).
+//     `stories` [] — and (Build 2, spec docs/specs/20261125_EXPLORE_BUILD_2_SPEC_AMENDMENT_B.md §7, build prompt K-16)
+//     the player's agent from the one research read: `agentId`, `agentName` and `equippedListLabel` are the read's
+//     `agent.id`, `agent.name` and `agent.equippedList.name`, each null when the read names none (B6c §1.3). Never guessed.
 //
 // THE FOUR WAYS IN (spec §3.6's table, exactly):
 //   work      mode 'item', startNow, item = the story with the question as edited
@@ -112,7 +114,7 @@ const canFocus = (el) => Boolean(el) && typeof el.focus === 'function' && el.isC
 export function createExploreSheetHost(load) {
   const loader = createBodyLoader(load);
 
-  function ExploreSheetHost({ entry, gated = false, phone = false, onClose, opener = null, fallbackFocus = null }) {
+  function ExploreSheetHost({ entry, gated = false, phone = false, onClose, opener = null, fallbackFocus = null, agent = null }) {
     const overlayRef = useRef(null);
     const backdropRef = useRef(null);
     const dialogRef = useRef(null);
@@ -241,9 +243,9 @@ export function createExploreSheetHost(load) {
                   {...bodyPropsOf(entry)}
                   direction={null}
                   stories={[]}
-                  agentName={null}
-                  agentId={null}
-                  equippedListLabel={null}
+                  agentName={agent?.name ?? null}
+                  agentId={agent?.id ?? null}
+                  equippedListLabel={agent?.equippedListName ?? null}
                   gated={gated}
                   phone={phone}
                   onClose={onClose}

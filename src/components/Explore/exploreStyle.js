@@ -42,8 +42,14 @@ export const wash = (tone, a) => `rgba(var(--ft-${tone}-rgb), ${a})`;
  */
 export const EXPLORE_LAYERS = Object.freeze({ bar: 60, sheet: 1000 });
 
-/** The breakpoint of the two-column home and reader (spec §3.2, §3.4). */
+/** The breakpoint of the two-column home and reader (spec §3.2, §3.4). Below it: the phone's jump row and bar line. */
 export const WIDE_MIN_PX = 1000;
+/** The same breakpoint as a media query, for the placements a script decides (Build 2: the shelf and Saved for later). */
+export const WIDE_QUERY = `(min-width: ${WIDE_MIN_PX}px)`;
+/** The evidence labels' tones (B-1, K-6): the story page's three, each with its own mark and line style too. */
+export const BASIS_TONE = Object.freeze({ source_cited: 'teal', reporters_reading: 'gold', no_source_yet: 'ink2' });
+/** Small capitals, as the evidence labels and the gap's labels are set. */
+export const CAPS = Object.freeze({ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', lineHeight: 1.4 });
 /** The app's BottomNav: 64 px tall and a 1 px top border, plus the safe-area inset (no border-box). The bar sits above it. */
 export const BOTTOM_NAV_PX = 65;
 
@@ -108,9 +114,19 @@ export const EXPLORE_CSS = `
 .ftx-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 22px; }
 .ftx-col { display: flex; flex-direction: column; gap: 22px; min-width: 0; }
 .ftx-wide-only { display: none; }
+.ftx-tickers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.ftx-cards { display: grid; grid-template-columns: minmax(0, 1fr); column-gap: 28px; row-gap: 22px; }
+.ftx-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.ftx-latest { display: grid; grid-template-columns: minmax(0, 1fr); column-gap: 28px; align-items: start; }
+.ftx-hero { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.ftx-hero-side { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.ftx-bar-line { flex: 1 1 100%; }
+.ftx-oneline { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ftx-gap-row { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 @media (min-width: 560px) {
   .ftx-two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ftx-parts { grid-template-columns: 140px minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: baseline; }
+  .ftx-tickers { display: flex; flex-wrap: wrap; }
 }
 @media (min-width: ${WIDE_MIN_PX}px) {
   .ftx-grid[data-ftx-grid="home"] { grid-template-columns: minmax(0, 1fr) 320px; gap: 44px; align-items: start; }
@@ -120,6 +136,13 @@ export const EXPLORE_CSS = `
   .ftx-grid[data-ftx-grid="story"] > [data-ftx-side] { grid-column: 2; grid-row: 1 / -1; }
   .ftx-phone-only { display: none; }
   .ftx-wide-only { display: block; }
+  .ftx-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 28px; }
+  .ftx-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+  .ftx-latest { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .ftx-hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; }
+  .ftx-hero-side { border-left: 1px solid ${T.hair}; padding-left: 28px; }
+  .ftx-bar-line { flex: 1 1 160px; }
+  .ftx-gap-row { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 10px; align-items: baseline; }
 }
 @media (prefers-reduced-motion: reduce) { .ftx-btn, .ftx-rowbtn { transition: none; } }
 `;

@@ -1,0 +1,339 @@
+{
+  "version": 5,
+  "status": "draft",
+  "publishedAt": "<timestamp>",
+  "kind": "overview",
+  "lead": "story",
+  "subject": "AI buildout",
+  "title": "The AI buildout: who gets paid, and in what order",
+  "deck": "Every new AI data center pays a chain of businesses, from chip designers to power companies. Each link has its own story.",
+  "reporter": {
+    "name": "Kim",
+    "beat": "Themes and changing business conditions"
+  },
+  "evidenceSpan": "Sep to Nov 2026",
+  "body": [
+    "When a cloud company adds AI capacity, its money moves in order: it buys processors, houses them in a data center, and connects the building to the power grid. Each step pays a different kind of business.",
+    "Alphabet, Google's parent, reported $51.4 billion of capital spending in the three months to September 30, 2026, mainly on servers, network equipment and data centers. NVIDIA reported $107.6 billion of Data Center sales in its quarter ended October 25, 2026.",
+    "Kim's reading is that chip designers tend to be paid when hardware ships and utilities month by month once a building is switched on, with networking suppliers and landlords in between.",
+    "The last step has the widest gap. Dominion Energy, Virginia's main utility, counts about 54 GW of data-center capacity under contract against a billed peak of 4.8 GW."
+  ],
+  "openQuestion": "Which step in the chain turns AI spending into sales soonest, and which has the most still on paper?",
+  "connections": [
+    {
+      "id": "chips",
+      "who": "Chip designers",
+      "what": "Design the processors that run AI work and sell them to the companies that fill data centers.",
+      "basis": "source_cited",
+      "basisLine": "One company release cited. It gives NVIDIA's Data Center sales. It says nothing about the other three.",
+      "sourceIds": [
+        "s1"
+      ],
+      "leads": [
+        {
+          "symbol": "NVDA",
+          "name": "NVIDIA"
+        },
+        {
+          "symbol": "AMD",
+          "name": "AMD"
+        },
+        {
+          "symbol": "AVGO",
+          "name": "Broadcom"
+        },
+        {
+          "symbol": "MU",
+          "name": "Micron"
+        }
+      ],
+      "known": "NVIDIA reported Data Center sales of $107.6 billion for its quarter ended October 25, 2026.",
+      "unknown": "How much of each other chip company's sales comes from data centers.",
+      "whereToLook": "The segment tables in each company's quarterly report."
+    },
+    {
+      "id": "cloud",
+      "who": "Cloud companies",
+      "what": "Pay for the processors, servers and buildings, then rent the computing power to others.",
+      "basis": "source_cited",
+      "basisLine": "One company filing cited. It shows Alphabet's spending. It does not name who Alphabet buys from, and it does not cover the other four companies.",
+      "sourceIds": [
+        "s2"
+      ],
+      "leads": [
+        {
+          "symbol": "GOOGL",
+          "name": "Alphabet"
+        },
+        {
+          "symbol": "MSFT",
+          "name": "Microsoft"
+        },
+        {
+          "symbol": "AMZN",
+          "name": "Amazon"
+        },
+        {
+          "symbol": "ORCL",
+          "name": "Oracle"
+        },
+        {
+          "symbol": "CRWV",
+          "name": "CoreWeave"
+        }
+      ],
+      "known": "Alphabet reported $51.4 billion of capital spending for the three months ended September 30, 2026, mainly on technical infrastructure.",
+      "unknown": "Which cloud companies are growing fastest, and how each is paying for it.",
+      "whereToLook": "Each company's quarterly results: cloud sales, capital spending, debt and cash."
+    },
+    {
+      "id": "networking",
+      "who": "Networking suppliers",
+      "what": "Make the switches and cables that link thousands of processors into one system.",
+      "basis": "reporters_reading",
+      "basisLine": "Kim's reading of how AI systems are built. No filing cited.",
+      "sourceIds": [],
+      "leads": [
+        {
+          "symbol": "AVGO",
+          "name": "Broadcom"
+        },
+        {
+          "symbol": "CSCO",
+          "name": "Cisco"
+        }
+      ],
+      "known": "",
+      "unknown": "How much cloud companies spend on networking for each dollar they spend on processors.",
+      "whereToLook": "Capital-spending breakdowns on cloud companies' earnings calls, and Broadcom's remarks on its AI networking sales."
+    },
+    {
+      "id": "landlords",
+      "who": "Data-center landlords",
+      "what": "Own data-center buildings and rent space in them to companies that need room for their machines.",
+      "basis": "no_source_yet",
+      "basisLine": "Nobody has checked this yet.",
+      "sourceIds": [],
+      "leads": [
+        {
+          "symbol": "EQIX",
+          "name": "Equinix"
+        },
+        {
+          "symbol": "DLR",
+          "name": "Digital Realty"
+        }
+      ],
+      "known": "",
+      "unknown": "Whether the large cloud companies rent from landlords or mostly build their own data centers.",
+      "whereToLook": "The customer and leasing sections of the landlords' annual reports, and the lease notes in each cloud company's filings."
+    },
+    {
+      "id": "power",
+      "who": "Electric utilities",
+      "what": "Supply the electricity that data centers run on.",
+      "basis": "source_cited",
+      "basisLine": "One company presentation cited. It covers Dominion's own territory only.",
+      "sourceIds": [
+        "s3"
+      ],
+      "leads": [
+        {
+          "symbol": "D",
+          "name": "Dominion Energy"
+        },
+        {
+          "symbol": "NEE",
+          "name": "NextEra Energy"
+        },
+        {
+          "symbol": "DUK",
+          "name": "Duke Energy"
+        },
+        {
+          "symbol": "SO",
+          "name": "Southern Company"
+        },
+        {
+          "symbol": "CEG",
+          "name": "Constellation Energy"
+        }
+      ],
+      "known": "Dominion reported about 54 GW of data-center capacity under contract and a data-center billing peak of 4.8 GW as of August 2026.",
+      "unknown": "Which utilities have the most data-center demand under contract, and how fast it turns into sales.",
+      "whereToLook": "The utility's quarterly results and the load forecast it files with its grid operator.",
+      "leadsToStory": "dominion-data-centers"
+    }
+  ],
+  "sources": [
+    {
+      "id": "s1",
+      "name": "NVIDIA news release: financial results for third quarter fiscal 2027",
+      "kind": "Company release",
+      "dated": "Nov 2026",
+      "excerpt": "Data Center revenue of $107.6 billion, up 110% from a year ago",
+      "url": "https://investor.nvidia.com/news/press-release-details/2026/NVIDIA-Announces-Financial-Results-for-Third-Quarter-Fiscal-2027/default.aspx"
+    },
+    {
+      "id": "s2",
+      "name": "Alphabet quarterly report (Form 10-Q) for the quarter ended September 30, 2026",
+      "kind": "Company filing",
+      "dated": "Oct 2026",
+      "excerpt": "Capital expenditures, which primarily reflected investments in technical infrastructure, were $51.4 billion for the three months ended September 30, 2026.",
+      "url": "https://s206.q4cdn.com/479360582/files/doc_financials/2026/q3/GOOG-10-Q-Q3-2026.pdf"
+    },
+    {
+      "id": "s3",
+      "name": "Dominion Energy presentation to PJM: 20-year data center forecast",
+      "kind": "Company presentation",
+      "dated": "Sep 2026",
+      "excerpt": "Data center billing peak load as of August 2026 is 4.8 GW",
+      "url": "https://www.pjm.com/-/media/DotCom/committees-groups/subcommittees/las/2026/20260929/20260929-item-5ai---dominion_energy.pdf"
+    },
+    {
+      "id": "s4",
+      "name": "Microsoft news release: first quarter results, fiscal 2027",
+      "kind": "Company release",
+      "dated": "Oct 2026",
+      "excerpt": "Azure revenue increased 48%",
+      "url": "https://microsoft.com/en-us/investor/earnings/fy-2027-q1/press-release-webcast"
+    },
+    {
+      "id": "s5",
+      "name": "Amazon news release: third quarter 2026 results",
+      "kind": "Company release",
+      "dated": "Oct 2026",
+      "excerpt": "AWS segment sales increased 39% year-over-year to $46.0 billion.",
+      "url": "https://aboutamazon.com/news/company-news/amazon-earnings-q3-2026-report"
+    },
+    {
+      "id": "s6",
+      "name": "Oracle news release: first quarter results, fiscal 2027",
+      "kind": "Company release",
+      "dated": "Sep 2026",
+      "excerpt": "Q1 Cloud Infra (IaaS) Revenue up 121% in USD & up 120% in constant currency to $7.4 billion.",
+      "url": "https://investor.oracle.com/investor-news/news-details/2026/Oracle-Announces-Q1-Results-Driven-by-Triple-Digit-Growth-in-Cloud-Infrastructure-Revenues/default.aspx"
+    },
+    {
+      "id": "s7",
+      "name": "CoreWeave news release: third quarter 2026 results (financial highlights table, in millions)",
+      "kind": "Company release",
+      "dated": "Nov 2026",
+      "excerpt": "Revenue $ 3,661 $ 1,365",
+      "url": "https://investors.coreweave.com/news/news-details/2026/CoreWeave-Reports-Strong-Third-Quarter-2026-Results/default.aspx"
+    }
+  ],
+  "questions": [
+    {
+      "id": "cloud-leaders",
+      "angleLabel": "Cloud leaders",
+      "featured": true,
+      "text": "Which AI cloud companies are growing fastest, aside from Google?",
+      "unknown": "Which cloud companies are growing fastest, and how each is paying for it.",
+      "fromConnection": "cloud",
+      "shape": "who_leads",
+      "group": [
+        {
+          "symbol": "MSFT",
+          "name": "Microsoft"
+        },
+        {
+          "symbol": "AMZN",
+          "name": "Amazon"
+        },
+        {
+          "symbol": "ORCL",
+          "name": "Oracle"
+        },
+        {
+          "symbol": "CRWV",
+          "name": "CoreWeave"
+        }
+      ],
+      "measures": [
+        {
+          "kind": "reported",
+          "name": "Cloud growth",
+          "plain": "How much more the cloud business sold than a year ago.",
+          "cells": [
+            {
+              "symbol": "MSFT",
+              "value": 48,
+              "unit": "percent",
+              "period": "Quarter ended Sep 30, 2026",
+              "sourceId": "s4",
+              "excerpt": "Azure revenue increased 48%"
+            },
+            {
+              "symbol": "AMZN",
+              "value": 39,
+              "unit": "percent",
+              "period": "Quarter ended Sep 30, 2026",
+              "sourceId": "s5",
+              "excerpt": "AWS segment sales increased 39% year-over-year to $46.0 billion."
+            },
+            {
+              "symbol": "ORCL",
+              "value": 121,
+              "unit": "percent",
+              "period": "Quarter ended Aug 31, 2026",
+              "sourceId": "s6",
+              "excerpt": "Q1 Cloud Infra (IaaS) Revenue up 121% in USD & up 120% in constant currency to $7.4 billion."
+            },
+            {
+              "symbol": "CRWV",
+              "formula": "growth_from_year_ago",
+              "inputs": [
+                {
+                  "value": 3661,
+                  "unit": "USD millions",
+                  "period": "Quarter ended Sep 30, 2026",
+                  "sourceId": "s7",
+                  "excerpt": "Revenue $ 3,661 $ 1,365"
+                },
+                {
+                  "value": 1365,
+                  "unit": "USD millions",
+                  "period": "Quarter ended Sep 30, 2025",
+                  "sourceId": "s7",
+                  "excerpt": "Revenue $ 3,661 $ 1,365"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "stored",
+          "storedKey": "revenueGrowthYOY"
+        },
+        {
+          "kind": "stored",
+          "storedKey": "fcfMargin"
+        }
+      ],
+      "benchmark": "XLK",
+      "wrongIfSeed": "The names you pick trail the benchmark over the window, or lose their lead on your measures at the next earnings report.",
+      "watch": {
+        "document": "Each company's quarterly results",
+        "updates": "Quarterly"
+      }
+    }
+  ],
+  "topics": [
+    "AI buildout",
+    "Chips",
+    "Power"
+  ],
+  "tickers": [
+    "MSFT",
+    "AMZN",
+    "ORCL",
+    "CRWV",
+    "GOOGL",
+    "NVDA",
+    "AMD",
+    "AVGO",
+    "D",
+    "EQIX"
+  ]
+}

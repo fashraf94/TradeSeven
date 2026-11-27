@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from 'vitest';
 import {
-  BASES, EXPLORE_RECORD_KIND as OWN_RECORD_KIND, FORMS, QUESTION_MAX, RESEARCH, STORY_ID, atLimitOf, featuredCardsOf, formOf, itemFor, questionIdFor,
+  BASES, EXPLORE_RECORD_KIND as OWN_RECORD_KIND, FORMS, QUESTION_MAX, RESEARCH, STORY_ID, atLimitOf, frontPageOf, formOf, itemFor, questionIdFor,
   researchViewOf, sheetItemOf, stateOf, storyMatchesOf, storyOf, topicsOf,
 } from './exploreView';
 import { OBSERVATION_MAX, cleanPlayerText } from '../../../api/_utils/sharedResearch/session.js';
@@ -165,11 +165,12 @@ describe('K-7: the state line carries the read\'s numbers untouched (spec §3.7)
 });
 
 describe('the home and the sheet item', () => {
-  it('one card per featured question, newest story first; topics only from stories with one', () => {
-    expect(featuredCardsOf(SAMPLE_STORIES).map((c) => `${c.story.id}:${c.question.id}`)).toEqual([
-      'sample-ai-buildout:q-chips', 'sample-tap-to-pay:q-tap', 'sample-utility-load:q-earn', 'sample-utility-load:q-spend',
-    ]);
-    expect(topicsOf(SAMPLE_STORIES)).toEqual(['AI buildout', 'Energy grid', 'Payments']);
+  it('Build 2 (B-3, B-4, B-5): the newest overview is the hero; a product-led one a tile; the rest one card each, on its first featured question; topics only from the cards', () => {
+    const page = frontPageOf(SAMPLE_STORIES);
+    expect(`${page.hero.story.id}:${page.hero.question.id}`).toBe('sample-ai-buildout:q-chips');
+    expect(page.tiles.map((s) => s.id)).toEqual(['sample-tap-to-pay']);
+    expect(page.cards.map((c) => `${c.story.id}:${c.question.id}`)).toEqual(['sample-utility-load:q-earn']);
+    expect(topicsOf(page.cards)).toEqual(['Energy grid']);
   });
   it('a story opens on the asked question, else its first featured', () => {
     const s = SAMPLE_STORIES[0];

@@ -92,6 +92,8 @@ describe('the boundary (K-3)', () => {
       'ExploreRuntime.jsx', 'ExploreTab.jsx', 'ExploreHome.jsx', 'ExploreStory.jsx', 'ExplorePanel.jsx', 'ExploreQuestions.jsx', 'ExploreSearch.jsx',
       'ExplorePinnedBar.jsx', 'ExploreSheetHost.jsx', 'loadSharedResearch.js', 'useExploreResearch.js', 'exploreCopy.js', 'exploreView.js',
       'exploreSources.js', 'exploreStyle.js', 'exploreParts.jsx', '__fixtures__/stories.js', '__fixtures__/exploreKit.js',
+      // Build 2
+      'ExploreChain.jsx', 'ExploreShelf.jsx', 'ExploreJumpRow.jsx',
     ]));
   });
   it('holds on the real files', () => {
@@ -148,8 +150,8 @@ function wordsWrittenIn(text) {
   return out;
 }
 
-/** The words the page must never use (E-1; the sheet's banned promises, K-13). */
-const BANNED = [/supported/i, /source-backed/i, /verified/i, /confirmed/i, /confidence/i, /shadow/i, /watched/i, /will sell/i, /sells at/i, /holds it/i, /held for/i, /expire/i];
+/** The words the page must never use (E-1; the sheet's banned promises, K-13; Build 2's B-7, K-18: "not written yet"). */
+const BANNED = [/supported/i, /source-backed/i, /verified/i, /confirmed/i, /confidence/i, /shadow/i, /watched/i, /will sell/i, /sells at/i, /holds it/i, /held for/i, /expire/i, /not written yet/i];
 
 describe('the words (K-13, E-1)', () => {
   const copy = readFileSync(join(HERE, 'exploreCopy.js'), 'utf8');
@@ -157,7 +159,7 @@ describe('the words (K-13, E-1)', () => {
     expect(b.test(copy)).toBe(false);
   });
   it('the banned list bites (planted)', () => {
-    for (const word of ['Supported', 'Source-backed', 'Verified', 'Confirmed', 'confidence 80%', 'Shadow', 'watched', 'it will sell', 'sells at', 'holds it', 'held for', 'expires']) {
+    for (const word of ['Supported', 'Source-backed', 'Verified', 'Confirmed', 'confidence 80%', 'Shadow', 'watched', 'it will sell', 'sells at', 'holds it', 'held for', 'expires', 'Deep story not written yet']) {
       expect(BANNED.some((b) => b.test(`x ${word} y`)), word).toBe(true);
     }
   });
@@ -240,7 +242,7 @@ describe('the look (BUILD_RULES §10, §11; K-15)', () => {
     const rules = EXPLORE_CSS.replace(/\s+/g, ' ');
     expect(rules).not.toMatch(/overflow(-y|-x)?\s*:\s*(auto|scroll)/);
     expect(rules).not.toMatch(/max-height|position\s*:\s*sticky/);
-    for (const p of OURS.filter((x) => /Explore(Home|Story|Panel|Questions|Search|Tab)\.jsx$/.test(x))) {
+    for (const p of OURS.filter((x) => /Explore(Home|Story|Panel|Questions|Search|Tab|Chain|Shelf|JumpRow)\.jsx$/.test(x))) {
       expect(stripComments(code(p)), rel(p)).not.toMatch(/overflow[XY]?\s*:\s*'(auto|scroll)'|maxHeight|position\s*:\s*'sticky'/);
     }
   });
