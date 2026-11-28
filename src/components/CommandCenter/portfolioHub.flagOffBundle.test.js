@@ -166,3 +166,106 @@ describe('the portfolio switch off: the slice folds away (spec §4 slice 1; revi
       'the default card reaching the drawing part ships it with the switch off').not.toBe(await bundle(ENTRY_CARD, ENTRY_CARD_USED, entryCardToday(card)));
   }, 60000);
 });
+
+// ── Slice 3 (spec 20261126 §4 slice 3; Amendment A PH-25 to PH-28): the book layout folds away too ──────────────────────────
+//
+// Slice 3 reads the switch at many sites, each a literal ternary (`COMMAND_CENTER_PORTFOLIO_HUB_ENABLED && … ? book : today`) or a
+// statement guarded by it (`if (COMMAND_CENTER_PORTFOLIO_HUB_ENABLED && …) …;`). Rather than an anchor per site, the file "without
+// the switch" is made from its parse: every such ternary replaced by its switch-off arm, every such statement removed (slice 1's bare
+// `COMMAND_CENTER_PORTFOLIO_HUB_ENABLED ? a : b` too). Each file is then bundled as the switch-off graph takes it, both ways; the code
+// must be the same, and the site count is pinned so the transform cannot quietly find nothing.
+// What these rows prove, and what they do not (review S3G-3): every switch site folds to its off arm, and the new modules and table
+// leave nothing. They do not prove the off arms are main's text, nor that an edit outside a site (a prop, a default parameter) is
+// absent: that is each slice's whole-build comparison with main (the build report's §4.3), where every non-map file is byte-identical.
+
+const JSX_PARSER = Parser.extend(acornJsx());
+const SWITCH = 'COMMAND_CENTER_PORTFOLIO_HUB_ENABLED';
+/** A test that reads the switch first: the switch itself, or `switch && …` (its leftmost operand). */
+function readsSwitchFirst(test) {
+  let node = test;
+  while (node && node.type === 'LogicalExpression' && node.operator === '&&') node = node.left;
+  return node?.type === 'Identifier' && node.name === SWITCH;
+}
+/** `code` without the switch: each switch ternary by its off arm, each switch-guarded statement gone. Returns the text and the count. */
+function withoutSwitch(code) {
+  const sites = [];
+  const visit = (node) => {
+    if (!node || typeof node.type !== 'string') return;
+    if ((node.type === 'ConditionalExpression' || node.type === 'IfStatement') && readsSwitchFirst(node.test)) { sites.push(node); return; }
+    for (const [k, v] of Object.entries(node)) {
+      if (k === 'start' || k === 'end') continue;
+      if (Array.isArray(v)) v.forEach(visit);
+      else if (v && typeof v.type === 'string') visit(v);
+    }
+  };
+  visit(JSX_PARSER.parse(code, { ecmaVersion: 'latest', sourceType: 'module' }));
+  const text = [...sites].sort((a, b) => b.start - a.start).reduce((out, node) => {
+    const off = node.type === 'IfStatement' ? (node.alternate ? code.slice(node.alternate.start, node.alternate.end) : '') : code.slice(node.alternate.start, node.alternate.end);
+    return out.slice(0, node.start) + off + out.slice(node.end);
+  }, code);
+  return { text, count: sites.length };
+}
+
+const SLICE3_FILES = Object.freeze([
+  // [file, the exports the switch-off graph takes from it, the switch sites it holds]
+  [HUB, ['default'], 16],
+  ['src/components/CommandCenter/PhoneTabs.jsx', ['PhonePanel', 'PhoneTabRow'], 4],
+  ['src/components/CommandCenter/ShadowStage.jsx', ['PhoneStage', 'ShadowStage'], 1],
+  ['src/components/CommandCenter/Armory.jsx', ['default', 'ArmorySheetContext', 'ArmoryStageContext', 'PHONE_ARMORY', 'PHONE_ARMORY_GRID', 'PHONE_HERO', 'PhoneArmoryDetails', 'PhoneArmoryRing', 'PhoneArmoryScope', 'armoryHeroRead', 'phoneArmoryGridHeight', 'phoneArmoryLayout'], 2],
+  [ACTIVITY, ACTIVITY_USED, 1],
+  ['src/components/PracticeField/IdeaBookScreen.jsx', ['default'], 3],
+]);
+const SLICE3_MODULES = Object.freeze([
+  'src/components/CommandCenter/BookLayout.jsx',
+  'src/components/CommandCenter/sections/BookOverview.jsx',
+  'src/components/CommandCenter/hub/bookTabs.js',
+  'src/components/PracticeField/ideaBookPartsOptions.js',
+]);
+
+describe('the portfolio switch off: slice 3\'s book layout folds away (spec §4 slice 3)', () => {
+  it.each(SLICE3_FILES)('%s: the same code as the file without the switch (%j used; %i sites)', async (rel, used, sites) => {
+    const source = read(rel);
+    const without = withoutSwitch(source);
+    expect(without.count, `${rel}: the switch sites the transform found. If you added or removed a switch site on purpose, update this count (SLICE3_FILES)`).toBe(sites);
+    expect(without.text).not.toMatch(new RegExp(`\\b${SWITCH}\\s*(?:&&|\\?)`));
+    const [now, today] = [await bundle(rel, used, source), await bundle(rel, used, without.text)];
+    expect(now).toBe(today);
+    expect(now).not.toMatch(/HubBookReadContext|IdeaBookPartsOptions|PhoneArmorySheet|BookPhoneBody|BookWideBody|BOOK_SHEETS|COMMAND_CENTER_PORTFOLIO_HUB_ENABLED/);
+  }, 60000);
+
+  it.each(SLICE3_MODULES)('%s, imported and unused: nothing', async (rel) => {
+    expect((await bundle(rel, [])).trim()).toBe('');
+  }, 30000);
+
+  // Review S3G-3: the copy table gained a table of its own (PORTFOLIO_HUB_COPY), outside any switch site. Taken as the switch-off
+  // graph takes the module (its three other tables), it must leave nothing: the same code as the module with that declaration cut.
+  it('hub/hubCopy.js, as the switch-off graph takes it: the same code as without PORTFOLIO_HUB_COPY', async () => {
+    const rel = 'src/components/CommandCenter/hub/hubCopy.js';
+    const used = ['HUB_COPY', 'AGENT_FORM_COPY', 'ARMORY_COPY'];
+    const source = read(rel);
+    const decl = JSX_PARSER.parse(source, { ecmaVersion: 'latest', sourceType: 'module' }).body
+      .filter((node) => node.type === 'ExportNamedDeclaration' && node.declaration?.declarations?.[0]?.id?.name === 'PORTFOLIO_HUB_COPY');
+    expect(decl).toHaveLength(1);
+    const without = source.slice(0, decl[0].start) + source.slice(decl[0].end);
+    const [now, today] = [await bundle(rel, used, source), await bundle(rel, used, without)];
+    expect(now).toBe(today);
+    expect(now).not.toMatch(/PORTFOLIO_HUB_COPY|Needs you|deskRowLabel/);
+  }, 30000);
+
+  it('the transform and the check bite: a site that does not fold, an unmarked context and a module-level table each differ or survive', async () => {
+    // The transform sees a planted site, and turns it to its off arm.
+    expect(withoutSwitch(`const a = ${SWITCH} && x ? 1 : 2; if (${SWITCH} && y) z();`)).toEqual({ text: 'const a = 2; ', count: 2 });
+    // A book read that does not fold (`||` keeps the context read alive) ships with the switch off.
+    const phone = read('src/components/CommandCenter/PhoneTabs.jsx');
+    const unfolded = phone.replace(`${SWITCH} && use(HubBookReadContext)`, `${SWITCH} || use(HubBookReadContext)`);
+    expect(unfolded).not.toBe(phone);
+    expect(await bundle('src/components/CommandCenter/PhoneTabs.jsx', ['PhonePanel', 'PhoneTabRow'], unfolded),
+      'a site that does not fold differs from the file without the switch').not.toBe(await bundle('src/components/CommandCenter/PhoneTabs.jsx', ['PhonePanel', 'PhoneTabRow'], withoutSwitch(phone).text));
+    const options = 'src/components/PracticeField/ideaBookPartsOptions.js';
+    expect((await bundle(options, [], replaceOnce(read(options), '/* @__PURE__ */ createContext(null)', 'createContext(null)', 'ideaBookPartsOptions.js'))).trim(),
+      'the mark off the parts\' options context: the call survives').not.toBe('');
+    const layoutFile = 'src/components/CommandCenter/BookLayout.jsx';
+    expect((await bundle(layoutFile, [], `${read(layoutFile)}\nconst LEAK = Object.freeze({ bar: C.ink, list: [C.teal] });\nconsole.info(LEAK);\n`)).trim(),
+      'a module-level statement in the book layout survives').not.toBe('');
+  }, 90000);
+});

@@ -116,6 +116,8 @@ describe('AGENT_FORM_ARMORY_ENABLED — the pin (BUILD_RULES §2), a kill switch
       '<HubAgentFormContext.Provider value={AGENT_FORM_ARMORY_ENABLED ? armoryHeroRead(readers.agent) : readers.agent}>',
     ]);
     expect(at(`${hub}LoadoutSheets.jsx`)).toEqual([IMPORT, '{AGENT_FORM_ARMORY_ENABLED ? (', `{${A2} ? (`]);
+    // The portfolio hub's slice 3: the book layout's loadout sheet hands its cards the shell's lists, as today's panel does.
+    expect(at(`${hub}BookLayout.jsx`)).toEqual([IMPORT, `{${A2} ? (`]);
     const HUB_IMPORT_2 = "import { AGENT_FORM_ARMORY_ENABLED } from '../../../config/agentFormFlags';";
     expect(at(`${hub}panels/LoadoutPanel.jsx`)).toEqual([HUB_IMPORT_2, `{${A2} ? (`, `{${A2} ? null : (`]);
     expect(at(`${hub}sections/DeploySection.jsx`)).toEqual([HUB_IMPORT_2, `{${A2} ? (`, `{${A2} ? <DeployLoadoutLine onOpen={onOpenLoadout} /> : (`]);
@@ -188,6 +190,8 @@ describe('AGENT_FORM_ARMORY_ENABLED — the pin (BUILD_RULES §2), a kill switch
       'components/AgentForm/engine/core.js',
       'components/AgentForm/engine/engine.js',
       'components/AgentForm/engine/form.js',
+      // The portfolio hub's slice 3: the book layout's loadout sheet, beside PER_GAME_LOADOUT_ENABLED, as today's panel reads it.
+      'components/CommandCenter/BookLayout.jsx',
       'components/CommandCenter/CommandCenterHub.jsx',
       'components/CommandCenter/LoadoutSheets.jsx',
       'components/CommandCenter/ShadowStage.jsx',

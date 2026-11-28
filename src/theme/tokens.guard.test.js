@@ -280,6 +280,12 @@ const GUARDED_FILES = [
   'src/components/CommandCenter/HubBookScope.jsx',
   'src/components/CommandCenter/hub/hubBookRead.js',
   'src/components/CommandCenter/hub/hubLayout.js',
+  // The portfolio hub's slice 3 (spec 20261126 §4 slice 3; Amendment A PH-25 to PH-28): the book layout's tabs, panels and loadout
+  // sheet, its Overview, and the pure tab module — colours only through the hub style, from birth, registered in the commit that
+  // introduces them (hazard 34).
+  'src/components/CommandCenter/BookLayout.jsx',
+  'src/components/CommandCenter/sections/BookOverview.jsx',
+  'src/components/CommandCenter/hub/bookTabs.js',
   // Agent form build S0 (the WebGL engine port, its wrapper and the lab): every colour through readToken /
   // cssVar from birth — zero core-palette literals, registered in the commit that introduces them (hazard 34).
   'src/components/AgentForm/engine/armor.js',

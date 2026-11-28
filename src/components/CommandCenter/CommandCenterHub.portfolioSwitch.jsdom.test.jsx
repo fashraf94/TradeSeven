@@ -12,6 +12,11 @@
 //     switch off; the decision is exposed only on the scope's inert wrapper (`data-hub-layout`, `display: contents`).
 // Both switches are read through getters, so one file holds both states. The book's route is the one stand-in for the
 // network (fetchWithAuth, as the card's own suite stands it in); every other request answers 404.
+//
+// Slice 3 (spec §4 slice 3, PH-19; Amendment A PH-23) changes what a book owner sees with the switch on: the book layout, and no
+// card (with the switch on the card is never drawn now: it needs a book, and a book is the book layout). So the parity rows keep
+// every case of §3 that gives 'today' (the fall-through, slice 3's test 4), and the book owner's rows say what the shell's one read
+// now draws. What the book layout draws is CommandCenterHub.bookLayout.jsdom.test.jsx's.
 
 import React, { act } from 'react';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -46,7 +51,7 @@ vi.mock('../../utils/fetchWithAuth', () => ({
 }));
 
 import CommandCenterHub from './CommandCenterHub';
-import { HUB_COPY as COPY } from './hub/hubCopy';
+import { HUB_COPY as COPY, PORTFOLIO_HUB_COPY as BOOK_COPY } from './hub/hubCopy';
 import useIdeaBook, { IDEA_BOOK_PATH, REFOCUS_QUIET_MS } from '../PracticeField/useIdeaBook';
 import { entryHeadlineOf } from '../PracticeField/ideaBookCopy';
 import { buildBookView } from '../../../api/_utils/practiceField/bookView.js';
@@ -128,6 +133,8 @@ function unmountAll() {
 const bookReads = () => net.calls.filter((c) => c.url === IDEA_BOOK_PATH).length;
 const markers = () => [...document.querySelectorAll('[data-hub-layout]')];
 const card = () => document.querySelector('[data-ib="entry-card"]');
+/** Slice 3: the book layout's tab row, drawn only when the decision is 'book'. */
+const bookLayout = () => document.querySelector('[data-hub-book-tabs]');
 
 /** React's useId tokens renumbered by first appearance (the counter is global across roots): the HTML a player is drawn. */
 function normalized(html) {
@@ -159,7 +166,6 @@ const CASES = Object.freeze({
   'loading (the read never answers)': { setup: () => { net.answer = () => new Promise(() => {}); }, layout: 'today', requests: 1, card: false },
   'idle (the identity is unresolved)': { setup: () => { r.identity = { resolved: false, uid: null, authEpoch: 0 }; }, layout: 'today', requests: 0, card: false },
   'idle (the idea book screen\'s switch is off)': { setup: () => { f.screen = false; }, layout: 'today', requests: 0, card: false },
-  'a book owner': { setup: () => {}, layout: 'book', requests: 1, card: true },
 });
 
 describe('switch off (the shipped value): today\'s hub, the card reading for itself', () => {
@@ -184,7 +190,7 @@ describe('switch off (the shipped value): today\'s hub, the card reading for its
   });
 });
 
-describe('switch on: slice 1 draws nothing new — for every case of §3, and for a book owner, the hub is what it is with the switch off', () => {
+describe('switch on: every case of §3 that gives \'today\' draws today\'s hub — what it is with the switch off (slice 1\'s parity; slice 3\'s fall-through)', () => {
   for (const site of ['mobile', 'desktop']) {
     it.each(Object.keys(CASES))(`${site}, %s`, async (name) => {
       const c = CASES[name];
@@ -225,31 +231,17 @@ describe('switch on: slice 1 draws nothing new — for every case of §3, and fo
   }
 });
 
-describe('switch on, a book owner: one read at the shell, and the card draws from it', () => {
+describe('switch on, a book owner: one read at the shell, and the book layout draws from it (slice 3: no card)', () => {
   beforeEach(() => { f.portfolio = true; });
 
-  it.each(['mobile', 'desktop'])('%s: one read on mount; the decision is book; the card is drawn from that read', async (site) => {
+  it.each(['mobile', 'desktop'])('%s: one read on mount; the decision is book; the book layout is drawn from that read, and the card is not', async (site) => {
     await render(site);
     expect(bookReads()).toBe(1);
     expect(markers().map((m) => m.getAttribute('data-hub-layout'))).toEqual(['book']);
-    expect(card()).not.toBeNull();
-    expect(card().textContent).toContain(entryHeadlineOf(BOOK.line));
-  });
-
-  it('opening the card reads once more (the shell\'s read, refreshed); Escape closes the page and focus returns to the card', async () => {
-    await render('desktop');
-    const opener = card();
-    act(() => { opener.focus(); });
-    click(opener);
-    await flush();
-    expect(bookReads()).toBe(2);
-    const layer = document.querySelector('[data-ib="layer"]');
-    expect(layer).not.toBeNull();
-    press(layer, 'Escape');
-    await flush();
+    expect(bookLayout()).not.toBeNull();
+    expect(document.querySelector('[data-ib="book-line"]').textContent).toContain(entryHeadlineOf(BOOK.line));
+    expect(card()).toBeNull();
     expect(document.querySelector('[data-ib="layer"]')).toBeNull();
-    expect(document.activeElement).toBe(card());
-    expect(bookReads()).toBe(2);
   });
 
   it('the window regaining focus reads once — a focus and a visibility change together are one read, never two readers', async () => {
@@ -264,31 +256,32 @@ describe('switch on, a book owner: one read at the shell, and the card draws fro
     expect(bookReads()).toBe(2);
   });
 
-  it('mobile: the Overview coming back draws the card at once from the shell\'s read, and reads nothing', async () => {
+  it('mobile: moving between the book layout\'s tabs reads nothing — the read is the shell\'s', async () => {
     await render('mobile');
-    click(byRole(document, 'tab', COPY.phoneTabs.research)[0]);
+    click(byRole(document, 'tab', BOOK_COPY.tabs.ideas)[0]);
     await flush();
-    expect(card()).toBeNull();
-    click(byRole(document, 'tab', COPY.phoneTabs.overview)[0]);
+    click(byRole(document, 'tab', BOOK_COPY.tabs.overview)[0]);
     await flush();
-    expect(card()).not.toBeNull();
+    expect(document.querySelector('[data-ib="positions"]')).not.toBeNull();
     expect(bookReads()).toBe(1);
   });
 
-  it('the card and the decision never disagree: a read that comes back with no book takes both away in the same render', async () => {
+  it('the layout never disagrees with the read: a read that comes back with no book takes the book layout away in the same render, and brings no card', async () => {
     await render('desktop');
     expect(markers()[0].getAttribute('data-hub-layout')).toBe('book');
-    expect(card()).not.toBeNull();
+    expect(bookLayout()).not.toBeNull();
     net.answer = { status: 200, body: { book: null } };
     vi.setSystemTime(NOW + REFOCUS_QUIET_MS + 1);
     act(() => { window.dispatchEvent(new Event('focus')); });
     await flush();
     expect(bookReads()).toBe(2);
     expect(markers()[0].getAttribute('data-hub-layout')).toBe('today');
+    expect(bookLayout()).toBeNull();
+    expect(document.querySelector('[data-hub-area-panel]')).not.toBeNull();
     expect(card()).toBeNull();
   });
 
-  it('a refresh that fails after a good read keeps the book: the card stays, and so does the decision', async () => {
+  it('a refresh that fails after a good read keeps the book layout (PH-23): the decision stays, and so does the drawing', async () => {
     await render('desktop');
     net.answer = { status: 500, body: { error: 'read_failed' } };
     vi.setSystemTime(NOW + REFOCUS_QUIET_MS + 1);
@@ -296,7 +289,8 @@ describe('switch on, a book owner: one read at the shell, and the card draws fro
     await flush();
     expect(bookReads()).toBe(2);
     expect(markers()[0].getAttribute('data-hub-layout')).toBe('book');
-    expect(card()).not.toBeNull();
+    expect(bookLayout()).not.toBeNull();
+    expect(card()).toBeNull();
   });
 
   // Review P1W-2, a stated change (report §3): with the switch on the read belongs to the shell, so on the phone it no longer follows
@@ -304,18 +298,18 @@ describe('switch on, a book owner: one read at the shell, and the card draws fro
   it.each([
     [false, [1, 1, 1, 2]],
     [true, [1, 1, 2, 2]],
-  ])('mobile, the read\'s triggers (switch on: %s) — reads after mount, the Research tab, a window focus, the Overview again: %j', async (on, expected) => {
+  ])('mobile, the read\'s triggers (switch on: %s) — reads after mount, the Research tab (the book layout\'s Ideas), a window focus, the Overview again: %j', async (on, expected) => {
     f.portfolio = on;
     await render('mobile');
     const seen = [bookReads()];
-    click(byRole(document, 'tab', COPY.phoneTabs.research)[0]);
+    click(byRole(document, 'tab', on ? BOOK_COPY.tabs.ideas : COPY.phoneTabs.research)[0]);
     await flush();
     seen.push(bookReads());
     vi.setSystemTime(NOW + REFOCUS_QUIET_MS + 1);
     act(() => { window.dispatchEvent(new Event('focus')); });
     await flush();
     seen.push(bookReads());
-    click(byRole(document, 'tab', COPY.phoneTabs.overview)[0]);
+    click(byRole(document, 'tab', on ? BOOK_COPY.tabs.overview : COPY.phoneTabs.overview)[0]);
     await flush();
     seen.push(bookReads());
     expect(seen).toEqual(expected);
@@ -332,7 +326,9 @@ describe('switch on, a book owner: one read at the shell, and the card draws fro
     expect(document.querySelector('[data-hub="shell"]').getAttribute('data-hub-site')).toBe('desktop');
     expect(bookReads()).toBe(2);
     expect(markers().map((m) => m.getAttribute('data-hub-layout'))).toEqual(on ? ['book'] : []);
-    expect(card()).not.toBeNull();
+    // Slice 3: with the switch on, the book owner's hub at the new site is the book layout; off, today's card.
+    expect(Boolean(card())).toBe(!on);
+    expect(Boolean(bookLayout())).toBe(on);
   });
 
   it('a hub handed no App object (the S1 frames) has no connected shell: no decision, and the card reads for itself, as today', async () => {

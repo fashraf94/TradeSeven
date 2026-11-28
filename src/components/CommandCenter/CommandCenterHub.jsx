@@ -186,6 +186,13 @@ import SharedResearchSheet from './SharedResearchSheet';
 // puts around the connected shell. With it false the arm folds away and the scope is never built.
 import { COMMAND_CENTER_PORTFOLIO_HUB_ENABLED } from '../../config/commandCenterPortfolioFlags';
 import HubBookScope from './HubBookScope';
+// Slice 3 (spec 20261126 §4; Amendment A PH-25 to PH-28): the book layout — the scope's decision, read at each site below as a
+// literal ternary on the switch (so with it off each folds to today's element), the four tabs and their panels, and the loadout's
+// sheet key.
+import { HubBookReadContext } from './hub/hubBookRead';
+import { HUB_LAYOUTS } from './hub/hubLayout';
+import { BOOK_SHEETS } from './hub/bookTabs';
+import { BookPhoneBody, BookWidePanel, DEPLOY_LOADOUT_OPENER, bookWideGrid } from './BookLayout';
 
 /** Shadow's box per composition (the design: 340 desktop, 260 tablet, 200 phone — 196 under 375 px). */
 export function shadowSizeFor(composition, width) {
@@ -439,6 +446,11 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
   // Amendment E V1.1 §3.2: admission ending while the research sheet is open closes it, as the Huddle's lapse does — and so does an
   // owner or epoch change (review B3: the open investigation is the former owner's).
   if (sheet.sheet === HUB_SHEETS.RESEARCH && !researchSheetHeldBy(researchDoor, sheet.entry)) runtime.closeSheet();
+  // The portfolio hub's slice 3: the loadout's and the armory's sheets belong to the book layout; a layout that leaves it (an owner
+  // change) frees the slot. And today's armory (the hero's box, ARCHETYPE) has no home in the book layout: the book arriving closes it,
+  // so an armory never reopens in the other layout's home without a tap (review S3W-2, S3W-3; the HU-4 rule above).
+  if (COMMAND_CENTER_PORTFOLIO_HUB_ENABLED && (sheet.sheet === BOOK_SHEETS.LOADOUT || sheet.sheet === BOOK_SHEETS.ARMORY) && use(HubBookReadContext)?.layout !== HUB_LAYOUTS.BOOK) runtime.closeSheet();
+  if (COMMAND_CENTER_PORTFOLIO_HUB_ENABLED && sheet.sheet === HUB_SHEETS.ARCHETYPE && use(HubBookReadContext)?.layout === HUB_LAYOUTS.BOOK) runtime.closeSheet();
   return (
     <HubLayoutContext.Provider value={composition}>
       <style data-hub-css="">{HUB_SCOPED_CSS}</style>
@@ -463,17 +475,19 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
             // Agent form build A1 (FD-8): the phone armory opens in the hero's box, so its state wraps the stage. With the
             // armory on, PhoneStage is the armory's stage, which draws the agent form and never ShadowCanvas (the armory is
             // on only while the hub's form is: agentFormFlags.test.js), so ShadowCanvas's tier and still switch go unread.
-            <PhoneArmoryScope open={sheet.sheet === HUB_SHEETS.ARCHETYPE} agent={runtime.agent} onClose={runtime.closeSheet} opener={sheet.opener} reducedMotion={shared.reducedMotion} width={width}>
+            // The portfolio hub's slice 3 (PH-17): in the book layout the armory opens in its own sheet (BookLayout.jsx), never in
+            // the hero's box, and the hero is paused behind it, so the phone draws one live figure, as today; no area is selected.
+            <PhoneArmoryScope open={COMMAND_CENTER_PORTFOLIO_HUB_ENABLED && use(HubBookReadContext)?.layout === HUB_LAYOUTS.BOOK ? false : sheet.sheet === HUB_SHEETS.ARCHETYPE} agent={runtime.agent} onClose={runtime.closeSheet} opener={sheet.opener} reducedMotion={shared.reducedMotion} width={width}>
               <PhoneStage
                 size={shadowSizeFor(composition, width)}
                 status={shared.status}
                 processing={shared.display.processing}
                 words={statusWordsOf(deploy, shared)}
-                selectedArea={AREA_FOR_PHONE_TAB[tab]}
+                selectedArea={COMMAND_CENTER_PORTFOLIO_HUB_ENABLED && use(HubBookReadContext)?.layout === HUB_LAYOUTS.BOOK ? null : AREA_FOR_PHONE_TAB[tab]}
                 summaries={shared.summaries}
                 reducedMotion={shared.reducedMotion}
                 createdAttemptId={shared.createdAttemptId}
-                paused={coverOpen}
+                paused={COMMAND_CENTER_PORTFOLIO_HUB_ENABLED && use(HubBookReadContext)?.layout === HUB_LAYOUTS.BOOK ? coverOpen || sheet.sheet === BOOK_SHEETS.ARMORY : coverOpen}
                 holdPhase={deploy?.holdPhase ?? null}
                 progress={deploy?.progress ?? null}
               />
@@ -497,7 +511,24 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
           )}
           {DRB_HUDDLE_ENABLED && huddle ? <HuddleChip chip={huddle.chip} onOpen={actions.openHuddle} /> : null}
         </div>
-        <PhoneTabRow idBase={shared.idBase} tab={tab} onSelect={selectTab} />
+        {/* The portfolio hub's slice 3 (spec 20261126 §4): in the book layout, the four tabs and their panel, and the loadout's
+            and the armory's sheets (BookLayout.jsx), where today's tab row and panel are. */}
+        {COMMAND_CENTER_PORTFOLIO_HUB_ENABLED && use(HubBookReadContext)?.layout === HUB_LAYOUTS.BOOK ? (
+          <BookPhoneBody
+            idBase={shared.idBase}
+            initialTab={tab}
+            width={width}
+            sections={sections}
+            actions={actions}
+            agent={runtime.agent}
+            lists={runtime.lists}
+            sheet={sheet}
+            onCloseSheet={runtime.closeSheet}
+            onTabChange={() => deploy?.cancelCharging()}
+            reducedMotion={shared.reducedMotion}
+          />
+        ) : <PhoneTabRow idBase={shared.idBase} tab={tab} onSelect={selectTab} />}
+        {COMMAND_CENTER_PORTFOLIO_HUB_ENABLED && use(HubBookReadContext)?.layout === HUB_LAYOUTS.BOOK ? null : (
         <div style={{ padding: '14px 14px 24px' }}>
           {PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? (
             // Build A2: the panel's loadout surfaces take the shell's committed lists through the scope's context.
@@ -508,6 +539,7 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
             <PhonePanel idBase={shared.idBase} tab={tab} sections={sections} actions={actions} reducedMotion={shared.reducedMotion} />
           )}
         </div>
+        )}
       </section>
       <DeployStrip
         ref={stripRef}
@@ -516,7 +548,7 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
         waitingLine={shared.waitingLine}
         loadoutLine={shared.loadoutLine}
         placement={placement}
-        onOpenLoadout={() => selectTab(PHONE_TABS.LOADOUT)}
+        onOpenLoadout={COMMAND_CENTER_PORTFOLIO_HUB_ENABLED && use(HubBookReadContext)?.layout === HUB_LAYOUTS.BOOK ? sheet.open(BOOK_SHEETS.LOADOUT) : () => selectTab(PHONE_TABS.LOADOUT)}
         onOpenGame={actions.openGame}
         onAction={AGENT_FORM_ARMORY_ENABLED && actions.deployAction ? (kind) => { if (kind === DISPLAY_ACTIONS.RETRY && sheet.sheet === HUB_SHEETS.ARCHETYPE) runtime.closeSheet(); actions.deployAction(kind); } : actions.deployAction}
         holdWiring={deploy?.hold(HUB_DEPLOY_CONTROLS.STRIP) ?? null}
@@ -620,6 +652,8 @@ function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, age
   // Amendment E V1.1 §3.2: admission ending while the research sheet is open closes it, as the Huddle's lapse does — and so does an
   // owner or epoch change (review B3: the open investigation is the former owner's).
   if (sheet.sheet === HUB_SHEETS.RESEARCH && !researchSheetHeldBy(researchDoor, sheet.entry)) runtime.closeSheet();
+  // The portfolio hub's slice 3: the loadout's sheet belongs to the book layout; a layout that leaves it (an owner change) frees the slot.
+  if (COMMAND_CENTER_PORTFOLIO_HUB_ENABLED && sheet.sheet === BOOK_SHEETS.LOADOUT && use(HubBookReadContext)?.layout !== HUB_LAYOUTS.BOOK) runtime.closeSheet();
   const stage = (
     <ShadowStage
       composition={composition}
@@ -628,7 +662,7 @@ function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, age
       status={shared.status}
       processing={shared.display.processing}
       words={statusWordsOf(deploy, shared)}
-      selectedArea={area}
+      selectedArea={COMMAND_CENTER_PORTFOLIO_HUB_ENABLED && use(HubBookReadContext)?.layout === HUB_LAYOUTS.BOOK ? null : area}
       onSelectArea={selectArea}
       summaries={shared.summaries}
       idBase={shared.idBase}
@@ -670,7 +704,7 @@ function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, age
         <DeploySection
           deploy={sections.deploy}
           loadoutLine={shared.loadoutLine}
-          onOpenLoadout={() => selectArea(HUB_AREAS.ARCHETYPE)}
+          onOpenLoadout={COMMAND_CENTER_PORTFOLIO_HUB_ENABLED && use(HubBookReadContext)?.layout === HUB_LAYOUTS.BOOK ? () => sheet.open(BOOK_SHEETS.LOADOUT)({ currentTarget: rootRef.current?.querySelector(DEPLOY_LOADOUT_OPENER) ?? null }) : () => selectArea(HUB_AREAS.ARCHETYPE)}
           onAction={actions.deployAction}
           holdWiring={deploy?.hold(HUB_DEPLOY_CONTROLS.CARD) ?? null}
           holding={deploy?.holdControlId === HUB_DEPLOY_CONTROLS.CARD ? deploy.holdPhase : null}
@@ -696,15 +730,32 @@ function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, age
     brief: <BriefSection brief={sections.brief} onRetry={actions.retryBrief} />,
   };
   const hasNext = sections.nextAction?.status === 'ready' && Boolean(sections.nextAction.candidate);
-  const grid = wideGrid(composition, hasNext);
+  // The portfolio hub's slice 3 (spec 20261126 §4; review S3W-6): the book layout keeps today's grid and today's tree, so the hero
+  // and the Deploy card keep their places and never remount when the layout arrives or leaves. Only the grid's template (the hero,
+  // the tabs with their panel, and Deploy alone in the side: BookLayout.jsx bookWideGrid), the next-action slot (the Overview's
+  // "Needs you" strip has it) and the panel slot's content (BookWidePanel) change.
+  const grid = COMMAND_CENTER_PORTFOLIO_HUB_ENABLED && use(HubBookReadContext)?.layout === HUB_LAYOUTS.BOOK ? bookWideGrid(composition) : wideGrid(composition, hasNext);
   const body = (
     <div data-hub-body={composition} style={{ padding: `14px ${gutter}px ${desktop ? 30 : 28}px`, ...grid.body }}>
-      <div data-hub-slot="next" style={{ gridArea: 'next', minWidth: 0, display: hasNext ? 'block' : 'none' }}>
-        <NextActionCard nextAction={sections.nextAction} deploy={sections.deploy} onAct={actions.nextAction} onLater={actions.laterNextAction} holdWiring={actions.nextActionHold} holding={actions.nextActionHolding} />
+      <div data-hub-slot="next" style={{ gridArea: 'next', minWidth: 0, display: (COMMAND_CENTER_PORTFOLIO_HUB_ENABLED && use(HubBookReadContext)?.layout === HUB_LAYOUTS.BOOK ? false : hasNext) ? 'block' : 'none' }}>
+        {COMMAND_CENTER_PORTFOLIO_HUB_ENABLED && use(HubBookReadContext)?.layout === HUB_LAYOUTS.BOOK ? null : <NextActionCard nextAction={sections.nextAction} deploy={sections.deploy} onAct={actions.nextAction} onLater={actions.laterNextAction} holdWiring={actions.nextActionHold} holding={actions.nextActionHolding} />}
       </div>
       <div data-hub-slot="main" style={grid.main}>
         <div data-hub-slot="stage" style={{ gridArea: 'stage', minWidth: 0 }}>{stage}{DRB_HUDDLE_ENABLED && huddle ? <HuddleChip chip={huddle.chip} onOpen={actions.openHuddle} /> : null}</div>
-        <div data-hub-slot="panel" style={{ gridArea: 'panel', minWidth: 0 }}>{panel}</div>
+        <div data-hub-slot="panel" style={{ gridArea: 'panel', minWidth: 0 }}>{COMMAND_CENTER_PORTFOLIO_HUB_ENABLED && use(HubBookReadContext)?.layout === HUB_LAYOUTS.BOOK ? (
+          <BookWidePanel
+            composition={composition}
+            idBase={shared.idBase}
+            initialArea={area}
+            sections={sections}
+            actions={actions}
+            lists={runtime.lists}
+            sheet={sheet}
+            onCloseSheet={runtime.closeSheet}
+            onTabChange={() => deploy?.cancelCharging()}
+            reducedMotion={shared.reducedMotion}
+          />
+        ) : panel}</div>
       </div>
       <div data-hub-slot="side" style={grid.side}>
         {grid.sideOrder.map((key) => (

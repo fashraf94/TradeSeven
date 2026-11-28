@@ -22,6 +22,7 @@ import IdeaBookEntry, { IDEA_BOOK_SCREEN_ON, IdeaBookEntryView } from '../../Pra
 // book (hub/hubBookRead.js) instead of making its own. The switch is a literal (off on merge), so the site folds to today's card.
 import { COMMAND_CENTER_PORTFOLIO_HUB_ENABLED } from '../../../config/commandCenterPortfolioFlags';
 import { HubBookReadContext } from '../hub/hubBookRead';
+import { HUB_LAYOUTS } from '../hub/hubLayout';
 
 const KIND_ICON = { completed: 'sword', deployed: 'bolt', loadout: 'pencil', idea: 'search', research: 'search' };
 
@@ -75,9 +76,12 @@ export function ActivityAgeNote({ activity, style }) {
  * The portfolio hub's slice 1 (spec 20261126 §3): the card at its hub site with the switch on. Inside the connected shell's
  * book scope (HubBookScope.jsx) it draws from the shell's one read, handed as props, and reads nothing itself. Outside it (a hub
  * with no App object: no connected shell) it is today's card, reading for itself. React 19's `use` reads the scope.
+ * Slice 3 (spec PH-19): when the scope's decision is the book layout, the hub draws the book itself, so the card is not drawn,
+ * and neither is the full-window screen it opens. Both stay in the code as the way back (today's layout draws them).
  */
 function HubIdeaBookEntry() {
   const shell = use(HubBookReadContext);
+  if (shell && shell.layout === HUB_LAYOUTS.BOOK) return null;
   return shell ? <IdeaBookEntryView read={shell.read} refresh={shell.refresh} /> : <IdeaBookEntry />;
 }
 

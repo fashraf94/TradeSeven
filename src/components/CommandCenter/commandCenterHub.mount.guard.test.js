@@ -78,6 +78,9 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
+// The portfolio hub's slice 3 (review S3G-2): a parse of the Idea book screen's module, to scan the parts the hub draws inside it.
+import { Parser } from 'acorn';
+import acornJsx from 'acorn-jsx';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..', '..', '..');
@@ -676,6 +679,15 @@ const PERMITTED_TERMINALS = Object.freeze({
   // re-export of useIdeaBook, the same hook, keyed by owner and epoch, no poll), and the card is handed that read as props
   // (IdeaBookEntryView): still one read, now at the shell. The exports the hub takes from both are named in the S5 row below.
   'src/config/commandCenterPortfolioFlags.js': 'COMMAND_CENTER_PORTFOLIO_HUB_ENABLED — the portfolio hub, read as a literal so flag-off folds away (spec 20261126 PH-20)',
+  // The portfolio hub's slice 3 (spec 20261126 §4 slice 3, PH-10; Amendment A PH-25, PH-28): the book layout draws the Idea book's
+  // own parts — the book line, the desk rows (the strip), the positions table (its in-place detail panels inside it) and, on the
+  // Setups tab, the Desks content — from the scope's one read (HubBookScope.jsx), handed in as the view: no read of their own. The
+  // walk stops at the screen's module, whose default export (the full-window page) keeps its own window listener and effects; the
+  // hub takes only the four parts, named in the S5 row below, and none of them holds an effect, a timer, a listener or a read
+  // (IdeaBookScreen.jsx). The parts' options are a scope of their own (ideaBookPartsOptions.js: one pure-marked createContext and
+  // nothing else), set by the Overview to turn the Cash row off; the screen never sets it.
+  'src/components/PracticeField/IdeaBookScreen.jsx': "the Idea book's parts — BookLine, Strip, PosTable and DesksTab — drawn from the scope's one read, handed in (spec 20261126 PH-10)",
+  'src/components/PracticeField/ideaBookPartsOptions.js': "the Idea book parts' options scope: the Cash row off in the hub's Overview (spec PH-10; Amendment A PH-28)",
 });
 /** framer-motion: motion.div and useReducedMotion (the house precedent for OS reduced motion); react-dom: createPortal for the sheet. */
 const PERMITTED_PACKAGES = Object.freeze(['framer-motion', 'react', 'react-dom']);
@@ -1455,6 +1467,10 @@ describe('S5 — the exports the hub takes from the shipped services, hooks and 
     // switch on only — the card's drawing part handed the shell's read and the one read hook, re-exported for the shell's scope.
     '/PracticeField/IdeaBookEntry': ['IDEA_BOOK_SCREEN_ON', 'IdeaBookEntryView', 'default', 'useIdeaBook'],
     '/config/commandCenterPortfolioFlags': ['COMMAND_CENTER_PORTFOLIO_HUB_ENABLED'],
+    // The portfolio hub's slice 3 (spec 20261126 PH-10; Amendment A PH-25): the four parts the book layout draws, never the
+    // screen's default export (the full-window page, which the card alone opens), and the parts' options scope.
+    '/PracticeField/IdeaBookScreen': ['BookLine', 'DesksTab', 'PosTable', 'Strip'],
+    '/PracticeField/ideaBookPartsOptions': ['IdeaBookPartsOptions'],
   });
 
   it('across every file of the directory, exactly these names and no others', () => {
@@ -1491,6 +1507,73 @@ describe('S5 — the exports the hub takes from the shipped services, hooks and 
     expect(scope.match(/\buseIdeaBook\(/g)).toHaveLength(1);
     // The count bites: a second read is two.
     expect(`${scope}\nconst again = useIdeaBook({ enabled: true });`.match(/\buseIdeaBook\(/g)).toHaveLength(2);
+  });
+
+  // The portfolio hub's slice 3 (spec 20261126 PH-10; Amendment A PH-25): the Idea book's parts are drawn in two places only — the
+  // Overview (the book line, the desk rows and the table) and the Setups tab (the Desks content) — and the options scope is set by the
+  // Overview alone. The S5 names row above pins the names; this pins the takers, so a part drawn elsewhere is a decision, not a drift.
+  it('slice 3: the Idea book\'s parts are taken by the Overview and the book layout alone, and never the screen\'s default export', () => {
+    const takers = (tail, name) => hubDirFiles().filter((rel) => importedNames(stripComments(read(rel)), tail).includes(name));
+    for (const name of ['BookLine', 'PosTable', 'Strip']) expect(takers('/PracticeField/IdeaBookScreen', name), name).toEqual([HUB_FILE('sections/BookOverview.jsx')]);
+    expect(takers('/PracticeField/IdeaBookScreen', 'DesksTab')).toEqual([HUB_FILE('BookLayout.jsx')]);
+    expect(takers('/PracticeField/IdeaBookScreen', 'default')).toEqual([]);
+    expect(takers('/PracticeField/ideaBookPartsOptions', 'IdeaBookPartsOptions')).toEqual([HUB_FILE('sections/BookOverview.jsx')]);
+    // The taker scan bites: a planted default import of the screen is seen.
+    expect(importedNames("import IdeaBookScreen from '../PracticeField/IdeaBookScreen';", '/PracticeField/IdeaBookScreen')).toEqual(['default']);
+  });
+
+  // Review S3G-2: the screen's module is a terminal, so the walk and the directory scan never enter it, while the hub now draws four
+  // of its parts and what they call. This reads inside it: every function in the module is either one the hub draws (scanned here,
+  // with the parts' own modules) or the full-window page's own (whose effects and listener are the page's, outside the hub); a new
+  // function must be put in one list or the other.
+  it('slice 3: the Idea book parts the hub draws, inside their terminal, hold no read, timer, listener, observer or effect', () => {
+    const SCREEN = 'src/components/PracticeField/IdeaBookScreen.jsx';
+    const DRAWN = ['BookLine', 'Strip', 'PosTable', 'DesksTab', 'NamePanel', 'IdeaPanel', 'Ledger', 'Words', 'DeskSection'];
+    const PAGE_ONLY = ['Tabs', 'FinishedRow', 'ResultSheet', 'HistoryTab', 'useWidth', 'Quiet', 'IdeaBookScreen'];
+    const code = read(SCREEN);
+    const fns = new Map();
+    const ranges = new Map();
+    for (const node of Parser.extend(acornJsx()).parse(code, { ecmaVersion: 'latest', sourceType: 'module' }).body) {
+      const decl = node.type === 'ExportNamedDeclaration' || node.type === 'ExportDefaultDeclaration' ? node.declaration : node;
+      if (decl?.type === 'FunctionDeclaration') { fns.set(decl.id.name, code.slice(decl.start, decl.end)); ranges.set(decl.id.name, [node.start, node.end]); }
+      // The import lines name what the page's own functions use (useEffect); a part's call of it is in its body, scanned below.
+      if (node.type === 'ImportDeclaration') ranges.set(`import@${node.start}`, [node.start, node.end]);
+    }
+    // Review S3F-2: this row reddens in a Practice Field build that never touched the hub, so each failure says what to do.
+    const GUIDE = [
+      'The Command Center draws parts of src/components/PracticeField/IdeaBookScreen.jsx in its hub: BookLine, Strip, PosTable and',
+      'DesksTab, and every function they call. Every top-level function DECLARATION (`function name() {}`) in that file is listed in',
+      'this row, in DRAWN or in PAGE_ONLY (src/components/CommandCenter/commandCenterHub.mount.guard.test.js, "slice 3: the Idea book',
+      'parts the hub draws"). Arrow-function constants at the top level (amountOf, panelStyle) are not listed: they are scanned with the',
+      'drawn parts as module code.',
+      '- A new function declaration: add its name to DRAWN if BookLine, Strip, PosTable or DesksTab, or anything they call, uses it;',
+      '  otherwise add it to PAGE_ONLY. A removed one: take its name out of its list.',
+      '- A page-only helper that holds an effect, timer or listener must be a function declaration listed in PAGE_ONLY: written as',
+      '  `const name = () => {...}` it is module code, the scan below finds its effect, and listing it does not help.',
+      '- A DRAWN function may hold no effect, timer, listener, observer or read (no useEffect, setTimeout, addEventListener, fetch...).',
+      '- A drawn part that starts calling a page-only function fails as "Part -> function" (e.g. "PosTable -> Quiet"). If the function',
+      '  holds none of those, move its name from PAGE_ONLY to DRAWN. If it does (useWidth, the page\'s effects), the drawn part must',
+      '  not call it: take what it needs as a prop from the page, or ask the Command Center\'s owner before changing this row.',
+    ].join('\n');
+    expect([...fns.keys()].sort(), `IdeaBookScreen.jsx gained or lost a top-level function.\n${GUIDE}`).toEqual([...DRAWN, ...PAGE_ONLY].sort());
+    // Review S3R-2: the whole module but the page's own functions is scanned — module-level statements and helpers too — and no part
+    // the hub draws may call into the page's own functions (whose effects and listener are the page's).
+    const cut = [...PAGE_ONLY.map((name) => ranges.get(name)), ...[...ranges.entries()].filter(([k]) => k.startsWith('import@')).map(([, r]) => r)];
+    const withoutPage = cut.sort((a, b) => b[0] - a[0]).reduce((text, [s, e]) => text.slice(0, s) + text.slice(e), code);
+    expect(activityInCode(`${SCREEN} (less the page's own)`, stripComments(withoutPage)),
+      `IdeaBookScreen.jsx, outside its PAGE_ONLY functions, now holds an effect, timer, listener, observer or read.\n${GUIDE}`).toEqual([]);
+    const callsPage = (body) => PAGE_ONLY.filter((name) => new RegExp(`\\b${name}\\b`).test(stripComments(body)));
+    expect(DRAWN.flatMap((name) => callsPage(fns.get(name)).map((p) => `${name} -> ${p}`)),
+      `A part the Command Center draws now calls a page-only function of IdeaBookScreen.jsx.\n${GUIDE}`).toEqual([]);
+    expect(callsPage(`${fns.get('PosTable')}\nconst w = useWidth(null);`), 'the call check bites').toEqual(['useWidth']);
+    expect(activityInCode('planted', stripComments(`${withoutPage}\nconst settle = () => setTimeout(f, 0);`)), 'the module scan bites').not.toEqual([]);
+    const inParts = DRAWN.flatMap((name) => activityInCode(`${SCREEN}#${name}`, stripComments(fns.get(name))));
+    const PARTS_MODULES = ['src/components/PracticeField/IdeaBookParts.jsx', 'src/components/PracticeField/ideaBookStyle.js', 'src/components/PracticeField/ideaBookCopy.js', 'src/components/PracticeField/ideaBookPartsOptions.js'];
+    expect([...inParts, ...PARTS_MODULES.flatMap((rel) => activityInCode(rel, stripComments(read(rel))))],
+      `A DRAWN function, or a module the drawn parts take (IdeaBookParts.jsx, ideaBookStyle.js, ideaBookCopy.js, ideaBookPartsOptions.js), now holds an effect, timer, listener, observer or read.\n${GUIDE}`).toEqual([]);
+    // The scan bites: the page's own effects and listener are seen, where they are.
+    expect(activityInCode(`${SCREEN}#useWidth`, stripComments(fns.get('useWidth')))).toEqual(expect.arrayContaining([`${SCREEN}#useWidth: \\baddEventListener\\b`, `${SCREEN}#useWidth: \\buseEffect\\b`]));
+    expect(activityInCode(`${SCREEN}#PosTable`, stripComments(`${fns.get('PosTable')}\nuseEffect(() => { window.addEventListener('scroll', f); }, []);`))).not.toEqual([]);
   });
 
   it('the only writes the hub can make are the equips: nothing else of agentService, and no other service of the shipped set', () => {

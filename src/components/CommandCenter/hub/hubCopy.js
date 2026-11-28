@@ -703,3 +703,28 @@ export const ARMORY_COPY = Object.freeze({
   /** The picker's notice when the server resets an aggressive tempo dial (its mastery-dark wording). */
   dialReset: (name) => `Tempo dial reset to Standard — the Aggressive position isn't available for ${name} yet.`,
 });
+
+/**
+ * The portfolio hub's slice 3 (spec docs/specs/20261126_COMMAND_CENTER_PORTFOLIO_HUB_BUILD_SPEC_V1.md §2, §5; Amendment A PH-26), drawn
+ * only in the book layout (COMMAND_CENTER_PORTFOLIO_HUB_ENABLED on and a ready read with a book). A table of its own, as
+ * AGENT_FORM_COPY is, so with the switch off nothing reads it and the hub chunk stays byte-identical to main's.
+ *   - The four tabs, in the design's words (ccp6-screens.jsx): Overview · Ideas · Setups · Partnership. Loadout is no tab (PH-17).
+ *     The tablist's name is the phone's today, the design's too.
+ *   - "Needs you": the slim strip's group name, the design's (ccp4-table.jsx NeedStrip4). Its line is today's next action's own
+ *     title, its action the candidate's own, and its "Later" today's (COPY.nextAction).
+ *   - The loadout's sheet title: the word the strip's status button already ends on ("… Open loadout") and today's phone tab.
+ * Everything about the book itself is the view's (the server's words) and the Idea book's own chrome (ideaBookCopy.js).
+ */
+export const PORTFOLIO_HUB_COPY = Object.freeze({
+  tabs: Object.freeze({
+    listLabel: 'Command Center sections',
+    overview: 'Overview',
+    ideas: 'Ideas',
+    setups: 'Setups',
+    partnership: 'Partnership',
+  }),
+  needsYou: 'Needs you',
+  loadoutSheet: 'Loadout',
+  /** A desk row's screen-reader name in the hub: the row's own words, then the tab it opens (the screen's says "Open Desks"). */
+  deskRowLabel: (deskName, text, tabName) => `${deskName} · ${text}. Open ${tabName}`,
+});
