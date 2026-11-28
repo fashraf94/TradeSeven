@@ -85,16 +85,27 @@ const ageText = (ms) => {
   return h < 48 ? `${h.toFixed(1)} hours old` : `${(h / 24).toFixed(1)} days old`;
 };
 
+/** RU-19 (Build 3b): the statement currency and what it holds back, as one line. */
+export function currencyLine(record) {
+  if (!Object.hasOwn(record ?? {}, 'reportsIn')) return `  reports in: not recorded (shape version ${record?.shapeVersion ?? 'none'}; the next fetch records it)`;
+  if (record.reportsIn === null) return '  reports in: unknown (the response names no statement currency); nothing held back';
+  const held = Array.isArray(record.heldBack) ? record.heldBack : [];
+  if (held.length === 0) return `  reports in: ${record.reportsIn}; nothing held back`;
+  return `  reports in: ${record.reportsIn}; held back (left blank): ${held.join(', ')}. They would mix ${record.reportsIn} figures with a US-dollar market value.`;
+}
+
 /** The stored record, with plain labels. */
 export function renderRecord(record) {
   const lines = [
     `${record.symbol}: ${record.name} (sector ${record.sectorId}, industry ${record.industry ?? 'none given'})`,
     `  status ${record.status}; fetched ${record.fetchedAt ?? 'never'}; shape version ${record.shapeVersion}`,
+    currencyLine(record),
   ];
   if (record.unavailable) lines.push(`  last attempt failed: ${record.unavailable.reason} at ${record.unavailable.at}`);
   if (record.metrics) {
+    const held = new Set(Array.isArray(record.heldBack) ? record.heldBack : []);
     lines.push('  The ten measures:');
-    for (const [key, label, kind] of TEN_MEASURES) lines.push(`    ${label}: ${formatMeasure(record.metrics[key], kind)}`);
+    for (const [key, label, kind] of TEN_MEASURES) lines.push(`    ${label}: ${held.has(key) ? `held back (reports in ${record.reportsIn})` : formatMeasure(record.metrics[key], kind)}`);
     const tenKeys = new Set(TEN_MEASURES.map(([k]) => k));
     const rest = STORED_METRIC_KEYS.filter((k) => !tenKeys.has(k)).map((k) => `${k} ${record.metrics[k] === null ? 'null' : record.metrics[k]}`);
     lines.push(`  Other stored measures (raw): ${rest.join('; ')}`);

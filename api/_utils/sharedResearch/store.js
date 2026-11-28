@@ -299,18 +299,30 @@ export async function readStoredFacts(db, names) {
   return { estimates: est ? { computedAt: isoOf(est.computedAt), stocks: est.stocks ?? {} } : null, claims };
 }
 
-/** peerRankings and stockRankings rows by symbol (the opening's unwritten projection, and the company names). */
+/**
+ * The opening's rows by symbol (the unwritten projection), from `peerRankings/{sym}` alone, as the rankings job writes
+ * it (api/cron/compute-rankings.js persistResults): the name, `sectorName`, `compositeRank` among `totalPeers` sector
+ * peers, the stored measures and `computedAt`. Build 3b PR A (RU-21): the read used to take `sector` (a field the job
+ * never writes) and a top-level `stockRankings/{sym}` collection nothing writes, so the card never showed a sector or
+ * a rank. Values are passed as stored (BUILD_RULES §9): a rank that is not a whole number is no rank. A symbol with no
+ * document has no row data.
+ */
 export async function readRankingRows(db, symbols) {
   const peers = {};
-  const rankings = {};
-  const rows = await Promise.all(symbols.map((s) => Promise.all([db.collection('peerRankings').doc(s).get(), db.collection('stockRankings').doc(s).get()])));
+  const snaps = await Promise.all(symbols.map((s) => db.collection('peerRankings').doc(s).get()));
   symbols.forEach((symbol, i) => {
-    const pd = dataOf(rows[i][0]);
-    const rd = dataOf(rows[i][1]);
-    if (pd) peers[symbol] = { name: typeof pd.name === 'string' ? pd.name : null, sector: pd.sector ?? null, metrics: pd.metrics ?? null, updatedAt: isoOf(pd.updatedAt ?? pd.computedAt) };
-    if (rd) rankings[symbol] = { compositeScore: rd.compositeScore ?? null, percentile: rd.percentile ?? null, tier: rd.tier ?? null, updatedAt: isoOf(rd.updatedAt ?? rd.computedAt) };
+    const pd = dataOf(snaps[i]);
+    if (!pd) return;
+    peers[symbol] = {
+      name: typeof pd.name === 'string' ? pd.name : null,
+      sectorName: typeof pd.sectorName === 'string' && pd.sectorName.trim() ? pd.sectorName : null,
+      compositeRank: Number.isSafeInteger(pd.compositeRank) ? pd.compositeRank : null,
+      totalPeers: Number.isSafeInteger(pd.totalPeers) ? pd.totalPeers : null,
+      metrics: pd.metrics ?? null,
+      computedAt: isoOf(pd.computedAt),
+    };
   });
-  return { peers, rankings };
+  return { peers };
 }
 
 /** Company names for symbols: `peerRankings/{symbol}.name` (spec F13); a symbol with no row keeps its symbol. */

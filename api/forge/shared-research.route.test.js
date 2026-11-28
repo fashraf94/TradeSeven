@@ -159,6 +159,20 @@ describe('open from a story (spec §4.2, §6.3)', () => {
     expect(out.quota).toEqual({ investigationsToday: 1, perDay: 3, framingsToday: 0, framingsPerDay: 10, stepsToday: 0, stepsPerDay: 30 });
     expect(sessionDoc(out.session.sessionId).attribution).toMatchObject(STAMP);
   });
+  it('Build 3b PR A (RU-21): the stored rows carry the sector, the rank among sector peers as the rankings job stored it, and the date it was computed', async () => {
+    const computedAt = new Date('2026-11-26T11:00:51.000Z');
+    seedEnv.store.set('peerRankings/ETN', { ticker: 'ETN', name: 'Eaton Corporation plc', sectorId: 'XLI', sectorName: 'Industrials', compositeScore: 71.4, compositeRank: 4, totalPeers: 22, tier: 'Strong', metrics: { grossMargin: 0.38 }, computedAt });
+    seedEnv.store.set('peerRankings/GEV', { ticker: 'GEV', name: 'GE Vernova Inc.', sectorId: 'XLI', sectorName: 'Industrials', compositeRank: null, totalPeers: 22, computedAt });
+    seedEnv.store.set('stockRankings/ETN', { compositeScore: 99, percentile: 99, tier: 'A' });
+    const out = await openStory();
+    expect(out.opening.storedRows).toEqual([
+      { symbol: 'ETN', name: 'Eaton Corporation plc', peer: { sector: 'Industrials', metrics: { grossMargin: 0.38 }, asOf: computedAt.toISOString() }, ranking: { rank: 4, of: 22, sector: 'Industrials', asOf: computedAt.toISOString() } },
+      { symbol: 'GEV', name: 'GE Vernova Inc.', peer: { sector: 'Industrials', metrics: null, asOf: computedAt.toISOString() }, ranking: null },
+    ]);
+    expect(seedEnv.reads.filter(([, p]) => /stockRankings/.test(p))).toEqual([]);
+    const read = await get({ sessionId: out.session.sessionId });
+    expect(read.body.storedRows).toEqual(out.opening.storedRows);
+  });
   it('refusals: an unsupported kind, a mismatched entry, a missing or deep-dive story, a bad question, a bad request id', async () => {
     const entry = { kind: 'item', itemRef: { recordKind: 'fantasyTimesStories', recordId: 'story-1' }, question: QUESTION };
     const cases = [

@@ -205,7 +205,9 @@ describe('Work (spec §7.2)', () => {
     await flush();
     expect(label('Opening · no answer yet')).not.toBeNull();
     const stored = $('[data-sr-stored]').textContent;
-    expect(stored).toContain('Eaton Corporation plc · ETN · Industrials · Ranking score 71');
+    // Build 3b PR A (RU-21): the sector, the rank among sector peers exactly as stored, and the day it was computed
+    expect(stored).toContain('Eaton Corporation plc · ETN · Industrials · Ranked 4 of 22 in Industrials · As of Nov 11, 2026');
+    expect(stored).not.toContain('Ranking score');
     const story = A.openStory.body.record.findings.find((f) => f.statusReason === 'reporter_content');
     const card = $(`[data-sr-finding="${story.findingId}"]`);
     expect(card.textContent).toContain('From FantasyTimes');

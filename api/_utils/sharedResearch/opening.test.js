@@ -78,9 +78,35 @@ describe('§15 S-1 — the SignalDrop', () => {
 });
 
 describe('the unwritten projection (F14)', () => {
-  it('rankings and peer rows per name, never findings', () => {
-    expect(storedRowsOf(['NVDA'], { peers: { NVDA: { name: 'NVIDIA Corporation', sector: 'Technology', metrics: { pe: 40 } } } })).toEqual([
-      { symbol: 'NVDA', name: 'NVIDIA Corporation', peer: { sector: 'Technology', metrics: { pe: 40 }, asOf: null }, ranking: null },
+  // Build 3b PR A (RU-21): rows from what the rankings job writes (store.js readRankingRows' shape)
+  const AT = '2026-11-26T11:00:51.000Z';
+  const NVDA = { name: 'NVIDIA Corporation', sectorName: 'Technology', compositeRank: 3, totalPeers: 21, metrics: { pe: 40 }, computedAt: AT };
+  it('a row with a sector and a rank: the sector, the rank among sector peers exactly as stored, the date computed', () => {
+    expect(storedRowsOf(['NVDA'], { peers: { NVDA } })).toEqual([
+      { symbol: 'NVDA', name: 'NVIDIA Corporation', peer: { sector: 'Technology', metrics: { pe: 40 }, asOf: AT }, ranking: { rank: 3, of: 21, sector: 'Technology', asOf: AT } },
     ]);
+  });
+  it.each([
+    ['no rank', { compositeRank: null }],
+    ['no peer count', { totalPeers: null }],
+    ['a rank past its peer count', { compositeRank: 22 }],
+    ['a rank of 0', { compositeRank: 0 }],
+    ['a rank that is not a whole number (never rounded)', { compositeRank: 2.6 }],
+  ])('a row with a sector and %s: the sector stays, the rank is left out (nothing invented)', (_t, over) => {
+    const [row] = storedRowsOf(['NVDA'], { peers: { NVDA: { ...NVDA, ...over } } });
+    expect(row.peer).toEqual({ sector: 'Technology', metrics: { pe: 40 }, asOf: AT });
+    expect(row.ranking).toBeNull();
+  });
+  it('a rank with no sector name is left out too (the line names the sector)', () => {
+    const [row] = storedRowsOf(['NVDA'], { peers: { NVDA: { ...NVDA, sectorName: null } } });
+    expect(row.peer.sector).toBeNull();
+    expect(row.ranking).toBeNull();
+  });
+  it('a symbol with no document: its symbol as its name, no peer row, no rank', () => {
+    expect(storedRowsOf(['ZZZ'], { peers: {} })).toEqual([{ symbol: 'ZZZ', name: 'ZZZ', peer: null, ranking: null }]);
+  });
+  it('reads no ranking from anywhere but the peer row (the old `rankings` argument is gone)', () => {
+    const rows = storedRowsOf(['NVDA'], { peers: {}, rankings: { NVDA: { compositeScore: 71, percentile: 90, tier: 'A' } } });
+    expect(rows).toEqual([{ symbol: 'NVDA', name: 'NVDA', peer: null, ranking: null }]);
   });
 });

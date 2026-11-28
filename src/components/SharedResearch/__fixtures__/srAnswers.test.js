@@ -95,7 +95,9 @@ function build() {
   });
   const storyRecord = append(baseRecord({ question: STORY_Q, sessionId: storySid, createdAt: OPEN_AT }),
     built(openingFindingsOf({ entryKind: 'item', story: STORY, names: storyNames, stored: STORED, nowIso: OPEN_AT }), OPEN_AT), OPEN_AT);
-  const storyRows = storedRowsOf(storyNames, { peers: { ETN: { name: 'Eaton Corporation plc', sector: 'Industrials', updatedAt: '2026-11-11T06:00:00.000Z' } }, rankings: { ETN: { compositeScore: 71, updatedAt: '2026-11-11T06:00:00.000Z' } } });
+  // Build 3b PR A (RU-21): the row as readRankingRows reads peerRankings/{sym} — the sector name, the rank among sector
+  // peers and the time it was computed
+  const storyRows = storedRowsOf(storyNames, { peers: { ETN: { name: 'Eaton Corporation plc', sectorName: 'Industrials', compositeRank: 4, totalPeers: 22, metrics: null, computedAt: '2026-11-11T11:00:51.000Z' } } });
   A.openStory = { status: 200, body: openAnswer({ session: storySession, record: storyRecord, names: ETN_NAMES, storedRows: storyRows }) };
   const previous = previousViewOf({ sessionId: '1a1a1a1a-0000-4000-8000-000000000009', updatedAt: '2026-11-09T18:00:00.000Z' }, { endedAt: '2026-11-09T18:00:00.000Z', terminalReason: 'concluded' });
   A.openStoryPrevious = { status: 200, body: openAnswer({ session: storySession, record: storyRecord, names: ETN_NAMES, storedRows: storyRows, previous }) };

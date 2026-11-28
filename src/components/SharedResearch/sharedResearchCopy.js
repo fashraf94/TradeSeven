@@ -291,7 +291,8 @@ export const SR_COPY = Object.freeze({
   earlierNote: 'This is your earlier investigation. It is closed; you can read it.',
   fromStory: 'From the story',
   storedFacts: 'What the records already hold',
-  storedScore: (score) => `Ranking score ${score}`,
+  // Build 3b PR A (RU-21): the rank among sector peers, exactly as the rankings job stored it (BUILD_RULES §9)
+  storedRank: (rank, of, sector) => `Ranked ${rank} of ${of} in ${sector}`,
   storedNone: 'No company in the game is in scope yet. Stored facts appear here once a name enters the investigation.',
   openingHead: 'Opening',
   openingBody: 'No answer yet. I start from what the records hold and one step you can take.',
