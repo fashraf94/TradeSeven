@@ -44,7 +44,9 @@ function Row({ sections, current, onJump, backLabel, onBack, copy }) {
         <Icon name="back" size={18} />
       </button>
       {/* never shrunk below their words (review P-1: at 320 px a shrunk label spilled into the next, and a tap there
-          hit the wrong section); the marker takes no width of its own */}
+          hit the wrong section); the marker takes no width of its own. Below 360 px the counts are not drawn (F-3: two-
+          digit counts ran the last label past the row at 320 px) — one media query (exploreStyle.js `.ftx-jump-count`)
+          for both copies; `display: none` takes the count out of the button's name too, so the name is what is drawn */}
       <div style={{ flex: 1, minWidth: 0, display: 'flex', justifyContent: 'space-between', columnGap: 6 }}>
         {sections.map((s) => {
           const on = s.id === current;
@@ -60,7 +62,7 @@ function Row({ sections, current, onJump, backLabel, onBack, copy }) {
               style={{ ...RESET, position: 'relative', minHeight: 44, display: 'inline-flex', alignItems: 'center', gap: 3, fontWeight: 600, color: on ? T.ink : T.ink2, whiteSpace: 'nowrap', flexShrink: 0 }}
             >
               <span style={{ fontSize: 12, lineHeight: 1.3 }}>{s.label}</span>
-              {s.count !== null ? <span style={{ fontSize: 12, lineHeight: 1.3, color: T.ink3, fontWeight: 500 }}>{s.count}</span> : null}
+              {s.count !== null ? <span className="ftx-jump-count" style={{ fontSize: 12, lineHeight: 1.3, color: T.ink3, fontWeight: 500 }}>{s.count}</span> : null}
               {on ? <span aria-hidden="true" data-explore-jump-mark="" style={{ position: 'absolute', left: 0, right: 0, bottom: 5, height: 2, borderRadius: 1, background: T.teal }} /> : null}
             </button>
           );

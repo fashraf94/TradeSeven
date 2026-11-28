@@ -60,8 +60,8 @@ export function Tickers({ list, onOpen }) {
   );
 }
 
-export function Eyebrow({ as = 'div', id, tone = null, style, children }) {
-  return React.createElement(as, { id, style: { ...S.eyebrow, color: tone ? T[tone] : T.ink3, ...style } }, children);
+export function Eyebrow({ as = 'div', id, tone = null, tabIndex, style, children }) {
+  return React.createElement(as, { id, tabIndex, style: { ...S.eyebrow, color: tone ? T[tone] : T.ink3, ...style } }, children);
 }
 
 export function Tag({ tone = 'ink2', dim = false, children }) {

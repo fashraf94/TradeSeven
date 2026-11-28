@@ -23,7 +23,7 @@
 // in one place only: the hero's story is not also a card, a product-led overview is a tile and not a card, and a deep
 // story is only in the Latest row. Nothing on the front page reads a story by id.
 
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { EXPLORE_COMPARE_ROUTE } from '../../config/exploreFlags';
 import { EXPLORE_COPY } from './exploreCopy';
 import { RESEARCH, countsOf, dateOf, frontPageOf, itemFor, parentOf, saveBusyOf, stateOf, topicsOf } from './exploreView';
@@ -184,12 +184,13 @@ function SavedList({ explore, storyById, onOpenStory }) {
   const ready = research.status === RESEARCH.READY;
   return (
     <section aria-labelledby="ftx-saved-h" style={S.section} data-explore-saved="">
-      <Eyebrow as="h2" id="ftx-saved-h">{COPY.saved}</Eyebrow>
+      <Eyebrow as="h2" id="ftx-saved-h" tabIndex={-1} style={{ outline: 'none' }}>{COPY.saved}</Eyebrow>
       {bookmarks.status === 'loading' && <StatusLine>{COPY.savedLoading}</StatusLine>}
       {bookmarks.status === 'failed' && (
         <div style={S.section}>
           <Notice role="alert" tone="copper">{COPY.savedFailed}</Notice>
-          <div><Btn onClick={bookmarks.retry} data-explore-retry-bookmarks="">{COPY.tryAgain}</Btn></div>
+          {/* the button leaves with the retry: focus goes to the list's heading first, never to <body> (F-1) */}
+          <div><Btn onClick={() => { const h = document.getElementById('ftx-saved-h'); bookmarks.retry(); if (h) h.focus({ preventScroll: true }); }} data-explore-retry-bookmarks="">{COPY.tryAgain}</Btn></div>
         </div>
       )}
       {bookmarks.status === 'ready' && bookmarks.list.length === 0 && <p style={S.small}>{COPY.savedEmpty}</p>}
@@ -228,7 +229,11 @@ export default function ExploreHome({ explore, byId, stocksData, onOpenStory, on
   const isSaved = (id) => bookmarks.list.some((b) => b.storyId === id);
   const ready = research.status === RESEARCH.READY;
   const holds = shelfHolds(research);
-  const shelf = (placement) => <ExploreShelf research={research} byId={byId} onContinue={onContinue} onViewIt={onViewIt} placement={placement} />;
+  // the shelf's Try again raises it; a shelf drawn anew in its other place (the answer moved it) takes focus while it is
+  // up; lowered once the read has answered, after that draw (ExploreShelf.jsx, F-1)
+  const shelfRetryFocus = useRef(false);
+  useEffect(() => { if (research.status !== RESEARCH.LOADING) shelfRetryFocus.current = false; }, [research.status]);
+  const shelf = (placement) => <ExploreShelf research={research} byId={byId} onContinue={onContinue} onViewIt={onViewIt} placement={placement} retryFocus={shelfRetryFocus} />;
   const saved = <SavedList explore={explore} storyById={byId} onOpenStory={onOpenStory} />;
 
   return (
@@ -248,12 +253,14 @@ export default function ExploreHome({ explore, byId, stocksData, onOpenStory, on
       </div>
       {page.tiles.length > 0 ? <StartRow tiles={page.tiles} onOpenStory={onOpenStory} /> : null}
       <section aria-labelledby="ftx-cards-h" style={{ ...S.col, gap: 14 }} data-explore-cards="">
+        {/* the heading is ONE element whether the cards show or not (F-1: it holds focus through a re-read); without
+            cards it is for screen readers only and its row draws no box */}
+        <div style={page.cards.length > 0 ? { display: 'flex', alignItems: 'center', justifyContent: 'space-between', columnGap: 16, rowGap: 8, flexWrap: 'wrap' } : { display: 'contents' }}>
+          <h2 id="ftx-cards-h" tabIndex={-1} className={page.cards.length > 0 ? undefined : 'ftx-sr'} style={page.cards.length > 0 ? { ...S.h2, outline: 'none' } : { outline: 'none' }}>{COPY.questionsLabel}</h2>
+          {page.cards.length > 0 ? <Legend /> : null}
+        </div>
         {page.cards.length > 0 ? (
           <>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', columnGap: 16, rowGap: 8, flexWrap: 'wrap' }}>
-              <h2 id="ftx-cards-h" style={S.h2}>{COPY.questionsLabel}</h2>
-              <Legend />
-            </div>
             {topics.length > 0 && (
               <div style={S.row} data-explore-topics="" role="group" aria-label={COPY.topics}>
                 {[null, ...topics].map((t) => (
@@ -272,12 +279,13 @@ export default function ExploreHome({ explore, byId, stocksData, onOpenStory, on
               </div>
             )}
           </>
-        ) : <h2 id="ftx-cards-h" className="ftx-sr">{COPY.questionsLabel}</h2>}
+        ) : null}
         {stories.status === 'idle' || stories.status === 'loading' ? <StatusLine>{COPY.loading}</StatusLine> : null}
         {stories.status === 'failed' && (
           <div style={S.section}>
             <Notice role="alert" tone="copper">{COPY.failed}</Notice>
-            <div><Btn onClick={stories.retry} data-explore-retry-stories="">{COPY.tryAgain}</Btn></div>
+            {/* the button leaves with the retry: focus goes to the heading above first, never to <body> (F-1) */}
+            <div><Btn onClick={() => { const h = document.getElementById('ftx-cards-h'); stories.retry(); if (h) h.focus({ preventScroll: true }); }} data-explore-retry-stories="">{COPY.tryAgain}</Btn></div>
           </div>
         )}
         {stories.status === 'ready' && list.length === 0 && <p role="status" style={{ ...S.meta, fontSize: 15 }} data-explore-empty="">{COPY.empty}</p>}

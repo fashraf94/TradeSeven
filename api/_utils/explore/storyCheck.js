@@ -35,6 +35,13 @@ const isPlain = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const textOf = (v) => (typeof v === 'string' && v.trim() ? v.trim() : null);
 const listOf = (v) => (Array.isArray(v) ? v : []);
 const show = (v) => (v === undefined ? '(missing)' : JSON.stringify(v));
+/** An id (or a reference to one) with spaces at its ends: the page reads every id trimmed (exploreView.js). */
+const padded = (v) => typeof v === 'string' && v.trim() !== '' && v !== v.trim();
+/**
+ * F-2 (the Explore chat's fix prompt of Nov 27; review N-5): a padded id is REFUSED, not noted and not repaired — the
+ * standing of SQ-5. The page reads ids trimmed, so the stored record and the id the page hands on would not match.
+ */
+const paddedMessage = (field, value) => `${field} is ${show(value)}, with spaces at its ends: the page reads ids trimmed, so a padded id would not be found`;
 
 /** A finding (K-3): the level, the rule, the field, the value as found, and what is wrong in plain words. */
 const finding = (level, rule, field, value, message) => ({ level, rule, field, value: value === undefined ? null : value, message });
@@ -159,12 +166,12 @@ function checkOne({ id, record, discarded }, ctx) {
   connections.forEach((c, i) => {
     const at = `connections[${i}]`;
     if (!isPlain(c)) { refuse('K-4(g)', at, c, 'a connection is an object'); return; }
-    // The id is the address (standard §8): looked up exactly as written, never trimmed (review A5).
+    // The id is the address (standard §8): looked up exactly as written, never trimmed (review A5); a padded one is refused (F-2).
     const cid = textOf(c.id) ? c.id : null;
     if (!cid) refuse('K-4(g)', `${at}.id`, c.id, 'every connection has an `id`');
     else if (connById.has(cid)) refuse('K-4(g)', `${at}.id`, c.id, `the connection id "${cid}" is used twice`);
     else connById.set(cid, c);
-    if (cid && cid !== cid.trim()) note('record', `${at}.id`, c.id, 'the id has spaces at its ends: every reference to it must repeat them exactly');
+    if (cid && padded(cid) && connById.get(cid) === c) refuse('F-2', `${at}.id`, c.id, paddedMessage(`${at}.id`, c.id)); // one refusal per field: a reused id is refused above
     if (!BASES.includes(c.basis)) refuse('K-4(g)', `${at}.basis`, c.basis, `\`basis\` is one of ${BASES.join(', ')}`);
     if (!textOf(c.unknown)) refuse('K-4(g)', `${at}.unknown`, c.unknown, 'every connection states its one unknown (the gap, standard §5)');
     if (!textOf(c.whereToLook)) refuse('K-4(g)', `${at}.whereToLook`, c.whereToLook, 'every connection says where to look (the gap, standard §5)');
@@ -191,7 +198,10 @@ function checkOne({ id, record, discarded }, ctx) {
     if (cellKindOf(cell) === 'stated') cites.push([`${field}.sourceId`, cell.sourceId]);
     if (cellKindOf(cell) === 'computed') listOf(cell.inputs).forEach((inp, k) => { if (isPlain(inp)) cites.push([`${field}.inputs[${k}].sourceId`, inp.sourceId]); });
   }
-  for (const [field, sid] of cites) if (!sourceIds.has(sid)) refuse('K-4(h)', field, sid, `names no source: there is no source with id ${show(sid)}`);
+  for (const [field, sid] of cites) {
+    if (!sourceIds.has(sid)) refuse('K-4(h)', field, sid, `names no source: there is no source with id ${show(sid)}`);
+    else if (padded(sid)) refuse('F-2', field, sid, paddedMessage(field, sid));
+  }
   const seenSource = new Set();
   sources.forEach((s, i) => {
     const at = `sources[${i}]`;
@@ -205,6 +215,7 @@ function checkOne({ id, record, discarded }, ctx) {
     // Two sources under one id: a citation of it names no ONE source, and a figure's match could rest on the other
     // (review H5/A7). Refused under K-4(h).
     if (typeof s.id === 'string' && seenSource.has(s.id)) refuse('K-4(h)', `${at}.id`, s.id, 'two sources share this id: a citation of it names no one source');
+    else if (padded(s.id)) refuse('F-2', `${at}.id`, s.id, paddedMessage(`${at}.id`, s.id));
     seenSource.add(s.id);
     if (typeof s.id === 'string' && !cites.some(([, sid]) => sid === s.id)) note('record', `${at}.id`, s.id, 'no connection and no figure cites this source');
   });
@@ -239,6 +250,7 @@ function checkOne({ id, record, discarded }, ctx) {
     const at = `questions[${i}]`;
     if (!isPlain(q)) { refuse('K-4(i)', at, q, 'a question is an object'); return; }
     if (!connById.has(q.fromConnection)) refuse('K-4(i)', `${at}.fromConnection`, q.fromConnection, 'names no connection of this story');
+    else if (padded(q.fromConnection)) refuse('F-2', `${at}.fromConnection`, q.fromConnection, paddedMessage(`${at}.fromConnection`, q.fromConnection));
     if (!SHAPES.includes(q.shape)) refuse('K-4(i)', `${at}.shape`, q.shape, `\`shape\` is one of ${SHAPES.join(', ')}`);
     else shapesUsed.push(q.shape);
     // The founder's ruling SQ-5 (Nov 26): refused, not noted. An investigation starts from a question by its id, and
@@ -247,6 +259,7 @@ function checkOne({ id, record, discarded }, ctx) {
     const qid = textOf(q.id);
     if (!qid) refuse('SQ-5', `${at}.id`, q.id, 'every question has an id: without one the page invents one, which an investigation started from this question could not name');
     else if (seenQ.has(qid)) refuse('SQ-5', `${at}.id`, q.id, `the id "${qid}" is already used by another question of this story; the page would rename this one`);
+    else if (padded(q.id)) refuse('F-2', `${at}.id`, q.id, paddedMessage(`${at}.id`, q.id));
     seenQ.add(qid);
     if (!textOf(q.text)) note('page', `${at}.text`, q.text, 'the page does not draw a question without text');
     else if (q.text.trim().length > 120) note('standard §6 rule 7', `${at}.text`, q.text.trim().length, 'a question reads in one sentence, under 120 characters where possible');
@@ -396,6 +409,7 @@ function checkLinks({ id, record, kind, connById }, ctx, refuse, note) {
         const conn = listOf(parent.connections).find((c) => isPlain(c) && c.id === p.connectionId);
         if (!conn) refuse('K-4(e)', 'parent.connectionId', p.connectionId, `names no connection of "${p.storyId}"`);
         else if (conn.leadsToStory !== id) refuse('K-4(e)', 'parent.connectionId', p.connectionId, `the parent connection's leadsToStory is ${show(conn.leadsToStory)}, not this story`);
+        else if (padded(p.connectionId)) refuse('F-2', 'parent.connectionId', p.connectionId, paddedMessage('parent.connectionId', p.connectionId));
       }
     }
   }
@@ -405,7 +419,12 @@ function checkLinks({ id, record, kind, connById }, ctx, refuse, note) {
     // K-4(e) reads (review A12 put the looser reading to the founder: SQ-8).
     if (c.leadsToStory === undefined) continue;
     const at = `connections[${cid}].leadsToStory`;
-    if (kind !== 'overview') { note('standard §7', at, c.leadsToStory, 'only an overview\'s connection leads to a deep story'); continue; }
+    if (kind !== 'overview') {
+      // a deep story's own door is still followed by the page (doorOf), which drops a padded one: refused (F-2, review B-1)
+      if (padded(c.leadsToStory)) refuse('F-2', at, c.leadsToStory, paddedMessage(at, c.leadsToStory));
+      else note('standard §7', at, c.leadsToStory, 'only an overview\'s connection leads to a deep story');
+      continue;
+    }
     const target = typeof c.leadsToStory === 'string' && c.leadsToStory ? found(c.leadsToStory) : null;
     if (!target || target.kind !== 'deep') {
       refuse('K-4(e)', at, c.leadsToStory, `names no existing deep story (${where})${typeof c.leadsToStory === 'string' ? ctx.describeMissing(c.leadsToStory) : ''}`);

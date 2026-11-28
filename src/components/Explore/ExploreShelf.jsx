@@ -13,8 +13,15 @@
 //   no access              one line (SQ-4) · the read failed: the line and Try again (one tap, one read)
 // A null question or statement leaves its line out: nothing is invented in its place. The open rows keep Build 1's
 // "Research in progress" attributes (it is the same list, moved onto the shelf).
+//
+// Try again (review P-3; F-1, the fix prompt of Nov 27): the button leaves with the retry, so the tap puts focus on the
+// shelf's heading first (never scrolling), which stays while the read is out. On a phone a retry whose answer holds a
+// thesis MOVES the shelf (after the cards while it holds nothing, above the hero once it holds one): it is drawn anew in
+// its other place and the old heading leaves with the old one. So the tap also raises the page's `retryFocus` flag, and
+// the shelf drawn in the other place takes focus on its own heading as it mounts, before the frame is painted — only
+// when focus would otherwise rest on <body>. The front page lowers the flag once the read has answered.
 
-import React from 'react';
+import React, { useLayoutEffect, useRef } from 'react';
 import { EXPLORE_COPY } from './exploreCopy';
 import { RESEARCH, dateOf, shelfOf } from './exploreView';
 import { S, T } from './exploreStyle';
@@ -48,8 +55,15 @@ function BlankSentence() {
   );
 }
 
-export default function ExploreShelf({ research, byId, onContinue, onViewIt, placement }) {
+export default function ExploreShelf({ research, byId, onContinue, onViewIt, placement, retryFocus = null }) {
   const headingId = `ftx-shelf-h-${placement}`;
+  const headingRef = useRef(null);
+  useLayoutEffect(() => {
+    if (!retryFocus?.current) return;
+    const el = headingRef.current;
+    if (el && (document.activeElement === null || document.activeElement === document.body)) el.focus({ preventScroll: true });
+    // on mount only: a shelf drawn anew while a retry is out is the moved one
+  }, []);
   const shelf = shelfOf(research);
   const holds = Boolean(shelf) && (shelf.open.length > 0 || shelf.finished.length > 0);
   const status = research?.status ?? RESEARCH.LOADING;
@@ -63,7 +77,7 @@ export default function ExploreShelf({ research, byId, onContinue, onViewIt, pla
       <div style={S.section}>
         <Notice role="alert" tone="copper">{COPY.failed}</Notice>
         {/* the button leaves with the retry: focus goes to the shelf's heading first, never to <body> (review P-3) */}
-        <div><Btn kind="secondary" onClick={() => { const h = document.getElementById(headingId); research.retry(); if (h) h.focus({ preventScroll: true }); }} data-explore-shelf-retry="">{COPY.tryAgain}</Btn></div>
+        <div><Btn kind="secondary" onClick={() => { const h = headingRef.current; if (retryFocus) retryFocus.current = true; research.retry(); if (h) h.focus({ preventScroll: true }); }} data-explore-shelf-retry="">{COPY.tryAgain}</Btn></div>
       </div>
     );
   } else if (status !== RESEARCH.READY) body = <StatusLine>{COPY.checking}</StatusLine>;
@@ -114,7 +128,7 @@ export default function ExploreShelf({ research, byId, onContinue, onViewIt, pla
   return (
     <section aria-labelledby={headingId} style={{ ...S.section, gap: 12 }} data-explore-shelf={state} data-explore-shelf-placement={placement}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-        <h2 id={headingId} tabIndex={-1} style={{ ...S.eyebrow, color: holds ? T.teal : T.ink3, outline: 'none' }}>{COPY.title}</h2>
+        <h2 id={headingId} ref={headingRef} tabIndex={-1} style={{ ...S.eyebrow, color: holds ? T.teal : T.ink3, outline: 'none' }}>{COPY.title}</h2>
         {holds ? <span style={S.meta} data-explore-shelf-counts="">{COPY.counts(shelf.openCount, shelf.finishedCount)}</span> : null}
       </div>
       {body}
