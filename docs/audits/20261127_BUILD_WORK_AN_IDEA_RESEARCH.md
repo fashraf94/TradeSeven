@@ -434,8 +434,8 @@ None blocks a merge. Each item was built to the stricter or narrower reading nam
 4. On the card, open **What the records already hold**. Corning's row reads Technology · **Research only · no rank** · the day fetched, then its own numbers. There is no rank line.
 5. Set the names to Corning. Tap **Find the reasons**, confirm the why, pick what would prove it wrong, and pick the time frame.
 6. Tap **Save thesis**. The saved screen names Corning and carries **"Holds a research-only company. It can't be equipped to a battle agent."**
-7. Tap **Use it in my next game**. You should see **"This idea holds a research-only company and can't be equipped to a battle agent."** Your agent is unchanged.
-8. Optional: in the Forge, the saved list holds GLW.
+7. Optional: in the Forge, the saved list holds GLW. Then go back to the saved idea in Work an idea.
+8. Tap **Use it in my next game**. You should see **"This idea holds a research-only company and can't be equipped to a battle agent."** Your agent is unchanged.
 
 ---
 
