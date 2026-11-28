@@ -18,7 +18,7 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { SR_COPY as COPY } from '../sharedResearchCopy';
 import { T, S } from '../sharedResearchStyle';
-import { findingsById, remainingOf, STATEMENT_MAX } from '../sharedResearchView';
+import { findingsById, holdsResearchOnlyIn, remainingOf, STATEMENT_MAX } from '../sharedResearchView';
 import { partFindingIdsOf, panelOf, revisedWhyChoiceOf, themeLineOf } from '../thesisView';
 import {
   CardHead, ClearConfirm, Composer, Count, Cover, FOOT, FreeButton, PartPanel, PriceLines, Rail, ResearchButton, Sentence, ThemeLine, WhyBlock, WhyProposal, freeLabelOf, researchLabelOf, usePanelInView,
@@ -156,6 +156,7 @@ export default function ThesisReady({ sr, agentName, phone, edit, setEdit, onKee
           <span style={{ fontSize: 12.5, color: T.ink2 }}>{names.length === 1 ? B.oneStock : B.nNames(names.length)}</span>
           <Count n={partFindingIdsOf(thesis, 'names', companies).length} />
         </div>
+        {holdsResearchOnlyIn(names, companies?.supported) && <p style={{ ...S.small, ...WRAP }} data-sr-research-only="">{COPY.research.holdsResearchOnly}</p>}
         <WhyBlock thesis={thesis} agentName={agentName} />
         {revisedWhyChoiceOf(thesis) && tapped !== 'why' && <div><LinkButton disabled={busy} onClick={() => tapPart('why')} attrs={{ 'data-sr-revised-waiting': '' }}>{B.revisedWaiting}</LinkButton></div>}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 11, borderTop: `1px solid ${T.hair}` }} data-sr-judged="">

@@ -22,7 +22,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { SR_COPY as COPY } from '../sharedResearchCopy';
 import { T, S, wash } from '../sharedResearchStyle';
-import { adoptableOf, carriedByCompanyOf, draftOf, findingsById, strayNamesOf, STATEMENT_MAX, withoutRole } from '../sharedResearchView';
+import { adoptableOf, carriedByCompanyOf, draftOf, findingsById, holdsResearchOnlyIn, strayNamesOf, STATEMENT_MAX, withoutRole } from '../sharedResearchView';
 import { Button, Eyebrow, Field, Finding, LinkButton, Notice, Running, Tag } from '../parts';
 import { ADOPTABLE_HORIZONS, HORIZON_HELPER, HORIZON_LABELS } from '../../../constants/sharedResearch';
 
@@ -45,6 +45,7 @@ function SavedIdea({ sr, agentName, agentId, equippedListLabel, phone, onClose }
       {alreadySaved && <p style={S.body} data-sr-saved-already="">{COPY.savedAlready}</p>}
       {!alreadySaved && input.statement && <p style={S.body}>{input.statement}</p>}
       {!alreadySaved && input.horizonEnum && <p style={S.meta}>{COPY.savedLine((names.length ? names : input.symbols ?? []).join(' · '), HORIZON_LABELS[input.horizonEnum] ?? input.horizonEnum, conditions)}</p>}
+      {holdsResearchOnlyIn(input.symbols, sr.inv?.adoptPreview?.companies ?? sr.inv?.companies?.supported) && <p style={S.small} data-sr-research-only="">{COPY.research.holdsResearchOnly}</p>}
       <div style={{ borderTop: `1px solid ${T.hair}`, paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
         {canEquip && eq.status === 'none' && (
           <>
@@ -60,7 +61,7 @@ function SavedIdea({ sr, agentName, agentId, equippedListLabel, phone, onClose }
         {canEquip && eq.status === 'done' && <p style={{ ...S.body, display: 'flex', gap: 8, flexWrap: 'wrap' }} data-sr-equipped=""><span>{COPY.equipped}</span>{equippedListLabel && <span style={S.small}>{COPY.replaced(equippedListLabel)}</span>}</p>}
         {canEquip && eq.status === 'failed' && (
           <>
-            <Notice role="alert" attrs={{ 'data-sr-equip-failed': '' }}>{COPY.equipFailed}</Notice>
+            <Notice role="alert" attrs={{ 'data-sr-equip-failed': eq.code ?? '' }}>{eq.code === 'research_only_list' ? COPY.research.equipRefused : COPY.equipFailed}</Notice>
             <div style={S.actions}>
               <Button kind="secondary" onClick={() => sr.equipNow({ agentId, watchlistId: outcome.watchlistId })}>{COPY.retry}</Button>
               <Button kind="ghost" onClick={sr.declineEquip}>{COPY.leaveSaved}</Button>

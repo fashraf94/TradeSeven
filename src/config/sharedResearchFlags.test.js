@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 import { SHARED_RESEARCH_MODE, SHARED_RESEARCH_MODES } from './sharedResearchFlags.js';
 import { SHARED_RESEARCH_BUILDER_MODE, SHARED_RESEARCH_BUILDER_MODES } from './sharedResearchFlags.js';
+import { SHARED_RESEARCH_UNIVERSE_MODE, SHARED_RESEARCH_UNIVERSE_MODES } from './sharedResearchFlags.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SRC = readFileSync(path.join(HERE, 'sharedResearchFlags.js'), 'utf8').replace(/\r\n/g, '\n');
@@ -100,5 +101,40 @@ describe('SHARED_RESEARCH_BUILDER_MODE — the pin (BUILD_RULES §2; Amendment B
   it('never a DARK_BY_DESIGN key, but noted by name in that block', () => {
     expect(GUARD).not.toMatch(/^\s*SHARED_RESEARCH_BUILDER_MODE\s*:/m);
     expect(GUARD).toContain('SHARED_RESEARCH_BUILDER_MODE intentionally ABSENT');
+  });
+});
+
+// Build 3b (research universe; RU-22): the research universe's switch, in the same module, pinned the same way.
+
+const UNIVERSE_ROLLBACK = 'move the literal back one step with its pin: new investigations open on the game list; open research investigations keep their stamp';
+
+describe('SHARED_RESEARCH_UNIVERSE_MODE — the pin (BUILD_RULES §2; Build 3b, RU-22)', () => {
+  it("is 'off' — move the literal back one step with its pin: new investigations open on the game list; open research investigations keep their stamp", () => {
+    // THE ROW THAT MOVES WITH A FLIP ('off' → 'founder' → 'on'), in the founder's flip PR; a rollback moves it back.
+    expect(SHARED_RESEARCH_UNIVERSE_MODE).toBe('off');
+  });
+
+  it('the allowed values: exactly off · founder · on, frozen, in walk order, and the shipped value is one of them', () => {
+    expect(SHARED_RESEARCH_UNIVERSE_MODES).toEqual(['off', 'founder', 'on']);
+    expect(Object.isFrozen(SHARED_RESEARCH_UNIVERSE_MODES)).toBe(true);
+    expect(SHARED_RESEARCH_UNIVERSE_MODES).toContain(SHARED_RESEARCH_UNIVERSE_MODE);
+  });
+
+  it('is a plain string literal with a Pinned-by pointer naming this file, and its runway and rollback are written beside it', () => {
+    expect(SRC).toMatch(/^export const SHARED_RESEARCH_UNIVERSE_MODE = '(off|founder|on)';$/m);
+    const idx = SRC.indexOf('export const SHARED_RESEARCH_UNIVERSE_MODE = ');
+    expect(SRC.slice(0, idx).split('\n').slice(-2).join('\n')).toContain('Pinned by: sharedResearchFlags.test.js');
+    const doc = SRC.slice(SRC.lastIndexOf('/**', idx), idx);
+    expect(doc).toContain('RUNWAY:');
+    expect(doc).toContain('Never a build PR');
+    expect(doc).toContain('universeModeNow()');
+    expect(doc).toContain('readPracticeFieldFounderList');
+    expect(doc.replace(/\s*\n\s*\*\s*/g, ' ')).toContain(UNIVERSE_ROLLBACK);
+    expect(SELF).toContain(`"is '${SHARED_RESEARCH_UNIVERSE_MODE}' — ${UNIVERSE_ROLLBACK}"`);
+  });
+
+  it('never a DARK_BY_DESIGN key, but noted by name in that block', () => {
+    expect(GUARD).not.toMatch(/^\s*SHARED_RESEARCH_UNIVERSE_MODE\s*:/m);
+    expect(GUARD).toContain('SHARED_RESEARCH_UNIVERSE_MODE intentionally ABSENT');
   });
 });

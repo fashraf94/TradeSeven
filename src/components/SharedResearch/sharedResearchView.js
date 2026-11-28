@@ -210,6 +210,13 @@ export const STATEMENT_MAX = 1000;
 /** The adoptable companies of the server's preview, in its order. */
 export const adoptableOf = (preview) => (preview?.companies ?? []).filter((c) => c.adoptable);
 
+/**
+ * Research universe Build 3b (section 7.2, RU-18): does an idea with these symbols hold a research-only company? Worked
+ * out from the server's companies each time — their `eligibility`, never a stored flag. Only a research session's
+ * companies can say 'research', so on a game-list session this is always false.
+ */
+export const holdsResearchOnlyIn = (symbols, companies) => (companies ?? []).some((c) => c?.eligibility === 'research' && (symbols ?? []).includes(c.symbol));
+
 /** The draft for the names picked: the server's fragments, in the preview's order, joined — no request (K-7). */
 export function draftOf(preview, symbols) {
   const picked = new Set(symbols);

@@ -193,3 +193,48 @@ export function Lead({ lead, findings }) {
     </div>
   );
 }
+
+// ── the stored rows (Build 3b PR A, RU-21; a research company's row, section 6) ──────────────────────────────────
+
+/**
+ * A game stock's row as one line (RU-21): name and symbol, the sector, "Ranked {n} of {total} in {sector}" exactly as
+ * the server's row carries it (BUILD_RULES §9: no rounding, no re-derivation), and the date it was computed. A row with
+ * no rank leaves the rank line out.
+ */
+const storedRowLineOf = (row) => [
+  row.name !== row.symbol ? `${row.name} · ${row.symbol}` : row.symbol,
+  row.peer?.sector ?? null,
+  row.ranking ? COPY.storedRank(row.ranking.rank, row.ranking.of, row.ranking.sector) : null,
+  row.peer?.asOf && formatDay(row.peer.asOf) ? COPY.asOf(formatDay(row.peer.asOf)) : null,
+].filter(Boolean).join(' · ');
+
+/**
+ * A research company's row (section 6; RU-15, RU-19): name and symbol, its sector, "Research only · no rank", the date its
+ * numbers were fetched, then each kept measure that is not null; the currency line once when a measure is held back; or
+ * why no numbers show.
+ */
+function ResearchRow({ row }) {
+  const R = COPY.research;
+  const metrics = row.numbers === 'shown' && row.peer?.metrics ? row.peer.metrics : null;
+  const held = Array.isArray(row.heldBack) ? row.heldBack : [];
+  const shown = metrics ? R.measures.filter(([key]) => typeof metrics[key] === 'number' && Number.isFinite(metrics[key])) : [];
+  const day = row.peer?.asOf ? formatDay(row.peer.asOf) : null;
+  const showHeld = metrics !== null && held.length !== 0 && typeof row.reportsIn === 'string';
+  const showStale = metrics !== null && row.stale === true;
+  return (
+    <div data-sr-research-row={row.symbol} style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+      <p style={S.meta}>{[row.name !== row.symbol ? `${row.name} · ${row.symbol}` : row.symbol, row.peer?.sector ?? null, R.noRank, day ? COPY.asOf(day) : null].filter(Boolean).join(' · ')}</p>
+      {shown.map(([key, label, kind]) => <p key={key} style={S.small} data-sr-measure={key}>{R.measure(label, R.value(kind, metrics[key]))}</p>)}
+      {showHeld && <p style={S.small} data-sr-held-back="">{R.heldBack(row.reportsIn)}</p>}
+      {showStale && <p style={S.small}>{R.stale}</p>}
+      {row.numbers === 'not_fetched' && <p style={S.small} data-sr-not-fetched="">{R.notFetched}</p>}
+      {row.numbers === 'not_available' && <p style={S.small} data-sr-not-available="">{R.notAvailable}</p>}
+    </div>
+  );
+}
+
+/** One stored row: a research company's (research: true), else a game stock's single line. */
+export function StoredRow({ row }) {
+  if (row?.research === true) return <ResearchRow row={row} />;
+  return <p style={S.meta}>{storedRowLineOf(row)}</p>;
+}

@@ -550,7 +550,9 @@ export default function useSharedResearch({ gated: gatedProp = false } = {}) {
       if (live.current) setPending(null);
     }
     if (!live.current) return null;
-    setEquip(out.ok ? { status: 'done' } : { status: 'failed' });
+    // Build 3b (RU-18): the equip route's research_only_list refusal keeps its code, so the screen says why; every other
+    // failure is answered as before
+    setEquip(out.ok ? { status: 'done' } : out.error?.code === 'research_only_list' ? { status: 'failed', code: 'research_only_list' } : { status: 'failed' });
     return out;
   }, []);
 

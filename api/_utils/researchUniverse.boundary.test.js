@@ -19,6 +19,14 @@
 //   - the per-stock math, api/_utils/stockMeasures.js: named only by the rankings job (compute-rankings.js), the
 //     research modules and their tests.
 // Any other file naming one fails.
+//
+// Build 3b (Work an idea accepts research companies; build prompt section 9) adds EXACTLY these importers, each named
+// below in its own set: the session's universe (sharedResearch/sessionUniverse.js: the research list, the directory's
+// names for the lookup), the research rows (sharedResearch/researchRows.js: the research list and the fetch module), the
+// equip route's guard (api/agent/equip-watchlist.js: isResearchStock, RU-18), and their tests. The switch's own name,
+// SHARED_RESEARCH_UNIVERSE_MODE(S), contains "RESEARCH_UNIVERSE": it is set aside before the scan, so a file that names
+// only the switch (the flag module, its pin, the flag guard's note, a route test's mock) passes, and any other mention in
+// the same file still fails (a planted row proves it).
 
 import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
@@ -47,7 +55,19 @@ const ALLOWED = new Set([
   'api/_utils/researchMeasures.js',
   'api/_utils/researchMeasures.test.js',
   'api/_utils/researchMeasures.precedence.test.js',
+  // Build 3b: the session's universe, the research rows, the equip route's guard, and their tests.
+  'api/_utils/sharedResearch/sessionUniverse.js',
+  'api/_utils/sharedResearch/sessionUniverse.test.js',
+  'api/_utils/sharedResearch/everydayNames.test.js',
+  'api/_utils/sharedResearch/researchRows.js',
+  'api/_utils/sharedResearch/researchRows.test.js',
+  'api/forge/shared-research.research.route.test.js',
+  'api/agent/equip-watchlist.js',
+  'api/agent/equip-watchlist.researchOnly.test.js',
 ]);
+
+/** Build 3b: the switch's own name, set aside before the scan (see the header). */
+const SWITCH_NAME = /\bSHARED_RESEARCH_UNIVERSE_MODES?\b/g;
 
 /** Build 2: the fetch module. Named only by itself, the hand-run script, their tests and this file. */
 const FETCH_NAMES = /research[-_]?measures|research-stock\.(?:m?js|test)/i;
@@ -58,6 +78,10 @@ const FETCH_ALLOWED = new Set([
   'scripts/research-stock.mjs',
   'scripts/research-stock.test.js',
   'api/_utils/researchUniverse.boundary.test.js',
+  // Build 3b: the research rows fetch and read a research company's numbers; their tests and the route's research rows.
+  'api/_utils/sharedResearch/researchRows.js',
+  'api/_utils/sharedResearch/researchRows.test.js',
+  'api/forge/shared-research.research.route.test.js',
 ]);
 
 /** Build 2: the per-stock math. Named only by the rankings job, the research modules and their tests, and this file. */
@@ -86,9 +110,9 @@ function walk(rel, out) {
   return out;
 }
 
-/** Files (repo-relative path, text) that name either module and are not allowed to. */
+/** Files (repo-relative path, text) that name either module and are not allowed to. The switch's own name is set aside (Build 3b). */
 function offendersIn(files, allowed = ALLOWED, names = NAMES) {
-  return files.filter((f) => (names.test(f.path) || names.test(f.text)) && !allowed.has(f.path)).map((f) => f.path);
+  return files.filter((f) => (names.test(f.path) || names.test(f.text.replace(SWITCH_NAME, ''))) && !allowed.has(f.path)).map((f) => f.path);
 }
 
 describe('Build 2: the scanner catches every way of reaching the fetch module and the per-stock math (planted)', () => {
@@ -137,6 +161,28 @@ describe('the scanner catches every way of reaching the modules (planted)', () =
     const files = [{ path: 'src/clean.js', text: "import { ALL_TICKERS } from '../api/_utils/rankingConfig.js';" },
       ...[...ALLOWED].map((p) => ({ path: p, text: "import './researchUniverse.js'; import './researchDirectory.js';" }))];
     expect(offendersIn(files)).toEqual([]);
+  });
+});
+
+describe('Build 3b: the name of the switch is set aside, and nothing else', () => {
+  it('a file that names only the switch passes', () => {
+    expect(offendersIn([{ path: 'src/config/x.js', text: "export const SHARED_RESEARCH_UNIVERSE_MODE = 'off'; export const SHARED_RESEARCH_UNIVERSE_MODES = [];" }])).toEqual([]);
+  });
+  it.each([
+    ['the switch and an import of the research list', "import { SHARED_RESEARCH_UNIVERSE_MODE } from './flags.js';\nimport { isResearchStock } from './researchUniverse.js';"],
+    ['the switch and a mention in a comment', '// SHARED_RESEARCH_UNIVERSE_MODE gates researchDirectory here'],
+    ['a longer name that only starts like the switch', 'const SHARED_RESEARCH_UNIVERSE_MODE_COPY = 1;'],
+    ['the research list spelled in lower case', 'const research_universe = 1;'],
+  ])('%s still fails', (_t, text) => {
+    expect(offendersIn([{ path: 'api/zz.js', text }])).toEqual(['api/zz.js']);
+  });
+  it('the new importers are allowed by name, and nothing else in their folders is', () => {
+    for (const p of ['api/_utils/sharedResearch/sessionUniverse.js', 'api/_utils/sharedResearch/researchRows.js', 'api/agent/equip-watchlist.js']) expect(ALLOWED.has(p)).toBe(true);
+    expect(FETCH_ALLOWED.has('api/_utils/sharedResearch/researchRows.js')).toBe(true);
+    for (const p of ['api/forge/shared-research.js', 'api/_utils/sharedResearch/store.js', 'api/_utils/sharedResearch/companies.js', 'api/agent/unequip-watchlist.js']) {
+      expect(ALLOWED.has(p), p).toBe(false);
+      expect(FETCH_ALLOWED.has(p), p).toBe(false);
+    }
   });
 });
 

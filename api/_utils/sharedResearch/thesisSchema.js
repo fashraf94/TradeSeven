@@ -41,7 +41,7 @@
 import { currentFindingsOf } from '../researchRecords/model.js';
 import { ADOPTABLE_HORIZONS, PICK_PARTS, THESIS_PARTS, THESIS_LIMITS as L } from '../../../src/constants/sharedResearch.js';
 import { STEP_SCHEMA, validateStepTurn, sentencesOf, promisesService, ACRONYMS, INDEX_NAMES } from './stepSchema.js';
-import { gameUniverse, companiesOf, resolveSymbol, isSameCompany } from './companies.js';
+import { gameUniverse, companiesOf, resolveSymbol, isSameCompany, nameAsTickerOf } from './companies.js';
 import { NAMES_A_PRICE, lineFailOf, builderWordingOf } from './thesisWords.js';
 import { applyProposals, cardContextOf } from './thesis.js';
 
@@ -379,11 +379,12 @@ export function validateBuildTurn(output, ctx) {
         const text = lineOf(r?.text, L.reason);
         const companyName = clean(r?.companyName) || null;
         // the symbol given; else the name written as a ticker; else the one card name whose stored company name it IS
-        const symbol = resolveSymbol(r?.symbolCandidate, universe) ?? (companyName ? resolveSymbol(companyName, universe) : null)
-          ?? (companyName ? (forNames.filter((s) => isSameCompany(companyName, { symbol: s, name: names[s] })).length === 1 ? forNames.find((s) => isSameCompany(companyName, { symbol: s, name: names[s] })) : null) : null);
+        // (a name read as a ticker in capitals only on a research session, and its everyday names count there — Build 3b)
+        const symbol = resolveSymbol(r?.symbolCandidate, universe) ?? (companyName ? nameAsTickerOf(companyName, universe) : null)
+          ?? (companyName ? (forNames.filter((s) => isSameCompany(companyName, { symbol: s, name: names[s] }, universe)).length === 1 ? forNames.find((s) => isSameCompany(companyName, { symbol: s, name: names[s] }, universe)) : null) : null);
         if (!text) return drop(`why.reason:${i}`, 'length');
         if (!symbol || !forNames.includes(symbol)) return drop(`why.reason:${i}`, 'not_a_name');
-        if (companyName && !isSameCompany(companyName, { symbol, name: names[symbol] })) return drop(`why.reason:${i}`, 'identity_mismatch');
+        if (companyName && !isSameCompany(companyName, { symbol, name: names[symbol] }, universe)) return drop(`why.reason:${i}`, 'identity_mismatch');
         const ids = resolveAll(r?.refs);
         if (ids === null) return drop(`why.reason:${i}`, 'invalid_source');
         // rule 1 (§B12 W-10): at least one ref, every ref a current Source-backed finding, at least one about the name
@@ -530,9 +531,15 @@ export function validateBuildTurn(output, ctx) {
 
 /** The server's line on a dead end (§B4.5): no company is picked to finish the card. */
 export const DEAD_END_LINE = 'No listed company has a sourced connection yet; nothing is picked to finish the card.';
-/** Does a text name a company in the game's universe by its symbol (the acronyms and index names never count)? */
+/**
+ * Does a text name a company in the game's universe by its symbol (the acronyms and index names never count)? On a
+ * research session (Build 3b section 5.7; review L2-6) a word of one or two capitals counts only as one of the game's own
+ * symbols: "A", "IT", "ON", "PR" open or fill many a sentence and are directory symbols. On the game list this is exactly
+ * as before.
+ */
 function namesAListedCompany(text, universe) {
-  return (String(text ?? '').match(/\b[A-Z]{1,5}(?:[.-][A-Z])?\b/g) || []).some((w) => !ACRONYMS.includes(w) && !INDEX_NAMES.includes(w) && resolveSymbol(w, universe) !== null);
+  return (String(text ?? '').match(/\b[A-Z]{1,5}(?:[.-][A-Z])?\b/g) || []).some((w) => !ACRONYMS.includes(w) && !INDEX_NAMES.includes(w) && resolveSymbol(w, universe) !== null
+    && (universe.strictCase !== true || w.length > 2 || resolveSymbol(w, gameUniverse) !== null));
 }
 
 /**

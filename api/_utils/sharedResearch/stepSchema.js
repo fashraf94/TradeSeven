@@ -45,7 +45,7 @@ import {
   FINDINGS_MAX, FINDING_ID_PREFIX, currentFindingsOf, isInstant, buildFinding, isSourceUrl,
 } from '../researchRecords/model.js';
 import { RELATIONSHIP_ROLES, ROLE_SEPARATOR, UNRESOLVED_REASONS } from '../../../src/constants/sharedResearch.js';
-import { gameUniverse, resolveSymbol, namesCompany, isSameCompany } from './companies.js';
+import { gameUniverse, resolveSymbol, namesCompany, isSameCompany, nameAsTickerOf } from './companies.js';
 import { METHOD_SOURCE, methodMarkersFor } from './method.js';
 
 /**
@@ -162,6 +162,8 @@ export function strayTickersOf(text, universe = gameUniverse) {
   for (const w of String(text ?? '').match(TICKERISH) || []) {
     if (ACRONYMS.includes(w) || INDEX_NAMES.includes(w)) continue;
     if (universe.has(w.replace('.', '-'))) continue;
+    // Build 3b (review L2-3): a research session's listed everyday names written in capitals ("TSMC"); none on the game list
+    if (typeof universe.allowsWord === 'function' && universe.allowsWord(w)) continue;
     out.push(w);
   }
   return out;
@@ -465,15 +467,27 @@ export function validateStepTurn(output, ctx) {
    */
   const identityOf = (candidate, companyName, factText = null) => {
     let symbol = resolveSymbol(candidate, universe);
-    if (symbol === null && companyName) symbol = resolveSymbol(companyName, universe);
+    if (symbol === null && companyName) {
+      // a name written as its ticker (on a research session, in capitals only — Build 3b section 5.7); then, on a
+      // research session only, the one company whose core or everyday name it is (section 5.6). Both, naming two
+      // different companies, is no company: never a guess.
+      const asTicker = nameAsTickerOf(companyName, universe);
+      const byName = typeof universe.lookupName === 'function' ? universe.lookupName(companyName) : null;
+      if (asTicker !== null && byName !== null && asTicker !== byName) {
+        notes.push(`identity_ambiguous:${asTicker}|${byName}`);
+        return null;
+      }
+      symbol = asTicker ?? byName;
+    }
     if (symbol === null) return null;
     // the named company must BE the symbol's (every word of the name in the stored name — refuter SH-2)
-    if (companyName && !isSameCompany(companyName, { symbol, name: names[symbol] })) {
+    if (companyName && !isSameCompany(companyName, { symbol, name: names[symbol] }, universe)) {
       notes.push(`identity_mismatch:${symbol}`);
       return null;
     }
-    // a finding that names no company carries the symbol only when its own fact names that company (refuter SH-1)
-    if (!companyName && factText !== null && !namesCompany(factText, { symbol, name: names[symbol] })) {
+    // a finding that names no company carries the symbol only when its own fact names that company (refuter SH-1); on a
+    // research session a research-only company is never identified without its name in words (review L2-4)
+    if (!companyName && factText !== null && ((typeof universe.needsName === 'function' && universe.needsName(symbol)) || !namesCompany(factText, { symbol, name: names[symbol] }))) {
       notes.push(`identity_unnamed:${symbol}`);
       return null;
     }

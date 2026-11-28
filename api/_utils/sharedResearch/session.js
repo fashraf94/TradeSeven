@@ -386,6 +386,8 @@ export function sessionViewOf(s) {
     createdAt: s.createdAt, updatedAt: s.updatedAt,
     // the thesis builder's stamp (Amendment B §B2): present only on a builder session — a ledger's view is unchanged
     ...(s.shape === 'builder' ? { shape: 'builder' } : {}),
+    // the research universe's stamp (Build 3b): present only on a research session — a game-list session's view is unchanged
+    ...(s.universe === 'research' ? { universe: 'research' } : {}),
   };
 }
 
