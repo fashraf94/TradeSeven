@@ -109,9 +109,9 @@ describe('SHARED_RESEARCH_BUILDER_MODE — the pin (BUILD_RULES §2; Amendment B
 const UNIVERSE_ROLLBACK = 'move the literal back one step with its pin: new investigations open on the game list; open research investigations keep their stamp';
 
 describe('SHARED_RESEARCH_UNIVERSE_MODE — the pin (BUILD_RULES §2; Build 3b, RU-22)', () => {
-  it("is 'off' — move the literal back one step with its pin: new investigations open on the game list; open research investigations keep their stamp", () => {
+  it("is 'founder' — move the literal back one step with its pin: new investigations open on the game list; open research investigations keep their stamp", () => {
     // THE ROW THAT MOVES WITH A FLIP ('off' → 'founder' → 'on'), in the founder's flip PR; a rollback moves it back.
-    expect(SHARED_RESEARCH_UNIVERSE_MODE).toBe('off');
+    expect(SHARED_RESEARCH_UNIVERSE_MODE).toBe('founder');
   });
 
   it('the allowed values: exactly off · founder · on, frozen, in walk order, and the shipped value is one of them', () => {
